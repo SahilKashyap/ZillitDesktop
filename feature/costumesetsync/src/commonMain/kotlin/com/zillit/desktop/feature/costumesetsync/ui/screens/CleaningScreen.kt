@@ -6,6 +6,25 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitHorizontalScrollRail
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,8 +43,6 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
@@ -56,7 +73,8 @@ import com.zillit.desktop.feature.costumesetsync.ui.rememberResource
 import com.zillit.desktop.feature.costumesetsync.ui.t
 import com.zillit.desktop.feature.costumesetsync.ui.tEnum
 
-private val COLUMN_WIDTH = 236.dp
+private val COLUMN_WIDTH = 250.dp
+private val ITEMS_MAX_HEIGHT = 480.dp
 private const val BOARD_VIEW = "board"
 private const val LIST_VIEW = "list"
 
@@ -93,8 +111,10 @@ fun CleaningScreen() {
         title = t("csync_cleaning_title"),
         sub = fill(t("csync_cleaning_sub"), "open" to stillOpen.size, "done" to items.count(readyToday)),
         actions = {
-            ZillitChoiceChip(t("csync_cleaning_board"), selected = view == BOARD_VIEW, onClick = { view = BOARD_VIEW })
-            ZillitChoiceChip(t("csync_cleaning_list"), selected = view == LIST_VIEW, onClick = { view = LIST_VIEW })
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                WfViewToggle(AhIcons.Grid, view == BOARD_VIEW) { view = BOARD_VIEW }
+                WfViewToggle(AhIcons.List, view == LIST_VIEW) { view = LIST_VIEW }
+            }
             if (ctx.canPost) {
                 ZillitButton(t("csync_emergency"), onClick = { emergencyOpen = true }, variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Siren)
                 ZillitButton(
@@ -107,7 +127,7 @@ fun CleaningScreen() {
             }
         },
     )
-    ZillitSearchField(q, { q = it }, Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), placeholder = t("csync_cleaning_search"))
+    SearchWithButton(q, { q = it }, t("csync_cleaning_search"), Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md))
 
     Await(data) {
         if (view == BOARD_VIEW) {
@@ -144,24 +164,49 @@ private fun cleaningMatches(q: String, i: Rec): Boolean {
     )
 }
 
-/** One column per stage; only the cards grow, the stage heading and its count stay on top. */
+/** One column per stage; only the cards scroll, the stage heading and its count stay on top. */
 @Composable
 private fun CleaningBoard(pipeline: List<String>, shown: List<Rec>, readyToday: (Rec) -> Boolean) {
     val open = shown.filter { it.str("status") !in CLEANING_CLOSED }
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
-        pipeline.forEach { stage ->
-            val stageItems = if (stage == "READY") shown.filter(readyToday) else open.filter { it.str("status") == stage }
-            Column(
-                Modifier.width(COLUMN_WIDTH).clip(ZillitTheme.shapes.medium).background(ZillitTheme.colors.surfaceSunken).padding(ZillitTheme.spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-                    RowTitle(tEnum(stage))
-                    MutedText(stageItems.size.toString())
+    val colors = ZillitTheme.colors
+    val scroll = rememberScrollState()
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(scroll).padding(bottom = 22.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            pipeline.forEach { stage ->
+                val stageItems = if (stage == "READY") shown.filter(readyToday) else open.filter { it.str("status") == stage }
+                val shape = RoundedCornerShape(12.dp)
+                Column(
+                    Modifier
+                        .width(COLUMN_WIDTH)
+                        .heightIn(min = 120.dp)
+                        .clip(shape)
+                        .background(if (colors.isDark) Color(0xFF0F172A) else Color(0xFFE4E6EB))
+                        .border(1.dp, if (colors.isDark) Color(0x0AFFFFFF) else Color(0xFFF3F4F6), shape)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ZillitText(tEnum(stage), Modifier.weight(1f), style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
+                        val pill = RoundedCornerShape(999.dp)
+                        ZillitText(
+                            stageItems.size.toString(),
+                            Modifier.widthIn(min = 22.dp).clip(pill).background(colors.surface).border(1.dp, colors.border, pill).padding(horizontal = 8.dp, vertical = 1.dp),
+                            style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+                            color = colors.textMuted,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    Column(Modifier.heightIn(max = ITEMS_MAX_HEIGHT).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        stageItems.forEach { CleaningCard(it) }
+                    }
                 }
-                stageItems.forEach { CleaningCard(it) }
             }
         }
+        ZillitHorizontalScrollRail(scroll, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
     }
 }
 
@@ -171,39 +216,54 @@ private fun CleaningCard(i: Rec) {
     val ctx = LocalSync.current
     val costume = i.rec("costume")
     val emergency = i.bool("is_emergency")
-    val priority = if (emergency) "URGENT" else i.str("priority")
+    val priority = if (emergency) "URGENT" else i.str("priority").ifBlank { "NORMAL" }
     val where = listOfNotNull(
         i.rec("scene")?.let { "${t("csync_sc")} ${it.str("number")}" + (if (i.long("take_number") > 0) " T${i.long("take_number")}" else "") },
         costume?.rec("character")?.str("name")?.ifBlank { null },
     ).joinToString(" · ")
     val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(10.dp)
+    // An emergency: an inset red bar and a faint tint fading out, so the text lines up with every other card.
+    val tint = if (emergency) Brush.horizontalGradient(0f to colors.dangerSoft, 0.6f to colors.surface, 1f to colors.surface) else SolidColor(colors.surface)
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(colors.surface)
-            .border(BorderStroke(1.dp, if (emergency) colors.danger else colors.border), ZillitTheme.shapes.medium)
+            .clip(shape)
+            .background(tint)
+            .border(1.dp, colors.border, shape)
+            .then(if (emergency) Modifier.drawBehind { drawRect(colors.danger, size = Size(3.dp.toPx(), size.height)) } else Modifier)
             .clickable { ctx.nav.go("cleaning/${i.id}") }
-            .padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            MonoText(costume?.str("asset_number").orEmpty())
-            StatusBadge(priority, label = if (emergency) t("csync_emergency") else tEnum(priority))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(
+                costume?.str("asset_number").orEmpty(),
+                Modifier.weight(1f),
+                style = ZillitTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = 0.02.em),
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+            WfPriorityPill(priority, if (emergency) t("csync_emergency") else tEnum(priority), emergency)
         }
-        RowTitle(costume?.str("name").orEmpty())
-        MutedText(listOf(i.str("problem"), tEnum(i.str("cleaning_type"))).filter { it.isNotBlank() }.joinToString(" · "), maxLines = 2)
-        if (where.isNotBlank()) MutedText(where)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        ZillitText(costume?.str("name").orEmpty(), style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp), maxLines = 1)
+        val problem = listOf(i.str("problem"), tEnum(i.str("cleaning_type"))).filter { it.isNotBlank() }.joinToString(" · ")
+        if (problem.isNotBlank()) {
+            ZillitText(problem, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.5.sp, lineHeight = 17.5.sp), color = colors.textPrimary.copy(alpha = 0.85f), maxLines = 2)
+        }
+        if (where.isNotBlank()) ZillitText(where, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp).height(1.dp).background(colors.divider))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             val who = i.str("assigned_to_name")
             ZillitText(
-                if (who.isNotBlank()) "👤 $who" else t("csync_unassigned_lower"),
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textSecondary,
+                if (who.isNotBlank()) "\uD83D\uDC64 $who" else t("csync_unassigned_lower"),
+                style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp, fontStyle = if (who.isBlank()) FontStyle.Italic else FontStyle.Normal),
+                color = if (who.isBlank()) colors.textMuted else colors.textPrimary,
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false),
             )
-            ZillitText(whenText(i, LocalSync.current.now()), style = ZillitTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+            Box(Modifier.weight(1f))
+            ZillitText(whenText(i, ctx.now()), style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
         }
     }
 }

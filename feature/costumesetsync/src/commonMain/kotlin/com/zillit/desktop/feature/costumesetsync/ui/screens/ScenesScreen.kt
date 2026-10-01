@@ -185,7 +185,7 @@ private fun EditEnd(s: EditEndState, reload: () -> Unit, ask: (Confirm?) -> Unit
                 ZillitButton(t("csync_edit_all"), onClick = { editor.startEditAll(s.list) }, variant = ButtonVariant.Secondary, enabled = s.list.isNotEmpty() && !editor.busy)
                 ZillitButton(t("csync_edit_single"), onClick = { editor.single = "" }, variant = ButtonVariant.Secondary, enabled = s.list.isNotEmpty() && !editor.busy)
             }
-            ZillitButton(t("csync_add"), onClick = { editor.startNew() }, leadingIcon = ZillitIcons.Add, enabled = NEW_KEY !in editor.drafts && !editor.busy)
+            BlueButton(t("csync_add"), onClick = { editor.startNew() }, enabled = NEW_KEY !in editor.drafts && !editor.busy)
         }
     }
 }

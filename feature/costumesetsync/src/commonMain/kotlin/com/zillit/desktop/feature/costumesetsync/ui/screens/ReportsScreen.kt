@@ -15,10 +15,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
@@ -30,7 +34,6 @@ import com.zillit.desktop.feature.costumesetsync.domain.Tone
 import com.zillit.desktop.feature.costumesetsync.domain.fmtMoney
 import com.zillit.desktop.feature.costumesetsync.domain.todayParam
 import com.zillit.desktop.feature.costumesetsync.ui.Await
-import com.zillit.desktop.feature.costumesetsync.ui.DateInput
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
@@ -45,7 +48,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
 import com.zillit.desktop.feature.costumesetsync.ui.tEnum
 import kotlinx.coroutines.launch
 
-private val TILE_WIDTH = 150.dp
+private val TILE_WIDTH = 130.dp
 
 /** Anything that moves a figure on one of the three reports. */
 private val REPORT_EVENTS = SyncEvents.Costume + SyncEvents.Cleaning + SyncEvents.Alteration + SyncEvents.Damage + SyncEvents.Missing +
@@ -109,7 +112,8 @@ private fun Toolbar(ctx: SyncCtx, tab: String, date: String, onDate: (String) ->
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
         when (tab) {
             "daily" -> {
-                DateInput(date, onDate, t("csync_rpt_tab_daily"), Modifier.width(KIT_DATE_WIDTH))
+                // No visible label, as the web's DatePicker.
+                com.zillit.desktop.core.designsystem.component.ZillitDateField(date, onDate, Modifier.width(KIT_DATE_WIDTH))
                 ZillitButton(
                     t("csync_rpt_csv"),
                     onClick = { ctx.whenDownload { daily?.let { saveCsv(ctx, "wardrobe-daily-$date.csv", ReportsModel.dailyCsv(it)) } } },
@@ -128,7 +132,7 @@ private fun Toolbar(ctx: SyncCtx, tab: String, date: String, onDate: (String) ->
                 )
                 MutedText(t("csync_rpt_n_assets", "n" to inventory.size))
             }
-            else -> ZillitNotice(t("csync_rpt_wrap_notice").replace("{qr}", t("csync_qr_labels")), tone = StatusTone.Progress)
+            else -> ZillitNotice(t("csync_rpt_wrap_notice").replace("{qr}", t("csync_qr_labels")), tone = StatusTone.Progress, modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -160,17 +164,22 @@ private fun Piece(costume: Rec?, mark: String = "", emergency: Boolean = false) 
 private fun DailyReport(data: Rec, day: String) {
     val s = data.rec("summary") ?: Rec.Empty
     val ctx = LocalSync.current
-    SectionCard(title = t("csync_rpt_daily_title", "name" to data.rec("project")?.str("name").orEmpty())) {
+    // The web puts the heading inside the card body (an `h2`, no header band).
+    SectionCard {
+        ZillitText(
+            t("csync_rpt_daily_title", "name" to data.rec("project")?.str("name").orEmpty()),
+            style = ZillitTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+        )
         MutedText(DayKeys.medium(day) + " · " + t("csync_rpt_shooting_day", "n" to (data.rec("project")?.long("shooting_day") ?: 0L)))
         FlowRow(Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             val tile = Modifier.width(TILE_WIDTH)
-            StatCard(t("csync_rpt_scenes"), s.long("scenes"), tile)
-            StatCard(t("csync_rpt_returned"), s.long("returned"), tile)
-            StatCard(t("csync_rpt_cleaning"), s.long("cleaning"), tile, hint = t("csync_rpt_n_completed", "n" to s.long("cleaning_completed")))
-            StatCard(t("csync_rpt_alteration"), s.long("alteration"), tile)
-            StatCard(t("csync_rpt_damaged"), s.long("damaged"), tile)
-            StatCard(t("csync_rpt_missing"), s.long("missing"), tile, tone = Tone.Danger.takeIf { s.long("missing") > 0 })
-            if (ctx.isFinance) StatCard(t("csync_rpt_spend_today"), fmtMoney(s.double("spend"), ctx.currency), tile)
+            StatCard(t("csync_rpt_scenes"), s.long("scenes"), tile, compact = true)
+            StatCard(t("csync_rpt_returned"), s.long("returned"), tile, compact = true)
+            StatCard(t("csync_rpt_cleaning"), s.long("cleaning"), tile, compact = true, hint = t("csync_rpt_n_completed", "n" to s.long("cleaning_completed")))
+            StatCard(t("csync_rpt_alteration"), s.long("alteration"), tile, compact = true)
+            StatCard(t("csync_rpt_damaged"), s.long("damaged"), tile, compact = true)
+            StatCard(t("csync_rpt_missing"), s.long("missing"), tile, compact = true, tone = Tone.Danger.takeIf { s.long("missing") > 0 })
+            if (ctx.isFinance) StatCard(t("csync_rpt_spend_today"), fmtMoney(s.double("spend"), ctx.currency), tile, compact = true)
         }
     }
     Column(Modifier.padding(top = ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
@@ -212,7 +221,8 @@ private fun ScenesTable(scenes: List<Rec>) {
 private fun CleaningCard(cleaning: List<Rec>, modifier: Modifier) {
     SectionCard(title = t("csync_rpt_cleaning_card"), flush = true, modifier = modifier) {
         if (cleaning.isEmpty()) MutedText(t("csync_none_period"), Modifier.padding(ZillitTheme.spacing.lg))
-        cleaning.forEach { c ->
+        cleaning.forEachIndexed { i, c ->
+            if (i > 0) ZillitDivider()
             ReportItem(c.rec("costume"), "", c.bool("is_emergency"), "${c.str("problem")} · ${tEnum(c.str("cleaning_type"))}", c.str("status"))
         }
     }
@@ -221,8 +231,14 @@ private fun CleaningCard(cleaning: List<Rec>, modifier: Modifier) {
 @Composable
 private fun AltMissingCard(alterations: List<Rec>, missing: List<Rec>, modifier: Modifier) {
     SectionCard(title = t("csync_rpt_alt_missing_card"), flush = true, modifier = modifier) {
-        alterations.forEach { a -> ReportItem(a.rec("costume"), "✂️", false, "${a.str("issue")} → ${a.str("required_work")}", a.str("status")) }
-        missing.forEach { m -> ReportItem(m.rec("costume"), "🔎", false, t("csync_rpt_last_seen", "x" to m.str("last_seen_location").ifBlank { "—" }), "MISSING") }
+        alterations.forEachIndexed { i, a ->
+            if (i > 0) ZillitDivider()
+            ReportItem(a.rec("costume"), "✂️", false, "${a.str("issue")} → ${a.str("required_work")}", a.str("status"))
+        }
+        missing.forEachIndexed { i, m ->
+            if (i > 0 || alterations.isNotEmpty()) ZillitDivider()
+            ReportItem(m.rec("costume"), "🔎", false, t("csync_rpt_last_seen", "x" to m.str("last_seen_location").ifBlank { "—" }), "MISSING")
+        }
         if (alterations.size + missing.size == 0) MutedText(t("csync_none_period"), Modifier.padding(ZillitTheme.spacing.lg))
     }
 }

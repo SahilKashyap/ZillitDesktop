@@ -47,7 +47,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
 import com.zillit.desktop.feature.costumesetsync.ui.tEnum
 import kotlinx.coroutines.launch
 
-private val TILE_WIDTH = 170.dp
+private val TILE_WIDTH = 130.dp
 private val SEARCH_WIDTH = 420.dp
 
 /** Everything the budget reads: the report (`expenses`, `by_category`, inventory and rental figures) and the pickers' lists. */
@@ -187,12 +187,12 @@ private class BudgetView(val ctx: SyncCtx, val book: BudgetData, val cat: String
 private fun BudgetTiles(ctx: SyncCtx, view: BudgetView, cat: String, onCat: (String) -> Unit) {
     val tile = Modifier.width(TILE_WIDTH)
     FlowRow(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        StatCard(t("csync_budget_total_spend"), view.total(view.all), tile, onClick = { onCat("") })
+        StatCard(t("csync_budget_total_spend"), view.total(view.all), tile, compact = true, active = cat.isEmpty(), onClick = { onCat("") })
         view.cats.forEach { c ->
-            StatCard(tEnum(c), view.total(view.all.filter { it.str("category") == c }), tile, onClick = { onCat(if (cat == c) "" else c) })
+            StatCard(tEnum(c), view.total(view.all.filter { it.str("category") == c }), tile, compact = true, active = cat == c, onClick = { onCat(if (cat == c) "" else c) })
         }
-        StatCard(t("csync_budget_inventory_value"), BudgetModel.fmtAmount(view.book.report.double("inventory_value"), view.currency), tile, hint = t("csync_budget_inventory_value_hint")) { ctx.nav.go("costumes") }
-        StatCard(t("csync_budget_rental_committed"), BudgetModel.fmtAmount(view.book.report.double("rental_committed"), view.currency), tile, hint = t("csync_budget_rental_committed_hint")) { ctx.nav.go("vendors") }
+        StatCard(t("csync_budget_inventory_value"), BudgetModel.fmtAmount(view.book.report.double("inventory_value"), view.currency), tile, hint = t("csync_budget_inventory_value_hint"), compact = true) { ctx.nav.go("costumes") }
+        StatCard(t("csync_budget_rental_committed"), BudgetModel.fmtAmount(view.book.report.double("rental_committed"), view.currency), tile, hint = t("csync_budget_rental_committed_hint"), compact = true) { ctx.nav.go("vendors") }
     }
 }
 

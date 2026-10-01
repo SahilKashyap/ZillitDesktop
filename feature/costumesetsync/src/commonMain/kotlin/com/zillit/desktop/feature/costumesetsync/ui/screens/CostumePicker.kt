@@ -4,6 +4,12 @@ import androidx.compose.foundation.layout.Arrangement
 import com.zillit.desktop.feature.costumesetsync.ui.SyncDialogShell
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
@@ -73,7 +78,7 @@ fun CostumePickerDialog(
         width = 640.dp,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            ZillitSearchField(q, { q = it }, Modifier.weight(1f), t("csync_picker_search"))
+            SearchWithButton(q, { q = it }, t("csync_picker_search"), Modifier.weight(1f))
             if (characterId.isNotBlank()) ZillitCheckbox(onlyCharacter, { onlyCharacter = it }, label = t("csync_this_character_only"))
             if (ctx.canPost) ZillitButton(t("csync_new_costume"), onClick = { newOpen = true }, leadingIcon = ZillitIcons.Add)
         }
@@ -99,9 +104,11 @@ private fun PickerList(q: String, characterId: String, exclude: (Rec) -> Boolean
         if (shown.isEmpty()) {
             EmptyState(t("csync_costumes_empty_title"))
         } else {
-            Column(Modifier.fillMaxWidth()) {
-                shown.forEach { piece ->
-                    CostumeRow(piece, onClick = { onPick(piece) }, end = { ZillitText("+", style = ZillitTheme.typography.titleMedium) })
+            // `.csync-picker`: the list scrolls inside the dialog, capped at 46% of the window.
+            val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+            Column(Modifier.fillMaxWidth().heightIn(max = (windowHeight * 0.46f).coerceAtLeast(200.dp)).verticalScroll(rememberScrollState())) {
+                shown.forEachIndexed { i, piece ->
+                    CostumeRow(piece, onClick = { onPick(piece) }, end = { ZillitIcon(ZillitIcons.Add, size = 16.dp) }, last = i == shown.lastIndex)
                 }
             }
         }

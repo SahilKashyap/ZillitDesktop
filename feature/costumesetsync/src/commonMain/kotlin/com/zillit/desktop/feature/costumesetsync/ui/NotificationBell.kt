@@ -16,7 +16,21 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.domain.NotificationsModel
 import kotlinx.coroutines.delay
@@ -47,14 +61,39 @@ fun NotificationBell(refreshTick: Int = 0) {
     }
     val title = t("csync_notifications_title")
     val label = if (unread > 0) "$title — ${t("csync_notifications_unread", "n" to unread)}" else title
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    // The web's `.csync-topbar__btn`: a 36px square, 9px radius, hairline border, accent on hover.
     Box {
-        ZillitIconButton(ZillitIcons.Bell, label, onClick = { ctx.nav.go("notifications") })
+        Box(
+            Modifier
+                .size(BTN)
+                .clip(RoundedCornerShape(BTN_RADIUS))
+                .background(colors.surfaceHover)
+                .border(1.dp, if (hovered) colors.accent else colors.border, RoundedCornerShape(BTN_RADIUS))
+                .hoverable(interaction)
+                .semantics { contentDescription = label }
+                .clickable { ctx.nav.go("notifications") },
+            contentAlignment = Alignment.Center,
+        ) { ZillitIcon(ZillitIcons.Bell, tint = if (hovered) colors.accent else colors.textPrimary, size = 17.dp) }
         if (unread > 0) {
-            Box(Modifier.align(Alignment.TopEnd).background(ZillitTheme.colors.danger, RoundedCornerShape(PIP_RADIUS)).padding(horizontal = 4.dp)) {
-                ZillitText(NotificationsModel.badge(unread), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textOnAccent, maxLines = 1)
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(6.dp, (-6).dp)
+                    .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                    .border(2.dp, colors.surface, RoundedCornerShape(PIP_RADIUS))
+                    .background(colors.danger, RoundedCornerShape(PIP_RADIUS))
+                    .padding(horizontal = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitText(NotificationsModel.badge(unread), style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold, lineHeight = 14.sp), color = Color.White, maxLines = 1)
             }
         }
     }
 }
 
+private val BTN = 36.dp
+private val BTN_RADIUS = 9.dp
 private val PIP_RADIUS = 8.dp

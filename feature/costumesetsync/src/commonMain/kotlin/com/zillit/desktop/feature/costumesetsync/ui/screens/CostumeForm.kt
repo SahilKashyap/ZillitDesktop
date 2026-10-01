@@ -1,6 +1,9 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +22,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.MediaEntry
 import com.zillit.desktop.feature.costumesetsync.ui.MediaPicker
 import com.zillit.desktop.feature.costumesetsync.ui.PickInput
 import com.zillit.desktop.feature.costumesetsync.ui.RecInput
+import com.zillit.desktop.feature.costumesetsync.ui.StackedPick
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.attachMedia
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -163,12 +167,18 @@ private fun CostumeFormContent(onClose: () -> Unit, initial: Rec?, defaultCharac
         onConfirm = save,
         confirmEnabled = draft.name.isNotBlank(),
         busy = saving,
+        width = FORM_WIDTH.dp,
     ) {
         CostumeFields(draft, { draft = it }, initial != null, characters.value.orEmpty(), vendors.value.orEmpty())
         ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
         MediaPicker(media, { media = it }, enabled = !saving)
     }
 }
+
+// The web's modal is 900 wide with two columns: 16 of padding each side leaves 868, so two 428 cells and the 12 between.
+private val CELL = Modifier.width(428.dp)
+private val WIDE = Modifier.width(868.dp)
+private const val FORM_WIDTH = 900
 
 @Composable
 private fun CostumeFields(draft: CostumeDraft, onChange: (CostumeDraft) -> Unit, editing: Boolean, characters: List<Rec>, vendors: List<Rec>) {
@@ -181,28 +191,33 @@ private fun CostumeFields(draft: CostumeDraft, onChange: (CostumeDraft) -> Unit,
             draft.assetNumber,
             { onChange(draft.copy(assetNumber = it.uppercase())) },
             t("csync_asset_number"),
+            CELL,
             help = if (editing) null else t("csync_asset_number_hint"),
         )
-        TextInput(draft.name, { onChange(draft.copy(name = it)) }, t("csync_field_name"))
-        EnumInput(draft.category, ctx.metaList("costume_categories"), { onChange(draft.copy(category = it.ifBlank { draft.category }, type = "")) }, t("csync_field_category"))
-        // Type offers the service's list; anything not on it is typed in the box beneath.
-        PickInput(draft.type.takeIf { it in types }.orEmpty(), types.map { it to it }, { onChange(draft.copy(type = it)) }, t("csync_field_type"), placeholder = "—")
-        TextInput(draft.type, { onChange(draft.copy(type = it)) }, "${t("csync_field_type")}")
-        TextInput(draft.color, { onChange(draft.copy(color = it)) }, t("csync_field_colour"))
-        TextInput(draft.size, { onChange(draft.copy(size = it)) }, t("csync_field_size"))
-        TextInput(draft.brand, { onChange(draft.copy(brand = it)) }, t("csync_field_brand"))
-        TextInput(draft.fabric, { onChange(draft.copy(fabric = it)) }, t("csync_field_fabric"))
-        RecInput(draft.characterId, characters, { onChange(draft.copy(characterId = it)) }, t("csync_field_character"), placeholder = t("csync_unassigned_dash"))
-        PickInput(draft.location.takeIf { it in locations }.orEmpty(), locations.map { it to it }, { onChange(draft.copy(location = it.ifBlank { draft.location })) }, t("csync_field_location"))
-        TextInput(draft.location, { onChange(draft.copy(location = it)) }, "${t("csync_field_location")}")
-        EnumInput(draft.source, ctx.metaList("costume_sources"), { onChange(draft.copy(source = it.ifBlank { draft.source })) }, t("csync_field_source"))
-        RecInput(draft.vendorId, vendors, { onChange(draft.copy(vendorId = it)) }, t("csync_field_vendor"), placeholder = "—")
+        TextInput(draft.name, { onChange(draft.copy(name = it)) }, t("csync_field_name"), CELL)
+        EnumInput(draft.category, ctx.metaList("costume_categories"), { onChange(draft.copy(category = it.ifBlank { draft.category }, type = "")) }, t("csync_field_category"), CELL)
+        // Type offers the service's list; anything not on it is typed in the box beneath, inside the same field.
+        StackedPick(
+            draft.type.takeIf { it in types }.orEmpty(), types.map { it to it }, { onChange(draft.copy(type = it)) },
+            draft.type, { onChange(draft.copy(type = it)) }, t("csync_field_type"), CELL, placeholder = "—",
+        )
+        TextInput(draft.color, { onChange(draft.copy(color = it)) }, t("csync_field_colour"), CELL)
+        TextInput(draft.size, { onChange(draft.copy(size = it)) }, t("csync_field_size"), CELL)
+        TextInput(draft.brand, { onChange(draft.copy(brand = it)) }, t("csync_field_brand"), CELL)
+        TextInput(draft.fabric, { onChange(draft.copy(fabric = it)) }, t("csync_field_fabric"), CELL)
+        RecInput(draft.characterId, characters, { onChange(draft.copy(characterId = it)) }, t("csync_field_character"), CELL, placeholder = t("csync_unassigned_dash"))
+        StackedPick(
+            draft.location.takeIf { it in locations }.orEmpty(), locations.map { it to it }, { onChange(draft.copy(location = it.ifBlank { draft.location })) },
+            draft.location, { onChange(draft.copy(location = it)) }, t("csync_field_location"), CELL,
+        )
+        EnumInput(draft.source, ctx.metaList("costume_sources"), { onChange(draft.copy(source = it.ifBlank { draft.source })) }, t("csync_field_source"), CELL)
+        RecInput(draft.vendorId, vendors, { onChange(draft.copy(vendorId = it)) }, t("csync_field_vendor"), CELL, placeholder = "—")
         if (ctx.isFinance) {
-            TextInput(draft.purchaseCost, { onChange(draft.copy(purchaseCost = it)) }, "${t("csync_field_purchase_cost")}$inCurrency", number = true)
-            TextInput(draft.rentalPerDay, { onChange(draft.copy(rentalPerDay = it)) }, "${t("csync_rental_per_day")}$inCurrency", number = true)
+            TextInput(draft.purchaseCost, { onChange(draft.copy(purchaseCost = it)) }, "${t("csync_field_purchase_cost")}$inCurrency", CELL, number = true)
+            TextInput(draft.rentalPerDay, { onChange(draft.copy(rentalPerDay = it)) }, "${t("csync_rental_per_day")}$inCurrency", CELL, number = true)
         }
-        TextInput(draft.quantity, { onChange(draft.copy(quantity = it)) }, t("csync_field_quantity"), number = true)
-        TextInput(draft.care, { onChange(draft.copy(care = it)) }, t("csync_field_care"))
-        TextInput(draft.notes, { onChange(draft.copy(notes = it)) }, t("csync_field_notes"), FormWide, multiline = true)
+        TextInput(draft.quantity, { onChange(draft.copy(quantity = it)) }, t("csync_field_quantity"), CELL, number = true)
+        TextInput(draft.care, { onChange(draft.copy(care = it)) }, t("csync_field_care"), CELL)
+        TextInput(draft.notes, { onChange(draft.copy(notes = it)) }, t("csync_field_notes"), WIDE, multiline = true)
     }
 }

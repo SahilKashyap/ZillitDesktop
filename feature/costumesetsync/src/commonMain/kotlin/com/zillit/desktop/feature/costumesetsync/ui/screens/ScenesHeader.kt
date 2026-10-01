@@ -1,9 +1,14 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -80,37 +85,45 @@ internal fun ScenesHeader(scenes: List<Rec>, filters: SceneFilterState, state: H
         state.view == "breakdown" -> t("csync_breakdown_sub")
         else -> t("csync_scenes_sub")
     }
-    PageHead(title = draftTitle, sub = sub, actions = { HeaderButtons(revisions, filters, state, actions) })
+    val ctx = com.zillit.desktop.feature.costumesetsync.ui.LocalSync.current
+    ScenesHead(draftTitle, sub, onBack = { ctx.nav.backOr("dashboard") }) { HeaderButtons(revisions, filters, state, actions) }
 }
+
+/** antd `size="large"`: 40dp where the default is 32. */
+private val LARGE = Modifier.defaultMinSize(minHeight = 40.dp)
 
 @Composable
 private fun HeaderButtons(revisions: List<String>, filters: SceneFilterState, state: HeaderState, actions: HeaderActions) {
     if (revisions.isNotEmpty()) {
-        FilterSelect(filters.revision, revisions.map { it to it }, t("csync_all_drafts"), { filters.revision = it; filters.page = 1 }, Modifier.width(REV_W))
+        FilterSelect(filters.revision, revisions.map { it to it }, t("csync_all_drafts"), { filters.revision = it; filters.page = 1 }, Modifier.width(REV_W).height(40.dp))
     }
     // Editing keeps the bar to the job in hand: no uploads until it is put down.
     if (!state.canPost || state.busyEditing) return
     if (state.view == "breakdown") {
-        ZillitButton(t("csync_collapse_scene_number"), onClick = { actions.setView("scenes") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Collapse)
+        ZillitButton(t("csync_collapse_scene_number"), onClick = { actions.setView("scenes") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Collapse, modifier = LARGE)
     } else {
-        ZillitButton(t("csync_expand_scene_number"), onClick = { actions.setView("breakdown") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Expand)
+        ZillitButton(t("csync_expand_scene_number"), onClick = { actions.setView("breakdown") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Expand, modifier = LARGE)
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        ZillitButton(t("csync_upload_script"), onClick = actions.uploadScript, leadingIcon = ZillitIcons.Upload)
+    ButtonStack {
+        ZillitButton(t("csync_upload_script"), onClick = actions.uploadScript, leadingIcon = ZillitIcons.Upload, modifier = LARGE)
         if (state.hasScript) ZillitButton(t("csync_view_uploaded_script"), onClick = actions.viewScript, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye)
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        ZillitButton(t("csync_upload_schedule"), onClick = actions.uploadSchedule, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Calendar)
-        ZillitText(t("csync_upload_schedule_hint"), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger, modifier = Modifier.widthIn(max = HINT_W))
+    ButtonStack {
+        ZillitButton(t("csync_upload_schedule"), onClick = actions.uploadSchedule, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Calendar, modifier = LARGE)
+        ZillitText(
+            t("csync_upload_schedule_hint"),
+            style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp),
+            color = ZillitTheme.colors.danger,
+            textAlign = TextAlign.Center,
+        )
         if (state.hasSchedule) ZillitButton(t("csync_view_uploaded_schedule"), onClick = actions.viewSchedule, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye)
     }
-    ZillitButton(t("csync_add_to_breakdown"), onClick = actions.addToBreakdown, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add)
+    ZillitButton(t("csync_add_to_breakdown"), onClick = actions.addToBreakdown, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add, modifier = LARGE)
 }
 
-private val HINT_W = 190.dp
-private val REV_W = 170.dp
+private val REV_W = 160.dp
 private val EPISODE_W = 150.dp
-private val CHARACTER_W = 190.dp
+private val CHARACTER_W = 170.dp
 
 /** Search, episode and character filters, and the shoot-date chips (hidden while editing). */
 @Composable
@@ -118,16 +131,12 @@ internal fun ScenesFilterBar(scenes: List<Rec>, episodes: Boolean, filters: Scen
     val episodeList = episodesOf(scenes)
     val cast = castOptions(scenes)
     FlowRow(
-        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitSearchField(
-            value = filters.query,
-            onValueChange = { filters.query = it; filters.page = 1 },
-            placeholder = t("csync_scenes_search"),
-            modifier = Modifier.width(SEARCH_W),
-        )
+        SearchWithButton(filters.query, { filters.query = it; filters.page = 1 }, t("csync_scenes_search"), Modifier.width(SEARCH_W))
         if (episodes && episodeList.isNotEmpty()) {
             FilterSelect(
                 filters.episode, episodeList.map { it to "${t("csync_field_episode")} $it" }, t("csync_all_episodes"),
@@ -136,15 +145,15 @@ internal fun ScenesFilterBar(scenes: List<Rec>, episodes: Boolean, filters: Scen
         }
         if (cast.isNotEmpty()) FilterSelect(filters.characterId, cast, t("csync_all_characters"), { filters.characterId = it; filters.page = 1 }, Modifier.width(CHARACTER_W))
         if (!editingMode) {
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                WHEN_KEYS.forEach { key -> ZillitChoiceChip(t("csync_when_$key"), filters.shoot == key, { filters.shoot = key; filters.page = 1 }) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                WHEN_KEYS.forEach { key -> InkChip(t("csync_when_$key"), filters.shoot == key) { filters.shoot = key; filters.page = 1 } }
             }
         }
-        end()
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { end() }
     }
 }
 
-private val SEARCH_W = 260.dp
+private val SEARCH_W = 340.dp
 
 @Composable
 internal fun SceneEmpty(filters: SceneFilterState, canPost: Boolean, onAdd: () -> Unit) {

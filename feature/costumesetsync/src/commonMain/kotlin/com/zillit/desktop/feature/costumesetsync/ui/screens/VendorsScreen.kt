@@ -55,7 +55,7 @@ private val OUT = setOf("BOOKED", "PICKED_UP", "OVERDUE")
 private const val DAY_MS = 86_400_000L
 private val SEARCH_WIDTH = 420.dp
 private val CARD_WIDTH = 330.dp
-private val ROW_WEIGHTS = listOf(2.2f, 1.4f, 1f, 1.4f, 1f, 1f, 1.6f)
+private val ROW_WEIGHTS = listOf(2.2f, 1.3f, 1f, 1.3f, 0.9f, 1f, 2.5f)
 private val ROW_WEIGHTS_NO_RATE = ROW_WEIGHTS.filterIndexed { i, _ -> i != RATE_AT }
 private const val RATE_AT = 4
 

@@ -31,7 +31,13 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.costumesetsync.domain.NotificationsModel
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
@@ -100,7 +106,7 @@ fun GlobalSearch(modifier: Modifier = Modifier) {
             }
         },
     ) {
-        ZillitSearchField(q, { q = it; open = true }, Modifier.fillMaxWidth(), placeholder = t("csync_gsearch_placeholder"))
+        HeaderSearchBox(q, { q = it; open = true }, t("csync_gsearch_placeholder"))
         if (open && debounced.isNotEmpty()) {
             Popup(
                 alignment = Alignment.TopStart,
@@ -140,3 +146,31 @@ private fun SearchMenu(hits: List<NotificationsModel.Hit>, onPick: (Notification
 }
 
 private val MENU_RADIUS = 8.dp
+
+/** The web's antd input: white, hairline border, a leading magnifier, 32px high. */
+@Composable
+private fun HeaderSearchBox(value: String, onChange: (String) -> Unit, placeholder: String) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        Modifier.fillMaxWidth().height(32.dp).background(colors.surface, shape).border(1.dp, if (focused) colors.accent else colors.border, shape).padding(horizontal = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ZillitIcon(ZillitIcons.Search, tint = colors.textPrimary, size = 15.dp)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) ZillitText(placeholder, style = ZillitTheme.typography.bodyMedium, color = colors.textMuted, maxLines = 1)
+            BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                interactionSource = interaction,
+                textStyle = ZillitTheme.typography.bodyMedium.copy(color = colors.textPrimary),
+                cursorBrush = SolidColor(colors.textPrimary),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}

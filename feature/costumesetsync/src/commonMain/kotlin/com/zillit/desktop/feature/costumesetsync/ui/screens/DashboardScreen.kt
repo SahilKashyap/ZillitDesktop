@@ -1,13 +1,20 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -16,11 +23,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
@@ -28,15 +42,14 @@ import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.Tone
 import com.zillit.desktop.feature.costumesetsync.domain.longDay
 import com.zillit.desktop.feature.costumesetsync.domain.todayParam
+import com.zillit.desktop.feature.costumesetsync.ui.AutoFillGrid
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
-import com.zillit.desktop.feature.costumesetsync.ui.FieldGrid
-import com.zillit.desktop.feature.costumesetsync.ui.FieldRow
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
+import com.zillit.desktop.feature.costumesetsync.ui.Page
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
 import com.zillit.desktop.feature.costumesetsync.ui.ReadinessDot
-import com.zillit.desktop.feature.costumesetsync.ui.RowTitle
 import com.zillit.desktop.feature.costumesetsync.ui.SectionCard
 import com.zillit.desktop.feature.costumesetsync.ui.SocketRefresh
 import com.zillit.desktop.feature.costumesetsync.ui.StatCard
@@ -77,80 +90,78 @@ fun DashboardScreen() {
         val byStatus = counts.rec("by_status")
         val project = ctx.project.rec
         val phase = project?.str("current_location")?.ifBlank { null } ?: project?.str("status")?.let(::tEnum).orEmpty()
-        PageHead(
-            title = ctx.project.name.ifBlank { t("csync_production") },
-            sub = listOf("${t("csync_shooting_day")} ${project?.long("shooting_day") ?: 0}", phase, longDay(root.str("date")))
-                .filter { it.isNotBlank() }.joinToString(" · "),
-            actions = {
-                if (ctx.canPost) {
-                    ZillitButton(t("csync_emergency"), onClick = { emergency = true }, variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Siren)
-                    ZillitButton(t("csync_costume"), onClick = { ctx.nav.go("costumes?new=1") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add)
-                }
-            },
-        )
+        Page {
+            PageHead(
+                title = ctx.project.name.ifBlank { t("csync_production") },
+                sub = listOf("${t("csync_shooting_day")} ${project?.long("shooting_day") ?: 0}", phase, longDay(root.str("date")))
+                    .filter { it.isNotBlank() }.joinToString(" · "),
+                actions = {
+                    if (ctx.canPost) {
+                        ZillitButton(t("csync_emergency"), onClick = { emergency = true }, variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Siren)
+                        ZillitButton(t("csync_costume"), onClick = { ctx.nav.go("costumes?new=1") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add)
+                    }
+                },
+                bottomPadding = 0.dp,
+            )
 
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            val tile = Modifier.width(TILE_WIDTH)
-            StatCard(t("csync_dash_characters"), counts.long("characters"), tile) { ctx.nav.go("characters") }
-            StatCard(t("csync_dash_costumes"), counts.long("costumes"), tile) { ctx.nav.go("costumes") }
-            StatCard(t("csync_dash_todays_scenes"), counts.long("todays_scenes"), tile) { ctx.nav.go("scenes") }
-            StatCard(t("csync_dash_todays_costumes"), counts.long("todays_costumes"), tile, hint = t("csync_dash_across_changes"))
-            StatCard(t("csync_dash_issued_today"), counts.long("issued_today"), tile, tone = Tone.Info)
-            StatCard(t("csync_dash_returned_today"), counts.long("returned_today"), tile, tone = Tone.Ok)
-            StatCard(t("csync_dash_cleaning"), counts.long("cleaning"), tile, tone = Tone.Info.takeIf { counts.long("cleaning") > 0 }) { ctx.nav.go("cleaning") }
-            StatCard(t("csync_dash_alteration"), counts.long("alteration"), tile, tone = Tone.Warn.takeIf { counts.long("alteration") > 0 }) { ctx.nav.go("alterations") }
-            StatCard(t("csync_dash_missing"), counts.long("missing"), tile, tone = Tone.Danger.takeIf { counts.long("missing") > 0 }) { ctx.nav.go("missing") }
-            StatCard(t("csync_dash_damaged"), counts.long("damaged"), tile, tone = Tone.Danger.takeIf { counts.long("damaged") > 0 }) { ctx.nav.go("damages") }
-        }
-
-        Row(Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.lg), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Top) {
-            SectionCard(
-                title = t("csync_dash_todays_scenes"),
-                modifier = Modifier.weight(1.4f),
-                actions = { ZillitButton(t("csync_all_scenes"), onClick = { ctx.nav.go("scenes") }, variant = ButtonVariant.Tertiary, trailingIcon = ZillitIcons.ChevronRight) },
-            ) {
-                val scenes = root.recs("todays_scenes")
-                if (scenes.isEmpty()) {
-                    EmptyState(t("csync_dash_scenes_empty_title"), t("csync_dash_scenes_empty_hint"))
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) { scenes.forEach { SceneCard(it) } }
-                }
+            // `.csync-stats--compact`: auto-fill columns of at least 120, 10 apart, every tile as tall as its row.
+            val tiles = listOf<Tile>(
+                Tile(t("csync_dash_characters"), counts.long("characters"), go = "characters"),
+                Tile(t("csync_dash_costumes"), counts.long("costumes"), go = "costumes"),
+                Tile(t("csync_dash_todays_scenes"), counts.long("todays_scenes"), go = "scenes"),
+                Tile(t("csync_dash_todays_costumes"), counts.long("todays_costumes"), hint = t("csync_dash_across_changes")),
+                Tile(t("csync_dash_issued_today"), counts.long("issued_today"), tone = Tone.Info),
+                Tile(t("csync_dash_returned_today"), counts.long("returned_today"), tone = Tone.Ok),
+                Tile(t("csync_dash_cleaning"), counts.long("cleaning"), tone = Tone.Info.takeIf { counts.long("cleaning") > 0 }, go = "cleaning"),
+                Tile(t("csync_dash_alteration"), counts.long("alteration"), tone = Tone.Warn.takeIf { counts.long("alteration") > 0 }, go = "alterations"),
+                Tile(t("csync_dash_missing"), counts.long("missing"), tone = Tone.Danger.takeIf { counts.long("missing") > 0 }, go = "missing"),
+                Tile(t("csync_dash_damaged"), counts.long("damaged"), tone = Tone.Danger.takeIf { counts.long("damaged") > 0 }, go = "damages"),
+            )
+            AutoFillGrid(tiles.size, TILE_MIN, TILE_GAP) { i, cell ->
+                val tile = tiles[i]
+                StatCard(tile.label, tile.value, cell, tone = tile.tone, hint = tile.hint, compact = true, onClick = tile.go?.let { target -> { ctx.nav.go(target) } })
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-                SectionCard(title = t("csync_dash_priorities")) {
-                    val priorities = root.recs("priorities")
-                    if (priorities.isEmpty()) {
-                        MutedText(t("csync_dash_priorities_clear"))
+
+            // `.csync-columns`: 1.25fr beside 1fr, 16 apart, each column as tall as its own content.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                SectionCard(
+                    title = t("csync_dash_todays_scenes"),
+                    modifier = Modifier.weight(1.25f),
+                    actions = { TextLink(t("csync_all_scenes")) { ctx.nav.go("scenes") } },
+                ) {
+                    val scenes = root.recs("todays_scenes")
+                    if (scenes.isEmpty()) {
+                        EmptyState(t("csync_dash_scenes_empty_title"), t("csync_dash_scenes_empty_hint"))
                     } else {
-                        priorities.forEachIndexed { index, priority ->
-                            if (index > 0) ZillitDivider()
-                            val link = priority.str("link")
-                            Row(
-                                Modifier.fillMaxWidth().then(if (link.isNotBlank()) Modifier.clickable { ctx.nav.go(link) } else Modifier).padding(vertical = ZillitTheme.spacing.sm),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                            ) {
-                                ReadinessDot(priority.str("severity"))
-                                ZillitText(priority.str("text"), Modifier.weight(1f))
-                                if (link.isNotBlank()) ZillitText("›", color = ZillitTheme.colors.textMuted)
-                            }
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { scenes.forEach { SceneCard(it) } }
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SectionCard(title = t("csync_dash_priorities")) {
+                        val priorities = root.recs("priorities")
+                        if (priorities.isEmpty()) {
+                            MutedText(t("csync_dash_priorities_clear"))
+                        } else {
+                            priorities.forEachIndexed { index, priority -> PriorityRow(priority, divided = index > 0) }
                         }
                     }
-                }
-                SectionCard(title = t("csync_dash_by_status")) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                        byStatus?.keys?.map { it to byStatus.long(it) }
-                            ?.sortedByDescending { it.second }
-                            ?.forEach { (status, n) ->
-                                StatusBadge(status, "${tEnum(status)} · $n", Modifier.clickable { ctx.nav.go("costumes?status=$status") })
-                            }
+                    SectionCard(title = t("csync_dash_by_status")) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            byStatus?.keys?.map { it to byStatus.long(it) }
+                                ?.sortedByDescending { it.second }
+                                ?.forEach { (status, n) ->
+                                    StatusBadge(status, "${tEnum(status)} · $n", Modifier.clickable { ctx.nav.go("costumes?status=$status") }, large = true)
+                                }
+                        }
                     }
-                }
-                SectionCard(title = t("csync_dash_at_a_glance")) {
-                    FieldGrid {
-                        FieldRow(t("csync_dash_emergencies"), counts.long("emergencies_today").toString())
-                        FieldRow(t("csync_dash_fittings"), counts.long("fittings_today").toString())
-                        FieldRow(t("csync_dash_rentals_due"), counts.long("rentals_due").toString())
+                    SectionCard(title = t("csync_dash_at_a_glance")) {
+                        // `.csync-fields`: auto-fill columns of at least 180, 16 apart and 12 between rows.
+                        val glance = listOf(
+                            t("csync_dash_emergencies") to counts.long("emergencies_today").toString(),
+                            t("csync_dash_fittings") to counts.long("fittings_today").toString(),
+                            t("csync_dash_rentals_due") to counts.long("rentals_due").toString(),
+                        )
+                        AutoFillGrid(glance.size, 180.dp, 16.dp, rowGap = 12.dp) { i, cell -> GlanceField(glance[i].first, glance[i].second, cell) }
                     }
                 }
             }
@@ -159,28 +170,96 @@ fun DashboardScreen() {
     EmergencyCleanDialog(open = emergency, onClose = { emergency = false }, onChanged = { data.reload(silent = true) })
 }
 
-/** One of today's scenes: its title and status, then each character's readiness. */
+private class Tile(val label: String, val value: Long, val tone: Tone? = null, val hint: String? = null, val go: String? = null)
+
+/** `.csync-textlink`: a quiet bold text button with a trailing caret. */
+@Composable
+private fun TextLink(text: String, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Row(
+        Modifier.clip(RoundedCornerShape(6.dp)).background(if (hovered) colors.surfaceHover else Color.Transparent)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ZillitText(text, style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
+        ZillitIcon(ZillitIcons.ChevronRight, tint = colors.textPrimary, size = 14.dp)
+    }
+}
+
+/** `.csync-priority--link`: dot, text, and a caret when the priority links somewhere; hairlines between rows. */
+@Composable
+private fun PriorityRow(priority: Rec, divided: Boolean) {
+    val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
+    val link = priority.str("link")
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    if (divided) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (link.isNotBlank() && hovered) colors.surfaceHover else Color.Transparent)
+            .then(if (link.isNotBlank()) Modifier.clickable(interactionSource = interaction, indication = null) { ctx.nav.go(link) } else Modifier)
+            .padding(horizontal = 4.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ReadinessDot(priority.str("severity"), pulse = priority.str("severity") == "CRITICAL")
+        ZillitText(priority.str("text"), Modifier.weight(1f), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp))
+        if (link.isNotBlank()) ZillitIcon(ZillitIcons.ChevronRight, tint = colors.textMuted, size = 15.dp)
+    }
+}
+
+/** A label over a figure, as `.csync-field`: 11 upper-case muted label, 14 value. */
+@Composable
+private fun GlanceField(label: String, value: String, modifier: Modifier) {
+    Column(modifier) {
+        ZillitText(label.uppercase(), style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, letterSpacing = 0.04.em, fontWeight = FontWeight.Normal), color = ZillitTheme.colors.textMuted, maxLines = 1)
+        ZillitText(value, Modifier.padding(top = 2.dp), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp))
+    }
+}
+
+/** One of today's scenes (`.csync-scene`): a bordered card, its title and status, then each character's readiness. */
 @Composable
 private fun SceneCard(scene: Rec) {
     val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(12.dp)
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
     Column(
-        Modifier.fillMaxWidth().clickable { ctx.nav.go("scenes/${scene.id}") }.padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        Modifier.fillMaxWidth().clip(shape).background(colors.surface)
+            .border(1.dp, if (hovered) colors.accent else colors.border, shape)
+            .clickable(interactionSource = interaction, indication = null) { ctx.nav.go("scenes/${scene.id}") }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ReadinessDot(scene.str("level"))
+        Row(Modifier.padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ReadinessDot(scene.str("level"), pulse = scene.str("level") == "MISSING")
             Column(Modifier.weight(1f)) {
-                RowTitle(listOf(scene.str("number").takeIf { it.isNotBlank() }?.let { "${t("csync_sc")} $it" }.orEmpty(), scene.str("name")).filter { it.isNotBlank() }.joinToString(" · "))
-                MutedText(listOf(scene.str("location"), tEnum(scene.str("time_of_day"))).filter { it.isNotBlank() }.joinToString(" · "))
+                ZillitText(
+                    listOf(scene.str("number").takeIf { it.isNotBlank() }?.let { "${t("csync_sc")} $it" }.orEmpty(), scene.str("name")).filter { it.isNotBlank() }.joinToString(" · "),
+                    style = ZillitTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                ZillitText(
+                    listOf(scene.str("location"), scene.str("time_of_day").takeIf { it.isNotBlank() }?.let(::tEnum).orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),
+                    style = ZillitTheme.typography.bodyLarge.copy(fontSize = 13.sp),
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
             }
             StatusBadge(scene.str("status"))
         }
-        scene.recs("characters").forEach { ch ->
-            Row(Modifier.padding(start = ZillitTheme.spacing.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ReadinessDot(ch.str("level"))
+        scene.recs("characters").forEachIndexed { index, ch ->
+            // `.csync-readinessline + .csync-readinessline`: a dashed rule between rows only.
+            if (index > 0) DashedRule(colors.border)
+            Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ReadinessDot(ch.str("level"), pulse = ch.str("level") == "MISSING")
                 Column(Modifier.weight(1f)) {
-                    RowTitle(ch.str("name"))
-                    MutedText(ch.str("change").ifBlank { t("csync_dash_no_change") })
+                    ZillitText(ch.str("name"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
+                    ZillitText(ch.str("change").ifBlank { t("csync_dash_no_change") }, style = ZillitTheme.typography.bodyLarge.copy(fontSize = 13.sp), color = colors.textMuted, maxLines = 1)
                 }
                 StatusBadge(ch.str("level"))
             }
@@ -188,4 +267,12 @@ private fun SceneCard(scene: Rec) {
     }
 }
 
-private val TILE_WIDTH = 124.dp
+@Composable
+private fun DashedRule(color: Color) {
+    Canvas(Modifier.fillMaxWidth().height(1.dp)) {
+        drawLine(color, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
+    }
+}
+
+private val TILE_MIN = 120.dp
+private val TILE_GAP = 10.dp

@@ -1,7 +1,12 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -63,9 +68,8 @@ internal fun ReadinessCard(scene: Rec, readiness: Rec?, characters: List<Rec>, r
         },
     ) {
         if (rows.isEmpty()) EmptyState(t("csync_no_characters_in_scene"))
-        rows.forEachIndexed { i, r ->
-            if (i > 0) ZillitDivider()
-            CharacterReadiness(scene, r, reload)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            rows.forEach { r -> CharacterReadiness(scene, r, reload) }
         }
     }
     AddCharacterDialog(addOpen, scene, characters, { addOpen = false }, reload)
@@ -77,14 +81,19 @@ private fun CharacterReadiness(scene: Rec, r: Rec, reload: () -> Unit) {
     val character = r.rec("character") ?: Rec.Empty
     val sc = scene.recs("characters").firstOrNull { it.str("character_id") == character.id }
     val change = r.rec("change")
-    Column(Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    // `.csync-scenecard`: 12dp padding, 1dp border, 10dp radius.
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ZillitTheme.colors.surface)
+            .border(1.dp, ZillitTheme.colors.border, RoundedCornerShape(10.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             Column(Modifier.weight(1f)) {
                 ZillitText(
                     character.str("name"),
                     Modifier.clickable { ctx.nav.go("characters/${character.id}") },
                     style = ZillitTheme.typography.titleSmall,
-                    color = ZillitTheme.colors.accent,
+                    color = ZillitTheme.colors.info,
                     maxLines = 1,
                 )
                 MutedText(character.rec("actor")?.str("name")?.ifEmpty { null } ?: t("csync_no_actor_short"))
@@ -114,7 +123,7 @@ private fun CharacterReadiness(scene: Rec, r: Rec, reload: () -> Unit) {
                 ZillitText(
                     "#${change.str("change_number")} ${change.str("name")}",
                     Modifier.clickable { ctx.nav.go("changes/${change.id}") },
-                    color = ZillitTheme.colors.accent,
+                    color = ZillitTheme.colors.info,
                 )
             } else {
                 ZillitText(t("csync_not_assigned"))

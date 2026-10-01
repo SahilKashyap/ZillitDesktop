@@ -1,6 +1,13 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,8 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
@@ -25,10 +30,34 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
  * setup screens. Prefixed `kit` so they never clash with a neighbouring screen's helper.
  */
 
-/** A sub-tab strip inside a screen (the web's `SubTabs`). */
+/**
+ * A sub-tab strip inside a screen (the web's `SubTabs`): 14px labels, 8x16 padding, a 1px rule under the
+ * row; the open tab is bold ink with a 2px ink underline, not the accent.
+ */
 @Composable
 internal fun KitTabs(tabs: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
-    ZillitTabStrip(tabs = tabs.map { ZillitTab(it.first, it.second) }, activeId = value, onSelect = onChange)
+    val colors = ZillitTheme.colors
+    val ink = colors.textPrimary
+    Box(Modifier.fillMaxWidth()) {
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(1.dp).background(colors.border))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            tabs.forEach { (id, label) ->
+                val on = id == value
+                Box(
+                    Modifier.clickable { onChange(id) }
+                        .drawBehind { if (on) drawRect(ink, Offset(0f, size.height - 2.dp.toPx()), Size(size.width, 2.dp.toPx())) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    ZillitText(
+                        label,
+                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
+                        color = if (on) colors.textPrimary else colors.textSecondary,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** "1 scene" / "3 scenes": [key] is the plural key, `<key>_one` the singular; both carry `{n}`. */

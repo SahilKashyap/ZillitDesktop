@@ -1,6 +1,15 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,7 +41,6 @@ import com.zillit.desktop.feature.costumesetsync.domain.humanize
 import com.zillit.desktop.feature.costumesetsync.domain.isoInstant
 import com.zillit.desktop.feature.costumesetsync.domain.measurementsOf
 import com.zillit.desktop.feature.costumesetsync.domain.recordRequestDraft
-import com.zillit.desktop.feature.costumesetsync.ui.ChipRow
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.FieldRow
 import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
@@ -40,7 +48,6 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormWide
 import com.zillit.desktop.feature.costumesetsync.ui.Load
 import com.zillit.desktop.feature.costumesetsync.ui.LoadingView
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
-import com.zillit.desktop.feature.costumesetsync.ui.MonoText
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
 import com.zillit.desktop.feature.costumesetsync.ui.ReferenceGrid
@@ -141,12 +148,18 @@ private fun FittingBody(fitting: Rec, fittingId: String, reload: () -> Unit) {
     val open = status !in FITTING_CLOSED
     val projectName = ctx.project.name.ifBlank { t("csync_production") }
 
-    ZillitButton(t("csync_fitting_back"), onClick = { ctx.nav.back() }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.ArrowLeft)
     PageHead(
         title = who,
         sub = sub,
+        crumbs = "${t("csync_fittings_title")} / ${character.str("name")}",
+        titleContent = {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                WfLargeAvatar(wfInitials(character.str("name")))
+                ZillitText(who, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+                StatusBadge(status, large = true)
+            }
+        },
         actions = {
-            StatusBadge(status)
             if (ctx.canPost) {
                 WfSendRequestButton {
                     val summary = "${t("csync_fitting")}: ${character.str("name")}" +
@@ -169,18 +182,18 @@ private fun FittingBody(fitting: Rec, fittingId: String, reload: () -> Unit) {
             }
         },
     )
-    fitting.str("notes").takeIf { it.isNotBlank() }?.let { WfNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md)) }
+    fitting.str("notes").takeIf { it.isNotBlank() }?.let { WfNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md), info = true) }
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
         SectionCard(
-            modifier = Modifier.weight(2f),
+            modifier = Modifier.weight(1.4f),
             title = t("csync_fitting_checklist"),
             actions = {
                 if (ctx.canPost) ZillitButton(t("csync_piece"), onClick = { pickerOpen = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
             },
         ) {
             if (items.isEmpty()) MutedText(t("csync_fitting_no_items"), maxLines = 2)
-            items.forEach { item ->
+            items.forEachIndexed { index, item ->
                 val costumeId = item.str("costume_id").ifBlank { item.rec("costume")?.id.orEmpty() }
                 FittingItem(
                     item = item,
@@ -193,6 +206,7 @@ private fun FittingBody(fitting: Rec, fittingId: String, reload: () -> Unit) {
                     onStatus = { s -> setItem(costumeId, body("status" to s)) {} },
                     onAlteration = { alt = AlterationDraft(costumeId) },
                     onRemove = { run({ ctx.api.delete("/fittings/$fittingId/items/$costumeId") }, {}) },
+                    first = index == 0,
                 )
             }
         }
@@ -240,6 +254,7 @@ private fun alterationPatch(draft: AlterationDraft): JsonObject {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FittingItem(
     item: Rec,
@@ -252,19 +267,28 @@ private fun FittingItem(
     onStatus: (String) -> Unit,
     onAlteration: () -> Unit,
     onRemove: () -> Unit,
+    first: Boolean = false,
 ) {
     val ctx = LocalSync.current
     val c = item.rec("costume") ?: Rec.Empty
     val itemStatus = item.str("status")
-    Column(Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        Row(Modifier.clickable { ctx.nav.go("costumes/$costumeId") }, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            MonoText(c.str("asset_number"))
-            ZillitText(c.str("name"), style = ZillitTheme.typography.titleSmall, color = ZillitTheme.colors.accentText)
+    val colors = ZillitTheme.colors
+    if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.clickable { ctx.nav.go("costumes/$costumeId") }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                ZillitText(c.str("asset_number"), style = ZillitTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp), color = colors.textMuted)
+                ZillitText(c.str("name"), style = ZillitTheme.typography.bodyMedium, color = colors.info)
+            }
             StatusBadge(itemStatus)
         }
-        MutedText(listOfNotNull(c.str("size").ifBlank { null }?.let { "${t("csync_size")} $it" }, tEnum(c.str("status")).ifBlank { null }).joinToString(" · "))
+        ZillitText(
+            listOfNotNull(c.str("size").ifBlank { null }?.let { "${t("csync_size")} $it" }, tEnum(c.str("status")).ifBlank { null }).joinToString(" · "),
+            style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = colors.textMuted,
+        )
         when {
-            note != null -> Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+            note != null -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextInput(note.text, { onNote(note.copy(text = it)) }, t("csync_field_notes"), Modifier.weight(1f), placeholder = t("csync_fitting_note_placeholder"))
                 ZillitButton(t("csync_save"), onClick = { onSaveNote(note.text) }, size = ButtonSize.Small, enabled = !busy, loading = busy)
                 ZillitButton(t("csync_cancel"), onClick = { onCancelNote(item.str("notes")) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
@@ -272,15 +296,15 @@ private fun FittingItem(
             ctx.canPost -> ZillitText(
                 if (item.str("notes").isNotBlank()) "✎ ${item.str("notes")}" else "+ ${t("csync_notes_lower")}",
                 Modifier.clickable { onNote(NoteEdit(costumeId, item.str("notes"))) },
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.accentText,
+                style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = colors.textMuted,
             )
             item.str("notes").isNotBlank() -> MutedText(item.str("notes"), maxLines = 3)
         }
         if (ctx.canPost) {
-            ChipRow {
-                ZillitButton(t("csync_fitted"), { onStatus("FITTED") }, variant = if (itemStatus == "FITTED") ButtonVariant.Primary else ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Check, enabled = !busy)
-                ZillitButton(tEnum("PENDING"), { onStatus("PENDING") }, variant = if (itemStatus == "PENDING") ButtonVariant.Primary else ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Clock, enabled = !busy)
+            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                WfInkButton(t("csync_fitted"), { onStatus("FITTED") }, on = itemStatus == "FITTED", icon = ZillitIcons.Check, enabled = !busy)
+                WfInkButton(tEnum("PENDING"), { onStatus("PENDING") }, on = itemStatus == "PENDING", icon = ZillitIcons.Clock, enabled = !busy)
                 ZillitButton(t("csync_alteration"), onAlteration, variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = !busy)
                 ZillitButton(t("csync_reject"), { onStatus("REJECTED") }, variant = if (itemStatus == "REJECTED") ButtonVariant.Danger else ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Close, enabled = !busy)
                 ZillitButton(t("csync_remove_lower"), onRemove, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, enabled = !busy)

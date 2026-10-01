@@ -7,6 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -27,9 +32,6 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -153,12 +155,14 @@ fun SendRequestDialog(
                 ZillitButton(t("csync_done"), onClick = onClose)
             } else {
                 ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary)
-                ZillitButton(
+                // Ink once it can be pressed, as the reference's primary button here.
+                WfInkButton(
                     fill(t("csync_send_to_n"), "n" to if (count > 0) count else "…"),
                     onClick = send,
-                    leadingIcon = ZillitIcons.Send,
+                    on = canSend && !sending,
+                    icon = ZillitIcons.Send,
                     enabled = canSend && !sending,
-                    loading = sending,
+                    large = true,
                 )
             }
         },
@@ -182,15 +186,13 @@ fun SendRequestDialog(
                     style = ZillitTheme.typography.label,
                     color = ZillitTheme.colors.textSecondary,
                 )
-                ZillitTabStrip(
-                    tabs = GROUPS.map { g ->
-                        ZillitTab(g, t("csync_request_group_$g") + picked.getValue(g).size.takeIf { it > 0 }?.let { " ($it)" }.orEmpty())
-                    },
+                InkTabs(
+                    tabs = GROUPS.map { g -> g to (t("csync_request_group_$g") + picked.getValue(g).size.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()) },
                     activeId = group,
                     onSelect = { group = it; q = "" },
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                    ZillitSearchField(q, { q = it }, Modifier.weight(1f), placeholder = t("csync_request_search_$group"))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SearchWithButton(q, { q = it }, t("csync_request_search_$group"), Modifier.width(340.dp))
                     if (group == GROUP_CREW) MutedText(t("csync_request_everyone"))
                     if (ctx.canPost && group == GROUP_VENDORS) {
                         ZillitButton(t("csync_new_vendor"), onClick = { adding = GROUP_VENDORS }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
@@ -235,17 +237,22 @@ private fun RecipientList(rows: List<Recipient>, picked: List<String>, onToggle:
         MutedText(t("csync_nobody_here_yet"))
         return
     }
-    Column(Modifier.fillMaxWidth().heightIn(max = LIST_MAX).verticalScroll(rememberScrollState())) {
-        rows.forEach { r ->
+    val colors = ZillitTheme.colors
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = LIST_MAX).clip(shape).background(colors.surface).border(1.dp, colors.border, shape).verticalScroll(rememberScrollState()),
+    ) {
+        rows.forEachIndexed { index, r ->
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
             Row(
-                Modifier.fillMaxWidth().clickable { onToggle(r.id) }.padding(vertical = ZillitTheme.spacing.xs),
+                Modifier.fillMaxWidth().clickable { onToggle(r.id) }.padding(horizontal = 14.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ZillitCheckbox(r.id in picked, { onToggle(r.id) })
-                Column(Modifier.weight(1f)) {
-                    RowTitle(r.name)
-                    if (r.sub.isNotBlank()) MutedText(r.sub)
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ZillitText(r.name, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1)
+                    if (r.sub.isNotBlank()) MutedText(r.sub, Modifier.weight(1f, fill = false))
                 }
             }
         }
@@ -263,7 +270,7 @@ private fun SentView(sent: Sent, text: String, subject: String, message: String)
             sent.offApp.isNotEmpty() -> t("csync_request_no_crew")
             else -> t("csync_request_nothing_sent")
         }
-        WfNotice(line)
+        WfNotice(line, ok = true)
         if (sent.offApp.isNotEmpty()) {
             MutedText(t("csync_request_pass_on"), maxLines = 3)
             sent.offApp.forEach { r ->

@@ -2,6 +2,12 @@ package com.zillit.desktop.feature.costumesetsync.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,7 +42,6 @@ import com.zillit.desktop.feature.costumesetsync.ui.FieldRow
 import com.zillit.desktop.feature.costumesetsync.ui.Load
 import com.zillit.desktop.feature.costumesetsync.ui.LoadingView
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
-import com.zillit.desktop.feature.costumesetsync.ui.MonoText
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
 import com.zillit.desktop.feature.costumesetsync.ui.ReferenceGrid
@@ -87,6 +92,7 @@ private fun CleaningNotFound(onBack: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CleaningBody(ticket: Rec, cleaningId: String, reload: () -> Unit) {
     val ctx = LocalSync.current
@@ -121,13 +127,18 @@ private fun CleaningBody(ticket: Rec, cleaningId: String, reload: () -> Unit) {
         scene?.let { "${t("csync_sc")} ${it.str("number")}" + (if (ticket.long("take_number") > 0) " ${t("csync_take")} ${ticket.long("take_number")}" else "") },
     ).joinToString(" · ")
 
-    ZillitButton(t("csync_cleaning_back"), onClick = { ctx.nav.back() }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.ArrowLeft)
     PageHead(
         title = ticket.str("problem"),
         sub = null,
+        crumbs = "${t("csync_cleaning")} / ${t("csync_ticket")}",
+        titleContent = {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs), itemVerticalAlignment = Alignment.CenterVertically) {
+                if (ticket.bool("is_emergency")) StatusBadge("URGENT", label = "🚨 ${t("csync_emergency")}", large = true)
+                ZillitText(ticket.str("problem"), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+                StatusBadge(status, large = true)
+            }
+        },
         actions = {
-            if (ticket.bool("is_emergency")) StatusBadge("URGENT", label = "🚨 ${t("csync_emergency")}")
-            StatusBadge(status)
             if (ctx.canPost) {
                 ZillitButton(t("csync_send_request_btn"), onClick = { request = cleaningTicketDraft(ticket) }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Send)
             }
@@ -135,8 +146,8 @@ private fun CleaningBody(ticket: Rec, cleaningId: String, reload: () -> Unit) {
     )
     Row(Modifier.padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.clickable { costume?.id?.takeIf { it.isNotBlank() }?.let { ctx.nav.go("costumes/$it") } }, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            MonoText(costume?.str("asset_number").orEmpty())
-            ZillitText(costume?.str("name").orEmpty(), style = ZillitTheme.typography.titleSmall, color = ZillitTheme.colors.accentText)
+            ZillitText(costume?.str("asset_number").orEmpty(), style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold))
+            ZillitText(costume?.str("name").orEmpty(), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.info)
         }
         if (sub.isNotBlank()) MutedText(sub)
     }
@@ -145,8 +156,8 @@ private fun CleaningBody(ticket: Rec, cleaningId: String, reload: () -> Unit) {
         WfPipeline(pipeline, if (status == "CANCELLED") "" else status)
         if (status == "CANCELLED") WfNotice(t("csync_cleaning_cancelled"))
     }
-    Row(Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1.25f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (ctx.canPost && !closed) {
                 WorkCard(ticket, status, next, note, { note = it }, busy, advance, onAssignMe = {
                     send({ ctx.api.patch("/cleaning/$cleaningId", body("assigned_to" to ctx.currentUserId)) }, false)
@@ -155,7 +166,7 @@ private fun CleaningBody(ticket: Rec, cleaningId: String, reload: () -> Unit) {
             DetailsCard(ticket)
             ReferenceGrid(entityType = "CLEANING", entityId = cleaningId, title = t("csync_stain_photos"), kinds = listOf("STAIN", "DETAIL", "OTHER"))
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             ReplacementCard(ticket, closed, busy) { id -> send({ ctx.api.post("/cleaning/$cleaningId/replacement", body("costume_id" to id)) }, false) }
             SectionCard(title = t("csync_history")) {
                 val logs = ticket.recs("logs").reversed().map { historyEntry(it) }
@@ -220,17 +231,18 @@ private fun WorkCard(
 ) {
     SectionCard(title = t("csync_cleaning_work")) {
         if (ticket.str("assigned_to").isBlank()) {
-            Row { ZillitButton(t("csync_assign_to_me"), onClick = onAssignMe, variant = ButtonVariant.Secondary, enabled = !busy) }
+            Row(Modifier.padding(bottom = 10.dp)) { ZillitButton(t("csync_assign_to_me"), onClick = onAssignMe, variant = ButtonVariant.Secondary, enabled = !busy) }
         }
         TextInput(note, onNote, t("csync_note_optional"), Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
             when {
                 status == "QUALITY_CHECK" -> {
-                    ZillitButton(t("csync_cleaning_qc_pass"), onClick = { advance(body("qc_result" to "PASS", "qc_notes" to note)) }, enabled = !busy)
+                    ZillitButton(t("csync_cleaning_qc_pass"), onClick = { advance(body("qc_result" to "PASS", "qc_notes" to note)) }, leadingIcon = ZillitIcons.Check, enabled = !busy)
                     ZillitButton(
                         t("csync_cleaning_qc_fail"),
                         onClick = { advance(body("qc_result" to "FAIL", "qc_notes" to note.ifBlank { "QC failed" })) },
                         variant = ButtonVariant.Danger,
+                        leadingIcon = ZillitIcons.Close,
                         enabled = !busy,
                     )
                 }
@@ -251,7 +263,7 @@ private fun WorkCard(
                     }
                 }
             }
-            ZillitButton(t("csync_cleaning_cancel"), onClick = onCancel, variant = ButtonVariant.Tertiary, enabled = !busy)
+            WfTextButton(t("csync_cleaning_cancel"), ZillitTheme.colors.danger, onCancel, enabled = !busy)
         }
     }
 }
@@ -284,13 +296,18 @@ private fun ReplacementCard(ticket: Rec, closed: Boolean, busy: Boolean, onAssig
     val alternatives = ticket.recs("alternatives")
     SectionCard(title = t("csync_cleaning_replacement")) {
         when {
-            replacement != null -> Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                WfNotice(
-                    fill(t("csync_cleaning_replacement_set"), "asset" to replacement.str("asset_number"), "name" to replacement.str("name")),
-                    Modifier.weight(1f),
-                )
-                ZillitButton(t("csync_view"), onClick = { ctx.nav.go("costumes/${replacement.id}") }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-            }
+            replacement != null -> WfNotice(
+                fill(t("csync_cleaning_replacement_set"), "asset" to replacement.str("asset_number"), "name" to replacement.str("name")),
+                ok = true,
+                trailing = {
+                    ZillitText(
+                        t("csync_view"),
+                        Modifier.clickable { ctx.nav.go("costumes/${replacement.id}") },
+                        style = ZillitTheme.typography.bodyMedium.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                        color = ZillitTheme.colors.info,
+                    )
+                },
+            )
             closed -> MutedText(t("csync_cleaning_replacement_closed"), maxLines = 3)
             alternatives.isEmpty() -> MutedText(t("csync_cleaning_replacement_none"), maxLines = 3)
             else -> alternatives.forEach { a ->

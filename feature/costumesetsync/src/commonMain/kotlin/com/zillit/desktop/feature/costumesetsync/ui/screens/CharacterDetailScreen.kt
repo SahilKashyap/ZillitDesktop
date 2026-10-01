@@ -8,6 +8,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.border
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,8 +59,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 private val ReferenceKinds = listOf("REFERENCE", "FRONT", "SIDE", "BACK", "DETAIL", "DOCUMENT", "OTHER")
-private const val SCENE_PANE_WEIGHT = 1f
-private const val MAIN_PANE_WEIGHT = 1.6f
+private const val SCENE_PANE_WEIGHT = 1.4f
+private const val MAIN_PANE_WEIGHT = 1f
 
 /** Where in the character's address the screen is: `characters/<id>`, `…/scenes/<sceneId>` or `…/all`. */
 internal data class CharacterView(val sceneId: String, val all: Boolean, val viaRow: Boolean)
@@ -122,7 +129,7 @@ private fun SceneRow(entry: Rec, selected: Boolean, characterId: String) {
     ListRow(
         onClick = { ctx.nav.go("characters/$characterId/scenes/${scene?.id.orEmpty()}") },
         modifier = if (selected) Modifier.background(ZillitTheme.colors.surfaceSelected) else Modifier,
-        leading = { RowBadge(scene?.str("number").orEmpty()) },
+        leading = { SquareAvatar(scene?.str("number").orEmpty()) },
         end = { MutedText(fmtDate(scene?.long("shoot_date"))) },
     ) {
         RowTitle(scene?.str("name").orEmpty().ifEmpty { "${t("csync_scene")} ${scene?.str("number").orEmpty()}" })
@@ -155,7 +162,7 @@ private fun CharacterBody(ch: Rec, view: CharacterView, actors: List<Rec>, reloa
     PageHeader(ch, scenes, viaScene) { editOpen = true }
     viaScene?.let { SceneNote(it) }
     val hideScenes = hidesOtherScenes(view, viaScene != null)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
         if (!hideScenes) {
             Column(Modifier.weight(SCENE_PANE_WEIGHT)) {
                 SectionCard(title = t("csync_list_of_scenes"), flush = true) {
@@ -167,7 +174,7 @@ private fun CharacterBody(ch: Rec, view: CharacterView, actors: List<Rec>, reloa
                 }
             }
         }
-        Column(Modifier.weight(MAIN_PANE_WEIGHT), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
+        Column(Modifier.weight(MAIN_PANE_WEIGHT), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ActorCard(ch, reload)
             ReferenceGrid(entityType = "CHARACTER", entityId = ch.id, title = t("csync_references"), kinds = ReferenceKinds)
             FittingsCard(ch, reload)
@@ -195,12 +202,35 @@ private fun PageHeader(ch: Rec, scenes: List<Rec>, viaScene: Rec?, onEdit: () ->
     PageHead(
         title = titleOf(ch),
         sub = PlayedBy(ch) + ch.str("description").let { if (it.isEmpty()) "" else " · $it" },
+        titleContent = { CharacterTitle(ch) },
         actions = {
-            StatusBadge(ch.str("type"), tEnum(ch.str("type")))
-            if (ctx.canPost) ZillitButton(t("csync_edit"), onClick = onEdit, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
+            if (ctx.canPost) {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ZillitButton(t("csync_edit"), onClick = onEdit, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
+                    ZillitText(
+                        t("csync_edit_character_hint"), Modifier.widthIn(max = 240.dp),
+                        style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = ZillitTheme.colors.textMuted, textAlign = TextAlign.End,
+                    )
+                }
+            }
         },
     )
-    if (ctx.canPost) MutedText(t("csync_edit_character_hint"), Modifier.padding(bottom = ZillitTheme.spacing.sm), maxLines = 2)
+}
+
+/** The web's `head`: a 56dp avatar tile with the initials, "1. Anna" and the type badge. */
+@Composable
+private fun CharacterTitle(ch: Rec) {
+    val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(14.dp)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(56.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape), contentAlignment = Alignment.Center) {
+            ZillitText(nameInitials(ch.str("name")), style = ZillitTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold), color = colors.textMuted)
+        }
+        Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(titleOf(ch), Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+            StatusBadge(ch.str("type"), tEnum(ch.str("type")))
+        }
+    }
 }
 
 @Composable

@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +104,14 @@ private fun SceneDetailBody(ctx: SyncCtx, scene: Rec, data: SceneDetailData, rel
     val overall = readiness?.str("overall").orEmpty()
     PageHead(
         title = "${t("csync_sc")} ${scene.str("number")}${scene.str("name").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()}",
+        crumbs = "${t("csync_scenes_title")} / ${t("csync_sc")} ${scene.str("number")}",
+        titleContent = {
+            val title = "${t("csync_sc")} ${scene.str("number")}${scene.str("name").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()}"
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                ZillitText(title, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+                if (overall.isNotEmpty()) StatusBadge(overall, if (overall == "READY") t("csync_costume_ready") else tEnum(overall))
+            }
+        },
         sub = listOfNotNull(
             scene.str("episode").takeIf { episodes && it.isNotEmpty() }?.let { "${t("csync_field_episode")} $it" },
             scene.str("int_ext").ifEmpty { null },
@@ -111,7 +123,6 @@ private fun SceneDetailBody(ctx: SyncCtx, scene: Rec, data: SceneDetailData, rel
             if (scene.long("shoot_date") != 0L) fmtDate(scene.long("shoot_date")) else t("csync_unscheduled"),
         ).joinToString(" · "),
         actions = {
-            if (overall.isNotEmpty()) StatusBadge(overall, if (overall == "READY") t("csync_costume_ready") else tEnum(overall))
             ZillitButton(
                 t("csync_nav_continuity"), onClick = { ctx.nav.go("continuity?sceneId=${scene.id}") },
                 variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Draft,
@@ -121,9 +132,9 @@ private fun SceneDetailBody(ctx: SyncCtx, scene: Rec, data: SceneDetailData, rel
     )
     scene.str("synopsis").takeIf { it.isNotEmpty() }?.let { ZillitNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md), tone = StatusTone.Progress) }
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f)) { ReadinessCard(scene, readiness, data.characters, reload) }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1.4f)) { ReadinessCard(scene, readiness, data.characters, reload) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TakesCard(scene)
             CuesCard(scene, reload)
             CleaningCard(scene)

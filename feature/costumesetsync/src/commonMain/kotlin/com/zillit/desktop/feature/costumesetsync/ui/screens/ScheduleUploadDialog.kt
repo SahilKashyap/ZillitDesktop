@@ -76,11 +76,7 @@ private fun SchedPick(upload: ScheduleUpload, docs: ProjectDocuments) {
         t("csync_doc_read_this"), t("csync_doc_none_$lower"),
     )
     ZillitText(t("csync_doc_or_upload"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
-        ZillitButton(t("csync_sched_drop_$lower"), onClick = upload::chooseFile, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Upload, loading = upload.parsing && upload.doc == null)
-        if (upload.parsing) MutedText(t("csync_upload_reading", "file" to upload.pickedName))
-    }
-    MutedText(t("csync_sched_formats"))
+    DropZone(t("csync_sched_drop_$lower"), t("csync_sched_formats"), upload.parsing, t("csync_upload_reading", "file" to upload.pickedName), upload::chooseFile)
     MutedText(t("csync_sched_keep_note"), maxLines = 3)
 }
 

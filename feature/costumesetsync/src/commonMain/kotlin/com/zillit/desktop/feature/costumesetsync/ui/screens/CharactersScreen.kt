@@ -1,6 +1,15 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -103,92 +112,88 @@ fun CharactersScreen() {
     val isCharacters = tab == CHARACTERS_TAB
     val charRows = characters.value
     val actorRows = actors.value
-    PageHead(
-        title = t("csync_list_of_characters"),
-        sub = t("csync_characters_page_sub"),
-        actions = {
-            ZillitButton(t("csync_back"), onClick = { ctx.nav.backOr("dashboard") }, variant = ButtonVariant.Tertiary, leadingIcon = ZillitIcons.ArrowLeft)
-            ZillitButton(
-                "★ ${t("csync_nav_actors")}",
-                onClick = { ctx.nav.go("actors") },
-                variant = ButtonVariant.Secondary,
-            )
-            if (ctx.canPost && isCharacters) {
-                if (numbering) {
-                    ZillitButton(
-                        t("csync_save"),
-                        onClick = {
-                            ctx.scope.launch {
-                                savingNumbers = true
-                                val saved = saveCastNumbers(ctx, charRows.orEmpty(), draft)
-                                savingNumbers = false
-                                if (saved) {
-                                    numbering = false
-                                    draft.clear()
-                                    reload()
+    Column(verticalArrangement = Arrangement.spacedBy(PAGE_GAP.dp)) {
+        PageHead(
+            title = t("csync_list_of_characters"),
+            sub = t("csync_characters_page_sub"),
+            note = t("csync_characters_order_note"),
+            modifier = Modifier.padding(top = 12.dp),
+            actions = {
+                ZillitButton(t("csync_nav_actors"), onClick = { ctx.nav.go("actors") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.StarFilled)
+                if (ctx.canPost && isCharacters) {
+                    if (numbering) {
+                        ZillitButton(
+                            t("csync_save"),
+                            onClick = {
+                                ctx.scope.launch {
+                                    savingNumbers = true
+                                    val saved = saveCastNumbers(ctx, charRows.orEmpty(), draft)
+                                    savingNumbers = false
+                                    if (saved) {
+                                        numbering = false
+                                        draft.clear()
+                                        reload()
+                                    }
                                 }
-                            }
-                        },
-                        variant = ButtonVariant.Secondary,
-                        loading = savingNumbers,
-                    )
-                } else {
-                    ZillitButton(t("csync_cast_numbers"), onClick = { numbering = true }, variant = ButtonVariant.Secondary)
+                            },
+                            variant = ButtonVariant.Secondary,
+                            loading = savingNumbers,
+                        )
+                    } else {
+                        ZillitButton("# ${t("csync_cast_numbers")}", onClick = { numbering = true }, variant = ButtonVariant.Secondary)
+                    }
                 }
-            }
-            if (ctx.canPost) {
-                ZillitButton(
-                    t(if (isCharacters) "csync_character" else "csync_actor"),
-                    onClick = { if (isCharacters) charOpen = true else actorOpen = true },
-                    leadingIcon = ZillitIcons.Add,
-                )
-            }
-        },
-    )
-    ZillitText(t("csync_characters_order_note"), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger)
-    if (charRows == null || actorRows == null) {
-        Await(if (charRows == null) characters else actors) { }
-        return
-    }
-    ZillitTabStrip(
-        tabs = listOf(
-            ZillitTab(CHARACTERS_TAB, "${t("csync_characters_title")} (${charRows.size})"),
-            ZillitTab(ACTORS_TAB, "${t("csync_actors_title")} (${actorRows.size})"),
-        ),
-        activeId = tab,
-        onSelect = { tab = it },
-        modifier = Modifier.padding(vertical = ZillitTheme.spacing.sm),
-    )
-    if ((if (isCharacters) charRows else actorRows).isNotEmpty()) {
-        ZillitSearchField(
-            q,
-            { q = it },
-            Modifier.widthIn(max = SEARCH_WIDTH.dp).fillMaxWidth().padding(bottom = ZillitTheme.spacing.sm),
-            t(if (isCharacters) "csync_characters_search" else "csync_actors_search"),
+                if (ctx.canPost) {
+                    ZillitButton(
+                        t(if (isCharacters) "csync_character" else "csync_actor"),
+                        onClick = { if (isCharacters) charOpen = true else actorOpen = true },
+                        leadingIcon = ZillitIcons.Add,
+                    )
+                }
+            },
         )
-    }
-    if (isCharacters && charRows.isNotEmpty() && q.isBlank()) CastOrderNote(charRows, numbering)
-    SectionCard(flush = true) {
-        if (isCharacters) {
-            CharacterRows(charRows, q, numbering, draft)
+        if (charRows == null || actorRows == null) {
+            Await(if (charRows == null) characters else actors) { }
         } else {
-            ActorRows(actorRows, q)
+            InkTabs(
+                listOf(
+                    CHARACTERS_TAB to "${t("csync_characters_title")} (${charRows.size})",
+                    ACTORS_TAB to "${t("csync_actors_title")} (${actorRows.size})",
+                ),
+                tab,
+            ) { tab = it }
+            if ((if (isCharacters) charRows else actorRows).isNotEmpty()) {
+                SearchWithButton(q, { q = it }, t(if (isCharacters) "csync_characters_search" else "csync_actors_search"), Modifier.fillMaxWidth())
+            }
+            if (isCharacters && charRows.isNotEmpty() && q.isBlank()) CastOrderNote(charRows, numbering)
+            SectionCard(flush = true) {
+                if (isCharacters) CharacterRows(charRows, q, numbering, draft) else ActorRows(actorRows, q)
+            }
         }
     }
-    NewCharacterFull(charOpen, { charOpen = false }, actorRows, ::reload)
+    NewCharacterFull(charOpen, { charOpen = false }, actors.value.orEmpty(), ::reload)
     QuickActorDialog(actorOpen, { actorOpen = false }, ::reload)
 }
+
+/** The list scrolls inside its card (the web's `.csync-rows { max-height: 62vh }`). */
+private const val LIST_MAX_HEIGHT = 496
+private const val PAGE_GAP = 16
 
 @Composable
 private fun CastOrderNote(characters: List<Rec>, numbering: Boolean) {
     val unnumbered = characters.count { !it.has("cast_number") }
-    val tail = if (unnumbered > 0) {
-        " · $unnumbered ${t("csync_of")} ${characters.size} ${t("csync_still_no_cast_number")}" +
-            if (numbering) ", ${t("csync_type_it_beside_name")}" else ""
-    } else {
-        ""
+    val colors = ZillitTheme.colors
+    val style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp)
+    val text = buildAnnotatedString {
+        append(t("csync_in_cast_order"))
+        if (unnumbered > 0) {
+            append(" · ")
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(unnumbered.toString()) }
+            append(" ${t("csync_of")} ${characters.size} ${t("csync_still_no_cast_number")}")
+            if (numbering) append(", ${t("csync_type_it_beside_name")}")
+        }
     }
-    MutedText(t("csync_in_cast_order") + tail, Modifier.padding(bottom = ZillitTheme.spacing.sm), maxLines = 2)
+    ZillitText(text, style = style, color = colors.textMuted, maxLines = 2)
 }
 
 @Composable
@@ -204,30 +209,20 @@ private fun CharacterRows(characters: List<Rec>, q: String, numbering: Boolean, 
         EmptyState(t("csync_characters_no_match"), t("csync_characters_no_match_hint"))
         return
     }
-    Column {
-        shown.forEach { c ->
+    Column(Modifier.heightIn(max = LIST_MAX_HEIGHT.dp).verticalScroll(rememberScrollState())) {
+        shown.forEachIndexed { index, c ->
             val counts = c.rec("counts")
             val actorName = c.rec("actor")?.str("name").orEmpty().ifEmpty { t("csync_no_actor_assigned") }
             val age = c.str("age").takeIf { it.isNotEmpty() && it != "0" }?.let { " · ${t("csync_age_lower")} $it" }.orEmpty()
-            ListRow(
+            val n = { key: String -> (counts?.long(key) ?: 0L).toString() }
+            CharListRow(
                 onClick = if (numbering) null else ({ ctx.nav.go("characters/${c.id}") }),
-                leading = {
-                    if (numbering) {
-                        CastBox(c, draft)
-                    } else {
-                        RowBadge(c.str("cast_number"))
-                    }
-                },
-                end = {
-                    val n = { key: String -> (counts?.long(key) ?: 0L).toString() }
-                    MutedText(
-                        "${n("scenes")} ${t("csync_count_scenes")} · ${n("changes")} ${t("csync_count_changes")} · ${n("costumes")} ${t("csync_count_pieces")}",
-                    )
-                },
-            ) {
-                RowTitle(c.str("name"))
-                MutedText(actorName + age)
-            }
+                leading = { if (numbering) CastBox(c, draft) else SquareAvatar(c.str("cast_number")) },
+                title = c.str("name"),
+                sub = actorName + age,
+                end = "${n("scenes")} ${t("csync_count_scenes")} · ${n("changes")} ${t("csync_count_changes")} · ${n("costumes")} ${t("csync_count_pieces")}",
+                last = index == shown.lastIndex,
+            )
         }
     }
 }
@@ -248,14 +243,17 @@ private fun ActorRows(actors: List<Rec>, q: String) {
         EmptyState(t("csync_actors_no_match"), t("csync_actors_no_match_hint"))
         return
     }
-    Column {
-        shown.forEach { a ->
+    Column(Modifier.heightIn(max = LIST_MAX_HEIGHT.dp).verticalScroll(rememberScrollState())) {
+        shown.forEachIndexed { index, a ->
             val phone = a.str("phone").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
-            ListRow(onClick = null, leading = { RowBadge(nameInitials(a.str("name"))) }) {
-                RowTitle(a.str("name"))
-                MutedText(a.recs("characters").joinToString(", ") { it.str("name") }.ifEmpty { t("csync_no_character") } + phone)
-                MutedText((a.rec("measurements")?.let { m -> m.keys.joinToString(" · ") { "$it ${m.str(it)}" } }).orEmpty())
-            }
+            CharListRow(
+                onClick = null,
+                leading = { SquareAvatar(nameInitials(a.str("name"))) },
+                title = a.str("name"),
+                sub = a.recs("characters").joinToString(", ") { it.str("name") }.ifEmpty { t("csync_no_character") } + phone,
+                extra = (a.rec("measurements")?.let { m -> m.keys.joinToString(" · ") { "$it ${m.str(it)}" } }).orEmpty(),
+                last = index == shown.lastIndex,
+            )
         }
     }
 }

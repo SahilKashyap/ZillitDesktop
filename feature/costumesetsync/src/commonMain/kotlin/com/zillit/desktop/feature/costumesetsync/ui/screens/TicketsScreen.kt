@@ -2,6 +2,12 @@ package com.zillit.desktop.feature.costumesetsync.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,8 +26,6 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.Answer
@@ -39,9 +43,7 @@ import com.zillit.desktop.feature.costumesetsync.domain.recordRequestDraft
 import com.zillit.desktop.feature.costumesetsync.domain.ticketChase
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
-import com.zillit.desktop.feature.costumesetsync.ui.FieldRow
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
-import com.zillit.desktop.feature.costumesetsync.ui.MonoText
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
 import com.zillit.desktop.feature.costumesetsync.ui.ReferenceGrid
@@ -143,11 +145,11 @@ fun TicketsScreen(kind: TicketKind) {
             }
         },
     )
-    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-        ZillitSearchField(q, { q = it }, Modifier.weight(1f), placeholder = t("csync_tickets_search_$tab"))
+    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        SearchWithButton(q, { q = it }, t("csync_tickets_search_$tab"), Modifier.weight(1f))
         // Open first, then All — the reference's two chips.
-        ZillitChoiceChip(t("csync_filter_open"), selected = onlyOpen, onClick = { onlyOpen = true })
-        ZillitChoiceChip(t("csync_filter_all"), selected = !onlyOpen, onClick = { onlyOpen = false })
+        InkChip(t("csync_filter_open"), active = onlyOpen, onClick = { onlyOpen = true })
+        InkChip(t("csync_filter_all"), active = !onlyOpen, onClick = { onlyOpen = false })
     }
 
     Await(data) {
@@ -224,13 +226,39 @@ private fun ticketMatches(board: TicketBoard, q: String, r: Rec): Boolean {
     }
 }
 
-/** The piece opens its own page, as the reference's card title does. */
+/** The piece opens its own page, as the reference's card title does: asset in mono, then the name, both in the text colour. */
 @Composable
 private fun CostumeLink(c: Rec?) {
     val ctx = LocalSync.current
-    Row(Modifier.clickable { c?.id?.takeIf { it.isNotBlank() }?.let { ctx.nav.go("costumes/$it") } }, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        MonoText(c?.str("asset_number").orEmpty())
-        ZillitText(c?.str("name").orEmpty(), style = ZillitTheme.typography.titleSmall, color = ZillitTheme.colors.accentText)
+    Row(Modifier.clickable { c?.id?.takeIf { it.isNotBlank() }?.let { ctx.nav.go("costumes/$it") } }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        ZillitText(c?.str("asset_number").orEmpty(), style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, fontSize = 12.9.sp))
+        ZillitText(c?.str("name").orEmpty(), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+    }
+}
+
+/** The 14sp line under a card's title: the issue in bold, an arrow, then the work. */
+@Composable
+private fun IssueLine(issue: String, work: String) {
+    ZillitText(
+        buildAnnotatedString {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(issue) }
+            append(" \u2192 $work")
+        },
+        Modifier.padding(top = 10.dp),
+        style = ZillitTheme.typography.bodyMedium,
+    )
+}
+
+/** The web's `.csync-kv--wide`: a 120dp muted label beside its value, one pair per row, "—" when unknown. */
+@Composable
+private fun KvRows(rows: List<Pair<String, String>>) {
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        rows.forEach { (k, v) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ZillitText(k, Modifier.width(120.dp), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textMuted)
+                ZillitText(v.ifBlank { "\u2014" }, style = ZillitTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 
@@ -253,7 +281,7 @@ private fun AlterationCard(a: Rec, pipeline: List<String>, actions: TicketAction
                     StatusBadge(status)
                     if (late) StatusBadge("OVERDUE", label = t("csync_overdue"))
                 }
-                ZillitText("${a.str("issue")} → ${a.str("required_work")}", style = ZillitTheme.typography.titleSmall)
+                IssueLine(a.str("issue"), a.str("required_work"))
                 MutedText(
                     listOfNotNull(
                         who.ifBlank { null },
@@ -262,11 +290,11 @@ private fun AlterationCard(a: Rec, pipeline: List<String>, actions: TicketAction
                     ).joinToString(" · "),
                     maxLines = 2,
                 )
-                if (a.str("notes").isNotBlank()) MutedText(a.str("notes"), maxLines = 4)
+                if (a.str("notes").isNotBlank()) MutedText(a.str("notes"), Modifier.padding(top = 10.dp), maxLines = 6)
             }
             AlterationButtons(a, status, next, actions)
         }
-        if (status !in TicketBoard.Alterations.closed) WfPipeline(pipeline, status)
+        if (status !in TicketBoard.Alterations.closed) WfPipeline(pipeline, status, Modifier.padding(top = 10.dp))
         ReferenceGrid(entityType = "ALTERATION", entityId = a.id, kinds = ALTERATION_PHOTO_KINDS, compact = true, bare = true, attachments = false)
     }
 }
@@ -328,7 +356,7 @@ private fun DamageCard(d: Rec, actions: TicketActions) {
                     CostumeLink(costume)
                     StatusBadge(status)
                 }
-                ZillitText(d.str("description"), style = ZillitTheme.typography.titleSmall)
+                ZillitText(d.str("description"), Modifier.padding(top = 10.dp), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
                 MutedText(detail, maxLines = 2)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
@@ -369,14 +397,16 @@ private fun MissingCard(m: Rec, actions: TicketActions, foundAt: FoundAt?, onFou
                     costume?.rec("character")?.str("name")?.takeIf { it.isNotBlank() }?.let { MutedText(it) }
                 }
                 // Label beside value, "—" when unknown — as the reference's list.
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl)) {
-                    FieldRow(t("csync_field_last_seen"), m.str("last_seen_location"))
-                    FieldRow(t("csync_field_last_assigned_short"), m.str("last_assigned_to"))
-                    FieldRow(t("csync_field_last_scan"), fmtDateTime(m.long("last_scan_at")))
-                    FieldRow(t("csync_field_reported"), fmtDateTime(m.long("created")))
-                    if (m.long("resolved_at") != 0L) FieldRow(t("csync_field_resolved"), fmtDateTime(m.long("resolved_at")))
-                }
-                if (m.str("notes").isNotBlank()) MutedText(m.str("notes"), maxLines = 4)
+                KvRows(
+                    listOfNotNull(
+                        t("csync_field_last_seen") to m.str("last_seen_location"),
+                        t("csync_field_last_assigned_short") to m.str("last_assigned_to"),
+                        t("csync_field_last_scan") to fmtDateTime(m.long("last_scan_at")),
+                        t("csync_field_reported") to fmtDateTime(m.long("created")),
+                        if (m.long("resolved_at") != 0L) t("csync_field_resolved") to fmtDateTime(m.long("resolved_at")) else null,
+                    ),
+                )
+                if (m.str("notes").isNotBlank()) MutedText(m.str("notes"), Modifier.padding(top = 10.dp), maxLines = 6)
                 ReferenceGrid(entityType = "MISSING", entityId = m.id, kinds = MISSING_PHOTO_KINDS, compact = true, bare = true, attachments = false)
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {

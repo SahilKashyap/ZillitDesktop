@@ -24,6 +24,7 @@ import com.zillit.desktop.feature.costumesetsync.domain.fill
 import com.zillit.desktop.feature.costumesetsync.domain.fmtTime
 import com.zillit.desktop.feature.costumesetsync.domain.isSameDay
 import com.zillit.desktop.feature.costumesetsync.domain.todayParam
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.ui.CostumeRow
 import com.zillit.desktop.feature.costumesetsync.ui.EnumInput
 import com.zillit.desktop.feature.costumesetsync.ui.FormCell
@@ -153,6 +154,7 @@ private fun EmergencyForm(costume: Rec, initialScene: String, onClose: () -> Uni
     WfFormDialog(
         open = true,
         title = "${t("csync_emergency_cleaning")} · ${costume.str("asset_number")}",
+        icon = ZillitIcons.Siren,
         onDismiss = onClose,
         actions = {
             ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary, enabled = !busy)
@@ -160,13 +162,12 @@ private fun EmergencyForm(costume: Rec, initialScene: String, onClose: () -> Uni
         },
     ) {
         WfNotice(t("csync_emergency_explainer"))
-        CostumeRow(costume, noStatus = true)
         FormGrid {
             TextInput(problem, { problem = it }, t("csync_field_problem"), FormWide)
             EnumInput(type, ctx.metaList("cleaning_types"), { type = it }, t("csync_field_cleaning_type"))
             Column(FormCell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitText(t("csync_field_priority"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                StatusBadge("URGENT", label = tEnum("URGENT"))
+                StatusBadge("URGENT", label = tEnum("URGENT"), large = true)
             }
             SceneSelect(sceneId, { sceneId = it }, t("csync_field_scene"))
             TextInput(take, { take = it.filter(Char::isDigit) }, t("csync_field_take"), number = true)
@@ -191,18 +192,18 @@ private fun EmergencyResult(costume: Rec, result: Raised, onClose: () -> Unit, o
         actions = {
             ZillitButton(t("csync_close"), onClick = onClose, variant = ButtonVariant.Secondary)
             if (result.request.id.isNotBlank()) {
-                ZillitButton(t("csync_open_ticket"), onClick = { onClose(); ctx.nav.go("cleaning/${result.request.id}") })
+                ZillitButton(t("csync_open_ticket"), onClick = { onClose(); ctx.nav.go("cleaning/${result.request.id}") }, variant = ButtonVariant.Secondary)
             }
         },
     ) {
-        WfNotice(fill(t("csync_emergency_now_cleaning"), "asset" to costume.str("asset_number")))
+        WfNotice(fill(t("csync_emergency_now_cleaning"), "asset" to costume.str("asset_number")), ok = true)
         val issued = replacement
         when {
-            issued != null -> WfNotice(fill(t("csync_replacement_issued"), "asset" to issued.str("asset_number"), "name" to issued.str("name")))
+            issued != null -> WfNotice(fill(t("csync_replacement_issued"), "asset" to issued.str("asset_number"), "name" to issued.str("name")), info = true)
             result.alternatives.isEmpty() -> WfNotice(fill(t("csync_no_replacement"), "time" to fmtTime(result.request.long("expected_ready_at")).ifBlank { "—" }))
         }
         if (result.alternatives.isNotEmpty()) {
-            ZillitText(t("csync_available_alternatives"), style = ZillitTheme.typography.titleSmall)
+            ZillitText(t("csync_available_alternatives"), style = ZillitTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
             result.alternatives.forEach { a ->
                 CostumeRow(
                     a,
@@ -212,8 +213,9 @@ private fun EmergencyResult(costume: Rec, result: Raised, onClose: () -> Unit, o
                             if (issued?.id == a.id) {
                                 StatusBadge("READY", label = t("csync_assigned"))
                             } else {
-                                ZillitButton(
+                                WfInkButton(
                                     t("csync_assign"),
+                                    on = true,
                                     onClick = {
                                         busy = true
                                         ctx.scope.launch {
@@ -225,7 +227,6 @@ private fun EmergencyResult(costume: Rec, result: Raised, onClose: () -> Unit, o
                                             }
                                         }
                                     },
-                                    size = ButtonSize.Small,
                                     enabled = !busy && issued == null,
                                 )
                             }

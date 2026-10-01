@@ -6,7 +6,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -155,12 +167,39 @@ fun ProductionSetupWizard(open: Boolean, project: Rec?, edit: Boolean, onClose: 
     ScriptUploadDialog(scriptOpen, upload, docs) { scriptOpen = false }
 }
 
+/** The web's `.csync-setup__q`: the step's question, centred and bold. */
+@Composable
+private fun Question(text: String) {
+    ZillitText(
+        text,
+        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
+        style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+        textAlign = TextAlign.Center,
+    )
+}
+
 @Composable
 private fun TypeStep(type: String, onType: (String) -> Unit) {
-    ZillitText(t("csync_setup_select"), style = ZillitTheme.typography.titleSmall)
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        listOf("FEATURE" to "csync_setup_feature", "EPISODIC" to "csync_setup_series").forEach { (value, label) ->
-            ZillitChoiceChip(t(label), type == value, onClick = { onType(value) })
+    val colors = ZillitTheme.colors
+    Question(t("csync_setup_select"))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(Triple("FEATURE", "csync_setup_feature", ZillitIcons.Camera), Triple("EPISODIC", "csync_setup_series", ZillitIcons.Grid)).forEach { (value, label, icon) ->
+            val on = type == value
+            val shape = RoundedCornerShape(10.dp)
+            val ink = if (on) colors.accentText else colors.textPrimary
+            Column(
+                Modifier.weight(1f)
+                    .background(if (on) colors.accentSoft else colors.surface, shape)
+                    .border(1.dp, if (on) colors.accent else colors.border, shape)
+                    .clip(shape)
+                    .clickable { onType(value) }
+                    .padding(horizontal = 12.dp, vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                ZillitIcon(icon, tint = ink, size = 28.dp)
+                ZillitText(t(label), color = ink)
+            }
         }
     }
 }
@@ -183,7 +222,7 @@ private fun DatesStep(
             field(to, t("csync_field_end_date"))()
         }
     }
-    ZillitText(t("csync_setup_dates_q"), style = ZillitTheme.typography.titleSmall)
+    Question(t("csync_setup_dates_q"))
     range(t("csync_setup_shoot_dates"), "start_date", "end_date")
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         ZillitCheckbox(withPrep, onPrep, label = t("csync_setup_add_prep"))
@@ -201,18 +240,46 @@ private fun DatesStep(
 
 @Composable
 private fun ScriptStep(edit: Boolean, current: Rec?, sceneCount: Int, onChoose: () -> Unit) {
-    ZillitText(t("csync_setup_script_q"), style = ZillitTheme.typography.titleSmall)
+    val colors = ZillitTheme.colors
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+        ZillitIcon(ZillitIcons.File, tint = colors.textPrimary, size = 20.dp)
+        ZillitText(t("csync_setup_script_q"), style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
+    }
     if (edit && (current != null || sceneCount > 0)) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            ZillitText(t("csync_setup_current_script").uppercase(), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
+        val card = RoundedCornerShape(12.dp)
+        Column(
+            Modifier.fillMaxWidth().background(colors.surfaceSunken, card).border(1.dp, colors.border, card).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            ZillitText(t("csync_setup_current_script").uppercase(), style = ZillitTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.72.sp), color = colors.textMuted)
             if (current != null) {
-                ZillitText(docName(current), style = ZillitTheme.typography.titleSmall)
+                ZillitText(docName(current), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
                 MutedText(listOf(t(docSourceKey(current)), current.str("revision"), fmtDateTime(current.long("created"))).filter { it.isNotBlank() }.joinToString(" · "))
             }
             MutedText(t(if (sceneCount == 1) "csync_setup_scenes_in_breakdown_one" else "csync_setup_scenes_in_breakdown", "n" to sceneCount))
             MutedText(t("csync_setup_new_draft_hint"), maxLines = 2)
         }
     }
-    ZillitButton(t("csync_setup_drop"), onClick = onChoose, variant = ButtonVariant.Secondary, size = ButtonSize.Medium, leadingIcon = ZillitIcons.Upload)
-    MutedText(t("csync_setup_drop_hint"), maxLines = 2)
+    // The drop zone: a dashed tile with the upload mark, a bold line and a hint (a click opens the file picker).
+    val zone = RoundedCornerShape(12.dp)
+    Column(
+        Modifier.fillMaxWidth()
+            .background(colors.surface, zone)
+            .drawBehind {
+                drawRoundRect(
+                    colors.border,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
+                )
+            }
+            .clip(zone)
+            .clickable(onClick = onChoose)
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ZillitIcon(ZillitIcons.Upload, tint = colors.info, size = 34.dp)
+        ZillitText(t("csync_setup_drop"), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+        MutedText(t("csync_setup_drop_hint"), maxLines = 2)
+    }
 }

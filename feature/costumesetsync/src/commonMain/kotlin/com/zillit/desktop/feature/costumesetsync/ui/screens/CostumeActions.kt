@@ -11,7 +11,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.icon.AhIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costumesetsync.ui.InkButton
+import com.zillit.desktop.feature.costumesetsync.ui.StackedPick
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -128,48 +134,49 @@ private fun ActionButtons(
 ) {
     val ctx = LocalSync.current
     val status = costume.str("status")
-    ChipRow(modifier) {
+    // `.csync-buttonrow`: 6dp between buttons. Ink-filled ones are the status's main action.
+    ChipRow(modifier, gap = BUTTON_GAP) {
         if (status == "CLEANING") {
-            ZillitButton(t("csync_in_cleaning_view"), onClick = { go(if (openCleaningId.isNotBlank()) "cleaning/$openCleaningId" else "cleaning") })
+            InkButton(t("csync_in_cleaning_view"), onClick = { go(if (openCleaningId.isNotBlank()) "cleaning/$openCleaningId" else "cleaning") }, icon = AhIcons.Refresh)
         }
         if (status == "ALTERATION") {
-            ZillitButton(t("csync_with_tailor_view"), onClick = { go("alterations") })
+            InkButton(t("csync_with_tailor_view"), onClick = { go("alterations") }, icon = AhIcons.Cut)
         }
         if (ctx.canPost) {
-            val ink = ButtonVariant.Primary
-            val plain = ButtonVariant.Secondary
-            @Composable fun button(label: String, variant: ButtonVariant = plain, onClick: () -> Unit) =
-                ZillitButton(label, onClick = onClick, variant = variant)
+            @Composable fun button(label: String, icon: ImageVector, ink: Boolean = false, onClick: () -> Unit) =
+                if (ink) InkButton(label, onClick = onClick, icon = icon) else ZillitButton(label, onClick = onClick, variant = ButtonVariant.Secondary, leadingIcon = icon)
             // The movements this status allows, in the reference's order.
             when (status) {
                 "AVAILABLE" -> {
-                    button(t("csync_act_issue"), ink) { move("ISSUE", "Actor") }
-                    button(t("csync_act_send_to_set")) { move("TO_SET", "Set") }
+                    button(t("csync_act_issue"), ZillitIcons.Inbox, ink = true) { move("ISSUE", "Actor") }
+                    button(t("csync_act_send_to_set"), AhIcons.Video) { move("TO_SET", "Set") }
                 }
                 "ISSUED" -> {
-                    button(t("csync_act_on_set"), ink) { move("TO_SET", "Set") }
-                    button(t("csync_act_return")) { move("RETURN", "Wardrobe Truck") }
+                    button(t("csync_act_on_set"), AhIcons.Video, ink = true) { move("TO_SET", "Set") }
+                    button(t("csync_act_return"), ZillitIcons.Inbox) { move("RETURN", "Wardrobe Truck") }
                 }
-                "ON_SET" -> button(t("csync_act_return_to_wardrobe"), ink) { move("RETURN", "Wardrobe Truck") }
-                "MISSING" -> button(t("csync_act_found"), ink) { move("FOUND", "Wardrobe Truck") }
-                "DAMAGED" -> button(t("csync_act_repaired"), ink) { move("REPAIRED", "Wardrobe Truck") }
-                "RETURNED_TO_VENDOR", "RETIRED" -> button(t("csync_act_receive_back"), ink) { move("RECEIVED", "Warehouse") }
+                "ON_SET" -> button(t("csync_act_return_to_wardrobe"), ZillitIcons.Inbox, ink = true) { move("RETURN", "Wardrobe Truck") }
+                "MISSING" -> button(t("csync_act_found"), AhIcons.MapPin, ink = true) { move("FOUND", "Wardrobe Truck") }
+                "DAMAGED" -> button(t("csync_act_repaired"), ZillitIcons.Inbox, ink = true) { move("REPAIRED", "Wardrobe Truck") }
+                "RETURNED_TO_VENDOR", "RETIRED" -> button(t("csync_act_receive_back"), ZillitIcons.Inbox, ink = true) { move("RECEIVED", "Warehouse") }
             }
             if (status in ACTIVE) {
-                button(t("csync_act_emergency_clean"), ButtonVariant.Danger) { open(ActionForm.Emergency) }
-                button(t("csync_act_move")) { move("MOVE", "") }
+                ZillitButton(t("csync_act_emergency_clean"), onClick = { open(ActionForm.Emergency) }, variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Siren)
+                button(t("csync_act_move"), ZillitIcons.Forward) { move("MOVE", "") }
             }
-            if (status in ACTIVE || status == "DAMAGED") button(t("csync_act_report_damage")) { open(ActionForm.Damage) }
-            if (status != "MISSING" && status != "RETIRED") button(t("csync_act_mark_missing")) { open(ActionForm.Missing) }
+            if (status in ACTIVE || status == "DAMAGED") button(t("csync_act_report_damage"), AhIcons.AlertTriangle) { open(ActionForm.Damage) }
+            if (status != "MISSING" && status != "RETIRED") button(t("csync_act_mark_missing"), AhIcons.AlertCircle) { open(ActionForm.Missing) }
             if (status in ACTIVE) {
-                button(t("csync_act_request_cleaning")) { open(ActionForm.Cleaning) }
-                button(t("csync_act_alteration")) { open(ActionForm.Alteration) }
+                button(t("csync_act_request_cleaning"), AhIcons.Refresh) { open(ActionForm.Cleaning) }
+                button(t("csync_act_alteration"), AhIcons.Cut) { open(ActionForm.Alteration) }
             }
             // Managers only, as the reference (its FINANCE_ROLES are its manager roles).
-            if (ctx.isFinance && status in setOf("AVAILABLE", "DAMAGED")) button(t("csync_act_retire")) { move("RETIRE", "") }
+            if (ctx.isFinance && status in setOf("AVAILABLE", "DAMAGED")) button(t("csync_act_retire"), AhIcons.Archive) { move("RETIRE", "") }
         }
     }
 }
+
+private val BUTTON_GAP = 6.dp
 
 /** Issue / return / move / to-set / found / repaired / receive / retire: `POST /costumes/{id}/actions`. */
 @Composable
@@ -205,11 +212,11 @@ private fun MovementDialog(costume: Rec, movement: Movement, sceneId: String, ta
         },
         confirmEnabled = !(action == "MOVE" && location.isBlank()),
         busy = busy,
+        ink = true,
     ) {
         FormGrid {
             if (action != "RETIRE") {
-                PickInput(location, options, { location = it }, t("csync_to_location"), FormWide, placeholder = t("csync_choose_dash"))
-                TextInput(location, { location = it }, t("csync_to_location"), FormWide)
+                StackedPick(location, options, { location = it }, location, { location = it }, t("csync_to_location"), FormWide, placeholder = t("csync_choose_dash"))
             }
             if (action in setOf("ISSUE", "TO_SET", "RETURN")) {
                 val sceneOptions = scenes.value.orEmpty().map { s ->

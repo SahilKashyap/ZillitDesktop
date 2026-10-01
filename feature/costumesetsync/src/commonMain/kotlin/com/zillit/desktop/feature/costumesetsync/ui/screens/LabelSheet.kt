@@ -52,10 +52,10 @@ internal fun labelSheetHtml(title: String, costumes: List<Rec>): String {
     }
     return "<!doctype html><html><head><meta charset=\"utf-8\"><title>${escapeHtml(title)}</title><style>" +
         "body{font-family:-apple-system,Segoe UI,Arial,sans-serif;margin:12mm}" +
-        ".sheet{display:flex;flex-wrap:wrap;gap:6mm}" +
-        ".label{display:flex;gap:3mm;align-items:center;width:90mm;padding:3mm;border:1px solid #999;page-break-inside:avoid}" +
-        ".asset{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:13pt}" +
-        ".l0{font-weight:600}.l1,.l2{font-size:9pt;color:#444}" +
+        ".sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}" +
+        ".label{display:flex;gap:10px;align-items:center;padding:10px;border:1px dashed #999;border-radius:6px;background:#fff;color:#000;break-inside:avoid;page-break-inside:avoid}" +
+        ".asset{font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:15px}" +
+        ".l0{font-size:12px;font-weight:600}.l1,.l2{font-size:11px;color:#4b5563}" +
         "</style></head><body><div class=\"sheet\">$labels</div>" +
         "<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},300)})</script></body></html>"
 }

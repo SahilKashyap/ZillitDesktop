@@ -1,6 +1,12 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costumesetsync.ui.FormCell
+import com.zillit.desktop.feature.costumesetsync.ui.Notice
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -137,13 +143,18 @@ internal fun CleaningDialog(
         confirmEnabled = problem.isNotBlank(),
         busy = filing.busy,
         danger = emergency,
+        ink = !emergency,
+        icon = if (emergency) ZillitIcons.Siren else null,
     ) {
-        if (emergency) MutedText(t("csync_emergency_explainer"), maxLines = 4)
+        if (emergency) Notice { ZillitText(t("csync_emergency_explainer"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp)) }
         FormGrid {
             TextInput(problem, { problem = it }, t("csync_field_problem"), FormWide)
             EnumInput(type, ctx.metaList("cleaning_types"), { type = it.ifBlank { type } }, t("csync_field_cleaning_type"))
             if (emergency) {
-                StatusBadge("URGENT", tEnum("URGENT"))
+                Column(FormCell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                    ZillitText(t("csync_field_priority"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+                    StatusBadge("URGENT", tEnum("URGENT"), large = true)
+                }
             } else {
                 EnumInput(priority, ctx.metaList("priorities"), { priority = it.ifBlank { priority } }, t("csync_field_priority"))
             }
@@ -230,6 +241,7 @@ internal fun AlterationDialog(costume: Rec, onClose: () -> Unit, onFiled: () -> 
         },
         confirmEnabled = issue.isNotBlank() && work.isNotBlank(),
         busy = filing.busy,
+        ink = true,
     ) {
         FormGrid {
             TextInput(issue, { issue = it }, t("csync_field_issue"), FormWide)

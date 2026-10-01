@@ -116,7 +116,7 @@ private fun CueRow(c: Rec, reload: () -> Unit) {
                 val who = c.rec("character")
                 when {
                     who != null && who.id.isNotEmpty() ->
-                        ZillitText(who.str("name"), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.accent)
+                        ZillitText(who.str("name"), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.info)
                     c.str("character_name").isNotEmpty() -> ZillitText(c.str("character_name"), style = ZillitTheme.typography.labelSmall)
                     else -> MutedText(t("csync_scene"))
                 }

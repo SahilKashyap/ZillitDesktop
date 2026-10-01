@@ -119,11 +119,7 @@ private fun PickPhase(upload: ScriptUpload, docs: ProjectDocuments) {
         t("csync_doc_read_this"), t("csync_doc_none_script"),
     )
     ZillitText(t("csync_doc_or_upload"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
-        ZillitButton(t("csync_upload_drop"), onClick = upload::chooseFile, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Upload, loading = upload.parsing && upload.doc == null)
-        if (upload.parsing) MutedText(t("csync_upload_reading", "file" to upload.pickedName))
-    }
-    MutedText(t("csync_upload_formats"))
+    DropZone(t("csync_upload_drop"), t("csync_upload_formats"), upload.parsing, t("csync_upload_reading", "file" to upload.pickedName), upload::chooseFile)
     MutedText(t("csync_upload_reupload_note"), maxLines = 3)
 }
 

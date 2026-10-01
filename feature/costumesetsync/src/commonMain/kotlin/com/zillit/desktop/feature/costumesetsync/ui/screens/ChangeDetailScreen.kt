@@ -100,6 +100,7 @@ private fun ChangeBody(ch: Rec, reload: () -> Unit) {
 
     PageHead(
         title = "${t("csync_change")} #${ch.str("change_number")} · ${ch.str("name")}",
+        crumbs = "${t("csync_nav_characters")} / ${character?.str("name").orEmpty()} / ${t("csync_change")} #${ch.str("change_number")}",
         sub = listOf(
             character?.str("name").orEmpty() + character?.rec("actor")?.str("name")?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty(),
             ch.str("description"),
@@ -108,11 +109,11 @@ private fun ChangeBody(ch: Rec, reload: () -> Unit) {
             if (ctx.canPost) ZillitButton(t("csync_edit"), onClick = { editOpen = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
         },
     )
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1.4f)) {
             PiecesCard(ch, items, wear, { wear = it }, { discard = it }, { pickOpen = true }, reload)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ReferenceGrid(entityType = "CHANGE", entityId = ch.id, title = t("csync_look_photos"), kinds = LOOK_PHOTO_KINDS)
             UsedInScenes(ch)
             ch.str("notes").takeIf { it.isNotEmpty() }?.let { SectionCard(title = t("csync_field_notes")) { ZillitText(it) } }
@@ -241,14 +242,17 @@ private fun UsedInScenes(ch: Rec) {
     val scenes = ch.recs("scene_characters")
     SectionCard(title = t("csync_used_in_scenes"), flush = scenes.isNotEmpty()) {
         if (scenes.isEmpty()) MutedText(t("csync_not_in_any_scene"))
-        scenes.forEach { sc ->
+        scenes.forEachIndexed { index, sc ->
             val scene = sc.rec("scene")
             val sceneId = scene?.id?.ifEmpty { null } ?: sc.str("scene_id")
-            ListRow(
+            CharListRow(
                 onClick = { ctx.nav.go("scenes/$sceneId") },
-                leading = { ZillitText(scene?.str("number").orEmpty(), style = ZillitTheme.typography.titleSmall, color = ZillitTheme.colors.accent) },
-                end = { MutedText(fmtDate(scene?.long("shoot_date"))) },
-            ) { RowTitle(scene?.str("name")?.ifEmpty { null } ?: "${t("csync_scene")} ${scene?.str("number").orEmpty()}") }
+                leading = { SquareAvatar(scene?.str("number").orEmpty()) },
+                title = scene?.str("name")?.ifEmpty { null } ?: "${t("csync_scene")} ${scene?.str("number").orEmpty()}",
+                sub = "",
+                end = fmtDate(scene?.long("shoot_date")),
+                last = index == scenes.lastIndex,
+            )
         }
     }
 }

@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -182,6 +184,7 @@ internal fun SyncFrame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp:
     val ctx = LocalSync.current
     // A production with nothing in it opens to the first-run landing instead of the tabs (the web's `FirstRun`).
     if (ctx.project.notSetUp && !setUpHere) {
+        TopBar(bellTick, search = false)
         ZillitScrollColumn(modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(ZillitTheme.spacing.xl)) {
             FirstRun(onChanged = onReloadProject, onDone = onSetUp)
         }
@@ -193,25 +196,7 @@ internal fun SyncFrame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp:
     val tabs = TABS.filter { !it.financeOnly || ctx.isFinance }
     fun countOf(item: NavItem): Int = item.count?.let { counts?.long(it)?.toInt() } ?: 0
 
-    Row(
-        Modifier.fillMaxWidth().background(ZillitTheme.colors.surface).padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        ZillitText(
-            str(S.desktop_csync_tool_name),
-            style = ZillitTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-            modifier = Modifier.weight(1f),
-        )
-        GlobalSearch(Modifier.width(SEARCH_WIDTH))
-        NotificationBell(bellTick)
-        if (!ctx.canPost) {
-            ZillitButton(t("csync_request_posting_access"), onClick = { ctx.askRights(RightsKind.Post) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-        }
-        if (!ctx.canDownload) {
-            ZillitButton(t("csync_request_download_access"), onClick = { ctx.askRights(RightsKind.Download) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-        }
-    }
+    TopBar(bellTick, search = true)
     SyncTabBar(
         tabs = tabs.map { tab ->
             SyncTabModel(
@@ -227,10 +212,11 @@ internal fun SyncFrame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp:
         onGo = ctx.nav::go,
         // The Setup tab: the production's setup, filled in, to change (setup roles only).
         trailing = if (ctx.project.canSetUp(ctx.canPost)) {
-            { ZillitButton(t("csync_nav_setup"), onClick = { setupOpen = true }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small) }
+            SyncTabModel("setup", t("csync_nav_setup"), ZillitIcons.Settings, "setup")
         } else {
             null
         },
+        onTrailing = { setupOpen = true },
     )
     ZillitScrollColumn(
         modifier = Modifier.fillMaxSize().background(ZillitTheme.colors.surfaceSunken),
@@ -246,4 +232,33 @@ internal fun SyncFrame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp:
         onChanged = onReloadProject,
         onDone = { setupOpen = false; ctx.nav.go("breakdown") },
     )
+}
+
+/** The top bar. [search] is off on the first-run landing, where there is nothing to find yet (the web's `bare`). */
+@Composable
+private fun TopBar(bellTick: Int, search: Boolean) {
+    val ctx = LocalSync.current
+    // The web's `.csync-topbar`: a 60px bar on the surface with a bottom rule, 18px bold title, then the
+    // search, the bell and (on the web) a theme toggle — omitted here, the desktop has no per-tool theme.
+    Row(
+        Modifier.fillMaxWidth().height(60.dp).background(ZillitTheme.colors.surface).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ZillitText(
+            str(S.desktop_csync_tool_name),
+            style = ZillitTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 22.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = (-0.18).sp),
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+        )
+        if (!ctx.canPost) {
+            ZillitButton(t("csync_request_posting_access"), onClick = { ctx.askRights(RightsKind.Post) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+        }
+        if (!ctx.canDownload) {
+            ZillitButton(t("csync_request_download_access"), onClick = { ctx.askRights(RightsKind.Download) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+        }
+        if (search) GlobalSearch(Modifier.width(SEARCH_WIDTH))
+        NotificationBell(bellTick)
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.border))
 }

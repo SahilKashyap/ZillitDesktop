@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,7 +105,14 @@ fun ActorsScreen() {
     PageHead(
         title = "★ ${t("csync_nav_actors")}",
         sub = t("csync_actors_page_sub"),
-        actions = { ZillitButton(t("csync_nav_characters"), onClick = { ctx.nav.go("characters") }, variant = ButtonVariant.Secondary) },
+        crumbs = "${t("csync_nav_characters")} / ${t("csync_nav_actors")}",
+        titleContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ZillitText("★", Modifier.padding(end = 8.dp), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), color = ZillitTheme.colors.accent)
+                ZillitText(t("csync_nav_actors"), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold))
+            }
+        },
+        modifier = Modifier.padding(top = 12.dp),
     )
     SectionCard(
         title = t("csync_all_actors"),
@@ -111,7 +122,7 @@ fun ActorsScreen() {
     ) {
         Await(actors) { all ->
             val list = all.filter { actorMatches(it, q) }
-            ZillitSearchField(q, { q = it }, Modifier.widthIn(max = SEARCH_WIDTH.dp).fillMaxWidth(), t("csync_search_plain"))
+            SearchWithButton(q, { q = it }, t("csync_search_plain"), Modifier.widthIn(max = 320.dp).fillMaxWidth())
             if (list.isEmpty()) {
                 EmptyState(t("csync_nothing_to_display"), if (ctx.canPost) t("csync_press_add_first_actor") else null)
             } else {

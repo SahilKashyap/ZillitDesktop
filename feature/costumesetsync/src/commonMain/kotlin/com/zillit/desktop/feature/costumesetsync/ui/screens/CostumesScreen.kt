@@ -2,10 +2,14 @@ package com.zillit.desktop.feature.costumesetsync.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -14,13 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.CostumeRow
+import com.zillit.desktop.feature.costumesetsync.ui.LIST_MAX_VIEWPORT
+import com.zillit.desktop.feature.costumesetsync.ui.Page
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.FilterSelect
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
@@ -76,38 +80,42 @@ fun CostumesScreen() {
     val pageSize = loaded?.rec?.long("page_size")?.toInt()?.takeIf { it > 0 } ?: PAGE_SIZE
     val pages = maxOf(1, (total + pageSize - 1) / pageSize)
     // The header and filters stay put while the list reloads, so typing keeps its focus.
-    PageHead(
-        title = t("csync_costumes_title"),
-        sub = if (loaded != null) t("csync_costumes_count", "count" to total) else t("csync_inventory"),
-        actions = { if (ctx.canPost) ZillitButton(t("csync_costume"), onClick = { createOpen = true }, leadingIcon = ZillitIcons.Add) },
-    )
-    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitSearchField(
-            value = q,
-            onValueChange = { q = it; ctx.nav.setQuery("q", it) },
-            placeholder = t("csync_costumes_search_placeholder"),
-            modifier = Modifier.weight(1f).widthIn(min = 240.dp),
+    Page {
+        PageHead(
+            title = t("csync_costumes_title"),
+            sub = if (loaded != null) t("csync_costumes_count", "count" to total) else t("csync_inventory"),
+            actions = { if (ctx.canPost) ZillitButton(t("csync_costume"), onClick = { createOpen = true }, leadingIcon = ZillitIcons.Add) },
+            bottomPadding = 0.dp,
         )
-        FilterSelect(status, enumOptions(ctx.metaList("costume_statuses")), t("csync_costumes_any_status"), { ctx.nav.setQuery("status", it); ctx.nav.setQuery("page", null) })
-        FilterSelect(category, enumOptions(ctx.metaList("costume_categories")), t("csync_costumes_any_category"), { ctx.nav.setQuery("category", it); ctx.nav.setQuery("page", null) })
-        FilterSelect(
-            characterId,
-            characters.value.orEmpty().map { it.id to it.str("name") },
-            t("csync_costumes_any_character"),
-            { ctx.nav.setQuery("characterId", it); ctx.nav.setQuery("page", null) },
-        )
-        FilterSelect(source, enumOptions(ctx.metaList("costume_sources")), t("csync_costumes_any_source"), { ctx.nav.setQuery("source", it); ctx.nav.setQuery("page", null) })
-    }
-    SectionCard(flush = true, modifier = Modifier.fillMaxWidth()) {
-        Await(result) { answer ->
-            val items = answer.rows
-            if (items.isEmpty()) {
-                EmptyState(t("csync_costumes_empty_title"), t("csync_costumes_empty_hint"))
-            } else {
-                Column { items.forEach { c -> CostumeRow(c, onClick = { ctx.nav.go("costumes/${c.id}") }) } }
-            }
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SearchWithButton(q, { q = it; ctx.nav.setQuery("q", it) }, t("csync_costumes_search_placeholder"), Modifier.width(SEARCH_WIDTH))
+            FilterSelect(status, enumOptions(ctx.metaList("costume_statuses")), t("csync_costumes_any_status"), { ctx.nav.setQuery("status", it); ctx.nav.setQuery("page", null) }, FILTER)
+            FilterSelect(category, enumOptions(ctx.metaList("costume_categories")), t("csync_costumes_any_category"), { ctx.nav.setQuery("category", it); ctx.nav.setQuery("page", null) }, FILTER)
+            FilterSelect(
+                characterId,
+                characters.value.orEmpty().map { it.id to it.str("name") },
+                t("csync_costumes_any_character"),
+                { ctx.nav.setQuery("characterId", it); ctx.nav.setQuery("page", null) },
+                FILTER,
+            )
+            FilterSelect(source, enumOptions(ctx.metaList("costume_sources")), t("csync_costumes_any_source"), { ctx.nav.setQuery("source", it); ctx.nav.setQuery("page", null) }, FILTER)
         }
-        Pager(page, pages, onPage = { ctx.nav.setQuery("page", it.toString()) })
+        SectionCard(flush = true, modifier = Modifier.fillMaxWidth()) {
+            Await(result) { answer ->
+                val items = answer.rows
+                if (items.isEmpty()) {
+                    EmptyState(t("csync_costumes_empty_title"), t("csync_costumes_empty_hint"))
+                } else {
+                    // `.csync-rows`: the list scrolls inside its card (62vh) so the pager stays in view.
+                    val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+                    val cap = (windowHeight * LIST_MAX_VIEWPORT).coerceAtLeast(MIN_LIST_HEIGHT)
+                    Column(Modifier.heightIn(max = cap).verticalScroll(rememberScrollState())) {
+                        items.forEachIndexed { i, c -> CostumeRow(c, onClick = { ctx.nav.go("costumes/${c.id}") }, last = i == items.lastIndex) }
+                    }
+                }
+            }
+            Pager(page, pages, onPage = { ctx.nav.setQuery("page", it.toString()) })
+        }
     }
     CostumeFormDialog(
         open = createOpen,
@@ -116,3 +124,8 @@ fun CostumesScreen() {
         defaultCharacterId = characterId,
     )
 }
+
+// antd's `Input.Search` here is `flex: 1 1 260px; max-width: 340px`; each Select holds `min-width: 150px`.
+private val SEARCH_WIDTH = 340.dp
+private val FILTER = Modifier.width(150.dp)
+private val MIN_LIST_HEIGHT = 240.dp

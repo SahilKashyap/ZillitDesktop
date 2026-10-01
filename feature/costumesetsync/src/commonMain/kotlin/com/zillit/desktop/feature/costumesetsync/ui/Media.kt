@@ -2,6 +2,23 @@ package com.zillit.desktop.feature.costumesetsync.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import com.zillit.desktop.core.designsystem.icon.AhIcons
+import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,9 +90,10 @@ const val MAX_UPLOAD_BYTES: Long = 250L * 1024 * 1024
 
 private const val DEFAULT_KIND = "REFERENCE"
 private val DEFAULT_KINDS = listOf("FRONT", "SIDE", "BACK", "CLOSEUP", "DETAIL", "STAIN", "REFERENCE", "DOCUMENT", "OTHER")
-private val TILE_SIZE = 96.dp
-private val GRID_TILE = 120.dp
-private val COMPACT_TILE = 84.dp
+private val TILE_SIZE = 88.dp
+private val KIND_WIDTH = 130.dp
+private val GRID_MIN = 132.dp
+private val COMPACT_MIN = 96.dp
 private const val IMAGE_CACHE_LIMIT = 200
 private const val BYTES_PER_KB = 1024
 
@@ -218,11 +236,13 @@ internal fun rememberStoredImage(reference: Rec): ImageBitmap? {
     return bitmap
 }
 
-/** One tile: a picture filling it, or [placeholder] while there is none. */
+/** One tile: a picture filling it, or [placeholder] while there is none; the web's bordered, 8dp-cornered `.csync-ref__thumb`. */
 @Composable
-private fun PictureTile(bitmap: ImageBitmap?, size: Dp, modifier: Modifier = Modifier, placeholder: @Composable () -> Unit) {
+private fun PictureTile(bitmap: ImageBitmap?, modifier: Modifier = Modifier, placeholder: @Composable () -> Unit) {
+    val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(8.dp)
     Box(
-        modifier.size(size).clip(ZillitTheme.shapes.medium).background(ZillitTheme.colors.surfaceSunken),
+        modifier.clip(shape).background(colors.surfaceHover).border(1.dp, colors.border, shape),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -233,32 +253,41 @@ private fun PictureTile(bitmap: ImageBitmap?, size: Dp, modifier: Modifier = Mod
     }
 }
 
-/** The corner ✕ of a tile. */
+/** The round ✕ on a tile (`.csync-ref__del`, 24dp; `.csync-take-media__remove` is the same dark disc, smaller). */
 @Composable
-private fun RemoveMark(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RemoveMark(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 24.dp) {
     Box(
-        modifier.size(22.dp).clip(ZillitTheme.shapes.small).background(ZillitTheme.colors.surface).clickable(onClick = onClick),
+        modifier.size(size).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        ZillitText("✕", style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textSecondary)
+        ZillitIcon(ZillitIcons.Close, tint = Color.White, size = 12.dp)
+    }
+}
+
+/** A dark play plate, centred over a clip's thumbnail (`.csync-ref__play`). */
+@Composable
+private fun PlayPlate(modifier: Modifier = Modifier) {
+    Box(modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).padding(8.dp)) {
+        ZillitIcon(ZillitIcons.Play, tint = Color.White, size = 14.dp)
     }
 }
 
 @Composable
 private fun GlyphLabel(glyph: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(ZillitTheme.spacing.xs)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(6.dp)) {
         ZillitText(glyph, style = ZillitTheme.typography.titleMedium)
-        ZillitText(label, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textSecondary, maxLines = 2)
+        ZillitText(label, style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp), color = ZillitTheme.colors.textMuted, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
 // -- the button row (MediaButtons.jsx) ---------------------------------------
 
 /**
- * Photo · Video · Gallery · Add file · Add link: the module's one media row.
- * On a desktop Photo and Video are file choosers filtered to pictures / clips;
- * Gallery takes either. [files] = false drops Add file; Add link shows only when
- * [onAddLink] is given (a form whose record does not exist yet has nothing to link to).
+ * Photo · Video · Gallery · Add file · Add link: the module's one media row, as two groups (take it, attach it) with a divider
+ * between. On a desktop Photo and Video are file choosers filtered to pictures / clips; Gallery takes either. [files] = false
+ * drops Add file; Add link shows only when [onAddLink] is given (a form whose record does not exist yet has nothing to link to).
+ * In a card narrower than 560dp, as the web's container query does, [leading] takes a full row and each group becomes an even
+ * two-column grid (capture first, then attach) instead of a ragged wrap.
  */
 @Composable
 fun MediaButtons(
@@ -268,6 +297,7 @@ fun MediaButtons(
     enabled: Boolean = true,
     busy: Boolean = false,
     files: Boolean = true,
+    leading: (@Composable (narrow: Boolean) -> Unit)? = null,
 ) {
     val ctx = LocalSync.current
     val scope = rememberCoroutineScope()
@@ -277,28 +307,59 @@ fun MediaButtons(
             if (picked.isNotEmpty()) onFiles(picked)
         }
     }
-    FlowRow(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        val small = ButtonSize.Small
-        val secondary = ButtonVariant.Secondary
-        ZillitButton(
-            if (busy) t("csync_uploading") else t("csync_take_photo"),
-            onClick = { choose(IMAGE_EXTENSIONS) },
-            variant = secondary,
-            size = small,
-            leadingIcon = ZillitIcons.Camera,
-            enabled = enabled,
-        )
-        ZillitButton(t("csync_take_video"), onClick = { choose(VIDEO_EXTENSIONS) }, variant = secondary, size = small, leadingIcon = ZillitIcons.Play, enabled = enabled)
-        ZillitButton(t("csync_nav_gallery"), onClick = { choose(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS) }, variant = secondary, size = small, leadingIcon = ZillitIcons.Photo, enabled = enabled)
-        if (files) {
-            ZillitButton(t("csync_add_file"), onClick = { choose(emptySet()) }, variant = secondary, size = small, leadingIcon = ZillitIcons.Paperclip, enabled = enabled)
+    val capture = listOf<MediaButton>(
+        MediaButton(if (busy) t("csync_uploading") else t("csync_take_photo"), AhIcons.Camera) { choose(IMAGE_EXTENSIONS) },
+        MediaButton(t("csync_take_video"), AhIcons.Video) { choose(VIDEO_EXTENSIONS) },
+        MediaButton(t("csync_nav_gallery"), ZillitIcons.Photo) { choose(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS) },
+    )
+    val attach = buildList {
+        if (files) add(MediaButton(t("csync_add_file"), ZillitIcons.Paperclip) { choose(emptySet()) })
+        if (onAddLink != null) add(MediaButton(t("csync_add_link"), ZillitIcons.Link) { onAddLink() })
+    }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val narrow = maxWidth <= NARROW_CARD
+        if (narrow) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                leading?.invoke(true)
+                MediaGrid(capture, enabled)
+                if (attach.isNotEmpty()) MediaGrid(attach, enabled)
+            }
+        } else {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                leading?.invoke(false)
+                capture.forEach { MediaButtonView(it, enabled) }
+                if (attach.isNotEmpty()) {
+                    Box(Modifier.padding(horizontal = 2.dp).width(1.dp).height(24.dp).background(ZillitTheme.colors.border))
+                    attach.forEach { MediaButtonView(it, enabled) }
+                }
+            }
         }
-        if (onAddLink != null) {
-            ZillitButton(t("csync_add_link"), onClick = onAddLink, variant = secondary, size = small, leadingIcon = ZillitIcons.Link, enabled = enabled)
+    }
+}
+
+private val NARROW_CARD = 560.dp
+
+private class MediaButton(val label: String, val icon: ImageVector, val onClick: () -> Unit)
+
+@Composable
+private fun MediaButtonView(button: MediaButton, enabled: Boolean, modifier: Modifier = Modifier) {
+    ZillitButton(button.label, onClick = button.onClick, modifier = modifier, variant = ButtonVariant.Secondary, leadingIcon = button.icon, enabled = enabled)
+}
+
+/** Two even columns of buttons: `grid-template-columns: repeat(2, minmax(0, 1fr))`, 8dp apart. */
+@Composable
+private fun MediaGrid(buttons: List<MediaButton>, enabled: Boolean) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        buttons.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                pair.forEach { MediaButtonView(it, enabled, Modifier.weight(1f)) }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
     }
 }
@@ -378,18 +439,20 @@ fun MediaPicker(
 
 @Composable
 private fun EntryTile(entry: MediaEntry, enabled: Boolean, onRemove: () -> Unit) {
+    // `.csync-take-media__item`: 88dp, 8dp corners, a hairline; the ✕ sits 4dp in from the top right.
     Box(Modifier.size(TILE_SIZE)) {
         when (entry) {
-            is MediaEntry.Link -> PictureTile(null, TILE_SIZE) { GlyphLabel("🔗", entry.title) }
+            is MediaEntry.Link -> PictureTile(null, Modifier.size(TILE_SIZE)) { GlyphLabel("🔗", entry.title) }
             is MediaEntry.Local -> {
                 val file = entry.file
                 val bitmap by produceState<ImageBitmap?>(null, file) {
                     if (file.isImage) value = withContext(Dispatchers.Default) { decodeImage(file.bytes) }
                 }
-                PictureTile(bitmap, TILE_SIZE) { GlyphLabel(if (file.isVideo) "🎬" else "📄", file.name) }
+                PictureTile(bitmap, Modifier.size(TILE_SIZE)) { GlyphLabel(if (file.isVideo) "🎬" else "📄", file.name) }
+                if (file.isVideo) PlayPlate(Modifier.align(Alignment.BottomStart).padding(4.dp))
             }
         }
-        if (enabled) RemoveMark(onRemove, Modifier.align(Alignment.TopEnd).padding(2.dp))
+        if (enabled) RemoveMark(onRemove, Modifier.align(Alignment.TopEnd).padding(4.dp), size = 18.dp)
     }
 }
 
@@ -438,15 +501,24 @@ fun ReferenceGrid(
     }
 
     val content: @Composable () -> Unit = {
+        // `.csync-refbox`: 12dp between the media row and what is attached.
         Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             if (ctx.canPost) {
-                FilterSelect(kind, enumOptions(kindList), tEnum(kind), { kind = it.ifBlank { kindList.first() } }, Modifier.width(180.dp))
                 MediaButtons(
                     onFiles = { upload(it, kind) },
                     onAddLink = if (attachments) ({ linkOpen = true }) else null,
                     enabled = !uploading,
                     busy = uploading,
                     files = attachments,
+                    leading = { narrow ->
+                        ZillitSelect(
+                            value = kind,
+                            options = kindList,
+                            onSelect = { kind = it },
+                            label = { tEnum(it) },
+                            modifier = if (narrow) Modifier.fillMaxWidth() else Modifier.width(KIND_WIDTH),
+                        )
+                    },
                 )
             }
             Await(photos) { items -> ReferenceBody(items, compact, attachments, onOpen = { preview = it }, onRemoved = { photos.reload(silent = true) }) }
@@ -476,40 +548,52 @@ private fun ReferenceBody(items: List<Rec>, compact: Boolean, attachments: Boole
     }
     val (pictures, others) = items.partition { it.isPicture() }
     val remove: (Rec) -> Unit = { ref -> ctx.launchWrite({ ctx.api.delete("/photos/${ref.id}") }, { onRemoved() }) }
-    val size = if (compact) COMPACT_TILE else GRID_TILE
     if (pictures.isNotEmpty()) {
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            pictures.forEach { ref -> ReferenceTile(ref, size, { onOpen(ref) }, { remove(ref) }) }
+        // `.csync-refgrid`: auto-fill columns of at least 132 (96 compact), 12 apart, 4:3 tiles.
+        AutoFillGrid(pictures.size, if (compact) COMPACT_MIN else GRID_MIN, ZillitTheme.spacing.md, stretch = false) { i, cell ->
+            ReferenceTile(pictures[i], cell, { onOpen(pictures[i]) }, { remove(pictures[i]) })
         }
     }
-    others.forEach { ref -> ReferenceRow(ref, { remove(ref) }) }
+    if (others.isNotEmpty()) {
+        // `.csync-rows--flat`: a quiet 1dp frame, 8dp corners, hairlines between the rows.
+        val shape = RoundedCornerShape(8.dp)
+        Column(Modifier.fillMaxWidth().clip(shape).border(1.dp, ZillitTheme.colors.border, shape)) {
+            others.forEachIndexed { i, ref ->
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.border))
+                ReferenceRow(ref) { remove(ref) }
+            }
+        }
+    }
 }
 
 @Composable
-private fun ReferenceTile(ref: Rec, size: Dp, onOpen: () -> Unit, onRemove: () -> Unit) {
+private fun ReferenceTile(ref: Rec, cell: Modifier, onOpen: () -> Unit, onRemove: () -> Unit) {
     val ctx = LocalSync.current
     val bitmap = rememberStoredImage(ref)
-    Box(Modifier.size(size)) {
-        PictureTile(bitmap, size, Modifier.clickable(onClick = onOpen)) { GlyphLabel(if (ref.isVideo()) "🎬" else "🖼", tEnum(ref.str("kind"))) }
-        if (ref.isVideo()) ZillitText("▶", Modifier.align(Alignment.Center), style = ZillitTheme.typography.titleMedium, color = ZillitTheme.colors.textSecondary)
+    Box(cell.aspectRatio(THUMB_RATIO)) {
+        PictureTile(bitmap, Modifier.fillMaxSize().clickable(onClick = onOpen)) { GlyphLabel(if (ref.isVideo()) "🎬" else "🖼", tEnum(ref.str("kind"))) }
+        if (ref.isVideo()) PlayPlate(Modifier.align(Alignment.Center))
         if (ref.str("kind").isNotBlank()) {
+            // `.csync-ref__kind`: bottom-left, 10 bold upper-case on a dark chip.
             ZillitText(
-                tEnum(ref.str("kind")),
-                Modifier.align(Alignment.BottomStart).padding(4.dp).background(ZillitTheme.colors.surface).padding(horizontal = 4.dp),
-                style = ZillitTheme.typography.labelSmall,
+                tEnum(ref.str("kind")).uppercase(),
+                Modifier.align(Alignment.BottomStart).padding(6.dp).clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp),
+                style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.06.em),
+                color = Color.White,
+                maxLines = 1,
             )
         }
-        if (ctx.canPost) RemoveMark(onRemove, Modifier.align(Alignment.TopEnd).padding(2.dp))
+        if (ctx.canPost) RemoveMark(onRemove, Modifier.align(Alignment.TopEnd).padding(6.dp))
     }
 }
 
+private const val THUMB_RATIO = 4f / 3f
+
+/** A file or a link (`.csync-plain-row`): its icon, name over "kind · size · caption", a go-there mark and a remove ✕. */
 @Composable
 private fun ReferenceRow(ref: Rec, onRemove: () -> Unit) {
     val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
     val scope = rememberCoroutineScope()
     val link = ref.str("media_type") == "LINK"
     val attachment = ref.rec("attachment")
@@ -523,13 +607,30 @@ private fun ReferenceRow(ref: Rec, onRemove: () -> Unit) {
         }
         Unit
     }
-    ListRow(
-        onClick = { if (link) open() else ctx.whenDownload { open() } },
-        leading = { ZillitText(if (link) "🔗" else "📄", style = ZillitTheme.typography.titleMedium) },
-        end = { if (ctx.canPost) ZillitButton(t("csync_remove"), onClick = onRemove, variant = ButtonVariant.Secondary, size = ButtonSize.Small) },
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Row(
+        Modifier.fillMaxWidth().background(if (hovered) colors.surfaceHover else Color.Transparent)
+            .clickable(interactionSource = interaction, indication = null) { if (link) open() else ctx.whenDownload { open() } }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        RowTitle(ref.first("title", "caption").ifBlank { attachment?.str("name").orEmpty().ifBlank { ref.str("url") } })
-        if (detail.isNotBlank()) MutedText(detail)
+        ZillitIcon(if (link) ZillitIcons.Link else ZillitIcons.File, tint = colors.textPrimary, size = 16.dp)
+        Column(Modifier.weight(1f)) {
+            ZillitText(
+                ref.first("title", "caption").ifBlank { attachment?.str("name").orEmpty().ifBlank { ref.str("url") } },
+                style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+            )
+            if (detail.isNotBlank()) ZillitText(detail, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
+        }
+        ZillitIcon(if (link) AhIcons.ExternalLink else ZillitIcons.Download, tint = colors.textPrimary, size = 14.dp)
+        if (ctx.canPost) {
+            Box(Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onRemove).padding(4.dp)) {
+                ZillitIcon(ZillitIcons.Close, tint = colors.textMuted, size = 12.dp)
+            }
+        }
     }
 }
 
@@ -570,7 +671,7 @@ internal fun PreviewDialog(ref: Rec?, onClose: () -> Unit, onOpenRecord: ((Strin
     ) {
         val bitmap = shown?.let { rememberStoredImage(it) }
         if (bitmap != null) {
-            Image(bitmap, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
+            Image(bitmap, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black))
         }
         val caption = shown?.let {
             val parts = if (onOpenRecord != null) {

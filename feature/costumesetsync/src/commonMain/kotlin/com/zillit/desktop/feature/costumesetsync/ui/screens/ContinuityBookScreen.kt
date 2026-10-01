@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -132,21 +134,14 @@ private fun PrepTab(ctx: SyncCtx, book: BookData, prepDay: String, onDay: (Strin
     val notReady = rows.count { it.second.level != "READY" }
     SectionCard(
         title = "${t("csync_prep")} · ${DayKeys.medium(prepDay)}",
-        actions = { DateInput(prepDay, onDay, t("csync_day_to_prepare"), Modifier.width(KIT_DATE_WIDTH)) },
+        actions = { com.zillit.desktop.core.designsystem.component.ZillitDateField(prepDay, onDay, Modifier.width(KIT_DATE_WIDTH)) },
     ) {
         if (prepScenes.isEmpty()) {
             EmptyState(t("csync_nothing_scheduled_day"), t("csync_nothing_scheduled_prep_hint"))
             return@SectionCard
         }
-        val stats = listOfNotNull(
-            "${prepScenes.size} " + t(if (prepScenes.size == 1) "csync_count_scene_one" else "csync_count_scenes"),
-            "${rows.size} " + t(if (rows.size == 1) "csync_count_character_one" else "csync_count_characters"),
-            "${rows.size - notReady} " + t("csync_count_ready"),
-            if (notReady > 0) "$notReady " + t("csync_count_not_ready") else null,
-            ContinuityModel.locations(prepScenes).takeIf { it.isNotEmpty() }?.joinToString(" · "),
-        )
-        MutedText(stats.joinToString(" · "), Modifier.padding(bottom = ZillitTheme.spacing.md), maxLines = 3)
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
+        DayStats(prepScenes)
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             prepScenes.forEach { PrepScene(ctx, it, book.records) }
         }
     }
@@ -154,7 +149,12 @@ private fun PrepTab(ctx: SyncCtx, book: BookData, prepDay: String, onDay: (Strin
 
 @Composable
 private fun PrepScene(ctx: SyncCtx, s: Rec, records: List<Rec>) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    // The web's `.csync-scenecard`: a bordered 10dp box.
+    val box = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    Column(
+        Modifier.fillMaxWidth().background(ZillitTheme.colors.surface, box).border(1.dp, ZillitTheme.colors.border, box).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitButton("${t("csync_sc")} ${s.str("number")}" + s.str("name").let { if (it.isBlank()) "" else " · $it" }, onClick = { ctx.nav.go("scenes/${s.id}") }, variant = ButtonVariant.Tertiary)
             MutedText(sceneLine(s))

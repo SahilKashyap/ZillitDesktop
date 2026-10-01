@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,9 +18,6 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
-import com.zillit.desktop.core.designsystem.component.ZillitAvatar
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
@@ -50,6 +50,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.tEnum
  * "Send reminder request" covers every fitting still open — not what the filters show. What is still to
  * come leads (that is what people are asked to confirm); a slot already gone by follows, marked missed.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FittingsScreen() {
     val ctx = LocalSync.current
@@ -79,14 +80,18 @@ fun FittingsScreen() {
             }
         },
     )
-    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitSearchField(q, { q = it }, Modifier.weight(1f).widthIn(min = 240.dp), placeholder = t("csync_fittings_search"))
-    }
-    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitChoiceChip(t("csync_filter_all"), selected = status.isEmpty(), onClick = { status = "" })
+    // One toolbar row, as the web: the search (260-340 wide, magnifier on the right) then the status chips.
+    FlowRow(
+        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        SearchWithButton(q, { q = it }, t("csync_fittings_search"), Modifier.width(340.dp))
+        InkChip(t("csync_filter_all"), active = status.isEmpty(), onClick = { status = "" })
         // Lower-case, as the reference's chips read ("in progress").
         ctx.metaList("fitting_statuses").forEach { s ->
-            ZillitChoiceChip(tEnum(s).lowercase(), selected = status == s, onClick = { status = s })
+            InkChip(tEnum(s).lowercase(), active = status == s, onClick = { status = s })
         }
     }
     SectionCard(flush = true, modifier = Modifier.fillMaxWidth()) {
@@ -139,7 +144,7 @@ private fun FittingRow(x: Rec, projectName: String, onRequest: (RequestDraft) ->
     ).joinToString(" · ")
     ListRow(
         onClick = { ctx.nav.go("fittings/${x.id}") },
-        leading = { ZillitAvatar(character.ifBlank { "?" }) },
+        leading = { SquareAvatar(wfInitials(character)) },
         end = {
             WfSendRequestButton {
                 val summary = "${t("csync_fitting")}: $character" + (if (actor.isNotBlank()) " ($actor)" else "") +

@@ -49,10 +49,14 @@ fun FormDialog(
     danger: Boolean = false,
     subtitle: String? = null,
     width: Dp = 640.dp,
+    /** The web's `.csync-btn-ink` confirm button: dark-filled instead of the brand colour. */
+    ink: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     SyncDialogShell(
         title = title,
+        icon = icon,
         subtitle = subtitle,
         visible = open,
         onDismiss = onDismiss,
@@ -60,7 +64,11 @@ fun FormDialog(
         width = width,
         actions = {
             ZillitButton(t("csync_cancel"), onClick = onDismiss, variant = ButtonVariant.Secondary, enabled = !busy)
-            ZillitButton(confirmLabel, onClick = onConfirm, variant = if (danger) ButtonVariant.Danger else ButtonVariant.Primary, enabled = confirmEnabled && !busy, loading = busy)
+            if (ink && !danger) {
+                InkButton(if (busy) "…" else confirmLabel, onClick = onConfirm, enabled = confirmEnabled && !busy)
+            } else {
+                ZillitButton(confirmLabel, onClick = onConfirm, variant = if (danger) ButtonVariant.Danger else ButtonVariant.Primary, enabled = confirmEnabled && !busy, loading = busy)
+            }
         },
     ) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), content = content)

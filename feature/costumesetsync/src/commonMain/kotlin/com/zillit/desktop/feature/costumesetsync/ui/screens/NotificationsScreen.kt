@@ -19,7 +19,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.costumesetsync.domain.NotificationsModel
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
-import com.zillit.desktop.feature.costumesetsync.domain.fmtDateTime
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.ListRow
@@ -91,7 +90,6 @@ private fun NotificationRow(ctx: SyncCtx, n: Rec, reload: () -> Unit) {
         ) {
             ZillitText(n.str("title"), style = ZillitTheme.typography.titleSmall, maxLines = 2)
             if (n.str("body").isNotBlank()) MutedText(n.str("body"), maxLines = 3)
-            if (time != 0L) MutedText(fmtDateTime(time))
         }
     }
 }

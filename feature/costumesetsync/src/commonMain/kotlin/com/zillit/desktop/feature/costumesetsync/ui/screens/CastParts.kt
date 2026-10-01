@@ -43,14 +43,14 @@ internal fun castOrder(list: List<Rec>): List<Rec> =
 internal fun nameInitials(name: String): String =
     name.split(Regex("\\s+")).filter { it.isNotEmpty() }.take(2).joinToString("") { it.first().uppercase() }
 
-/** Accent-coloured text that navigates or opens something: the web's `csync-linkbtn`. */
+/** Blue (`--hub-blue`) text that navigates or opens something: the web's `csync-linkbtn`. */
 @Composable
 internal fun CastLink(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, bold: Boolean = false) {
     ZillitText(
         text,
         modifier.clickable(onClick = onClick),
         style = ZillitTheme.typography.bodyMedium.copy(fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal),
-        color = ZillitTheme.colors.accentText,
+        color = ZillitTheme.colors.info,
         maxLines = 1,
     )
 }

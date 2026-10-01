@@ -16,7 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -54,7 +56,7 @@ internal object Col {
     val location = 270.dp
     val description = 300.dp
     val character = 190.dp
-    val castNumber = 90.dp
+    val castNumber = 120.dp
     val castName = 200.dp
     val change = 170.dp
     val shootDate = 160.dp
@@ -92,8 +94,8 @@ internal fun TCell(width: Dp, modifier: Modifier = Modifier, content: @Composabl
     Column(modifier.width(width).padding(horizontal = CELL_PAD_X, vertical = CELL_PAD_Y), content = content)
 }
 
-private val CELL_PAD_X = 6.dp
-private val CELL_PAD_Y = 6.dp
+private val CELL_PAD_X = 10.dp
+private val CELL_PAD_Y = 8.dp
 
 /** The Scene Breakdown table: header, the add row, then a read row or an editor row per scene. */
 @Composable
@@ -136,7 +138,14 @@ private fun TableHeader(input: TableInput) {
 @Composable
 private fun HeadCell(width: Dp, label: String, hidden: Boolean = false) {
     TCell(width) {
-        if (!hidden) ZillitText(label.uppercase(), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted, maxLines = 1)
+        if (!hidden) {
+            ZillitText(
+                label.uppercase(),
+                style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.44.sp),
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -173,11 +182,11 @@ private const val OMITTED_ALPHA = 0.55f
 private fun SceneCells(scene: Rec, input: TableInput, actions: TableActions) {
     if (input.episodes) TCell(Col.episode) { ZillitText(scene.str("episode"), maxLines = 1) }
     TCell(Col.scene) {
+        // `.csync-scenelink`: bold ink, the number alone is the link.
         ZillitText(
             scene.str("number"),
             Modifier.clickable { actions.openScene(scene) },
-            style = ZillitTheme.typography.titleSmall,
-            color = ZillitTheme.colors.accent,
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
             maxLines = 1,
         )
         scene.str("status").takeIf { it.isNotEmpty() && it != "PLANNED" }?.let { StatusBadge(it, tEnum(it)) }

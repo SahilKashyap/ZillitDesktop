@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.FlowRow
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -40,7 +44,6 @@ import com.zillit.desktop.feature.costumesetsync.domain.fmtDateTime
 import com.zillit.desktop.feature.costumesetsync.domain.todayParam
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.ButtonRow
-import com.zillit.desktop.feature.costumesetsync.ui.DateInput
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.ListRow
 import com.zillit.desktop.feature.costumesetsync.ui.MediaEntry
@@ -121,9 +124,7 @@ internal class TakeDraft {
  * `?characterId=`) as on the web, so the book and the scene pages can link
  * straight into a take form.
  *
- * Not ported here: the call sheet upload / "View callsheet" dialogs (the
- * schedule importer and document viewer belong to the scenes screens) and
- * "Scan a label", which the web itself hides (`SCAN_ON_WEB`).
+ * "Scan a label" is not ported: the web itself hides it (`SCAN_ON_WEB`).
  */
 @Composable
 fun ContinuityOnSetScreen() {
@@ -179,19 +180,64 @@ fun ContinuityOnSetScreen() {
         ctx.nav.setQuery("characterId", s.recs("characters").firstOrNull()?.str("character_id"))
     }
 
+    // The call sheet the day works from: View (once one exists) and Upload, ahead of the book link, as the web orders them.
+    val sheetDocs = rememberProjectDocuments("CALLSHEET")
+    var sheetUpload by remember { mutableStateOf(false) }
+    var sheetView by remember { mutableStateOf(false) }
+    var sheetRead by remember { mutableStateOf<Rec?>(null) }
     PageHead(
         title = t("csync_on_set"),
         sub = t("csync_on_set_sub"),
-        actions = { ZillitButton("${t("csync_continuity_book")} →", onClick = { ctx.nav.go("continuity/book") }, variant = ButtonVariant.Secondary) },
+        actions = {
+            if (sheetDocs.docs.isNotEmpty() || project?.rec("callsheet_document") != null) {
+                ZillitButton(t("csync_view_callsheet"), onClick = { sheetView = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Eye)
+            }
+            if (ctx.canPost) {
+                ZillitButton(t("csync_upload_callsheet"), onClick = { sheetUpload = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.File)
+            }
+            ZillitButton("${t("csync_continuity_book")} →", onClick = { ctx.nav.go("continuity/book") }, variant = ButtonVariant.Secondary)
+        },
     )
-    ZillitText(t("csync_on_set_hint"), color = ZillitTheme.colors.danger, modifier = Modifier.padding(bottom = ZillitTheme.spacing.md))
+    ZillitText(
+        t("csync_on_set_hint"),
+        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+        color = ZillitTheme.colors.danger,
+        modifier = Modifier.padding(bottom = ZillitTheme.spacing.md),
+    )
 
     Await(scenes) { all ->
+        val sheetImport = rememberScheduleUpload(
+            open = sheetUpload,
+            kind = "CALLSHEET",
+            docs = sheetDocs,
+            breakdown = all,
+            onApplied = { d ->
+                d?.takeIf { it.isNotEmpty() }?.let { picked = it }
+                refresh()
+                sheetDocs.reload()
+                ctx.changed()
+            },
+            onClose = { sheetUpload = false; sheetRead = null },
+        )
+        // Opened from the viewer's "Read this": start straight on that document, once per opening.
+        LaunchedEffect(sheetUpload, sheetRead?.id) { sheetRead?.takeIf { sheetUpload }?.let { sheetImport.pickDoc(it) } }
+        ScheduleUploadDialog(sheetUpload, sheetImport, sheetDocs) { sheetUpload = false; sheetRead = null }
+        if (sheetView) {
+            DocumentViewerDialog(
+                open = true,
+                kind = "CALLSHEET",
+                docs = sheetDocs,
+                scenes = all,
+                onClose = { sheetView = false },
+                onRead = { d -> sheetView = false; sheetRead = d; sheetUpload = true },
+            )
+        }
         val dayScenes = ContinuityModel.onDay(all, day)
         val onBoard = sceneRec != null && DayKeys.of(sceneRec.long("shoot_date")) == day && sceneRec.str("status") != "OMITTED"
         SectionCard(
             title = "${t("csync_on_set")} · ${DayKeys.short(day)}" + (project?.long("shooting_day")?.takeIf { it > 0 }?.let { " · " + t("csync_day_n", "n" to it) } ?: ""),
-            actions = { DateInput(day, { picked = it.ifEmpty { today } }, t("csync_shooting_day"), Modifier.width(KIT_DAY_FIELD)) },
+            // No visible label, as the web's DatePicker (its label is the aria-label only).
+            actions = { com.zillit.desktop.core.designsystem.component.ZillitDateField(day, { picked = it.ifEmpty { today } }, Modifier.width(KIT_DAY_FIELD)) },
         ) {
             if (project?.long("callsheet_at")?.let { it > 0 } == true) CallSheetLine(project, sheetDay, day) { picked = sheetDay }
             if (dayScenes.isEmpty()) {
@@ -249,25 +295,56 @@ private fun CallSheetLine(project: Rec, sheetDay: String, day: String, onShow: (
     }
 }
 
-/** "3 scenes · 5 characters · 4 ready · 1 not ready · Kitchen · Garden". */
+/** "**3** scenes  **5** characters  **4** ready  (! 1 not ready)  Kitchen · Garden": the web's `.csync-daystats`. */
 @Composable
-private fun DayStats(dayScenes: List<Rec>) {
+internal fun DayStats(dayScenes: List<Rec>) {
     val rows = ContinuityModel.rowsOf(dayScenes)
     val notReady = rows.count { it.second.level != "READY" }
-    val parts = listOfNotNull(
-        "${dayScenes.size} " + t(if (dayScenes.size == 1) "csync_count_scene_one" else "csync_count_scenes"),
-        "${rows.size} " + t(if (rows.size == 1) "csync_count_character_one" else "csync_count_characters"),
-        "${rows.size - notReady} " + t("csync_count_ready"),
-        if (notReady > 0) "$notReady " + t("csync_count_not_ready") else null,
-        ContinuityModel.locations(dayScenes).takeIf { it.isNotEmpty() }?.joinToString(" · "),
-    )
-    MutedText(parts.joinToString(" · "), Modifier.padding(bottom = ZillitTheme.spacing.md), maxLines = 3)
+    val colors = ZillitTheme.colors
+    val base = ZillitTheme.typography.bodyMedium
+    @Composable
+    fun stat(n: Int, label: String) {
+        ZillitText(
+            androidx.compose.ui.text.buildAnnotatedString {
+                pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = colors.textPrimary))
+                append(n.toString())
+                pop()
+                append(" $label")
+            },
+            style = base,
+            color = colors.textSecondary,
+        )
+    }
+    FlowRow(
+        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        stat(dayScenes.size, t(if (dayScenes.size == 1) "csync_count_scene_one" else "csync_count_scenes"))
+        stat(rows.size, t(if (rows.size == 1) "csync_count_character_one" else "csync_count_characters"))
+        stat(rows.size - notReady, t("csync_count_ready"))
+        if (notReady > 0) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                ZillitIcon(ZillitIcons.Warning, tint = colors.danger, size = 14.dp)
+                ZillitText("$notReady " + t("csync_count_not_ready"), style = base, color = colors.danger)
+            }
+        }
+        ContinuityModel.locations(dayScenes).takeIf { it.isNotEmpty() }?.let { ZillitText(it.joinToString(" · "), style = base, color = colors.textSecondary) }
+    }
 }
 
 /** One scene on the board: its heading, its characters as readiness chips. */
 @Composable
 private fun SceneBoardCard(s: Rec, open: Boolean, characterId: String, onOpen: (String) -> Unit, onOpenFirst: () -> Unit, onClose: () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    // The web's `.csync-scenecard`: a 10dp-radius box with a 12dp pad; the open scene's edge turns ink.
+    val box = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    Column(
+        Modifier.fillMaxWidth()
+            .background(ZillitTheme.colors.surface, box)
+            .border(1.dp, if (open) ZillitTheme.colors.textPrimary else ZillitTheme.colors.border, box)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitButton(
                 "${t("csync_sc")} ${s.str("number")}" + s.str("name").takeIf { it.isNotBlank() }.let { if (it == null) "" else " · $it" },
