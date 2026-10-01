@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Silinen dosyalar ve klasörler, siz geri yükleyene veya kalıcı olarak silene kadar burada bekler.</string>
     <string name="desktop_email_forward_to">Yönlendirilecek adres</string>
     <string name="desktop_tools_drag_to_reorder">Yeniden sıralamak için %1$s sürükleyin</string>
-    <string name="desktop_call_line3_not_configured">Bu kurulumda Hat 1 yapılandırılmamış</string>
+    <string name="desktop_call_line3_not_configured">Bu kurulumda Hat 3 yapılandırılmamış</string>
     <string name="desktop_drive_favourite">Favori</string>
     <string name="desktop_drive_restore_tooltip">Özgün konuma geri yükle</string>
     <string name="desktop_turn_off">Kapat</string>

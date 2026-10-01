@@ -9,11 +9,16 @@ enum class CallLogDirection { Incoming, Outgoing }
 /**
  * Which line carried a logged call, as the detail sheet names it.
  *
- * The wire words are the server's and the numbers are the user's, and since
- * 2026-09-26 they are crossed: "agora" is Line 2, **"livekit" is Line 1**,
- * and anything else — "mediasoup" or the field missing on an older row — is
- * **Line 3**. The two were swapped on request so that LiveKit, the preferred
- * line, carries the first number; nothing on the wire moved with them.
+ * The wire words are the server's and the numbers are the user's, and they
+ * agree with the phones: "agora" is Line 2, **"livekit" is Line 3**, and
+ * anything else — "mediasoup" or the field missing on an older row — is
+ * **Line 1**. That is Android's mapping (`UIExtentions.kt`: `CALLING_LIVEKIT`
+ * → `txt_line_three`, `CALLING_MEDIA_SOUP` → `txt_line_one`), and it is why
+ * every internal name for LiveKit here says "line three".
+ *
+ * These were briefly crossed the other way (2026-09-26 – 2026-10-01), which
+ * made a LiveKit call read "Line 1" on the desktop and "Line 3" on the phone
+ * that placed it. Do not re-cross them without changing Android too.
  *
  * Not [CallProvider], whose absent-means-Agora default is right for joining a
  * live call and wrong for labelling history.
@@ -30,25 +35,25 @@ enum class CallLine(private val labelKey: String) {
     /** The plumbing a redial on this line takes — the row's tag turned back into a choice. */
     val provider: CallProvider
         get() = when (this) {
-            One -> CallProvider.LiveKit
+            One -> CallProvider.Mediasoup
             Two -> CallProvider.Agora
-            Three -> CallProvider.Mediasoup
+            Three -> CallProvider.LiveKit
         }
 
     companion object {
         fun ofWire(raw: String?): CallLine = when (raw?.trim()?.lowercase()) {
             "agora" -> Two
-            "livekit" -> One
-            else -> Three
+            "livekit" -> Three
+            else -> One
         }
 
         /**
          * What every production offers a redial, in the order the thread
          * header lists them: Line 2 first (every deployment has it), then
-         * Line 3 (mediasoup). Line 1 — LiveKit — is appended by the host
+         * Line 1 (mediasoup). Line 3 — LiveKit — is appended by the host
          * where remote config lists the production.
          */
-        val DEFAULT: List<CallLine> = listOf(Two, Three)
+        val DEFAULT: List<CallLine> = listOf(Two, One)
     }
 }
 
@@ -124,8 +129,8 @@ data class CallLogEntry(
     val roomId: String = "",
     val title: String = "",
     val projectId: String = "",
-    /** Absent on the wire means mediasoup, which is Line 3 — see [CallLine.ofWire]. */
-    val line: CallLine = CallLine.Three,
+    /** Absent on the wire means mediasoup, which is Line 1 — see [CallLine.ofWire]. */
+    val line: CallLine = CallLine.One,
     /** Who placed the call — `from_user_id`, or the older rows' `user_id`. */
     val callerUserId: String = "",
     /** Who a 1:1 call was placed to — `to_user_id`. */

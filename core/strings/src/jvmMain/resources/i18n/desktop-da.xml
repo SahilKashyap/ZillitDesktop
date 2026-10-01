@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Slettede filer og mapper venter her, indtil du gendanner eller sletter dem permanent.</string>
     <string name="desktop_email_forward_to">Videresend til</string>
     <string name="desktop_tools_drag_to_reorder">Træk for at flytte %1$s</string>
-    <string name="desktop_call_line3_not_configured">Linje 1 er ikke konfigureret på denne installation</string>
+    <string name="desktop_call_line3_not_configured">Linje 3 er ikke konfigureret på denne installation</string>
     <string name="desktop_drive_favourite">Favorit</string>
     <string name="desktop_drive_restore_tooltip">Gendan til oprindelig placering</string>
     <string name="desktop_turn_off">Slå fra</string>

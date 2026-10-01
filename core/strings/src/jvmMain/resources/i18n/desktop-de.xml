@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Gelöschte Dateien und Ordner warten hier, bis Sie sie wiederherstellen oder endgültig löschen.</string>
     <string name="desktop_email_forward_to">Weiterleiten an</string>
     <string name="desktop_tools_drag_to_reorder">%1$s ziehen, um die Reihenfolge zu ändern</string>
-    <string name="desktop_call_line3_not_configured">Line 1 ist in dieser Installation nicht konfiguriert</string>
+    <string name="desktop_call_line3_not_configured">Line 3 ist in dieser Installation nicht konfiguriert</string>
     <string name="desktop_drive_favourite">Favorit</string>
     <string name="desktop_drive_restore_tooltip">Am ursprünglichen Ort wiederherstellen</string>
     <string name="desktop_turn_off">Ausschalten</string>

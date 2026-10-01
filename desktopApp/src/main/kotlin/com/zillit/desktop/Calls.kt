@@ -306,13 +306,11 @@ internal fun CallLogTab(
         // frame decides "today" against the same instant.
         nowMillis = remember(state.entries) { System.currentTimeMillis() },
         // The same lines the thread header offers (`callLines`): the gated
-        // line where the roll-out list names this production. That line is
-        // LiveKit, which the numbers crossing of 2026-09-26 shows as Line 1 —
-        // appending `Three` here instead listed mediasoup twice and left
-        // Line 1 off the Calls tab altogether, since DEFAULT already ends in
-        // it. The remote-config key still says "line three"; the label does
-        // not follow it.
-        lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.One else CallLine.DEFAULT,
+        // LiveKit line, Line 3, where the roll-out list names this production.
+        // DEFAULT already ends in the other two, so appending the wrong
+        // constant here listed one line twice and left the gated one off the
+        // Calls tab altogether.
+        lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT,
     )
 }
 

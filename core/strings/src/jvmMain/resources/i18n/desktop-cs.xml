@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Smazané soubory a složky zde čekají, dokud je neobnovíte nebo trvale nesmažete.</string>
     <string name="desktop_email_forward_to">Přeposílat na</string>
     <string name="desktop_tools_drag_to_reorder">Přetažením změňte pořadí: %1$s</string>
-    <string name="desktop_call_line3_not_configured">Linka 1 není v této instalaci nastavena</string>
+    <string name="desktop_call_line3_not_configured">Linka 3 není v této instalaci nastavena</string>
     <string name="desktop_drive_favourite">Oblíbené</string>
     <string name="desktop_drive_restore_tooltip">Obnovit na původní místo</string>
     <string name="desktop_turn_off">Vypnout</string>

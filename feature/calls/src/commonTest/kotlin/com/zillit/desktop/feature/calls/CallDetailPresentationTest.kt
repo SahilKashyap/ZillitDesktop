@@ -26,7 +26,7 @@ class CallDetailPresentationTest {
     private fun row(
         mode: CallMode = CallMode.Private,
         type: CallType = CallType.Audio,
-        line: CallLine = CallLine.Three,
+        line: CallLine = CallLine.One,
         missed: Boolean = false,
         outgoing: Boolean = true,
         duration: Long = 0,
@@ -46,9 +46,9 @@ class CallDetailPresentationTest {
 
     @Test
     fun `the header names the kind and the line`() {
-        assertEquals("Audio call · Line 3", row().detailSubtitle())
+        assertEquals("Audio call · Line 1", row().detailSubtitle())
         assertEquals("Video call · Line 2", row(type = CallType.Video, line = CallLine.Two).detailSubtitle())
-        assertEquals("Audio call · Line 1", row(line = CallLine.One).detailSubtitle())
+        assertEquals("Audio call · Line 3", row(line = CallLine.Three).detailSubtitle())
     }
 
     @Test
@@ -87,7 +87,7 @@ class CallDetailPresentationTest {
 
     @Test
     fun `the rich roster - names, guests, invites, attendance and the server's missed verdict`() {
-        val sheet = row(line = CallLine.One).copy(
+        val sheet = row(line = CallLine.Three).copy(
             participants = listOf(
                 CallLogParticipant("me", status = "caller", joinCount = 1, totalMillis = 65_000),
                 CallLogParticipant(
@@ -119,18 +119,18 @@ class CallDetailPresentationTest {
 
     @Test
     fun `a missed call's roster carries no attendance`() {
-        val sheet = row(line = CallLine.One, missed = true)
+        val sheet = row(line = CallLine.Three, missed = true)
             .copy(participants = listOf(CallLogParticipant("me", status = "caller", totalMillis = 500)))
             .detailParticipants("me", names::get)
         assertNull(sheet[0].meta)
     }
 
     @Test
-    fun `the duration chip - the row's own on Lines 2 and 3, rebuilt from answers on Line 1`() {
+    fun `the duration chip - the row's own on Lines 1 and 2, rebuilt from answers on Line 3`() {
         assertNull(row().detailDuration())
         assertEquals("1m 30s", row(duration = 90_000).detailDuration())
-        // Line 1 (LiveKit): start 1000, duration 60000 → end 61000; first answer 11000 → 50s live.
-        val live = row(line = CallLine.One, duration = 60_000).copy(
+        // Line 3 (LiveKit): start 1000, duration 60000 → end 61000; first answer 11000 → 50s live.
+        val live = row(line = CallLine.Three, duration = 60_000).copy(
             startedAtMillis = 1_000,
             participants = listOf(
                 CallLogParticipant("me", status = "caller", answeredAtMillis = 11_000),
@@ -142,7 +142,7 @@ class CallDetailPresentationTest {
         val legacy = live.copy(durationMillis = -1_000)
         assertEquals("40s", legacy.detailDuration())
         // Nobody answered: nothing to say.
-        val unanswered = row(line = CallLine.One)
+        val unanswered = row(line = CallLine.Three)
             .copy(participants = listOf(CallLogParticipant("me", status = "caller")))
         assertNull(unanswered.detailDuration())
     }

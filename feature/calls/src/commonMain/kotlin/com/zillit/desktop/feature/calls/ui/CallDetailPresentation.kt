@@ -43,7 +43,7 @@ fun CallLogEntry.directionLabel(): String = when {
  * lines read the row's own duration, in the units the list uses.
  */
 fun CallLogEntry.detailDuration(): String? =
-    if (line == CallLine.One) {
+    if (line == CallLine.Three) {
         liveKitDurationMillis()?.let(::formatMillis)
     } else {
         durationMillis.takeIf { it > 0 }?.let(::formatDuration)

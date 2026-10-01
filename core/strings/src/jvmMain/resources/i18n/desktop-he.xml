@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">קבצים ותיקיות שנמחקו ממתינים כאן עד שתשחזרו או תמחקו אותם לצמיתות.</string>
     <string name="desktop_email_forward_to">העברה אל</string>
     <string name="desktop_tools_drag_to_reorder">גררו כדי לסדר מחדש את %1$s</string>
-    <string name="desktop_call_line3_not_configured">קו 1 אינו מוגדר בהתקנה הזו</string>
+    <string name="desktop_call_line3_not_configured">קו 3 אינו מוגדר בהתקנה הזו</string>
     <string name="desktop_drive_favourite">מועדף</string>
     <string name="desktop_drive_restore_tooltip">שחזור למיקום המקורי</string>
     <string name="desktop_turn_off">כיבוי</string>

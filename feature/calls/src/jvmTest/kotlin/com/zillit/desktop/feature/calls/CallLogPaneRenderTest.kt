@@ -72,7 +72,7 @@ class CallLogPaneRenderTest {
     }
 
     @Test
-    fun `an older row with no line on the wire still says Line 3`() = runComposeUiTest {
+    fun `an older row with no line on the wire still says Line 1`() = runComposeUiTest {
         setContent {
             ZillitTheme {
                 CallLogPane(
@@ -88,7 +88,7 @@ class CallLogPaneRenderTest {
             }
         }
 
-        onAllNodesWithText("Line 3").assertCountEquals(1)
+        onAllNodesWithText("Line 1").assertCountEquals(1)
     }
 
     @Test
@@ -104,7 +104,7 @@ class CallLogPaneRenderTest {
                     onEvent = { events += it },
                     nameFor = { names[it] },
                     nowMillis = now,
-                    lines = CallLine.DEFAULT + CallLine.One,
+                    lines = CallLine.DEFAULT + CallLine.Three,
                 )
             }
         }

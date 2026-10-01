@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Naghihintay dito ang mga natanggal na file at folder hanggang sa ibalik o permanenteng tanggalin mo ang mga ito.</string>
     <string name="desktop_email_forward_to">I-forward sa</string>
     <string name="desktop_tools_drag_to_reorder">I-drag para ayusin muli ang %1$s</string>
-    <string name="desktop_call_line3_not_configured">Hindi naka-configure ang Line 1 sa install na ito</string>
+    <string name="desktop_call_line3_not_configured">Hindi naka-configure ang Line 3 sa install na ito</string>
     <string name="desktop_drive_favourite">Paborito</string>
     <string name="desktop_drive_restore_tooltip">Ibalik sa orihinal na lokasyon</string>
     <string name="desktop_turn_off">I-off</string>

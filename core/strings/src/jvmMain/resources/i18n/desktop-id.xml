@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">File dan folder yang dihapus menunggu di sini sampai Anda memulihkan atau menghapusnya secara permanen.</string>
     <string name="desktop_email_forward_to">Teruskan ke</string>
     <string name="desktop_tools_drag_to_reorder">Seret untuk mengurutkan ulang %1$s</string>
-    <string name="desktop_call_line3_not_configured">Line 1 belum dikonfigurasi pada instalasi ini</string>
+    <string name="desktop_call_line3_not_configured">Line 3 belum dikonfigurasi pada instalasi ini</string>
     <string name="desktop_drive_favourite">Favorit</string>
     <string name="desktop_drive_restore_tooltip">Pulihkan ke lokasi asal</string>
     <string name="desktop_turn_off">Nonaktifkan</string>

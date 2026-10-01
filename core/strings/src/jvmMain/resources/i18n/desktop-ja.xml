@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">削除したファイルやフォルダーは、復元するか完全に削除するまでここに保管されます。</string>
     <string name="desktop_email_forward_to">転送先</string>
     <string name="desktop_tools_drag_to_reorder">ドラッグして %1$s を並べ替え</string>
-    <string name="desktop_call_line3_not_configured">このインストールではライン 1 が設定されていません</string>
+    <string name="desktop_call_line3_not_configured">このインストールではライン 3 が設定されていません</string>
     <string name="desktop_drive_favourite">お気に入り</string>
     <string name="desktop_drive_restore_tooltip">元の場所に復元</string>
     <string name="desktop_turn_off">オフにする</string>

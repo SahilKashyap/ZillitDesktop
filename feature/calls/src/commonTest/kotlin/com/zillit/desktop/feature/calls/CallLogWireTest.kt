@@ -117,13 +117,13 @@ class CallLogWireTest {
         assertFalse(directNobody?.isRedialable == true)
     }
 
-    /** Crossed since 2026-09-26: LiveKit is Line 1 and mediasoup Line 3. */
+    /** As the phones number them: mediasoup is Line 1 and LiveKit Line 3. */
     @Test
     fun `a line tag turns back into the provider a redial takes`() {
-        assertEquals(CallProvider.LiveKit, CallLine.One.provider)
+        assertEquals(CallProvider.Mediasoup, CallLine.One.provider)
         assertEquals(CallProvider.Agora, CallLine.Two.provider)
-        assertEquals(CallProvider.Mediasoup, CallLine.Three.provider)
-        assertEquals(listOf(CallLine.Two, CallLine.Three), CallLine.DEFAULT)
+        assertEquals(CallProvider.LiveKit, CallLine.Three.provider)
+        assertEquals(listOf(CallLine.Two, CallLine.One), CallLine.DEFAULT)
     }
 
     @Test
@@ -134,13 +134,13 @@ class CallLogWireTest {
         assertFalse(rendered.contains("vivek"))
     }
 
-    /** agora is Line 2, livekit Line 1, anything else — mediasoup, or nothing — Line 3. */
+    /** agora is Line 2, livekit Line 3, anything else — mediasoup, or nothing — Line 1. */
     @Test
     fun `the line reads as the sheet labels it`() {
         assertEquals(CallLine.Two, read("""{"call_uuid":"u1","line":"agora"}""")?.line)
-        assertEquals(CallLine.One, read("""{"call_uuid":"u1","line":"LiveKit"}""")?.line)
-        assertEquals(CallLine.Three, read("""{"call_uuid":"u1","line":"mediasoup"}""")?.line)
-        assertEquals(CallLine.Three, read("""{"call_uuid":"u1"}""")?.line)
+        assertEquals(CallLine.Three, read("""{"call_uuid":"u1","line":"LiveKit"}""")?.line)
+        assertEquals(CallLine.One, read("""{"call_uuid":"u1","line":"mediasoup"}""")?.line)
+        assertEquals(CallLine.One, read("""{"call_uuid":"u1"}""")?.line)
     }
 
     /** `call_users` arrives as bare ids on older rows and objects on newer ones — mixed, even. */

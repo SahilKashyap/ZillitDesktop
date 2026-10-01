@@ -4451,16 +4451,16 @@ private val ZillitWidget.widgetDetail: String
 /**
  * The chat module names a line by its wire word; the calls module by its
  * provider, and the two use the same words — so the wire word is the mapping,
- * not a `when` over the numbers. Said this way it survived the 2026-09-26
- * swap of Line 1 and Line 3 without an edit, which a branch per constant
- * would not have.
+ * not a `when` over the numbers. Said this way it survived both the 2026-09-26
+ * swap of Line 1 and Line 3 and its undoing on 2026-10-01 without an edit,
+ * which a branch per constant would not have.
  */
 internal fun CallLine.toProvider(): CallProvider = CallProvider.ofWire(wire)
 
 /**
- * The lines a production offers. The LiveKit line — labelled Line 1 — only
- * where the roll-out list names it; see LineThreeGate, whose name is the
- * remote-config key's (`line_three_enabled_in`) and not the label's.
+ * The lines a production offers. The LiveKit line — labelled Line 3, as the
+ * phones label it and as `line_three_enabled_in` already said — only where the
+ * roll-out list names it; see LineThreeGate.
  */
 internal fun AppGraph.Ready.callLines(projectId: String?): List<CallLine> =
-    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.One else CallLine.DEFAULT
+    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT

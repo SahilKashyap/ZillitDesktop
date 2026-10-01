@@ -243,11 +243,11 @@ data class CallUiState(
      */
     val lineLabel: String
         get() = when (session?.provider) {
-            // Crossed on purpose, as everywhere the numbers are shown: see
-            // `CallLine`. LiveKit is Line 1 and mediasoup Line 3.
-            CallProvider.LiveKit -> str(S.txt_line_one)
+            // As the phones number them, and as `CallLine` maps them: LiveKit
+            // is Line 3 and mediasoup Line 1.
+            CallProvider.LiveKit -> str(S.txt_line_three)
             CallProvider.Agora -> str(S.txt_line_two)
-            CallProvider.Mediasoup -> str(S.txt_line_three)
+            CallProvider.Mediasoup -> str(S.txt_line_one)
             else -> ""
         }
 

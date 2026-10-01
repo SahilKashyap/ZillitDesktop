@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">ไฟล์และโฟลเดอร์ที่ลบจะรออยู่ที่นี่จนกว่าคุณจะกู้คืนหรือลบถาวร</string>
     <string name="desktop_email_forward_to">ส่งต่อไปยัง</string>
     <string name="desktop_tools_drag_to_reorder">ลากเพื่อจัดลำดับ %1$s ใหม่</string>
-    <string name="desktop_call_line3_not_configured">ไม่ได้ตั้งค่า Line 1 ในการติดตั้งนี้</string>
+    <string name="desktop_call_line3_not_configured">ไม่ได้ตั้งค่า Line 3 ในการติดตั้งนี้</string>
     <string name="desktop_drive_favourite">รายการโปรด</string>
     <string name="desktop_drive_restore_tooltip">กู้คืนไปยังตำแหน่งเดิม</string>
     <string name="desktop_turn_off">ปิด</string>

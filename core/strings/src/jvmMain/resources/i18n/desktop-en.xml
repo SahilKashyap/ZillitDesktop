@@ -1042,7 +1042,7 @@
     <string name="desktop_drive_trash_empty_message">Deleted files and folders wait here until you restore or permanently delete them.</string>
     <string name="desktop_email_forward_to">Forward to</string>
     <string name="desktop_tools_drag_to_reorder">Drag to reorder %1$s</string>
-    <string name="desktop_call_line3_not_configured">Line 1 is not configured on this install</string>
+    <string name="desktop_call_line3_not_configured">Line 3 is not configured on this install</string>
     <string name="desktop_drive_favourite">Favourite</string>
     <string name="desktop_drive_restore_tooltip">Restore to original location</string>
     <string name="desktop_turn_off">Turn off</string>

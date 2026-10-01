@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Os ficheiros e pastas eliminados ficam aqui até os restaurar ou eliminar permanentemente.</string>
     <string name="desktop_email_forward_to">Reencaminhar para</string>
     <string name="desktop_tools_drag_to_reorder">Arraste para reordenar %1$s</string>
-    <string name="desktop_call_line3_not_configured">A Linha 1 não está configurada nesta instalação</string>
+    <string name="desktop_call_line3_not_configured">A Linha 3 não está configurada nesta instalação</string>
     <string name="desktop_drive_favourite">Favorito</string>
     <string name="desktop_drive_restore_tooltip">Restaurar para a localização original</string>
     <string name="desktop_turn_off">Desativar</string>

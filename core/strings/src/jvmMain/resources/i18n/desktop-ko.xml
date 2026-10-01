@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">삭제된 파일과 폴더는 복원하거나 영구 삭제할 때까지 여기에 보관됩니다.</string>
     <string name="desktop_email_forward_to">전달 대상</string>
     <string name="desktop_tools_drag_to_reorder">%1$s을(를) 드래그하여 순서 변경</string>
-    <string name="desktop_call_line3_not_configured">이 설치에는 Line 1이 설정되어 있지 않습니다</string>
+    <string name="desktop_call_line3_not_configured">이 설치에는 Line 3이 설정되어 있지 않습니다</string>
     <string name="desktop_drive_favourite">즐겨찾기</string>
     <string name="desktop_drive_restore_tooltip">원래 위치로 복원</string>
     <string name="desktop_turn_off">끄기</string>
