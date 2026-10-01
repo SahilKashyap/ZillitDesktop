@@ -465,8 +465,18 @@ private suspend fun onProjectOpened(
         // production's rights answer questions asked inside another.
         badges.clear()
         remoteConfig.clear()
-        projectContext?.clear(activeProject.value?.id)
-        socket.disconnect()
+        // A switch arrives here FIRST, with no production open, and only then
+        // with the new one — so the keep-alive below had to be on this leg too.
+        // Cutting the socket here ended the call before the guarded leg ever
+        // ran, which is why guarding only that one never worked. The profile
+        // stays for the same reason: clearing it blanks the identity a live
+        // call still needs for its roster, its leave and its client log.
+        if (isCallActive()) {
+            onSocketReconnectSkippedForCall()
+        } else {
+            projectContext?.clear(activeProject.value?.id)
+            socket.disconnect()
+        }
         return
     }
 

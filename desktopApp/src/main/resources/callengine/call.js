@@ -964,8 +964,13 @@
                 if (!line1Local.element) { line1Local.element = line1VideoElement(line1Local.stream); }
                 cell.mount.innerHTML = '';
                 cell.mount.appendChild(line1Local.element);
+                // Every remote mount above resumes; the self preview did not,
+                // and a render rebuilds the cells, so from the second mount on
+                // the user's own tile was a paused element over a live camera.
+                resume(line1Local.element);
                 report.push('mounted self');
             } else if (cell && line1Local.element) {
+                resume(line1Local.element);
                 report.push(videoState('self', line1Local.element));
             }
         }

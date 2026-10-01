@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.session.ProjectContext
+import com.zillit.desktop.feature.auth.ui.AuthStep
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
@@ -202,18 +203,31 @@ internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? 
 }
 
 /**
- * Ends any live call when the session does.
+ * Ends any live call when the **session** does.
  *
  * The call surface is mounted inside the signed-in branch, but the coordinator
- * lives on appScope and knows nothing about it. A 401 or a project switch
- * swaps that branch for the auth screen and the overlay simply vanishes — the
- * Agora client stays joined, both tracks stay published and the camera
- * indicator stays lit, with no hang-up button left anywhere to press.
+ * lives on appScope and knows nothing about it. A 401 swaps that branch for the
+ * auth screen and the overlay simply vanishes — the Agora client stays joined,
+ * both tracks stay published and the camera indicator stays lit, with no
+ * hang-up button left anywhere to press.
+ *
+ * **Picking another production is not that.** The session, the device and the
+ * tokens all outlive a switch; only the open production changes, and a call
+ * must survive it. [AuthStep.ProjectSelection] is the production picker — the
+ * screen a switch lands on, and the one a fresh sign-in passes through — so it
+ * counts as signed in here. A real sign-out goes to [AuthStep.QrLogin] (the
+ * default of a reset `AuthUiState`), which does not, and still hangs up.
+ *
+ * Reading `step == Complete` instead ended every call the moment the user
+ * reached for the switcher: `switchProject` clears the step before any network
+ * work, so the hang-up beat the keep-alive guard in `onProjectOpened` and left
+ * it dead code.
  */
 @Composable
-internal fun EndCallOnSignOut(ready: AppGraph.Ready, signedIn: Boolean) {
-    LaunchedEffect(signedIn) {
-        if (!signedIn) ready.callCoordinator.hangUp()
+internal fun EndCallOnSignOut(ready: AppGraph.Ready, step: AuthStep) {
+    val sessionAlive = step == AuthStep.Complete || step == AuthStep.ProjectSelection
+    LaunchedEffect(sessionAlive) {
+        if (!sessionAlive) ready.callCoordinator.hangUp()
     }
 }
 
@@ -291,9 +305,14 @@ internal fun CallLogTab(
         // Read once per composition rather than per row, so every row in one
         // frame decides "today" against the same instant.
         nowMillis = remember(state.entries) { System.currentTimeMillis() },
-        // The same lines the thread header offers: Line 3 where the
-        // roll-out list names this production.
-        lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT,
+        // The same lines the thread header offers (`callLines`): the gated
+        // line where the roll-out list names this production. That line is
+        // LiveKit, which the numbers crossing of 2026-09-26 shows as Line 1 —
+        // appending `Three` here instead listed mediasoup twice and left
+        // Line 1 off the Calls tab altogether, since DEFAULT already ends in
+        // it. The remote-config key still says "line three"; the label does
+        // not follow it.
+        lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.One else CallLine.DEFAULT,
     )
 }
 

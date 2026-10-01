@@ -794,6 +794,10 @@ private fun ApplicationScope.ZillitWindows(
     // same reason — it must outlive being behind the main frame.
     (graph as? AppGraph.Ready)?.let { ready ->
         CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark, showMain = showMain)
+        // The shell — and with it the ring card inside the frame — is up only
+        // once a production is open. Anywhere else the floating card must not
+        // defer to the frame; see [IncomingCallWidget].
+        val authStep = authViewModel?.state?.collectAsState()?.value?.step
         IncomingCallWidget(
             ready = ready,
             calls = viewModels.calls,
@@ -801,6 +805,7 @@ private fun ApplicationScope.ZillitWindows(
             frame = frame,
             darkTheme = isDark,
             showMain = showMain,
+            shellShowsRing = authStep == AuthStep.Complete,
         )
         MessageWidget(
             ready = ready,
@@ -1457,7 +1462,7 @@ private fun BackgroundWork(
 ) {
     val auth by authViewModel.state.collectAsState()
     SessionExpiry(ready, authViewModel)
-    EndCallOnSignOut(ready, signedIn = auth.step == AuthStep.Complete)
+    EndCallOnSignOut(ready, step = auth.step)
     TokenSessionOnSignIn(ready, signedIn = auth.step == AuthStep.Complete)
     AuthEffects(authViewModel, createViewModel, joinViewModel)
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)

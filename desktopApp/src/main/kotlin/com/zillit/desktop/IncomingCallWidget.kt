@@ -64,6 +64,12 @@ internal fun ApplicationScope.IncomingCallWidget(
     frame: ComposeWindow?,
     darkTheme: Boolean,
     showMain: () -> Unit,
+    /**
+     * Whether the main window has the in-window ring card up — true only while
+     * the signed-in shell is on screen. False on the production picker and the
+     * sign-in pages, where this card is the only one there is.
+     */
+    shellShowsRing: Boolean,
 ) {
     calls ?: return
     val enabled by preferences.observe(ZillitPreferences.CallWidget).collectAsState(initial = true)
@@ -80,7 +86,13 @@ internal fun ApplicationScope.IncomingCallWidget(
         }
     }
     val current = session
-    val cardHidden = !enabled || dismissed || mainInFront
+    // Standing down for the main window is only right when that window is in
+    // fact showing the ring. The call surface lives inside the signed-in
+    // shell, so on the production picker — where a switch lands, and where a
+    // fresh sign-in waits — there is no ring card behind this one and
+    // deferring to the frame left an incoming call with nowhere at all to be
+    // answered.
+    val cardHidden = !enabled || dismissed || (mainInFront && shellShowsRing)
     if (cardHidden || !ringing || current == null) return
 
     val windowState = rememberWindowState(
