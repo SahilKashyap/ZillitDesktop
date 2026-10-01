@@ -95,6 +95,7 @@ import com.zillit.desktop.core.appupdate.UpdateFailure
 import com.zillit.desktop.core.appupdate.installer
 import com.zillit.desktop.feature.shell.UpdateInstall
 import com.zillit.desktop.feature.shell.UpdateNotice
+import com.zillit.desktop.feature.shell.UpdateSurface
 import com.zillit.desktop.feature.shell.railItemsFor
 import com.zillit.desktop.feature.sos.data.SosRepositoryImpl
 import com.zillit.desktop.feature.sos.domain.SosCrewMember
@@ -1571,13 +1572,30 @@ private fun ZillitContent(
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
+    // Computed here rather than inside the shell so the sign-in page and the
+    // picker get the same answer: one six-hourly poll, one restart countdown,
+    // whichever screen is up.
+    val updateScope = rememberCoroutineScope()
+    val updateStatus = rememberUpdateStatus(ready)
+    val updateNotice = currentUpdateNotice(ready, updateStatus, onQuit)
+
     Box {
         if (authState.step == AuthStep.Complete) {
             SignedInShell(
                 ready, registry, viewModels, workspaceViewModel, authViewModel,
                 themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
+                updateStatus, updateNotice,
             )
         } else {
+            UpdateSurface(
+                notice = updateNotice,
+                onDownload = ::openInBrowser,
+                onInstall = { ready.inAppUpdater.installOrDownload(updateStatus) },
+                onCancel = { ready.inAppUpdater.cancel() },
+                onOpen = { ready.inAppUpdater.openDownloaded() },
+                onRestart = { updateScope.launch { ready.restartToUpdate(onQuit) } },
+                onQuit = onQuit,
+            ) {
             AuthScreen(
                 viewModel = authViewModel,
                 // The production list carries the theme toggle, as on the web —
@@ -1593,6 +1611,7 @@ private fun ZillitContent(
                 // still read it off to support.
                 appVersion = installedAppVersion(),
             )
+            }
         }
         // Above either screen: the startup notification-permission check, as
         // the phones make it, whatever the person is looking at.
@@ -1618,6 +1637,9 @@ private fun SignedInShell(
     language: String,
     onLanguageChange: (String) -> Unit,
     onQuit: () -> Unit,
+    /** Computed once in [ZillitContent], so every screen shares one poll. */
+    updateStatus: UpdateStatus,
+    updateNotice: UpdateNotice?,
 ) {
     val authState by authViewModel.state.collectAsState()
     val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
@@ -1625,7 +1647,6 @@ private fun SignedInShell(
     val socketState by ready.socketEvents.connectionState.collectAsState()
     val scope = rememberCoroutineScope()
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
-    val updateStatus = rememberUpdateStatus(ready)
     // The open production's deletion deadline, as the socket last left it.
     val projectDeletionDueAt = ready.projectContext?.context?.collectAsState()?.value?.deletionDueAtMillis
     // Open until this device says otherwise, as the web's side menu is.
@@ -1671,7 +1692,7 @@ private fun SignedInShell(
         // context is re-read on `project:(un)marked:for:deletion`.
         deletionDueAtMillis = projectDeletionDueAt,
         statusText = statusText(socketState, syncStatus),
-        updateNotice = currentUpdateNotice(ready, updateStatus, onQuit),
+        updateNotice = updateNotice,
         // The guarded launcher — https only, as the auth links use.
         onDownloadUpdate = ::openInBrowser,
         onInstallUpdate = { ready.inAppUpdater.installOrDownload(updateStatus) },
