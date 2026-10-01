@@ -162,12 +162,14 @@ fun TicketsScreen(kind: TicketKind) {
                 )
             }
         } else {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                shown.forEach { r ->
-                    when (board) {
-                        TicketBoard.Alterations -> AlterationCard(r, pipeline, actions)
-                        TicketBoard.Damages -> DamageCard(r, actions)
-                        TicketBoard.Missing -> MissingCard(r, actions, foundAt, { foundAt = it })
+            androidx.compose.runtime.CompositionLocalProvider(LocalRecordCounts provides rememberCommentCounts(board.entity)) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+                    shown.forEach { r ->
+                        when (board) {
+                            TicketBoard.Alterations -> AlterationCard(r, pipeline, actions)
+                            TicketBoard.Damages -> DamageCard(r, actions)
+                            TicketBoard.Missing -> MissingCard(r, actions, foundAt, { foundAt = it })
+                        }
                     }
                 }
             }
@@ -306,11 +308,10 @@ private fun AlterationButtons(a: Rec, status: String, next: String?, actions: Ti
     val piece = "${costume?.str("asset_number").orEmpty()} ${costume?.str("name").orEmpty()}"
     val due = if (a.long("deadline") != 0L) " · ${fill(t("csync_due_n"), "date" to fmtDateTime(a.long("deadline")))}" else ""
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-        WfSendRequestButton {
-            val summary = "${t("csync_share_alteration")}: $piece\n${a.str("issue")} → ${a.str("required_work")}\n" +
-                fill(t("csync_status_n"), "s" to tEnum(status)) + due
-            actions.send(a, piece.trim(), summary, "csync_ask_alteration")
-        }
+        val summary = "${t("csync_share_alteration")}: $piece\n${a.str("issue")} → ${a.str("required_work")}\n" +
+            fill(t("csync_status_n"), "s" to tEnum(status)) + due
+        WfSendRequestButton { actions.send(a, piece.trim(), summary, "csync_ask_alteration") }
+        RecordActions("ALTERATION", a.id, piece.trim(), summary)
         if (ctx.canPost && next != null) {
             ZillitButton(
                 tEnum(next),
@@ -360,11 +361,10 @@ private fun DamageCard(d: Rec, actions: TicketActions) {
                 MutedText(detail, maxLines = 2)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                WfSendRequestButton {
-                    val summary = "${t("csync_share_damage")}: $piece\n${d.str("description")}\n" +
-                        fill(t("csync_status_n"), "s" to tEnum(status)) + " · " + fill(t("csync_reported_lower_n"), "date" to fmtDateTime(d.long("created")))
-                    actions.send(d, piece.trim(), summary, "csync_ask_damage")
-                }
+                val summary = "${t("csync_share_damage")}: $piece\n${d.str("description")}\n" +
+                    fill(t("csync_status_n"), "s" to tEnum(status)) + " · " + fill(t("csync_reported_lower_n"), "date" to fmtDateTime(d.long("created")))
+                WfSendRequestButton { actions.send(d, piece.trim(), summary, "csync_ask_damage") }
+                RecordActions("DAMAGE", d.id, piece.trim(), summary)
                 if (ctx.canPost && status !in TicketBoard.Damages.closed) DamageButtons(d, status, actions)
             }
         }
@@ -410,13 +410,12 @@ private fun MissingCard(m: Rec, actions: TicketActions, foundAt: FoundAt?, onFou
                 ReferenceGrid(entityType = "MISSING", entityId = m.id, kinds = MISSING_PHOTO_KINDS, compact = true, bare = true, attachments = false)
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                WfSendRequestButton {
-                    val summary = "${t("csync_share_missing")}: $piece\n" +
-                        fill(t("csync_last_seen_n"), "x" to m.str("last_seen_location").ifBlank { "—" }) + " · " +
-                        fill(t("csync_last_assigned_lower_n"), "x" to m.str("last_assigned_to").ifBlank { "—" }) + "\n" +
-                        fill(t("csync_reported_n"), "date" to fmtDateTime(m.long("created")))
-                    actions.send(m, piece.trim(), summary, "csync_ask_missing")
-                }
+                val summary = "${t("csync_share_missing")}: $piece\n" +
+                    fill(t("csync_last_seen_n"), "x" to m.str("last_seen_location").ifBlank { "—" }) + " · " +
+                    fill(t("csync_last_assigned_lower_n"), "x" to m.str("last_assigned_to").ifBlank { "—" }) + "\n" +
+                    fill(t("csync_reported_n"), "date" to fmtDateTime(m.long("created")))
+                WfSendRequestButton { actions.send(m, piece.trim(), summary, "csync_ask_missing") }
+                RecordActions("MISSING", m.id, piece.trim(), summary)
                 if (ctx.canPost && status == "OPEN") MissingButtons(m, actions, foundAt, onFoundAt)
             }
         }

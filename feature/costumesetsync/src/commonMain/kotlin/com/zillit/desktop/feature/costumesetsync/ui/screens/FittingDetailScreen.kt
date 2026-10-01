@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -160,10 +161,11 @@ private fun FittingBody(fitting: Rec, fittingId: String, reload: () -> Unit) {
             }
         },
         actions = {
+            val summary = "${t("csync_fitting")}: ${character.str("name")}" +
+                (fitting.rec("actor")?.str("name")?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()) + "\n$sub"
+            RecordActions("FITTING", fittingId, "${t("csync_fitting")} · ${character.str("name")}", summary, count = rememberCommentCounts("FITTING")[fittingId] ?: 0)
             if (ctx.canPost) {
                 WfSendRequestButton {
-                    val summary = "${t("csync_fitting")}: ${character.str("name")}" +
-                        (fitting.rec("actor")?.str("name")?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()) + "\n$sub"
                     request = recordRequestDraft(
                         fittingId,
                         "${t("csync_fitting")} · ${character.str("name")}",
@@ -343,7 +345,7 @@ private fun AlterationDialog(alt: AlterationDraft?, onChange: (AlterationDraft?)
         FormGrid {
             TextInput(draft.issue, { onChange(draft.copy(issue = it)) }, t("csync_field_issue"), FormWide)
             TextInput(draft.required, { onChange(draft.copy(required = it)) }, t("csync_field_required"), FormWide)
-            WfDateTimeInput(draft.date, draft.time, { onChange(draft.copy(date = it)) }, { onChange(draft.copy(time = it)) }, t("csync_field_deadline"), FormWide)
+            DateTimeInput(draft.date, draft.time, { onChange(draft.copy(date = it)) }, { onChange(draft.copy(time = it)) }, t("csync_field_deadline"), FormWide)
         }
         MutedText(t("csync_alteration_sends_to_tailor"), maxLines = 3)
     }

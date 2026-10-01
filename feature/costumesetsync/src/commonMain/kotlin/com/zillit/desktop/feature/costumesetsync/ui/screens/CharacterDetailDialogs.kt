@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -199,7 +200,7 @@ internal fun CharacterFittingDialog(open: Boolean, onClose: () -> Unit, characte
         busy = saving,
     ) {
         FormGrid {
-            WfDateTimeInput(date, time, { date = it }, { time = it }, t("csync_when"))
+            DateTimeInput(date, time, { date = it }, { time = it }, t("csync_when"))
             TextInput(location, { location = it }, t("csync_where"), FormWide)
             Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitText(t("csync_pieces_to_try"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)

@@ -248,8 +248,7 @@ internal fun AlterationDialog(costume: Rec, onClose: () -> Unit, onFiled: () -> 
             TextInput(work, { work = it }, t("csync_field_required"), FormWide)
             TextInput(tailor, { tailor = it }, t("csync_field_tailor"))
             EnumInput(priority, ctx.metaList("priorities"), { priority = it.ifBlank { priority } }, t("csync_field_priority"))
-            DateInput(date, { date = it }, t("csync_field_deadline"))
-            TextInput(time, { time = it }, "HH:mm", placeholder = "17:00")
+            com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput(date, time, { date = it }, { time = it }, t("csync_field_deadline"))
         }
         ReportMedia(filing, t("csync_shoot_pick_scan"))
     }

@@ -121,25 +121,6 @@ internal fun RowScope.WfSaveActions(
     )
 }
 
-private val DATE_WIDTH = 300.dp
-private val TIME_WIDTH = 150.dp
-
-/** A date plus an `HH:mm` time — the web's date-time picker as two fields on one row. */
-@Composable
-internal fun WfDateTimeInput(
-    date: String,
-    time: String,
-    onDate: (String) -> Unit,
-    onTime: (String) -> Unit,
-    label: String,
-    modifier: Modifier = FormWide,
-) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        DateInput(date, onDate, label, Modifier.width(DATE_WIDTH))
-        TextInput(time, onTime, "HH:mm", Modifier.width(TIME_WIDTH), placeholder = "HH:mm")
-    }
-}
-
 private const val PICK_DEBOUNCE_MS = 300L
 private const val PICK_PAGE_SIZE = 100
 

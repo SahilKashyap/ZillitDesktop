@@ -103,8 +103,10 @@ fun FittingsScreen() {
             if (shown.isEmpty()) {
                 EmptyState(if (q.isNotBlank()) t("csync_fittings_none_match") else t("csync_fittings_empty_title"))
             } else {
-                shown.forEach { x ->
-                    FittingRow(x, projectName, onRequest = { request = it })
+                androidx.compose.runtime.CompositionLocalProvider(LocalRecordCounts provides rememberCommentCounts("FITTING")) {
+                    shown.forEach { x ->
+                        FittingRow(x, projectName, onRequest = { request = it })
+                    }
                 }
             }
         }
@@ -146,13 +148,14 @@ private fun FittingRow(x: Rec, projectName: String, onRequest: (RequestDraft) ->
         onClick = { ctx.nav.go("fittings/${x.id}") },
         leading = { SquareAvatar(wfInitials(character)) },
         end = {
+            val summary = "${t("csync_fitting")}: $character" + (if (actor.isNotBlank()) " ($actor)" else "") +
+                "\n${fmtDateTime(x.long("scheduled_at"))}" + (if (x.str("location").isNotBlank()) " · ${x.str("location")}" else "")
             WfSendRequestButton {
-                val summary = "${t("csync_fitting")}: $character" + (if (actor.isNotBlank()) " ($actor)" else "") +
-                    "\n${fmtDateTime(x.long("scheduled_at"))}" + (if (x.str("location").isNotBlank()) " · ${x.str("location")}" else "")
                 onRequest(
                     recordRequestDraft(x.id, "${t("csync_fitting")} · $character", summary, t("csync_ask_fitting"), projectName),
                 )
             }
+            RecordActions("FITTING", x.id, "${t("csync_fitting")} · $character", summary)
             StatusBadge(x.str("status"))
         },
     ) {

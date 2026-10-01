@@ -32,6 +32,7 @@ import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
 import com.zillit.desktop.feature.costumesetsync.domain.humanize
 import com.zillit.desktop.feature.costumesetsync.domain.matches
+import com.zillit.desktop.feature.costumesetsync.ui.AutoFillGrid
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
@@ -47,7 +48,8 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
 import com.zillit.desktop.feature.costumesetsync.ui.tEnum
 import kotlinx.coroutines.launch
 
-private val TILE_WIDTH = 130.dp
+private val TILE_WIDTH = 120.dp
+private val TILE_GAP = 10.dp
 private val SEARCH_WIDTH = 420.dp
 
 /** Everything the budget reads: the report (`expenses`, `by_category`, inventory and rental figures) and the pickers' lists. */
@@ -60,8 +62,8 @@ private fun cast(c: Rec): String = if (c.has("cast_number") && c.str("cast_numbe
  * budget, which is all of those at once and the printable top sheet. Finance roles only.
  *
  * A tapped spend tile narrows every tab to that category; tap it again (or Total spend) for everything.
- * Totals are summed per currency, so a line in pounds is never added into a rupee total. Not ported: the
- * per-line chat / share / "send a request" actions (the shared record-actions component) and the sheet
+ * Totals are summed per currency, so a line in pounds is never added into a rupee total. Not ported: "send a request" on a line and the sheet
+
  * template download (a raw file the api client does not fetch).
  */
 @Composable
@@ -100,7 +102,9 @@ fun BudgetScreen() {
     var deleting by remember { mutableStateOf<Rec?>(null) }
     val holder = remember { BudgetFormHolder() }
 
+    val counts = rememberCommentCounts("EXPENSE") + rememberCommentCounts("BUDGET")
     Await(data) { book ->
+      androidx.compose.runtime.CompositionLocalProvider(LocalRecordCounts provides counts) {
         val view = BudgetView(ctx, book, cat, q)
         BudgetHeader(ctx, onUpload = { uploadOpen = true }, onAdd = { editing = null; lineOpen = true })
         BudgetTiles(ctx, view, cat) { cat = it }
@@ -127,12 +131,28 @@ fun BudgetScreen() {
                 MutedText(t("csync_budget_matching") + " · " + view.total(view.shown) + " " + kitCount("csync_budget_across_n_expenses", view.shown.size))
             }
             val onEdit: ((Rec) -> Unit)? = if (ctx.canPost) { l -> editing = l; lineOpen = true } else null
-            val actions: (@Composable (Rec) -> Unit)? = if (ctx.canPost) { l -> DeleteMark { deleting = l } } else null
+            val actions: (@Composable (Rec) -> Unit)? = { l ->
+                RecordActions("EXPENSE", l.id, BudgetModel.lineTitle(l, t("csync_budget_line")), expenseSummary(l, view.currency))
+                if (ctx.canPost) DeleteMark { deleting = l }
+            }
             if (tab == "full") FullTab(ctx, view, onEdit, actions) else SectionCard(flush = true) { TabBody(tab, view, book, onEdit, actions) }
         }
         BudgetDialogs(ctx, book, view, lineOpen, editing, uploadOpen, holder, deleting, { lineOpen = false }, { uploadOpen = false }, { deleting = null }) { data.reload(silent = true) }
+      }
     }
 }
+
+/** The web's `summaryOf`: what a share or a chat about one expense line carries. */
+private fun expenseSummary(e: Rec, currency: String): String =
+    "${t("csync_budget_expense")}: ${BudgetModel.lineTitle(e, t("csync_budget_line"))} · ${BudgetModel.fmtAmount(e.double("amount"), e.str("currency").ifEmpty { currency })}\n" +
+        listOfNotNull(
+            e.str("account_code").ifEmpty { null },
+            e.long("date").takeIf { it != 0L }?.let { fmtDate(it) },
+            tEnum(e.str("category")).ifEmpty { null },
+            e.rec("scene")?.let { "${t("csync_sc")} ${it.str("number")}" },
+            e.rec("character")?.str("name")?.ifEmpty { null },
+            e.rec("vendor")?.str("name")?.ifEmpty { null },
+        ).joinToString(" · ")
 
 @Composable
 private fun BudgetHeader(ctx: SyncCtx, onUpload: () -> Unit, onAdd: () -> Unit) {
@@ -185,14 +205,17 @@ private class BudgetView(val ctx: SyncCtx, val book: BudgetData, val cat: String
 
 @Composable
 private fun BudgetTiles(ctx: SyncCtx, view: BudgetView, cat: String, onCat: (String) -> Unit) {
-    val tile = Modifier.width(TILE_WIDTH)
-    FlowRow(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        StatCard(t("csync_budget_total_spend"), view.total(view.all), tile, compact = true, active = cat.isEmpty(), onClick = { onCat("") })
-        view.cats.forEach { c ->
-            StatCard(tEnum(c), view.total(view.all.filter { it.str("category") == c }), tile, compact = true, active = cat == c, onClick = { onCat(if (cat == c) "" else c) })
-        }
-        StatCard(t("csync_budget_inventory_value"), BudgetModel.fmtAmount(view.book.report.double("inventory_value"), view.currency), tile, hint = t("csync_budget_inventory_value_hint"), compact = true) { ctx.nav.go("costumes") }
-        StatCard(t("csync_budget_rental_committed"), BudgetModel.fmtAmount(view.book.report.double("rental_committed"), view.currency), tile, hint = t("csync_budget_rental_committed_hint"), compact = true) { ctx.nav.go("vendors") }
+    // `.csync-stats--compact`: auto-fill, minmax(120px, 1fr), 10px apart — the tiles stretch to share the row.
+    class Tile(val label: String, val value: String, val hint: String? = null, val active: Boolean = false, val go: () -> Unit)
+    val tiles = buildList {
+        add(Tile(t("csync_budget_total_spend"), view.total(view.all), active = cat.isEmpty()) { onCat("") })
+        view.cats.forEach { c -> add(Tile(tEnum(c), view.total(view.all.filter { it.str("category") == c }), active = cat == c) { onCat(if (cat == c) "" else c) }) }
+        add(Tile(t("csync_budget_inventory_value"), BudgetModel.fmtAmount(view.book.report.double("inventory_value"), view.currency), t("csync_budget_inventory_value_hint")) { ctx.nav.go("costumes") })
+        add(Tile(t("csync_budget_rental_committed"), BudgetModel.fmtAmount(view.book.report.double("rental_committed"), view.currency), t("csync_budget_rental_committed_hint")) { ctx.nav.go("vendors") })
+    }
+    AutoFillGrid(tiles.size, TILE_WIDTH, TILE_GAP, Modifier.padding(bottom = ZillitTheme.spacing.md)) { i, cell ->
+        val tile = tiles[i]
+        StatCard(tile.label, tile.value, cell, hint = tile.hint, compact = true, active = tile.active, onClick = tile.go)
     }
 }
 
@@ -206,7 +229,7 @@ private fun CategoryNote(cat: String, view: BudgetView, onClear: () -> Unit) {
 
 @Composable
 private fun DeleteMark(onAsk: () -> Unit) {
-    ZillitButton(t("csync_delete"), onClick = onAsk, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Trash)
+    com.zillit.desktop.core.designsystem.component.ZillitIconButton(ZillitIcons.Trash, t("csync_delete"), onAsk, tint = ZillitTheme.colors.textSecondary, size = 28.dp)
 }
 
 @Composable
@@ -255,6 +278,14 @@ private fun FullTab(ctx: SyncCtx, view: BudgetView, onEdit: ((Rec) -> Unit)?, ac
                     ).joinToString(" · "),
                 )
             }
+            val name = ctx.project.name.ifEmpty { t("csync_production") }
+            RecordActions(
+                "BUDGET",
+                ctx.project.rec?.id?.ifEmpty { null } ?: "budget",
+                "$name · ${t("csync_budget_word")}",
+                "$name · ${t("csync_budget_word")}\n${t("csync_budget_grand_total")}: ${view.total(expenses)}\n" +
+                    view.deptGroups.joinToString("\n") { g -> "${g.title}: ${view.total(g.lines)}" },
+            )
             ZillitButton(
                 t("csync_print_pdf"),
                 onClick = { ctx.whenDownload { printBudget(ctx, view) } },

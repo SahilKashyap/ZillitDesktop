@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -15,14 +16,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitDateField
-import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
-import com.zillit.desktop.core.designsystem.component.ZillitTextField
+
+/** A fixed [width], or the whole cell when [Dp.Unspecified]. */
+private fun Modifier.cellWidth(width: Dp): Modifier = if (width == Dp.Unspecified) fillMaxWidth() else width(width)
 
 /**
- * Compact label-less controls for a table cell: the web's `size="small"` antd
- * inputs. A pick over [options] (value, label) where the empty value is "none".
+ * Compact label-less controls for a table cell: the web's `size="small"` antd inputs (24px tall).
+ * A pick over [options] (value, label) where the empty value is "none".
  */
 @Composable
 internal fun CellPick(
@@ -33,16 +33,11 @@ internal fun CellPick(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     enabled: Boolean = true,
+    searchable: Boolean = true,
+    newLabel: String? = null,
+    onNew: () -> Unit = {},
 ) {
-    ZillitSearchSelect(
-        value = options.firstOrNull { it.first == value },
-        options = options,
-        onSelect = { onChange(it.first) },
-        label = { it.second },
-        modifier = modifier.width(width),
-        placeholder = placeholder,
-        enabled = enabled,
-    )
+    CompactSelect(value, options, onChange, modifier.cellWidth(width), enabled, placeholder, searchable, newLabel, onNew)
 }
 
 /** A closed small list (Day / Night): no search box. */
@@ -54,14 +49,7 @@ internal fun CellSelect(
     width: Dp,
     enabled: Boolean = true,
 ) {
-    ZillitSelect(
-        value = options.firstOrNull { it.first == value } ?: options.first(),
-        options = options,
-        onSelect = { onChange(it.first) },
-        label = { it.second },
-        modifier = Modifier.width(width),
-        enabled = enabled,
-    )
+    CompactSelect(value, options, onChange, Modifier.cellWidth(width), enabled, searchable = false)
 }
 
 @Composable
@@ -72,20 +60,18 @@ internal fun CellField(
     enabled: Boolean = true,
     error: String? = null,
     onEnter: (() -> Unit)? = null,
+    numeric: Boolean = false,
+    autoFocus: Boolean = false,
+    placeholder: String = "",
+    modifier: Modifier = Modifier,
+    height: Dp = 24.dp,
 ) {
-    ZillitTextField(
-        value = value,
-        onValueChange = onChange,
-        modifier = Modifier.width(width),
-        enabled = enabled,
-        errorText = error,
-        onImeAction = { onEnter?.invoke() },
-    )
+    CompactField(value, onChange, modifier.cellWidth(width), enabled, error != null, placeholder, numeric, autoFocus, onEnter, height)
 }
 
 @Composable
-internal fun CellDate(value: String, onChange: (String) -> Unit, width: Dp, enabled: Boolean = true) {
-    ZillitDateField(value = value, onValueChange = onChange, modifier = Modifier.width(width), enabled = enabled)
+internal fun CellDate(value: String, onChange: (String) -> Unit, width: Dp, enabled: Boolean = true, height: Dp = 24.dp, dmy: Boolean = false) {
+    CompactDate(value, onChange, Modifier.cellWidth(width), enabled, height, dmy)
 }
 
 /** The radio of Edit single's pick column. */

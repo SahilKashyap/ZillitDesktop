@@ -1,6 +1,23 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costumesetsync.ui.SyncDialogShell
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,7 +46,6 @@ import com.zillit.desktop.feature.costumesetsync.domain.BudgetModel
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
 import com.zillit.desktop.feature.costumesetsync.ui.FilterSelect
-import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -40,7 +56,7 @@ import kotlinx.serialization.json.JsonArray
 
 private val SHEET_EXTENSIONS = setOf("xlsx", "xlsm", "csv", "pdf")
 private val DIALOG_WIDTH = 1100.dp
-private val DEPARTMENT_WIDTH = 280.dp
+private val DEPARTMENT_WIDTH = 260.dp
 private const val DESC_WEIGHT = 2.2f
 
 /** One line of an uploaded sheet with the user's tick and the two fields they may correct before import. */
@@ -97,34 +113,45 @@ internal fun BudgetUpload(open: Boolean, onClose: () -> Unit, onImported: () -> 
     val importCurrency = picked.firstOrNull { it.rec.str("currency").isNotEmpty() }?.rec?.str("currency") ?: currency
     val label = if (saving) t("csync_importing") else kitCount("csync_budget_import_n", picked.size).replace("{total}", BudgetModel.fmtAmount(total, importCurrency))
 
-    FormDialog(
-        open = open,
+    val ready = preview != null && picked.isNotEmpty() && bad == null && !saving
+    val importNow: () -> Unit = {
+        saving = true
+        scope.launch {
+            val lines = picked.map { BudgetModel.toImportLine(it.rec, BudgetModel.ImportEdit(it.description, it.category), currency) }
+            val done = ctx.write { ctx.api.post("/expenses/import", body("lines" to JsonArray(lines))) }
+            saving = false
+            if (done != null) {
+                onImported()
+                onClose()
+            }
+        }
+    }
+    SyncDialogShell(
         title = t("csync_upload_budget_sheet"),
+        visible = open,
         onDismiss = onClose,
-        confirmLabel = label,
-        onConfirm = {
-            saving = true
-            scope.launch {
-                val lines = picked.map { BudgetModel.toImportLine(it.rec, BudgetModel.ImportEdit(it.description, it.category), currency) }
-                val done = ctx.write { ctx.api.post("/expenses/import", body("lines" to JsonArray(lines))) }
-                saving = false
-                if (done != null) {
-                    onImported()
-                    onClose()
-                }
+        width = DIALOG_WIDTH,
+        actions = {
+            ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary)
+            if (preview != null) {
+                ZillitButton(t("csync_upload_choose_another"), onClick = ::read, variant = ButtonVariant.Secondary, enabled = !reading)
+                ZillitButton(label, onClick = importNow, variant = if (ready) ButtonVariant.Primary else ButtonVariant.Secondary, enabled = ready, loading = saving)
             }
         },
-        confirmEnabled = preview != null && picked.isNotEmpty() && bad == null,
-        busy = saving,
-        width = DIALOG_WIDTH,
     ) {
         val current = preview
-        if (current == null) {
-            ZillitText(t("csync_budget_upload_formats"), style = ZillitTheme.typography.titleSmall)
-            MutedText(t("csync_budget_upload_help"), maxLines = 3)
-            ZillitButton(if (reading) t("csync_reading") else t("csync_choose_file"), onClick = ::read, enabled = !reading, loading = reading)
-        } else {
-            PreviewBody(current, rows, dept, cats, inDept, importCurrency, reading, onDept = { dept = it }, onRows = { rows = it }, onAnother = ::read)
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            if (current == null) {
+                // `.csync-budget-upload`: centred, 10 apart, 24 of air; the sheet icon over the formats line.
+                Column(Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ZillitIcon(ZillitIcons.Upload, tint = ZillitTheme.colors.textMuted, size = 36.dp)
+                    ZillitText(t("csync_budget_upload_formats"), style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                    ZillitText(t("csync_budget_upload_help"), Modifier.widthIn(max = 560.dp), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted, textAlign = TextAlign.Center)
+                    ZillitButton(if (reading) t("csync_reading") else t("csync_choose_file"), onClick = ::read, enabled = !reading, loading = reading)
+                }
+            } else {
+                PreviewBody(current, rows, dept, cats, inDept, importCurrency, reading, onDept = { dept = it }, onRows = { rows = it })
+            }
         }
     }
 }
@@ -140,7 +167,6 @@ private fun PreviewBody(
     reading: Boolean,
     onDept: (String) -> Unit,
     onRows: (List<SheetRow>) -> Unit,
-    onAnother: () -> Unit,
 ) {
     val isPdf = preview.str("file_name").lowercase().endsWith(".pdf")
     val departments = rows.map { it.rec.str("department") }.filter { it.isNotEmpty() }.distinct()
@@ -154,60 +180,97 @@ private fun PreviewBody(
         if (skipped.isNotEmpty() && sheets.size > 1) append(" · ").append(t("csync_budget_skipped_sheets", "names" to skipped.joinToString(", ")))
         append(". ").append(t("csync_budget_untick_hint"))
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
-        MutedText(head, Modifier.weight(1f), maxLines = 3)
-        ZillitButton(t("csync_upload_choose_another"), onClick = onAnother, variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = !reading)
-    }
     if (isPdf && departments.size > 1) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(t("csync_budget_department"), style = ZillitTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(t("csync_budget_department"), style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
             FilterSelect(dept, departments.map { it to it }, t("csync_budget_all_departments", "n" to rows.size), onDept, Modifier.width(DEPARTMENT_WIDTH))
             MutedText(kitCount("csync_budget_n_plain_lines", shown.size) + " · " + BudgetModel.fmtAmount(shown.sumOf { it.value.rec.double("amount") }, importCurrency))
         }
     }
+    MutedText(head, maxLines = 4)
     val allOn = shown.isNotEmpty() && shown.all { it.value.pick }
-    Row(Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitCheckbox(allOn, { on -> onRows(rows.map { if (inDept(it)) it.copy(pick = on) else it }) }, label = t("csync_tick_all"))
+    // `.csync-table` inside `.csync-budget-preview`: pinned header, the rows scroll in their own 55vh box.
+    Column(Modifier.fillMaxWidth().border(1.dp, ZillitTheme.colors.border, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
+        SheetHead(isPdf, allOn) { on -> onRows(rows.map { if (inDept(it)) it.copy(pick = on) else it }) }
+        Column(Modifier.fillMaxWidth().heightIn(max = PREVIEW_MAX).verticalScroll(rememberScrollState())) {
+            shown.forEach { (i, r) -> SheetLine(r, isPdf, sheets.size > 1, cats, importCurrency) { next -> onRows(rows.mapIndexed { j, x -> if (j == i) next else x }) } }
+        }
     }
-    shown.forEach { (i, r) -> SheetLine(r, isPdf, sheets.size > 1, cats, importCurrency) { next -> onRows(rows.mapIndexed { j, x -> if (j == i) next else x }) } }
+}
+
+@Composable
+private fun SheetHead(isPdf: Boolean, allOn: Boolean, onAll: (Boolean) -> Unit) {
+    val head = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.04.em)
+    Row(
+        Modifier.fillMaxWidth().background(ZillitTheme.colors.surfaceSunken).padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(CHECK_COL)) { ZillitCheckbox(allOn, onAll) }
+        @Composable
+        fun th(text: String, modifier: Modifier) = ZillitText(text.uppercase(), modifier, style = head, color = ZillitTheme.colors.textMuted, maxLines = 1)
+        th(t(if (isPdf) "csync_budget_page" else "csync_budget_row"), Modifier.width(ROW_COL))
+        th(t("csync_budget_account"), Modifier.width(ACCOUNT_COL))
+        if (isPdf) th(t("csync_field_name"), Modifier.width(ACCOUNT_COL))
+        th(t("csync_field_description"), Modifier.weight(DESC_WEIGHT))
+        th(t("csync_field_category"), Modifier.width(CATEGORY_COL))
+        th(t("csync_budget_amount"), Modifier.width(AMOUNT_COL))
+        th(t("csync_field_date"), Modifier.width(DATE_COL))
+        th(t("csync_field_scene"), Modifier.weight(MATCH_WEIGHT))
+        th(t("csync_field_character"), Modifier.weight(MATCH_WEIGHT))
+        th(t("csync_field_vendor"), Modifier.weight(MATCH_WEIGHT))
+    }
 }
 
 @Composable
 private fun SheetLine(r: SheetRow, isPdf: Boolean, multiSheet: Boolean, cats: List<String>, importCurrency: String, onChange: (SheetRow) -> Unit) {
     val l = r.rec
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-        ZillitCheckbox(r.pick, { onChange(r.copy(pick = it)) })
+    Row(
+        Modifier.fillMaxWidth().alpha(if (r.pick) 1f else UNTICKED_ALPHA).padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(CHECK_COL)) { ZillitCheckbox(r.pick, { onChange(r.copy(pick = it)) }) }
         Column(Modifier.width(ROW_COL)) {
             MutedText((if (!isPdf && multiSheet) "${l.str("sheet")} · " else "") + l.str("row"))
-            r.noteKey?.let { MutedText(t(it), maxLines = 2) }
+            r.noteKey?.let { ZillitText(t(it), style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp), color = ZillitTheme.colors.warning, maxLines = 2) }
         }
         Column(Modifier.width(ACCOUNT_COL)) {
-            ZillitText(l.str("account_code").ifBlank { "—" }, style = ZillitTheme.typography.bodySmall, maxLines = 1)
+            ZillitText(l.str("account_code").ifBlank { "—" }, style = ZillitTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), maxLines = 1)
             MutedText(l.str("account_name"))
         }
-        if (isPdf) MutedText(l.str("payee").ifBlank { "—" }, Modifier.width(ACCOUNT_COL))
+        if (isPdf) ZillitText(l.str("payee").ifBlank { "—" }, Modifier.width(ACCOUNT_COL), style = ZillitTheme.typography.bodySmall, maxLines = 1)
         ZillitTextField(r.description, { onChange(r.copy(description = it)) }, Modifier.weight(DESC_WEIGHT), placeholder = t("csync_field_description"))
         FilterSelect(r.category, enumOptions(cats), "—", { onChange(r.copy(category = it.ifEmpty { r.category })) }, Modifier.width(CATEGORY_COL))
         ZillitText(
             if (l.has("amount")) BudgetModel.fmtAmount(l.double("amount"), l.str("currency").ifEmpty { importCurrency }) else "—",
             Modifier.width(AMOUNT_COL),
-            style = ZillitTheme.typography.titleSmall,
+            style = ZillitTheme.typography.titleSmall.copy(textAlign = TextAlign.End),
             maxLines = 1,
         )
         MutedText(if (l.long("date") != 0L) fmtDate(l.long("date")) else t("csync_when_today"), Modifier.width(DATE_COL))
-        Box(Modifier.weight(1f)) { Matched(l.str("scene"), l.str("scene_id"), l.str("character"), l.str("character_id"), l.str("vendor"), l.str("vendor_id")) }
+        Box(Modifier.weight(MATCH_WEIGHT)) { Matched(l.str("scene"), l.str("scene_id")) }
+        Box(Modifier.weight(MATCH_WEIGHT)) { Matched(l.str("character"), l.str("character_id")) }
+        Box(Modifier.weight(MATCH_WEIGHT)) { Matched(l.str("vendor"), l.str("vendor_id")) }
     }
 }
 
 /** A name the sheet gave that this production does not have is shown, but will not be linked. */
 @Composable
-private fun Matched(scene: String, sceneId: String, character: String, characterId: String, vendor: String, vendorId: String) {
-    fun part(text: String, id: String) = if (text.isBlank()) null else if (id.isNotEmpty()) text else "$text · ${t("csync_budget_not_found")}"
-    MutedText(listOfNotNull(part(scene, sceneId), part(character, characterId), part(vendor, vendorId)).joinToString(" | ").ifEmpty { "—" }, maxLines = 2)
+private fun Matched(text: String, id: String) {
+    when {
+        text.isBlank() -> MutedText("—")
+        id.isNotEmpty() -> ZillitText(text, style = ZillitTheme.typography.bodySmall, maxLines = 1)
+        else -> MutedText("$text · ${t("csync_budget_not_found")}", maxLines = 2)
+    }
 }
 
-private val ROW_COL = 80.dp
-private val ACCOUNT_COL = 110.dp
-private val CATEGORY_COL = 150.dp
-private val AMOUNT_COL = 100.dp
-private val DATE_COL = 90.dp
+private val CHECK_COL = 28.dp
+private val ROW_COL = 70.dp
+private val ACCOUNT_COL = 100.dp
+private val CATEGORY_COL = 140.dp
+private val AMOUNT_COL = 90.dp
+private val DATE_COL = 80.dp
+private val PREVIEW_MAX = 420.dp
+private const val MATCH_WEIGHT = 1f
+private const val UNTICKED_ALPHA = 0.55f

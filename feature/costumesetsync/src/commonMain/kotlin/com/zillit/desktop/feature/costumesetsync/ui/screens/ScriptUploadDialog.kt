@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import com.zillit.desktop.feature.costumesetsync.ui.SyncDialogShell
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,9 +19,7 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitSegmented
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
-import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
@@ -29,7 +30,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.t
 
 private val NARROW = 620.dp
-private val WIDE = 1100.dp
+private val WIDE = 980.dp
 
 /**
  * The script upload dialog: pick (a listed document or a file), confirm a replace,
@@ -145,18 +146,16 @@ private fun ReviewPhase(upload: ScriptUpload, result: Rec, meta: Rec?) {
         )
     }
     result.strings("warnings").forEach { ZillitNotice(it, tone = StatusTone.Pending) }
-    TextInput(upload.revision, { upload.revision = it }, t("csync_field_revision"), FormWide, help = t("csync_field_revision_hint"))
-    ZillitNotice(summaryText(upload), tone = StatusTone.Ready)
-    ZillitSegmented(
-        listOf(
-            ZillitTab("scenes", "${t("csync_tab_scenes")} (${scenes.size})"),
-            ZillitTab(
-                "characters",
-                "${t("csync_tab_characters")} (${upload.detected.size})" +
-                    if (upload.newCharacters > 0) "  ${t("csync_char_n_new", "n" to upload.newCharacters)}" else "",
-            ),
-        ),
-        upload.tab, { upload.tab = it },
+    // `.csync-upload-meta`: the revision name beside the summary, equal halves.
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        TextInput(upload.revision, { upload.revision = it }, t("csync_field_revision"), Modifier.weight(1f), help = t("csync_field_revision_hint"))
+        ZillitNotice(summaryText(upload), Modifier.weight(1f).fillMaxHeight(), tone = StatusTone.Ready)
+    }
+    InkTabs(
+        listOf("scenes" to "${t("csync_tab_scenes")} (${scenes.size})", "characters" to "${t("csync_tab_characters")} (${upload.detected.size})"),
+        upload.tab,
+        badges = if (upload.newCharacters > 0) mapOf("characters" to t("csync_char_n_new", "n" to upload.newCharacters)) else emptyMap(),
+        onSelect = { upload.tab = it },
     )
     if (upload.tab == "scenes") ScriptScenesTable(upload, meta) else CharacterConfirm(upload)
     ZillitCheckbox(

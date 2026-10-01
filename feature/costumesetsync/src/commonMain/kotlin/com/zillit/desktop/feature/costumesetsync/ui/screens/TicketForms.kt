@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
@@ -221,7 +222,7 @@ private fun AlterationFields(f: TicketDraftState, onChange: (TicketDraftState) -
     TextInput(f.required, { onChange(f.copy(required = it)) }, t("csync_field_required"), FormWide)
     TextInput(f.tailor, { onChange(f.copy(tailor = it)) }, t("csync_field_tailor"))
     EnumInput(f.priority, ctx.metaList("priorities"), { onChange(f.copy(priority = it)) }, t("csync_field_priority"))
-    WfDateTimeInput(f.date, f.time, { onChange(f.copy(date = it)) }, { onChange(f.copy(time = it)) }, t("csync_field_deadline"))
+    DateTimeInput(f.date, f.time, { onChange(f.copy(date = it)) }, { onChange(f.copy(time = it)) }, t("csync_field_deadline"))
 }
 
 @Composable

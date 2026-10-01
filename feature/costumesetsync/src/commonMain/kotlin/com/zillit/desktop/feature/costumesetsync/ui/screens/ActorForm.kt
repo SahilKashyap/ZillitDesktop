@@ -204,16 +204,14 @@ private fun ActorFormBody(
 private fun NextFitting(form: ActorFormState, onChange: (ActorFormState) -> Unit) {
     var time by remember(form.nextFittingAt == 0L) { mutableStateOf(actorTimeText(form.nextFittingAt)) }
     val date = actorDateText(form.nextFittingAt)
-    Row(Cell, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        DateInput(date, { onChange(form.copy(nextFittingAt = actorDateMs(it, time))) }, t("csync_field_next_fitting"), Modifier.width(260.dp))
-        TextInput(
-            time,
-            { time = it; onChange(form.copy(nextFittingAt = actorDateMs(date, it))) },
-            "HH:mm",
-            Modifier.width(140.dp),
-            enabled = date.isNotEmpty(),
-        )
-    }
+    com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput(
+        date,
+        time,
+        { onChange(form.copy(nextFittingAt = actorDateMs(it, time))) },
+        { time = it; onChange(form.copy(nextFittingAt = actorDateMs(date, it))) },
+        t("csync_field_next_fitting"),
+        Cell,
+    )
 }
 
 @Composable

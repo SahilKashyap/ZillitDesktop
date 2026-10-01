@@ -45,7 +45,14 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
 /** The web's `.csync-subtabs`: 14sp labels, 8/16 padding, the active one ink-coloured with a 2dp ink underline. */
 @Composable
-internal fun InkTabs(tabs: List<Pair<String, String>>, activeId: String, modifier: Modifier = Modifier, onSelect: (String) -> Unit) {
+internal fun InkTabs(
+    tabs: List<Pair<String, String>>,
+    activeId: String,
+    modifier: Modifier = Modifier,
+    /** A pill after a tab's label (`csync-badge--warn`: the characters tab's "2 new"), by tab id. */
+    badges: Map<String, String> = emptyMap(),
+    onSelect: (String) -> Unit,
+) {
     val colors = ZillitTheme.colors
     Box(modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border).align(Alignment.BottomStart))
@@ -53,13 +60,23 @@ internal fun InkTabs(tabs: List<Pair<String, String>>, activeId: String, modifie
             tabs.forEach { (id, label) ->
                 val on = id == activeId
                 Column(Modifier.width(IntrinsicSize.Max).clickable { onSelect(id) }) {
-                    ZillitText(
-                        label,
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
-                        color = if (on) colors.textPrimary else colors.textMuted,
-                        maxLines = 1,
-                    )
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ZillitText(
+                            label,
+                            style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
+                            color = if (on) colors.textPrimary else colors.textMuted,
+                            maxLines = 1,
+                        )
+                        badges[id]?.let { badge ->
+                            ZillitText(
+                                badge,
+                                Modifier.clip(RoundedCornerShape(999.dp)).background(colors.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = colors.accentText,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                     Box(Modifier.fillMaxWidth().height(2.dp).background(if (on) colors.textPrimary else androidx.compose.ui.graphics.Color.Transparent))
                 }
             }
@@ -256,7 +273,7 @@ internal fun BlueButton(text: String, onClick: () -> Unit, enabled: Boolean = tr
     }
 }
 
-/** The web's `.csync-dropzone`: a full-width, centred panel with a 2dp dashed border, 30/20 padding and a sunken fill. */
+/** The web's `.csync-dropzone` (its later rule wins): a full-width, centred panel with a 1.5dp dashed border, 18/12 padding, 4dp gap and the page fill. */
 @Composable
 internal fun DropZone(title: String, formats: String, busy: Boolean, busyText: String, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
@@ -269,9 +286,9 @@ internal fun DropZone(title: String, formats: String, busy: Boolean, busyText: S
             .background(colors.surfaceSunken)
             .androidx_drawDashed(border)
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 30.dp),
+            .padding(horizontal = 12.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (busy) {
             ZillitText(busyText, style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -287,7 +304,7 @@ private fun Modifier.androidx_drawDashed(color: androidx.compose.ui.graphics.Col
         color = color,
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
         style = androidx.compose.ui.graphics.drawscope.Stroke(
-            width = 2.dp.toPx(),
+            width = 1.5.dp.toPx(),
             pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
         ),
     )

@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.costumesetsync.domain.BudgetModel
 import com.zillit.desktop.feature.costumesetsync.domain.PrintHtml.esc
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.ui.t
+import kotlinx.datetime.toLocalDateTime
 
 /*
  * The whole budget laid out the way a production budget prints: a cover, a top sheet of departments with
@@ -12,8 +13,24 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
  * saves (the web renders it into a hidden print portal).
  */
 
-private fun coverDate(ms: Long): String =
-    if (ms == 0L) "" else com.zillit.desktop.feature.costumesetsync.domain.fmtDate(ms)
+/** The cover's dates as a printed budget writes them: "01 Oct 2026"; [long] gives "30 September 2026". 0 is unset. */
+private fun coverDate(ms: Long, long: Boolean = false): String {
+    if (ms == 0L) return ""
+    val d = kotlinx.datetime.Instant.fromEpochMilliseconds(ms).toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
+    val month = d.month.name.lowercase().replaceFirstChar { it.uppercase() }.let { if (long) it else it.take(SHORT_MONTH) }
+    return "${d.day.toString().padStart(2, '0')} $month ${d.year}"
+}
+
+private const val SHORT_MONTH = 3
+
+/** The web's `.csync-bd` print rules (11px page, 26px cover title, ruled top sheet, details on a fresh page). */
+private const val BD_STYLE = "<style>.bd{font-size:11px}.bd .cover{padding-bottom:16px;margin-bottom:16px;border-bottom:2px solid #000}" +
+    ".bd .cover h1{margin:0;font-size:26px}.bd .sub{margin-top:4px;font-weight:600;letter-spacing:.06em}" +
+    ".bd .meta{display:flex;justify-content:space-between;margin-top:12px}.bd .r{text-align:right}" +
+    ".bd table.top{width:100%;border-collapse:collapse;margin-bottom:24px}.bd table.top th,.bd table.top td{padding:4px 6px;border-bottom:1px solid #e5e7eb;text-align:left}" +
+    ".bd table.top th.r,.bd table.top td.r{text-align:right}.bd table.top tr.total td{font-weight:700;border-top:1px solid #000}" +
+    ".bd table.top tr.grand td{font-size:13px;font-weight:800;border-top:2px solid #000}.bd .details{break-before:page;page-break-before:always}" +
+    ".bd .label{margin-bottom:8px;font-size:14px;font-weight:700}.bd .foot{margin-top:16px;font-size:10px;color:#6b7280;text-align:center}</style>"
 
 private fun row(code: String, title: String, total: String, cls: String = "") =
     "<tr class=\"$cls\"><td>${esc(code)}</td><td>${esc(title)}</td><td class=\"r\">${esc(total)}</td></tr>"
@@ -29,9 +46,13 @@ internal fun budgetHtml(project: Rec?, expenses: List<Rec>, groups: List<BudgetG
     val end = project?.long("end_date") ?: 0L
     val days = if (start != 0L && end != 0L) ((end - start) / MS_PER_DAY).toInt() + 1 else null
     return buildString {
-        append("<h1>${esc(name)}</h1><div class=\"sub\">${esc(t("csync_budget_word").uppercase())}</div>")
+        append(BD_STYLE)
+        append("<div class=\"bd\"><div class=\"cover\"><h1>${esc(name)}</h1>")
+        append("<div class=\"sub\">${esc(t("csync_budget_word").uppercase())} · ${esc(coverDate(System.currentTimeMillis(), long = true))}</div><div class=\"meta\"><div>")
         project?.str("type")?.takeIf { it.isNotEmpty() }?.let { append("<div>${esc(t(if (it == "EPISODIC") "csync_setup_series" else "csync_setup_feature"))}</div>") }
         project?.str("studio")?.takeIf { it.isNotEmpty() }?.let { append("<div>${esc(it)}</div>") }
+        listOfNotNull(project?.str("city")?.ifEmpty { null }, project?.str("country")?.ifEmpty { null }).takeIf { it.isNotEmpty() }?.let { append("<div>${esc(it.joinToString(", "))}</div>") }
+        append("</div><div class=\"r\">")
         listOf("prep_start_date" to "csync_budget_prep_from", "start_date" to "csync_budget_shoot_from", "wrap_date" to "csync_budget_wrap").forEach { (key, label) ->
             val ms = project?.long(key) ?: 0L
             if (ms != 0L) {
@@ -41,7 +62,8 @@ internal fun budgetHtml(project: Rec?, expenses: List<Rec>, groups: List<BudgetG
             }
         }
         if (currency.isNotEmpty()) append("<div>${esc(t("csync_budget_all_figures_in", "c" to currency))}</div>")
-        append("<table><tr><th>${esc(t("csync_budget_account"))}</th><th>${esc(t("csync_field_description"))}</th><th class=\"r\">${esc(t("csync_budget_total"))}</th></tr>")
+        append("</div></div></div>")
+        append("<table class=\"top\"><tr><th style=\"width:90px\">${esc(t("csync_budget_account"))}</th><th>${esc(t("csync_field_description"))}</th><th class=\"r\">${esc(t("csync_budget_total"))}</th></tr>")
         BudgetModel.SECTIONS.forEach { s ->
             val inS = rows.filter { BudgetModel.inSection(it, s) }
             if (inS.isEmpty()) return@forEach
@@ -52,8 +74,9 @@ internal fun budgetHtml(project: Rec?, expenses: List<Rec>, groups: List<BudgetG
         append(row("", t("csync_budget_total_atl"), total(atl), "total"))
         append(row("", t("csync_budget_total_btl"), total(btl), "total"))
         append(row("", t("csync_budget_grand_total"), total(expenses), "grand"))
-        append("</table><h2>${esc(t("csync_budget_details"))}</h2>")
+        append("</table><div class=\"details\"><div class=\"label\">${esc(t("csync_budget_details"))}</div>")
         append(detailHtml(groups, currency))
+        append("</div><div class=\"foot\">${esc(name)}</div></div>")
     }
 }
 

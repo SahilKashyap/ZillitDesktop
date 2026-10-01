@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
@@ -145,7 +146,7 @@ fun CleaningRequestDialog(open: Boolean, onClose: () -> Unit, onDone: (RequestDr
             EnumInput(priority, ctx.metaList("priorities"), { priority = it }, t("csync_field_priority"))
             SceneSelect(sceneId, { sceneId = it }, t("csync_field_scene"))
             TextInput(take, { take = it.filter(Char::isDigit) }, t("csync_field_take"), number = true)
-            WfDateTimeInput(date, time, { date = it }, { time = it }, t("csync_field_needed_by"))
+            DateTimeInput(date, time, { date = it }, { time = it }, t("csync_field_needed_by"))
             Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
                 MediaPicker(media, { media = it }, enabled = !saving, help = t("csync_shoot_stain_hint"))

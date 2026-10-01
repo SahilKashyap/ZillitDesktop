@@ -71,6 +71,8 @@ fun ZillitDateField(
      * Null (the default) offers every day.
      */
     minDate: LocalDate? = null,
+    /** Extra content inside the field's border, before the calendar button (a time entry, for a date-time control). */
+    trailingExtra: (@Composable () -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     // Which month the grid shows. Seeded from the field, and kept while the
@@ -88,6 +90,7 @@ fun ZillitDateField(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
             trailingContent = {
+                trailingExtra?.invoke()
                 ZillitIconButton(
                     icon = ZillitIcons.Calendar,
                     contentDescription = str(S.desktop_choose_a_date),

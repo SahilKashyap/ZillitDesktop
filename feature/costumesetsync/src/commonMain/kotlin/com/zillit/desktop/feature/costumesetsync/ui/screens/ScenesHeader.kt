@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -89,6 +90,9 @@ internal fun ScenesHeader(scenes: List<Rec>, filters: SceneFilterState, state: H
     ScenesHead(draftTitle, sub, onBack = { ctx.nav.backOr("dashboard") }) { HeaderButtons(revisions, filters, state, actions) }
 }
 
+/** A text button wider than its stack sits centred on one line and overflows both sides (the web's flex column). */
+private val OVERFLOW = Modifier.wrapContentWidth(unbounded = true)
+
 /** antd `size="large"`: 40dp where the default is 32. */
 private val LARGE = Modifier.defaultMinSize(minHeight = 40.dp)
 
@@ -106,7 +110,7 @@ private fun HeaderButtons(revisions: List<String>, filters: SceneFilterState, st
     }
     ButtonStack {
         ZillitButton(t("csync_upload_script"), onClick = actions.uploadScript, leadingIcon = ZillitIcons.Upload, modifier = LARGE)
-        if (state.hasScript) ZillitButton(t("csync_view_uploaded_script"), onClick = actions.viewScript, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye)
+        if (state.hasScript) ZillitButton(t("csync_view_uploaded_script"), onClick = actions.viewScript, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye, modifier = OVERFLOW)
     }
     ButtonStack {
         ZillitButton(t("csync_upload_schedule"), onClick = actions.uploadSchedule, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Calendar, modifier = LARGE)
@@ -116,7 +120,7 @@ private fun HeaderButtons(revisions: List<String>, filters: SceneFilterState, st
             color = ZillitTheme.colors.danger,
             textAlign = TextAlign.Center,
         )
-        if (state.hasSchedule) ZillitButton(t("csync_view_uploaded_schedule"), onClick = actions.viewSchedule, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye)
+        if (state.hasSchedule) ZillitButton(t("csync_view_uploaded_schedule"), onClick = actions.viewSchedule, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye, modifier = OVERFLOW)
     }
     ZillitButton(t("csync_add_to_breakdown"), onClick = actions.addToBreakdown, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add, modifier = LARGE)
 }

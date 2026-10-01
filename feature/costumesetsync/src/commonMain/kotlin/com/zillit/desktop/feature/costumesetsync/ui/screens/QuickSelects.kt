@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -260,6 +261,43 @@ fun ActorSelect(
                 created = created + (actor.id to actor.str("name"))
                 onChange(actor.id)
                 onCreated(actor)
+            }
+        },
+    )
+}
+
+/**
+ * The breakdown editor's Cast name picker: the web's `ActorSelect` at `size="small"` — a 24dp searchable
+ * dropdown opening with "+ New actor" (the quick, name-only form), the picked actor assigned straight back.
+ */
+@Composable
+internal fun CellActorPick(value: String, options: List<Pair<String, String>>, onChange: (String) -> Unit, enabled: Boolean = true) {
+    val ctx = LocalSync.current
+    var open by remember { mutableStateOf(false) }
+    var created by remember { mutableStateOf(emptyList<Pair<String, String>>()) }
+    val seen = options.map { it.first }.toSet()
+    val unassigned = t("csync_unassigned_dash")
+    CompactSelect(
+        value = value,
+        options = listOf("" to unassigned) + options + created.filter { it.first !in seen },
+        onChange = onChange,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        placeholder = unassigned,
+        searchable = true,
+        newLabel = if (ctx.canPost) t("csync_new_actor") else null,
+        onNew = { open = true },
+    )
+    ActorFormDialog(
+        open = open,
+        onClose = { open = false },
+        saveLabel = t("csync_create_and_assign"),
+        allowAddAnother = false,
+        quick = true,
+        onSaved = { actor ->
+            if (actor.id.isNotEmpty()) {
+                created = created + (actor.id to actor.str("name"))
+                onChange(actor.id)
             }
         },
     )

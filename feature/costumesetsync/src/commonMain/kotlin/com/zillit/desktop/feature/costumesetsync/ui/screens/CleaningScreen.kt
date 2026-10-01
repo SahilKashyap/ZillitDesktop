@@ -276,7 +276,7 @@ private fun whenText(i: Rec, now: Long): String = when {
 
 /** The list view: open tickets first, then the closed ones. */
 @Composable
-private fun CleaningList(shown: List<Rec>, q: String) {
+internal fun CleaningList(shown: List<Rec>, q: String) {
     val ctx = LocalSync.current
     SectionCard(flush = true, modifier = Modifier.fillMaxWidth()) {
         if (shown.isEmpty()) {
@@ -296,8 +296,14 @@ private fun CleaningList(shown: List<Rec>, q: String) {
                     StatusBadge(i.str("status"))
                 },
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                    MonoText(costume?.str("asset_number").orEmpty())
+                // `.csync-asset` (12px mono, muted) then the name, one space apart.
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+                    com.zillit.desktop.core.designsystem.component.ZillitText(
+                        costume?.str("asset_number").orEmpty(),
+                        style = ZillitTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp),
+                        color = ZillitTheme.colors.textMuted,
+                        maxLines = 1,
+                    )
                     RowTitle(costume?.str("name").orEmpty(), Modifier.weight(1f, fill = false))
                 }
                 MutedText(

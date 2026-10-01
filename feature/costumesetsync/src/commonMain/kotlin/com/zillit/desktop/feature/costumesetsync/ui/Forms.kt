@@ -1,6 +1,13 @@
 package com.zillit.desktop.feature.costumesetsync.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
@@ -123,6 +130,56 @@ fun TextInput(
 fun DateInput(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = FormCell) {
     ZillitDateField(value = value, onValueChange = onChange, label = label, modifier = modifier)
 }
+
+/**
+ * The web's one antd date-time picker: a single bordered field holding the date text, a hairline, the
+ * `HH:mm` text and the calendar button (the calendar popup is [ZillitDateField]'s). [date] is
+ * `YYYY-MM-DD`, [time] is `HH:mm`; both stay the callers' own wire strings.
+ */
+@Composable
+fun DateTimeInput(
+    date: String,
+    time: String,
+    onDate: (String) -> Unit,
+    onTime: (String) -> Unit,
+    label: String,
+    modifier: Modifier = FormCell,
+    enabled: Boolean = true,
+) {
+    val colors = ZillitTheme.colors
+    ZillitDateField(
+        value = date,
+        onValueChange = onDate,
+        label = label,
+        modifier = modifier,
+        enabled = enabled,
+        trailingExtra = {
+            Box(Modifier.width(1.dp).height(18.dp).background(colors.border))
+            Box(Modifier.width(68.dp).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterStart) {
+                if (time.isEmpty()) ZillitText("HH:mm", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted, maxLines = 1)
+                BasicTextField(
+                    value = time,
+                    onValueChange = { onTime(it.take(TIME_MAX)) },
+                    enabled = enabled && date.isNotEmpty(),
+                    singleLine = true,
+                    textStyle = ZillitTheme.typography.bodyMedium.copy(color = colors.textPrimary),
+                    cursorBrush = SolidColor(colors.accent),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+    )
+}
+
+/** One-string form: `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` in, the same shape out. */
+@Composable
+fun DateTimeInput(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = FormCell) {
+    val date = value.substringBefore('T')
+    val time = value.substringAfter('T', "")
+    DateTimeInput(date, time, { onChange(if (time.isEmpty()) it else "${it}T$time") }, { onChange(if (date.isEmpty()) "" else if (it.isEmpty()) date else "${date}T$it") }, label, modifier)
+}
+
+private const val TIME_MAX = 5
 
 /** A label above a searchable pick-one list of (value, label) options; the empty value is "none". */
 @Composable
