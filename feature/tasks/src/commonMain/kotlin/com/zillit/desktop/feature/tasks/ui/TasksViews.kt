@@ -133,7 +133,13 @@ private class DragState {
     var origin = Offset.Zero
     val columns: SnapshotStateMap<TaskStatus, Rect> = mutableStateMapOf()
 
-    fun overColumn(): TaskStatus? = columns.entries.firstOrNull { pointer in it.value }?.key
+    /**
+     * The column the pointer is over — by its horizontal span only: an empty
+     * column is only as tall as its heading, and a card dropped low in the
+     * gap under it was meant for it all the same.
+     */
+    fun overColumn(): TaskStatus? =
+        columns.entries.firstOrNull { pointer.x >= it.value.left && pointer.x <= it.value.right }?.key
 }
 
 /**
