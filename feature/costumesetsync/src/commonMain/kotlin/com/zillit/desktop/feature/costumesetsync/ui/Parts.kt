@@ -2,6 +2,9 @@ package com.zillit.desktop.feature.costumesetsync.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -86,7 +90,10 @@ fun ReadinessDot(level: String?, modifier: Modifier = Modifier) {
     Box(modifier.size(10.dp).clip(CircleShape).background(colour))
 }
 
-/** The heading block under the tool's tabs. */
+/**
+ * The heading block of every page, as the web draws it: a square back arrow, the
+ * title large with its sub-line under it, and the page's actions at the right.
+ */
 @Composable
 fun PageHead(
     title: String,
@@ -94,25 +101,75 @@ fun PageHead(
     sub: String? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
 ) {
-    ZillitPageHeader(
-        title = title,
-        description = sub,
-        actions = actions,
-        modifier = modifier.padding(bottom = ZillitTheme.spacing.md),
-    )
+    val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
+    Row(
+        modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        Box(
+            Modifier
+                .size(BACK_SIZE)
+                .clip(ZillitTheme.shapes.medium)
+                .background(colors.surface)
+                .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+                .clickable { ctx.nav.backOr("dashboard") },
+            contentAlignment = Alignment.Center,
+        ) { ZillitIcon(ZillitIcons.ArrowLeft, tint = colors.textPrimary, size = BACK_ICON) }
+        Column(Modifier.weight(1f).widthIn(min = TITLE_MIN_WIDTH)) {
+            ZillitText(title, style = ZillitTheme.typography.titleLarge.copy(fontSize = TITLE_SIZE, lineHeight = TITLE_LINE, fontWeight = FontWeight.Bold), maxLines = 2)
+            sub?.takeIf { it.isNotBlank() }?.let { ZillitText(it, style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 2) }
+        }
+        actions?.let {
+            Row(
+                Modifier,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+                verticalAlignment = Alignment.Top,
+                content = it,
+            )
+        }
+    }
 }
 
-/** One headline figure; [tone] tints it (`Ok`/`Info`/`Warn`/`Danger`), none for a plain count. */
+private val TITLE_MIN_WIDTH = 220.dp
+private val FILTER_WIDTH = 170.dp
+private val TITLE_SIZE = 26.sp
+private val TITLE_LINE = 32.sp
+private val BACK_SIZE = 38.dp
+private val BACK_ICON = 18.dp
+
+/**
+ * One headline figure, as the web draws it: a plain white tile with a small
+ * upper-case label over a large number, which alone takes the tone's colour.
+ */
 @Composable
 fun StatCard(label: String, value: Any?, modifier: Modifier = Modifier, tone: Tone? = null, hint: String? = null, onClick: (() -> Unit)? = null) {
-    ZillitStatTile(
-        label = label,
-        value = value?.toString() ?: "0",
-        modifier = modifier,
-        sub = hint,
-        tone = tone?.takeIf { it != Tone.Muted }?.toStatusTone(),
-        onClick = onClick,
-    )
+    val colors = ZillitTheme.colors
+    val ink = when (tone) {
+        Tone.Info -> colors.info
+        Tone.Ok -> colors.success
+        Tone.Warn -> colors.warning
+        Tone.Danger -> colors.danger
+        else -> colors.textPrimary
+    }
+    Column(
+        modifier
+            .clip(ZillitTheme.shapes.large)
+            .background(colors.surface)
+            .border(1.dp, colors.border, ZillitTheme.shapes.large)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        ZillitText(label.uppercase(), style = ZillitTheme.typography.labelSmall, color = colors.textSecondary, maxLines = 2)
+        ZillitText(
+            value?.toString() ?: "0",
+            style = ZillitTheme.typography.titleLarge.copy(fontSize = TITLE_SIZE, lineHeight = TITLE_LINE, fontWeight = FontWeight.Bold),
+            color = ink,
+        )
+        hint?.let { ZillitText(it, style = ZillitTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 2) }
+    }
 }
 
 @Composable
@@ -129,8 +186,65 @@ fun SectionCard(
 
 @Composable
 fun EmptyState(title: String, hint: String? = null, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
-    ZillitEmptyState(title = title, message = hint, modifier = modifier, action = action)
+    val emoji = emojiFor(title)
+    if (emoji == null) {
+        ZillitEmptyState(title = title, message = hint, modifier = modifier, action = action)
+        return
+    }
+    // The reference's own empty state: an emoji over the title, hint and action.
+    Column(
+        modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxl, horizontal = ZillitTheme.spacing.lg),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(emoji, style = ZillitTheme.typography.titleLarge.copy(fontSize = EMOJI_SIZE))
+        ZillitText(title, style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+        hint?.let { ZillitText(it, style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textSecondary, maxLines = 3) }
+        action?.invoke()
+    }
 }
+
+private val EMOJI_SIZE = 34.sp
+
+/** The emoji the web gives an empty state, found by its title's key: the web passes `icon` per call site. */
+private fun emojiFor(title: String): String? = EMPTY_EMOJI.entries.firstOrNull { t(it.key) == title }?.value
+
+private val EMPTY_EMOJI: Map<String, String> = mapOf(
+    "csync_actors_empty_title" to "🎭",
+    "csync_actors_no_match" to "🔍",
+    "csync_budget_empty" to "💸",
+    "csync_budget_finance_only" to "🔒",
+    "csync_budget_no_match" to "🔍",
+    "csync_change_not_found" to "👗",
+    "csync_character_not_found" to "🧍",
+    "csync_characters_empty_title" to "🧍",
+    "csync_characters_no_match" to "🔍",
+    "csync_cleaning_empty_title" to "🧼",
+    "csync_cleaning_none_match" to "🧼",
+    "csync_click_scene_above" to "🎬",
+    "csync_costumes_empty_title" to "👗",
+    "csync_dash_scenes_empty_title" to "🎬",
+    "csync_fittings_empty_title" to "📏",
+    "csync_fittings_none_match" to "📏",
+    "csync_gallery_empty_title" to "🖼",
+    "csync_no_changes_yet" to "👗",
+    "csync_no_characters_in_scene" to "🧍",
+    "csync_no_shoot_days" to "🎞️",
+    "csync_no_takes_recorded" to "📖",
+    "csync_no_takes_yet" to "📖",
+    "csync_not_in_any_scene_yet" to "🎬",
+    "csync_nothing_scheduled_day" to "📋",
+    "csync_nothing_to_display" to "★",
+    "csync_notifications_empty_title" to "🔔",
+    "csync_rentals_no_match" to "🔍",
+    "csync_rentals_none" to "🏷",
+    "csync_scan_empty_title" to "📷",
+    "csync_scene_not_found" to "🎬",
+    "csync_scenes_empty_title" to "🎬",
+    "csync_vendors_no_match" to "🔍",
+    "csync_vendors_none" to "🏬",
+    "csync_view_only_book" to "🎬",
+)
 
 @Composable
 fun LoadingView(modifier: Modifier = Modifier) {
@@ -160,7 +274,7 @@ fun FilterSelect(
     options: List<Pair<String, String>>,
     placeholder: String,
     onChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.width(FILTER_WIDTH),
 ) {
     val any = "" to placeholder
     ZillitSelect(

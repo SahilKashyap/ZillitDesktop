@@ -32,6 +32,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -40,41 +41,48 @@ import com.zillit.desktop.feature.costumesetsync.ui.screens.FirstRun
 import com.zillit.desktop.feature.costumesetsync.ui.screens.ProductionSetupWizard
 import kotlin.time.Clock
 
-private val SEARCH_WIDTH = 260.dp
+private val SEARCH_WIDTH = 380.dp
 
 /** One page inside a tab group, with the `counts` key behind its figure. */
-private data class NavItem(val to: String, val labelKey: String, val count: String? = null)
+private data class NavItem(val to: String, val labelKey: String, val count: String? = null, val danger: Boolean = false)
 
 /** A primary tab; a group lists its pages as a second strip. */
-private data class NavTab(val id: String, val labelKey: String, val start: String, val items: List<NavItem> = emptyList(), val financeOnly: Boolean = false)
+private data class NavTab(
+    val id: String,
+    val labelKey: String,
+    val start: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val items: List<NavItem> = emptyList(),
+    val financeOnly: Boolean = false,
+)
 
 private val TABS = listOf(
-    NavTab("dashboard", "csync_nav_dashboard", "dashboard"),
-    NavTab("breakdown", "csync_nav_scenes", "breakdown"),
+    NavTab("dashboard", "csync_nav_dashboard", "dashboard", ZillitIcons.Grid),
+    NavTab("breakdown", "csync_nav_scenes", "breakdown", ZillitIcons.Calendar),
     NavTab(
-        "character", "csync_nav_character_breakdown", "characters",
+        "character", "csync_nav_character_breakdown", "characters", ZillitIcons.Users,
         listOf(NavItem("characters", "csync_nav_characters"), NavItem("actors", "csync_nav_actors")),
     ),
     NavTab(
-        "costumes", "csync_nav_costumes", "costumes",
+        "costumes", "csync_nav_costumes", "costumes", ZillitIcons.Tag,
         listOf(
             NavItem("costumes", "csync_nav_costumes", "costumes"),
             NavItem("fittings", "csync_nav_fittings", "fittings_today"),
             NavItem("cleaning", "csync_nav_cleaning", "cleaning"),
             NavItem("alterations", "csync_nav_alterations", "alteration"),
-            NavItem("damages", "csync_nav_damage", "damaged"),
-            NavItem("missing", "csync_nav_missing", "missing"),
+            NavItem("damages", "csync_nav_damage", "damaged", danger = true),
+            NavItem("missing", "csync_nav_missing", "missing", danger = true),
             NavItem("labels", "csync_nav_qr_labels"),
-            NavItem("vendors", "csync_nav_vendors_rentals", "rentals_due"),
+            NavItem("vendors", "csync_nav_vendors_rentals", "rentals_due", danger = true),
         ),
     ),
     NavTab(
-        "continuity", "csync_nav_continuity", "continuity",
+        "continuity", "csync_nav_continuity", "continuity", ZillitIcons.Camera,
         listOf(NavItem("continuity", "csync_nav_on_set"), NavItem("continuity/book", "csync_nav_book")),
     ),
-    NavTab("reports", "csync_nav_reports", "reports"),
-    NavTab("budget", "csync_nav_budget", "budget", financeOnly = true),
-    NavTab("gallery", "csync_nav_gallery", "gallery"),
+    NavTab("reports", "csync_nav_reports", "reports", ZillitIcons.BarChart),
+    NavTab("budget", "csync_nav_budget", "budget", ZillitIcons.Wallet, financeOnly = true),
+    NavTab("gallery", "csync_nav_gallery", "gallery", ZillitIcons.Photo),
 )
 
 /** Which primary tab lights for a route head — a record's own page lights its list's tab. */
@@ -146,7 +154,7 @@ fun SyncOnsetShell(viewModel: SyncOnsetViewModel, onTitle: (String) -> Unit = {}
                 !state.viewer.canView -> Gate(str(S.desktop_csync_gate_noview_title), str(S.desktop_csync_gate_noview_hint))
                 !state.projectReady || state.meta == null -> Gate(str(S.desktop_csync_loading), null)
                 else -> CompositionLocalProvider(LocalSync provides ctx) {
-                    Frame(
+                    SyncFrame(
                         counts = state.counts,
                         bellTick = bellTick,
                         setUpHere = setUpHere,
@@ -170,7 +178,7 @@ private fun Gate(title: String, hint: String?) {
 }
 
 @Composable
-private fun Frame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp: () -> Unit, onReloadProject: () -> Unit) {
+internal fun SyncFrame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp: () -> Unit, onReloadProject: () -> Unit) {
     val ctx = LocalSync.current
     // A production with nothing in it opens to the first-run landing instead of the tabs (the web's `FirstRun`).
     if (ctx.project.notSetUp && !setUpHere) {
@@ -186,14 +194,15 @@ private fun Frame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp: () -
     fun countOf(item: NavItem): Int = item.count?.let { counts?.long(it)?.toInt() } ?: 0
 
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
+        Modifier.fillMaxWidth().background(ZillitTheme.colors.surface).padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        if (ctx.nav.canGoBack) {
-            ZillitButton(t("csync_back"), onClick = { ctx.nav.back() }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-        }
-        ZillitText(str(S.desktop_csync_tool_name), style = ZillitTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        ZillitText(
+            str(S.desktop_csync_tool_name),
+            style = ZillitTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+            modifier = Modifier.weight(1f),
+        )
         GlobalSearch(Modifier.width(SEARCH_WIDTH))
         NotificationBell(bellTick)
         if (!ctx.canPost) {
@@ -203,14 +212,19 @@ private fun Frame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp: () -
             ZillitButton(t("csync_request_download_access"), onClick = { ctx.askRights(RightsKind.Download) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
         }
     }
-    ZillitTabStrip(
+    SyncTabBar(
         tabs = tabs.map { tab ->
-            ZillitTab(tab.id, t(tab.labelKey), count = tab.items.sumOf(::countOf))
+            SyncTabModel(
+                id = tab.id,
+                label = t(tab.labelKey),
+                icon = tab.icon,
+                start = tab.start,
+                items = tab.items.map { SyncTabItem(it.to, t(it.labelKey), countOf(it), it.danger) },
+            )
         },
         activeId = activeTab,
-        onSelect = { id -> tabs.firstOrNull { it.id == id }?.let { ctx.nav.go(it.start) } },
-        size = TabStripSize.Primary,
-        modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg),
+        activeItem = itemOf(route),
+        onGo = ctx.nav::go,
         // The Setup tab: the production's setup, filled in, to change (setup roles only).
         trailing = if (ctx.project.canSetUp(ctx.canPost)) {
             { ZillitButton(t("csync_nav_setup"), onClick = { setupOpen = true }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small) }
@@ -218,18 +232,8 @@ private fun Frame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp: () -
             null
         },
     )
-    val group = tabs.firstOrNull { it.id == activeTab }?.items.orEmpty()
-    if (group.isNotEmpty()) {
-        ZillitTabStrip(
-            tabs = group.map { ZillitTab(it.to, t(it.labelKey), count = countOf(it)) },
-            activeId = itemOf(route),
-            onSelect = { ctx.nav.go(it) },
-            size = TabStripSize.Secondary,
-            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg),
-        )
-    }
     ZillitScrollColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(ZillitTheme.colors.surfaceSunken),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(ZillitTheme.spacing.xl),
     ) {
         SyncRoutes(route)

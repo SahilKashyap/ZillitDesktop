@@ -26,6 +26,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.Tone
+import com.zillit.desktop.feature.costumesetsync.domain.longDay
 import com.zillit.desktop.feature.costumesetsync.domain.todayParam
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
@@ -78,7 +79,7 @@ fun DashboardScreen() {
         val phase = project?.str("current_location")?.ifBlank { null } ?: project?.str("status")?.let(::tEnum).orEmpty()
         PageHead(
             title = ctx.project.name.ifBlank { t("csync_production") },
-            sub = listOf("${t("csync_shooting_day")} ${project?.long("shooting_day") ?: 0}", phase, root.str("date"))
+            sub = listOf("${t("csync_shooting_day")} ${project?.long("shooting_day") ?: 0}", phase, longDay(root.str("date")))
                 .filter { it.isNotBlank() }.joinToString(" · "),
             actions = {
                 if (ctx.canPost) {
@@ -187,4 +188,4 @@ private fun SceneCard(scene: Rec) {
     }
 }
 
-private val TILE_WIDTH = 168.dp
+private val TILE_WIDTH = 124.dp

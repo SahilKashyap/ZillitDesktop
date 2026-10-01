@@ -45,6 +45,15 @@ fun fmtDateTime(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): St
 fun fmtTime(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String =
     localTime(ms, zone)?.let { "${two(it.hour)}:${two(it.minute)}" }.orEmpty()
 
+/** `2026-10-01` → `Thu, 1 Oct 2026` (the dashboard's heading date); the input itself when it does not parse. */
+fun longDay(ymd: String): String {
+    val date = runCatching { kotlinx.datetime.LocalDate.parse(ymd.take(DAY_CHARS)) }.getOrNull() ?: return ymd
+    val weekday = date.dayOfWeek.name.take(SHORT).lowercase().replaceFirstChar { it.uppercase() }
+    return "$weekday, ${date.dayOfMonth} ${date.month.short()} ${date.year}"
+}
+
+private const val DAY_CHARS = 10
+
 /** Today as `YYYY-MM-DD`, which the dashboard and report `date` params take. */
 fun todayParam(now: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
     val d = Instant.fromEpochMilliseconds(now).toLocalDateTime(zone)

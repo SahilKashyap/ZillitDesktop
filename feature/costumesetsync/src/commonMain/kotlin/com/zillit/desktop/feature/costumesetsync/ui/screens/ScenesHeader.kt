@@ -101,12 +101,13 @@ private fun HeaderButtons(revisions: List<String>, filters: SceneFilterState, st
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ZillitButton(t("csync_upload_schedule"), onClick = actions.uploadSchedule, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Calendar)
-        ZillitText(t("csync_upload_schedule_hint"), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger)
+        ZillitText(t("csync_upload_schedule_hint"), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger, modifier = Modifier.widthIn(max = HINT_W))
         if (state.hasSchedule) ZillitButton(t("csync_view_uploaded_schedule"), onClick = actions.viewSchedule, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye)
     }
     ZillitButton(t("csync_add_to_breakdown"), onClick = actions.addToBreakdown, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add)
 }
 
+private val HINT_W = 190.dp
 private val REV_W = 170.dp
 private val EPISODE_W = 150.dp
 private val CHARACTER_W = 190.dp

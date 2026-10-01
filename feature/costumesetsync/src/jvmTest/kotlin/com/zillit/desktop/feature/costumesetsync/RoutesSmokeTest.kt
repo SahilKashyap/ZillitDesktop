@@ -65,7 +65,7 @@ class RoutesSmokeTest {
         return """{"status":1,"data":$data}"""
     }
 
-    private fun ctx(route: String): SyncCtx {
+    internal fun ctx(route: String): SyncCtx {
         val engine = MockEngine { request ->
             respond(reply(request.url.toString()), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         }
