@@ -104,6 +104,7 @@ internal fun ApplicationScope.CallWindow(
             window.requestFocus()
             com.zillit.desktop.core.common.ZillitLog.i("CallWindowing") { "raised the call window" }
         }
+        LeaveCompactWhenZoomed(windowState, compact, calls)
         ZillitTheme(darkTheme = darkTheme) {
             val colors = ZillitTheme.colors
             AvatarFaces(ready) {
@@ -136,6 +137,27 @@ internal fun ApplicationScope.CallWindow(
                 }
             }
         }
+    }
+}
+
+/**
+ * Zoomed or full-screened from the OS button, the thumbnail stops being one.
+ *
+ * Compact draws the PiP strip and asks the page for its compact stage, where
+ * the CSS hides every tile but the first (`body.compact .tile:not(:first-child)`)
+ * — so a maximised thumbnail was a full screen of one face with everybody else
+ * switched off, above a four-button strip that is not the call's controls.
+ * Leaving compact hands the same window to the real surface, at the size the
+ * user just asked for.
+ */
+@Composable
+private fun LeaveCompactWhenZoomed(windowState: WindowState, compact: Boolean, calls: CallViewModel) {
+    LaunchedEffect(windowState.placement, compact) {
+        if (!compact || windowState.placement == WindowPlacement.Floating) return@LaunchedEffect
+        com.zillit.desktop.core.common.ZillitLog.i("CallWindowing") {
+            "thumbnail ${windowState.placement}; leaving compact"
+        }
+        calls.onEvent(CallEvent.ToggleCallCompact)
     }
 }
 
@@ -262,6 +284,11 @@ private fun rememberCallWindowState(compact: Boolean): WindowState {
             settled = true
             return@LaunchedEffect
         }
+        // A window the OS is sizing — zoomed or full-screen — keeps the size
+        // and place the OS gave it. This runs when leaving compact, and a
+        // thumbnail leaves compact precisely BECAUSE it was just maximised:
+        // centring it at 960x640 would undo the click that got us here.
+        if (state.placement != WindowPlacement.Floating) return@LaunchedEffect
         if (compact) {
             state.size = pipLastSize
             state.position = pipLastPosition ?: WindowPosition.Aligned(Alignment.BottomEnd)
