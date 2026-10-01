@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -79,13 +80,16 @@ internal fun ApplicationScope.CallWindow(
     // No video gate: an audio call gets a window too. The surface draws
     // avatars when there is no picture, and a call the user cannot see is
     // exactly the thing this window exists to prevent.
-    if (!state.pipOpen) return
+    if (!callWindowAlive(state.pipOpen)) return
 
     val compact = state.pipCompact
     val windowState = rememberCallWindowState(compact)
     Window(
         onCloseRequest = { calls.onEvent(CallEvent.TogglePip) },
         state = windowState,
+        // Hidden for the one frame between the contents going and the window
+        // following, so the empty shell is never seen.
+        visible = state.pipOpen,
         title = state.headerTitle.ifBlank { str(S.desktop_zillit_call) },
         // Only the thumbnail floats. A full call window that forced itself
         // over everything would be the one thing nobody could get out of the
@@ -93,6 +97,10 @@ internal fun ApplicationScope.CallWindow(
         alwaysOnTop = compact,
         resizable = true,
     ) {
+        // Everything below — the stage, the strip and the browser the crash
+        // above is about — goes as soon as the call does, a frame before the
+        // window that holds it.
+        if (!state.pipOpen) return@Window
         // The pill's expand button, pressed in the main window while the call
         // lives here: this window is the call, so it comes forward — out of
         // the Dock if it was minimised there, and full size (the view model
@@ -139,6 +147,53 @@ internal fun ApplicationScope.CallWindow(
             }
         }
     }
+}
+
+/**
+ * True while the call window should exist: for as long as the call is up, and
+ * one frame longer.
+ *
+ * Dropping the window and its contents together — what `if (!state.pipOpen)
+ * return` did — killed the UI on Windows every time a call ended:
+ *
+ *     IllegalStateException: SkiaLayer is disposed
+ *       at SwingInteropViewGroup.invalidate
+ *       at CefBrowserWr$3.removeCanvas … removeNotify
+ *       at ComposeWindowPanel.removeNotify
+ *
+ * Compose disposes the scene and its `SkiaLayer`, then AWT walks the hierarchy
+ * calling `removeNotify`; JCEF's canvas removal invalidates its parent chain,
+ * that chain still reaches the dead scene, and the throw escapes onto the
+ * event thread. The call was still connected with no way back to it, and the
+ * process went on holding the single-instance lock — so Zillit could not be
+ * reopened either. macOS never hit it: JCEF only takes this
+ * heavyweight-canvas path on Windows.
+ *
+ * `callVideoSurface`'s `onDispose` exists to unparent the browser first, and
+ * it was losing the race because the window's AWT teardown had already begun.
+ * Holding the window one frame past its contents gives that disposal the
+ * ordering it was written to assume: the browser leaves the hierarchy while
+ * the scene is still alive, and by the time the window goes there is no
+ * interop view left in it.
+ *
+ * The same family as the `getPreferredSize` crash the holder in
+ * `callVideoSurface` fixes — Compose touching Swing interop during window
+ * disposal. That one was measurement; this is invalidation.
+ */
+@Composable
+private fun callWindowAlive(pipOpen: Boolean): Boolean {
+    var alive by remember { mutableStateOf(false) }
+    LaunchedEffect(pipOpen) {
+        if (pipOpen) {
+            alive = true
+        } else {
+            // One frame: long enough for the composition that drops the
+            // contents to have been applied, and `onDispose` to have run.
+            withFrameNanos { }
+            alive = false
+        }
+    }
+    return alive
 }
 
 /**

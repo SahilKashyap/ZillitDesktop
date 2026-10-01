@@ -298,6 +298,7 @@ import com.zillit.desktop.feature.home.ui.HomeToolProvider
 import com.zillit.desktop.feature.home.ui.MediaCapture
 import com.zillit.desktop.feature.shell.placeholderTools
 import java.util.UUID
+import kotlin.system.exitProcess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.coroutines.launch
@@ -368,8 +369,37 @@ private fun installCrashLogging() {
         // handler is what puts the dialog on screen, and losing it would turn
         // a visible crash into a silent one.
         previous?.uncaughtException(thread, error)
+
+        // Then, if there is no UI left, go. See [leavesTheUiDead].
+        if (error.leavesTheUiDead()) {
+            ZillitLog.w(CRASH_TAG) { "the UI is gone; exiting rather than holding the lock invisibly" }
+            exitProcess(UI_CRASH_EXIT)
+        }
     }
 }
+
+/**
+ * True when the throw means this process has no working UI left, and keeping
+ * it alive only does harm.
+ *
+ * A disposed Compose scene does not come back. The window is gone, nothing
+ * repaints, and the process sits there holding the single-instance lock — so
+ * every later launch is refused and the only way back in is Task Manager.
+ * That is how one crash while hanging up a call turned into "Zillit will not
+ * open any more". Exiting costs nothing that is not already lost (the window
+ * geometry is written as it changes, and the shutdown hook still runs) and it
+ * hands the lock back, which is the difference between a crash and a
+ * lockout.
+ *
+ * Matched on the message because Skiko offers nothing else to match on — it
+ * is a plain `IllegalStateException`. Deliberately narrow: an unrecognised
+ * crash keeps the old behaviour of staying up, because a process that quits
+ * on anything unexpected is its own kind of bug.
+ */
+private fun Throwable.leavesTheUiDead(): Boolean =
+    generateSequence(this, Throwable::cause).any {
+        it is IllegalStateException && it.message?.contains("SkiaLayer is disposed") == true
+    }
 
 /**
  * Says why nothing happened.
@@ -4421,6 +4451,9 @@ private const val GLOBAL_BADGE_SEGMENT = "global_label"
 private const val SOS_BADGE_SEGMENT = "sos_label"
 
 private const val CRASH_TAG = "Crash"
+
+/** Distinct from a clean exit, so a crash is visible in a parent process or a log. */
+private const val UI_CRASH_EXIT = 1
 
 /** The Drive's folders under [parentId] (null = the root), as the email-rules picker lists them. */
 private suspend fun AppGraph.Ready.driveFolderOptions(parentId: String?): ZillitResult<List<DriveFolderOption>> =
