@@ -281,6 +281,35 @@ kotlin.sourceSets["main"].kotlin.srcDir(generateBuildInfo)
 // renaming the bundle must not re-identify the app.
 val desktopPackageName = "Zillit-Desktop" + if (zillitVariantLabel.isEmpty()) "" else "-$zillitVariantLabel"
 
+/*
+ * The packaging metadata, named out here rather than only inside
+ * `nativeDistributions`, because `packageSignedMsi` drives jpackage itself and
+ * has to pass the *same* values. Two sources of truth for them would not fail
+ * any build; the `upgradeUuid` in particular would ship an in-app update that
+ * installs *beside* the build it was meant to replace, and the only symptom is
+ * two Zillits in the Start menu on someone else's machine.
+ */
+val desktopDescription = "Zillit Desktop"
+val desktopVendor = "Zillit"
+val windowsMenuGroup = "Zillit" + if (zillitVariantLabel.isEmpty()) "" else " $zillitVariantLabel"
+
+/*
+ * Stable per-variant UUID — required for MSI upgrades to replace rather than
+ * install alongside. An upgradeUuid is exactly how WiX/jpackage tells two
+ * products apart, so a QA or develop build needs its OWN id: sharing
+ * production's would make installing it silently replace production instead of
+ * sitting beside it. Do not regenerate any of these.
+ */
+val windowsUpgradeUuid = when (zillitVariant) {
+    "" -> "8F5D2C41-9A3E-4B7C-BE21-6D4A0F3E9C58"
+    "qa" -> "B3C6E6F1-4E8A-4E6B-9E36-5B9A6E1F0A2D"
+    "develop" -> "0E7D9C2B-1A3F-4C5E-8D2A-7F6B4C9E3A1B"
+    // An unrecognised variant still needs a stable id so repackaging it twice
+    // upgrades rather than duplicates; deterministic from the variant string
+    // rather than hardcoded, since nothing named it in advance.
+    else -> UUID.nameUUIDFromBytes("zillit-desktop-variant-$zillitVariant".toByteArray()).toString()
+}
+
 val jbrFrameworks = File(jetbrainsRuntime.get().metadata.installationPath.asFile.parentFile, "Frameworks")
 
 // Registered only where there is something to copy — macOS. Decided here at
@@ -747,17 +776,20 @@ if (File(jbrBin, "jcef_helper.exe").isFile) {
  * is what makes an in-app update possible at all. Unsigned, the app can only
  * download the file and ask the person to run it themselves.
  *
- * It does NOT put a signature on the launcher *inside* the package, so the
- * second half of that check — the incoming package's signer subject against
- * the signature on the running build's launcher — never engages, and installs
- * fall back to accepting any valid signature whose digest matches the one
- * published in Remote Config. The reason is that `packageMsi` does not
- * consume `createDistributable`: jpackage lays out the payload itself from the
- * runtime image, which is the same fact `copyCefResources` above exists for.
- * There is therefore no signed launcher for it to carry, and no amount of
- * signing the app image changes what ships. Closing that gap means packaging
- * from an already-signed app image through jpackage's `--app-image`, which is
- * a task of its own rather than a flag here.
+ * `packageMsi` and `packageExe` sign the installer and nothing else. The
+ * launcher *inside* those packages stays unsigned, so the second half of the
+ * updater's check — the incoming package's signer subject against the
+ * signature on the running build's launcher — never engages, and installs fall
+ * back to accepting any valid signature whose digest matches the one published
+ * in Remote Config. The reason is that neither task consumes
+ * `createDistributable`: Compose hands jpackage an `--app-image` only on
+ * macOS, and on Windows it lays out the payload from the runtime image
+ * instead — the same fact `copyCefResources` above exists for.
+ *
+ * `packageSignedMsi` below is the way out, and the task a Windows release
+ * people receive in-app should use: it signs the launcher in the app image and
+ * then runs jpackage over that image with `--app-image`, so the signature
+ * ships inside the installer and the subject comparison engages.
  *
  * ## Naming the certificate
  *
@@ -768,29 +800,119 @@ if (File(jbrBin, "jcef_helper.exe").isFile) {
  * of those, and a .pfx remains for the self-signed certificate used to
  * exercise the update path before a real one is bought.
  *
+ *     -PzillitAzureSigningEndpoint=https://eus.codesigning.azure.net
+ *     -PzillitAzureSigningAccount=<account> -PzillitAzureSigningProfile=<profile>
+ *                                                    Azure Artifact Signing
  *     -PzillitWindowsSigningCert=3A7F…               by thumbprint, 40 hex
  *     -PzillitWindowsSigningCert="Zillit Pvt Ltd"    by subject
  *     -PzillitWindowsSigningCert=C:\zillit.pfx       a file, with …Password
- *     -PzillitWindowsSigningDlib=…  -PzillitWindowsSigningDmdf=…
- *                                                    Azure Trusted Signing
+ *     -PzillitWindowsSigningDlib=… -PzillitWindowsSigningDmdf=…
+ *                                                    any dlib, named by hand
  *
- * Prefer the subject. Once the launcher gap above is closed the updater will
- * compare subjects rather than thumbprints — precisely so that renewing the
+ * Prefer Azure Artifact Signing, and otherwise the subject: the updater
+ * compares subjects rather than thumbprints — precisely so that renewing the
  * certificate, which every one of them needs yearly, does not strand every
  * install on the release before it — and a build pinned here to a thumbprint
- * would hand out packages those installs no longer recognise.
+ * would hand out packages those installs no longer recognise. Azure Artifact
+ * Signing is the easiest of them to keep stable that way: its certificates are
+ * reissued every three days, but the subject comes from the one-time identity
+ * validation and does not move with them.
  *
  * No secret belongs in the repo's gradle.properties. A password, where the
  * shape needs one at all, goes in ~/.gradle/gradle.properties or the
  * environment — and note that one given here is written into Gradle's
- * configuration cache under `build/`, while the thumbprint and subject forms
- * need no password and leave nothing behind.
+ * configuration cache under `build/`, while the thumbprint, subject and Azure
+ * forms need no password and leave nothing behind. Azure authenticates through
+ * `DefaultAzureCredential`, which is to say `az login` on a workstation or
+ * AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_CLIENT_SECRET on a runner; none of the
+ * three properties above is itself a secret.
  */
 val windowsSigningCert = providers.gradleProperty("zillitWindowsSigningCert")
 val windowsSigningDlib = providers.gradleProperty("zillitWindowsSigningDlib")
+val azureSigningEndpoint = providers.gradleProperty("zillitAzureSigningEndpoint")
+val azureSigningAccount = providers.gradleProperty("zillitAzureSigningAccount")
+val azureSigningProfile = providers.gradleProperty("zillitAzureSigningProfile")
 
-if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent) {
-    val signtool = providers.gradleProperty("zillitSigntool").orNull?.let(::File)
+// All three, or none: a half-named account cannot sign, and finding that out
+// from signtool's 403 after a twenty-minute package is the worst place to.
+val azureSigning = azureSigningEndpoint.isPresent || azureSigningAccount.isPresent ||
+    azureSigningProfile.isPresent
+if (azureSigning) {
+    require(azureSigningEndpoint.isPresent && azureSigningAccount.isPresent && azureSigningProfile.isPresent) {
+        "Azure Artifact Signing needs all three of -PzillitAzureSigningEndpoint, " +
+            "-PzillitAzureSigningAccount and -PzillitAzureSigningProfile. " +
+            "Given: " + listOf(
+            "Endpoint" to azureSigningEndpoint, "Account" to azureSigningAccount,
+            "Profile" to azureSigningProfile,
+        ).filter { it.second.isPresent }.joinToString { it.first }.ifEmpty { "none" }
+    }
+}
+
+if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent || azureSigning) {
+    /*
+     * The dlib, for the Azure path.
+     *
+     * `signtool` cannot reach the service on its own: the signing happens
+     * inside `Azure.CodeSigning.Dlib.dll`, which is not part of Windows and
+     * arrives either with the Artifact Signing Client Tools installer
+     * (`winget install -e --id Microsoft.Azure.ArtifactSigningClientTools`) or
+     * as the `Microsoft.ArtifactSigning.Client` NuGet package. Named by hand
+     * with -PzillitWindowsSigningDlib; otherwise found by looking where those
+     * two put it, matched on the directory *name* rather than a guessed exact
+     * path, since the installer's own has moved with the service's rename.
+     *
+     * The client tools install **per user**, which is why LOCALAPPDATA is
+     * searched and not only Program Files: as of version 0.1.128 the dll lands
+     * in `%LOCALAPPDATA%\Microsoft\MicrosoftArtifactSigningClientTools`, loose
+     * in the directory rather than under the `bin\x64\` that the NuGet package
+     * and Microsoft's own documentation describe.
+     */
+    // Deep enough for `<root>\<version>\bin\x64\`, shallow enough that a wrong
+    // root costs nothing: this walks Program Files, and an unbounded descent
+    // there is a visible pause on every configure.
+    val dlibSearchDepth = 6
+    val azureDlib: File? = if (azureSigning && !windowsSigningDlib.isPresent) {
+        val home = File(System.getProperty("user.home"))
+        val local = System.getenv("LOCALAPPDATA")
+        val installed = listOfNotNull(
+            System.getenv("ProgramFiles"),
+            System.getenv("ProgramFiles(x86)"),
+            local,
+            local?.let { "$it\\Microsoft" },
+        )
+            .map(::File)
+            .flatMap { it.listFiles().orEmpty().toList() }
+            .filter { it.isDirectory && it.name.contains("signing", ignoreCase = true) }
+        val nuget = listOf("microsoft.artifactsigning.client", "microsoft.trusted.signing.client")
+            .map { File(home, ".nuget\\packages\\$it") }
+            .filter(File::isDirectory)
+        (installed + nuget)
+            .asSequence()
+            .flatMap { root -> root.walkTopDown().maxDepth(dlibSearchDepth) }
+            .filter { it.name.equals("Azure.CodeSigning.Dlib.dll", ignoreCase = true) && it.isFile }
+            // The dlib has to match signtool's architecture, and we run the x64
+            // one — an x86 dll beside it in the same package loads into nothing
+            // and says so obscurely. Path order second, so that where several
+            // versions of the NuGet package are unpacked the newest wins.
+            .sortedWith(
+                compareByDescending<File> { it.path.contains("x64", ignoreCase = true) }
+                    .thenByDescending { it.path },
+            )
+            .firstOrNull()
+    } else {
+        null
+    }
+    if (azureSigning) {
+        requireNotNull(windowsSigningDlib.orNull ?: azureDlib?.path) {
+            "Azure Artifact Signing was asked for but Azure.CodeSigning.Dlib.dll was not found. " +
+                "Install the client tools with `winget install -e --id " +
+                "Microsoft.Azure.ArtifactSigningClientTools`, or name the dll with " +
+                "-PzillitWindowsSigningDlib=<path to bin\\x64\\Azure.CodeSigning.Dlib.dll>."
+        }
+    }
+
+    val namedSigntool = providers.gradleProperty("zillitSigntool").orNull?.let(::File)
+    val signtool = namedSigntool
         ?: File("C:\\Program Files (x86)\\Windows Kits\\10\\bin")
             .listFiles { entry: File -> entry.isDirectory && entry.name.startsWith("10.") }
             .orEmpty()
@@ -804,10 +926,82 @@ if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent) {
     }
     require(signtool.isFile) { "-PzillitSigntool does not name a file: ${signtool.path}" }
 
-    val credential: List<String> = if (windowsSigningDlib.isPresent) {
-        listOf("/dlib", windowsSigningDlib.get()) +
-            providers.gradleProperty("zillitWindowsSigningDmdf").orNull
-                ?.let { listOf("/dmdf", it) }.orEmpty()
+    /*
+     * The dlib will not load into an old signtool.
+     *
+     * Certificate-store signing has worked with every signtool ever shipped,
+     * so this only gates the Azure path — but there it is worth failing on
+     * early, because what an old signtool actually does is refuse the dlib
+     * with a message about neither Azure nor versions. Microsoft's floor is
+     * the Windows 11 SDK, and the 20348 SDK specifically does not work. An
+     * explicitly named signtool is taken on trust: someone pointing at one
+     * knows what they have, and a build tool should not be the thing standing
+     * in the way.
+     */
+    val azureMinSdkBuild = 22621
+    if (azureSigning && namedSigntool == null) {
+        val sdkBuild = signtool.parentFile.parentFile.name.split('.').getOrNull(2)?.toIntOrNull()
+        require(sdkBuild != null && sdkBuild >= azureMinSdkBuild) {
+            "Azure Artifact Signing needs signtool.exe from the Windows 11 SDK " +
+                "(10.0.$azureMinSdkBuild or newer); the newest one installed is " +
+                "${signtool.path}, which the signing dlib will not load. Install a current " +
+                "Windows SDK, or name a newer signtool with -PzillitSigntool=<path>."
+        }
+    }
+
+    /*
+     * Where the account lives, as signtool wants it: a JSON file, not flags.
+     *
+     * Generated rather than kept in the repo because the endpoint is
+     * region-specific and the account and profile differ per environment, and
+     * because there is nothing secret in it to protect — the credential comes
+     * from `DefaultAzureCredential` at signing time, not from this file. A
+     * hand-written one (-PzillitWindowsSigningDmdf) wins, for the fields this
+     * does not cover: CorrelationId, or an ExcludeCredentials list that stops
+     * DefaultAzureCredential trying every mechanism in turn on a runner.
+     */
+    val azureMetadata = layout.buildDirectory.file("signing/azure-artifact-signing.json")
+    val writeAzureMetadata = if (azureSigning && !providers.gradleProperty("zillitWindowsSigningDmdf").isPresent) {
+        val endpoint = azureSigningEndpoint.get()
+        val account = azureSigningAccount.get()
+        val profile = azureSigningProfile.get()
+        tasks.register("writeAzureSigningMetadata") {
+            description = "Writes the Azure Artifact Signing account metadata signtool's dlib reads."
+            outputs.file(azureMetadata)
+            // The three values are inputs, so changing region or profile
+            // rewrites the file instead of signing against the old one.
+            inputs.property("endpoint", endpoint)
+            inputs.property("account", account)
+            inputs.property("profile", profile)
+
+            val destination = azureMetadata
+            doLast {
+                val file = destination.get().asFile
+                file.parentFile.mkdirs()
+                file.writeText(
+                    """
+                    {
+                      "Endpoint": "$endpoint",
+                      "CodeSigningAccountName": "$account",
+                      "CertificateProfileName": "$profile"
+                    }
+                    """.trimIndent() + "\n",
+                )
+            }
+        }
+    } else {
+        null
+    }
+
+    val credential: List<String> = if (windowsSigningDlib.isPresent || azureSigning) {
+        // The generated file is named only on the Azure path. A dlib named by
+        // hand keeps the old behaviour of passing /dmdf only when asked:
+        // pointing it at a file this build never writes would break the one
+        // case — a dlib that needs no metadata — that used to work.
+        val metadata = providers.gradleProperty("zillitWindowsSigningDmdf").orNull
+            ?: azureMetadata.get().asFile.absolutePath.takeIf { azureSigning }
+        listOf("/dlib", windowsSigningDlib.orNull ?: azureDlib!!.absolutePath) +
+            metadata?.let { listOf("/dmdf", it) }.orEmpty()
     } else {
         val named = windowsSigningCert.get()
         when {
@@ -822,11 +1016,19 @@ if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent) {
         }
     }
 
-    // RFC 3161, and not optional. An untimestamped signature stops verifying
-    // the day the certificate expires, and every install in the field would
-    // then refuse its next update rather than merely showing its age.
+    /*
+     * RFC 3161, and not optional. An untimestamped signature stops verifying
+     * the day the certificate expires, and every install in the field would
+     * then refuse its next update rather than merely showing its age.
+     *
+     * On the Azure path that is not a distant worry but a three-day fuse: an
+     * Artifact Signing certificate is reissued every three days, so an
+     * untimestamped package is trusted over a weekend and refused by every
+     * install from Monday. Microsoft's own timestamping authority is the
+     * default there, as its documentation asks.
+     */
     val timestampUrl = providers.gradleProperty("zillitWindowsSigningTimestampUrl")
-        .getOrElse("http://timestamp.digicert.com")
+        .getOrElse(if (azureSigning) "http://timestamp.acs.microsoft.com" else "http://timestamp.digicert.com")
 
     // Captured as plain values for the execution bodies below — a String, a
     // List<String> and a Provider all serialise; reaching back into the
@@ -838,14 +1040,16 @@ if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent) {
 
     // `finalizedBy` rather than a task to remember: a `packageMsi` that quietly
     // produced an unsigned installer is exactly the accident this exists to
-    // design out.
-    listOf(
+    // design out. Keyed by format because `packageSignedMsi` below reaches for
+    // the .msi signer: it writes the same file, and signing it is the same job.
+    val installerSigners = listOf(
         Triple("packageMsi", "signWindowsMsi", "msi"),
         Triple("packageExe", "signWindowsExe", "exe"),
-    ).forEach { (packager, signerName, format) ->
+    ).associate { (packager, signerName, format) ->
         val target = binaries.map { it.file("$format/$desktopPackageName-$zillitVersion.$format") }
         val signer = tasks.register(signerName) {
             description = "Authenticode-signs the packaged .$format."
+            writeAzureMetadata?.let { dependsOn(it) }
             // jpackage rewrites the installer, so an up-to-date verdict here
             // can be about a file that is already gone.
             outputs.upToDateWhen { false }
@@ -880,7 +1084,160 @@ if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent) {
             }
         }
         tasks.matching { it.name == packager }.configureEach { finalizedBy(signer) }
+        format to signer
     }
+
+    /*
+     * The signature that reaches the installed machine.
+     *
+     * Everything above signs an installer; this signs the launcher that the
+     * installer *contains*, which is the only signature `WindowsInstaller` can
+     * read once Zillit is running. Without it the updater has nothing to
+     * compare an incoming package against and falls back to the digest alone;
+     * with it, a package signed by anybody else is refused before it is run,
+     * however well its digest matches a Remote Config entry someone managed to
+     * edit.
+     *
+     * Only the launcher. The DLLs beside it come from the JetBrains Runtime
+     * already signed by JetBrains, and re-signing several hundred of them
+     * would be several hundred round trips to a signing service for no
+     * question anybody asks.
+     */
+    val appImage = binaries.map { it.dir("app/$desktopPackageName") }
+    val signWindowsLauncher = tasks.register("signWindowsLauncher") {
+        description = "Authenticode-signs the launcher inside the app image, before it is packaged."
+        dependsOn("createDistributable")
+        writeAzureMetadata?.let { dependsOn(it) }
+        // createDistributable lays the image out again from the runtime image,
+        // so a signature from a previous run is not evidence about this one.
+        outputs.upToDateWhen { false }
+
+        val target = appImage.map { it.file("$desktopPackageName.exe") }
+        val tool = signtoolPath
+        val arguments = signArgs
+
+        doLast {
+            val file = target.get().asFile
+            check(file.isFile) {
+                "signWindowsLauncher: no ${file.name} in ${file.parent}. createDistributable did " +
+                    "not produce an app image, so there is no launcher to sign."
+            }
+            // `createDistributable` leaves the launcher read-only, and signtool
+            // embeds the signature by rewriting the file in place — so without
+            // this it fails with a bare "SignTool Error: Access is denied."
+            // that says nothing about a file attribute. Cleared rather than
+            // restored afterwards: jpackage copies the contents into the
+            // installer and the bit means nothing to what ships.
+            if (!file.canWrite()) {
+                check(file.setWritable(true)) {
+                    "signWindowsLauncher: ${file.name} is read-only and the attribute could not " +
+                        "be cleared, so signtool cannot rewrite it with a signature."
+                }
+            }
+            listOf(
+                arguments + file.absolutePath,
+                listOf("verify", "/pa", file.absolutePath),
+            ).forEach { step ->
+                val process = ProcessBuilder(listOf(tool) + step).redirectErrorStream(true).start()
+                val output = process.inputStream.bufferedReader().readText().trim()
+                val code = process.waitFor()
+                check(code == 0) {
+                    "signtool ${step.first()} failed on ${file.name} (exit $code):\n$output"
+                }
+            }
+            logger.lifecycle("signWindowsLauncher: signed and verified ${file.name}")
+        }
+    }
+
+    /*
+     * The .msi a Windows release is made of.
+     *
+     * jpackage over `--app-image`, rather than Compose's `packageMsi`, for one
+     * reason: Compose passes an app image to jpackage on macOS only, and on
+     * Windows builds the payload from the jlink runtime image instead — so
+     * whatever is done to the app image, including signing its launcher, never
+     * reaches the installer `packageMsi` writes. This takes the image
+     * `createDistributable` produced, signed launcher and all, and wraps that.
+     *
+     * The flags are jpackage's spellings of the `windows { }` block, which is
+     * why `windowsMenuGroup` and `windowsUpgradeUuid` are declared beside
+     * `desktopPackageName` instead of there: the UUID in particular has to be
+     * byte-for-byte what every previous release used, or this installs beside
+     * the build it should replace. `perUserInstall = false` is the absence of
+     * `--win-per-user-install`, and the icon, the jvm arguments and the bundled
+     * configuration all ride along inside the image rather than being named
+     * again here.
+     */
+    val packageSignedMsi = tasks.register("packageSignedMsi") {
+        description = "Builds the .msi from a signed app image — the installer in-app updates accept."
+        group = "compose desktop"
+        dependsOn(signWindowsLauncher)
+
+        val jpackage = File(jetbrainsRuntime.get().metadata.installationPath.asFile, "bin\\jpackage.exe")
+            .absolutePath
+        val image = appImage
+        val destination = binaries.map { it.dir("msi") }
+        // jpackage insists on writing its scratch directory itself and fails if
+        // it already exists, so it is ours to clear rather than Gradle's.
+        val scratch = layout.buildDirectory.dir("jpackage/signedMsi")
+        val name = desktopPackageName
+        val version = zillitVersion
+        val summary = desktopDescription
+        val publisher = desktopVendor
+        val menuGroup = windowsMenuGroup
+        val upgradeUuid = windowsUpgradeUuid
+        // What `windows { iconFile }` gives packageMsi: the icon Add/Remove
+        // Programs and the installer itself show. The launcher inside the image
+        // already carries it, but the installer is a separate binary.
+        val icon = project.file("icons/zillit.ico")
+
+        doLast {
+            val imageDir = image.get().asFile
+            // `app\.jpackage.xml`, not the image root: that is where jpackage
+            // writes it on Windows, beside the .cfg and the jars. (On macOS it
+            // is `Contents/app/`, which is why the path is worth naming rather
+            // than guessing.) Checked only so a missing or hand-made image
+            // fails with a sentence instead of jpackage's own terse version.
+            check(File(imageDir, "app\\.jpackage.xml").isFile) {
+                "packageSignedMsi: ${imageDir.path} is not a jpackage app image " +
+                    "(app\\.jpackage.xml is missing). jpackage reads that file to learn what it " +
+                    "is packaging."
+            }
+            val destinationDir = destination.get().asFile.apply { mkdirs() }
+            val scratchDir = scratch.get().asFile.apply { deleteRecursively() }
+            // jpackage overwrites its output, but a stale .msi left behind by a
+            // failed run would otherwise be signed and shipped by the finalizer.
+            File(destinationDir, "$name-$version.msi").delete()
+
+            val command = listOf(
+                jpackage,
+                "--type", "msi",
+                "--app-image", imageDir.absolutePath,
+                "--name", name,
+                "--app-version", version,
+                "--description", summary,
+                "--vendor", publisher,
+                "--icon", icon.absolutePath,
+                "--dest", destinationDir.absolutePath,
+                "--temp", scratchDir.absolutePath,
+                "--win-menu",
+                "--win-menu-group", menuGroup,
+                "--win-shortcut",
+                "--win-dir-chooser",
+                "--win-upgrade-uuid", upgradeUuid,
+            )
+            val process = ProcessBuilder(command).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText().trim()
+            val code = process.waitFor()
+            check(code == 0) {
+                "jpackage failed building the .msi (exit $code). WiX 3.x must be on PATH — see " +
+                    "docs/WINDOWS_BUILD.md.\n$output"
+            }
+            logger.lifecycle("packageSignedMsi: wrote $name-$version.msi from the signed app image")
+        }
+    }
+    // The same signer `packageMsi` uses: same path, same file, same job.
+    packageSignedMsi.configure { finalizedBy(installerSigners.getValue("msi")) }
 
     logger.lifecycle("Windows packages will be Authenticode-signed and timestamped at $timestampUrl")
 }
@@ -994,7 +1351,11 @@ if (bundleConfig.isPresent) {
     }
 
     // Every way the image becomes something a person can run or hand over.
-    listOf("packageDmg", "packageDistributionForCurrentOS", "runDistributable", "notarizeDmg")
+    // `packageSignedMsi` belongs here and `packageMsi` does not: the signed
+    // route wraps this very image, so checking the image checks the installer,
+    // while `packageMsi` builds its payload from the runtime image and a verdict
+    // about the image would say nothing about what it shipped.
+    listOf("packageDmg", "packageSignedMsi", "packageDistributionForCurrentOS", "runDistributable", "notarizeDmg")
         .forEach { consumer ->
             tasks.matching { it.name == consumer }.configureEach { dependsOn(verifyBundledConfig) }
         }
@@ -1074,8 +1435,10 @@ compose.desktop {
             // Generated, never a source directory: the staged file is a secret
             // and has no business inside the repo.
             if (bundleConfig.isPresent) appResourcesRootDir.set(appResourcesDir)
-            description = "Zillit Desktop"
-            vendor = "Zillit"
+            // Shared with `packageSignedMsi`, which passes them to jpackage
+            // itself — see the values beside `desktopPackageName`.
+            description = desktopDescription
+            vendor = desktopVendor
 
             // `jlink`-trimmed runtime (plan §10, risk 11). Modules listed are
             // those the current dependency set needs; extend as core modules
@@ -1199,26 +1562,12 @@ compose.desktop {
                 }
             }
             windows {
-                menuGroup = "Zillit" + if (zillitVariantLabel.isEmpty()) "" else " $zillitVariantLabel"
+                // Both from the shared values beside `desktopPackageName`:
+                // `packageSignedMsi` passes these same two to jpackage itself,
+                // and they must not be able to drift apart.
+                menuGroup = windowsMenuGroup
+                upgradeUuid = windowsUpgradeUuid
                 iconFile.set(project.file("icons/zillit.ico"))
-                // Stable per-variant UUID — required for MSI upgrades to
-                // replace rather than install alongside. An upgradeUuid is
-                // exactly how WiX/jpackage tells two products apart, so a QA
-                // or develop build needs its OWN id: sharing production's
-                // would make installing it silently replace production
-                // instead of sitting beside it. Do not regenerate any of these.
-                upgradeUuid = when (zillitVariant) {
-                    "" -> "8F5D2C41-9A3E-4B7C-BE21-6D4A0F3E9C58"
-                    "qa" -> "B3C6E6F1-4E8A-4E6B-9E36-5B9A6E1F0A2D"
-                    "develop" -> "0E7D9C2B-1A3F-4C5E-8D2A-7F6B4C9E3A1B"
-                    // An unrecognised variant still needs a stable id so
-                    // repackaging it twice upgrades rather than duplicates;
-                    // deterministic from the variant string rather than
-                    // hardcoded, since nothing named it in advance.
-                    else -> UUID.nameUUIDFromBytes(
-                        "zillit-desktop-variant-$zillitVariant".toByteArray(),
-                    ).toString()
-                }
                 // Start-menu entry, desktop shortcut, and a folder chooser —
                 // the installer people expect on Windows rather than a silent
                 // per-user drop into AppData.
