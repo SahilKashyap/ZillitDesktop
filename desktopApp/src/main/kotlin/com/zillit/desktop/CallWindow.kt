@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
+import java.awt.Dimension
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
@@ -104,7 +105,7 @@ internal fun ApplicationScope.CallWindow(
             window.requestFocus()
             com.zillit.desktop.core.common.ZillitLog.i("CallWindowing") { "raised the call window" }
         }
-        LeaveCompactWhenZoomed(windowState, compact, calls)
+        CallWindowBehaviour(windowState, window, compact, calls)
         ZillitTheme(darkTheme = darkTheme) {
             val colors = ZillitTheme.colors
             AvatarFaces(ready) {
@@ -141,17 +142,37 @@ internal fun ApplicationScope.CallWindow(
 }
 
 /**
- * Zoomed or full-screened from the OS button, the thumbnail stops being one.
+ * What the OS may do to this window, and what the call needs back.
  *
- * Compact draws the PiP strip and asks the page for its compact stage, where
- * the CSS hides every tile but the first (`body.compact .tile:not(:first-child)`)
- * — so a maximised thumbnail was a full screen of one face with everybody else
- * switched off, above a four-button strip that is not the call's controls.
- * Leaving compact hands the same window to the real surface, at the size the
- * user just asked for.
+ * **A floor under the size.** The dock is a fixed row — two pills with carets,
+ * five round buttons and the hang-up — about 540dp of controls that cannot
+ * reflow, and the stage above it needs room for a tile and the mini-tile that
+ * floats over it. Dragged below that the controls run off the right edge and
+ * the mini tile lands on top of the big one, which is what "the call UI is
+ * distracted in a small window" looks like. The OS enforces the floor, so the
+ * layout is never asked to do something it has no way to do. The thumbnail has
+ * its own, much smaller floor: it is one tile and a four-button strip.
+ *
+ * **Zoomed, it stops being a thumbnail.** Compact draws the PiP strip and asks
+ * the page for its compact stage, where the CSS hides every tile but the first
+ * (`body.compact .tile:not(:first-child)`) — so a maximised thumbnail was a
+ * full screen of one face with everybody else switched off. Leaving compact
+ * hands the same window to the real surface, at the size just asked for.
  */
 @Composable
-private fun LeaveCompactWhenZoomed(windowState: WindowState, compact: Boolean, calls: CallViewModel) {
+private fun CallWindowBehaviour(
+    windowState: WindowState,
+    window: java.awt.Window,
+    compact: Boolean,
+    calls: CallViewModel,
+) {
+    LaunchedEffect(compact) {
+        window.minimumSize = if (compact) {
+            Dimension(PIP_MIN_WIDTH, PIP_MIN_HEIGHT)
+        } else {
+            Dimension(CALL_MIN_WIDTH, CALL_MIN_HEIGHT)
+        }
+    }
     LaunchedEffect(windowState.placement, compact) {
         if (!compact || windowState.placement == WindowPlacement.Floating) return@LaunchedEffect
         com.zillit.desktop.core.common.ZillitLog.i("CallWindowing") {
@@ -312,6 +333,16 @@ private fun rememberCallWindowState(compact: Boolean): WindowState {
 /** A call window opens big enough to hold a grid and its controls. */
 private val CALL_DEFAULT_WIDTH = 960.dp
 private val CALL_DEFAULT_HEIGHT = 640.dp
+
+/**
+ * The smallest the OS will let either window become — see [CallWindowBehaviour].
+ * AWT sizes a window in the same logical points Compose measures `Dp` in here,
+ * so these are the dp figures they read as.
+ */
+private const val CALL_MIN_WIDTH = 680
+private const val CALL_MIN_HEIGHT = 480
+private const val PIP_MIN_WIDTH = 260
+private const val PIP_MIN_HEIGHT = 180
 private val PIP_DEFAULT_WIDTH = 360.dp
 private val PIP_DEFAULT_HEIGHT = 240.dp
 private val PIP_BAR_HEIGHT = 36.dp
