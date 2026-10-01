@@ -1,26 +1,47 @@
-@file:Suppress("LongMethod","CyclomaticComplexMethod","MaxLineLength") // Each view is one page laid out top to bottom.
+@file:Suppress("LongMethod", "CyclomaticComplexMethod", "MaxLineLength") // Each view is one page laid out top to bottom, to the web's Tasks.css.
 
 package com.zillit.desktop.feature.tasks.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -28,34 +49,10 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.draw.alpha
-import kotlinx.coroutines.delay
-import com.zillit.desktop.feature.tasks.domain.dropStatus
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
-import com.zillit.desktop.core.designsystem.component.ZillitSegmented
-import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -64,21 +61,21 @@ import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskFilter
 import com.zillit.desktop.feature.tasks.domain.TaskKind
+import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.boardColumn
 import com.zillit.desktop.feature.tasks.domain.closeBlocker
 import com.zillit.desktop.feature.tasks.domain.compareBoard
 import com.zillit.desktop.feature.tasks.domain.daysUntil
+import com.zillit.desktop.feature.tasks.domain.deptColour
+import com.zillit.desktop.feature.tasks.domain.dropStatus
 import com.zillit.desktop.feature.tasks.domain.dueBucket
 import com.zillit.desktop.feature.tasks.domain.isPrivate
 import com.zillit.desktop.feature.tasks.domain.listRows
 import com.zillit.desktop.feature.tasks.domain.matchesFilter
 import com.zillit.desktop.feature.tasks.domain.parentTitle
+import kotlinx.coroutines.delay
 import kotlinx.datetime.LocalDate
-
-private val PAGE_PAD = 20.dp
-private val NARROW = 880.dp
-private val COLUMN_GAP = 16.dp
 
 internal fun TasksUiState.actions(today: LocalDate, onEvent: (TasksEvent) -> Unit) = TaskActions(
     canPost = canPost,
@@ -92,37 +89,57 @@ internal fun TasksUiState.actions(today: LocalDate, onEvent: (TasksEvent) -> Uni
     isBusy = { it.id in busy },
 )
 
+/** The page heading (`.zt-top`): the view's name and what it shows, with its main action at the right. */
 @Composable
-private fun ViewHeader(title: String, description: String, state: TasksUiState, onEvent: (TasksEvent) -> Unit, addLabel: String?, onAdd: (() -> Unit)?) {
-    ZillitPageHeader(
-        title = title,
-        description = description,
-        modifier = Modifier.padding(horizontal = PAGE_PAD, vertical = ZillitTheme.spacing.md),
-        actions = {
+private fun TopBar(title: String, sub: String, state: TasksUiState, onEvent: (TasksEvent) -> Unit, addLabel: String?, onAdd: (() -> Unit)?) {
+    val k = TasksTheme.c
+    Column(Modifier.fillMaxWidth().background(k.surface)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            TText(title, 24, FontWeight.Bold, maxLines = 1)
+            TText(sub, 13, color = k.muted, maxLines = 1, modifier = Modifier.weight(1f))
             if (state.canPost) {
-                if (addLabel != null && onAdd != null) ZillitButton(addLabel, onClick = onAdd, leadingIcon = ZillitIcons.Add)
+                if (addLabel != null && onAdd != null) TBtn(addLabel, onAdd, icon = ZillitIcons.Add)
             } else {
-                ZillitButton(str(S.desktop_request_access), onClick = { onEvent(TasksEvent.AskForRights) }, variant = ButtonVariant.Secondary)
+                TBtn(str(S.desktop_request_access), { onEvent(TasksEvent.AskForRights) }, kind = BtnKind.Ghost)
             }
-        },
-    )
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+    }
+}
+
+private val PageScroll = PaddingValues(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 40.dp)
+
+@Composable
+private fun Page(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    ZillitScrollColumn(Modifier.fillMaxSize(), contentPadding = PageScroll, verticalArrangement = Arrangement.spacedBy(16.dp), content = content)
 }
 
 @Composable
 private fun Loading() {
-    Column(Modifier.fillMaxWidth().padding(PAGE_PAD), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        repeat(SKELETON_ROWS) { ZillitSkeletonBar(Modifier.fillMaxWidth()) }
+    Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        com.zillit.desktop.core.designsystem.component.ZillitSpinner(size = 16.dp)
+        TText(str(S.desktop_tasks_loading), 14, color = TasksTheme.c.muted)
     }
 }
 
 @Composable
 private fun NoMatch(query: String, onClear: () -> Unit) {
-    ZillitEmptyState(
-        title = str(S.desktop_tasks_no_match, query.trim()),
-        icon = ZillitIcons.Search,
-        action = { ZillitButton(str(S.ah_cd_clear_search), onClick = onClear, variant = ButtonVariant.Secondary, size = ButtonSize.Small) },
+    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TText(str(S.desktop_tasks_no_match, query.trim()), 14, color = TasksTheme.c.fg)
+        TText(str(S.ah_cd_clear_search), 13, SemiBold, TasksTheme.c.accent, Modifier.clickable(onClick = onClear).padding(4.dp))
+    }
+}
+
+/** A dashed rounded edge, for an empty column and a private card. */
+private fun Modifier.dashed(color: Color, radius: Float = 10f): Modifier = drawBehind {
+    drawRoundRect(
+        color = color, cornerRadius = CornerRadius(radius.dp.toPx()),
+        style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
     )
 }
+
+private fun dateHeading(today: LocalDate) =
+    "${fullDayText(today).substringBefore(',')}, ${dayText(today, today)}"
 
 /** A card being carried: where the pointer is, in window coordinates, and where it grabbed the card. */
 private class DragState {
@@ -142,15 +159,17 @@ private class DragState {
         columns.entries.firstOrNull { pointer.x >= it.value.left && pointer.x <= it.value.right }?.key
 }
 
+
 /**
  * The Board: every MAIN task the user can see (project tasks plus their own or
  * shared self tasks) in To do / Progress/Update / Done. Subtasks live inside
  * their main task, whose card counts them. Cancelled tasks sit at the bottom of
- * Done, greyed out and struck through. A card moves between columns from its ⋯
- * menu; a main task with open subtasks cannot go to Done, and says why.
+ * Done, greyed out and struck through. A card moves between columns by being
+ * dragged, or from its ⋯ menu; a main task with open subtasks cannot go to Done.
  */
 @Composable
 internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
+    val k = TasksTheme.c
     val actions = state.actions(today, onEvent)
     val filter = state.boardFilter
     val drag = remember { DragState() }
@@ -165,7 +184,10 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
     val visible = state.mainTasks.filter { matchesFilter(it, filter, state.lookup) }
         .map { task -> moving[task.id]?.let { task.copy(status = it) } ?: task }
         .sortedWith(compareBoard)
-    val shown = visible.size
+    val open = state.mainTasks.filter { it.status.isOpen }
+    val dueToday = open.count { daysUntil(it.dueDate, today) == 0 }
+    val late = open.count { (daysUntil(it.dueDate, today) ?: 0) < 0 }
+    val set = { next: TaskFilter -> onEvent(TasksEvent.BoardFilterChanged(next)) }
     val drop = { task: Task ->
         val target = dropStatus(task, drag.overColumn())
         if (target != null) {
@@ -173,82 +195,67 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
             onEvent(TasksEvent.SetStatus(state.byId[task.id] ?: task, target))
         }
     }
-    val open = state.mainTasks.filter { it.status.isOpen }
-    val dueToday = open.count { daysUntil(it.dueDate, today) == 0 }
-    val late = open.count { (daysUntil(it.dueDate, today) ?: 0) < 0 }
-    val set = { next: TaskFilter -> onEvent(TasksEvent.BoardFilterChanged(next)) }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { drag.origin = it.positionInRoot() }) {
-    Column(Modifier.fillMaxSize()) {
-        ViewHeader(
-            title = str(S.desktop_tasks_nav_board),
-            description = str(S.desktop_tasks_top_board_sub),
-            state = state,
-            onEvent = onEvent,
-            addLabel = str(S.desktop_tasks_add_task),
-            onAdd = { onEvent(TasksEvent.NewTask()) },
-        )
-        ZillitScrollColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(PAGE_PAD), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            if (state.loading && !state.loaded) {
-                Loading()
-                return@ZillitScrollColumn
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                if (dueToday > 0) ZillitStatusPill(str(S.desktop_tasks_due_today_count, dueToday), tone = StatusTone.Pending)
-                if (late > 0) ZillitStatusPill(str(S.desktop_tasks_overdue_count, late), tone = StatusTone.Rejected)
-                ZillitStatusPill(str(S.desktop_tasks_open_count, open.size))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                ZillitSegmented(
-                    options = listOf(
-                        ZillitTab("all", str(S.desktop_tasks_filter_all)),
-                        ZillitTab("project", str(S.desktop_tasks_filter_project)),
-                        ZillitTab("self", str(S.desktop_tasks_nav_self)),
-                    ),
-                    activeId = filter.kind.name.lowercase(),
-                    onSelect = { id -> set(filter.copy(kind = TaskKind.entries.first { it.name.lowercase() == id })) },
-                )
-                ChoicePicker(
-                    value = filter.department.ifEmpty { null },
-                    choices = state.departments.map { Choice(it.id, it.name) },
-                    emptyLabel = str(S.desktop_inv_all_departments),
-                    onChange = { set(filter.copy(department = it.orEmpty())) },
-                    modifier = Modifier.width(PICKER),
-                )
-                ChoicePicker(
-                    value = filter.assignee.ifEmpty { null },
-                    choices = listOf(Choice(TaskFilter.NO_ASSIGNEE, str(S.desktop_tasks_filter_unassigned_only))) + crewChoices(state.crew, state.hodIds),
-                    emptyLabel = str(S.desktop_tasks_filter_assignee_all),
-                    onChange = { set(filter.copy(assignee = it.orEmpty())) },
-                    modifier = Modifier.width(PICKER),
-                )
-                ZillitSearchField(
-                    value = filter.query,
-                    onValueChange = { set(filter.copy(query = it)) },
-                    placeholder = str(S.desktop_tasks_search_placeholder),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (filter.query.isNotBlank() && shown == 0) {
-                NoMatch(filter.query, onClear = { set(filter.copy(query = "")) })
-            } else {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(COLUMN_GAP), verticalAlignment = Alignment.Top) {
-                    TaskStatus.board.forEach { status ->
-                        val cards = visible.filter { boardColumn(it) == status }
-                        BoardColumn(status, cards, state, actions, onEvent, drag, drop, Modifier.weight(1f))
+        Column(Modifier.fillMaxSize()) {
+            TopBar(str(S.desktop_tasks_nav_board), str(S.desktop_tasks_board_top), state, onEvent, str(S.desktop_tasks_add_task)) { onEvent(TasksEvent.NewTask()) }
+            Box(Modifier.weight(1f)) {
+                Page {
+                    if (state.loading && !state.loaded) {
+                        Loading()
+                        return@Page
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TText(dateHeading(today), 14, FontWeight.Bold)
+                        if (dueToday > 0) Pill(str(S.desktop_tasks_due_today_count, dueToday), k.warn, k.warnBg)
+                        if (late > 0) Pill(str(S.desktop_tasks_overdue_count, late), k.late, k.lateBg)
+                        Pill(str(S.desktop_tasks_open_count, open.size), k.chipFg, k.chip)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.clip(RoundedCornerShape(9.dp)).background(k.chip).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            listOf(TaskKind.All to str(S.desktop_tasks_filter_all), TaskKind.Project to str(S.desktop_tasks_filter_project), TaskKind.Self to str(S.desktop_tasks_nav_self)).forEach { (kind, label) ->
+                                val on = filter.kind == kind
+                                TText(
+                                    label, 13, if (on) SemiBold else FontWeight.Normal, if (on) k.fg else k.muted,
+                                    Modifier.height(30.dp).clip(RoundedCornerShape(7.dp)).background(if (on) k.surface else Color.Transparent)
+                                        .clickable { set(filter.copy(kind = kind)) }.padding(horizontal = 12.dp, vertical = 5.dp),
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                        TPicker(
+                            value = filter.department.ifEmpty { null },
+                            picks = state.departments.map { Pick(it.id, it.name, colour = Color(deptColour(it.id))) },
+                            emptyLabel = str(S.desktop_inv_all_departments), onChange = { set(filter.copy(department = it.orEmpty())) },
+                            compact = true, searchHint = str(S.desktop_tasks_pick_dept),
+                        )
+                        TPicker(
+                            value = filter.assignee.ifEmpty { null },
+                            picks = listOf(Pick(TaskFilter.NO_ASSIGNEE, str(S.desktop_tasks_filter_unassigned_only))) + crewPicks(state.crew, state.hodIds),
+                            emptyLabel = str(S.desktop_tasks_all_assignees), onChange = { set(filter.copy(assignee = it.orEmpty())) }, compact = true,
+                        )
+                        TSearch(filter.query, { set(filter.copy(query = it)) }, str(S.desktop_tasks_search_ph), Modifier.widthIn(min = 220.dp, max = 320.dp).weight(1f, fill = false))
+                    }
+                    if (filter.query.isNotBlank() && visible.isEmpty()) {
+                        NoMatch(filter.query, onClear = { set(filter.copy(query = "")) })
+                    } else {
+                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                            TaskStatus.board.forEach { status ->
+                                BoardColumn(status, visible.filter { boardColumn(it) == status }, state, actions, onEvent, drag, drop, Modifier.weight(1f).fillMaxHeight())
+                            }
+                        }
                     }
                 }
             }
         }
-    }
-    val carried = drag.id?.let { id -> visible.firstOrNull { it.id == id } }
-    if (carried != null) {
-        val density = LocalDensity.current
-        val at = drag.pointer - drag.grab - drag.origin
-        Box(Modifier.offset { IntOffset(at.x.toInt(), at.y.toInt()) }.width(with(density) { drag.size.width.toDp() }).alpha(CARRIED_ALPHA)) {
-            TaskCard(carried, state.subtasksOf(carried.id), state.departmentName(carried.departmentId), actions)
+        val carried = drag.id?.let { id -> visible.firstOrNull { it.id == id } }
+        if (carried != null) {
+            val density = LocalDensity.current
+            val at = drag.pointer - drag.grab - drag.origin
+            Box(Modifier.offset { IntOffset(at.x.toInt(), at.y.toInt()) }.width(with(density) { drag.size.width.toDp() }).alpha(CARRIED_ALPHA)) {
+                TaskCard(carried, state.subtasksOf(carried.id), state.departmentName(carried.departmentId), actions)
+            }
         }
-    }
     }
 }
 
@@ -263,38 +270,33 @@ private fun BoardColumn(
     onDrop: (Task) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = ZillitTheme.colors
+    val k = TasksTheme.c
+    val look = statusLook(status)
     val over = drag.id != null && drag.overColumn() == status
-    Column(
-        modifier
-            .onGloballyPositioned { drag.columns[status] = it.boundsInRoot() }
-            .clip(ZillitTheme.shapes.large)
-            .background(if (over) colors.accentSoft else androidx.compose.ui.graphics.Color.Transparent),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.xs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            Box(Modifier.size(COLUMN_DOT).clip(CircleShape).background(statusColour(status)))
-            ZillitText(statusText(status), style = ZillitTheme.typography.titleSmall, color = colors.textPrimary)
-            ZillitText(cards.size.toString(), style = ZillitTheme.typography.label, color = colors.textMuted, modifier = Modifier.weight(1f))
-            if (state.canPost) {
-                com.zillit.desktop.core.designsystem.component.ZillitIconButton(
-                    icon = ZillitIcons.Add,
-                    contentDescription = "${str(S.desktop_tasks_add_task)}: ${statusText(status)}",
-                    onClick = { onEvent(TasksEvent.NewTask(TaskDraft(status = status))) },
+    Column(modifier.onGloballyPositioned { drag.columns[status] = it.boundsInRoot() }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp)).background(look.bg).padding(start = 12.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Dot(look.dot, 10.dp)
+            TText(statusText(status), 14, SemiBold, look.fg)
+            TText(cards.size.toString(), 13, SemiBold, look.fg.copy(alpha = 0.8f), Modifier.weight(1f))
+            if (state.canPost) TIconBtn(ZillitIcons.Add, "${str(S.desktop_tasks_add_task)}: ${statusText(status)}", { onEvent(TasksEvent.NewTask(TaskDraft(status = status))) }, tint = look.fg)
+        }
+        Column(
+            Modifier.fillMaxWidth().weight(1f).heightIn(min = 120.dp).clip(RoundedCornerShape(12.dp)).background(if (over) look.bg else Color.Transparent).padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (cards.isEmpty()) {
+                TText(
+                    str(if (state.canPost) S.desktop_tasks_col_empty else S.desktop_tasks_col_empty_ro), 13, color = k.faint,
+                    modifier = Modifier.fillMaxWidth().dashed(k.line2).padding(18.dp), maxLines = 2,
                 )
             }
-        }
-        if (cards.isEmpty()) {
-            ZillitText(
-                text = str(if (state.canPost) S.desktop_nothing_here_yet else S.desktop_nothing_here),
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
-                modifier = Modifier.padding(ZillitTheme.spacing.md),
-            )
-        }
-        cards.forEach { task ->
-            DraggableCard(task, drag, enabled = state.canPost, onDrop = onDrop) { modifier ->
-                TaskCard(task, state.subtasksOf(task.id), state.departmentName(task.departmentId), actions, modifier)
+            cards.forEach { task ->
+                DraggableCard(task, drag, enabled = state.canPost, onDrop = onDrop) { modifier ->
+                    TaskCard(task, state.subtasksOf(task.id), state.departmentName(task.departmentId), actions, modifier)
+                }
             }
         }
     }
@@ -344,6 +346,7 @@ private fun DraggableCard(
     )
 }
 
+
 /**
  * Everything assigned to me — main tasks AND subtasks — grouped by when it is
  * due, with the closed ones folded away under "Closed". A subtask carries a
@@ -351,6 +354,7 @@ private fun DraggableCard(
  */
 @Composable
 internal fun MineView(state: TasksUiState, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
+    val k = TasksTheme.c
     val actions = state.actions(today, onEvent)
     val query = state.mineQuery
     val rows = remember(state.tasks, state.me, query, state.crew, state.departments) {
@@ -359,38 +363,35 @@ internal fun MineView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
     val searching = query.isNotBlank()
     val first = state.crewById[state.me]?.fullName?.substringBefore(' ')
     Column(Modifier.fillMaxSize()) {
-        ViewHeader(
-            title = str(S.desktop_tasks_nav_mine),
-            description = if (first != null) str(S.desktop_tasks_top_mine_sub, first) else str(S.desktop_tasks_nav_mine_sub),
-            state = state,
-            onEvent = onEvent,
-            addLabel = str(S.desktop_tasks_add_task),
-            onAdd = { onEvent(TasksEvent.NewTask(TaskDraft(assigneeId = state.me))) },
-        )
-        ZillitScrollColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(PAGE_PAD), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            if (state.loading && !state.loaded) {
-                Loading()
-                return@ZillitScrollColumn
-            }
-            Column(Modifier.widthIn(max = NARROW), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                ZillitSearchField(query, { onEvent(TasksEvent.MineQueryChanged(it)) }, Modifier.fillMaxWidth(), str(S.desktop_tasks_search_mine_placeholder))
-                DueBucket.entries.forEach { bucket ->
-                    val group = rows.open.filter { dueBucket(it.dueDate, today) == bucket }
-                    if (group.isEmpty()) return@forEach
-                    GroupBox(
-                        title = bucketTitle(bucket),
-                        sub = if (bucket == DueBucket.Week) str(S.desktop_tasks_mine_next7) else null,
-                        count = group.size,
-                        late = bucket == DueBucket.Overdue,
-                    ) {
-                        group.forEach { task -> MineRow(task, state, actions) }
+        TopBar(
+            str(S.desktop_tasks_nav_mine), if (first != null) str(S.desktop_tasks_top_mine_sub, first) else str(S.desktop_tasks_nav_mine_sub), state, onEvent,
+            str(S.desktop_tasks_add_task),
+        ) { onEvent(TasksEvent.NewTask(TaskDraft(assigneeId = state.me))) }
+        Box(Modifier.weight(1f)) {
+            Page {
+                if (state.loading && !state.loaded) {
+                    Loading()
+                    return@Page
+                }
+                Column(Modifier.widthIn(max = NARROW), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    TSearch(query, { onEvent(TasksEvent.MineQueryChanged(it)) }, str(S.desktop_tasks_search_mine_placeholder), Modifier.widthIn(max = 320.dp).fillMaxWidth())
+                    DueBucket.entries.forEach { bucket ->
+                        val group = rows.open.filter { dueBucket(it.dueDate, today) == bucket }
+                        if (group.isEmpty()) return@forEach
+                        GroupBox(
+                            title = bucketTitle(bucket),
+                            sub = when (bucket) {
+                                DueBucket.Today -> dateHeading(today)
+                                DueBucket.Week -> str(S.desktop_tasks_mine_next7)
+                                else -> null
+                            },
+                            count = group.size, late = bucket == DueBucket.Overdue,
+                        ) { group.forEach { task -> MineRow(task, state, actions) } }
                     }
+                    if (searching && rows.open.isEmpty() && rows.closed.isEmpty()) NoMatch(query, onClear = { onEvent(TasksEvent.MineQueryChanged("")) })
+                    if (!searching && rows.open.isEmpty()) TText(str(S.desktop_tasks_mine_empty), 14, color = k.faint)
+                    ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { MineRow(it, state, actions) } }
                 }
-                if (searching && rows.open.isEmpty() && rows.closed.isEmpty()) NoMatch(query, onClear = { onEvent(TasksEvent.MineQueryChanged("")) })
-                if (!searching && rows.open.isEmpty()) {
-                    ZillitText(str(S.desktop_tasks_mine_empty), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textMuted)
-                }
-                ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { MineRow(it, state, actions) } }
             }
         }
     }
@@ -399,16 +400,14 @@ internal fun MineView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
 @Composable
 private fun MineRow(task: Task, state: TasksUiState, actions: TaskActions) {
     TaskRow(
-        task = task,
-        actions = actions,
-        parentTitle = parentTitle(task, state.byId),
+        task = task, actions = actions, parentTitle = parentTitle(task, state.byId),
         tags = {
             if (task.isSelf) {
                 SelfTag(task, state.me, state.crewById)
             } else if (task.departmentId != null) {
                 DeptTag(task.departmentId, state.departmentName(task.departmentId))
             }
-            if (task.scenes.isNotBlank()) ZillitText(task.scenes, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textSecondary, maxLines = 1)
+            SceneChip(task.scenes)
             SubtaskCount(state.subtasksOf(task.id))
             AssignLine(task, state.me, state.crewById)
         },
@@ -428,6 +427,7 @@ private fun MineRow(task: Task, state: TasksUiState, actions: TaskActions) {
  */
 @Composable
 internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
+    val k = TasksTheme.c
     val actions = state.actions(today, onEvent)
     val query = state.selfQuery
     val rows = remember(state.tasks, state.me, query, state.crew, state.departments) {
@@ -442,79 +442,59 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
     var due by remember(today) { mutableStateOf<String?>(today.toString()) }
     var who by remember { mutableStateOf<String?>(null) }
     val sharable = state.assignableCrew
+    val add = {
+        onEvent(TasksEvent.QuickAdd(title, due, who))
+        if (title.isNotBlank()) title = ""
+    }
 
     Column(Modifier.fillMaxSize()) {
-        ViewHeader(
-            title = str(S.desktop_tasks_nav_self),
-            description = str(S.desktop_tasks_top_self_sub),
-            state = state,
-            onEvent = onEvent,
-            addLabel = null,
-            onAdd = null,
-        )
-        ZillitScrollColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(PAGE_PAD), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            if (state.loading && !state.loaded) {
-                Loading()
-                return@ZillitScrollColumn
-            }
-            Column(Modifier.widthIn(max = NARROW), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                if (state.canPost) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                        ZillitTextField(
-                            value = title,
-                            onValueChange = { title = it },
-                            placeholder = str(S.desktop_tasks_self_add_placeholder),
-                            maxLength = TITLE_MAX,
-                            modifier = Modifier.weight(1f),
-                            onImeAction = {
-                                onEvent(TasksEvent.QuickAdd(title, due, who))
-                                if (title.isNotBlank()) title = ""
-                            },
-                        )
-                        DueField(value = due, onChange = { due = it }, modifier = Modifier.width(DATE_WIDTH))
-                        ChoicePicker(
-                            value = who,
-                            choices = crewChoices(sharable, state.hodIds, exclude = state.me),
-                            emptyLabel = str(S.desktop_tasks_self_just_me),
-                            onChange = { who = it },
-                            modifier = Modifier.width(PICKER),
-                        )
-                        ZillitButton(
-                            text = str(if (state.quickAdding) S.desktop_tasks_adding else S.desktop_tasks_self_add),
-                            onClick = {
-                                onEvent(TasksEvent.QuickAdd(title, due, who))
-                                if (title.isNotBlank()) title = ""
-                            },
-                            enabled = title.isNotBlank() && !state.quickAdding,
-                        )
+        TopBar(str(S.desktop_tasks_nav_self), str(S.desktop_tasks_top_self_sub), state, onEvent, null, null)
+        Box(Modifier.weight(1f)) {
+            Page {
+                if (state.loading && !state.loaded) {
+                    Loading()
+                    return@Page
+                }
+                Column(Modifier.widthIn(max = NARROW), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    if (state.canPost) {
+                        val shape = RoundedCornerShape(12.dp)
+                        Row(
+                            Modifier.fillMaxWidth().clip(shape).background(k.surface).border(BorderStroke(1.dp, k.line2), shape).padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            TInput(title, { title = it }, Modifier.weight(1f).padding(horizontal = 6.dp), placeholder = str(S.desktop_tasks_self_add_placeholder), style = txt(15), maxLength = TITLE_MAX, onEnter = add)
+                            TDate(
+                                due, due?.let { runCatching { dayText(LocalDate.parse(it), today) }.getOrNull() } ?: str(S.ah_template_no_date),
+                                { due = it }, today, compact = true,
+                            )
+                            TPicker(who, crewPicks(sharable, state.hodIds, exclude = state.me), str(S.desktop_tasks_self_just_me), { who = it }, compact = true, avatars = true)
+                            TBtn(str(if (state.quickAdding) S.desktop_tasks_adding else S.desktop_tasks_self_add), add, enabled = title.isNotBlank() && !state.quickAdding)
+                        }
+                    } else {
+                        TText(str(S.desktop_tasks_read_only_hint), 14, color = k.muted)
                     }
-                } else {
-                    ZillitText(str(S.desktop_tasks_read_only_hint), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textMuted)
-                }
-                ZillitText(str(S.desktop_tasks_self_note), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
-                ZillitSearchField(query, { onEvent(TasksEvent.SelfQueryChanged(it)) }, Modifier.fillMaxWidth(), str(S.desktop_tasks_search_self_placeholder))
-                DueBucket.entries.forEach { bucket ->
-                    val group = private.filter { dueBucket(it.dueDate, today) == bucket }
-                    if (group.isEmpty()) return@forEach
-                    GroupBox(
-                        title = bucketTitle(bucket),
-                        sub = if (bucket == DueBucket.Week) str(S.desktop_tasks_mine_next7) else null,
-                        count = group.size,
-                        late = bucket == DueBucket.Overdue,
-                    ) {
-                        group.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ZillitIcon(ZillitIcons.Lock, tint = k.muted, size = 12.dp)
+                        TText(str(S.desktop_tasks_self_note), 13, color = k.muted)
                     }
-                }
-                if (searching && rows.open.isEmpty() && rows.closed.isEmpty()) NoMatch(query, onClear = { onEvent(TasksEvent.SelfQueryChanged("")) })
-                if (!searching && private.isEmpty()) {
-                    ZillitText(str(S.desktop_tasks_self_empty), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textMuted)
-                }
-                if (shared.isNotEmpty()) {
-                    GroupBox(title = str(S.desktop_tasks_self_assigned_by_you), sub = str(S.desktop_tasks_self_assigned_by_you_sub), count = shared.size) {
-                        shared.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) }
+                    TSearch(query, { onEvent(TasksEvent.SelfQueryChanged(it)) }, str(S.desktop_tasks_search_self_placeholder), Modifier.widthIn(max = 320.dp).fillMaxWidth())
+                    DueBucket.entries.forEach { bucket ->
+                        val group = private.filter { dueBucket(it.dueDate, today) == bucket }
+                        if (group.isEmpty()) return@forEach
+                        GroupBox(
+                            title = bucketTitle(bucket), sub = if (bucket == DueBucket.Week) str(S.desktop_tasks_mine_next7) else null,
+                            count = group.size, late = bucket == DueBucket.Overdue,
+                        ) { group.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) } }
                     }
+                    if (searching && rows.open.isEmpty() && rows.closed.isEmpty()) NoMatch(query, onClear = { onEvent(TasksEvent.SelfQueryChanged("")) })
+                    if (!searching && private.isEmpty()) TText(str(S.desktop_tasks_self_empty), 14, color = k.faint)
+                    if (shared.isNotEmpty()) {
+                        GroupBox(title = str(S.desktop_tasks_self_assigned_by_you), sub = str(S.desktop_tasks_self_assigned_by_you_sub), count = shared.size) {
+                            shared.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) }
+                        }
+                    }
+                    ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) } }
                 }
-                ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) } }
             }
         }
     }
@@ -525,68 +505,56 @@ private fun SelfRow(
     task: Task,
     state: TasksUiState,
     actions: TaskActions,
-    sharable: List<com.zillit.desktop.feature.tasks.domain.TaskPerson>,
+    sharable: List<TaskPerson>,
     pending: MutableMap<String, String>,
     onEvent: (TasksEvent) -> Unit,
 ) {
+    val k = TasksTheme.c
     val private = isPrivate(task)
     val current = if (private) "" else task.assigneeId.orEmpty()
     val editing = task.id in pending
     val value = if (editing) pending.getValue(task.id) else current
-    val subtasks = state.subtasksOf(task.id)
     val busy = task.id in state.busy
     TaskRow(
-        task = task,
-        actions = actions,
+        task = task, actions = actions, editing = editing,
         tags = {
-            if (task.description.isNotBlank()) {
-                ZillitText(task.description, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted, maxLines = 1)
-            }
-            SubtaskCount(subtasks)
+            if (task.description.isNotBlank()) TText(task.description, 12, color = k.muted, maxLines = 2)
+            SubtaskCount(state.subtasksOf(task.id))
         },
         right = {
             DueChip(task, actions.today)
             if (!editing && private) {
-                ZillitText(str(S.desktop_tasks_self_only_you), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    ZillitIcon(ZillitIcons.Lock, tint = k.faint, size = 12.dp)
+                    TText(str(S.desktop_tasks_self_only_you), 12, color = k.faint)
+                }
             }
             if (!editing && !private) {
-                Column {
+                Column(horizontalAlignment = Alignment.End) {
                     PersonName(state.crewById[task.assigneeId], state.me)
-                    ZillitText(str(S.desktop_tasks_self_now_in_theirs), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
+                    TText(str(S.desktop_tasks_self_now_in_theirs), 12, color = k.ok)
                 }
             }
             if (state.canPost) {
-                ChoicePicker(
-                    value = value.ifEmpty { null },
-                    choices = crewChoices(sharable, state.hodIds, exclude = state.me),
+                TPicker(
+                    value = value.ifEmpty { null }, picks = crewPicks(sharable, state.hodIds, exclude = state.me),
                     emptyLabel = str(if (private) S.desktop_assign_to else S.desktop_tasks_self_only_me_private),
-                    onChange = { picked ->
-                        if ((picked ?: "") == current) pending.remove(task.id) else pending[task.id] = picked.orEmpty()
-                    },
-                    modifier = Modifier.width(PICKER),
-                    enabled = !busy,
+                    onChange = { picked -> if ((picked ?: "") == current) pending.remove(task.id) else pending[task.id] = picked.orEmpty() },
+                    compact = true, enabled = !busy,
                 )
             }
             if (editing) {
-                ZillitButton(str(S.cancel), onClick = { pending.remove(task.id) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-                ZillitButton(
-                    text = str(S.save),
-                    onClick = {
-                        onEvent(TasksEvent.Share(task.id, pending[task.id]?.ifEmpty { null }))
-                        pending.remove(task.id)
-                    },
-                    size = ButtonSize.Small,
-                    enabled = !busy,
-                )
+                TBtn(str(S.cancel), { pending.remove(task.id) }, kind = BtnKind.Ghost, small = true)
+                TBtn(str(S.save), {
+                    onEvent(TasksEvent.Share(task.id, pending[task.id]?.ifEmpty { null }))
+                    pending.remove(task.id)
+                }, small = true, enabled = !busy)
             }
         },
     )
 }
 
-private val PICKER = 200.dp
-private val DATE_WIDTH = 170.dp
-private val COLUMN_DOT = 10.dp
-private const val SKELETON_ROWS = 6
+private val NARROW = 980.dp
 private const val MOVE_WAIT_MS = 4000L
 private const val GHOST_ALPHA = 0.35f
 private const val CARRIED_ALPHA = 0.92f

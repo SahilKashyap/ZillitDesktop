@@ -1,4 +1,4 @@
-@file:Suppress("MaxLineLength") // Cards and rows are laid out in one pass.
+@file:Suppress("MaxLineLength") // Cards and rows are laid out in one pass, to the web's Tasks.css.
 
 package com.zillit.desktop.feature.tasks.ui
 
@@ -6,11 +6,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,14 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitDivider
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.Task
@@ -52,10 +53,10 @@ internal class TaskActions(
 )
 
 /**
- * A board card: department (or who a self task is shared with) and priority on
- * top, the title, scenes / due date / subtask and comment counts, then who it
- * is assigned to. Everything shown comes from the project. A cancelled card is
- * greyed out and struck through, and sits at the bottom of Done.
+ * A board card (`.zt-card`): department (or who a self task is shared with)
+ * and priority on top, the title, scenes / due / subtasks / comments, then who
+ * it is assigned to. A private self task has a dashed edge; a cancelled card
+ * is greyed out and struck through.
  */
 @Composable
 internal fun TaskCard(
@@ -65,52 +66,50 @@ internal fun TaskCard(
     actions: TaskActions,
     modifier: Modifier = Modifier,
 ) {
-    val colors = ZillitTheme.colors
+    val k = TasksTheme.c
     val assignee = task.assigneeId?.let { actions.crewById[it] }
     val showWho = task.assigneeId != null || !task.isSelf
+    val shape = RoundedCornerShape(10.dp)
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val private = isPrivate(task)
     Column(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier.fillMaxWidth()
             .alpha(if (task.status == TaskStatus.Cancelled) CANCELLED_ALPHA else 1f)
-            .clip(ZillitTheme.shapes.large)
-            .background(colors.surface)
-            .border(BorderStroke(1.dp, if (isPrivate(task)) colors.borderStrong else colors.border), ZillitTheme.shapes.large)
-            .clickable { actions.onOpen(task) }
-            .padding(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            .clip(shape)
+            .background(if (private) k.privateBg else k.surface)
+            .border(BorderStroke(1.dp, if (private) k.privateLine else if (hovered) k.line2 else k.line), shape)
+            .hoverable(source)
+            .clickable(interactionSource = source, indication = null) { actions.onOpen(task) }
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            if (task.isSelf) SelfTag(task, actions.me, actions.crewById, Modifier.weight(1f)) else DeptTag(task.departmentId, departmentName, Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.weight(1f)) {
+                if (task.isSelf) SelfTag(task, actions.me, actions.crewById) else DeptTag(task.departmentId, departmentName)
+            }
             PriorityChip(task.priority)
             TaskMenu(
-                task = task,
-                canPost = actions.canPost,
-                blocker = actions.blockerOf(task),
-                onStatus = { actions.onStatus(task, it) },
-                onDelete = { actions.onDelete(task) },
-                blockerNote = ::blockerNote,
+                task = task, canPost = actions.canPost, blocker = actions.blockerOf(task),
+                onStatus = { actions.onStatus(task, it) }, onDelete = { actions.onDelete(task) },
+                modifier = Modifier.padding(end = 0.dp), blockerNote = ::blockerNote,
             )
         }
         TaskTitle(task)
         MetaRow {
-            if (task.scenes.isNotBlank()) ZillitText(task.scenes, style = ZillitTheme.typography.labelSmall, color = colors.textSecondary, maxLines = 1)
+            SceneChip(task.scenes)
             DueChip(task, actions.today)
             SubtaskCount(subtasks)
-            if (task.commentCount > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                    ZillitIcon(ZillitIcons.Chat, tint = colors.textMuted, size = COMMENT_ICON)
-                    ZillitText(task.commentCount.toString(), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
-                }
-            }
+            CommentCount(task.commentCount)
         }
         if (showWho) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                PersonAvatar(assignee)
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TAvatar(assignee, 26.dp)
                 Column(Modifier.weight(1f)) {
                     if (task.assigneeId != null) {
                         PersonName(assignee, actions.me)
                     } else {
-                        ZillitText(str(S.unassigned), style = ZillitTheme.typography.label, color = colors.textMuted)
+                        TText(str(S.unassigned), 13, color = k.faint, modifier = Modifier.padding(top = 4.dp))
                     }
                     AssignLine(task, actions.me, actions.crewById)
                 }
@@ -120,10 +119,9 @@ internal fun TaskCard(
 }
 
 /**
- * A list row, as My Tasks and Self Tasks show it:
- * `[status box]  Title   [what the view shows]  [⋯]`, with the "Subtask of …"
- * line and tags under the title. The box completes an open task or reopens a
- * closed one in one click; clicking the title opens the task.
+ * A list row (`.zt-row`): `[status box]  Title  [what the view shows]  [⋯]`,
+ * the "Subtask of …" line and tags under the title. The box completes an open
+ * task or reopens a closed one; clicking the title opens the task.
  */
 @Composable
 internal fun TaskRow(
@@ -131,34 +129,34 @@ internal fun TaskRow(
     actions: TaskActions,
     modifier: Modifier = Modifier,
     parentTitle: String = "",
+    editing: Boolean = false,
     tags: @Composable () -> Unit = {},
     right: @Composable () -> Unit = {},
 ) {
-    val colors = ZillitTheme.colors
+    val k = TasksTheme.c
     Column(modifier.fillMaxWidth().alpha(if (task.status == TaskStatus.Cancelled) CANCELLED_ALPHA else 1f)) {
-        ZillitDivider()
+        Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+            Modifier.fillMaxWidth().background(if (editing) k.warnBg else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatusBox(task.status, enabled = actions.canPost && !actions.isBusy(task), onToggle = { actions.onStatus(task, it) })
-            Column(Modifier.weight(1f).clickable { actions.onOpen(task) }, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            Column(Modifier.weight(1f).clickable { actions.onOpen(task) }.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 TaskTitle(task, maxLines = 1)
                 if (parentTitle.isNotEmpty()) {
-                    ZillitText(str(S.desktop_tasks_subtask_of, parentTitle), style = ZillitTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        TText("↳", 12, color = k.faint)
+                        TText(str(S.desktop_tasks_subtask_of, parentTitle), 12, Medium, k.muted, maxLines = 1)
+                    }
                 }
                 MetaRow { tags() }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) { right() }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { right() }
             TaskMenu(
-                task = task,
-                canPost = actions.canPost,
-                blocker = actions.blockerOf(task),
-                onStatus = { actions.onStatus(task, it) },
-                onDelete = { actions.onDelete(task) },
-                onOpen = { actions.onOpen(task) },
-                blockerNote = ::blockerNote,
+                task = task, canPost = actions.canPost, blocker = actions.blockerOf(task),
+                onStatus = { actions.onStatus(task, it) }, onDelete = { actions.onDelete(task) },
+                onOpen = { actions.onOpen(task) }, blockerNote = ::blockerNote,
             )
         }
     }
@@ -170,17 +168,12 @@ internal fun ClosedGroup(count: Int, forced: Boolean, content: @Composable () ->
     if (count == 0) return
     var open by remember { mutableStateOf(false) }
     if (!forced) {
-        ZillitText(
-            text = str(if (open) S.desktop_tasks_hide_closed else S.desktop_tasks_show_closed, count),
-            style = ZillitTheme.typography.label,
-            color = ZillitTheme.colors.accentText,
-            modifier = Modifier.clickable { open = !open }.padding(vertical = ZillitTheme.spacing.xs),
+        TText(
+            str(if (open) S.desktop_tasks_hide_closed else S.desktop_tasks_show_closed, count), 13, SemiBold, TasksTheme.c.muted,
+            Modifier.clickable { open = !open }.padding(vertical = 8.dp),
         )
     }
-    if (open || forced) {
-        GroupBox(title = str(S.desktop_tasks_closed), count = count) { content() }
-    }
+    if (open || forced) GroupBox(title = str(S.desktop_tasks_closed), count = count) { content() }
 }
 
 private const val CANCELLED_ALPHA = 0.6f
-private val COMMENT_ICON = 13.dp

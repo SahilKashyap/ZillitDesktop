@@ -11884,4 +11884,17 @@
     <string name="desktop_could_not_play_video">Could not play this video.</string>
     <string name="desktop_video_open_outside">Open outside the app</string>
     <string name="desktop_video_preparing">Preparing video…</string>
+    <string name="desktop_tasks_board_top">All project tasks, plus your self tasks</string>
+    <string name="desktop_tasks_col_empty">No tasks here. Drag a card in or press +.</string>
+    <string name="desktop_tasks_col_empty_ro">No tasks here.</string>
+    <string name="desktop_tasks_all_assignees">All assignees</string>
+    <string name="desktop_tasks_search_ph">Search tasks, people, departments</string>
+    <string name="desktop_tasks_pick_dept">Search departments</string>
+    <string name="desktop_tasks_in_days">In %1$s days</string>
+    <string name="desktop_tasks_in_day">In 1 day</string>
+    <string name="desktop_tasks_days_ago_due">%1$s days ago</string>
+    <string name="desktop_tasks_day_ago_due">1 day ago</string>
+    <string name="desktop_tasks_no_date_pick">No due date</string>
+    <string name="desktop_tasks_sub_board">Project + self tasks</string>
+    <string name="desktop_tasks_prio_med">Med</string>
 </resources>
