@@ -69,7 +69,17 @@ object ConfigParser {
         val headerKey = headerKeyFrom(properties, prefix)
         val firebase = firebaseFrom(properties, prefix)
         val agoraAppId = properties[prefix + AGORA_APP_ID_SUFFIX]?.trim()?.takeIf { it.isNotEmpty() }
+        // Unlike every other value here, the weather key has no per-environment
+        // form: OpenWeatherMap is a third party, so staging and production hit
+        // the same account with the same key. Android therefore does not put it
+        // in `local.properties` at all — it hardcodes it (`WeatherProVM`,
+        // `WeatherProWidgetProvider`) — and the web inlines it into its bundle
+        // at build time (`VITE_WEATHER_API_KEY`). The key is public in both
+        // clients already, so a default here costs nothing and spares every
+        // machine a hand-edited properties line; the file still wins when it
+        // carries one.
         val weatherApiKey = properties[prefix + WEATHER_API_KEY_SUFFIX]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: DEFAULT_WEATHER_API_KEY
 
         if (!services.containsKey(ZillitService.Core)) {
             return ZillitResult.Failure(
@@ -150,8 +160,21 @@ object ConfigParser {
      */
     fun parseProperties(raw: String): Map<String, String> = PropertiesParser.parse(raw)
 
-    /** `<ENV>_WEATHER_API_KEY` — the Weather tool's OpenWeatherMap key. */
+    /**
+     * `<ENV>_WEATHER_API_KEY` — the Weather tool's OpenWeatherMap key.
+     *
+     * Optional: absent falls back to [DEFAULT_WEATHER_API_KEY]. Set it to point
+     * a machine at a different OpenWeatherMap account.
+     */
     private const val WEATHER_API_KEY_SUFFIX = "WEATHER_API_KEY"
+
+    /**
+     * The project's OpenWeatherMap One Call 3.0 key, as shipped in the Android
+     * client's source. One Call 3.0 needs a paid subscription separate from the
+     * free 2.5 tier, so this is the account's key rather than a placeholder;
+     * verified answering 200 for `data/3.0/onecall` on 2026-10-02.
+     */
+    private const val DEFAULT_WEATHER_API_KEY = "11c35c1b32e209927702b8fef0abab55"
 
     private const val AGORA_APP_ID_SUFFIX = "AGORA_APP_ID"
 

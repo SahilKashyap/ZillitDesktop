@@ -49,12 +49,16 @@ data class AppConfig(
     /**
      * The OpenWeatherMap key behind the Weather tool.
      *
-     * A real credential on someone's billable account, so it lives in the
-     * config file like every other secret here rather than in source — the
-     * Android client ships it hard-coded in `WeatherVM.kt:33`, which puts it
-     * in every extractable APK; this app does not copy that.
+     * Resolved by [ConfigParser]: `<ENV>_WEATHER_API_KEY` when the config file
+     * carries one, otherwise the project key baked into that parser. Unlike the
+     * other secrets here this one is not per-environment and is not private in
+     * any client — Android hardcodes it in `WeatherProVM.kt:37` and the web
+     * inlines `VITE_WEATHER_API_KEY` into its bundle — so withholding it bought
+     * nothing but a dark tool on every machine whose properties file predates
+     * the key.
      *
-     * Null simply switches the tool's forecast off, with the screen saying so.
+     * Null is still honoured, and switches the tool's forecast off with the
+     * screen saying so, for a build that deliberately parses without a default.
      */
     val weatherApiKey: String? = null,
 ) {
