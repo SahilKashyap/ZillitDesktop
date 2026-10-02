@@ -1505,6 +1505,28 @@ compose.desktop {
                 "java.xml",
                 "jdk.crypto.ec",
                 "jdk.unsupported",
+                /*
+                 * The three JavaFX needs, by `jdeps --list-deps` over the
+                 * shipped `javafx-*` jars rather than one at a time.
+                 *
+                 * JavaFX is on the CLASSPATH, so jlink cannot see what it
+                 * requires: the trimmer walks the module graph, the classpath
+                 * is not in it, and everything here gets dropped. The packaged
+                 * app then throws on the JavaFX thread the moment a clip is
+                 * opened — `NoClassDefFoundError: jdk/swing/interop/
+                 * SwingInterOpUtils` for the first of them — while `run`, on
+                 * the full JBR, never shows a thing.
+                 *
+                 * `jdk.unsupported.desktop` holds `jdk.swing.interop`, which
+                 * `JFXPanel` uses to put an FX scene in a Swing component.
+                 * `jdk.jfr` is what JavaFX's own pulse logging is built on.
+                 * `java.datatransfer` arrives transitively through
+                 * `java.desktop`, and is named so it stays if that ever stops
+                 * being true.
+                 */
+                "jdk.unsupported.desktop",
+                "jdk.jfr",
+                "java.datatransfer",
                 // The media engine IS this module — a trimmed runtime without
                 // it packages an app whose calls have no audio.
                 "jcef",
