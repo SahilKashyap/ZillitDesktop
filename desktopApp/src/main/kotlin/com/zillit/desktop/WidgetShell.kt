@@ -135,13 +135,15 @@ internal fun ApplicationScope.WidgetWindow(
             DesktopLayer(mode)
             ZillitTheme(darkTheme = darkTheme) {
                 AvatarFaces(graph) {
-                    Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-                        // No title bar on the desktop: this strip is the handle
-                        // that moves the window, and carries its close.
-                        if (mode == WidgetMode.Desktop) {
-                            WindowDraggableArea { GripStrip(title = title, onClose = onClose) }
+                    VideoPlayerMount {
+                        Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+                            // No title bar on the desktop: this strip is the handle
+                            // that moves the window, and carries its close.
+                            if (mode == WidgetMode.Desktop) {
+                                WindowDraggableArea { GripStrip(title = title, onClose = onClose) }
+                            }
+                            content(WidgetChrome(mode = mode, onToggleMode = { mode = mode.toggled() }))
                         }
-                        content(WidgetChrome(mode = mode, onToggleMode = { mode = mode.toggled() }))
                     }
                 }
             }

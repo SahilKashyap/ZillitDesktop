@@ -798,25 +798,29 @@ private fun ApplicationScope.ZillitWindows(
             // tokens. A no-op until the graph is Ready and until something
             // actually asks to pick — Chromium starts on first use.
             AvatarFaces(graph) {
-                LocationPickerMount(graph) {
-                    ZillitContent(
-                        graph = graph,
-                        registry = registry,
-                        viewModels = viewModels,
-                        workspaceViewModel = viewModel,
-                        authViewModel = authViewModel,
-                        themeMode = themeMode,
-                        onThemeModeChange = { mode ->
-                            scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
-                        },
-                        language = language,
-                        onLanguageChange = { code ->
-                            scope.launch { preferences.set(ZillitPreferences.Language, code) }
-                        },
-                        // The in-app update's restart: the ordinary quit, so
-                        // Chromium goes down first and the layout is saved.
-                        onQuit = { quitZillit(windowState) },
-                    )
+                FullScreenMount(windowState) {
+                VideoPlayerMount {
+                    LocationPickerMount(graph) {
+                        ZillitContent(
+                            graph = graph,
+                            registry = registry,
+                            viewModels = viewModels,
+                            workspaceViewModel = viewModel,
+                            authViewModel = authViewModel,
+                            themeMode = themeMode,
+                            onThemeModeChange = { mode ->
+                                scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
+                            },
+                            language = language,
+                            onLanguageChange = { code ->
+                                scope.launch { preferences.set(ZillitPreferences.Language, code) }
+                            },
+                            // The in-app update's restart: the ordinary quit, so
+                            // Chromium goes down first and the layout is saved.
+                            onQuit = { quitZillit(windowState) },
+                        )
+                    }
+                }
                 }
             }
         }
@@ -2570,6 +2574,8 @@ private fun chatProvider(
     loadThumbnail = { file -> fetchChatImage(ready, file, preview = true) },
     // The lightbox's fetch: the object itself, not its poster.
     loadFullImage = { file -> fetchChatImage(ready, file, preview = false) },
+    // A clip's address rather than its bytes — the viewer's player streams it.
+    videoUrl = { file -> chatStreamUrl(ready, file) },
     // "Open in Maps" on a shared location — the same guarded launcher the
     // map, sides and distribution tools take (https only).
     onOpenUrl = ::openInBrowser,
@@ -2617,6 +2623,27 @@ private suspend fun fetchChatBytes(
             preview = preview,
         ) as? com.zillit.desktop.core.common.ZillitResult.Success
         )?.data
+
+/**
+ * A presigned address for a chat clip, for the viewer's player.
+ *
+ * Through the same storage source the boards use, adapted the way
+ * [fetchChatBytes] adapts — chat and the boards write to one bucket and the
+ * two attachment types are the same five fields under different names.
+ */
+private suspend fun chatStreamUrl(
+    ready: AppGraph.Ready,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+): String? =
+    ready.noticeMedia.streamUrl(
+        com.zillit.desktop.feature.home.domain.NoticeAttachment(
+            media = file.media,
+            fileName = file.name,
+            thumbnail = file.thumbnail,
+            bucket = file.bucket,
+            region = file.region,
+        ),
+    )
 
 /** A PDF larger than this keeps its chip rather than being fetched whole for a poster. */
 private const val PDF_POSTER_MAX_BYTES = 15L * 1024 * 1024
@@ -3032,6 +3059,8 @@ internal class AppViewModels(
     val budget: BudgetViewModels?,
     /** The forecast where the unit is. */
     val weather: WeatherViewModel?,
+    /** The board, My tasks and Self tasks. */
+    val tasks: TasksViewModel?,
     /** Costumes & Set Sync: breakdown, inventory, fittings, sink, continuity. */
     val costumeSetSync: SyncOnsetViewModel?,
     /** Characters and who is up for them — one board, both casting lists. */
@@ -3057,8 +3086,6 @@ internal class AppViewModels(
 /**
  * Whether Zillit Draft appears on the tools grid.
  *
-    /** The board, My tasks and Self tasks. */
-    val tasks: TasksViewModel?,
  * Off for now, and **hidden rather than removed**: the module, its route, its
  * view model and its provider all stay wired, so a workspace tab already open
  * on it keeps working and turning the tile back on is this one flag. The
@@ -3430,6 +3457,7 @@ private fun rememberAppViewModels(
             adDashboard = ready?.buildAdDashboard(permissions),
             budget = ready?.buildBudget(permissions, scope),
             weather = ready?.buildWeather(permissions),
+            tasks = ready?.buildTasks(permissions),
             costumeSetSync = ready?.buildCostumeSetSync(permissions),
             casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
             wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
@@ -3455,7 +3483,6 @@ private fun rememberAppViewModels(
                 )
             },
             drive = ready?.let { graph ->
-            tasks = ready?.buildTasks(permissions),
                 DriveViewModel(
                     repository = graph.driveRepository,
                     viewer = { graph.driveViewer(permissions()) },
@@ -3613,6 +3640,7 @@ private fun buildRegistry(
     val saPortal = viewModels.saPortal?.let { vm -> saPortalProviders(vm) }.orEmpty()
     val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
     val weather = viewModels.weather?.let { vm -> (graph as? AppGraph.Ready)?.weatherProvider(vm) }
+    val tasks = viewModels.tasks?.let(::tasksProvider)
     val costumeSetSync = viewModels.costumeSetSync?.let { costumeSetSyncProvider(it, emailViewModel) }
     // Three casting tiles, one board: whichever tile is clicked, the lists
     // this viewer's rights allow are what open.
@@ -3638,7 +3666,6 @@ private fun buildRegistry(
         (graph as? AppGraph.Ready)?.budgetProvider(vms.department, DEPARTMENT_BUDGET_PATH, scope, audioPlayer)
     }
     val invoices = viewModels.invoices?.let { invoicesProvider(it) }
-    val tasks = viewModels.tasks?.let(::tasksProvider)
     // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
     // PDF-distribution engine at the web's three paths.
     val ready = graph as? AppGraph.Ready

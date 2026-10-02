@@ -131,6 +131,49 @@ class S3NoticeMediaSource(
         }
     }
 
+    /**
+     * A presigned GET for the whole object — what the in-app video viewer
+     * plays.
+     *
+     * The fetcher is the platform's media stack, which cannot carry the
+     * `Authorization` header [download] signs, so the signature travels in the
+     * query string instead ([AwsV4Signer.presignedUrl], the same arithmetic
+     * both phones get from the AWS SDK). S3 answers range requests on it, so
+     * the clip starts on its first seconds rather than its last byte.
+     *
+     * **`response-content-type` is not cosmetic.** The player chooses its
+     * demuxer from the content type S3 answers with, never from the key's
+     * extension — so an iPhone's `.mov`, which is the same H.264 in the same
+     * ISO container as an `.mp4`, plays only because this says so. A key with
+     * no extension at all plays for the same reason. It is signed along with
+     * everything else; appended afterwards it would be a parameter the
+     * signature did not cover, and S3 would answer 403.
+     *
+     * Short-lived on purpose: long enough to watch a reel through, short
+     * enough that the URL is worth little by the time anyone finds it.
+     */
+    override suspend fun streamUrl(attachment: NoticeAttachment): String? {
+        if (!attachment.isFetchable || attachment.media.isBlank()) return null
+        val keys = credentials() ?: return null
+
+        return AwsV4Signer.presignedUrl(
+            request = AwsRequest(
+                method = "GET",
+                path = s3KeyPath(attachment.media),
+                host = "${attachment.bucket}.s3.${attachment.region}.amazonaws.com",
+                payloadSha256 = "",
+                timestamp = now().format(AMZ_DATE),
+                region = attachment.region.orEmpty(),
+            ),
+            accessKey = keys.first,
+            secretKey = keys.second,
+            ttlSeconds = STREAM_TTL_SECONDS,
+            hmacSha256 = ::hmacSha256,
+            sha256Hex = ::sha256Hex,
+            extra = mapOf("response-content-type" to STREAM_CONTENT_TYPE),
+        )
+    }
+
     private suspend fun remember(key: String, bytes: ByteArray) {
         // A single object larger than the whole cache would evict everything
         // and still not fit; it is simply not cached.
@@ -155,6 +198,18 @@ class S3NoticeMediaSource(
         /** SHA-256 of the empty string — a GET has no payload. */
         const val EMPTY_SHA256 =
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+        /** Four hours: longer than any clip a board carries, and it then dies. */
+        const val STREAM_TTL_SECONDS = 4 * 60 * 60
+
+        /**
+         * What S3 is asked to answer with, whatever the object was stored as.
+         *
+         * Every clip any Zillit client uploads is H.264 in an ISO container —
+         * `.mp4` from Android and the web, `.mov` from iOS, the same bytes
+         * under two names. Saying so is what lets the second one play.
+         */
+        const val STREAM_CONTENT_TYPE = "video/mp4"
 
         const val DEFAULT_CACHE_BYTES = 64L * 1024 * 1024
         const val LOAD_FACTOR = 0.75f

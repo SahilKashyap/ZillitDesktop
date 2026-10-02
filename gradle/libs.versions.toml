@@ -8,6 +8,15 @@ composeMultiplatform = "1.11.1"
 material3 = "1.11.0-alpha07"
 androidx-lifecycle = "2.11.0-beta01"
 
+# JavaFX, for the in-app video player only (`FxVideoEngine`).
+#
+# Not a UI framework here — the app is Compose. It is the one cross-platform
+# media stack on the JVM that decodes H.264/AAC, which is what a camera, a
+# phone and every other Zillit client produce. The runtime's own Chromium
+# cannot: JetBrains builds JCEF without the proprietary codecs, so `<video>`
+# there answers `canPlayType('video/mp4; codecs="avc1.42E01E")` with "".
+javafx = "21.0.5"
+
 # --- core libs ---
 kotlinx-coroutines = "1.11.0"
 kotlinx-serialization = "1.11.0"

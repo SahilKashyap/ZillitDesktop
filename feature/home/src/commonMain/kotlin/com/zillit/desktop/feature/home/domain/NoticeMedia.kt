@@ -51,6 +51,21 @@ data class PickedMedia(
  */
 interface NoticeMediaSource {
     suspend fun fetch(attachment: NoticeAttachment, preview: Boolean): ZillitResult<ByteArray>
+
+    /**
+     * A fetchable address for the whole object, for a player rather than a
+     * decoder — the in-app video viewer, which streams.
+     *
+     * Not [fetch]: a clip is the one attachment nobody should wait for in
+     * full. The player ranges over the object and starts on the first
+     * seconds, so what it needs is a URL that carries its own authority
+     * (a presigned GET), not bytes.
+     *
+     * Null where the implementation cannot sign one — no credentials, no
+     * bucket on the row, or a source that only ever had bytes. The viewer
+     * says so rather than showing a black rectangle.
+     */
+    suspend fun streamUrl(attachment: NoticeAttachment): String? = null
 }
 
 /** A finished voice recording, ready to travel as a [PickedMedia]. */

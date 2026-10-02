@@ -39,6 +39,16 @@ class ChatSeams(
      */
     val loadFullImage: (suspend (ChatAttachment) -> ImageBitmap?)? = null,
     /**
+     * A playable address for a clip — a presigned S3 GET, which the viewer's
+     * player streams.
+     *
+     * Not bytes, unlike every other media seam here: a video is the one
+     * attachment nobody should wait out in full before the first frame, and
+     * the player ranges over the object itself. Null leaves the viewer with
+     * nothing to play, which it says, and offers the save-and-open instead.
+     */
+    val videoUrl: (suspend (ChatAttachment) -> String?)? = null,
+    /**
      * The app's guarded external-URL launcher (`main.kt`'s `openInBrowser`),
      * behind "Open in Maps" on a shared place. Null hides that affordance
      * rather than offering a dead one — the thread's own rule for the call

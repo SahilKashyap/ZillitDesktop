@@ -324,6 +324,25 @@ object ZillitIcons {
         moveTo(15f, 5f); lineTo(15f, 19f)
     }
 
+    /** The video transport's sound switch, on. */
+    val Volume: ImageVector = stroked("Volume") {
+        // The cone, then two arcs for the sound coming out of it.
+        moveTo(4f, 9f); lineTo(8f, 9f); lineTo(13f, 5f); lineTo(13f, 19f)
+        lineTo(8f, 15f); lineTo(4f, 15f); close()
+        moveTo(16.5f, 9f)
+        curveTo(17.5f, 10f, 17.5f, 14f, 16.5f, 15f)
+        moveTo(19f, 6.5f)
+        curveTo(21.3f, 9f, 21.3f, 15f, 19f, 17.5f)
+    }
+
+    /** And off: the same cone, with the diagonal bar of every mute toggle. */
+    val VolumeOff: ImageVector = stroked("VolumeOff") {
+        moveTo(4f, 9f); lineTo(8f, 9f); lineTo(13f, 5f); lineTo(13f, 19f)
+        lineTo(8f, 15f); lineTo(4f, 15f); close()
+        moveTo(17f, 10f); lineTo(21f, 14f)
+        moveTo(21f, 10f); lineTo(17f, 14f)
+    }
+
     val Mic: ImageVector = stroked("Mic") {
         // Capsule body, stand, base — the universal microphone glyph.
         moveTo(12f, 3f)

@@ -48,6 +48,14 @@ class ChatToolProvider(
     private val loadFullImage: (
         suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?
     )? = null,
+    /**
+     * A clip's playable address for the viewer's player — see
+     * [ChatSeams.videoUrl]. Null leaves a video with nothing to play, which
+     * the viewer says, offering the save-and-open instead.
+     */
+    private val videoUrl: (
+        suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> String?
+    )? = null,
     /** `ChatRepository::createRoom`; null hides the "New group" affordance. */
     private val createRoom: (
         suspend (String, List<String>) -> com.zillit.desktop.core.common.ZillitResult<
@@ -101,6 +109,7 @@ class ChatToolProvider(
                 requestDownloadRights = requestDownloadRights,
                 clipboard = clipboard,
                 loadFullImage = loadFullImage,
+                videoUrl = videoUrl,
                 onOpenUrl = onOpenUrl,
                 shareAsEmail = shareAsEmail?.let { share -> { message -> share(message, navigator) } },
             ),

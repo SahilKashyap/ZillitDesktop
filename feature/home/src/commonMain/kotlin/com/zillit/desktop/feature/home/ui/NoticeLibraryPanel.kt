@@ -59,6 +59,7 @@ internal fun NoticeLibraryPanel(
     media: NoticeMediaSource?,
     resolveAuthor: (String?) -> String?,
     onPreview: (NoticeAttachment) -> Unit,
+    onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
     onOpen: (noticeId: String, NoticeAttachment) -> Unit,
     onOpenLink: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -82,7 +83,7 @@ internal fun NoticeLibraryPanel(
 
         Box(Modifier.fillMaxWidth().heightIn(min = LIBRARY_MIN_HEIGHT, max = LIBRARY_MAX_HEIGHT)) {
             when (tab) {
-                LibraryTab.Media -> MediaTab(library.media, media, onPreview, onOpen)
+                LibraryTab.Media -> MediaTab(library.media, media, onPreview, onPlayVideo)
                 LibraryTab.Docs -> DocsTab(library.docs, onOpen)
                 LibraryTab.Links -> LinksTab(library.links, resolveAuthor, onOpenLink)
             }
@@ -130,7 +131,7 @@ private fun MediaTab(
     entries: List<LibraryEntry.Media>,
     media: NoticeMediaSource?,
     onPreview: (NoticeAttachment) -> Unit,
-    onOpen: (noticeId: String, NoticeAttachment) -> Unit,
+    onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
 ) {
     if (entries.isEmpty()) {
         EmptyTab(str(S.desktop_library_no_media))
@@ -149,7 +150,13 @@ private fun MediaTab(
                 entry = entry,
                 media = media,
                 onClick = {
-                    if (entry.isVideo) onOpen(entry.notice.id, entry.attachment) else onPreview(entry.attachment)
+                    // Both open in-app now: the picture in the lightbox, the
+                    // clip in the player beside it.
+                    if (entry.isVideo) {
+                        onPlayVideo(entry.notice.id, entry.attachment)
+                    } else {
+                        onPreview(entry.attachment)
+                    }
                 },
             )
         }

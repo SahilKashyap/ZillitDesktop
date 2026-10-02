@@ -129,6 +129,19 @@ internal fun BudgetConversationPane(
                     canDownload = { state.viewer.canDownload(state.mode) },
                     requestDownloadRights = { ready.rightsRequests.ask(state.mode.title, RightsKind.Download) },
                     loadFullImage = { file -> fetchBudgetChatImage(ready, file, preview = false) },
+                    // Same storage, same viewer: a clip posted here plays in
+                    // the pane rather than leaving for the OS.
+                    videoUrl = { file ->
+                        ready.noticeMedia.streamUrl(
+                            NoticeAttachment(
+                                media = file.media,
+                                fileName = file.name,
+                                thumbnail = file.thumbnail,
+                                bucket = file.bucket,
+                                region = file.region,
+                            ),
+                        )
+                    },
                     onOpenUrl = ::openInBrowser,
                 ),
                 resolveName = { id -> crewNameOf(ready, id) ?: chatState.peer?.fullName },

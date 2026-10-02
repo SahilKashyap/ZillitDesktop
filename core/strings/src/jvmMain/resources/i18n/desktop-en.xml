@@ -10958,6 +10958,11 @@
     <string name="desktop_csync_doc_none_script">No script yet. The latest from Script Distribution appears here, and so does any script imported with Upload script.</string>
     <string name="desktop_csync_doc_none_schedule">No schedule yet. The latest from Schedule Distribution appears here, and so does any schedule imported here.</string>
     <string name="desktop_csync_doc_preview_failed">This file could not be opened here.</string>
+    <string name="desktop_csync_doc_page_of">Page {page} of {pages}</string>
+    <string name="desktop_csync_doc_zoom_in">Zoom in</string>
+    <string name="desktop_csync_doc_zoom_out">Zoom out</string>
+    <string name="desktop_csync_doc_fit_width">Fit to width</string>
+    <string name="desktop_csync_doc_show_more_pages">Show {n} more pages</string>
     <string name="desktop_csync_view_script">View script</string>
     <string name="desktop_csync_callsheet">Call sheet</string>
     <string name="desktop_csync_callsheet_for">for</string>
@@ -11884,6 +11889,7 @@
     <string name="desktop_could_not_play_video">Could not play this video.</string>
     <string name="desktop_video_open_outside">Open outside the app</string>
     <string name="desktop_video_preparing">Preparing video…</string>
+    <string name="desktop_video_full_screen">Full screen</string>
     <string name="desktop_tasks_board_top">All project tasks, plus your self tasks</string>
     <string name="desktop_tasks_col_empty">No tasks here. Drag a card in or press +.</string>
     <string name="desktop_tasks_col_empty_ro">No tasks here.</string>
@@ -11897,11 +11903,6 @@
     <string name="desktop_tasks_no_date_pick">No due date</string>
     <string name="desktop_tasks_sub_board">Project + self tasks</string>
     <string name="desktop_tasks_prio_med">Med</string>
-    <string name="desktop_csync_doc_page_of">Page {page} of {pages}</string>
-    <string name="desktop_csync_doc_zoom_in">Zoom in</string>
-    <string name="desktop_csync_doc_zoom_out">Zoom out</string>
-    <string name="desktop_csync_doc_fit_width">Fit to width</string>
-    <string name="desktop_csync_doc_show_more_pages">Show {n} more pages</string>
     <string name="desktop_csync_scan_add_files">Add pages from files</string>
     <string name="desktop_csync_scan_no_camera_here">The camera can\'t be opened from here. Add the pages from picture files instead.</string>
     <string name="desktop_csync_scan_no_code">No QR code could be read from that picture. Try another, or type the asset number.</string>

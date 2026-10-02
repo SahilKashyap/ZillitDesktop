@@ -25,6 +25,26 @@ kotlin {
     }
 }
 
+/**
+ * The JavaFX artifacts the video player needs, and the classifier for this
+ * machine.
+ *
+ * `base` and `graphics` because `media` is built on them, `swing` for the
+ * `JFXPanel` the Compose window embeds. No `controls` — the transport under
+ * the picture is Compose's, drawn from this app's own design system.
+ */
+val javafxModules = listOf("base", "graphics", "media", "swing")
+
+val javafxPlatform: String = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    when {
+        os.contains("mac") -> if (arch.contains("aarch64")) "mac-aarch64" else "mac"
+        os.contains("win") -> "win"
+        else -> if (arch.contains("aarch64")) "linux-aarch64" else "linux"
+    }
+}
+
 dependencies {
     implementation(project(":core:appupdate"))
     implementation(project(":core:common"))
@@ -105,6 +125,22 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
 
     implementation(compose.desktop.currentOs)
+    // JavaFX's media stack, for the in-app video player and nothing else —
+    // see `FxVideoEngine`. Taken by host classifier, as `compose.desktop
+    // .currentOs` is: these artifacts carry the platform's own decoder
+    // libraries, so a mac build must not ship Windows' and the other way
+    // round.
+    //
+    // On the CLASSPATH rather than the module path, deliberately. JavaFX
+    // prints "Unsupported JavaFX configuration: classes were loaded from
+    // unnamed module" and then works; putting it on the module path instead
+    // would mean teaching jlink about four more modules, and the one time
+    // this build taught jlink about a module with natives under it
+    // (`jcef`), it shipped a loader with nothing underneath and crashed
+    // thirty seconds after sign-in. See the jlink note below.
+    javafxModules.forEach { module ->
+        implementation("org.openjfx:javafx-$module:" + libs.versions.javafx.get() + ":$javafxPlatform")
+    }
     // Already on the runtime classpath transitively; declared so the Drive
     // widget's desktop-layer call (DesktopWindowLevel) can compile against it.
     implementation("net.java.dev.jna:jna:5.13.0")

@@ -116,6 +116,13 @@ object AwsV4Signer {
      *
      * [ttlSeconds] is how long the URL stays good; AWS refuses more than seven
      * days.
+     *
+     * [extra] carries S3's own response overrides — `response-content-type`
+     * and friends — which are part of what gets signed, not decoration added
+     * afterwards: a parameter appended to a finished URL is a parameter the
+     * signature did not cover, and S3 answers 403. The video player needs one
+     * (it chooses its demuxer from the answered content type, not from the
+     * key's extension), and nothing else passes any.
      */
     fun presignedUrl(
         request: AwsRequest,
@@ -124,19 +131,22 @@ object AwsV4Signer {
         ttlSeconds: Int,
         hmacSha256: (key: ByteArray, data: String) -> ByteArray,
         sha256Hex: (String) -> String,
+        extra: Map<String, String> = emptyMap(),
     ): String {
         val date = request.timestamp.substringBefore('T')
         val scope = "$date/${request.region}/${request.service}/aws4_request"
 
         // Sorted by name, and each part encoded the way the signature reads it
         // — the credential's slashes become %2F or the signatures disagree.
-        val query = listOf(
-            "X-Amz-Algorithm" to ALGORITHM,
-            "X-Amz-Credential" to "$accessKey/$scope",
-            "X-Amz-Date" to request.timestamp,
-            "X-Amz-Expires" to ttlSeconds.toString(),
-            "X-Amz-SignedHeaders" to SIGNED_HEADER,
-        ).sortedBy { it.first }
+        val query = (
+            listOf(
+                "X-Amz-Algorithm" to ALGORITHM,
+                "X-Amz-Credential" to "$accessKey/$scope",
+                "X-Amz-Date" to request.timestamp,
+                "X-Amz-Expires" to ttlSeconds.toString(),
+                "X-Amz-SignedHeaders" to SIGNED_HEADER,
+            ) + extra.toList()
+            ).sortedBy { it.first }
             .joinToString("&") { (name, value) -> "${uriEncode(name)}=${uriEncode(value)}" }
 
         val canonicalRequest = listOf(

@@ -145,10 +145,27 @@ import androidx.compose.ui.layout.ContentScale
  * nine-parameter relay through board, card, thread and comment. Assembled once
  * per screen; the values inside are stable for its lifetime.
  */
+/**
+ * What is open over the board, if anything. One at a time: a picture blown up,
+ * or a clip playing — opening either closes the other, because both of them
+ * cover the whole board.
+ */
+private sealed interface BoardViewer {
+    data class Picture(val attachment: NoticeAttachment) : BoardViewer
+
+    /** The post's id rides along for the "open it outside" way out. */
+    data class Clip(val noticeId: String, val attachment: NoticeAttachment) : BoardViewer
+}
+
 private data class BoardUi(
     val onEvent: (HomeFeedEvent) -> Unit,
     val media: NoticeMediaSource?,
     val onPreview: (NoticeAttachment) -> Unit,
+    /**
+     * Opens a clip in the in-app player. Carries the post's id for the same
+     * reason [onOpen] does: the refusal's way out is that same save-and-open.
+     */
+    val onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
     /**
      * Save-and-open, by way of the model: the post's id rides along so a
      * call sheet's document can open as its watermarked copy.
@@ -217,9 +234,8 @@ internal fun HomeFeedScreen(
     /** Unread count for one unit's tab; zero draws nothing. */
     unitBadge: (String) -> Int = { 0 },
 ) {
-    // Which image is blown up, if any. Screen-level so the lightbox covers the
-    // whole board, not one bubble.
-    var lightbox by remember { mutableStateOf<NoticeAttachment?>(null) }
+    // Screen-level so a viewer covers the whole board, not one bubble.
+    var viewer by remember { mutableStateOf<BoardViewer?>(null) }
     // The post whose picture is open in the pen editor, if any.
     var imageReply by remember { mutableStateOf<Notice?>(null) }
     // An OS drag is over the board; drives the drop overlay.
@@ -229,23 +245,7 @@ internal fun HomeFeedScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-        UnitTabs(state, onEvent, unitBadge)
-
-        if (state.searchQuery != null) {
-            BoardSearchBar(state, onEvent)
-        }
-
-        // Call sheets are published documents, so "what went out and when" is a
-        // question people actually ask. The web puts this behind a floating
-        // button; a toggle in the header says what it does.
-        if (state.selectedUnit?.kind == HomeUnitKind.CallSheet) {
-            HistoryToggle(state.isHistory, onEvent)
-        }
-
-        // Pinned posts stay in view as a banner over the board — the
-        // messaging convention — rather than floating to the top and
-        // reshuffling the conversation. Click scrolls to the post.
-        PinnedBanner(state.pinnedBanner, resolveAuthor, onEvent)
+        BoardHeader(state, onEvent, unitBadge, resolveAuthor)
 
         // weight, NOT fillMaxSize: a fillMaxSize child of a Column consumes
         // every remaining pixel, which measured the composer below at zero
@@ -268,7 +268,8 @@ internal fun HomeFeedScreen(
                 resolveAuthor = resolveAuthor,
                 player = player,
                 onOpenLocation = onOpenLocation,
-                onPreview = { lightbox = it },
+                onPreview = { viewer = BoardViewer.Picture(it) },
+                onPlayVideo = { id, file -> viewer = BoardViewer.Clip(id, file) },
                 onImageReply = { imageReply = it },
                 loadAvatar = loadAvatar,
                 crewNames = crewNames,
@@ -288,15 +289,69 @@ internal fun HomeFeedScreen(
         loadAvatar = loadAvatar,
         imageReply = imageReply,
         onImageReplyClosed = { imageReply = null },
-        onPreview = { lightbox = it },
+        onPreview = { viewer = BoardViewer.Picture(it) },
+        onPlayVideo = { id, file -> viewer = BoardViewer.Clip(id, file) },
         onOpenLink = onOpenLink,
     )
 
     // Last, so it covers everything — including the Gallery it can be
     // opened from; drawn before the dialogs it sat underneath them.
-    lightbox?.let { attachment ->
-        MediaLightbox(attachment = attachment, media = media, onClose = { lightbox = null })
+    BoardViewers(
+        viewer = viewer,
+        media = media,
+        onOpenAttachment = { id, file -> onEvent(HomeFeedEvent.OpenAttachment(id, file)) },
+        onClose = { viewer = null },
+    )
     }
+}
+
+/** Everything above the board itself: the unit tabs, and what they bring. */
+@Composable
+private fun BoardHeader(
+    state: HomeFeedUiState,
+    onEvent: (HomeFeedEvent) -> Unit,
+    unitBadge: (String) -> Int,
+    resolveAuthor: (String?) -> String?,
+) {
+    UnitTabs(state, onEvent, unitBadge)
+
+    if (state.searchQuery != null) {
+        BoardSearchBar(state, onEvent)
+    }
+
+    // Call sheets are published documents, so "what went out and when" is a
+    // question people actually ask. The web puts this behind a floating
+    // button; a toggle in the header says what it does.
+    if (state.selectedUnit?.kind == HomeUnitKind.CallSheet) {
+        HistoryToggle(state.isHistory, onEvent)
+    }
+
+    // Pinned posts stay in view as a banner over the board — the messaging
+    // convention — rather than floating to the top and reshuffling the
+    // conversation. Click scrolls to the post.
+    PinnedBanner(state.pinnedBanner, resolveAuthor, onEvent)
+}
+
+/** Whichever viewer is open, over everything else. */
+@Composable
+private fun BoardViewers(
+    viewer: BoardViewer?,
+    media: NoticeMediaSource?,
+    onOpenAttachment: (noticeId: String, NoticeAttachment) -> Unit,
+    onClose: () -> Unit,
+) {
+    when (viewer) {
+        null -> Unit
+
+        is BoardViewer.Picture ->
+            MediaLightbox(attachment = viewer.attachment, media = media, onClose = onClose)
+
+        is BoardViewer.Clip -> VideoLightbox(
+            attachment = viewer.attachment,
+            media = media,
+            onOpenOutside = { onOpenAttachment(viewer.noticeId, viewer.attachment) },
+            onClose = onClose,
+        )
     }
 }
 
@@ -334,6 +389,7 @@ private fun BoardDialogs(
     imageReply: Notice?,
     onImageReplyClosed: () -> Unit,
     onPreview: (NoticeAttachment) -> Unit,
+    onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
     onOpenLink: (String) -> Unit,
 ) {
     ForwardPicker(state, onEvent)
@@ -347,6 +403,7 @@ private fun BoardDialogs(
         media = media,
         resolveAuthor = resolveAuthor,
         onPreview = onPreview,
+        onPlayVideo = onPlayVideo,
         onOpen = { noticeId, file -> onEvent(HomeFeedEvent.OpenAttachment(noticeId, file)) },
         onOpenLink = onOpenLink,
         onDismiss = { onEvent(HomeFeedEvent.DismissLibrary) },
@@ -2044,6 +2101,7 @@ private fun NoticeAttachment(
         attachment = attachment,
         media = ui.media,
         onPreview = ui.onPreview,
+        onPlayVideo = { file -> ui.onPlayVideo(noticeId, file) },
         onOpen = { file -> ui.onOpen(noticeId, file) },
         player = ui.player,
         location = location,
@@ -2454,6 +2512,7 @@ private fun BoardArea(
     player: AudioPlayer?,
     onOpenLocation: (GeoPoint) -> Unit,
     onPreview: (NoticeAttachment) -> Unit,
+    onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
     onImageReply: (Notice) -> Unit,
     loadAvatar: suspend (String) -> ByteArray?,
     crewNames: () -> List<String>,
@@ -2497,6 +2556,7 @@ private fun BoardArea(
                 onEvent = onEvent,
                 media = media,
                 onPreview = onPreview,
+                onPlayVideo = onPlayVideo,
                 onOpen = { noticeId, file -> onEvent(HomeFeedEvent.OpenAttachment(noticeId, file)) },
                 resolveAuthor = resolveAuthor,
                 player = player,

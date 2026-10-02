@@ -74,10 +74,16 @@ fun DetachedToolWindows(
                 ) {
                     ZillitTheme(darkTheme = darkTheme) {
                         AvatarFaces(graph) {
-                            LocationPickerMount(graph) {
-                                Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-                                    stateHolder.SaveableStateProvider(window.id.value) {
-                                        ToolWindowContent(window = window, registry = registry, onEvent = onEvent)
+                            VideoPlayerMount {
+                                LocationPickerMount(graph) {
+                                    Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+                                        stateHolder.SaveableStateProvider(window.id.value) {
+                                            ToolWindowContent(
+                                                window = window,
+                                                registry = registry,
+                                                onEvent = onEvent,
+                                            )
+                                        }
                                     }
                                 }
                             }

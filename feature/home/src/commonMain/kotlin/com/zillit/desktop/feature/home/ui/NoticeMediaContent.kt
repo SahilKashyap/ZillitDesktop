@@ -40,6 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitVideoView
+import com.zillit.desktop.core.designsystem.component.ZillitViewerClose
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.AudioPlayer
@@ -64,6 +66,7 @@ internal fun AttachmentContent(
     attachment: NoticeAttachment?,
     media: NoticeMediaSource?,
     onPreview: (NoticeAttachment) -> Unit,
+    onPlayVideo: (NoticeAttachment) -> Unit,
     onOpen: (NoticeAttachment) -> Unit,
     player: AudioPlayer? = null,
     location: GeoPoint? = null,
@@ -87,13 +90,15 @@ internal fun AttachmentContent(
         )
 
         // The thumbnail was made at upload time; the play badge is what says
-        // this is not a still. Playback is the OS's job — a desktop video
-        // player is not something to half-build inside a chat bubble.
+        // this is not a still. The clip opens in the viewer beside the
+        // pictures, not in whatever the OS keeps for `.mp4` — it used to be
+        // saved to Downloads and handed over, which meant waiting out the
+        // whole file to watch ten seconds of it.
         NoticeKind.Video -> MediaThumbnail(
             attachment = attachment,
             media = media,
             overlay = { PlayBadge() },
-            onClick = { onOpen(attachment) },
+            onClick = { onPlayVideo(attachment) },
         )
 
         NoticeKind.Audio -> AudioMessageContent(attachment, media, player, onOpen)
@@ -592,10 +597,15 @@ internal fun AudioMessageContent(
 }
 
 /**
- * The full-size image over a scrim; click anywhere to close.
+ * The full-size image over a scrim; the cross, or a click anywhere, closes it.
  *
  * Fetches the full object, not the thumbnail — this is the "let me actually
  * read the call sheet" view.
+ *
+ * The cross is not redundant with click-to-close. A viewer whose only exit is
+ * an undrawn gesture is one people back out of by guessing, and the guess on a
+ * picture is usually to click the picture — which is the one place here that
+ * does nothing special.
  */
 @Composable
 internal fun MediaLightbox(
@@ -636,8 +646,76 @@ internal fun MediaLightbox(
                 modifier = Modifier.fillMaxSize().padding(LIGHTBOX_PADDING),
             )
         }
+
+        ZillitViewerClose(
+            onClose = onClose,
+            modifier = Modifier.align(Alignment.TopEnd).padding(ZillitTheme.spacing.md),
+        )
     }
 }
+
+/**
+ * A clip, playing where the picture would be: the file's name, the cross, and
+ * the video under them.
+ *
+ * The URL is presigned on opening ([NoticeMediaSource.streamUrl]) and the
+ * player streams it — the board never has the bytes, which is the point for a
+ * file that can run to gigabytes.
+ *
+ * Laid out as a column rather than as chrome floating over the picture,
+ * because the player is a heavyweight surface: anything composed on top of it
+ * is painted over. Side by side, both are visible; stacked, only one is.
+ */
+@Composable
+internal fun VideoLightbox(
+    attachment: NoticeAttachment,
+    media: NoticeMediaSource?,
+    onOpenOutside: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val link by produceState<StreamLink?>(initialValue = null, attachment.media, media) {
+        value = StreamLink(media?.streamUrl(attachment))
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = LIGHTBOX_SCRIM)),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitText(
+                    text = attachment.fileName,
+                    style = ZillitTheme.typography.titleSmall,
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitViewerClose(onClose = onClose)
+            }
+            ZillitVideoView(
+                url = link?.url,
+                // Resolved, and there was nothing to resolve to.
+                failed = link != null && link?.url == null,
+                onOpenOutside = {
+                    // The viewer goes first: a dead player left standing
+                    // behind the OS's own window is the next thing the user
+                    // comes back to.
+                    onClose()
+                    onOpenOutside()
+                },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        }
+    }
+}
+
+/** Distinguishes "not resolved yet" (null) from "resolved to nothing" (url null). */
+private data class StreamLink(val url: String?)
 
 internal sealed interface AttachmentImage {
     data class Ready(val bitmap: ImageBitmap) : AttachmentImage

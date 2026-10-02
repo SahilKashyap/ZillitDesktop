@@ -244,8 +244,12 @@ internal fun ThreadPane(
                 file = file,
                 // The full object where the host offers it; the poster otherwise.
                 loadImage = { seams.loadFullImage?.invoke(it) ?: loadThumbnail(it) },
+                videoUrl = seams.videoUrl,
                 canDownload = seams.canDownload,
                 onDownload = onOpenAttachment,
+                // A clip the player will not take is handed over after all —
+                // the same gated save-and-open the chip used to do.
+                onOpenOutside = onOpenAttachment,
                 onClose = { viewing = null },
             )
         }
@@ -1514,6 +1518,15 @@ private fun AttachmentBody(
         // A picture opens the in-app viewer; saving stays gated behind its
         // Download (QA #11).
         file.kind == "image" -> MediaThumb(file, media, media.onView)
+        // A clip plays in the viewer beside the pictures, poster or no poster
+        // — it used to be saved to Downloads and handed to whatever the OS
+        // keeps for `.mp4`, which meant waiting out a whole file to watch the
+        // first ten seconds of it.
+        file.kind == "video" -> if (file.thumbnail.isNotBlank()) {
+            MediaThumb(file, media, media.onView, playBadge = true)
+        } else {
+            FileChip(file, media.onView)
+        }
         // A PDF is asked for its poster whether or not the row names one —
         // the host draws page one itself when the server has nothing (a
         // Box production, a Drive share, the phones' placeholder key). The
@@ -1523,7 +1536,6 @@ private fun AttachmentBody(
                 file,
                 media,
                 media.onOpen,
-                playBadge = file.kind == "video",
                 namePlate = file.kind == "document",
             )
         else -> FileChip(file, media.onOpen)
