@@ -51,6 +51,9 @@ PROD_BUDGET_BASE_URL=
 # Budget Builder: the zillit_budget service API, and the web deployment that
 # serves its page (the app ships with the web client, e.g. https://dev.zillit.com
 # for develop). Both unset = the tool reports itself unconfigured.
+# Production: web = https://web.zillit.com/ (the prod web bundle talks to the
+# unsuffixed *api hosts). budgetbuilderapi / -qa answered 503 on 2026-10-02 —
+# not deployed yet — and the prod web bundle carries no Budget Builder host.
 PROD_BUDGET_BUILDER_BASE_URL=
 PROD_BUDGET_BUILDER_WEB_URL=
 PROD_CALENDAR_BASE_URL=
