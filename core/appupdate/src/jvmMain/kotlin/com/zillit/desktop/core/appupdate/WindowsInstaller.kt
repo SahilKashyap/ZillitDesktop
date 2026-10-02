@@ -128,8 +128,12 @@ internal class WindowsInstaller(
             |
             |try { Wait-Process -Id ${'$'}AppPid -Timeout 120 -ErrorAction SilentlyContinue } catch { }
             |
-            |${'$'}msiArgs = @('/i', '"' + ${'$'}Msi + '"', '/passive', '/norestart',
-            |    'INSTALLDIR="' + ${'$'}InstallDir.TrimEnd('\') + '"', '/l*v', '"' + ${'$'}Log + '"')
+            |# One formatted string, not an array of concatenations. Inside @(...)
+            |# PowerShell's comma binds tighter than +, so '"' + ${'$'}Msi + '"' is not
+            |# one quoted element but three — a lone ", the path, a lone ". msiexec
+            |# then reads the token after /l*v as the log path, finds ", cannot open
+            |# it, and stops with 1622 having installed nothing.
+            |${'$'}msiArgs = '/i "{0}" /passive /norestart INSTALLDIR="{1}" /l*v "{2}"' -f ${'$'}Msi, ${'$'}InstallDir.TrimEnd('\'), ${'$'}Log
             |try {
             |    ${'$'}p = Start-Process -FilePath 'msiexec.exe' -ArgumentList ${'$'}msiArgs -Verb RunAs -Wait -PassThru
             |    ${'$'}code = ${'$'}p.ExitCode
