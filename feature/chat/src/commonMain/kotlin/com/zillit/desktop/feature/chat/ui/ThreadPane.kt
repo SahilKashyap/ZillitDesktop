@@ -95,6 +95,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import com.zillit.desktop.feature.chat.domain.MentionSpan
+import com.zillit.desktop.feature.chat.domain.PendingChatUpload
 import com.zillit.desktop.feature.chat.domain.chatClockTime
 import com.zillit.desktop.feature.chat.domain.sharedContent
 import com.zillit.desktop.feature.chat.domain.designationLabel
@@ -297,22 +298,30 @@ internal fun ThreadPane(
 }
 
 /**
- * The picked (or pasted, or dropped) file, before it joins the thread — the
- * phones' gallery viewer: caption, and a picture's edit tools. A pick is one
- * item; a drop may bring several, previewed together and still sent one
- * message each — the chat wire takes one file per message.
+ * The picked (or pasted, or dropped) files, before they join the thread —
+ * WhatsApp's media editor: a caption for each, a picture's edit tools, and
+ * "+" for more of any kind. However many there are, each is sent as its own
+ * message — the chat wire takes one file per message.
  */
 @Composable
 private fun ChatPreviewHost(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     val pending = state.pendingPreview
     val along = state.droppedAlong
+    // One preview item per upload, kept: the editor follows items by
+    // identity, so a file added with "+" must not remint the ones before it.
+    val minted = remember { HashMap<PendingChatUpload, PreviewItem>() }
+    val items = remember(pending, along) {
+        val uploads = pending?.let { listOf(it) + along }.orEmpty()
+        minted.keys.retainAll(uploads.toSet())
+        uploads.map { upload ->
+            minted.getOrPut(upload) { PreviewItem(upload.name, upload.contentType, upload.bytes) }
+        }
+    }
     MediaPreviewDialog(
-        items = androidx.compose.runtime.remember(pending, along) {
-            pending?.let { first ->
-                (listOf(first) + along).map { PreviewItem(it.name, it.contentType, it.bytes) }
-            }.orEmpty()
-        },
+        items = items,
         initialCaption = "",
+        captionPerItem = true,
+        onAddMore = { kind -> onEvent(ChatEvent.AttachKind(kind)) },
         onSend = { results, caption ->
             results.firstOrNull()?.let { onEvent(ChatEvent.PreviewSend(it, caption, more = results.drop(1))) }
         },

@@ -1,11 +1,21 @@
 package com.zillit.desktop.core.media
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -16,51 +26,57 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
-import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitEmojiPicker
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
 
 /**
- * The preview between picking a file and sending it — the desktop's
- * `GalleryItemView` (Android `mediaHandler/gallery/GalleryViewer.kt`,
- * `activity_gallery_item_viewer.xml`): the picked items large, one at a
- * time, with a filmstrip when there are several, a caption, "Media
- * selected: N", remove-item while more than one remains, and Send. A
- * picture's Edit opens the three tools of `EditImageActivity`'s menu —
- * draw, crop, add text (`fragment_edit_image_main_menu.xml`) — plus a
- * quarter-turn rotate; videos, documents and audio show their poster or a
- * file glyph and take no tools.
+ * The screen between picking files and sending them, laid out as WhatsApp
+ * lays its media editor out: a dark layer over the conversation; close, the
+ * picture's tools (rotate, crop, draw, text) and remove along the top; the
+ * item large in the middle — a picture with its edits, a PDF's first page
+ * under its name and page count, a clip's frame; the caption pill; then the
+ * strip of everything selected with a "+" for more, and the round send with
+ * its count.
  *
  * Every composer that attaches a file hosts this the same way: map its
- * picked files onto [PreviewItem]s, keep the list stable across
- * recompositions (`remember` it — a fresh list restarts the session), and
- * take [onSend]'s [PreviewResult]s — the edited pictures re-encoded, the
+ * picked files onto [PreviewItem]s, keep each item's identity stable across
+ * recompositions (`remember` them — the session follows items by identity),
+ * and take [onSend]'s [PreviewResult]s — the edited pictures re-encoded, the
  * rest as they came — plus the caption. Nothing here uploads or posts.
  *
- * Kept composed with an empty [items] so the shell's exit can play; the
- * last non-empty list is remembered so the fading card still has content.
+ * A host that lists more items while the screen is open — its [onAddMore]
+ * answered — keeps the session: edits, captions and removals stand, and the
+ * first new item comes on screen. A new first item starts a fresh session.
+ *
+ * Laid over its parent like the dialog shell it replaces: the host composes
+ * it last inside a full-size box. Kept composed with an empty [items] so the
+ * fade out can play; the last non-empty list is remembered so the fading
+ * screen still has content.
  */
 @Composable
 fun MediaPreviewDialog(
@@ -73,12 +89,23 @@ fun MediaPreviewDialog(
     /** The caption's ceiling; the field counts against it and Send refuses past it. */
     captionLimit: Int = DEFAULT_CAPTION_LIMIT,
     visible: Boolean = items.isNotEmpty(),
+    /** The strip's "+": the host picks more of a kind and lists them. Null hides it. */
+    onAddMore: ((PreviewKind) -> Unit)? = null,
+    /** The kinds "+" offers. */
+    addKinds: List<PreviewKind> = ALL_ATTACHMENT_KINDS,
+    /**
+     * One caption per item, each on its own [PreviewResult] — chat, where each
+     * file is its own message. False keeps one caption for all, passed beside.
+     */
+    captionPerItem: Boolean = false,
 ) {
     var shown by remember { mutableStateOf(items) }
     if (items.isNotEmpty()) shown = items
     if (shown.isEmpty()) return
-    val session = remember(shown) { MediaPreviewSession(shown, initialCaption) }
+    val session = remember(shown.first()) { MediaPreviewSession(shown, initialCaption, captionPerItem) }
+    LaunchedEffect(session, shown) { session.sync(shown) }
     DecodePictures(session)
+    LoadPosters(session)
 
     // The on-screen measurer draws the canvas; a second one, at density 1
     // and with its own cache, composites on a background thread — so no
@@ -89,125 +116,202 @@ fun MediaPreviewDialog(
     var sending by remember(session) { mutableStateOf(false) }
     var sendError by remember(session) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val editing = session.tool != null
 
-    // One send, shared by the button and the caption field's Enter — the
+    // One send, shared by the disc and the caption field's Enter — the
     // phones and the web both send on Enter from the preview's caption
-    // (web `CNC_FIXES_CHANGELOG.md` Fix 7 added it there), and a dialog
-    // where Enter does nothing reads as a dialog that ignored you.
+    // (web `CNC_FIXES_CHANGELOG.md` Fix 7 added it there), and a screen
+    // where Enter does nothing reads as one that ignored you.
     val send: () -> Unit = {
         sending = true
         scope.launch {
             // Compositing and encoding a full photo is real work;
-            // off the UI thread so the dialog does not freeze.
+            // off the UI thread so the screen does not freeze.
             val results = withContext(Dispatchers.Default) { session.results(rasterMeasurer) }
             sending = false
             if (results != null) {
-                onSend(results, session.caption.trim())
+                onSend(results, results.firstOrNull()?.caption?.takeIf { captionPerItem } ?: session.caption.trim())
             } else {
                 sendError = str(S.desktop_media_encode_failed)
             }
         }
     }
 
-    ZillitDialogShell(
-        title = if (editing) str(S.desktop_media_edit_picture) else str(S.desktop_media_send_media),
-        subtitle = if (editing) str(S.desktop_media_edit_subtitle) else str(S.desktop_media_send_subtitle),
-        icon = ZillitIcons.Photo,
-        visible = visible,
-        onDismiss = { if (editing) session.tool = null else onCancel() },
-        width = DIALOG_WIDTH,
-        maxHeight = DIALOG_MAX_HEIGHT,
-        // The picture takes whatever height the dialog gets and the caption
-        // sits under it; a fixed-height canvas in a scrolling body pushed
-        // the caption below the fold on a laptop screen (the image reply
-        // learned this live).
-        scrollable = false,
-        modifier = modifier,
-        actions = {
-            if (editing) {
-                EditActions(session)
-            } else {
-                PreviewActions(
-                    session = session,
-                    sending = sending,
-                    captionLimit = captionLimit,
-                    error = sendError,
-                    onCancel = onCancel,
-                    onSend = send,
-                )
-            }
-        },
-    ) {
-        if (editing) {
-            EditBody(session, measurer)
-        } else {
-            PreviewBody(session, measurer, captionLimit, sending, send)
-        }
-    }
-}
-
-/** Preview mode: the item large, its toolbar, the filmstrip, the caption. */
-@Composable
-private fun ColumnScope.PreviewBody(
-    session: MediaPreviewSession,
-    measurer: TextMeasurer,
-    captionLimit: Int,
-    sending: Boolean,
-    onSend: () -> Unit,
-) {
-    val item = session.current ?: return
-    PreviewToolbar(session, measurer)
-    ItemPreview(session, item, Modifier.weight(1f))
-    if (session.items.size > 1) Filmstrip(session)
-    ZillitTextField(
-        value = session.caption,
-        onValueChange = { session.caption = it },
-        placeholder = str(S.desktop_media_add_caption),
-        singleLine = false,
-        maxLength = captionLimit,
-        modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
-            // Enter sends, Shift+Enter starts a line — the composer's own
-            // bargain (`ThreadPane.kt:546`), so the two fields behave alike.
-            // A send already in flight swallows the key rather than firing
-            // twice.
-            val enter = event.type == KeyEventType.KeyDown &&
-                event.key == Key.Enter &&
-                !event.isShiftPressed
-            if (enter && !sending) onSend()
-            enter
-        },
-    )
-}
-
-/** Edit mode: the tool tabs, the active tool's row, and the canvas taking input. */
-@Composable
-private fun ColumnScope.EditBody(session: MediaPreviewSession, measurer: TextMeasurer) {
-    val edit = session.currentEdit ?: return
-    val tool = session.tool ?: return
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        EditTool.entries.forEach { candidate ->
-            ZillitChoiceChip(
-                label = candidate.name,
-                selected = tool == candidate,
-                onClick = { session.tool = candidate },
+    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut(), modifier = modifier) {
+        // WhatsApp's editor is dark whatever the theme: the picture is what
+        // is lit, and a white frame around a photo fights it.
+        ZillitTheme(darkTheme = true, animateThemeChange = false) {
+            EditorScreen(
+                session = session,
+                measurer = measurer,
+                sending = sending,
+                error = sendError,
+                captionLimit = captionLimit,
+                onSend = send,
+                onCancel = onCancel,
+                onAddMore = onAddMore,
+                addKinds = addKinds,
             )
         }
     }
-    when (tool) {
-        EditTool.Draw -> PenToolbar(edit.pen)
-        EditTool.Crop -> CropToolbar(
-            canApply = edit.cropBand != null,
-            onApply = { edit.applyCrop(measurer) },
-            onReset = { edit.cropBand = null },
+}
+
+/** The layer itself: top bar, stage, and — out of the editor — caption and strip. */
+@Composable
+@Suppress("LongParameterList") // The screen's state and its verbs, passed once.
+private fun EditorScreen(
+    session: MediaPreviewSession,
+    measurer: TextMeasurer,
+    sending: Boolean,
+    error: String?,
+    captionLimit: Int,
+    onSend: () -> Unit,
+    onCancel: () -> Unit,
+    onAddMore: ((PreviewKind) -> Unit)?,
+    addKinds: List<PreviewKind>,
+) {
+    val editing = session.tool != null
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(ZillitTheme.colors.canvas)
+            // Swallows clicks so nothing under the layer answers them.
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+    ) {
+        PreviewTopBar(session, measurer, onClose = { if (editing) session.tool = null else onCancel() })
+        if (editing) ToolRow(session, measurer)
+        ItemStage(
+            session,
+            measurer,
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
         )
-        EditTool.Text -> TextToolbar(edit.text, onPlace = { placeText(edit) })
+        if (!editing) {
+            CaptionBar(session, captionLimit, sending, onSend)
+            Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+            BottomBar(session, sending, error, captionLimit, onSend, onAddMore, addKinds)
+        }
     }
-    EditableImageCanvas(edit, tool, Modifier.weight(1f), measurer)
+}
+
+/** The open tool's row — the pen's colours, the crop's Apply, the text line — and Discard / Done. */
+@Composable
+private fun ToolRow(session: MediaPreviewSession, measurer: TextMeasurer) {
+    val edit = session.currentEdit ?: return
+    val tool = session.tool ?: return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        Box(Modifier.weight(1f)) {
+            when (tool) {
+                EditTool.Draw -> PenToolbar(edit.pen)
+                EditTool.Crop -> CropToolbar(
+                    canApply = edit.cropBand != null,
+                    onApply = { edit.applyCrop(measurer) },
+                    onReset = { edit.cropBand = null },
+                )
+                EditTool.Text -> TextToolbar(edit.text, onPlace = { placeText(edit) })
+            }
+        }
+        ZillitButton(
+            text = str(S.desktop_media_discard_edits),
+            onClick = { edit.reset() },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = edit.isEdited,
+        )
+        ZillitButton(text = str(S.ah_done), onClick = { session.tool = null }, size = ButtonSize.Small)
+    }
+}
+
+/** The caption pill with its emoji palette — the current item's, or the one for all. */
+@Composable
+private fun CaptionBar(session: MediaPreviewSession, captionLimit: Int, sending: Boolean, onSend: () -> Unit) {
+    var emojiOpen by remember { mutableStateOf(false) }
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitTextField(
+            value = session.caption,
+            onValueChange = { session.caption = it },
+            placeholder = str(S.desktop_media_add_caption),
+            singleLine = false,
+            // The counter only once it matters: an always-on "0/2000" is
+            // clutter WhatsApp's pill does not carry. Send refuses past it.
+            maxLength = captionLimit.takeIf { session.caption.length > captionLimit - COUNTER_HEADROOM },
+            containerColor = ZillitTheme.colors.surfaceRaised,
+            shape = RoundedCornerShape(CAPTION_CORNER),
+            trailingContent = {
+                Box {
+                    ZillitIconButton(
+                        icon = ZillitIcons.Smiley,
+                        contentDescription = str(S.desktop_insert_an_emoji),
+                        onClick = { emojiOpen = true },
+                        tint = ZillitTheme.colors.textSecondary,
+                    )
+                    ZillitMenuSurface(expanded = emojiOpen, onDismissRequest = { emojiOpen = false }) {
+                        ZillitEmojiPicker(
+                            onPick = { emoji -> session.caption = session.caption + emoji },
+                            modifier = Modifier.padding(ZillitTheme.spacing.sm),
+                        )
+                    }
+                }
+            },
+            modifier = Modifier.widthIn(max = CAPTION_MAX_WIDTH).fillMaxWidth().onPreviewKeyEvent { event ->
+                // Enter sends, Shift+Enter starts a line — the composer's own
+                // bargain, so the two fields behave alike. A send already in
+                // flight swallows the key rather than firing twice.
+                val enter = event.type == KeyEventType.KeyDown && event.key == Key.Enter && !event.isShiftPressed
+                if (enter && !sending) onSend()
+                enter
+            },
+        )
+    }
+}
+
+/** The strip, centred, with the send disc at the right and any refusal at the left. */
+@Composable
+@Suppress("LongParameterList") // The bar's state and its two verbs.
+private fun BottomBar(
+    session: MediaPreviewSession,
+    sending: Boolean,
+    error: String?,
+    captionLimit: Int,
+    onSend: () -> Unit,
+    onAddMore: ((PreviewKind) -> Unit)?,
+    addKinds: List<PreviewKind>,
+) {
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+    ) {
+        error?.let {
+            ZillitText(
+                text = it,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.danger,
+                modifier = Modifier.align(Alignment.CenterStart).widthIn(max = ERROR_WIDTH),
+            )
+        }
+        ThumbnailStrip(
+            session,
+            onAddMore,
+            addKinds,
+            Modifier.align(Alignment.Center).padding(horizontal = STRIP_INSET),
+        )
+        SendDisc(
+            count = session.items.size,
+            enabled = session.longestCaption <= captionLimit,
+            sending = sending,
+            onSend = onSend,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
+    }
 }
 
 /** Drops the typed line a little in from the top-left, each new one a line lower — the drag does the rest. */
@@ -222,58 +326,30 @@ private fun placeText(edit: ImageEditState) {
     edit.text.place(at, sizePx)
 }
 
-/** "Media selected: N", Cancel, Send — the gallery viewer's footer. */
-@Composable
-private fun RowScope.PreviewActions(
-    session: MediaPreviewSession,
-    sending: Boolean,
-    captionLimit: Int,
-    error: String?,
-    onCancel: () -> Unit,
-    onSend: () -> Unit,
-) {
-    ZillitText(
-        text = error ?: str(S.desktop_media_selected_count, session.items.size),
-        style = ZillitTheme.typography.labelSmall,
-        color = if (error != null) ZillitTheme.colors.danger else ZillitTheme.colors.textMuted,
-    )
-    Spacer(Modifier.weight(1f))
-    ZillitButton(text = str(S.cancel), onClick = onCancel, variant = ButtonVariant.Secondary, enabled = !sending)
-    ZillitButton(
-        text = if (sending) str(S.preparing) else str(S.send),
-        onClick = onSend,
-        enabled = !sending && session.caption.length <= captionLimit,
-        loading = sending,
-    )
-}
-
-/** Discard edits, Done — the editor's own footer. */
-@Composable
-private fun RowScope.EditActions(session: MediaPreviewSession) {
-    val edit = session.currentEdit
-    Spacer(Modifier.weight(1f))
-    ZillitButton(
-        text = str(S.desktop_media_discard_edits),
-        onClick = { edit?.reset() },
-        variant = ButtonVariant.Secondary,
-        enabled = edit?.isEdited == true,
-    )
-    ZillitButton(text = str(S.ah_done), onClick = { session.tool = null })
-}
-
 /**
  * Decodes every picture in the session once, off the UI thread, and hands
- * each to its editor. Pictures that will not decode are marked so the
- * preview shows them as files rather than "Loading…" forever.
+ * each to its editor — again whenever "+" brings more. Pictures that will not
+ * decode are marked so the preview shows them as files, not "Loading…".
  */
 @Composable
 private fun DecodePictures(session: MediaPreviewSession) {
-    LaunchedEffect(session) {
+    LaunchedEffect(session, session.items) {
         session.items.filter { it.kind == PreviewKind.Image }.forEach { item ->
             val edit = session.editFor(item)
-            if (edit.original != null) return@forEach
+            if (edit.original != null || item in session.undecodable) return@forEach
             val bitmap = withContext(Dispatchers.Default) { decodeImageBitmap(item.bytes) }
             if (bitmap != null) edit.load(bitmap) else session.markUndecodable(item)
+        }
+    }
+}
+
+/** Asks the app's poster maker, once per file, for what the stage and strip show. */
+@Composable
+private fun LoadPosters(session: MediaPreviewSession) {
+    val maker = LocalPreviewPosterMaker.current ?: return
+    LaunchedEffect(session, session.items, maker) {
+        session.items.filter { !session.isEditable(it) && it !in session.posters }.forEach { item ->
+            session.posters[item] = withContext(Dispatchers.Default) { maker.poster(item) }
         }
     }
 }
@@ -283,5 +359,11 @@ const val DEFAULT_CAPTION_LIMIT = 2000
 private const val TEXT_PLACE_X = 0.08f
 private const val TEXT_PLACE_Y = 0.4f
 private const val TEXT_LINE_GAP = 1.4f
-private val DIALOG_WIDTH = 840.dp
-private val DIALOG_MAX_HEIGHT = 820.dp
+private val HAIRLINE = 1.dp
+
+/** How close to the caption limit the counter appears. */
+private const val COUNTER_HEADROOM = 200
+private val CAPTION_CORNER = 10.dp
+private val CAPTION_MAX_WIDTH = 900.dp
+private val ERROR_WIDTH = 220.dp
+private val STRIP_INSET = 96.dp

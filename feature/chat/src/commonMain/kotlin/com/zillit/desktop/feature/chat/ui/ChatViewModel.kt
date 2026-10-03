@@ -1080,10 +1080,14 @@ class ChatViewModel(
         var stored: ChatAttachment? = null,
     )
 
-    /** The paperclip: the pick goes to the preview, not straight to the wire. */
+    /**
+     * The paperclip: the pick goes to the preview, not straight to the wire.
+     * Several files may come back at once, and a pick made while the preview
+     * is already open — its "+" — joins what is there rather than replacing it.
+     */
     private suspend fun pickForPreview(kind: PreviewKind? = null) {
         if (currentState.peer == null) return
-        val pending = when (val pick = if (kind == null) pickAttachment() else pickAttachmentOf(kind)) {
+        val picked = when (val pick = if (kind == null) pickAttachment() else pickAttachmentOf(kind)) {
             is ChatPick.Cancelled -> return
             // The picker weighed the file without reading it, as the web
             // weighs a File before uploading; its reason is the user's.
@@ -1092,17 +1096,25 @@ class ChatViewModel(
                 return
             }
 
-            is ChatPick.Ready -> pick.upload
+            is ChatPick.Ready -> listOf(pick.upload) + pick.more
         }
         // What the picker's own scales could not judge: an executable is
         // refused by name, whatever its size (`ChatFooterCnc.jsx:604-609`).
-        val refusal = ChatComposerRules.refuse(pending.name, pending.bytes.size.toLong())
-        if (refusal != null) {
-            setState { copy(error = refusal) }
-            return
+        // The first refusal is said; the rest still go to the preview.
+        val (fits, refused) = picked.partition { ChatComposerRules.refuse(it.name, it.bytes.size.toLong()) == null }
+        refused.firstOrNull()?.let { file ->
+            setState { copy(error = ChatComposerRules.refuse(file.name, file.bytes.size.toLong())) }
         }
-        ZillitLog.d(TAG) { "picked ${pending.name} for preview" }
-        setState { copy(pendingPreview = pending) }
+        if (fits.isEmpty()) return
+        ZillitLog.d(TAG) { "picked ${fits.size} file(s) for preview" }
+        val open = currentState.pendingPreview
+        setState {
+            if (open != null) {
+                copy(droppedAlong = droppedAlong + fits)
+            } else {
+                copy(pendingPreview = fits.first(), droppedAlong = fits.drop(1))
+            }
+        }
     }
 
     /** A pasted picture takes the picker's road, with the host uploader behind it. */
@@ -1158,7 +1170,7 @@ class ChatViewModel(
         val pending = currentState.pendingPreview ?: return
         // A caption is a body like any other; refuse it before the optimistic
         // bubble appears, since this path never reaches the guard in send().
-        if (ChatComposerRules.bodyTooLong(caption.trim())) {
+        if ((listOf(caption) + more.map { it.caption }).any { ChatComposerRules.bodyTooLong(it.trim()) }) {
             setState { copy(error = ChatComposerRules.BODY_TOO_LONG) }
             return
         }
@@ -1166,7 +1178,9 @@ class ChatViewModel(
         val uploadOf = { sent: PreviewResult -> (sources.firstOrNull { it.name == sent.name } ?: pending).upload }
         setState { copy(pendingPreview = null, droppedAlong = emptyList()) }
         queueMedia(peer, result, caption.trim(), uploadOf(result))
-        more.forEach { next -> queueMedia(peer, next, body = "", upload = uploadOf(next)) }
+        // Each of the others with its own caption — the preview keeps one per
+        // item, as WhatsApp does — or none.
+        more.forEach { next -> queueMedia(peer, next, body = next.caption.trim(), upload = uploadOf(next)) }
     }
 
     /** One media line: its bubble now, its upload and send behind it. */

@@ -15,12 +15,42 @@ import androidx.compose.ui.text.TextMeasurer
  * (`GalleryViewer.kt:143-147`). Held outside the composables so switching
  * item, tool and mode keeps every picture's edits.
  */
-class MediaPreviewSession(items: List<PreviewItem>, caption: String = "") {
+class MediaPreviewSession(
+    items: List<PreviewItem>,
+    caption: String = "",
+    /**
+     * One caption per item rather than one for all — chat sends each file as
+     * its own message, and WhatsApp captions each; a board post has one text.
+     */
+    val captionPerItem: Boolean = false,
+) {
     var items by mutableStateOf(items)
         private set
     var index by mutableStateOf(0)
         private set
-    var caption by mutableStateOf(caption)
+    private var sharedCaption by mutableStateOf(caption)
+    private val itemCaptions = mutableStateMapOf<PreviewItem, String>()
+
+    /** The caption the field shows: the current item's, or the one shared by all. */
+    var caption: String
+        get() = if (captionPerItem) current?.let { itemCaptions[it] }.orEmpty() else sharedCaption
+        set(value) {
+            if (!captionPerItem) {
+                sharedCaption = value
+            } else {
+                current?.let { itemCaptions[it] = value }
+            }
+        }
+
+    /** The longest caption in play — what Send weighs against the limit. */
+    val longestCaption: Int
+        get() = if (captionPerItem) itemCaptions.values.maxOfOrNull { it.length } ?: 0 else sharedCaption.length
+
+    /** Posters for the files that are not pictures, as the app's maker answers them. */
+    val posters = mutableStateMapOf<PreviewItem, PreviewPoster?>()
+
+    /** Items the user took out here — a host still listing them must not bring them back. */
+    private val removed = mutableSetOf<PreviewItem>()
 
     /** Whether the editor is open over the current picture, and with which tool. */
     var tool by mutableStateOf<EditTool?>(null)
@@ -62,8 +92,24 @@ class MediaPreviewSession(items: List<PreviewItem>, caption: String = "") {
         val item = current ?: return
         if (items.size <= 1) return
         edits.remove(item)
+        itemCaptions.remove(item)
+        posters.remove(item)
+        removed += item
         items = items - item
         index = index.coerceAtMost(items.lastIndex)
+        tool = null
+    }
+
+    /**
+     * Takes in what the host lists now that this session has not seen — the
+     * strip's "+" adding files while the preview is open — and shows the
+     * first of them. Items removed here stay removed; nothing else moves.
+     */
+    fun sync(listed: List<PreviewItem>) {
+        val fresh = listed.filter { it !in items && it !in removed }
+        if (fresh.isEmpty()) return
+        items = items + fresh
+        index = items.indexOf(fresh.first())
         tool = null
     }
 
@@ -73,7 +119,10 @@ class MediaPreviewSession(items: List<PreviewItem>, caption: String = "") {
      * thread. Null when a picture that was edited could not be encoded.
      */
     fun results(measurer: TextMeasurer, jpegQuality: Int = JPEG_QUALITY): List<PreviewResult>? =
-        items.map { item -> resultFor(item, measurer, jpegQuality) ?: return null }
+        items.map { item ->
+            val result = resultFor(item, measurer, jpegQuality) ?: return null
+            if (captionPerItem) result.copy(caption = itemCaptions[item].orEmpty().trim()) else result
+        }
 
     private fun resultFor(item: PreviewItem, measurer: TextMeasurer, jpegQuality: Int): PreviewResult? {
         val edit = edits[item]?.takeIf { it.isEdited } ?: return item.asResult()

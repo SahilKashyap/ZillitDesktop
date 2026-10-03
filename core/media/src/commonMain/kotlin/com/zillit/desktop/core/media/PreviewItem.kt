@@ -57,6 +57,12 @@ data class PreviewResult(
     val contentType: String,
     val bytes: ByteArray,
     val thumbnailBytes: ByteArray? = null,
+    /**
+     * This item's own caption, where the dialog keeps one per item (chat sends
+     * each file as its own message, WhatsApp's way); empty where one caption
+     * covers them all and arrives beside the results instead.
+     */
+    val caption: String = "",
 ) {
     override fun toString(): String = "PreviewResult(name=$name, type=$contentType, size=${bytes.size})"
     override fun equals(other: Any?): Boolean = this === other

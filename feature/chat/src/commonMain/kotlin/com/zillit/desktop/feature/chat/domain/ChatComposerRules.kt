@@ -106,6 +106,9 @@ sealed interface ChatPick {
     /** Refused before reading — the reason is already the user's to see. */
     data class Refused(val reason: String) : ChatPick
 
-    /** A file, on its way to the preview. */
-    data class Ready(val upload: PendingChatUpload) : ChatPick
+    /**
+     * A file on its way to the preview — and [more] when several were chosen
+     * at once, WhatsApp's multi-select, each to go as its own message.
+     */
+    data class Ready(val upload: PendingChatUpload, val more: List<PendingChatUpload> = emptyList()) : ChatPick
 }

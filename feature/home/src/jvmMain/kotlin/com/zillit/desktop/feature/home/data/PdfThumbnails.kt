@@ -16,18 +16,34 @@ import org.apache.pdfbox.rendering.PDFRenderer
  * simply not a PDF — and never a throw: the chip without a poster is the
  * fallback, not a failure.
  */
-fun pdfThumbnailJpeg(bytes: ByteArray): PosterFrame? = try {
+fun pdfThumbnailJpeg(
+    bytes: ByteArray,
+    /** Higher for a page shown large — the media editor's stage. */
+    dpi: Float = RENDER_DPI,
+    maxEdge: Int = MAX_EDGE,
+): PosterFrame? = try {
     Loader.loadPDF(bytes).use { document ->
         if (document.numberOfPages < 1) {
             null
         } else {
             PDFRenderer(document)
-                .renderImageWithDPI(0, RENDER_DPI)
-                .toPosterFrame(MAX_EDGE)
+                .renderImageWithDPI(0, dpi)
+                .toPosterFrame(maxEdge)
         }
     }
 } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
     ZillitLog.d(TAG) { "no thumbnail for this document: ${throwable::class.simpleName}" }
+    null
+}
+
+/**
+ * How many pages a PDF has — the "3 pages" under its name in the media
+ * editor. Null for anything that will not open as one; never a throw.
+ */
+fun pdfPageCount(bytes: ByteArray): Int? = try {
+    Loader.loadPDF(bytes).use { document -> document.numberOfPages.takeIf { it > 0 } }
+} catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
+    ZillitLog.d(TAG) { "no page count for this document: ${throwable::class.simpleName}" }
     null
 }
 

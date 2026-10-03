@@ -11578,6 +11578,7 @@ object S {
     const val desktop_media_choose_documents: String = "desktop_media_choose_documents"
     const val desktop_media_choose_photos: String = "desktop_media_choose_photos"
     const val desktop_media_choose_videos: String = "desktop_media_choose_videos"
+    const val desktop_media_crop: String = "desktop_media_crop"
     const val desktop_media_crop_hint: String = "desktop_media_crop_hint"
     const val desktop_media_deleted_success: String = "desktop_media_deleted_success"
     const val desktop_media_discard_edits: String = "desktop_media_discard_edits"

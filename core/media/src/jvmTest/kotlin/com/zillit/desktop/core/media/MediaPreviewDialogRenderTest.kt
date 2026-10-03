@@ -4,10 +4,16 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -18,10 +24,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Composes the real dialog: the caption field, the count, Send and Cancel
- * are on screen, Send hands back every item with the caption typed, and
- * the per-item controls follow Android's rules — Edit for pictures,
- * Remove only while more than one is selected.
+ * Composes the real screen, WhatsApp's media editor: the caption pill, the
+ * strip, the send disc with its count; Send hands back every item with the
+ * caption typed; a picture offers its tools and a file does not; remove only
+ * while more than one is selected; per-item captions ride on each result;
+ * and "+" asks the host for more without starting over.
  */
 @OptIn(ExperimentalTestApi::class)
 class MediaPreviewDialogRenderTest {
@@ -33,34 +40,34 @@ class MediaPreviewDialogRenderTest {
     }
 
     @Test
-    fun `the dialog shows the caption field, the count and Send, and Send returns the caption`() =
-        runComposeUiTest {
-            var sent: Pair<List<PreviewResult>, String>? = null
-            val items = listOf(PreviewItem("door.png", "image/png", pngBytes()))
-            setContent {
-                ZillitTheme {
-                    MediaPreviewDialog(
-                        items = items,
-                        onSend = { results, caption -> sent = results to caption },
-                        onCancel = {},
-                        initialCaption = "the door ",
-                    )
-                }
+    fun `a picture shows its tools, the count and Send, and Send returns the caption`() = runComposeUiTest {
+        var sent: Pair<List<PreviewResult>, String>? = null
+        val items = listOf(PreviewItem("door.png", "image/png", pngBytes()))
+        setContent {
+            ZillitTheme {
+                MediaPreviewDialog(
+                    items = items,
+                    onSend = { results, caption -> sent = results to caption },
+                    onCancel = {},
+                    initialCaption = "the door ",
+                )
             }
-
-            onNodeWithText("Media selected: 1").assertIsDisplayed()
-            onNodeWithText("Edit").assertIsDisplayed()
-            onNodeWithText("the door ").performTextReplacement("the door we need")
-            onNodeWithText("Send").performClick()
-            waitUntil(timeoutMillis = 5_000) { sent != null }
-
-            val (results, caption) = assertNotNull(sent)
-            assertEquals("the door we need", caption)
-            assertEquals("door.png", results.single().name)
         }
 
+        onNodeWithText("1").assertIsDisplayed()
+        onNodeWithContentDescription("Draw").assertExists()
+        onNodeWithContentDescription("Crop").assertExists()
+        onNodeWithText("the door ").performTextReplacement("the door we need")
+        onNodeWithContentDescription("Send").performClick()
+        waitUntil(timeoutMillis = 5_000) { sent != null }
+
+        val (results, caption) = assertNotNull(sent)
+        assertEquals("the door we need", caption)
+        assertEquals("door.png", results.single().name)
+    }
+
     @Test
-    fun `Cancel hands back nothing, and Remove appears only with several items`() = runComposeUiTest {
+    fun `Close hands back nothing, and Remove appears only with several items`() = runComposeUiTest {
         var cancelled = false
         val items = listOf(
             PreviewItem("call.pdf", "application/pdf", ByteArray(8)),
@@ -72,17 +79,71 @@ class MediaPreviewDialogRenderTest {
             }
         }
 
-        onNodeWithText("Media selected: 2").assertIsDisplayed()
-        // A document takes no tools.
-        assertTrue(onAllNodesWithTextCount("Edit") == 0, "documents must not offer Edit")
-        onNodeWithText("Remove").performClick()
-        onNodeWithText("Media selected: 1").assertIsDisplayed()
-        assertTrue(onAllNodesWithTextCount("Remove") == 0, "the last item cannot be removed")
+        onNodeWithText("2").assertIsDisplayed()
+        // A document takes no tools; its name heads the screen instead.
+        assertEquals(0, onAllNodesWithContentDescription("Draw").fetchSemanticsNodes().size)
+        onAllNodesWithText("call.pdf").fetchSemanticsNodes().isNotEmpty().let(::assertTrue)
+        onNodeWithContentDescription("Remove").performClick()
+        onNodeWithText("1").assertIsDisplayed()
+        assertEquals(0, onAllNodesWithContentDescription("Remove").fetchSemanticsNodes().size)
 
-        onNodeWithText("Cancel").performClick()
+        onNodeWithContentDescription("Close").performClick()
         assertTrue(cancelled)
     }
 
-    private fun androidx.compose.ui.test.ComposeUiTest.onAllNodesWithTextCount(text: String): Int =
-        onAllNodesWithText(text).fetchSemanticsNodes().size
+    @Test
+    fun `each item keeps its own caption where the host asks for one per item`() = runComposeUiTest {
+        var sent: List<PreviewResult>? = null
+        val items = listOf(
+            PreviewItem("one.png", "image/png", pngBytes()),
+            PreviewItem("two.png", "image/png", pngBytes()),
+        )
+        setContent {
+            ZillitTheme {
+                MediaPreviewDialog(
+                    items = items,
+                    onSend = { results, _ -> sent = results },
+                    onCancel = {},
+                    captionPerItem = true,
+                )
+            }
+        }
+
+        onNode(hasSetTextAction()).performTextReplacement("first")
+        onNodeWithContentDescription("two.png").performClick()
+        waitForIdle()
+        // The second item's field starts empty: the first caption stayed with the first.
+        onNode(hasSetTextAction()).performTextReplacement("second")
+        onNodeWithContentDescription("Send").performClick()
+        waitUntil(timeoutMillis = 5_000) { sent != null }
+
+        assertEquals(listOf("first", "second"), assertNotNull(sent).map { it.caption })
+    }
+
+    @Test
+    fun `plus asks the host for more, and what it adds joins the same screen`() = runComposeUiTest {
+        val asked = mutableListOf<PreviewKind>()
+        val first = PreviewItem("one.png", "image/png", pngBytes())
+        var items by mutableStateOf(listOf(first))
+        setContent {
+            ZillitTheme {
+                MediaPreviewDialog(
+                    items = items,
+                    onSend = { _, _ -> },
+                    onCancel = {},
+                    onAddMore = { kind -> asked += kind },
+                    addKinds = listOf(PreviewKind.Document),
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Add more").performClick()
+        assertEquals(listOf(PreviewKind.Document), asked)
+
+        items = items + PreviewItem("call.pdf", "application/pdf", ByteArray(8))
+        waitForIdle()
+        onNodeWithText("2").assertIsDisplayed()
+        // The new file comes on screen: its name heads the bar.
+        assertTrue(onAllNodesWithText("call.pdf").fetchSemanticsNodes().isNotEmpty())
+    }
 }

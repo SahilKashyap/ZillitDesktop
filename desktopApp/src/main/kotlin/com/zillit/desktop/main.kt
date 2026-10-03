@@ -800,7 +800,7 @@ private fun ApplicationScope.ZillitWindows(
             AvatarFaces(graph) {
                 FullScreenMount(windowState) {
                 VideoPlayerMount {
-                    LocationPickerMount(graph) {
+                    PreviewPostersMount { LocationPickerMount(graph) {
                         ZillitContent(
                             graph = graph,
                             registry = registry,
@@ -819,7 +819,7 @@ private fun ApplicationScope.ZillitWindows(
                             // Chromium goes down first and the layout is saved.
                             onQuit = { quitZillit(windowState) },
                         )
-                    }
+                    } }
                 }
                 }
             }
@@ -2127,19 +2127,20 @@ internal suspend fun pickChatAttachment(
     // Chat's own ceiling, not mail's 25 MB: both other clients carry files up
     // to 70 MB, and a desktop that stops at 25 refuses what a phone sends.
     var refusal: String? = null
-    val picked = if (kind == null) {
+    val picked: List<PickedBytes> = if (kind == null) {
         com.zillit.desktop.feature.email.data.FilePicker(
             maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
             onRefused = { _, _ ->
                 refusal = com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
             },
-        ).pick().firstOrNull()?.let { PickedBytes(it.name, it.contentType, it.bytes) }
+        ).pick().take(1).map { PickedBytes(it.name, it.contentType, it.bytes) }
     } else {
         // The attach sheet's kind: the same 70 MB ceiling, plus a wrong-kind
         // refusal the phones word as "Please select a valid file type".
+        // Several at once, WhatsApp's multi-select — each its own message.
         attachmentPicker.pick(
             kind = kind,
-            multiple = false,
+            multiple = true,
             maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
             onRefused = { why ->
                 refusal = when (why) {
@@ -2149,27 +2150,27 @@ internal suspend fun pickChatAttachment(
                         com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_REFUSED_TYPE
                 }
             },
-        ).firstOrNull()?.let { PickedBytes(it.name, it.contentType, it.bytes) }
+        ).map { PickedBytes(it.name, it.contentType, it.bytes) }
     }
 
-    val reason = refusal
-    if (picked == null) {
-        return reason?.let { com.zillit.desktop.feature.chat.domain.ChatPick.Refused(it) }
+    if (picked.isEmpty()) {
+        return refusal?.let { com.zillit.desktop.feature.chat.domain.ChatPick.Refused(it) }
             ?: com.zillit.desktop.feature.chat.domain.ChatPick.Cancelled
     }
 
-    // The bytes ride along so the thread's preview dialog can show (and for a
-    // picture, edit) the file before anything uploads; the upload then takes
+    // The bytes ride along so the thread's preview can show (and for a
+    // picture, edit) each file before anything uploads; the upload then takes
     // the possibly edited bytes back.
-    return com.zillit.desktop.feature.chat.domain.ChatPick.Ready(
+    val uploads = picked.map { file ->
         com.zillit.desktop.feature.chat.domain.PendingChatUpload(
-            name = picked.name,
-            contentType = picked.contentType,
-            bytes = picked.bytes,
+            name = file.name,
+            contentType = file.contentType,
+            bytes = file.bytes,
         ) { bytes, onProgress ->
-            uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress, capture)
-        },
-    )
+            uploadChatMedia(ready, file.name, file.contentType, bytes, onProgress, capture)
+        }
+    }
+    return com.zillit.desktop.feature.chat.domain.ChatPick.Ready(uploads.first(), more = uploads.drop(1))
 }
 
 /**
