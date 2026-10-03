@@ -48,9 +48,13 @@ import com.zillit.desktop.feature.calls.ui.themeJson
  * interrupt whatever tool is open, and the in-call bar must survive tab
  * switches — parenting it to any one screen would tie the call to that
  * screen's life.
+ *
+ * Also over the project list, so a call carried out of a production — "Switch
+ * Project" mid-call — keeps its bar while the next one is chosen. There the
+ * floating ring card owns incoming rings ([showsIncomingRing] false).
  */
 @Composable
-internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
+internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?, showsIncomingRing: Boolean = true) {
     calls ?: return
     val callState by calls.state.collectAsState()
     val engine = ready.callEngine
@@ -122,6 +126,7 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
         onEvent = calls::onEvent,
         loadAvatar = crewFaceLoader(ready),
         videoSurface = callVideoSurface(ready),
+        showsIncomingRing = showsIncomingRing,
     )
 }
 

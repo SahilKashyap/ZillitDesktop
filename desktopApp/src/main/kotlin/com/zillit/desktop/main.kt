@@ -1663,11 +1663,23 @@ private fun ZillitContent(
                 appVersion = installedAppVersion(),
             )
             }
+            ProjectListCallBar(ready, viewModels, authState.step)
         }
         // Above either screen: the startup notification-permission check, as
         // the phones make it, whatever the person is looking at.
         NotificationPermissionPrompt()
     }
+}
+
+/**
+ * A running call's bar over the project list — it was visible only inside a
+ * production, so "Switch Project" mid-call hid it while the next one was
+ * chosen. Rings stay with the floating card there (IncomingCallWidget's
+ * `shellShowsRing`), so this surface does not ring.
+ */
+@Composable
+private fun ProjectListCallBar(ready: AppGraph.Ready, viewModels: AppViewModels, step: AuthStep) {
+    if (step == AuthStep.ProjectSelection) CallSurface(ready, viewModels.calls, showsIncomingRing = false)
 }
 
 /**

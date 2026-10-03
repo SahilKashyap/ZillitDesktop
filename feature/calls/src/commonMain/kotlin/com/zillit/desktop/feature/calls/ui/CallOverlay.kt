@@ -38,6 +38,31 @@ import kotlin.math.roundToInt
  * lifecycle, and splitting them across screens is how a ring outlives its call
  * on other clients.
  */
+/** What the call's phase puts on screen: a ring card, the stage, the pill, or nothing. */
+@Composable
+@Suppress("LongParameterList") // The overlay's inputs, passed once.
+private fun PhaseSurface(
+    state: CallUiState,
+    onEvent: (CallEvent) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    hasVideo: Boolean,
+    ownsCall: Boolean,
+    showsIncomingRing: Boolean,
+    onSlot: (LayoutCoordinates) -> Unit,
+) {
+    when (state.phase) {
+        CallPhase.Incoming -> if (showsIncomingRing) CallRingCard(state, incoming = true, onEvent, loadAvatar)
+        CallPhase.Outgoing -> CallRingCard(state, incoming = false, onEvent, loadAvatar)
+        CallPhase.InCall, CallPhase.Ending ->
+            if (drawsStage(ownsCall, state.pipOpen, state.expanded)) {
+                CallStage(state, onEvent, loadAvatar, hasVideo, onSlot)
+            } else {
+                CallPill(state, onEvent, hasVideo, onSlot)
+            }
+        CallPhase.Idle -> Unit
+    }
+}
+
 @Composable
 fun CallOverlay(
     state: CallUiState,
@@ -60,6 +85,12 @@ fun CallOverlay(
      * main window and backwards in the call window — where it is always true.
      */
     ownsCall: Boolean = false,
+    /**
+     * False where another surface already rings — the project list, where the
+     * floating ring card answers incoming calls and a second card in the frame
+     * would ring twice. The in-call pill and stage show either way.
+     */
+    showsIncomingRing: Boolean = true,
 ) {
     var root by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var slot by remember { mutableStateOf(Rect.Zero) }
@@ -68,17 +99,7 @@ fun CallOverlay(
     }
 
     Box(modifier = Modifier.fillMaxSize().onGloballyPositioned { root = it }) {
-        when (state.phase) {
-            CallPhase.Incoming -> CallRingCard(state, incoming = true, onEvent, loadAvatar)
-            CallPhase.Outgoing -> CallRingCard(state, incoming = false, onEvent, loadAvatar)
-            CallPhase.InCall, CallPhase.Ending ->
-                if (drawsStage(ownsCall, state.pipOpen, state.expanded)) {
-                    CallStage(state, onEvent, loadAvatar, videoSurface != null, onSlot)
-                } else {
-                    CallPill(state, onEvent, videoSurface != null, onSlot)
-                }
-            CallPhase.Idle -> Unit
-        }
+        PhaseSurface(state, onEvent, loadAvatar, videoSurface != null, ownsCall, showsIncomingRing, onSlot)
 
         // ONE mount for the whole call, deliberately outside the branch above.
         // Taking a native browser out of the tree hands it back to the engine's
