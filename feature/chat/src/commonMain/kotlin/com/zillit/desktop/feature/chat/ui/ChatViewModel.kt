@@ -498,7 +498,7 @@ class ChatViewModel(
         when (event) {
             is ChatEvent.OpenThread -> openThread(event.contact)
             is ChatEvent.OpenGroup -> openThread(
-                CrewContact(userId = event.room.id, fullName = event.room.name),
+                CrewContact(userId = event.room.id, fullName = event.room.displayName),
                 isGroup = true,
             )
             ChatEvent.CloseThread -> {

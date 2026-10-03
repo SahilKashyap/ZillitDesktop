@@ -38,7 +38,7 @@ internal data class ChatMessageSearchRow(
     val room: GroupRoom?,
     val contact: CrewContact?,
 ) {
-    val title: String get() = room?.name ?: contact?.fullName.orEmpty()
+    val title: String get() = room?.displayName ?: contact?.fullName.orEmpty()
 }
 
 /**

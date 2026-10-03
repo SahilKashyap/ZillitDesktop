@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat.domain
 
+import com.zillit.desktop.core.localization.localised
 import kotlinx.serialization.Serializable
 
 /** One direct message, decrypted and ready to draw. */
@@ -169,7 +170,15 @@ data class GroupRoom(
      * but this survives, so the room keeps its place and its standing.
      */
     val sortingActivity: Long = 0L,
-)
+) {
+    /**
+     * What to show for [name]. System groups (a department's room) carry a
+     * label key — `camera_label` — in `room_name`, which every client runs
+     * through its label dictionary (Android `getDataFromLabelKey`); a name
+     * someone typed is not a key and comes back as it went in.
+     */
+    val displayName: String get() = name.localised()
+}
 
 /**
  * How far a message has got, as the wire counts it.

@@ -202,7 +202,7 @@ fun ChatFilter.admits(
 
 /** The name a listing row wears — the group's name or the person's. */
 fun RecentRow.displayName(): String = when (this) {
-    is RecentRow.Group -> room.name
+    is RecentRow.Group -> room.displayName
     is RecentRow.Direct -> contact.fullName
 }
 

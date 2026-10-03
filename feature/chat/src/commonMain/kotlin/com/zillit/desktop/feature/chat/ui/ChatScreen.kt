@@ -679,7 +679,7 @@ private fun GroupRowWithDelete(
     val mine = deleteRoom != null && selfId != null && row.room.ownedBy == selfId
 
     CrewRow(
-        contact = CrewContact(userId = row.room.id, fullName = row.room.name),
+        contact = CrewContact(userId = row.room.id, fullName = row.room.displayName),
         isSelected = state.peerIsGroup && state.peer?.userId == row.room.id,
         loadAvatar = { null },
         onClick = { onEvent(ChatEvent.OpenGroup(row.room)) },
@@ -696,7 +696,7 @@ private fun GroupRowWithDelete(
             {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = str(S.desktop_delete_named, row.room.name),
+                    contentDescription = str(S.desktop_delete_named, row.room.displayName),
                     enabled = !deleting,
                     onClick = { confirming = true },
                 )
@@ -707,7 +707,7 @@ private fun GroupRowWithDelete(
     )
 
     DeleteGroupDialog(
-        roomName = row.room.name,
+        roomName = row.room.displayName,
         visible = confirming,
         deleting = deleting,
         refusal = refusal,

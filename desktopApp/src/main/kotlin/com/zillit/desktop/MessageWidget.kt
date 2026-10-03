@@ -67,7 +67,7 @@ internal fun ApplicationScope.MessageWidget(
 ) {
     chat ?: return
     val toasts = remember { mutableStateListOf<MessageToast>() }
-    val groupName: (String) -> String? = { id -> chat.state.value.groups.firstOrNull { it.id == id }?.name }
+    val groupName: (String) -> String? = { id -> chat.state.value.groups.firstOrNull { it.id == id }?.displayName }
     LaunchedEffect(ready, chat) {
         ready.chatRepository.incoming.collect { message ->
             if (message.isMine) return@collect

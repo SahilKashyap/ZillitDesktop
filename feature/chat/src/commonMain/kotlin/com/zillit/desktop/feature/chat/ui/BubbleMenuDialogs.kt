@@ -119,7 +119,7 @@ internal fun ForwardDialog(
     var query by remember(source.id) { mutableStateOf("") }
     var picked by remember(source.id) { mutableStateOf(emptySet<ForwardTarget>()) }
     val rooms = remember(state.groups, query) {
-        state.groups.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+        state.groups.filter { query.isBlank() || it.displayName.contains(query.trim(), ignoreCase = true) }
     }
     val crew = remember(people, query) { people.searchCrew(query) }
 
@@ -166,7 +166,7 @@ internal fun ForwardDialog(
                 items(rooms, key = { "g-${it.id}" }) { room ->
                     val target = ForwardTarget(room.id, isGroup = true)
                     TargetRow(
-                        name = room.name,
+                        name = room.displayName,
                         caption = null,
                         checked = target in picked,
                         onToggle = { picked = picked.toggled(target) },
