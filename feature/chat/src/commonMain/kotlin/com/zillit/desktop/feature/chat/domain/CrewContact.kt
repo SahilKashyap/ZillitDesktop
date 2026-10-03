@@ -3,7 +3,6 @@ package com.zillit.desktop.feature.chat.domain
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -263,9 +262,23 @@ fun chatTimeLabel(
 }
 
 /**
+ * `HH:mm`, zero-padded — the time under each message, as the Home board
+ * prints it. The day is the chip's job, so the clock never swaps for a date
+ * the way the listing's column does; nothing for the epoch.
+ */
+fun chatClockTime(
+    atMillis: Long,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): String {
+    if (atMillis <= 0) return ""
+    val time = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone).time
+    return "${time.hour.pad()}:${time.minute.pad()}"
+}
+
+/**
  * The day chip a thread hangs over each day's first message — "Today",
- * "Yesterday", a weekday-and-date this year, date-and-year beyond. Words
- * where words are shorter, because the chip is furniture, not data.
+ * "Yesterday", then the full date ("05 August 2026"), worded as the Home
+ * board's date separators are.
  */
 fun chatDayLabel(
     atMillis: Long,
@@ -275,12 +288,10 @@ fun chatDayLabel(
     if (atMillis <= 0) return ""
     val day = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone).date
     val today = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(zone).date
-    val month = MONTHS[day.monthNumber - 1]
     return when {
         day == today -> str(S.today)
         day.toEpochDays() == today.toEpochDays() - 1 -> str(S.yesterday)
-        day.year == today.year -> "${WEEKDAYS[day.dayOfWeek.isoDayNumber - 1]} ${day.dayOfMonth} $month"
-        else -> "${day.dayOfMonth} $month ${day.year}"
+        else -> "${day.dayOfMonth.pad()} ${FULL_MONTHS[day.monthNumber - 1]} ${day.year}"
     }
 }
 
@@ -291,7 +302,10 @@ private val MONTHS = listOf(
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
 
-private val WEEKDAYS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+private val FULL_MONTHS = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
 
 /** Noon splits the 12-hour clock; hours past it read PM. */
 private const val HALF_DAY = 12

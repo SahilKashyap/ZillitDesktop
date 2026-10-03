@@ -99,7 +99,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import com.zillit.desktop.feature.chat.domain.MentionSpan
-import com.zillit.desktop.feature.chat.domain.chatTimeLabel
+import com.zillit.desktop.feature.chat.domain.chatClockTime
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.mentionSpans
 import kotlinx.datetime.toLocalDateTime
@@ -2202,8 +2202,6 @@ internal fun posterFrame(
  */
 @Composable
 private fun androidx.compose.foundation.layout.ColumnScope.BubbleFooter(message: ChatMessage) {
-    val now = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
-
     Row(
         modifier = Modifier.align(Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
@@ -2224,7 +2222,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.BubbleFooter(message:
             )
         }
         ZillitText(
-            text = chatTimeLabel(message.timestampMillis, now),
+            text = chatClockTime(message.timestampMillis),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )

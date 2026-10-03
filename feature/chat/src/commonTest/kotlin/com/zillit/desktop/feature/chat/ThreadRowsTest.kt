@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.chat
 
 import com.zillit.desktop.feature.chat.domain.ChatMessage
+import com.zillit.desktop.feature.chat.domain.chatClockTime
 import com.zillit.desktop.feature.chat.domain.chatDayLabel
 import com.zillit.desktop.feature.chat.ui.ThreadRow
 import com.zillit.desktop.feature.chat.ui.threadRows
@@ -43,9 +44,16 @@ class ThreadRowsTest {
     fun `today and yesterday are words, older days are dates`() {
         assertEquals("Today", chatDayLabel(now - hourMillis, now, zone))
         assertEquals("Yesterday", chatDayLabel(now - dayMillis, now, zone))
-        // 2026-08-05 is a Wednesday, and this year needs no year printed.
-        assertEquals("Wed 5 Aug", chatDayLabel(now - 7 * dayMillis, now, zone))
-        assertEquals("12 Aug 2025", chatDayLabel(now - 365 * dayMillis, now, zone))
+        // Worded as the Home board's separators are: day, month in full, year.
+        assertEquals("05 August 2026", chatDayLabel(now - 7 * dayMillis, now, zone))
+        assertEquals("12 August 2025", chatDayLabel(now - 365 * dayMillis, now, zone))
+    }
+
+    @Test
+    fun `the clock under a message is HH-mm whatever the day`() {
+        assertEquals("", chatClockTime(0, zone))
+        assertEquals(chatClockTime(now, zone), chatClockTime(now - 40 * dayMillis, zone))
+        assertEquals(5, chatClockTime(now, zone).length)
     }
 
     @Test
