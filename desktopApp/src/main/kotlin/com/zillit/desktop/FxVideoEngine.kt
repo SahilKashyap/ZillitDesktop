@@ -157,12 +157,15 @@ internal object ZillitVideoEngine : VideoEngine {
         }
     }
 
-    private fun engineFor(url: String): VideoEngine =
-        if (CHROMIUM_TYPES.any { url.contains("response-content-type=${it.replace("/", "%2F")}") }) {
-            KcefVideoEngine
-        } else {
-            FxVideoEngine
+    private fun engineFor(url: String): VideoEngine {
+        val chromium = CHROMIUM_TYPES.firstOrNull { type ->
+            url.contains("response-content-type=${type.replace("/", "%2F")}")
         }
+        ZillitLog.i("ZillitVideoEngine") {
+            "clip routed to ${if (chromium == null) "javafx" else "chromium ($chromium)"}"
+        }
+        return if (chromium == null) FxVideoEngine else KcefVideoEngine
+    }
 
     /** What JavaFX refuses and Chromium takes. */
     private val CHROMIUM_TYPES = listOf("video/webm", "video/ogg")

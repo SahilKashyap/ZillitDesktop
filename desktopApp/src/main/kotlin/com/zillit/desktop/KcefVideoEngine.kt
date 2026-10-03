@@ -21,6 +21,7 @@ import org.cef.browser.CefBrowser
 import org.cef.browser.CefRendering
 import java.awt.Component
 import java.io.File
+import javax.swing.JWindow
 import javax.swing.SwingUtilities
 
 /**
@@ -90,6 +91,19 @@ internal class KcefPlayback(private val url: String) : VideoPlayback {
 
     private var page: File? = null
 
+    /**
+     * Where the browser lives until the viewer shows it.
+     *
+     * Not an optimisation. JCEF only creates the native browser from a
+     * **realised** AWT peer, and the viewer does not mount the picture until
+     * playback has started — which cannot happen until the page loads, which
+     * cannot happen until the component is in a window. Parking it in an
+     * invisible one breaks that circle; the `SwingPanel` reparents it away
+     * from here when it mounts. The same trick the crew-list canvas uses, for
+     * the same reason.
+     */
+    private var holder: JWindow? = null
+
     fun start() {
         Thread({ open() }, "zillit-webm-open").apply {
             isDaemon = true
@@ -110,7 +124,9 @@ internal class KcefPlayback(private val url: String) : VideoPlayback {
             if (closed) return@invokeLater
             val made = cef.createBrowser("file://${file.absolutePath}", CefRendering.DEFAULT, false)
             browser = made
+            park(made.uiComponent)
             component.value = made.uiComponent
+            ZillitLog.i(TAG) { "webm browser created" }
         }
     }
 
@@ -125,13 +141,29 @@ internal class KcefPlayback(private val url: String) : VideoPlayback {
         if (closed) return
         val event = message.field("e") ?: return
         when (event) {
-            "ready" -> _state.update { it.copy(durationMillis = message.number("d").toMillis()) }
+            "ready" -> {
+                ZillitLog.i(TAG) { "webm ready: ${message.number("d").toMillis()} ms" }
+                _state.update { it.copy(durationMillis = message.number("d").toMillis()) }
+            }
             "time" -> _state.update { it.copy(positionMillis = message.number("t").toMillis()) }
             "play" -> _state.update { it.copy(isPlaying = true, started = true) }
             "pause", "end" -> _state.update { it.copy(isPlaying = false) }
             "error" -> fail("the page reported code ${message.field("c").orEmpty()}")
             else -> Unit
         }
+    }
+
+    /** An invisible window, far enough out that no display arrangement reaches it. */
+    private fun park(surface: Component) {
+        val window = JWindow().also { made ->
+            made.focusableWindowState = false
+            runCatching { made.opacity = 0f }
+            holder = made
+        }
+        window.contentPane.add(surface)
+        window.setBounds(HOLDER_OFFSCREEN, HOLDER_OFFSCREEN, HOLDER_SIDE, HOLDER_SIDE)
+        window.isVisible = true
+        window.toBack()
     }
 
     private fun fail(reason: String) {
@@ -165,6 +197,11 @@ internal class KcefPlayback(private val url: String) : VideoPlayback {
         // Closing the browser is what stops the sound; nothing else is asked to.
         runCatching { openBrowser?.close(true) }
         runCatching { openClient?.dispose() }
+        // After the browser: the window that hosted its native view goes last,
+        // or the view is orphaned in a window nobody can reach.
+        val window = holder
+        holder = null
+        if (window != null) SwingUtilities.invokeLater { window.dispose() }
         page?.let { file -> runCatching { file.delete() } }
         page = null
     }
@@ -182,6 +219,8 @@ internal class KcefPlayback(private val url: String) : VideoPlayback {
     private companion object {
         const val TAG = "KcefVideoEngine"
         const val MILLIS = 1000.0
+        const val HOLDER_OFFSCREEN = -4000
+        const val HOLDER_SIDE = 640
 
         /** The value for [key] in a one-level JSON object, as text. */
         fun String.field(key: String): String? =
