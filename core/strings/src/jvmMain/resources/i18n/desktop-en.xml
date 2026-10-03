@@ -11913,4 +11913,7 @@
     <string name="desktop_no_links">No links</string>
     <string name="desktop_no_documents">No documents</string>
     <string name="desktop_chat_info_loaded_only">From the messages loaded so far</string>
+    <string name="desktop_voice_video_calling">Voice and video calling</string>
+    <string name="desktop_calls_empty_hint">Ring anyone on this production from their chat or contact, or call back from the list.</string>
+    <string name="desktop_call_info">Call info</string>
 </resources>

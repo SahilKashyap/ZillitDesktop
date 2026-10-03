@@ -74,6 +74,36 @@ class StreamUrlTest {
     }
 
     @Test
+    fun `a webm is not called an mp4`() = runTest {
+        // The web client records with `MediaRecorder`, which writes WebM, and
+        // the player picks its demuxer from the answered type — so calling one
+        // `video/mp4` is how a file that plays everywhere else stops playing
+        // here. It is also what routes the viewer to the engine that can
+        // decode it, so getting this wrong costs twice.
+        val signer = source("AKIAEXAMPLE" to "secret")
+        val webm = requireNotNull(signer.streamUrl(clip.copy(media = "recording_1789.webm")))
+        assertTrue(webm.contains("response-content-type=video%2Fwebm"), webm)
+
+        // And the default is unchanged for everything else, which is what
+        // makes a `.mov` — and a key with no extension — playable at all.
+        listOf("clip.mp4", "IMG_0042.mov", "notice/abc123").forEach { key ->
+            val url = requireNotNull(signer.streamUrl(clip.copy(media = key)))
+            assertTrue(url.contains("response-content-type=video%2Fmp4"), key)
+        }
+    }
+
+    @Test
+    fun `the name decides, not the content type the uploader claimed`() = runTest {
+        // A `.mov` arrives as `video/quicktime`, which is exactly the claim
+        // being corrected — so the stored type is not consulted.
+        val signer = source("AKIAEXAMPLE" to "secret")
+        val url = requireNotNull(
+            signer.streamUrl(clip.copy(media = "a.webm", contentType = "video/quicktime")),
+        )
+        assertTrue(url.contains("response-content-type=video%2Fwebm"), url)
+    }
+
+    @Test
     fun `the same object signs the same way twice`() = runTest {
         val source = source("AKIAEXAMPLE" to "secret")
         assertEquals(source.streamUrl(clip), source.streamUrl(clip))

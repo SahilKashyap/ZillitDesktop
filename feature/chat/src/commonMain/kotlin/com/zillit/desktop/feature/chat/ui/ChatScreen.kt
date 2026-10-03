@@ -115,8 +115,11 @@ fun ChatScreen(
     onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)? = null,
     /** Which lines the call buttons offer. */
     lines: () -> List<CallLine> = { CallLine.DEFAULT },
-    /** The call history pane; null hides the Calls tab. */
-    callLog: (@Composable () -> Unit)? = null,
+    /**
+     * The call history — the list and the pane beside it — built by the host
+     * when the Calls tab opens; null hides the tab.
+     */
+    callPanes: (@Composable () -> CallsPanes)? = null,
     /**
      * Creates a group room (`ChatRepository.createRoom`) — the host passes
      * it through because the screen holds no repository. Null hides the
@@ -157,6 +160,9 @@ fun ChatScreen(
     // in its place. `peer` is a thread; `selectedId` a contact's card.
     val detailOpen = chatState?.peer != null || selectedId != null
     val showDirectory = !compact || !detailOpen
+    // Built only while the tab is open, as the old slot composed only then:
+    // the history is fetched when it is looked at, not when chat opens.
+    val calls = if (tab == DirectoryTab.Calls.name) callPanes?.invoke() else null
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Row(Modifier.fillMaxSize()) {
@@ -179,7 +185,8 @@ fun ChatScreen(
                 onQuery = { query = it },
                 onSelect = { selectedId = it },
                 onChatEvent = { event -> viewModel?.onEvent(event) },
-                callLog = callLog,
+                calls = calls,
+                hasCalls = callPanes != null,
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
                 onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
@@ -192,6 +199,11 @@ fun ChatScreen(
                 DetailSide(
                     compact, chatState, viewModel, crew, selfId, selectedId, onOpenAttachment,
                     loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
+                    // The Calls tab owns the pane beside it, as WhatsApp's does;
+                    // an open thread is still there on the way back to Chats.
+                    callsSide = calls?.takeIf { !compact }?.let { panes ->
+                        { panes.Side(onStartCall = { tab = DirectoryTab.Contacts.name }) }
+                    },
                     onBack = {
                         viewModel?.onEvent(ChatEvent.CloseThread)
                         selectedId = null
@@ -240,6 +252,7 @@ private fun RowScope.DetailSide(
     lines: () -> List<CallLine>,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
+    callsSide: (@Composable () -> Unit)?,
     onBack: () -> Unit,
 ) {
     if (!compact) {
@@ -267,10 +280,14 @@ private fun RowScope.DetailSide(
             Modifier.weight(1f).fillMaxWidth().background(ZillitTheme.colors.chatPanel),
             contentAlignment = Alignment.Center,
         ) {
-            DetailPane(
-                chatState, viewModel, crew, selfId, selectedId, onOpenAttachment,
-                loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
-            )
+            if (callsSide != null) {
+                callsSide()
+            } else {
+                DetailPane(
+                    chatState, viewModel, crew, selfId, selectedId, onOpenAttachment,
+                    loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
+                )
+            }
         }
     }
 }
@@ -506,14 +523,12 @@ private fun DirectoryPane(
     onSelect: (String) -> Unit,
     onChatEvent: (ChatEvent) -> Unit,
     /**
-     * The call history, supplied by the host.
-     *
-     * A slot rather than a dependency: this module knows nothing about calls,
-     * and the app composes the two — the same arrangement as the thread
-     * header's call buttons. Null hides the tab entirely, which is what a
-     * build with no media engine should do.
+     * The call history, supplied by the host while the Calls tab is open —
+     * see [CallsPanes]. [hasCalls] false hides the tab entirely, which is
+     * what a build with no media engine should do.
      */
-    callLog: (@Composable () -> Unit)?,
+    calls: CallsPanes?,
+    hasCalls: Boolean,
     /** The Chats search's reach into cached bodies; null keeps it to names. */
     searchMessages: ((String) -> List<MessageHit>)?,
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
@@ -539,14 +554,14 @@ private fun DirectoryPane(
             heading = !compact,
             tab = tab,
             chatState = chatState,
-            hasCallLog = callLog != null,
+            hasCallLog = hasCalls,
             onTab = onTab,
             onOpenWidget = onOpenWidget,
             onNewGroup = onNewGroup.takeIf { tab == DirectoryTab.Chats.name && chatState != null },
         )
 
-        if (tab == DirectoryTab.Calls.name && callLog != null) {
-            Box(Modifier.padding(horizontal = ZillitTheme.spacing.md)) { callLog() }
+        if (tab == DirectoryTab.Calls.name && calls != null) {
+            calls.List(inlineDetail = !compact)
         } else if (tab == DirectoryTab.Contacts.name) {
             ListingSearch(
                 value = query,

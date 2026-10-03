@@ -397,6 +397,37 @@ fun callTimeLabel(
 }
 
 /**
+ * The calls list's stamp, WhatsApp's: a clock today, "Yesterday", the day's
+ * name within the week, the date beyond — the year only once it differs.
+ */
+fun callListStamp(
+    atMillis: Long,
+    nowMillis: Long,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): String {
+    if (atMillis <= 0) return ""
+    val at = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone)
+    val today = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(zone).date
+    val daysAgo = today.toEpochDays().toLong() - at.date.toEpochDays().toLong()
+    val month = MONTHS[at.date.monthNumber - 1]
+    return when {
+        daysAgo == 0L -> "${at.hour.pad()}:${at.minute.pad()}"
+        daysAgo == 1L -> str(S.yesterday)
+        daysAgo in 2L..WEEK_DAYS -> str(WEEKDAY_KEYS[at.date.dayOfWeek.ordinal])
+        at.date.year == today.year -> "${at.date.dayOfMonth} $month"
+        else -> "${at.date.dayOfMonth} $month ${at.date.year}"
+    }
+}
+
+/** Monday first, as [kotlinx.datetime.DayOfWeek] orders them. */
+private val WEEKDAY_KEYS = listOf(
+    S.day_monday, S.day_tuesday, S.day_wednesday, S.day_thursday, S.day_friday, S.day_saturday, S.day_sunday,
+)
+
+/** Within this many days a call is named by its weekday. */
+private const val WEEK_DAYS = 6L
+
+/**
  * How long the call ran.
  *
  * `call_duration` is **milliseconds**. The logs contract does not say so —

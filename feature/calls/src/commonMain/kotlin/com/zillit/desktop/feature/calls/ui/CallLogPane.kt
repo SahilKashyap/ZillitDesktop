@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
@@ -22,7 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -34,7 +38,6 @@ import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
@@ -81,16 +84,33 @@ fun CallLogPane(
      * appends Line 3 where the production has it.
      */
     lines: List<CallLine> = CallLine.DEFAULT,
+    /**
+     * True where a side pane shows the picked call ([CallLogSide]) — WhatsApp
+     * Web's layout: a row click selects the call and the pane beside the list
+     * shows it, with the call-back under the row's hover glyph. False (the
+     * widget, with no room beside the list) keeps click-to-redial and the
+     * detail dialog.
+     */
+    inlineDetail: Boolean = false,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        PaneHeader(state, onEvent)
-        ZillitSearchField(
-            value = state.query,
-            onValueChange = { onEvent(CallLogEvent.Search(it)) },
-            placeholder = str(S.desktop_search_calls),
-        )
-        state.error?.let { message ->
-            ZillitNotice(text = message, tone = StatusTone.Rejected)
+    // WhatsApp's calls list: the search pill and the filters in a padded
+    // block, then the rows edge to edge under a "Recent" heading.
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        Column(
+            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitSearchField(
+                value = state.query,
+                onValueChange = { onEvent(CallLogEvent.Search(it)) },
+                placeholder = str(S.desktop_search_calls),
+                containerColor = ZillitTheme.colors.panelGrey,
+                bordered = false,
+            )
+            PaneHeader(state, onEvent)
+            state.error?.let { message ->
+                ZillitNotice(text = message, tone = StatusTone.Rejected)
+            }
         }
 
         // The web's Ongoing rows, above the history: a call you can walk
@@ -105,11 +125,11 @@ fun CallLogPane(
             state.entries.isEmpty() && state.missedOnly -> PaneNote(str(S.desktop_call_no_missed_calls))
             state.entries.isEmpty() -> PaneNote(str(S.desktop_call_no_calls_yet))
             shown.isEmpty() -> PaneNote(str(S.desktop_call_no_calls_match, state.query.trim()))
-            else -> CallLogList(state, shown, onEvent, nameFor, nowMillis, lines)
+            else -> CallLogList(state, shown, onEvent, nameFor, nowMillis, lines, inlineDetail)
         }
     }
 
-    PaneOverlays(state, onEvent, nameFor, selfUserId)
+    PaneOverlays(state, onEvent, nameFor, selfUserId, showDetail = !inlineDetail)
 }
 
 /**
@@ -123,6 +143,8 @@ private fun PaneOverlays(
     onEvent: (CallLogEvent) -> Unit,
     nameFor: (String) -> String?,
     selfUserId: String?,
+    /** False where the side pane shows the picked call instead of a dialog. */
+    showDetail: Boolean = true,
 ) {
     if (state.confirmingDelete) {
         WindowOverlay(onDismiss = { onEvent(CallLogEvent.CancelDeleteAll) }) {
@@ -134,7 +156,7 @@ private fun PaneOverlays(
             JoinOngoingDialog(call, selfUserId, onEvent)
         }
     }
-    state.detail?.let { entry ->
+    state.detail?.takeIf { showDetail }?.let { entry ->
         WindowOverlay(onDismiss = { onEvent(CallLogEvent.CloseDetail) }) {
             CallDetailDialog(
                 entry = entry,
@@ -154,16 +176,8 @@ private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitChoiceChip(
-            label = str(S.all),
-            selected = !state.missedOnly,
-            onClick = { onEvent(CallLogEvent.ShowAll) },
-        )
-        ZillitChoiceChip(
-            label = str(S.missed),
-            selected = state.missedOnly,
-            onClick = { onEvent(CallLogEvent.ShowMissed) },
-        )
+        FilterPill(str(S.all), selected = !state.missedOnly) { onEvent(CallLogEvent.ShowAll) }
+        FilterPill(str(S.missed), selected = state.missedOnly) { onEvent(CallLogEvent.ShowMissed) }
         Spacer(Modifier.weight(1f))
         // Nothing to wipe, nothing to press: Android answers an empty list
         // with a snackbar; a disabled control says the same without one.
@@ -178,17 +192,62 @@ private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
     }
 }
 
+/**
+ * One view filter, the chat listing's pill: the panel grey at rest, the
+ * accent's soft tint and text colour when chosen.
+ */
+@Composable
+private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    ZillitText(
+        text = label,
+        style = ZillitTheme.typography.label.copy(
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        ),
+        color = if (selected) colors.accentText else colors.textSecondary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(
+                when {
+                    selected -> colors.accentSoft
+                    hovered -> colors.surfaceHover
+                    else -> colors.panelGrey
+                },
+            )
+            .hoverable(interaction)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = PILL_PAD_V),
+    )
+}
+
+/** A section's heading over its rows — "Ongoing", "Recent" — WhatsApp's. */
+@Composable
+private fun SectionHeading(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.titleSmall,
+        color = ZillitTheme.colors.textPrimary,
+        modifier = Modifier.padding(
+            start = ZillitTheme.spacing.md,
+            end = ZillitTheme.spacing.md,
+            top = ZillitTheme.spacing.sm,
+            bottom = ZillitTheme.spacing.xs,
+        ),
+    )
+}
+
 /** "Ongoing" — one row per live call, with the web's Join / Switch here / Return. */
 @Composable
 private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -> Unit) {
     val colors = ZillitTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        ZillitText(
-            text = str(S.ongoing),
-            style = ZillitTheme.typography.labelSmall,
-            color = colors.textMuted,
-            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.sm),
-        )
+    Column(
+        modifier = Modifier.padding(horizontal = ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        SectionHeading(str(S.ongoing))
         ongoing.forEach { call ->
             Row(
                 modifier = Modifier
@@ -350,8 +409,10 @@ private fun CallLogList(
     nameFor: (String) -> String?,
     nowMillis: Long,
     lines: List<CallLine>,
+    inlineDetail: Boolean,
 ) {
-    ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+    ZillitLazyColumn {
+        item(key = "recent-heading") { SectionHeading(str(S.recent)) }
         items(shown, key = CallLogEntry::callUuid) { entry ->
             CallLogRow(
                 entry = entry,
@@ -360,6 +421,8 @@ private fun CallLogList(
                 lines = lines,
                 onRedial = { line -> onEvent(CallLogEvent.Redial(entry, line)) },
                 onDetail = { onEvent(CallLogEvent.ShowDetail(entry)) },
+                inlineDetail = inlineDetail,
+                selected = inlineDetail && state.detail?.callUuid == entry.callUuid,
             )
         }
         // A search narrows what is on screen, not what is fetched — older
@@ -385,13 +448,19 @@ private fun CallLogList(
 }
 
 /**
- * One history row. A click on a redialable row asks which line first — the
- * same menu the thread header's call buttons open — for a group row and a
- * 1:1 row alike; the call then goes out with the row's own type (audio or
- * video), as Android's recents redial it.
+ * One history row, WhatsApp's: the face, the name with the day at the far
+ * end, and under it how the call went — the kind's glyph and "Incoming",
+ * "Outgoing" or a red "Missed" — and the line that carried it.
+ *
+ * Beside a side pane ([inlineDetail]) a click picks the row and the pane
+ * shows the call; the call-back is the phone glyph that appears under the
+ * cursor. Without one, a click on a redialable row asks which line and rings
+ * — the same menu the thread header's call buttons open — and the info glyph
+ * opens the detail sheet. Either way the call goes out with the row's own
+ * type, as Android's recents redial it.
  */
 @Composable
-@Suppress("LongParameterList", "LongMethod") // The row's data plus its two verbs and the line picker.
+@Suppress("LongParameterList", "LongMethod") // The row's data, its two verbs and the line picker.
 private fun CallLogRow(
     entry: CallLogEntry,
     nameFor: (String) -> String?,
@@ -399,6 +468,8 @@ private fun CallLogRow(
     lines: List<CallLine>,
     onRedial: (CallLine) -> Unit,
     onDetail: () -> Unit,
+    inlineDetail: Boolean = false,
+    selected: Boolean = false,
 ) {
     val colors = ZillitTheme.colors
     val title = entry.displayTitle(nameFor)
@@ -408,63 +479,78 @@ private fun CallLogRow(
     // in the trailing glyph: the popup steals the pointer and the row loses
     // hover, so a menu owned by a hover-only control closes as it opens.
     var pickingLine by remember { mutableStateOf(false) }
+    val onRowClick: (() -> Unit)? = when {
+        inlineDetail -> onDetail
+        // Only rows that can actually ring something are pressable; a row
+        // whose peer left the production has nothing to redial.
+        entry.isRedialable -> ({ pickingLine = true })
+        else -> null
+    }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(ROW_CORNER))
-                .background(if (hovered || pickingLine) colors.surfaceHover else colors.surface)
+                .background(
+                    when {
+                        selected -> colors.surfaceSelected
+                        hovered || pickingLine -> colors.surfaceHover
+                        else -> colors.surface
+                    },
+                )
                 .hoverable(interaction)
-                // Only rows that can actually ring something are pressable; a row
-                // whose peer left the production has nothing to redial.
-                .then(if (entry.isRedialable) Modifier.clickable { pickingLine = true } else Modifier)
-                .padding(ZillitTheme.spacing.sm),
+                .then(if (onRowClick != null) Modifier.clickable(onClick = onRowClick) else Modifier)
+                .padding(start = ZillitTheme.spacing.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitAvatar(
                 name = title,
                 userId = entry.peerUserId.takeIf { entry.mode != CallMode.Group },
                 size = ROW_AVATAR,
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            Box(Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = ROW_HEIGHT)
+                        .padding(end = ZillitTheme.spacing.md, top = ROW_PAD_V, bottom = ROW_PAD_V),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs, Alignment.CenterVertically),
                 ) {
-                    ZillitText(
-                        text = title,
-                        style = ZillitTheme.typography.bodyMedium,
-                        // A missed call is the one row worth finding at a glance.
-                        color = if (entry.missed) colors.danger else colors.textPrimary,
-                        maxLines = 1,
-                        // Yields to the tag, never the other way round: a long name
-                        // ellipsises, and the line is still readable.
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    // Which line carried it, as the detail sheet already says and
-                    // Android's rows leave to the sheet. On the row because the
-                    // lines are different call stacks, and "which one rang me" is
-                    // the first question when one of them is misbehaving. A tag,
-                    // not a subtitle segment: the subtitle is one line at 320dp
-                    // and the appended word is exactly what the ellipsis eats.
-                    ZillitTag(entry.line.label, tone = TagTone.Neutral)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    ) {
+                        ZillitText(
+                            text = title,
+                            style = ZillitTheme.typography.bodyLarge,
+                            color = colors.textPrimary,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f),
+                        )
+                        ZillitText(
+                            text = callListStamp(entry.startedAtMillis, nowMillis),
+                            style = ZillitTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                            maxLines = 1,
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    ) {
+                        HowItWent(entry, Modifier.weight(1f))
+                        RowTrailing(entry, hovered || pickingLine, inlineDetail, onDetail) { pickingLine = true }
+                    }
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                ) {
-                    DirectionMark(entry)
-                    ZillitText(
-                        text = entry.subtitle(nowMillis),
-                        style = ZillitTheme.typography.labelSmall,
-                        color = colors.textMuted,
-                        maxLines = 1,
-                    )
-                }
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(HAIRLINE)
+                        .background(colors.divider),
+                )
             }
-            RowTrailing(entry, hovered || pickingLine, onDetail)
         }
         // Each line by its number alone — the thread header's reasoning: the
         // media stacks are our vendors, not the user's vocabulary.
@@ -486,42 +572,83 @@ private fun CallLogRow(
 }
 
 /**
- * The row's right edge: what the call was (or, under the cursor, what a click
- * does), then the info affordance.
- *
- * The info button is always composed, like the chat rows' star: a control
- * that exists only on hover loses the press to the row beneath it (see
- * `HomeFeedScreen`'s kebab). Its own click swallows the press, so opening the
- * sheet never also redials.
+ * The row's second line: the call's kind as a glyph, its direction as a word
+ * — a missed call in red, the one row worth finding at a glance — and the
+ * line that carried it. The line is its own word, not a subtitle segment:
+ * the lines are different call stacks, and "which one rang me" is the first
+ * question when one of them misbehaves.
  */
 @Composable
-private fun RowTrailing(entry: CallLogEntry, hovered: Boolean, onDetail: () -> Unit) {
+private fun HowItWent(entry: CallLogEntry, modifier: Modifier = Modifier) {
     val colors = ZillitTheme.colors
-    // Under the cursor a redialable row says what a click does; at rest
-    // it says what the call was. The two never show together — the phone
-    // replaces the camera glyph rather than crowding it.
-    when {
-        hovered && entry.isRedialable -> ZillitIcon(
-            icon = ZillitIcons.Phone,
-            contentDescription = str(S.desktop_call_again),
-            tint = colors.success,
+    val tint = if (entry.missed) colors.danger else colors.textSecondary
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIcon(
+            icon = if (entry.type == CallType.Video) ZillitIcons.Camera else ZillitIcons.Phone,
+            contentDescription = if (entry.type == CallType.Video) str(S.txt_video_call_label) else null,
+            tint = tint,
             size = ROW_ICON,
         )
-
-        entry.type == CallType.Video -> ZillitIcon(
-            icon = ZillitIcons.Camera,
-            contentDescription = str(S.txt_video_call_label),
-            tint = colors.textMuted,
-            size = ROW_ICON,
+        ZillitText(
+            text = when {
+                entry.missed -> str(S.missed)
+                entry.direction == CallLogDirection.Outgoing -> str(S.txt_call_outgoing)
+                else -> str(S.txt_call_incoming)
+            },
+            style = ZillitTheme.typography.bodySmall,
+            color = tint,
+            maxLines = 1,
+        )
+        ZillitText(text = "·", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+        ZillitText(
+            text = entry.line.label,
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.textMuted,
+            maxLines = 1,
         )
     }
-    ZillitIconButton(
-        icon = ZillitIcons.Info,
-        contentDescription = str(S.desktop_call_details),
-        onClick = onDetail,
-        tint = colors.textMuted,
-        size = INFO_BUTTON,
-    )
+}
+
+/**
+ * The second line's end: the call-back glyph beside a side pane, the info
+ * glyph without one. Both are always composed and faded in under the
+ * cursor — a control that exists only on hover loses the press to the row
+ * beneath it (see `HomeFeedScreen`'s kebab) — and each swallows its own
+ * press, so it never also picks or rings the row.
+ */
+@Composable
+private fun RowTrailing(
+    entry: CallLogEntry,
+    hovered: Boolean,
+    inlineDetail: Boolean,
+    onDetail: () -> Unit,
+    onCallBack: () -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    if (inlineDetail) {
+        if (entry.isRedialable) {
+            ZillitIconButton(
+                icon = if (entry.type == CallType.Video) ZillitIcons.Camera else ZillitIcons.Phone,
+                contentDescription = str(S.desktop_call_again),
+                onClick = onCallBack,
+                tint = colors.success,
+                size = ROW_ACTION,
+                modifier = Modifier.alpha(if (hovered) 1f else 0f),
+            )
+        }
+    } else {
+        ZillitIconButton(
+            icon = ZillitIcons.Info,
+            contentDescription = str(S.desktop_call_details),
+            onClick = onDetail,
+            tint = colors.textMuted,
+            size = ROW_ACTION,
+        )
+    }
 }
 
 /**
@@ -574,14 +701,22 @@ private fun PaneNote(text: String) {
     }
 }
 
+/** The bars' grey — the chat tool's panel colour, so the two tabs match. */
+internal val com.zillit.desktop.core.designsystem.ZillitColors.panelGrey: androidx.compose.ui.graphics.Color
+    get() = if (isDark) surfaceRaised else canvas
+
 /** Android's `delete_call_record` (`res/values/strings.xml:1267`). */
 internal val NO_RECORDS: String get() = str(S.delete_call_record)
 
 private val ROW_CORNER = 10.dp
 private val DIRECTION_DISC = 18.dp
 private val DIRECTION_GLYPH = 11.dp
-private val ROW_AVATAR = 32.dp
+private val ROW_AVATAR = 48.dp
+private val ROW_HEIGHT = 72.dp
+private val ROW_PAD_V = 10.dp
 private val ROW_ICON = 14.dp
-private val INFO_BUTTON = 22.dp
+private val ROW_ACTION = 24.dp
+private val HAIRLINE = 1.dp
+private val PILL_PAD_V = 6.dp
 private val HEADER_ICON = 28.dp
 private val CONFIRM_WIDTH = 380.dp

@@ -32,8 +32,8 @@ class ChatToolProvider(
     private val player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     private val loadAudio:
     suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray? = { null },
-    /** The call history pane, supplied by the app; null hides the Calls tab. */
-    private val callLog: (@Composable () -> Unit)? = null,
+    /** The call history's list and side pane, built by the app; null hides the Calls tab. */
+    private val callPanes: (@Composable () -> CallsPanes)? = null,
     /**
      * The viewer's download right on the C&C tool — `ProjectPermissions`'
      * `canDownload`, read per click so a rights change lands live. Gates
@@ -124,7 +124,7 @@ class ChatToolProvider(
                 player = player,
                 loadAudio = loadAudio,
                 onCall = onCall,
-                callLog = callLog,
+                callPanes = callPanes,
                 createRoom = createRoom,
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,

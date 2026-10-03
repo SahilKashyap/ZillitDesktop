@@ -78,7 +78,7 @@ fun CallDetailDialog(
 
 /** Direction, start time and duration — each hidden when the row cannot say. */
 @Composable
-private fun DetailChips(entry: CallLogEntry) {
+internal fun DetailChips(entry: CallLogEntry) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -126,7 +126,7 @@ private fun Chip(icon: androidx.compose.ui.graphics.vector.ImageVector?, text: S
 }
 
 @Composable
-private fun ParticipantList(
+internal fun ParticipantList(
     entry: CallLogEntry,
     selfUserId: String?,
     nameFor: (String) -> String?,

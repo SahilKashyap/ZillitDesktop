@@ -127,7 +127,45 @@ internal fun FullScreenMount(state: WindowState, content: @Composable () -> Unit
 /** Puts the player in reach of every viewer in [content]. */
 @Composable
 internal fun VideoPlayerMount(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalVideoEngine provides FxVideoEngine, content = content)
+    CompositionLocalProvider(LocalVideoEngine provides ZillitVideoEngine, content = content)
+}
+
+/**
+ * Picks the engine that can actually decode this clip.
+ *
+ * Neither of the two can do the other's formats — JavaFX has H.264/AAC and no
+ * WebM, the runtime's Chromium has VP8/VP9/AV1 and no H.264 — so the choice is
+ * made per clip rather than once.
+ *
+ * It is read from the URL, because the signing side has already decided: the
+ * presigned address carries `response-content-type`, chosen there from the
+ * object's own name (`NoticeMediaSource.streamUrl`). Reading that back is
+ * cheaper than fetching bytes to sniff, and keeps one answer to "what is this
+ * file" rather than two that can disagree.
+ */
+internal object ZillitVideoEngine : VideoEngine {
+
+    override fun open(url: String): VideoPlayback = engineFor(url).open(url)
+
+    @Composable
+    override fun Picture(playback: VideoPlayback, modifier: Modifier) {
+        // By the playback's own type, not by the URL again: the engine that
+        // built it is the only one that can draw it.
+        when (playback) {
+            is KcefPlayback -> KcefVideoEngine.Picture(playback, modifier)
+            else -> FxVideoEngine.Picture(playback, modifier)
+        }
+    }
+
+    private fun engineFor(url: String): VideoEngine =
+        if (CHROMIUM_TYPES.any { url.contains("response-content-type=${it.replace("/", "%2F")}") }) {
+            KcefVideoEngine
+        } else {
+            FxVideoEngine
+        }
+
+    /** What JavaFX refuses and Chromium takes. */
+    private val CHROMIUM_TYPES = listOf("video/webm", "video/ogg")
 }
 
 /**

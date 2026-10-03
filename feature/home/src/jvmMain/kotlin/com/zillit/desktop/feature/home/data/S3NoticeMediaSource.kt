@@ -149,6 +149,11 @@ class S3NoticeMediaSource(
      * everything else; appended afterwards it would be a parameter the
      * signature did not cover, and S3 would answer 403.
      *
+     * It is **not** a blanket `video/mp4`, though it began as one. The web
+     * client records with `MediaRecorder`, which writes WebM, and telling a
+     * player that a WebM is an MP4 is how a file that plays everywhere else
+     * stops playing here. See [forcedContentType].
+     *
      * Short-lived on purpose: long enough to watch a reel through, short
      * enough that the URL is worth little by the time anyone finds it.
      */
@@ -170,8 +175,36 @@ class S3NoticeMediaSource(
             ttlSeconds = STREAM_TTL_SECONDS,
             hmacSha256 = ::hmacSha256,
             sha256Hex = ::sha256Hex,
-            extra = mapOf("response-content-type" to STREAM_CONTENT_TYPE),
+            extra = mapOf("response-content-type" to forcedContentType(attachment)),
         )
+    }
+
+    /**
+     * What S3 is asked to answer with for this object.
+     *
+     * Only the containers that are genuinely something else get named; the
+     * default stays `video/mp4` because that is what makes a `.mov` — and a
+     * key with no extension at all — playable, which was the whole point of
+     * overriding the stored type in the first place.
+     *
+     * Read from the file's name rather than its stored content type: the
+     * stored one is whatever the uploading client claimed, and `.mov` arriving
+     * as `video/quicktime` is exactly the case being corrected here.
+     */
+    private fun forcedContentType(attachment: NoticeAttachment): String {
+        // Both the display name and the object key are consulted, and either
+        // may be the one carrying the extension: the key is built from the
+        // picked file's name at upload, but a row can arrive with the name
+        // renamed, blank, or the key rewritten. One of the two naming a
+        // container is enough.
+        val names = listOf(attachment.fileName, attachment.media)
+        return names.firstNotNullOfOrNull { name ->
+            when (name.substringAfterLast('.', "").lowercase()) {
+                "webm" -> WEBM_CONTENT_TYPE
+                "ogv", "ogg" -> OGG_CONTENT_TYPE
+                else -> null
+            }
+        } ?: STREAM_CONTENT_TYPE
     }
 
     private suspend fun remember(key: String, bytes: ByteArray) {
@@ -210,6 +243,11 @@ class S3NoticeMediaSource(
          * under two names. Saying so is what lets the second one play.
          */
         const val STREAM_CONTENT_TYPE = "video/mp4"
+
+        /** What the web client's `MediaRecorder` writes. */
+        const val WEBM_CONTENT_TYPE = "video/webm"
+
+        const val OGG_CONTENT_TYPE = "video/ogg"
 
         const val DEFAULT_CACHE_BYTES = 64L * 1024 * 1024
         const val LOAD_FACTOR = 0.75f
