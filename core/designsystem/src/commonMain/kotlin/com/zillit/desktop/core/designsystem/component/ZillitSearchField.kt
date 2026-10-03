@@ -44,6 +44,13 @@ fun ZillitSearchField(
     modifier: Modifier = Modifier,
     placeholder: String = str(S.search),
     enabled: Boolean = true,
+    /** Overrides the well's fill — the chat listing's grey pill. */
+    containerColor: androidx.compose.ui.graphics.Color? = null,
+    /**
+     * False drops the resting hairline and keeps only the focus ring — a
+     * filled pill that is its own edge, as the chat listing draws it.
+     */
+    bordered: Boolean = true,
 ) {
     val colors = ZillitTheme.colors
     val interactionSource = remember { MutableInteractionSource() }
@@ -53,12 +60,8 @@ fun ZillitSearchField(
         modifier = modifier
             .defaultMinSize(minHeight = FIELD_HEIGHT)
             .clip(ZillitTheme.shapes.medium)
-            .background(colors.surfaceSunken)
-            .border(
-                width = if (focused) FOCUS_BORDER else HAIRLINE,
-                color = if (focused) colors.focusRing else colors.border,
-                shape = ZillitTheme.shapes.medium,
-            )
+            .background(containerColor ?: colors.surfaceSunken)
+            .then(searchEdge(focused, bordered))
             .padding(horizontal = ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -101,6 +104,25 @@ fun ZillitSearchField(
                 tint = colors.textMuted,
             )
         }
+    }
+}
+
+/**
+ * The well's edge: the focus ring, the resting hairline, or — unbordered and
+ * unfocused — no edge at all. Not a 0dp border: in Compose that is not
+ * nothing, it is the one-pixel hairline.
+ */
+@Composable
+private fun searchEdge(focused: Boolean, bordered: Boolean): Modifier {
+    val colors = ZillitTheme.colors
+    return if (focused || bordered) {
+        Modifier.border(
+            width = if (focused) FOCUS_BORDER else HAIRLINE,
+            color = if (focused) colors.focusRing else colors.border,
+            shape = ZillitTheme.shapes.medium,
+        )
+    } else {
+        Modifier
     }
 }
 

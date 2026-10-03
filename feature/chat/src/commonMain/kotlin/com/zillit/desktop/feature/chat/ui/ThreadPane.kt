@@ -1,10 +1,5 @@
 package com.zillit.desktop.feature.chat.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.hoverable
@@ -48,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -100,6 +96,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import com.zillit.desktop.feature.chat.domain.MentionSpan
 import com.zillit.desktop.feature.chat.domain.chatClockTime
+import com.zillit.desktop.feature.chat.domain.sharedContent
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.mentionSpans
 import kotlinx.datetime.toLocalDateTime
@@ -160,14 +157,19 @@ internal fun ThreadPane(
     var dropHover by remember { mutableStateOf(false) }
     val hasComposer = state.hasComposer(peer)
     val canDrop = state.acceptsDroppedFiles(peer)
+    // Contact info, WhatsApp's third column: opened from the header, shut
+    // again whenever the thread changes hands.
+    var infoPage by remember(peer.userId) { mutableStateOf<InfoPage?>(null) }
+    val shared = remember(state.messages) { sharedContent(state.messages) }
+    val callable = state.isCallable(peer)
 
     // Painted here, not left to the host: the pane is also embedded inside
     // other tools, and a thread with no ground of its own showed whatever
-    // was behind it.
-    Box(
+    // was behind it. The ground is WhatsApp's papered wall, under grey bars.
+    androidx.compose.foundation.layout.BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(ZillitTheme.colors.canvas)
+            .background(ZillitTheme.colors.chatWallpaper)
             .externalFileDrop(
                 enabled = canDrop,
                 onHover = { dropHover = it },
@@ -177,57 +179,62 @@ internal fun ThreadPane(
                 maxBytes = ChatComposerRules.MAX_ATTACHMENT_BYTES,
             ),
     ) {
-        Column(Modifier.fillMaxSize()) {
-            ThreadHeader(state, peer, loadAvatar, onCall, lines, onEvent)
-            Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
-
-            val media = BubbleMedia(
-                onOpen = gatedOpen,
-                loadThumbnail = loadThumbnail,
-                player = player,
-                loadAudio = loadAudio,
-                // Pictures open in-app; downloading stays a separate, gated act.
-                onView = { viewing = it },
-                posters = posters,
-            )
-            // Passed beside the react handler rather than through it: deletion is
-            // keyed by the server's id, and only rows that have one can offer it.
-            Messages(
-                state, resolveName, MentionHooks(resolveMention, onOpenUser),
-                media, loadAvatar, onEvent, Modifier.weight(1f),
-                onImageReply = { imageReply = it },
-            )
-
-            // Slides up from the composer and fades back: the one line that
-            // is about right now should arrive and leave like it.
-            AnimatedVisibility(
-                visible = state.peerTyping,
-                enter = fadeIn() + slideInVertically { it / 2 },
-                exit = fadeOut() + slideOutVertically { it / 2 },
-            ) {
-                TypingIndicator(state.typingLabel(peer, resolveName))
-            }
-
-            if (refused) {
-                DownloadRefusedNotice(seams.requestDownloadRights) { refused = false }
-            }
-
-            state.replyTo?.let { parent ->
-                ChatReplyBar(
-                    parent = parent,
-                    authorLabel = if (parent.isMine) {
-                        "yourself"
-                    } else {
-                        resolveName(parent.senderId) ?: peer.fullName
-                    },
-                    onCancel = { onEvent(ChatEvent.CancelReply) },
+        val media = BubbleMedia(
+            onOpen = gatedOpen,
+            loadThumbnail = loadThumbnail,
+            player = player,
+            loadAudio = loadAudio,
+            // Pictures open in-app; downloading stays a separate, gated act.
+            onView = { viewing = it },
+            posters = posters,
+        )
+        // Wide enough, the panel takes a column of its own beside the
+        // thread; narrower, it covers the thread until it is closed.
+        WithInfoPanel(
+            page = infoPage,
+            sideBySide = maxWidth >= INFO_SIDE_BY_SIDE_MIN,
+            state = state,
+            peer = peer,
+            shared = shared,
+            hooks = InfoHooks(loadAvatar, media, onCall.takeIf { callable }, lines, onEvent),
+            onPage = { infoPage = it },
+        ) {
+            ChatWallpaper()
+            Column(Modifier.fillMaxSize()) {
+                ThreadHeader(
+                    state, peer, loadAvatar, onCall.takeIf { callable }, lines, onEvent, resolveName,
+                    onOpenInfo = { infoPage = infoPage.toggled() },
                 )
-            }
 
-            // No composer for someone who left — there is nobody to deliver
-            // to, and Android hides its whole action row (userActive).
-            if (hasComposer) {
-                Composer(state, peer.fullName, onEvent)
+                // Passed beside the react handler rather than through it: deletion is
+                // keyed by the server's id, and only rows that have one can offer it.
+                Messages(
+                    state, resolveName, MentionHooks(resolveMention, onOpenUser),
+                    media, loadAvatar, onEvent, Modifier.weight(1f),
+                    onImageReply = { imageReply = it },
+                )
+
+                if (refused) {
+                    DownloadRefusedNotice(seams.requestDownloadRights) { refused = false }
+                }
+
+                state.replyTo?.let { parent ->
+                    ChatReplyBar(
+                        parent = parent,
+                        authorLabel = if (parent.isMine) {
+                            "yourself"
+                        } else {
+                            resolveName(parent.senderId) ?: peer.fullName
+                        },
+                        onCancel = { onEvent(ChatEvent.CancelReply) },
+                    )
+                }
+
+                // No composer for someone who left — there is nobody to deliver
+                // to, and Android hides its whole action row (userActive).
+                if (hasComposer) {
+                    Composer(state, peer.fullName, onEvent)
+                }
             }
         }
 
@@ -388,102 +395,58 @@ private fun ChatReplyBar(parent: ChatMessage, authorLabel: String, onCancel: () 
 }
 
 /**
- * Green dot and the word, under the name — the same signal iOS's chat header
- * shows as green "Online" text and the web's shows as a green avatar dot.
- * Silent when offline or unknown: the header already carries a last-entry
- * line elsewhere, and a grey "offline" would just be furniture.
- */
-@Composable
-private fun OnlineLine(state: ChatUiState) {
-    if (!state.peerOnline || state.peerIsGroup) return
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        Box(
-            Modifier
-                .size(ONLINE_DOT)
-                .background(ZillitTheme.colors.success, CircleShape),
-        )
-        ZillitText(
-            text = str(S.online),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.success,
-        )
-    }
-}
-
-/**
- * "Disconnected", in red, under a peer who left the production. Their
- * history stays readable, but the composer below is gone — Android's
- * `userActive` (ChatAndGroupPage.kt:362-377) and its `disconnected_text`.
- */
-@Composable
-private fun DisconnectedLine(state: ChatUiState, peer: com.zillit.desktop.feature.chat.domain.CrewContact) {
-    if (!state.peerIsGroup && peer.hasLeft) {
-        ZillitText(
-            text = str(S.disconnected),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.danger,
-        )
-    }
-}
-
-/**
- * Who the thread is with: face, name, where they sit — and the two calls.
+ * Who this conversation is with: the name, and one line under it.
  *
- * The face is the loaded avatar, not initials: the header is this pane's one
- * fixed landmark, and it should look like the person. The call buttons are
- * tinted discs rather than bare glyphs — they are the header's two actions,
- * and the close beside them is not one.
- */
-/**
- * Who this conversation is with: name, presence, role, address.
- *
- * Everything the contact card used to carry, now that the card is no longer on
- * the way to a conversation — the header has to answer "which Sam is this" on
- * its own.
+ * WhatsApp's header: the line says what is happening now when something is —
+ * typing, in the accent — and otherwise who they are: online, department and
+ * role, and the address that tells two Sams apart, run together and cut at
+ * the edge. Someone who left gets "Disconnected", in red, instead.
  */
 @Composable
 private fun ThreadIdentity(
     state: ChatUiState,
     peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+    typing: String?,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
-        ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleSmall)
-        OnlineLine(state)
-        DisconnectedLine(state, peer)
-        // Department and role together — the same line their crew card leads
-        // with.
-        val role = listOfNotNull(
-            peer.department?.takeIf { it.isNotBlank() },
-            peer.designationLabel(),
-        ).joinToString(" · ") { it.localised() }
-        if (role.isNotBlank()) {
-            ZillitText(
-                text = role,
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-                maxLines = 1,
-            )
+        ZillitText(
+            text = peer.fullName,
+            style = ZillitTheme.typography.titleSmall,
+            maxLines = 1,
+        )
+        val departed = !state.peerIsGroup && peer.hasLeft
+        val status = when {
+            typing != null -> typing
+            departed -> str(S.disconnected)
+            else -> listOfNotNull(
+                str(S.online).takeIf { state.peerOnline && !state.peerIsGroup },
+                peer.department?.takeIf { it.isNotBlank() }?.localised(),
+                peer.designationLabel()?.localised(),
+                peer.email?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
         }
-        // A line of its own rather than a third item on the role line: an
-        // address is long, and appended there it would be the first thing
-        // truncated — which is the same as not showing it. Groups have no
-        // address, so the null check is the whole guard.
-        peer.email?.takeIf { it.isNotBlank() }?.let { address ->
+        if (status.isNotBlank()) {
             ZillitText(
-                text = address,
+                text = status,
                 style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
+                color = when {
+                    typing != null -> ZillitTheme.colors.accentText
+                    departed -> ZillitTheme.colors.danger
+                    else -> ZillitTheme.colors.textSecondary
+                },
                 maxLines = 1,
             )
         }
     }
 }
 
+/**
+ * The grey bar over the thread: face, identity, and the plain grey call
+ * glyphs at the end — WhatsApp's header. The calls still ask which line.
+ */
 @Composable
+@Suppress("LongParameterList") // The header's display state and its two verbs.
 private fun ThreadHeader(
     state: ChatUiState,
     peer: com.zillit.desktop.feature.chat.domain.CrewContact,
@@ -491,49 +454,61 @@ private fun ThreadHeader(
     onCall: ((video: Boolean, line: CallLine) -> Unit)?,
     lines: List<CallLine>,
     onEvent: (ChatEvent) -> Unit,
+    resolveName: (String) -> String?,
+    /** The face and name open the contact info, as WhatsApp's header does. */
+    onOpenInfo: () -> Unit = {},
 ) {
     val face = rememberChatFace(peer.userId, loadAvatar)
+    val typing = if (state.peerTyping) {
+        str(S.desktop_name_is_typing, state.typingLabel(peer, resolveName))
+    } else {
+        null
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surface)
-            .padding(ZillitTheme.spacing.md),
+            .background(ZillitTheme.colors.chatPanel)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
-        ThreadIdentity(state = state, peer = peer, modifier = Modifier.weight(1f))
-        // Callable when the peer has a device to ring (groups always do —
-        // the room is the address). No device, no buttons: a call button
-        // that fails on press is worse than none. Someone who has left the
-        // production keeps their device id on the crew row — the phone is
-        // still registered — but the call would be refused at the other end,
-        // so they get the thread and not the buttons.
-        val callable = state.peerIsGroup || (peer.deviceId != null && !peer.hasLeft)
-        if (onCall != null && callable) {
-            CallLineButton(
-                icon = ZillitIcons.Phone,
-                label = str(S.desktop_start_call),
-                tint = ZillitTheme.colors.success,
-                disc = ZillitTheme.colors.successSoft,
-                lines = lines,
-                onPick = { line -> onCall(false, line) },
-            )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clip(ZillitTheme.shapes.medium)
+                .clickable(onClickLabel = str(S.contact_info), onClick = onOpenInfo),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
+            ThreadIdentity(state = state, peer = peer, typing = typing, modifier = Modifier.weight(1f))
+        }
+        // [onCall] arrives null when the conversation cannot be rung: the peer
+        // has no device (groups always do — the room is the address), or has
+        // left the production — their phone is still registered, but the call
+        // would be refused at the other end. No buttons then: a call button
+        // that fails on press is worse than none.
+        if (onCall != null) {
             CallLineButton(
                 icon = ZillitIcons.Camera,
                 label = str(S.desktop_start_video_call),
-                tint = ZillitTheme.colors.accentText,
-                disc = ZillitTheme.colors.accentSoft,
                 lines = lines,
                 onPick = { line -> onCall(true, line) },
             )
-            Spacer(Modifier.width(ZillitTheme.spacing.xs))
+            CallLineButton(
+                icon = ZillitIcons.Phone,
+                label = str(S.desktop_start_call),
+                lines = lines,
+                onPick = { line -> onCall(false, line) },
+            )
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = str(S.desktop_close_conversation),
             onClick = { onEvent(ChatEvent.CloseThread) },
+            tint = ZillitTheme.colors.textSecondary,
+            size = HEADER_ACTION,
         )
     }
 }
@@ -551,30 +526,20 @@ private fun ThreadHeader(
  * every deployment has, and the one the desktop has carried longest.
  */
 @Composable
-@Suppress("LongParameterList") // One button's look and its menu.
 private fun CallLineButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    tint: androidx.compose.ui.graphics.Color,
-    /** The tinted disc under the glyph — the header's two actions, not two more grey icons. */
-    disc: androidx.compose.ui.graphics.Color,
     lines: List<CallLine>,
     onPick: (line: CallLine) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier
-            .size(CALL_DISC)
-            .clip(CircleShape)
-            .background(disc),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(contentAlignment = Alignment.Center) {
         ZillitIconButton(
             icon = icon,
             contentDescription = label,
             onClick = { open = true },
-            tint = tint,
-            size = CALL_DISC,
+            tint = ZillitTheme.colors.textSecondary,
+            size = HEADER_ACTION,
         )
         // Each line's row: the line's number and nothing else. It used to
         // carry the media stack's name beside it — "Agora", "Mediasoup" — on
@@ -595,69 +560,15 @@ private fun CallLineButton(
 }
 
 /**
- * Three breathing dots in a bubble-shaped pill, then the words.
- *
- * Animated because "is typing" is the one line on this screen about something
- * happening *right now* — static text reads as a state that got stuck.
- */
-@Composable
-private fun TypingIndicator(firstName: String) {
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "typing")
-    Row(
-        modifier = Modifier.padding(
-            horizontal = ZillitTheme.spacing.md,
-            vertical = ZillitTheme.spacing.xxs,
-        ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        Row(
-            modifier = Modifier
-                .clip(ZillitTheme.shapes.pill)
-                .background(ZillitTheme.colors.surface)
-                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-            horizontalArrangement = Arrangement.spacedBy(TYPING_DOT_GAP),
-        ) {
-            repeat(TYPING_DOTS) { index ->
-                val alpha by transition.animateFloat(
-                    initialValue = TYPING_DOT_REST,
-                    targetValue = 1f,
-                    animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                        animation = androidx.compose.animation.core.tween(TYPING_DOT_MILLIS),
-                        repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
-                        initialStartOffset = androidx.compose.animation.core.StartOffset(
-                            index * TYPING_DOT_STAGGER_MILLIS,
-                        ),
-                    ),
-                    label = "dot$index",
-                )
-                Box(
-                    Modifier
-                        .size(TYPING_DOT)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(ZillitTheme.colors.textMuted.copy(alpha = alpha)),
-                )
-            }
-        }
-        ZillitText(
-            text = str(S.desktop_name_is_typing, firstName),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-    }
-}
-
-
-/**
- * The writing bar, the board's bar to the pixel: plus, microphone, emoji,
- * the pill field, one filled send. A crew member moves between the Home
- * board and a thread without the controls moving under them.
+ * The writing bar, WhatsApp's: on the grey bar, the emoji palette, the
+ * attach sheet and the pin; the white field; and one round button at the end
+ * that is the microphone while there is nothing to send and the send arrow
+ * once there is.
  */
 @Composable
 private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) -> Unit) {
-    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
     if (state.recordingSeconds != null) {
-        Box(Modifier.fillMaxWidth().background(ZillitTheme.colors.surface).padding(ZillitTheme.spacing.sm)) {
+        Box(Modifier.fillMaxWidth().background(ZillitTheme.colors.chatPanel).padding(ZillitTheme.spacing.sm)) {
             com.zillit.desktop.core.designsystem.component.ZillitRecordingBar(
                 seconds = state.recordingSeconds ?: 0,
                 onCancel = { onEvent(ChatEvent.CancelRecording) },
@@ -682,10 +593,10 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surface)
-            .padding(ZillitTheme.spacing.sm),
+            .background(ZillitTheme.colors.chatPanel)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ComposerActions(state, onEvent)
         ZillitTextField(
@@ -693,6 +604,7 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
             onValueChange = { onEvent(ChatEvent.DraftChanged(it)) },
             placeholder = str(S.desktop_chat_message_placeholder, peerName),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(COMPOSER_RADIUS),
+            containerColor = ZillitTheme.colors.incomingBubble,
             // Multi-line like the board's composer: Enter sends, Shift+Enter
             // breaks the line — the same keys the board answers to.
             singleLine = false,
@@ -704,15 +616,34 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
                     handleChatComposerKey(event, state.canSend, onEvent, pasteImage)
                 },
         )
+        SendOrRecord(state.canSend, onEvent) { fieldFocus.requestFocus() }
+    }
+}
+
+/**
+ * The bar's end button: the send arrow when there is something to send, the
+ * microphone until then — WhatsApp's, which turns over at the first keystroke.
+ * [afterSend] hands the caret back to the field.
+ */
+@Composable
+private fun SendOrRecord(canSend: Boolean, onEvent: (ChatEvent) -> Unit, afterSend: () -> Unit) {
+    if (canSend) {
         ZillitIconButton(
             icon = ZillitIcons.Send,
             contentDescription = str(S.send),
             onClick = {
                 onEvent(ChatEvent.Send)
-                fieldFocus.requestFocus()
+                afterSend()
             },
-            enabled = state.canSend,
             filled = true,
+            size = SEND_BUTTON,
+        )
+    } else {
+        ZillitIconButton(
+            icon = ZillitIcons.Mic,
+            contentDescription = str(S.desktop_record_a_voice_message),
+            onClick = { onEvent(ChatEvent.StartRecording) },
+            tint = ZillitTheme.colors.textSecondary,
             size = SEND_BUTTON,
         )
     }
@@ -789,7 +720,7 @@ private fun Messages(
         state = listState,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = ZillitTheme.spacing.md),
+            .padding(horizontal = ZillitTheme.spacing.lg),
         // Newest at index 0, pinned to the visual bottom — see the note on
         // FollowLatestReversed above. The rows are built reversed to match.
         reverseLayout = true,
@@ -970,24 +901,31 @@ private fun ChatMessage.startsNewDay(previous: ChatMessage, zone: kotlinx.dateti
     return mine != theirs
 }
 
-/** The day, centred on its own quiet line — every chat client's convention. */
+/**
+ * The day, centred on the paper — WhatsApp's chip: the bubble's fill and
+ * corner, a hairline shadow, the words in the secondary grey.
+ */
 @Composable
 private fun DayChip(label: String) {
     Box(
         Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
         contentAlignment = Alignment.Center,
     ) {
+        val shape = androidx.compose.foundation.shape.RoundedCornerShape(BUBBLE_CORNER)
         ZillitText(
             text = label,
             style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
+            color = ZillitTheme.colors.textSecondary,
             modifier = Modifier
-                .clip(ZillitTheme.shapes.pill)
-                .background(ZillitTheme.colors.surface)
-                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
+                .shadow(BUBBLE_SHADOW, shape, clip = false)
+                .clip(shape)
+                .background(ZillitTheme.colors.incomingBubble)
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = DAY_CHIP_PAD_V),
         )
     }
 }
+
+private val DAY_CHIP_PAD_V = 5.dp
 
 /** History on its way; the pane says so rather than sitting blank. */
 @Composable
@@ -1059,14 +997,14 @@ private fun IncomingAware(
         }
         return
     }
-    // A room's line: the writer's face beside the run's last bubble, the
-    // others indented to meet it. Names ride the first bubble instead.
+    // A room's line: the writer's face beside the run's first bubble, level
+    // with its tail and name — WhatsApp's — the others indented to meet it.
     Row(
         modifier = runGap,
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        if (run.last) {
+        if (run.first) {
             // Through the shared face cache: a busy room's rows come and go
             // as it scrolls, and each used to fetch and decode its face anew.
             val face = rememberChatFace(message.senderId, loadAvatar)
@@ -1175,9 +1113,18 @@ internal data class MentionHooks(
  * body with neither is one plain text node.
  */
 @Composable
-private fun MentionedBody(body: String, mentions: MentionHooks) {
+private fun MentionedBody(
+    body: String,
+    mentions: MentionHooks,
+    /** The clock line, tucked in after the last line of words — see [WordsWithFooter]. */
+    footer: (@Composable () -> Unit)? = null,
+) {
     val spans = androidx.compose.runtime.remember(body) { mentionSpans(body, mentions.resolve) }
     val plain = spans.singleOrNull() as? MentionSpan.Words
+    if (footer != null) {
+        WordsWithFooter(mentionedText(spans, mentions), footer)
+        return
+    }
     if (plain != null) {
         ZillitText(
             text = plain.text,
@@ -1187,12 +1134,25 @@ private fun MentionedBody(body: String, mentions: MentionHooks) {
         return
     }
 
+    ZillitText(
+        text = mentionedText(spans, mentions),
+        style = ZillitTheme.typography.bodyMedium,
+        color = ZillitTheme.colors.textPrimary,
+    )
+}
+
+/** The spans as one string: tags and links lit and clickable. */
+@Composable
+private fun mentionedText(
+    spans: List<MentionSpan>,
+    mentions: MentionHooks,
+): androidx.compose.ui.text.AnnotatedString {
     val accent = ZillitTheme.colors.accentText
     val linkStyles = TextLinkStyles(
         style = SpanStyle(color = accent, textDecoration = TextDecoration.Underline),
         hoveredStyle = SpanStyle(color = ZillitTheme.colors.accentHover, textDecoration = TextDecoration.Underline),
     )
-    val annotated = buildAnnotatedString {
+    return buildAnnotatedString {
         spans.forEach { span ->
             when (span) {
                 is MentionSpan.Words -> append(span.text)
@@ -1213,12 +1173,50 @@ private fun MentionedBody(body: String, mentions: MentionHooks) {
             }
         }
     }
-    ZillitText(
-        text = annotated,
-        style = ZillitTheme.typography.bodyMedium,
-        color = ZillitTheme.colors.textPrimary,
-    )
 }
+
+/**
+ * The words with the clock tucked in after their last line — WhatsApp's
+ * float. The text is laid out first; when its last line leaves room for the
+ * footer the footer sits on that line at the bubble's end, and when it does
+ * not the footer takes a line of its own beneath. Nothing is added to the
+ * words themselves, so they read and match as written.
+ */
+@Composable
+private fun WordsWithFooter(
+    text: androidx.compose.ui.text.AnnotatedString,
+    footer: @Composable () -> Unit,
+) {
+    val laidOut = remember { arrayOfNulls<androidx.compose.ui.text.TextLayoutResult>(1) }
+    val style = ZillitTheme.typography.bodyMedium.copy(color = ZillitTheme.colors.textPrimary)
+    val gap = with(androidx.compose.ui.platform.LocalDensity.current) { FOOTER_GAP.roundToPx() }
+    androidx.compose.ui.layout.Layout(
+        contents = listOf(
+            { androidx.compose.foundation.text.BasicText(text, style = style, onTextLayout = { laidOut[0] = it }) },
+            footer,
+        ),
+    ) { (words, clock), constraints ->
+        val wordsPlaced = words.first().measure(constraints.copy(minWidth = 0))
+        val clockPlaced = clock.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val layout = laidOut[0]
+        val lastLineEnd = layout?.let { it.getLineRight(it.lineCount - 1).toInt() } ?: wordsPlaced.width
+        val inline = lastLineEnd + gap + clockPlaced.width <= constraints.maxWidth
+        val width = if (inline) {
+            maxOf(wordsPlaced.width, lastLineEnd + gap + clockPlaced.width)
+        } else {
+            maxOf(wordsPlaced.width, clockPlaced.width)
+        }
+        val height = if (inline) wordsPlaced.height else wordsPlaced.height + clockPlaced.height
+        layout(width, height) {
+            wordsPlaced.place(0, 0)
+            clockPlaced.place(width - clockPlaced.width, height - clockPlaced.height)
+        }
+    }
+}
+
+/** Between the last word and the clock when they share a line. */
+private val FOOTER_GAP = 10.dp
+
 
 /**
  * Only rows the server can address offer deletion: a just-sent bubble still
@@ -1403,7 +1401,7 @@ private fun Bubble(
             BubbleBody(
                 message, senderName, media, onReact, mine,
                 uploadPercent, resolveName, mentions, onJumpTo, translation,
-                tail = run.last,
+                tail = run.first,
             )
             if (!mine) {
                 Box(Modifier.alpha(if (revealed) 1f else 0f)) {
@@ -1433,26 +1431,36 @@ private fun BubbleBody(
     onJumpTo: (String) -> Unit = {},
     /** The menu's translation of the words, drawn under them. */
     translation: String? = null,
-    /** The run's last line wears the tail; the others are plain pills. */
+    /** The run's first line wears the tail; the others are plain. */
     tail: Boolean = true,
 ) {
+    // WhatsApp's bubble: a soft 8dp rectangle on a hairline shadow, the
+    // run's first line pointing at its writer from the top corner.
+    val shape = BubbleShape(mine = mine, withTail = tail)
     Column(
         modifier = Modifier
             .widthIn(max = BUBBLE_MAX_WIDTH)
-            // The flattened corner sits where the writer is — the classic
-            // tail, drawn with radii instead of a path. Rounding all four
-            // made every row read as belonging to nobody.
-            .clip(
-                androidx.compose.foundation.shape.RoundedCornerShape(
-                    topStart = BUBBLE_RADIUS,
-                    topEnd = BUBBLE_RADIUS,
-                    bottomStart = if (mine || !tail) BUBBLE_RADIUS else BUBBLE_TAIL,
-                    bottomEnd = if (!mine || !tail) BUBBLE_RADIUS else BUBBLE_TAIL,
-                ),
-            )
+            .shadow(BUBBLE_SHADOW, shape, clip = false)
+            .clip(shape)
             .background(bubbleFill(mine))
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+            .padding(
+                start = BUBBLE_PAD_H + if (mine) 0.dp else BUBBLE_TAIL_WIDTH,
+                end = BUBBLE_PAD_H + if (mine) BUBBLE_TAIL_WIDTH else 0.dp,
+                top = BUBBLE_PAD_TOP,
+                bottom = BUBBLE_PAD_BOTTOM,
+            ),
     ) {
+        // The writer's name heads the run, above even a quote — WhatsApp's.
+        if (senderName != null) {
+            ZillitText(
+                text = senderName,
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                // The writer's avatar hue, not the app accent: in a busy room
+                // the colour is what lets the eye follow one voice.
+                color = com.zillit.desktop.core.designsystem.component.avatarHue(senderName),
+                maxLines = 1,
+            )
+        }
         message.replyTo?.let { quoted ->
             QuotedLine(quoted, resolveName) { onJumpTo(quoted.messageId) }
         }
@@ -1467,16 +1475,15 @@ private fun BubbleBody(
         } else {
             message.attachment?.let { file -> AttachmentBody(file, media, uploadPercent) }
         }
-        if (senderName != null) {
-            ZillitText(
-                text = senderName,
-                style = ZillitTheme.typography.labelSmall,
-                // The writer's avatar hue, not the app accent: in a busy room
-                // the colour is what lets the eye follow one voice.
-                color = com.zillit.desktop.core.designsystem.component.avatarHue(senderName),
-            )
+        val words = place == null && message.body.isNotBlank()
+        // The clock tucks in at the end of the last line of words when it
+        // fits, and drops below them when it does not — WhatsApp's float.
+        if (words && translation == null) {
+            MentionedBody(message.body, mentions, footer = { FooterLine(message) })
+            ReactionChips(message, onReact, resolveName)
+            return@Column
         }
-        if (place == null && message.body.isNotBlank()) {
+        if (words) {
             MentionedBody(message.body, mentions)
         }
         // The web replaces the words with "original / rule / Translated
@@ -1808,30 +1815,18 @@ private fun ReactAffordance(
     }
 }
 
-/** The plus, the microphone, the pin and the emoji palette. */
+/** The emoji palette, the attach sheet and the pin — the bar's leading glyphs. */
 @Composable
 private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     var emojiOpen by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
-    // The phones' attach sheet, not a bare file dialog: Photo, Video,
-    // Document, Audio — the microphone and the pin stay their own buttons.
-    com.zillit.desktop.core.media.AttachMenu(
-        kinds = com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS,
-        contentDescription = str(S.desktop_attach_a_file),
-        onPick = { kind -> onEvent(ChatEvent.AttachKind(kind)) },
-    )
-    ZillitIconButton(
-        icon = ZillitIcons.Mic,
-        contentDescription = str(S.desktop_record_a_voice_message),
-        onClick = { onEvent(ChatEvent.StartRecording) },
-    )
-    ShareLocationAction(onEvent)
     Box {
         ZillitIconButton(
             icon = ZillitIcons.Smiley,
             contentDescription = str(S.desktop_insert_an_emoji),
             onClick = { emojiOpen = true },
+            tint = ZillitTheme.colors.textSecondary,
         )
         ZillitMenuSurface(
             expanded = emojiOpen,
@@ -1843,6 +1838,14 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
             )
         }
     }
+    // The phones' attach sheet, not a bare file dialog: Photo, Video,
+    // Document, Audio. The microphone lives at the bar's end now.
+    com.zillit.desktop.core.media.AttachMenu(
+        kinds = com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS,
+        contentDescription = str(S.desktop_attach_a_file),
+        onPick = { kind -> onEvent(ChatEvent.AttachKind(kind)) },
+    )
+    ShareLocationAction(onEvent)
 }
 
 /**
@@ -2202,8 +2205,14 @@ internal fun posterFrame(
  */
 @Composable
 private fun androidx.compose.foundation.layout.ColumnScope.BubbleFooter(message: ChatMessage) {
+    FooterLine(message, Modifier.align(Alignment.End))
+}
+
+/** The footer's own line — clock, flags, tick — wherever the bubble puts it. */
+@Composable
+private fun FooterLine(message: ChatMessage, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier.align(Alignment.End),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
@@ -2250,7 +2259,7 @@ private fun ChatSendState.icon() = when (this) {
 private fun ChatSendState.tint() = when (this) {
     // Read is the one state worth a colour — it is the answer to "did they
     // see it", and every other state is just progress toward that.
-    ChatSendState.Read -> ZillitTheme.colors.success
+    ChatSendState.Read -> ZillitTheme.colors.info
     ChatSendState.Failed -> ZillitTheme.colors.danger
     else -> ZillitTheme.colors.textMuted
 }
@@ -2287,44 +2296,23 @@ private fun FileChip(
     }
 }
 
-/**
- * The two bubble tints.
- *
- * Light: the writer's own lines in the pale accent, the other side's on
- * white — the surface the canvas already frames. Dark: the canvas and the
- * surface are two near-blacks a shade apart, so the other side's lines
- * take the raised surface to stand off the page at all, and one's own take
- * the accent laid over it rather than over black, which read as mud.
- */
+/** Theirs white (raised grey in the dark), ours the accent over it. */
 @Composable
-private fun bubbleFill(mine: Boolean): androidx.compose.ui.graphics.Color {
-    val colors = ZillitTheme.colors
-    return when {
-        !colors.isDark && mine -> colors.accentSoft
-        !colors.isDark -> colors.surface
-        mine -> colors.accent.copy(alpha = OWN_BUBBLE_DARK_ALPHA).compositeOver(colors.surfaceRaised)
-        else -> colors.surfaceRaised
-    }
-}
+private fun bubbleFill(mine: Boolean): androidx.compose.ui.graphics.Color =
+    if (mine) ZillitTheme.colors.outgoingBubble else ZillitTheme.colors.incomingBubble
 
-private val HAIRLINE = 1.dp
-private val BUBBLE_MAX_WIDTH = 420.dp
-private val CALL_DISC = 34.dp
-private const val OWN_BUBBLE_DARK_ALPHA = 0.22f
+private val BUBBLE_MAX_WIDTH = 560.dp
+private val BUBBLE_SHADOW = 1.dp
+private val BUBBLE_PAD_H = 9.dp
+private val BUBBLE_PAD_TOP = 6.dp
+private val BUBBLE_PAD_BOTTOM = 7.dp
+/** The header's glyph buttons: video, voice, close. */
+private val HEADER_ACTION = 36.dp
 
 /** Lines from one writer this close together read as one turn of speech. */
 internal const val RUN_GAP_MILLIS = 5 * 60 * 1000L
-private val BUBBLE_RADIUS = 16.dp
-private val BUBBLE_TAIL = 4.dp
 private val HEADER_AVATAR = 40.dp
-private val ONLINE_DOT = 8.dp
 private val EMPTY_GLYPH = 28.dp
-private val TYPING_DOT = 6.dp
-private val TYPING_DOT_GAP = 4.dp
-private const val TYPING_DOTS = 3
-private const val TYPING_DOT_MILLIS = 500
-private const val TYPING_DOT_STAGGER_MILLIS = 160
-private const val TYPING_DOT_REST = 0.25f
 private const val DAY_ROOM = 8
 private val STATUS_ICON = 14.dp
 private val ROW_AVATAR = 26.dp
@@ -2357,11 +2345,21 @@ private val QUICK_REACTIONS = listOf(
     "\ud83d\ude2e", "\ud83d\ude22", "\ud83d\ude4f",
 )
 // The board's composer metrics, matched exactly — see HomeFeedScreen.
-private val COMPOSER_RADIUS = 22.dp
+private val COMPOSER_RADIUS = 10.dp
 private val COMPOSER_MIN_HEIGHT = 44.dp
 private val SEND_BUTTON = 40.dp
 
 /** No composer for someone who left — there is nobody to deliver to (Android hides its action row). */
+/**
+ * Whether the open conversation can be rung: a room always (the room is the
+ * address), a person when they have a device and are still on the production.
+ */
+private fun ChatUiState.isCallable(peer: com.zillit.desktop.feature.chat.domain.CrewContact): Boolean =
+    peerIsGroup || (peer.deviceId != null && !peer.hasLeft)
+
+/** The header's click: opens the contact info, or shuts whichever page is open. */
+private fun InfoPage?.toggled(): InfoPage? = if (this == null) InfoPage.Contact else null
+
 private fun ChatUiState.hasComposer(peer: com.zillit.desktop.feature.chat.domain.CrewContact): Boolean =
     peerIsGroup || !peer.hasLeft
 

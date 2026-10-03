@@ -11907,4 +11907,10 @@
     <string name="desktop_csync_scan_no_camera_here">The camera can\'t be opened from here. Add the pages from picture files instead.</string>
     <string name="desktop_csync_scan_no_code">No QR code could be read from that picture. Try another, or type the asset number.</string>
     <string name="desktop_csync_scan_from_picture">Read from a picture</string>
+    <string name="desktop_group_info">Group info</string>
+    <string name="desktop_media_links_docs">Media, links and docs</string>
+    <string name="desktop_voice">Voice</string>
+    <string name="desktop_no_links">No links</string>
+    <string name="desktop_no_documents">No documents</string>
+    <string name="desktop_chat_info_loaded_only">From the messages loaded so far</string>
 </resources>

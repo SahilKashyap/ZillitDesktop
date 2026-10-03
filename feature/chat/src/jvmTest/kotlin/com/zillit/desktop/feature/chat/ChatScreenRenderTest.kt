@@ -161,7 +161,42 @@ class ChatScreenRenderTest {
         }
 
         onNodeWithText("Aisha Khan").assertExists()
-        onNodeWithText("aisha@example.com").assertExists()
+        // One status line under the name, WhatsApp's: role and address run
+        // together on it rather than stacked.
+        onNodeWithText("aisha@example.com", substring = true).assertExists()
+    }
+
+    /**
+     * WhatsApp's contact info: the header's name opens it, and its "Media,
+     * links and docs" row opens the shelves, where a link the thread holds
+     * is listed under Links.
+     */
+    @Test
+    fun `the header opens contact info and its shared row opens the shelves`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                ThreadPane(
+                    state = ChatUiState(
+                        peer = crew.first(),
+                        messages = listOf(
+                            message("m1", now - 60_000L, mine = false, body = "Plan at https://example.com/plan"),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+
+        onNodeWithText("Contact Info").assertDoesNotExist()
+        onNodeWithText("Aisha Khan").performClick()
+        waitForIdle()
+        onNodeWithText("Contact Info").assertExists()
+
+        onNodeWithText("Media, links and docs").performClick()
+        waitForIdle()
+        onNodeWithText("Links").performClick()
+        waitForIdle()
+        onNodeWithText("https://example.com/plan").assertExists()
     }
 
     /** A peer with no address gets no blank line where one would be. */

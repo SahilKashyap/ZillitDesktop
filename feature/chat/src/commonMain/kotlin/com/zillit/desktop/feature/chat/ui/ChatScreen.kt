@@ -9,67 +9,71 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.LocalAvatarLoader
 import com.zillit.desktop.core.designsystem.component.TagTone
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
-import com.zillit.desktop.core.designsystem.component.ZillitDivider
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.LocalAvatarLoader
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitTab
+import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.data.MessageHit
+import com.zillit.desktop.feature.chat.domain.ChatFilter
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.RecentRow
-import kotlinx.coroutines.launch
 import com.zillit.desktop.feature.chat.domain.admits
 import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 import com.zillit.desktop.feature.chat.domain.designationLabel
@@ -77,7 +81,7 @@ import com.zillit.desktop.feature.chat.domain.lastEntryDate
 import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
 import com.zillit.desktop.feature.chat.domain.searchRecents
-import com.zillit.desktop.feature.chat.domain.ChatFilter
+import kotlinx.coroutines.launch
 
 /**
  * Chat & Calls: the production's people, in Android's two-tab shape.
@@ -257,7 +261,12 @@ private fun RowScope.DetailSide(
                 onBack = onBack,
             )
         }
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        // A thread paints its own paper; with nothing open the pane is the
+        // panel grey WhatsApp leaves there, not the window's canvas.
+        Box(
+            Modifier.weight(1f).fillMaxWidth().background(ZillitTheme.colors.chatPanel),
+            contentAlignment = Alignment.Center,
+        ) {
             DetailPane(
                 chatState, viewModel, crew, selfId, selectedId, onOpenAttachment,
                 loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
@@ -273,21 +282,81 @@ private fun RowScope.DetailSide(
  * heading in a 420px window is a line of chrome where a conversation could be.
  */
 @Composable
-private fun DirectoryHeading(onOpenWidget: (() -> Unit)?) {
+private fun DirectoryHeading(onOpenWidget: (() -> Unit)?, onNewGroup: (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        ZillitText(text = str(S.desktop_chat_calls), style = ZillitTheme.typography.titleLarge)
+        ZillitText(
+            text = str(S.desktop_chat_calls),
+            style = ZillitTheme.typography.titleLarge,
+            modifier = Modifier.weight(1f),
+        )
+        // The heading's glyphs, WhatsApp's: new chat first, then the way out.
+        if (onNewGroup != null) {
+            ZillitIconButton(
+                icon = ZillitIcons.UserPlus,
+                contentDescription = str(S.desktop_new_group),
+                onClick = onNewGroup,
+                tint = ZillitTheme.colors.textSecondary,
+            )
+        }
         if (onOpenWidget != null) {
-            Spacer(Modifier.weight(1f))
             ZillitIconButton(
                 icon = ZillitIcons.Detach,
                 contentDescription = str(S.desktop_open_chat_widget),
                 onClick = onOpenWidget,
+                tint = ZillitTheme.colors.textSecondary,
             )
         }
     }
+}
+
+/** The padded block over the rows: the heading (not in the widget) and the tabs. */
+@Composable
+@Suppress("LongParameterList") // The block's display state and its three verbs.
+private fun DirectoryTop(
+    heading: Boolean,
+    tab: String,
+    chatState: ChatUiState?,
+    hasCallLog: Boolean,
+    onTab: (String) -> Unit,
+    onOpenWidget: (() -> Unit)?,
+    onNewGroup: (() -> Unit)?,
+) {
+    Column(
+        modifier = Modifier.padding(
+            start = ZillitTheme.spacing.md,
+            end = ZillitTheme.spacing.md,
+            top = ZillitTheme.spacing.md,
+        ),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        if (heading) DirectoryHeading(onOpenWidget = onOpenWidget, onNewGroup = onNewGroup)
+        DirectoryTabs(tab, chatState, hasCallLog, onTab)
+    }
+}
+
+/**
+ * The listing's search, WhatsApp's: a filled grey pill with no resting
+ * edge, inset from the pane's sides like the block above it.
+ */
+@Composable
+private fun ListingSearch(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    ZillitSearchField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = placeholder,
+        containerColor = ZillitTheme.colors.chatPanel,
+        bordered = false,
+        modifier = modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.md),
+    )
 }
 
 /**
@@ -457,21 +526,29 @@ private fun DirectoryPane(
     /** Opens the Chat widget, beside the heading. */
     onOpenWidget: (() -> Unit)? = null,
 ) {
+    // WhatsApp's listing: the heading, tabs, search and chips sit in a
+    // padded block; the rows under them run edge to edge, each closed by a
+    // hairline that starts where the text does.
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .background(ZillitTheme.colors.surface)
-            .padding(ZillitTheme.spacing.md),
+            .background(ZillitTheme.colors.surface),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        if (!compact) DirectoryHeading(onOpenWidget)
-
-        DirectoryTabs(tab, chatState, callLog != null, onTab)
+        DirectoryTop(
+            heading = !compact,
+            tab = tab,
+            chatState = chatState,
+            hasCallLog = callLog != null,
+            onTab = onTab,
+            onOpenWidget = onOpenWidget,
+            onNewGroup = onNewGroup.takeIf { tab == DirectoryTab.Chats.name && chatState != null },
+        )
 
         if (tab == DirectoryTab.Calls.name && callLog != null) {
-            callLog()
+            Box(Modifier.padding(horizontal = ZillitTheme.spacing.md)) { callLog() }
         } else if (tab == DirectoryTab.Contacts.name) {
-            ZillitSearchField(
+            ListingSearch(
                 value = query,
                 onValueChange = onQuery,
                 placeholder = str(S.desktop_chat_search_name_role_department),
@@ -506,7 +583,9 @@ private fun DirectoryPane(
                 loadAvatar = loadAvatar,
                 onEvent = onChatEvent,
                 searchMessages = searchMessages,
-                onNewGroup = onNewGroup,
+                // In the heading beside the title, WhatsApp's new-chat glyph —
+                // except in the widget, which has no heading.
+                onNewGroup = onNewGroup.takeIf { compact },
                 deleteRoom = deleteRoom,
             )
         } else {
@@ -539,10 +618,11 @@ private fun ChatsTab(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     Row(
+        modifier = Modifier.padding(end = if (onNewGroup != null) ZillitTheme.spacing.md else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitSearchField(
+        ListingSearch(
             value = query,
             onValueChange = { query = it },
             placeholder = str(S.desktop_search_chats),
@@ -630,14 +710,10 @@ private fun RecentsList(
 
     val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     val roomsState = rememberLazyListState()
-    // No hairlines between rows: each row is its own rounded card under the
-    // cursor and when open, and a rule under every one of them cut across
-    // that. Rows animate to their new place when activity reorders them,
-    // so a conversation that just moved up is seen moving, not swapped.
-    ZillitLazyColumn(
-        state = roomsState,
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-    ) {
+    // Rows touch, each closed by its own hairline (see CrewRow), as
+    // WhatsApp's do. Rows animate to their new place when activity reorders
+    // them, so a conversation that just moved up is seen moving, not swapped.
+    ZillitLazyColumn(state = roomsState) {
         items(rows, key = RecentRow::id) { row ->
             Box(Modifier.animateItem()) {
                 RecentRowCard(row, state, selfId, loadAvatar, onEvent, deleteRoom, nowMillis, crew)
@@ -646,7 +722,7 @@ private fun RecentsList(
         if (hits.isNotEmpty()) {
             item(key = "message-hits-header") { MessageHitsHeader() }
             items(hits) { hit ->
-                Column {
+                Column(Modifier.padding(horizontal = ZillitTheme.spacing.md)) {
                     MessageHitRowItem(hit, nowMillis, onEvent)
                     ZillitDivider()
                 }
@@ -837,10 +913,7 @@ private fun CrewList(
     onToggleFavourite: (String) -> Unit,
 ) {
     val crewState = rememberLazyListState()
-    ZillitLazyColumn(
-        state = crewState,
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-    ) {
+    ZillitLazyColumn(state = crewState) {
         // One row per person: the key is the user id, and a duplicate one throws.
         val people = crew.distinctBy(CrewContact::userId).sortedBy { it.fullName.lowercase() }
         items(people, key = CrewContact::userId) { contact ->
@@ -858,9 +931,11 @@ private fun CrewList(
 }
 
 /**
- * One listing row, the web's `UserCard` shape: name with an inline
- * "- (Admin)" suffix, the designation (or an explicit subtitle) under it, a
- * meta line under that, and badge + star at the trailing edge.
+ * One listing row, WhatsApp's: the face, then the name with the stamp at the
+ * far end, and under it the preview (or role) with the star and the count at
+ * its end. Rows touch; a hairline under the text, not under the face, closes
+ * each one. The web's `UserCard` lines — the "(Admin)" suffix, Disconnected,
+ * the Contacts tab's last entry — stack under those two.
  */
 @Composable
 @Suppress("LongParameterList") // One row's worth of display state.
@@ -881,15 +956,14 @@ private fun CrewRow(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val unread = badge > 0
     // Eased rather than switched: the highlight follows the cursor down the
     // list instead of blinking from row to row.
     val background by animateColorAsState(
         when {
-            isSelected -> ZillitTheme.colors.accentSoft
+            isSelected -> ZillitTheme.colors.chatRowSelected
             // Lights under the cursor like every other list in the
             // app; a row that ignores the pointer reads as inert.
-            hovered -> ZillitTheme.colors.surfaceHover
+            hovered -> ZillitTheme.colors.chatRowHover
             else -> ZillitTheme.colors.surface
         },
         animationSpec = tween(ROW_TINT_MILLIS),
@@ -899,11 +973,10 @@ private fun CrewRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(ZillitTheme.shapes.large)
             .background(background)
             .hoverable(interaction)
             .clickable(onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.sm),
+            .padding(start = ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
@@ -912,13 +985,30 @@ private fun CrewRow(
             image = rememberChatFace(contact.userId, loadAvatar),
             size = ROW_AVATAR,
         )
-        CrewIdentity(contact, unread, subtitle, meta, stamp, Modifier.weight(1f))
-        RowTrailing(badge, isFavourite, onToggleFavourite)
-        trailing?.invoke()
+        Box(Modifier.weight(1f)) {
+            CrewIdentity(
+                contact, badge > 0, subtitle, meta, stamp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = ROW_HEIGHT)
+                    .padding(end = ZillitTheme.spacing.md, top = ROW_PAD_V, bottom = ROW_PAD_V),
+            ) {
+                RowTrailing(badge, isFavourite, onToggleFavourite, revealed = hovered)
+                // The group's Delete waits for the cursor, as the star does.
+                trailing?.let { control -> Box(Modifier.alpha(if (hovered) 1f else 0f)) { control() } }
+            }
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(HAIRLINE)
+                    .background(ZillitTheme.colors.divider),
+            )
+        }
     }
 }
 
-/** The name line, then whatever the row has to say under it. */
+/** The name line, then the preview line with the row's controls at its end. */
 @Composable
 @Suppress("LongParameterList") // The row's lines, one each.
 private fun CrewIdentity(
@@ -928,23 +1018,28 @@ private fun CrewIdentity(
     meta: String?,
     stamp: String?,
     modifier: Modifier = Modifier,
+    controls: @Composable RowScope.() -> Unit,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+    Column(
+        modifier,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs, Alignment.CenterVertically),
+    ) {
         NameLine(contact, unread, stamp)
-        // `designation` is a translation key off `project/users`
-        // (`driver_label`); an explicit subtitle is already display text.
-        // The generic member designation is hidden, as on the phones.
-        (subtitle ?: contact.designationLabel()?.localised())?.takeIf { it.isNotBlank() }?.let {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            // `designation` is a translation key off `project/users`
+            // (`driver_label`); an explicit subtitle is already display text.
+            // The generic member designation is hidden, as on the phones.
             ZillitText(
-                text = it,
-                style = ZillitTheme.typography.labelSmall,
-                color = if (unread) {
-                    ZillitTheme.colors.textSecondary
-                } else {
-                    ZillitTheme.colors.textMuted
-                },
+                text = (subtitle ?: contact.designationLabel()?.localised()).orEmpty(),
+                style = ZillitTheme.typography.bodySmall,
+                color = if (unread) ZillitTheme.colors.textPrimary else ZillitTheme.colors.textSecondary,
                 maxLines = 1,
+                modifier = Modifier.weight(1f),
             )
+            controls()
         }
         // "Disconnected", in red, under someone who left or was removed from
         // the production — Android's listing row (`disconnedtedTxtView`,
@@ -986,11 +1081,9 @@ private fun NameLine(contact: CrewContact, unread: Boolean, stamp: String?) {
         ) {
             ZillitText(
                 text = contact.fullName,
-                style = if (unread) {
-                    ZillitTheme.typography.titleSmall
-                } else {
-                    ZillitTheme.typography.bodyMedium
-                },
+                style = ZillitTheme.typography.bodyLarge.copy(
+                    fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
+                ),
                 color = ZillitTheme.colors.textPrimary,
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false),
@@ -1018,18 +1111,20 @@ private fun NameLine(contact: CrewContact, unread: Boolean, stamp: String?) {
     }
 }
 
-/** The row's right edge: how much is waiting, and the star. */
+/**
+ * The preview line's end: how much is waiting, in a round accent count, and
+ * the star — shown when it is lit or the cursor is on the row, and faded
+ * rather than removed otherwise, so the press always has something to land on.
+ */
 @Composable
 private fun RowTrailing(
     badge: Int,
     isFavourite: Boolean?,
     onToggleFavourite: () -> Unit,
+    revealed: Boolean = true,
 ) {
-    if (badge > 0) {
-        // The C&C listing wears the brand orange, not the alert red —
-        // the web's chat badges.
-        ZillitBadge(count = badge, background = ZillitTheme.colors.accent)
-    }
+    // The star first, so the count — when there is one — sits flush at the
+    // row's end, where WhatsApp keeps it.
     if (isFavourite != null) {
         ZillitIconButton(
             icon = if (isFavourite) ZillitIcons.StarFilled else ZillitIcons.StarOutline,
@@ -1037,6 +1132,16 @@ private fun RowTrailing(
             onClick = onToggleFavourite,
             tint = if (isFavourite) ZillitTheme.colors.warning else ZillitTheme.colors.textMuted,
             size = STAR_SIZE,
+            modifier = Modifier.alpha(if (isFavourite || revealed) 1f else 0f),
+        )
+    }
+    if (badge > 0) {
+        // The C&C listing wears the brand orange, not the alert red —
+        // the web's chat badges.
+        ZillitBadge(
+            count = badge,
+            background = ZillitTheme.colors.accent,
+            modifier = Modifier.defaultMinSize(minWidth = BADGE_MIN),
         )
     }
 }
@@ -1066,6 +1171,9 @@ private fun CrewContact.lastEntryLine(): String? =
         ?.let { "${"last_entry".localised()}: ${lastEntryDate(it)}" }
 
 private val STAR_SIZE = 22.dp
+private val BADGE_MIN = 20.dp
+private val ROW_HEIGHT = 72.dp
+private val ROW_PAD_V = 10.dp
 
 /**
  * The three underline tabs. Chats and Calls each wear their own count — the
@@ -1110,18 +1218,54 @@ private fun DirectoryTabs(
 @Composable
 private fun FilterChips(chosen: ChatFilter, onPick: (ChatFilter) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = ZillitTheme.spacing.md),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ChatFilter.entries.forEach { entry ->
-            ZillitChoiceChip(
-                label = entry.label,
-                selected = chosen == entry,
-                onClick = { onPick(entry) },
-            )
+            FilterPill(label = entry.label, selected = chosen == entry, onClick = { onPick(entry) })
         }
     }
 }
+
+/**
+ * One filter, WhatsApp's pill: the panel grey at rest, the accent's soft tint
+ * with its text colour when chosen — a quiet mark, where a filled orange chip
+ * shouted over the list it filters.
+ */
+@Composable
+private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val background by animateColorAsState(
+        when {
+            selected -> colors.accentSoft
+            hovered -> colors.surfaceHover
+            else -> colors.chatPanel
+        },
+        animationSpec = tween(ROW_TINT_MILLIS),
+        label = "filterPill",
+    )
+    ZillitText(
+        text = label,
+        style = ZillitTheme.typography.label.copy(
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        ),
+        color = if (selected) colors.accentText else colors.textSecondary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(background)
+            .hoverable(interaction)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = PILL_PAD_V),
+    )
+}
+
+private val PILL_PAD_V = 6.dp
 
 /** The right pane: one person, large — the paper crew card, on glass. */
 @Composable
@@ -1277,7 +1421,7 @@ private fun PaneMessage(
 
 private val LIST_WIDTH = 320.dp
 private val HAIRLINE = 1.dp
-private val ROW_AVATAR = 40.dp
+private val ROW_AVATAR = 48.dp
 private const val ROW_TINT_MILLIS = 120
 private val CARD_MAX_WIDTH = 380.dp
 private val CARD_EDGE = 6.dp
