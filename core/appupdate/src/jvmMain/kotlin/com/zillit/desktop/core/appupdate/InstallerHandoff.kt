@@ -20,13 +20,21 @@ import java.util.concurrent.TimeUnit
  * Downloads an installer into the person's Downloads folder and hands it to
  * them: the in-app replacement for sending them off to a browser.
  *
- * Deliberately NOT an installer. Nothing here mounts, copies or runs anything,
- * and nothing asks for administrator rights. The file is saved, marked as
- * downloaded from the internet, and opened for the person to install
- * themselves — so it is exactly as safe as the browser download it replaces:
- * macOS Gatekeeper checks the signature and notarisation when the quarantined
- * file is opened, as it does for anything a browser saves. What it adds is a
- * progress bar inside the app instead of a trip out of it.
+ * Deliberately NOT an installer. Nothing here mounts, copies or replaces
+ * anything itself, and nothing here elevates: the file is saved, marked as
+ * downloaded from the internet, and handed to the OS to open — which is
+ * exactly what double-clicking a browser download does, with exactly the same
+ * checks. macOS Gatekeeper assesses the quarantined disk image when it is
+ * mounted; Windows SmartScreen vets the marked package when Explorer
+ * shell-executes it, and the install that follows asks for administrator
+ * through its own elevation, not ours. What this adds over the browser trip it
+ * replaces is a progress bar inside the app.
+ *
+ * It does mean a build gets this far without its digest being checked, so the
+ * OS prompt is load-bearing — see [HandoffSystem.open] on each platform. The
+ * install path proper ([PlatformInstaller]) checks the digest and the
+ * signature instead, and is preferred wherever Remote Config makes it
+ * possible; this is the fallback for when it cannot.
  *
  * Not [UpdateDownloader]: that one deletes every other file in its folder,
  * which is right for its private cache and ruinous in ~/Downloads.
@@ -92,9 +100,10 @@ class InstallerHandoff internal constructor(
      * Marks [file] as downloaded from the internet, then opens it.
      *
      * The quarantine mark is the point of doing it this way round: it is what
-     * makes macOS check the file before anything from it runs. A file the app
-     * wrote itself has none, and opening an unmarked installer would skip the
-     * check a browser download gets.
+     * makes macOS check the file before anything from it runs, and Windows put
+     * SmartScreen in front of the install. A file the app wrote itself has
+     * none, and opening an unmarked installer would skip the check a browser
+     * download gets.
      */
     fun handOver(file: File) {
         // Fail closed. An installer that could not be marked is one the OS
@@ -282,7 +291,10 @@ interface HandoffSystem {
      */
     fun quarantine(file: File): Boolean
 
-    /** Shows [file] to the person — opened where that is safe, revealed otherwise. */
+    /**
+     * Hands [file] to the person — opened where the OS checks it as it opens
+     * it, revealed otherwise. Never a path that skips those checks.
+     */
     fun open(file: File)
 
     companion object {
@@ -321,10 +333,24 @@ private object MacHandoff : HandoffSystem {
 }
 
 /**
- * Marked as from the Internet zone, then only revealed — never run.
+ * Marked as from the Internet zone, then started.
  *
- * On Windows "opening" an .msi or .exe starts it. The person starts it, from
- * Explorer, where SmartScreen checks the mark first.
+ * On Windows "opening" an .msi starts the install, and that is now the point:
+ * a download that only appears selected in Explorer leaves the person to find
+ * it and double-click, and they do not — "downloaded" reads as "installed"
+ * and they carry on with the old build.
+ *
+ * Started through Explorer rather than by running `msiexec` from here, because
+ * going through Explorer is a ShellExecute: it honours the Zone.Identifier
+ * mark [quarantine] just wrote, so SmartScreen vets the package and an
+ * unknown publisher still has to be confirmed. Nothing on this path has
+ * checked a digest — that is the install path's job, through
+ * [PlatformInstaller] — which makes that prompt the only thing between a
+ * swapped file on the CDN and an install. It must not be routed around.
+ *
+ * Explorer returns at once and reports nothing, so a package it could not
+ * start looks exactly like one it did: the file stays in Downloads and the
+ * strip keeps the button that opens it again.
  */
 private object WindowsHandoff : HandoffSystem {
     override fun quarantine(file: File): Boolean = runCatching {
@@ -334,10 +360,12 @@ private object WindowsHandoff : HandoffSystem {
     }.getOrDefault(false)
 
     override fun open(file: File) {
-        // Two arguments, not one: Java quotes any argument with a space in
-        // it, and Explorer does not recognise a quoted "/select,C:\…" — a
-        // path like "Zillit (2).msi" would open Documents instead.
-        run("explorer.exe", "/select,", file.absolutePath)
+        // The path on its own, as its own argument. Java quotes an argument
+        // with a space in it, which is what Explorer wants for a path it is
+        // to shell-execute — and was wrong for the "/select," this used to
+        // pass alongside it, which Explorer does not recognise quoted and
+        // answers by opening Documents.
+        run("explorer.exe", file.absolutePath)
     }
 }
 

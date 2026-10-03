@@ -58,11 +58,14 @@ class InAppUpdater(
      * opens it for the person to install — the path the update button takes
      * whenever [start] cannot, instead of sending them to a browser.
      *
-     * Never installs. Nothing here reaches [PlatformInstaller]: no disk image
-     * is mounted, nothing is copied into Applications, and nothing asks for an
-     * administrator. The downloaded file is marked as coming from the internet
-     * before it is opened, so the OS checks it exactly as it would a browser
-     * download. That is what makes it safe to offer without a checksum.
+     * Installs nothing itself. Nothing here reaches [PlatformInstaller]: this
+     * app is not replaced in place, no helper waits for it to quit, and
+     * nothing asks for an administrator on its behalf. What it does is open
+     * the file, having first marked it as coming from the internet, so the OS
+     * checks it exactly as it would a browser download the person
+     * double-clicked — on Windows that starts the installer, which elevates
+     * itself and reports to them, not to us. That equivalence is what makes it
+     * safe to offer without a checksum of our own.
      */
     fun downloadAndOpen(version: String, url: String) {
         val handoff = handoff ?: return

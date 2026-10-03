@@ -83,16 +83,38 @@ internal class WindowsInstaller(
         private fun powershell(vararg args: String) =
             listOf("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass") + args
 
-        /** Prints `Status|Subject`. The path is single-quoted, so only `'` needs escaping. */
+        /**
+         * Prints `Status|Subject`.
+         *
+         * Not one double quote anywhere in it, and that is load-bearing rather
+         * than a matter of taste. Java gives Windows a single command line, so
+         * it quotes this argument — it has spaces — and escapes any `"` inside
+         * it as `\"`. PowerShell's own parser reads that escape as the end of
+         * its string and stops with "The string is missing the terminator".
+         * The process exits 1, [signature] reads that as no signature at all,
+         * and every package is refused as unreadable, a correctly signed one
+         * included. It fails the same way for every file, so it cannot be
+         * mistaken for a problem with the package being installed.
+         *
+         * The `[string]` casts do the work `"" +` used to. They also take
+         * `$null` — an unsigned file has no `SignerCertificate` — where
+         * `$null.ToString()` would raise an error instead.
+         *
+         * The path is single-quoted, so only `'` needs escaping.
+         */
         fun signatureCommand(path: String): String {
             val quoted = "'" + path.replace("'", "''") + "'"
             return "\$s = Get-AuthenticodeSignature -LiteralPath $quoted; " +
-                "Write-Output (\"\" + \$s.Status + '|' + \$s.SignerCertificate.Subject)"
+                "Write-Output ([string]\$s.Status + '|' + [string]\$s.SignerCertificate.Subject)"
         }
 
         fun parseSignature(output: String): Signature? {
             val line = output.lineSequence().map { it.trim() }.lastOrNull { it.contains('|') } ?: return null
-            return Signature(status = line.substringBefore('|').trim(), subject = line.substringAfter('|').trim())
+            // A path PowerShell could not read prints its error and then a bare
+            // "|" — no status, no subject. That is unreadable, not a status of
+            // "" which would go on to be compared against "Valid".
+            val status = line.substringBefore('|').trim().ifEmpty { return null }
+            return Signature(status = status, subject = line.substringAfter('|').trim())
         }
 
         /**
@@ -106,8 +128,12 @@ internal class WindowsInstaller(
             |
             |try { Wait-Process -Id ${'$'}AppPid -Timeout 120 -ErrorAction SilentlyContinue } catch { }
             |
-            |${'$'}msiArgs = @('/i', '"' + ${'$'}Msi + '"', '/passive', '/norestart',
-            |    'INSTALLDIR="' + ${'$'}InstallDir.TrimEnd('\') + '"', '/l*v', '"' + ${'$'}Log + '"')
+            |# One formatted string, not an array of concatenations. Inside @(...)
+            |# PowerShell's comma binds tighter than +, so '"' + ${'$'}Msi + '"' is not
+            |# one quoted element but three — a lone ", the path, a lone ". msiexec
+            |# then reads the token after /l*v as the log path, finds ", cannot open
+            |# it, and stops with 1622 having installed nothing.
+            |${'$'}msiArgs = '/i "{0}" /passive /norestart INSTALLDIR="{1}" /l*v "{2}"' -f ${'$'}Msi, ${'$'}InstallDir.TrimEnd('\'), ${'$'}Log
             |try {
             |    ${'$'}p = Start-Process -FilePath 'msiexec.exe' -ArgumentList ${'$'}msiArgs -Verb RunAs -Wait -PassThru
             |    ${'$'}code = ${'$'}p.ExitCode

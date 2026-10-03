@@ -224,6 +224,43 @@ class InAppUpdateTest {
         assertTrue(command.contains("'C:\\Users\\O''Brien\\z.msi'"))
     }
 
+    /**
+     * The command reaches PowerShell as one Windows command line, which Java
+     * quotes because it contains spaces, escaping any `"` inside it as `\"`.
+     * PowerShell reads that escape as the end of its string and refuses to
+     * parse the line at all — so a single double quote here stops every update
+     * on Windows with "package signature is unreadable", whatever the package.
+     * Cheap to assert, and it caught this in production once.
+     */
+    @Test
+    fun `the signature command carries no double quote`() {
+        assertFalse('"' in WindowsInstaller.signatureCommand("C:\\Program Files\\Zillit-Desktop\\z.msi"))
+    }
+
+    /** PowerShell that could not read the file prints its error, then a bare `|`. */
+    @Test
+    fun `a file whose signature could not be read is unreadable, not a blank status`() {
+        assertNull(WindowsInstaller.parseSignature("Get-AuthenticodeSignature : File z.msi was not found.\r\n|\r\n"))
+    }
+
+    /**
+     * The helper's msiexec arguments must be one formatted string.
+     *
+     * Built as `@('/i', '"' + $Msi + '"', …)` they are not: inside an array
+     * literal PowerShell's comma binds tighter than `+`, so each quoted path
+     * becomes three elements — a lone `"`, the path, a lone `"`. msiexec then
+     * reads the token after `/l*v` as its log path, gets `"`, and exits 1622
+     * without installing anything. It fails identically every time, so it
+     * reads as "the installer opened and nothing happened".
+     */
+    @Test
+    fun `the helper passes msiexec one formatted argument string`() {
+        val formatted = """'/i "{0}" /passive /norestart INSTALLDIR="{1}" /l*v "{2}"' -f"""
+
+        assertTrue(formatted in WindowsInstaller.SCRIPT)
+        assertFalse("@('/i'" in WindowsInstaller.SCRIPT, "the array form splits each quoted path into three")
+    }
+
     private fun windows(incoming: String, ours: String): WindowsInstaller {
         val launcher = File(root, "Zillit-Desktop/Zillit-Desktop.exe")
         return WindowsInstaller(launcher, File(root, "work"), CommandRunner { command ->
