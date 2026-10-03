@@ -49,6 +49,9 @@ data class CallTile(
 
 private val ON_STAGE = setOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.InCall)
 
+/** Rows whose owner is in the channel, so whose stream a leftover uid can be. */
+private val IN_CHANNEL = setOf(CallStatus.Caller, CallStatus.InCall)
+
 /**
  * The stage's people, from the roster and the media stack together.
  *
@@ -90,13 +93,24 @@ fun buildTiles(
     val theOtherPerson = session.displayName
         .takeIf { session.mode == CallMode.Private && roster.size == 1 }
         .orEmpty()
+    val unclaimed = media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
+    // A 1:1 whose roster has no row for the other person at all, and one
+    // stream nobody claims: that stream IS them — there is nobody else it
+    // could be — so it wears the name on the call's own header, not "Guest".
+    val loneStranger = unclaimed.singleOrNull()
+        ?.takeIf { session.mode == CallMode.Private && roster.isEmpty() && session.displayName.isNotBlank() }
     return buildList {
         add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid, selfHand))
         roster.forEach {
             add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson, directory))
         }
-        media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
-            .forEach { add(guestTile(it, media)) }
+        unclaimed.forEach { uid ->
+            if (uid == loneStranger) {
+                add(guestTile(uid, media, session.displayName, session.displayUserId))
+            } else {
+                add(guestTile(uid, media))
+            }
+        }
     }
 }
 
@@ -126,7 +140,10 @@ private fun bindUids(
         return roster.associate { it.userId to mediasoupUidOf(it.userId) }
     }
     val known = roster.filter { it.numericUid != 0 }.associate { it.userId to it.numericUid }
-    val unbound = roster.filter { it.status == CallStatus.InCall && it.numericUid == 0 }
+    // The caller counts as in the channel: on an incoming call the other
+    // person's row reads `caller`, not `in_call`, and leaving them out of the
+    // pairing left their video an unclaimed stream — a face named "Guest".
+    val unbound = roster.filter { it.status in IN_CHANNEL && it.numericUid == 0 }
     val orphan = media.peers.keys.filter { it != selfUid && it !in known.values }
     return if (unbound.size == 1 && orphan.size == 1) {
         known + (unbound.first().userId to orphan.first())
@@ -211,11 +228,12 @@ private fun selfTile(
  * can simply be older than the channel. Their video is already on the stage,
  * so leaving them out would be a person on screen who does not exist in the UI.
  */
-private fun guestTile(uid: Int, media: CallMedia): CallTile {
+private fun guestTile(uid: Int, media: CallMedia, name: String = "", userId: String = ""): CallTile {
     val peer = media.peers.getValue(uid)
     return CallTile(
-        key = "uid:$uid",
-        name = UNNAMED,
+        key = userId.ifBlank { "uid:$uid" },
+        name = name.ifBlank { UNNAMED },
+        userId = userId,
         uid = uid,
         media = TileMedia(
             uid in media.speaking, peer.audioMuted, peer.videoOn, peer.sharing, peer.quality,

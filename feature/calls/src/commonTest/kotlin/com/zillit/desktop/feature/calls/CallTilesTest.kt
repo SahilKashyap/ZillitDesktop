@@ -84,6 +84,41 @@ class CallTilesTest {
         assertTrue(vivek.media?.audioMuted == true)
     }
 
+    /**
+     * An incoming Line 2 call: the other person's row reads `caller`, not
+     * `in_call`, and carries no agora_uid. Their stream must still bind to
+     * them — it used to fall through as an unclaimed stream named "Guest".
+     */
+    @Test
+    fun `on an incoming call the caller's row claims the one orphan stream`() {
+        val media = CallMedia(selfUid = 1, peers = mapOf(9 to MediaPeer(9)))
+        val tiles = buildTiles(
+            session(person("vivek", status = CallStatus.Caller, name = "Vivek Mishra")),
+            media, "Me", false, false,
+        )
+
+        assertEquals(listOf("Me", "Vivek Mishra"), tiles.map { it.name })
+        assertEquals(9, tiles.single { it.userId == "vivek" }.uid)
+    }
+
+    /** A 1:1 whose roster lacks the other person: the one stream is them, by the call's name. */
+    @Test
+    fun `a 1 to 1 stream with no roster row wears the caller's name`() {
+        val session = CallSession(
+            callUuid = "u1",
+            selfUserId = "me",
+            mode = CallMode.Private,
+            direction = CallDirection.Incoming,
+            callerUserId = "vivek",
+            callerName = "Vivek Mishra",
+        )
+        val tiles = buildTiles(session, CallMedia(selfUid = 1, peers = mapOf(9 to MediaPeer(9))), "Me", false, false)
+
+        val them = tiles.single { it.uid == 9 }
+        assertEquals("Vivek Mishra", them.name)
+        assertEquals("vivek", them.userId)
+    }
+
     @Test
     fun `two unbound rows and two orphan streams are never guessed at`() {
         val media = CallMedia(
