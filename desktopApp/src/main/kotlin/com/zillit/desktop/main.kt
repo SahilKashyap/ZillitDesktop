@@ -2564,7 +2564,7 @@ private fun chatProvider(
             )
         }
     },
-    callLog = calls?.let { { CallLogTab(ready, it) } },
+    callPanes = calls?.let { vm -> { rememberCallsPanes(ready, vm) } },
     // The Chats tab's "New group" and its message search — both straight off
     // the repository; the provider hides the affordances when absent.
     createRoom = { name, members -> ready.chatRepository.createRoom(name, members) },

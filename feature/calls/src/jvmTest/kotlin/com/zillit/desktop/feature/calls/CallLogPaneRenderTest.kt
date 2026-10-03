@@ -14,6 +14,9 @@ import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.ui.CallLogEvent
 import com.zillit.desktop.feature.calls.ui.CallLogPane
+import com.zillit.desktop.feature.calls.ui.CallLogSide
+import com.zillit.desktop.feature.calls.ui.callListStamp
+import kotlinx.datetime.TimeZone
 import com.zillit.desktop.feature.calls.ui.CallLogUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,5 +122,94 @@ class CallLogPaneRenderTest {
         onNodeWithText("Line 3").performClick()
         waitForIdle()
         assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.Three)), events)
+    }
+
+    /**
+     * WhatsApp's layout, with the side pane beside the list: a row click
+     * picks the call for the pane — it does not ring. Ringing is the pane's
+     * Call again, or the row's hover glyph.
+     */
+    @Test
+    fun `beside a side pane a row click picks the call instead of ringing`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        val row = entry("c1", CallLine.Two, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(row)),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    inlineDetail = true,
+                )
+            }
+        }
+
+        onNodeWithText("Aisha Khan").performClick()
+        waitForIdle()
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.ShowDetail(row)), events)
+        // No line menu opened: "Line 2" is the row's own word, once.
+        onAllNodesWithText("Line 2").assertCountEquals(1)
+    }
+
+    /** Nothing picked: the invitation, and Start call hands over to the host. */
+    @Test
+    fun `the side pane invites until a call is picked`() = runComposeUiTest {
+        var started = false
+        setContent {
+            ZillitTheme {
+                CallLogSide(
+                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.Two, "u1"))),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    onStartCall = { started = true },
+                )
+            }
+        }
+
+        onNodeWithText("Voice and video calling").assertExists()
+        onNodeWithText("Start call").performClick()
+        waitForIdle()
+        assertEquals(true, started)
+    }
+
+    /** A picked call: its info, and Call again asks which line before it rings. */
+    @Test
+    fun `a picked call shows its info and calls back on the chosen line`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        val row = entry("c1", CallLine.Two, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogSide(
+                    state = CallLogUiState(entries = listOf(row), detail = row),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    lines = CallLine.DEFAULT + CallLine.Three,
+                )
+            }
+        }
+
+        onNodeWithText("Call info").assertExists()
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Call again").performClick()
+        waitForIdle()
+        onNodeWithText("Line 3").performClick()
+        waitForIdle()
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.Three)), events)
+    }
+
+    /** The list's stamp, WhatsApp's: clock, Yesterday, the weekday, then a date. */
+    @Test
+    fun `the stamp reads clock, Yesterday, weekday, then date`() {
+        val zone = TimeZone.UTC
+        // 2026-08-12 (a Wednesday) at 03:56 UTC.
+        val day = 86_400_000L
+        assertEquals("03:56", callListStamp(now, now, zone))
+        assertEquals("Yesterday", callListStamp(now - day, now, zone))
+        assertEquals("Sunday", callListStamp(now - 3 * day, now, zone))
+        assertEquals("31 Jul", callListStamp(now - 12 * day, now, zone))
+        assertEquals("12 Aug 2025", callListStamp(now - 365 * day, now, zone))
     }
 }

@@ -213,22 +213,36 @@ fun ChatScreen(
         }
 
         if (createRoom != null) {
-            GroupEditorHost(
-                // Nobody puts themselves in the member list — the server
-                // adds the creator, as Android's picker leaves them out.
-                contacts = crew.filterNot { it.userId == selfId },
-                createRoom = createRoom,
-                visible = groupEditorOpen,
-                onDismiss = { groupEditorOpen = false },
-                onCreated = {
-                    groupEditorOpen = false
-                    // The same refresh the tab click rides: `rooms()` is
-                    // refetched and the new room takes its row.
-                    viewModel?.onEvent(ChatEvent.RefreshRecents)
-                },
-            )
+            NewGroupLayer(crew, selfId, createRoom, groupEditorOpen, viewModel) { groupEditorOpen = false }
         }
     }
+}
+
+/** The create-group dialog, over the whole screen. */
+@Composable
+@Suppress("LongParameterList") // The dialog's inputs, passed once.
+private fun NewGroupLayer(
+    crew: List<CrewContact>,
+    selfId: String?,
+    createRoom: suspend (name: String, memberIds: List<String>) -> ZillitResult<GroupRoom>,
+    visible: Boolean,
+    viewModel: ChatViewModel?,
+    onClose: () -> Unit,
+) {
+    GroupEditorHost(
+        // Nobody puts themselves in the member list — the server adds the
+        // creator, as Android's picker leaves them out.
+        contacts = crew.filterNot { it.userId == selfId },
+        createRoom = createRoom,
+        visible = visible,
+        onDismiss = onClose,
+        onCreated = {
+            onClose()
+            // The same refresh the tab click rides: `rooms()` is refetched
+            // and the new room takes its row.
+            viewModel?.onEvent(ChatEvent.RefreshRecents)
+        },
+    )
 }
 
 /**

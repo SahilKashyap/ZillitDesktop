@@ -141,8 +141,8 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
                 )
             }
         },
-        callLog = calls?.let { vm ->
-            { CallLogTab(this, vm, otherProjectId = project.id, otherUserId = meThere) }
+        callPanes = calls?.let { vm ->
+            { rememberCallsPanes(this, vm, otherProjectId = project.id, otherUserId = meThere) }
         },
         compact = true,
     )

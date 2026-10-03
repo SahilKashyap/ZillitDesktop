@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat
 
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
@@ -119,6 +120,31 @@ class ChatScreenRenderTest {
     }
 
     /**
+     * WhatsApp's Calls tab: the list in the directory column, told the side
+     * pane is beside it, and the side pane in place of the thread — whose
+     * Start call goes to Contacts.
+     */
+    @Test
+    fun `the Calls tab puts the list beside its side pane, and Start call opens Contacts`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew, loadAvatar = { null }, callPanes = { MarkerCalls })
+            }
+        }
+
+        onNodeWithText("calls-list").assertDoesNotExist()
+        onNodeWithText("Calls").performClick()
+        waitForIdle()
+        onNodeWithText("calls-list inline=true").assertExists()
+        onNodeWithText("calls-side").assertExists()
+
+        onNodeWithText("start").performClick()
+        waitForIdle()
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("calls-side").assertDoesNotExist()
+    }
+
+    /**
      * Android's pager order and landing page (`ChatAndCall.kt:81-140`): Chat,
      * Call, Contacts, opening on Chat. QA found the desktop opening on the
      * directory with Calls last.
@@ -127,7 +153,7 @@ class ChatScreenRenderTest {
     fun `the tabs run Chats, Calls, Contacts and open on Chats`() = runComposeUiTest {
         setContent {
             ZillitTheme {
-                ChatScreen(crew = crew, loadAvatar = { null }, callLog = {})
+                ChatScreen(crew = crew, loadAvatar = { null }, callPanes = { NoCalls })
             }
         }
 
@@ -596,5 +622,33 @@ private class StubChatRepository : ChatRepository {
     override suspend fun rooms(): ZillitResult<List<GroupRoom>> {
         roomsCalls++
         return ZillitResult.Success(roomsAnswer)
+    }
+}
+
+/** A Calls tab with nothing in it — the tab exists, its panes are blank. */
+private object NoCalls : com.zillit.desktop.feature.chat.ui.CallsPanes {
+    @androidx.compose.runtime.Composable
+    override fun List(inlineDetail: Boolean) = Unit
+
+    @androidx.compose.runtime.Composable
+    override fun Side(onStartCall: () -> Unit) = Unit
+}
+
+/** Panes that say where they were drawn, and a Start call to press. */
+private object MarkerCalls : com.zillit.desktop.feature.chat.ui.CallsPanes {
+    @androidx.compose.runtime.Composable
+    override fun List(inlineDetail: Boolean) {
+        androidx.compose.material3.Text("calls-list inline=$inlineDetail")
+    }
+
+    @androidx.compose.runtime.Composable
+    override fun Side(onStartCall: () -> Unit) {
+        androidx.compose.foundation.layout.Column {
+            androidx.compose.material3.Text("calls-side")
+            androidx.compose.material3.Text(
+                "start",
+                modifier = androidx.compose.ui.Modifier.clickable(onClick = onStartCall),
+            )
+        }
     }
 }

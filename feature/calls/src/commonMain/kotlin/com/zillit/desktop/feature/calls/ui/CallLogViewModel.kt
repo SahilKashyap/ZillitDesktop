@@ -419,6 +419,22 @@ fun callListStamp(
     }
 }
 
+/**
+ * The day a call belongs to, for the call info card's heading: "Today" where
+ * the list's stamp would be a clock — the card's own chips carry the time —
+ * and the list's day words otherwise.
+ */
+fun callDayLabel(
+    atMillis: Long,
+    nowMillis: Long,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): String {
+    if (atMillis <= 0) return ""
+    val day = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone).date
+    val today = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(zone).date
+    return if (day == today) str(S.today) else callListStamp(atMillis, nowMillis, zone)
+}
+
 /** Monday first, as [kotlinx.datetime.DayOfWeek] orders them. */
 private val WEEKDAY_KEYS = listOf(
     S.day_monday, S.day_tuesday, S.day_wednesday, S.day_thursday, S.day_friday, S.day_saturday, S.day_sunday,

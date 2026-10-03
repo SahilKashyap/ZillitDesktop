@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallLogPane
+import com.zillit.desktop.feature.calls.ui.CallLogSide
+import com.zillit.desktop.feature.chat.ui.CallsPanes
 import com.zillit.desktop.feature.calls.ui.CallLogViewModel
 import com.zillit.desktop.feature.calls.ui.OngoingCallsSource
 import com.zillit.desktop.feature.calls.ui.CallOverlay
@@ -250,7 +252,8 @@ internal fun decodeAvatar(bytes: ByteArray): ImageBitmap? =
 private const val AVATAR_MAX_SIDE = 384
 
 /**
- * The Calls tab inside Chat & Calls.
+ * The Calls tab inside Chat & Calls: the history list and the pane beside it,
+ * both over one [CallLogViewModel].
  *
  * Built here rather than in the chat tool because redialling is a calling
  * concern: the row knows a room or a device, and turning that into a ring is
@@ -259,23 +262,23 @@ private const val AVATAR_MAX_SIDE = 384
  * another's screen.
  */
 @Composable
-internal fun CallLogTab(
+internal fun rememberCallsPanes(
     ready: AppGraph.Ready,
     calls: CallViewModel,
     /** Another production's history — a widget showing one. Null is the open production's. */
     otherProjectId: String? = null,
     /** The reader's id ON [otherProjectId]. */
     otherUserId: String = "",
-) {
+): CallsPanes {
     val openProjectId = ready.projectContext?.context?.collectAsState()?.value?.project?.projectId
     val projectId = otherProjectId ?: openProjectId
+    val selfUserId: () -> String? = {
+        otherUserId.takeIf { it.isNotBlank() } ?: ready.projectContext?.context?.value?.profile?.userId
+    }
     val logs = remember(ready, projectId) {
         CallLogViewModel(
             api = ready.callApi,
-            selfUserId = {
-                otherUserId.takeIf { it.isNotBlank() }
-                    ?: ready.projectContext?.context?.value?.profile?.userId
-            },
+            selfUserId = selfUserId,
             nowMillis = System::currentTimeMillis,
             onRedial = { entry, line -> redialFromLog(ready, calls, entry, line, otherProjectId, otherUserId) },
             projectId = otherProjectId,
@@ -297,21 +300,44 @@ internal fun CallLogTab(
     LaunchedEffect(logs) {
         ready.callCoordinator.ended.collect { logs.onEvent(CallLogEvent.Refresh) }
     }
-    val state by logs.state.collectAsState()
-    CallLogPane(
-        state = state,
-        onEvent = logs::onEvent,
-        nameFor = { id -> crewNameOf(ready, id) },
-        // Read once per composition rather than per row, so every row in one
-        // frame decides "today" against the same instant.
-        nowMillis = remember(state.entries) { System.currentTimeMillis() },
-        // The same lines the thread header offers (`callLines`): the gated
-        // LiveKit line, Line 3, where the roll-out list names this production.
-        // DEFAULT already ends in the other two, so appending the wrong
-        // constant here listed one line twice and left the gated one off the
-        // Calls tab altogether.
-        lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT,
-    )
+    // The same lines the thread header offers (`callLines`): the gated
+    // LiveKit line, Line 3, where the roll-out list names this production.
+    // DEFAULT already ends in the other two, so appending the wrong constant
+    // here listed one line twice and left the gated one off the Calls tab.
+    val lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT
+    return remember(logs, lines) {
+        object : CallsPanes {
+            @Composable
+            override fun List(inlineDetail: Boolean) {
+                val state by logs.state.collectAsState()
+                CallLogPane(
+                    state = state,
+                    onEvent = logs::onEvent,
+                    nameFor = { id -> crewNameOf(ready, id) },
+                    // Read once per composition rather than per row, so every
+                    // row in one frame decides "today" against the same instant.
+                    nowMillis = remember(state.entries) { System.currentTimeMillis() },
+                    selfUserId = selfUserId(),
+                    lines = lines,
+                    inlineDetail = inlineDetail,
+                )
+            }
+
+            @Composable
+            override fun Side(onStartCall: () -> Unit) {
+                val state by logs.state.collectAsState()
+                CallLogSide(
+                    state = state,
+                    onEvent = logs::onEvent,
+                    nameFor = { id -> crewNameOf(ready, id) },
+                    nowMillis = remember(state.detail) { System.currentTimeMillis() },
+                    selfUserId = selfUserId(),
+                    lines = lines,
+                    onStartCall = onStartCall,
+                )
+            }
+        }
+    }
 }
 
 /**

@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -493,7 +494,7 @@ private fun CallLogRow(
                 .fillMaxWidth()
                 .background(
                     when {
-                        selected -> colors.surfaceSelected
+                        selected -> colors.rowSelected
                         hovered || pickingLine -> colors.surfaceHover
                         else -> colors.surface
                     },
@@ -704,6 +705,20 @@ private fun PaneNote(text: String) {
 /** The bars' grey — the chat tool's panel colour, so the two tabs match. */
 internal val com.zillit.desktop.core.designsystem.ZillitColors.panelGrey: androidx.compose.ui.graphics.Color
     get() = if (isDark) surfaceRaised else canvas
+
+/**
+ * The picked row: the light theme's selected tint, and in the dark a faint
+ * wash of the accent — the dark selected tint read as a brown bar. The chat
+ * listing's rule, so the two tabs agree.
+ */
+internal val com.zillit.desktop.core.designsystem.ZillitColors.rowSelected: androidx.compose.ui.graphics.Color
+    get() = if (isDark) {
+        accent.copy(alpha = SELECTED_DARK_ALPHA).compositeOver(surfaceRaised)
+    } else {
+        surfaceSelected
+    }
+
+private const val SELECTED_DARK_ALPHA = 0.1f
 
 /** Android's `delete_call_record` (`res/values/strings.xml:1267`). */
 internal val NO_RECORDS: String get() = str(S.delete_call_record)

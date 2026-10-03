@@ -111,7 +111,10 @@ private fun CallsInvitation(onStartCall: (() -> Unit)?) {
 @Composable
 private fun RoundAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
-        modifier = Modifier.clip(ZillitTheme.shapes.medium).clickable(onClick = onClick).padding(ZillitTheme.spacing.xs),
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(ZillitTheme.spacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
@@ -119,7 +122,12 @@ private fun RoundAction(icon: ImageVector, label: String, onClick: () -> Unit) {
             Modifier.size(ACTION_DISC).clip(CircleShape).background(ZillitTheme.colors.surface),
             contentAlignment = Alignment.Center,
         ) {
-            ZillitIcon(icon = icon, contentDescription = null, tint = ZillitTheme.colors.accentText, size = ACTION_GLYPH)
+            ZillitIcon(
+                icon = icon,
+                contentDescription = null,
+                tint = ZillitTheme.colors.accentText,
+                size = ACTION_GLYPH,
+            )
         }
         ZillitText(text = label, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textPrimary)
     }
@@ -205,15 +213,17 @@ private fun CallBack(entry: CallLogEntry, lines: List<CallLine>, onPick: (CallLi
 private fun CallCard(entry: CallLogEntry, nameFor: (String) -> String?, nowMillis: Long, selfUserId: String?) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            // Capped first, then filled: the other way round the fill wins and
+            // the card runs the pane's full width.
             .widthIn(max = CARD_MAX_WIDTH)
+            .fillMaxWidth()
             .clip(ZillitTheme.shapes.large)
             .background(ZillitTheme.colors.surface)
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = callListStamp(entry.startedAtMillis, nowMillis),
+            text = callDayLabel(entry.startedAtMillis, nowMillis),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
