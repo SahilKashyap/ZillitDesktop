@@ -309,7 +309,7 @@
 
     function buildCell(model, tileW, tileH, disc) {
         const tile = document.createElement('div');
-        tile.className = 'tile' + (model.ringing ? ' idle' : '');
+        tile.className = 'tile' + (model.ringing ? ' idle' : '') + (model.camOff ? ' camoff' : '');
         tile.style.width = tileW + 'px';
         tile.style.height = tileH + 'px';
         // The camera-off tile is washed in the person's own colour with a white
@@ -506,6 +506,8 @@
         cells.forEach((cell, uid) => {
             const track = videoTracks.get(uid);
             if (!track) { return; }
+            // Camera off: their picture, not the last frame the track holds.
+            if (cell.model.camOff) { return; }
             if (playingIn.get(uid) === cell.mount) { return; }
             track.play(cell.mount);
             playingIn.set(uid, cell.mount);
@@ -939,6 +941,10 @@
             if (entry.kind !== 'video') { return; }
             const cell = line1Tile(entry.peerId);
             if (!cell) { report.push('no tile for ' + entry.peerId); return; }
+            // A camera turned off is a muted (LiveKit) or paused (mediasoup)
+            // track, and either still shows its last frame: keep it out and
+            // the tile shows their picture. A shared screen still mounts.
+            if (cell.model.camOff && !entry.share) { report.push('camera off ' + entry.peerId); return; }
             const held = chosen.get(cell);
             // Later entries win ties: the map iterates oldest first, and the
             // oldest was once a dead track from the previous call, mounted over

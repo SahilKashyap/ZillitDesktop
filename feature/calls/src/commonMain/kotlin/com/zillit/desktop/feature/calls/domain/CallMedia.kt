@@ -40,6 +40,12 @@ data class MediaPeer(
     val videoOn: Boolean = false,
     val sharing: Boolean = false,
     val quality: LinkQuality = LinkQuality.Unknown,
+    /**
+     * The line SAID their camera is off — distinct from [videoOn] being false,
+     * which is also simply "no report yet". Only this hides their video, so a
+     * stream whose "on" was never reported keeps showing, as it always did.
+     */
+    val cameraOff: Boolean = false,
 )
 
 /**
@@ -75,7 +81,8 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.PeerJoined -> withPeer(event.uid) { it }
     is CallEngineEvent.PeerLeft -> copy(peers = peers - event.uid, speaking = speaking - event.uid)
     is CallEngineEvent.PeerAudioMuted -> withPeer(event.uid) { it.copy(audioMuted = event.muted) }
-    is CallEngineEvent.PeerVideoMuted -> withPeer(event.uid) { it.copy(videoOn = !event.muted) }
+    is CallEngineEvent.PeerVideoMuted ->
+        withPeer(event.uid) { it.copy(videoOn = !event.muted, cameraOff = event.muted) }
     // A chat line changes nobody's media; the coordinator carries it to the panel.
     is CallEngineEvent.ChatReceived -> this
     is CallEngineEvent.PeerScreenShare -> withPeer(event.uid) { it.copy(sharing = event.sharing) }

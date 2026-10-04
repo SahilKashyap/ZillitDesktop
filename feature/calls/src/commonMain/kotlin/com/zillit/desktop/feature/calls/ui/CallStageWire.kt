@@ -56,6 +56,15 @@ fun stageJson(tiles: List<CallTile>, columns: Int, pins: List<String> = emptyLis
                 // fallback, as the web's `colorOf` uses when its map misses.
                 put("hue", hex(colours[tile.key] ?: CallTileColors.of(tile.name)))
                 put("muted", tile.media?.audioMuted ?: false)
+                // Their camera is off, as the line reported it (Agora's
+                // unpublish, LiveKit's track mute, mediasoup's consumerPaused).
+                // The page keeps their video out of the tile while it is: a
+                // muted or paused track still holds its last frame, and that
+                // frozen face sat where their picture belonged. Only a KNOWN
+                // off — an unreported stream is never hidden — and never while
+                // they share a screen, which rides the same tile. Our own
+                // preview follows the button instead.
+                put("camOff", !tile.isSelf && tile.media?.let { it.cameraOff && !it.sharing } == true)
                 put("known", tile.media != null)
                 put("ringing", tile.presence == CallStatus.Ringing)
                 put("hand", tile.hand)

@@ -19,6 +19,8 @@ data class TileMedia(
     val videoOn: Boolean = false,
     val sharing: Boolean = false,
     val quality: LinkQuality = LinkQuality.Unknown,
+    /** Their camera is reported off — see [MediaPeer.cameraOff]. */
+    val cameraOff: Boolean = false,
 )
 
 /**
@@ -183,7 +185,10 @@ private fun rosterTile(
         presence = person.status,
         // peers never holds uid 0, so an unmapped row falls out as null here.
         media = media.peers[uid]?.let {
-            TileMedia(uid in media.speaking, it.audioMuted, it.videoOn, it.sharing, it.quality)
+            TileMedia(
+                uid in media.speaking, it.audioMuted, it.videoOn, it.sharing, it.quality,
+                cameraOff = it.cameraOff,
+            )
         },
         hand = person.handRaised,
         onHold = person.onHold && person.status.isConnected,
@@ -237,6 +242,7 @@ private fun guestTile(uid: Int, media: CallMedia, name: String = "", userId: Str
         uid = uid,
         media = TileMedia(
             uid in media.speaking, peer.audioMuted, peer.videoOn, peer.sharing, peer.quality,
+            cameraOff = peer.cameraOff,
         ),
     )
 }
