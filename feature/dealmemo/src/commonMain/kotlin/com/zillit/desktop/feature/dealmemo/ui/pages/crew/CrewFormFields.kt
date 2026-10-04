@@ -2,8 +2,6 @@ package com.zillit.desktop.feature.dealmemo.ui.pages.crew
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,8 +34,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -48,19 +44,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitInitialsTile
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.MemoFormat
+import com.zillit.desktop.feature.dealmemo.ui.components.DmSelectField
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
-import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
-import com.zillit.desktop.feature.dealmemo.ui.pages.preview.shadowed
-import com.zillit.desktop.feature.dealmemo.ui.pages.rules.BelowStartPosition
 
 /** A section card (`Card` with the wizard's `cardCls`): an optional titled header with its tag, then the body. */
 @Composable
@@ -319,6 +311,11 @@ internal fun LabelledSelect(
     }
 }
 
+/**
+ * `W.sel` over (value, label) pairs, in the app's one select style. The `""`
+ * row is the placeholder: the field reads it muted while nothing is chosen,
+ * and it is never ticked. A value no pair holds is shown as it is stored.
+ */
 @Composable
 internal fun FormSelect(
     value: String,
@@ -329,90 +326,27 @@ internal fun FormSelect(
     menuWidth: Dp = 280.dp,
     textSize: Float = 13.5f,
 ) {
-    val p = cp
-    var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(RADIUS)
-    val shown = options.firstOrNull { it.first == value }?.second ?: value
-    Box(modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRing(open, RADIUS, p.amber)
-                .height(height)
-                .clip(shape)
-                .background(p.inputBg)
-                .border(1.dp, if (open) p.focusBorder else p.inputBorder, shape)
-                .clickable { open = !open }
-                .pointerHoverIcon(PointerIcon.Hand)
-                .padding(start = 14.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitText(
-                text = shown,
-                style = DmType.sans(textSize.sp, FontWeight.SemiBold),
-                color = if (value.isEmpty()) p.muted else p.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitIcon(ZillitIcons.ChevronDown, size = 11.dp, tint = p.muted)
-        }
-        if (open) {
-            Popup(
-                popupPositionProvider = remember { BelowStartPosition(gap = 6) },
-                onDismissRequest = { open = false },
-                properties = PopupProperties(focusable = true),
-            ) {
-                val menuShape = RoundedCornerShape(12.dp)
-                Column(
-                    modifier = Modifier
-                        .width(menuWidth)
-                        .shadowed(menuShape)
-                        .clip(menuShape)
-                        .background(p.menu)
-                        .border(1.dp, p.pickerBorder, menuShape)
-                        .padding(5.dp),
-                ) {
-                    options.forEach { (optionValue, optionLabel) ->
-                        MenuRow(optionLabel, optionValue == value, muted = optionValue.isEmpty()) {
-                            open = false
-                            onPick(optionValue)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MenuRow(label: String, selected: Boolean, muted: Boolean, onClick: () -> Unit) {
-    val p = cp
-    val (source, hovered) = rememberHover()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(
-                when {
-                    selected && !muted -> p.selected
-                    hovered -> p.hover
-                    else -> Color.Transparent
-                },
-            )
-            .hoverable(source)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .pointerHoverIcon(PointerIcon.Hand)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitText(
-            text = label,
-            style = DmType.sans(13.sp, if (selected && !muted) FontWeight.SemiBold else FontWeight.Medium),
-            color = if (muted) p.muted else p.ink,
-            modifier = Modifier.weight(1f),
+    DmSelectField(
+        shown = value.takeIf { it.isNotEmpty() }?.let { v -> options.firstOrNull { it.first == v }?.second ?: v },
+        placeholder = options.firstOrNull { it.first.isEmpty() }?.second.orEmpty(),
+        modifier = modifier,
+        height = height,
+        textSize = textSize,
+        minListWidth = menuWidth,
+    ) { width, close ->
+        ZillitOptionPopup(
+            onDismiss = close,
+            options = options,
+            isSelected = { it.first.isNotEmpty() && it.first == value },
+            onPick = {
+                close()
+                onPick(it.first)
+            },
+            label = { it.second },
+            width = width,
+            // The placeholder row keeps the tile's space but draws none.
+            optionLeading = { ZillitInitialsTile(if (it.first.isEmpty()) "" else it.second) },
         )
-        if (selected && !muted) ZillitIcon(ZillitIcons.Check, size = 12.dp, tint = p.amber)
     }
 }
 

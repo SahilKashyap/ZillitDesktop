@@ -2,74 +2,37 @@ package com.zillit.desktop.feature.dealmemo.ui.pages.builder
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitInitialsTile
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.PayloadParts
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealAddress
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealCountry
+import com.zillit.desktop.feature.dealmemo.ui.components.DmSelectField
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
-import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.CountryPicker
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.CountryRowStyle
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.DateInput
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.isoFromStoredCode
-import com.zillit.desktop.feature.dealmemo.ui.pages.preview.shadowed
-import com.zillit.desktop.feature.dealmemo.ui.pages.rules.BelowStartPosition
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonPrimitive
@@ -86,11 +49,14 @@ internal data class PickOption(
 )
 
 /**
- * `RichSelect`: a trigger showing the chosen option, and a searchable,
- * keyboard-driven list under it — a fixed-height lazy list, since a lazy list
- * in a popup crashes on its intrinsics otherwise.
+ * `RichSelect`: a field showing the chosen option — or [triggerText], which
+ * the field reads in its place, even for a key the options no longer hold —
+ * over the app's one searchable select list. [leading] marks the field while
+ * something is shown; [rowLeading] replaces each row's initials tile; a
+ * disabled option is greyed and cannot be picked. A list with any [PickOption.badge]
+ * draws its own rows so the chip sits beside the label.
  */
-@Suppress("CyclomaticComplexMethod", "LongMethod")
+@Suppress("LongParameterList")
 @Composable
 internal fun RichSelect(
     options: List<PickOption>,
@@ -107,279 +73,71 @@ internal fun RichSelect(
     leading: (@Composable () -> Unit)? = null,
     rowLeading: (@Composable (PickOption) -> Unit)? = null,
 ) {
-    val p = bp
-    var open by remember { mutableStateOf(false) }
-    val selected = options.firstOrNull { it.key == selectedKey }
-    val shown = triggerText ?: selected?.label
-    val shape = RoundedCornerShape(RADIUS)
-    Box(modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(if (enabled) 1f else DISABLED)
-                .focusRingBuilder(open, p.cta)
-                .height(height)
-                .clip(shape)
-                .background(p.inputBg)
-                .border(
-                    1.dp,
-                    when {
-                        error -> p.red
-                        open -> p.focusBorder
-                        else -> p.inputBorder
-                    },
-                    shape,
-                )
-                .then(if (enabled) Modifier.clickable { open = !open }.pointerHoverIcon(PointerIcon.Hand) else Modifier)
-                .padding(start = 10.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            if (shown != null) leading?.invoke()
-            ZillitText(
-                text = shown ?: placeholder,
-                style = DmType.sans(14.sp, FontWeight.Normal),
-                color = if (shown == null) p.placeholder else p.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (clearable && shown != null && enabled) {
-                Box(
-                    modifier = Modifier.size(18.dp).clip(CircleShape).background(p.menuHover).clickable {
-                        onPick(null)
-                    },
-                    contentAlignment = Alignment.Center,
-                ) { ZillitIcon(ZillitIcons.Close, size = 9.dp, tint = p.muted) }
-            }
-            ZillitIcon(
-                ZillitIcons.ChevronDown,
-                size = 11.dp,
-                tint = p.muted,
-                modifier = Modifier.rotate(if (open) HALF_TURN else 0f),
-            )
-        }
-        if (open) {
-            Popup(
-                popupPositionProvider = remember { BelowStartPosition(gap = 8) },
-                onDismissRequest = { open = false },
-                properties = PopupProperties(focusable = true),
-            ) {
-                PickPanel(
-                    options = options,
-                    selectedKey = selectedKey,
-                    width = dropdownWidth,
-                    onPick = {
-                        open = false
-                        onPick(it.key)
-                    },
-                    onClose = { open = false },
-                    rowLeading = rowLeading,
-                )
-            }
-        }
+    val shown = triggerText ?: options.firstOrNull { it.key == selectedKey }?.label
+    val badged = options.any { it.badge != null }
+    DmSelectField(
+        shown = shown,
+        placeholder = placeholder,
+        modifier = modifier,
+        enabled = enabled,
+        error = error,
+        height = height,
+        minListWidth = dropdownWidth,
+        onClear = if (clearable) ({ onPick(null) }) else null,
+        leading = leading,
+    ) { width, close ->
+        ZillitOptionPopup(
+            onDismiss = close,
+            options = options,
+            isSelected = { it.key == selectedKey },
+            onPick = {
+                close()
+                onPick(it.key)
+            },
+            label = { it.label },
+            width = width,
+            searchable = true,
+            searchPlaceholder = str(S.dm_picker_search_hint),
+            searchText = { it.search },
+            subtitle = { it.sub },
+            optionLeading = rowLeading,
+            renderOption = if (badged) ({ option, selected -> BadgedRow(option, selected, rowLeading) }) else null,
+            isEnabled = { !it.disabled },
+        )
     }
 }
 
-@Suppress("LongMethod")
+/**
+ * A row of a list that carries badges: the shared row's own parts — the
+ * leading tile, the label, the muted second line — with the chip beside the label.
+ */
 @Composable
-private fun PickPanel(
-    options: List<PickOption>,
-    selectedKey: String?,
-    width: Dp,
-    onPick: (PickOption) -> Unit,
-    onClose: () -> Unit,
-    rowLeading: (@Composable (PickOption) -> Unit)?,
-) {
-    val p = bp
-    var query by remember { mutableStateOf("") }
-    val matches = remember(options, query) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) options else options.filter { q in it.search.lowercase() }
-    }
-    var highlight by remember(matches) {
-        mutableIntStateOf(matches.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0))
-    }
-    val listState = rememberLazyListState()
-    LaunchedEffect(highlight, matches) {
-        if (matches.isNotEmpty()) listState.animateScrollToItem((highlight - 2).coerceAtLeast(0))
-    }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    val shape = RoundedCornerShape(15.dp)
-    val rowHeight = if (options.any { it.sub != null }) RICH_ROW else PLAIN_ROW
-    Column(
-        modifier = Modifier
-            .width(width)
-            .shadowed(shape)
-            .clip(shape)
-            .background(p.menu)
-            .border(1.dp, p.menuBorder, shape),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitIcon(ZillitIcons.Search, size = 15.dp, tint = p.muted)
-            Spacer(Modifier.width(10.dp))
-            Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) ZillitText(
-                    text = str(S.dm_picker_search_hint),
-                    style = DmType.sans(13.5.sp),
-                    color = p.placeholder,
+private fun BadgedRow(option: PickOption, selected: Boolean, leading: (@Composable (PickOption) -> Unit)?) {
+    val colors = ZillitTheme.colors
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (leading != null) leading(option) else ZillitInitialsTile(option.label)
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ZillitText(
+                    text = option.label,
+                    style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (selected) colors.accentText else colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    textStyle = DmType.sans(13.5.sp, FontWeight.Medium).copy(color = p.ink),
-                    cursorBrush = SolidColor(p.cta),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focus)
-                        .onPreviewKeyEvent { event ->
-                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                            when (event.key) {
-                                Key.DirectionDown -> {
-                                    highlight = (highlight + 1).coerceAtMost(matches.lastIndex.coerceAtLeast(0))
-                                    true
-                                }
-                                Key.DirectionUp -> {
-                                    highlight = (highlight - 1).coerceAtLeast(0)
-                                    true
-                                }
-                                Key.Enter, Key.NumPadEnter -> {
-                                    matches.getOrNull(highlight)?.takeUnless { it.disabled }?.let(onPick)
-                                    true
-                                }
-                                Key.Escape -> {
-                                    onClose()
-                                    true
-                                }
-                                else -> false
-                            }
-                        },
+                option.badge?.let { PickBadge(it) }
+            }
+            option.sub?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(
+                    text = it,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        Rule(p.menuDivider)
-        if (matches.isEmpty()) {
-            ZillitText(
-                text = str(S.dm_empty_search, query),
-                style = DmType.sans(13.sp),
-                color = p.muted,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 28.dp),
-            )
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxWidth().height((matches.size.coerceAtMost(MAX_VISIBLE) * rowHeight).dp),
-            ) {
-                itemsIndexed(matches, key = { _, option -> option.key }) { index, option ->
-                    PickRow(
-                        option = option,
-                        height = rowHeight.dp,
-                        selected = option.key == selectedKey,
-                        highlighted = index == highlight,
-                        onClick = { if (!option.disabled) onPick(option) },
-                        leading = rowLeading,
-                    )
-                }
-            }
-        }
-        Rule(p.menuDivider)
-        Row(
-            modifier = Modifier.fillMaxWidth().background(p.menuHover).padding(horizontal = 18.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitText(text = "${matches.size}", style = DmType.mono(11.sp, FontWeight.Bold), color = p.ink2)
-            ZillitText(
-                text = " " + if (matches.size == 1) str(S.desktop_dm_one_option_suffix) else str(
-                    S.desktop_dm_options_suffix,
-                ),
-                style = DmType.sans(11.sp),
-                color = p.muted,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitText(
-                text = str(S.desktop_dm_keys_navigate_select_hint),
-                style = DmType.sans(10.5.sp),
-                color = p.muted,
-            )
-        }
-    }
-}
-
-@Suppress("LongMethod")
-@Composable
-private fun PickRow(
-    option: PickOption,
-    height: Dp,
-    selected: Boolean,
-    highlighted: Boolean,
-    onClick: () -> Unit,
-    leading: (@Composable (PickOption) -> Unit)?,
-) {
-    val p = bp
-    val (source, hovered) = rememberHover()
-    Column(Modifier.fillMaxWidth().height(height)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .alpha(if (option.disabled) DISABLED else 1f)
-                .background(
-                    when {
-                        selected -> p.menuSelected
-                        highlighted || hovered -> p.menuHover
-                        else -> Color.Transparent
-                    },
-                )
-                .hoverable(source)
-                .clickable(interactionSource = source, indication = null, onClick = onClick)
-                .pointerHoverIcon(if (option.disabled) PointerIcon.Default else PointerIcon.Hand),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.width(3.dp).fillMaxHeight().background(if (selected) p.cta else Color.Transparent))
-            Row(
-                modifier = Modifier.weight(1f).padding(start = 11.dp, end = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                leading?.invoke(option)
-                Column(Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        ZillitText(
-                            text = option.label,
-                            style = DmType.sans(13.5.sp, FontWeight.Bold),
-                            color = p.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        option.badge?.let { PickBadge(it) }
-                    }
-                    option.sub?.let {
-                        ZillitText(
-                            text = it,
-                            style = DmType.sans(12.sp),
-                            color = p.muted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (selected) {
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(p.cta), contentAlignment = Alignment.Center) {
-                        ZillitIcon(ZillitIcons.Check, size = 12.dp, tint = Color.White)
-                    }
-                }
-            }
-        }
-        Rule(p.menuDivider)
     }
 }
 
@@ -395,8 +153,12 @@ private fun PickBadge(text: String) {
     ) { ZillitText(text = text.uppercase(), style = DmType.sans(9.5.sp, FontWeight.Bold), color = p.cta, maxLines = 1) }
 }
 
-/** `W.sel`: a native select — a first "none" row, then the options; retired options show, disabled. */
-@Suppress("LongMethod")
+/**
+ * `W.sel`: a native select — a first "none" row ([placeholder], key `""`),
+ * then the options; retired options show, greyed and unpickable. A value no
+ * option holds is shown as it is stored.
+ */
+@Suppress("LongParameterList")
 @Composable
 internal fun NativeSelect(
     value: String,
@@ -410,104 +172,33 @@ internal fun NativeSelect(
     menuWidth: Dp? = null,
     textSize: Float = 14f,
 ) {
-    val p = bp
-    var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(RADIUS)
     val rows = listOfNotNull(placeholder?.let { PickOption("", it) }) + options
-    val shown = rows.firstOrNull { it.key == value }?.label ?: value
-    Box(modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(if (enabled) 1f else DISABLED)
-                .focusRingBuilder(open, p.cta)
-                .height(height)
-                .clip(shape)
-                .background(p.inputBg)
-                .border(
-                    1.dp,
-                    when {
-                        error -> p.red
-                        open -> p.focusBorder
-                        else -> p.inputBorder
-                    },
-                    shape,
-                )
-                .then(if (enabled) Modifier.clickable { open = !open }.pointerHoverIcon(PointerIcon.Hand) else Modifier)
-                .padding(start = 12.dp, end = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitText(
-                text = shown,
-                style = DmType.sans(textSize.sp, FontWeight.SemiBold),
-                color = if (value.isEmpty() && placeholder != null) p.muted else p.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitIcon(ZillitIcons.ChevronDown, size = 11.dp, tint = p.muted)
-        }
-        if (open) {
-            Popup(
-                popupPositionProvider = remember { BelowStartPosition(gap = 6) },
-                onDismissRequest = { open = false },
-                properties = PopupProperties(focusable = true),
-            ) {
-                val menuShape = RoundedCornerShape(12.dp)
-                Column(
-                    modifier = Modifier
-                        .then(if (menuWidth != null) Modifier.width(menuWidth) else Modifier.width(MENU_MIN))
-                        .heightIn(max = MENU_MAX)
-                        .shadowed(menuShape)
-                        .clip(menuShape)
-                        .background(p.menu)
-                        .border(1.dp, p.menuBorder, menuShape)
-                        .verticalScroll(rememberScrollState())
-                        .padding(5.dp),
-                ) {
-                    rows.forEach { option ->
-                        MenuRow(option, option.key == value) {
-                            if (!option.disabled) {
-                                open = false
-                                onPick(option.key)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MenuRow(option: PickOption, selected: Boolean, onClick: () -> Unit) {
-    val p = bp
-    val (source, hovered) = rememberHover()
-    val muted = option.key.isEmpty() || option.disabled
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(
-                when {
-                    selected && option.key.isNotEmpty() -> p.menuSelected
-                    hovered && !option.disabled -> p.menuHover
-                    else -> Color.Transparent
-                },
-            )
-            .hoverable(source)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .pointerHoverIcon(if (option.disabled) PointerIcon.Default else PointerIcon.Hand)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitText(
-            text = option.label,
-            style = DmType.sans(13.sp, if (selected && !muted) FontWeight.SemiBold else FontWeight.Medium),
-            color = if (muted) p.muted else p.ink,
-            modifier = Modifier.weight(1f),
+    val label = rows.firstOrNull { it.key == value }?.label ?: value
+    DmSelectField(
+        shown = if (value.isEmpty() && placeholder != null) null else label,
+        placeholder = placeholder.orEmpty(),
+        modifier = modifier,
+        enabled = enabled,
+        error = error,
+        height = height,
+        textSize = textSize,
+        minListWidth = menuWidth ?: MENU_MIN,
+    ) { width, close ->
+        ZillitOptionPopup(
+            onDismiss = close,
+            options = rows,
+            // The "none" row is never ticked, as the native select's own.
+            isSelected = { it.key.isNotEmpty() && it.key == value },
+            onPick = {
+                close()
+                onPick(it.key)
+            },
+            label = { it.label },
+            width = width,
+            isEnabled = { !it.disabled },
+            // The "none" row keeps the tile's space but draws none.
+            optionLeading = { ZillitInitialsTile(if (it.key.isEmpty()) "" else it.label) },
         )
-        if (selected && option.key.isNotEmpty()) ZillitIcon(ZillitIcons.Check, size = 12.dp, tint = p.cta)
     }
 }
 
@@ -592,7 +283,6 @@ internal fun AddressFields(
                     rowStyle = CountryRowStyle.Name,
                     height = CONTROL_HEIGHT,
                     textSize = 14f,
-                    radius = RADIUS,
                     enabled = enabled,
                 )
             }
@@ -663,7 +353,6 @@ internal fun PhoneFields(
                 modifier = Modifier.width(130.dp),
                 height = CONTROL_HEIGHT,
                 textSize = 13f,
-                radius = RADIUS,
             )
             BuilderInput(
                 value = number,
@@ -677,10 +366,4 @@ internal fun PhoneFields(
     }
 }
 
-private const val DISABLED = 0.5f
-private const val HALF_TURN = 180f
-private const val MAX_VISIBLE = 7
-private const val PLAIN_ROW = 44
-private const val RICH_ROW = 56
 private val MENU_MIN = 240.dp
-private val MENU_MAX = 320.dp

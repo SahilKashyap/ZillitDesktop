@@ -5,14 +5,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,11 +26,13 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -43,7 +43,6 @@ import com.zillit.desktop.feature.dealmemo.domain.rules.RuleTemplate
 import com.zillit.desktop.feature.dealmemo.domain.rules.TriggerField
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.pages.preview.CoaCodeField
-import com.zillit.desktop.feature.dealmemo.ui.pages.preview.shadowed
 import com.zillit.desktop.feature.dealmemo.ui.preview.CoaState
 
 private const val CUSTOM = "__custom__"
@@ -291,8 +290,11 @@ private fun IncrementCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
     )
 }
 
-/** The day kinds a premium fires on — "Any of…" until some are ticked. */
-@Suppress("LongMethod")
+/**
+ * The day kinds a premium fires on — "Any of…" until some are ticked. The
+ * cell is the grid's own; its list is the app's one multi-select list, which
+ * stays open while kinds are toggled.
+ */
 @Composable
 private fun DayKindsCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
     var open by remember { mutableStateOf(false) }
@@ -300,7 +302,8 @@ private fun DayKindsCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
     val label = kinds.joinToString(", ") { kind ->
         RuleOptions.DAY_KINDS.firstOrNull { it.first == kind }?.second ?: kind
     }
-    Box(Modifier.fillMaxWidth()) {
+    val anchor = rememberZillitSelectAnchor()
+    Box(Modifier.fillMaxWidth().zillitSelectAnchor(anchor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -322,42 +325,28 @@ private fun DayKindsCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
             ZillitIcon(ZillitIcons.ChevronDown, size = 11.dp, tint = rp.ink3)
         }
         if (open) {
-            Popup(
-                popupPositionProvider = remember { BelowStartPosition(gap = 4) },
-                onDismissRequest = { open = false },
-                properties = PopupProperties(focusable = true),
-            ) {
-                val shape = RoundedCornerShape(10.dp)
-                Column(
-                    modifier = Modifier
-                        .widthIn(min = 190.dp)
-                        .shadowed(shape)
-                        .clip(shape)
-                        .background(rp.surface)
-                        .border(1.dp, rp.border, shape)
-                        .padding(5.dp),
-                ) {
-                    RuleOptions.DAY_KINDS.forEach { (value, name) ->
-                        val on = value in kinds
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    val next = if (on) kinds - value else kinds + value
-                                    patch(row.copy(form = row.form.copy(dayKinds = next)))
-                                }
-                                .pointerHoverIcon(PointerIcon.Hand)
-                                .padding(horizontal = 9.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(9.dp),
-                        ) {
-                            CheckBox(checked = on, onToggle = null)
-                            ZillitText(text = name, style = DmType.sans(12.5.sp), color = rp.ink)
-                        }
-                    }
-                }
-            }
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = RuleOptions.DAY_KINDS,
+                isSelected = { it.first in kinds },
+                onPick = { (value, _) ->
+                    val next = if (value in kinds) kinds - value else kinds + value
+                    patch(row.copy(form = row.form.copy(dayKinds = next)))
+                },
+                label = { it.second },
+                width = anchor.popupWidth(),
+                footer = { shown ->
+                    str(
+                        if (shown == 1) {
+                            S.desktop_multiselect_option_count_one
+                        } else {
+                            S.desktop_multiselect_option_count_other
+                        },
+                        shown,
+                        kinds.size,
+                    )
+                },
+            )
         }
     }
 }

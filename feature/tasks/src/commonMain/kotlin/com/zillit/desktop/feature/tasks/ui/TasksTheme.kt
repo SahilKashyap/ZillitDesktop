@@ -14,17 +14,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -51,8 +48,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -308,8 +309,9 @@ internal data class Pick(val id: String, val label: String, val subtitle: String
 
 /**
  * The crew and department pickers: a ghost button showing the choice (with an
- * avatar or a department dot), opening a searchable list. [compact] is the
- * bordered 36dp form of the Board's toolbar.
+ * avatar or a department dot), opening the app's shared searchable list.
+ * [compact] is the bordered 36dp form of the Board's toolbar. The "nothing
+ * chosen" row ([emptyLabel]) leads the list and drops out once a search is typed.
  */
 @Composable
 internal fun TPicker(
@@ -320,19 +322,19 @@ internal fun TPicker(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     enabled: Boolean = true,
-    searchHint: String = str(S.dd_history_sender_picker_search_hint),
     avatars: Boolean = false,
+    searchHint: String = str(S.dd_history_sender_picker_search_hint),
 ) {
     val k = TasksTheme.c
     var open by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
     val none = Pick("", emptyLabel)
     val chosen = picks.firstOrNull { it.id == (value ?: "") } ?: none
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(if (compact) 8.dp else 6.dp)
+    val anchor = rememberZillitSelectAnchor()
 
-    Box(modifier) {
+    Box(modifier.zillitSelectAnchor(anchor)) {
         Row(
             Modifier
                 .height(if (compact) 36.dp else 34.dp)
@@ -353,51 +355,29 @@ internal fun TPicker(
             TText(chosen.label, 14, color = if (chosen.id.isEmpty()) k.faint else k.fg, maxLines = 1, modifier = Modifier.widthIn(max = 220.dp))
             ZillitIcon(ZillitIcons.ChevronDown, tint = k.faint, size = 14.dp)
         }
-        ZillitMenuSurface(expanded = open, onDismissRequest = { open = false; query = "" }) {
-            Column(Modifier.width(300.dp)) {
-                TInput(
-                    value = query,
-                    onChange = { query = it },
-                    placeholder = searchHint,
-                    style = txt(13),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-                Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
-                val words = query.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
-                val shown = (listOf(none) + picks).filter { p ->
-                    p.id.isEmpty() && words.isEmpty() || p.id.isNotEmpty() && words.all { w -> "${p.label} ${p.subtitle.orEmpty()}".lowercase().contains(w) }
-                }
-                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                    if (shown.isEmpty() || (shown.size == 1 && shown[0].id.isEmpty() && words.isNotEmpty())) {
-                        TText(str(S.dm_picker_empty), 13, color = k.faint, modifier = Modifier.padding(12.dp))
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = maxOf(anchor.popupWidth(), 300.dp),
+                options = listOf(none) + picks,
+                isSelected = { it.id == chosen.id },
+                onPick = { p ->
+                    open = false
+                    onChange(p.id.ifEmpty { null })
+                },
+                label = Pick::label,
+                searchable = true,
+                searchPlaceholder = searchHint,
+                // The "nothing" row matches no search, so it shows only unsearched.
+                searchText = { p -> if (p.id.isEmpty()) "" else "${p.label} ${p.subtitle.orEmpty()}" },
+                subtitle = Pick::subtitle,
+                optionLeading = { p ->
+                    when {
+                        p.person != null -> TAvatar(p.person, 28.dp)
+                        p.colour != null -> Dot(p.colour)
                     }
-                    shown.forEach { p ->
-                        val row = remember { MutableInteractionSource() }
-                        val rowHover by row.collectIsHoveredAsState()
-                        Row(
-                            Modifier.fillMaxWidth().background(if (rowHover || p.id == chosen.id) k.accentSoft else Color.Transparent)
-                                .hoverable(row)
-                                .clickable(interactionSource = row, indication = null) {
-                                    open = false
-                                    query = ""
-                                    onChange(p.id.ifEmpty { null })
-                                }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            when {
-                                p.person != null -> TAvatar(p.person, 28.dp)
-                                p.colour != null -> Dot(p.colour)
-                            }
-                            Column(Modifier.weight(1f)) {
-                                TText(p.label, 13, if (p.id == chosen.id) SemiBold else Medium, color = if (p.id.isEmpty()) k.muted else k.fg, maxLines = 1)
-                                p.subtitle?.let { TText(it, 12, color = k.faint, maxLines = 1) }
-                            }
-                        }
-                    }
-                }
-            }
+                },
+            )
         }
     }
 }

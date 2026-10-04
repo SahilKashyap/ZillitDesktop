@@ -87,7 +87,7 @@ internal class HistorySection(private val vm: VmScope, private val library: Libr
     }
 
     fun clearSenders() {
-        vm.update { copy(historySenderIds = emptySet(), historySenderQuery = "") }
+        vm.update { copy(historySenderIds = emptySet()) }
         load()
     }
 

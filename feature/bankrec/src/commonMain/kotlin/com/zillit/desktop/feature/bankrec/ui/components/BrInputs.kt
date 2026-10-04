@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,11 +37,10 @@ import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitInitialsTile
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.CostCentre
@@ -315,7 +312,13 @@ private fun taxGroups(options: List<TaxOption>): List<Pair<String?, List<String>
         (str(S.custom) to custom)
 }
 
-/** A select whose options sit under group headings — a tax type's country. */
+/**
+ * A select whose options sit under group headings — a tax type's country.
+ *
+ * Each id travels with its heading, so the shared list draws a heading
+ * wherever it changes; the blank first row has none. A [value] not in any
+ * group is still shown by its label, as before.
+ */
 @Composable
 internal fun GroupedSelect(
     value: String,
@@ -324,59 +327,17 @@ internal fun GroupedSelect(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = ZillitTheme.colors
-    var open by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp).clip(ZillitTheme.shapes.medium)
-                .background(colors.surface).border(1.dp, colors.border, ZillitTheme.shapes.medium)
-                .clickable { open = true }.padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitText(
-                label(value),
-                style = ZillitTheme.typography.bodyMedium,
-                color = if (value.isBlank()) colors.textMuted else colors.textPrimary,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitIcon(ZillitIcons.ChevronDown, tint = colors.textMuted, size = 14.dp)
-        }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            modifier = Modifier.background(colors.surfaceRaised),
-        ) {
-            groups.forEach { (heading, ids) ->
-                heading?.let {
-                    ZillitText(
-                        it.uppercase(),
-                        style = eyebrow(10.sp),
-                        color = colors.textMuted,
-                        modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp),
-                    )
-                }
-                ids.forEach { id ->
-                    DropdownMenuItem(
-                        text = {
-                            ZillitText(
-                                label(id),
-                                style = ZillitTheme.typography.bodyMedium,
-                                color = if (id == value) colors.accentText else colors.textPrimary,
-                            )
-                        },
-                        onClick = {
-                            open = false
-                            onSelect(id)
-                        },
-                        modifier = Modifier.background(
-                            if (id == value) colors.surfaceSelected else colors.surfaceRaised,
-                        ),
-                    )
-                }
-            }
-        }
-    }
+    val rows = remember(groups) { groups.flatMap { (heading, ids) -> ids.map { heading to it } } }
+    ZillitSelect(
+        value = rows.firstOrNull { it.second == value } ?: (null to value),
+        options = rows,
+        onSelect = { onSelect(it.second) },
+        label = { label(it.second) },
+        section = { it.first },
+        // The blank "Select tax" row keeps the tile's space but draws none.
+        optionLeading = { ZillitInitialsTile(if (it.second.isEmpty()) "" else label(it.second)) },
+        modifier = modifier,
+    )
 }
 
 /** The shared cost-centre list — one for both quick forms. */

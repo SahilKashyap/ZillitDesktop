@@ -6,16 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,21 +23,22 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.ZillitSelectTrigger
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
@@ -59,20 +54,25 @@ import com.zillit.desktop.feature.accounthub.domain.CoaAccount
 import com.zillit.desktop.feature.accounthub.domain.CoaCostType
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 
-/**
- * The web's `RichSelect` and friends, in Compose.
+/*
+ * The web's `RichSelect` and friends, in Compose — the hub's form pickers.
  *
- * ## Not a `DropdownMenu`
- *
- * The design system's menu hosts a lazy list, and a lazy list inside a menu
- * is measured against an unbounded height and crashes on open unless its
- * height is fixed (see the DropdownMenu note in memory). These lists are
- * composed in full inside a bounded, scrolling column under a `Popup`, which
- * is both correct and cheap at the sizes a picker ever reaches.
+ * Both draw the app's one select look ([ZillitSelectTrigger] and
+ * [ZillitOptionPopup]); what is the hub's own is the label above the field.
  */
 
-/** A single-choice field with a searchable list. [value] null shows the placeholder; the clear ✕ sends null back. */
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
+/**
+ * A single-choice field with a searchable list. [value] null shows the
+ * placeholder; the clear ✕ sends null back.
+ *
+ * Built from the shared trigger and list rather than `ZillitSearchSelect`,
+ * because that one blanks a value its options do not hold — and the currency
+ * pickers pass exactly that on purpose, so a currency the production has
+ * since dropped stays named. [secondary] is each row's muted second line, and
+ * is searched too: a dial code is found by its country's name, not only by
+ * its digits. [showInitials] off drops the row tiles, for figures ("+44").
+ */
+@Suppress("LongParameterList") // A picker's surface; each parameter is one knob the call sites use.
 @Composable
 fun <T> HubSelect(
     value: T?,
@@ -86,80 +86,57 @@ fun <T> HubSelect(
     searchable: Boolean = true,
     clearable: Boolean = false,
     secondary: ((T) -> String)? = null,
+    showInitials: Boolean = true,
 ) {
     var open by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
+    val anchor = rememberZillitSelectAnchor()
     val colors = ZillitTheme.colors
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (fieldLabel != null) FieldLabel(fieldLabel)
-        Box {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = ZillitDimens.controlHeight)
-                    .clip(ZillitTheme.shapes.medium)
-                    .background(if (enabled) colors.surface else colors.surfaceSunken)
-                    .border(1.dp, if (open) colors.focusRing else colors.border, ZillitTheme.shapes.medium)
-                    .clickable(enabled = enabled) { open = !open }
-                    .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        Box(Modifier.fillMaxWidth().zillitSelectAnchor(anchor)) {
+            ZillitSelectTrigger(
+                open = open,
+                enabled = enabled,
+                onClick = { open = !open },
+                modifier = Modifier.fillMaxWidth(),
+                minHeight = ZillitDimens.controlHeight,
+                onClear = if (clearable && value != null) ({ onSelect(null) }) else null,
             ) {
                 ZillitText(
                     text = value?.let(label) ?: placeholder,
                     style = ZillitTheme.typography.bodyMedium,
-                    color = if (value == null) colors.textMuted else colors.textPrimary,
+                    color = when {
+                        !enabled -> colors.textDisabled
+                        value == null -> colors.textMuted
+                        else -> colors.textPrimary
+                    },
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                if (clearable && value != null && enabled) {
-                    ZillitIconButton(
-                        icon = ZillitIcons.Close,
-                        contentDescription = str(S.ah_clear),
-                        onClick = { onSelect(null) },
-                    )
-                }
-                ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.textMuted, size = ZillitDimens.iconSmall)
             }
             if (open) {
-                PickerPopup(onDismiss = { open = false; search = "" }) {
-                    if (searchable) {
-                        ZillitSearchField(
-                            value = search,
-                            onValueChange = { search = it },
-                            placeholder = str(S.search),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    // The secondary line is searched too: a dial code is found by
-                    // its country's name, not only by its digits.
-                    val shown = options.filter {
-                        search.isBlank() ||
-                            label(it).contains(search, ignoreCase = true) ||
-                            secondary?.invoke(it)?.contains(search, ignoreCase = true) == true
-                    }
-                    PickerList(
-                        rows = shown,
-                        selected = { it == value },
-                        onPick = { onSelect(it); open = false; search = "" },
-                        label = label,
-                        secondary = secondary,
-                        empty = if (options.isEmpty()) str(S.desktop_nothing_to_choose_from) else str(
-                            S.desktop_hub_no_results_for_x,
-                            search,
-                        ),
-                    )
-                    PickerFooter(shown.size, options.size)
-                }
+                ZillitOptionPopup(
+                    onDismiss = { open = false },
+                    width = anchor.popupWidth(),
+                    options = options,
+                    isSelected = { it == value },
+                    onPick = { picked ->
+                        open = false
+                        onSelect(picked)
+                    },
+                    label = label,
+                    searchable = searchable,
+                    searchText = { item -> listOfNotNull(label(item), secondary?.invoke(item)).joinToString("\n") },
+                    subtitle = secondary,
+                    showInitials = showInitials,
+                )
             }
         }
     }
 }
 
-/** Several choices, shown as chips, with the same searchable list under a checkbox each — the web's `MultiSelect`. */
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
-@OptIn(ExperimentalLayoutApi::class)
+/** Several choices, shown as chips, over the same searchable list with a tick per choice — the web's `MultiSelect`. */
 @Composable
 fun <T> HubMultiSelect(
     selected: List<T>,
@@ -171,84 +148,17 @@ fun <T> HubMultiSelect(
     fieldLabel: String? = null,
     enabled: Boolean = true,
 ) {
-    var open by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
-    val colors = ZillitTheme.colors
-
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (fieldLabel != null) FieldLabel(fieldLabel)
-        Box {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = ZillitDimens.controlHeight)
-                    .clip(ZillitTheme.shapes.medium)
-                    .background(if (enabled) colors.surface else colors.surfaceSunken)
-                    .border(1.dp, if (open) colors.focusRing else colors.border, ZillitTheme.shapes.medium)
-                    .clickable(enabled = enabled) { open = !open }
-                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                if (selected.isEmpty()) {
-                    ZillitText(
-                        text = placeholder,
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = colors.textMuted,
-                        modifier = Modifier.weight(1f).padding(start = ZillitTheme.spacing.xs),
-                    )
-                } else {
-                    FlowRow(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                    ) {
-                        selected.forEach { item ->
-                            Chip(text = label(item), onRemove = if (enabled) ({ onChange(selected - item) }) else null)
-                        }
-                    }
-                }
-                ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.textMuted, size = ZillitDimens.iconSmall)
-            }
-            if (open) {
-                PickerPopup(onDismiss = { open = false; search = "" }) {
-                    ZillitSearchField(
-                        value = search,
-                        onValueChange = { search = it },
-                        placeholder = str(S.search),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    val shown = options.filter { search.isBlank() || label(it).contains(search, ignoreCase = true) }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = LIST_MAX)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        if (shown.isEmpty()) {
-                            FieldHint(
-                                if (options.isEmpty()) str(S.desktop_nothing_to_choose_from) else str(
-                                    S.desktop_hub_no_results_for_x,
-                                    search,
-                                ),
-                                Modifier.padding(ZillitTheme.spacing.sm),
-                            )
-                        }
-                        shown.forEach { item ->
-                            ZillitCheckbox(
-                                checked = item in selected,
-                                onCheckedChange = { on -> onChange(if (on) selected + item else selected - item) },
-                                label = label(item),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
-                            )
-                        }
-                    }
-                    PickerFooter(shown.size, options.size, selected.size)
-                }
-            }
-        }
+        ZillitMultiSelect(
+            selected = selected,
+            options = options,
+            label = label,
+            onChange = onChange,
+            placeholder = placeholder,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -279,84 +189,6 @@ fun Chip(text: String, modifier: Modifier = Modifier, onRemove: (() -> Unit)? = 
                 tint = colors.accentText,
             )
         }
-    }
-}
-
-@Composable
-private fun PickerPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
-    val colors = ZillitTheme.colors
-    Popup(
-        offset = IntOffset(0, POPUP_DROP),
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true),
-    ) {
-        Column(
-            modifier = Modifier
-                .width(POPUP_WIDTH)
-                .shadow(POPUP_ELEVATION, ZillitTheme.shapes.large)
-                .clip(ZillitTheme.shapes.large)
-                .background(colors.surfaceRaised)
-                .border(1.dp, colors.border, ZillitTheme.shapes.large)
-                .padding(ZillitTheme.spacing.sm),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) { content() }
-    }
-}
-
-@Composable
-private fun <T> PickerList(
-    rows: List<T>,
-    selected: (T) -> Boolean,
-    onPick: (T) -> Unit,
-    label: (T) -> String,
-    secondary: ((T) -> String)?,
-    empty: String,
-) {
-    val colors = ZillitTheme.colors
-    Column(modifier = Modifier.fillMaxWidth().heightIn(max = LIST_MAX).verticalScroll(rememberScrollState())) {
-        if (rows.isEmpty()) FieldHint(empty, Modifier.padding(ZillitTheme.spacing.sm))
-        rows.forEach { row ->
-            val active = selected(row)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(ZillitTheme.shapes.medium)
-                    .background(if (active) colors.surfaceSelected else colors.surfaceRaised)
-                    .clickable { onPick(row) }
-                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    ZillitText(text = label(row), style = ZillitTheme.typography.bodyMedium, maxLines = 1)
-                    secondary?.invoke(row)?.takeIf { it.isNotBlank() }?.let { FieldHint(it) }
-                }
-                if (active) ZillitIcon(
-                    icon = ZillitIcons.Check,
-                    tint = colors.accentText,
-                    size = ZillitDimens.iconSmall,
-                )
-            }
-        }
-    }
-}
-
-/** "N options · ↑↓ to move · ↵ to pick" — the web's footer, counts first. */
-@Composable
-private fun PickerFooter(shown: Int, total: Int, picked: Int? = null) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FieldHint(
-            when {
-                shown != total -> str(S.docusign_field_of, shown, total)
-                total == 1 -> str(S.desktop_one_option)
-                else -> str(S.desktop_n_options, total)
-            },
-        )
-        if (picked != null) FieldHint(str(S.desktop_hub_n_selected_bullet, picked))
     }
 }
 
@@ -761,10 +593,8 @@ fun TypedDetailsEditor(
 }
 
 private val POPUP_WIDTH = 340.dp
-private val LIST_MAX = 280.dp
 private val TYPE_WIDTH = 120.dp
 private val POPUP_ELEVATION = 12.dp
-private const val POPUP_DROP = 36
 private const val CODE_DROP = 60
 
 

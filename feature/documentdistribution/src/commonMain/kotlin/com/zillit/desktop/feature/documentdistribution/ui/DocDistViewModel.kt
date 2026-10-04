@@ -365,7 +365,6 @@ class DocDistViewModel(
             }
             is DocDistEvent.ToggleHistorySender -> history.toggleSender(event.senderId)
             DocDistEvent.ClearHistorySenders -> history.clearSenders()
-            is DocDistEvent.SearchHistorySenders -> setState { copy(historySenderQuery = event.text) }
             is DocDistEvent.HistorySenderMenu -> setState { copy(historySenderMenuOpen = event.open) }
             DocDistEvent.LoadMoreHistory -> history.loadMore()
             is DocDistEvent.ExpandDistribution -> history.expand(event.distributionId)

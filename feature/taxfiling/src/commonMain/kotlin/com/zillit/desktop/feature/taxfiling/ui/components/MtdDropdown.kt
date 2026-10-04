@@ -1,17 +1,11 @@
 package com.zillit.desktop.feature.taxfiling.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -20,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,9 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -44,13 +35,13 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.ZillitSelectTrigger
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
 
 /**
  * The web's fields are 42px tall, and so is the app's date field these sit
@@ -59,13 +50,13 @@ import com.zillit.desktop.core.strings.str
 internal val FieldHeight = 42.dp
 
 /**
- * The web's `Dropdown`: a field-shaped trigger over a list of rich options.
- *
- * The list is composed in full inside a bounded, scrolling column rather than a
- * lazy list in a menu — a lazy list measured by a menu's intrinsics crashes on
- * open — and it drops upward when the window has no room below, as the web's
- * does.
+ * The web's `Dropdown`: a field over a list of rich options — the app's shared
+ * select field ([ZillitSelectTrigger]) at this tool's 42dp height, opening the
+ * shared list ([ZillitOptionPopup]), which flips upward when the window has no
+ * room below. An option's status pill, or [mono] labels, need the row drawn
+ * here; otherwise the shared row draws the label and its quiet line.
  */
+@Suppress("LongMethod")
 @Composable
 internal fun <T> MtdDropdown(
     value: T?,
@@ -77,103 +68,67 @@ internal fun <T> MtdDropdown(
     enabled: Boolean = true,
     mono: Boolean = false,
 ) {
+    val palette = mtdPalette()
     var open by remember { mutableStateOf(false) }
-    var width by remember { mutableIntStateOf(0) }
+    val anchor = rememberZillitSelectAnchor()
     val selected = options.firstOrNull { it.value == value }
 
-    Box(modifier = modifier.onSizeChanged { width = it.width }) {
-        DropdownTrigger(
-            label = selected?.label,
-            placeholder = placeholder,
+    Box(modifier = modifier.zillitSelectAnchor(anchor)) {
+        ZillitSelectTrigger(
             open = open,
             enabled = enabled,
-            mono = mono,
-            onToggle = { open = !open },
-            onClear = if (clearable && selected != null && enabled) ({ onChange(null) }) else null,
-        )
-        if (open) {
-            DropdownPopup(widthPx = width, onDismiss = { open = false }) {
-                DropdownOptions(options = options, value = value, mono = mono) { picked ->
-                    open = false
-                    onChange(picked)
-                }
-            }
-        }
-    }
-}
-
-/** The field-shaped face of a dropdown: what is chosen, and a chevron — or a clear cross once it can be cleared. */
-@Composable
-private fun DropdownTrigger(
-    label: String?,
-    placeholder: String,
-    open: Boolean,
-    enabled: Boolean,
-    mono: Boolean,
-    onToggle: () -> Unit,
-    onClear: (() -> Unit)?,
-) {
-    val palette = mtdPalette()
-    val hover = remember { MutableInteractionSource() }
-    val hovered by hover.collectIsHoveredAsState()
-    val edge by animateColorAsState(
-        when {
-            open -> palette.accent
-            hovered && enabled -> palette.border2
-            else -> palette.border
-        },
-        label = "dropdownEdge",
-    )
-    val chosen = label != null
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .defaultMinSize(minHeight = FieldHeight)
-            .clip(FieldShape)
-            .background(if (enabled) palette.surface else palette.surface3)
-            .border(1.dp, edge, FieldShape)
-            .hoverable(hover)
-            .clickable(enabled = enabled, role = Role.DropdownList, onClick = onToggle)
-            .padding(start = 12.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ZillitText(
-            text = label ?: placeholder,
-            style = if (chosen) {
-                mtdText(if (mono) 13.5.sp else 14.sp, FontWeight.Medium, mono = mono)
-            } else {
-                mtdText(14.sp)
-            },
-            color = if (chosen) palette.ink else palette.muted,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
-        if (onClear != null) {
-            ZillitIconButton(
-                icon = ZillitIcons.Close,
-                contentDescription = str(S.txt_clear),
-                onClick = onClear,
-                size = 22.dp,
+            onClick = { open = !open },
+            modifier = Modifier.fillMaxWidth(),
+            minHeight = FieldHeight,
+            onClear = if (clearable && selected != null) ({ onChange(null) }) else null,
+        ) {
+            ZillitText(
+                text = selected?.label ?: placeholder,
+                style = if (selected != null) {
+                    mtdText(if (mono) 13.5.sp else 14.sp, FontWeight.Medium, mono = mono)
+                } else {
+                    mtdText(14.sp)
+                },
+                color = if (selected != null) palette.ink else palette.muted,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
             )
-        } else {
-            ZillitIcon(icon = ZillitIcons.ChevronDown, tint = palette.muted, size = 15.dp)
+        }
+        if (open) {
+            val rich = mono || options.any { it.pill != null }
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = anchor.popupWidth(),
+                options = options,
+                isSelected = { it.value == value },
+                onPick = { option ->
+                    open = false
+                    onChange(option.value)
+                },
+                label = MtdOption<T>::label,
+                searchable = false,
+                subtitle = MtdOption<T>::sub,
+                renderOption = if (rich) ({ option, active -> RichOption(option, active, mono) }) else null,
+            )
         }
     }
 }
 
+/** A row with what the shared one cannot draw: a monospace label, a status pill. */
 @Composable
-private fun <T> DropdownOptions(options: List<MtdOption<T>>, value: T?, mono: Boolean, onPick: (T) -> Unit) {
-    options.forEach { option ->
-        OptionRow(option = option, active = option.value == value, mono = mono) { onPick(option.value) }
-    }
-    if (options.isEmpty()) {
-        ZillitText(
-            text = str(S.desktop_nothing_to_choose_from),
-            style = mtdText(13.sp),
-            color = mtdPalette().muted,
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
-        )
+private fun <T> RichOption(option: MtdOption<T>, active: Boolean, mono: Boolean) {
+    val palette = mtdPalette()
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            ZillitText(
+                text = option.label,
+                style = mtdText(if (mono) 13.sp else 13.5.sp, FontWeight.SemiBold, mono = mono, tracking = (-0.01).em),
+                color = if (active) palette.accentText else palette.ink,
+                maxLines = 1,
+            )
+            option.sub?.let { ZillitText(text = it, style = mtdText(11.5.sp), color = palette.muted, maxLines = 1) }
+        }
+        option.pill?.let { (text, tone) -> MtdPill(text = text, tone = tone) }
     }
 }
 
@@ -211,41 +166,6 @@ internal fun DropdownPopup(
 }
 
 private val MIN_POPUP_WIDTH = 220.dp
-
-@Composable
-private fun <T> OptionRow(option: MtdOption<T>, active: Boolean, mono: Boolean, onPick: () -> Unit) {
-    val palette = mtdPalette()
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(
-                when {
-                    active -> palette.accentWash
-                    hovered -> palette.surface3
-                    else -> ZillitTheme.colors.surfaceRaised
-                },
-            )
-            .hoverable(interaction)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onPick)
-            .padding(horizontal = 11.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            ZillitText(
-                text = option.label,
-                style = mtdText(if (mono) 13.sp else 13.5.sp, FontWeight.SemiBold, mono = mono, tracking = (-0.01).em),
-                color = if (active) palette.accentText else palette.ink,
-                maxLines = 1,
-            )
-            option.sub?.let { ZillitText(text = it, style = mtdText(11.5.sp), color = palette.muted, maxLines = 1) }
-        }
-        option.pill?.let { (text, tone) -> MtdPill(text = text, tone = tone) }
-    }
-}
 
 /**
  * Below the anchor when it fits, above it when it does not — and never off the

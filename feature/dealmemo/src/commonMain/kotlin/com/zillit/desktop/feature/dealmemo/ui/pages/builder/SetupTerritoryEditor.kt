@@ -555,7 +555,6 @@ private fun CompanyForm(state: DealMemoUiState, draft: JsonObject, onChange: (Ma
                 rowStyle = CountryRowStyle.Country,
                 height = CONTROL_HEIGHT,
                 textSize = 14f,
-                radius = RADIUS,
             )
         }
         if (gb) {

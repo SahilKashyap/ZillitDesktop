@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,8 +52,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.CoaAccount
@@ -237,15 +239,19 @@ internal fun CoaCostChip(costType: CoaCostType, tooltip: String = "") {
     }
 }
 
-/** The table's inline class select, dressed in the class's own colours as the web's is. */
+/**
+ * The table's inline class select, dressed in the class's own colours as the
+ * web's is. The pill stays the trigger; its list is the app's one list, each
+ * row led by its class's dot.
+ */
 @Composable
 internal fun CoaCostSelect(value: CoaCostType, onSelect: (CoaCostType) -> Unit) {
-    val colors = ZillitTheme.colors
     val tone = coaCostTone(value)
     var open by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    Box {
+    val anchor = rememberZillitSelectAnchor()
+    Box(Modifier.zillitSelectAnchor(anchor)) {
         Row(
             modifier = Modifier
                 .clip(SMALL_SHAPE)
@@ -266,33 +272,22 @@ internal fun CoaCostSelect(value: CoaCostType, onSelect: (CoaCostType) -> Unit) 
             )
             ZillitIcon(CoaIcons.ChevronDown, tint = tone.content, size = 11.dp)
         }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            modifier = Modifier.background(colors.surfaceRaised, RoundedCornerShape(8.dp)),
-        ) {
-            CoaCostType.entries.forEach { option ->
-                DropdownMenuItem(
-                    onClick = {
-                        open = false
-                        onSelect(option)
-                    },
-                    modifier = Modifier.background(
-                        if (option == value) colors.surfaceSelected else colors.surfaceRaised,
-                    ),
-                    text = { CostOption(option) },
-                )
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = anchor.popupWidth(),
+                options = CoaCostType.entries,
+                isSelected = { it == value },
+                onPick = { option ->
+                    open = false
+                    onSelect(option)
+                },
+                label = { it.label },
+                optionLeading = { option ->
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(coaCostTone(option).content))
+                },
+            )
         }
-    }
-}
-
-/** A class in the select's menu: its dot, then its word. */
-@Composable
-private fun CostOption(option: CoaCostType) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(coaCostTone(option).content))
-        ZillitText(option.label, style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textPrimary)
     }
 }
 

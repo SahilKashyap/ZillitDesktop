@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,9 +59,13 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.CoaBulk
@@ -546,15 +548,19 @@ private fun Modifier.tabOut(onTab: (() -> Unit)?): Modifier = if (onTab == null)
     }
 }
 
-/** A borderless cell select with a chevron (`.coa-select`). */
+/**
+ * A borderless cell select with a chevron (`.coa-select`). The cell stays the
+ * trigger; its list is the app's one list, at least as wide as the cell.
+ */
 @Composable
 private fun <T> GridSelect(value: T, options: List<T>, label: (T) -> String, onSelect: (T) -> Unit) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     var open by remember { mutableStateOf(false) }
+    val anchor = rememberZillitSelectAnchor()
     val shape = RoundedCornerShape(5.dp)
-    Box(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 2.dp).zillitSelectAnchor(anchor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -576,29 +582,18 @@ private fun <T> GridSelect(value: T, options: List<T>, label: (T) -> String, onS
             )
             ZillitIcon(CoaIcons.ChevronDown, tint = colors.textMuted, size = 11.dp)
         }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            modifier = Modifier.background(colors.surfaceRaised, RoundedCornerShape(8.dp)),
-        ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    onClick = {
-                        open = false
-                        onSelect(option)
-                    },
-                    modifier = Modifier.background(
-                        if (option == value) colors.surfaceSelected else colors.surfaceRaised,
-                    ),
-                    text = {
-                        ZillitText(
-                            label(option),
-                            style = ZillitTheme.typography.bodyMedium,
-                            color = if (option == value) colors.accentText else colors.textPrimary,
-                        )
-                    },
-                )
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = anchor.popupWidth(),
+                options = options,
+                isSelected = { it == value },
+                onPick = { option ->
+                    open = false
+                    onSelect(option)
+                },
+                label = label,
+            )
         }
     }
 }

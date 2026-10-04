@@ -8,18 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +39,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionAction
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.ui.t
 import kotlinx.datetime.DateTimeUnit
@@ -125,8 +126,9 @@ internal fun CompactField(
 }
 
 /**
- * A small dropdown over [options] (value, label). [searchable] puts a filter box above the list (the actor
- * picker); [onNew] adds a leading "+ <newLabel>" row (the "+ New actor" of the web's `ActorSelect`).
+ * A small dropdown over [options] (value, label): the 24dp cell trigger kept, opening the app's one list
+ * ([ZillitOptionPopup]). [searchable] puts a filter line above the list (the actor picker); [onNew] pins a
+ * "+ <newLabel>" row on top (the "+ New actor" of the web's `ActorSelect`).
  */
 @Composable
 internal fun CompactSelect(
@@ -140,47 +142,26 @@ internal fun CompactSelect(
     newLabel: String? = null,
     onNew: () -> Unit = {},
 ) {
-    val colors = ZillitTheme.colors
     var open by remember { mutableStateOf(false) }
-    var query by remember(open) { mutableStateOf("") }
+    val anchor = rememberZillitSelectAnchor()
     val shown = options.firstOrNull { it.first == value && it.first.isNotEmpty() }
-    Box(modifier) {
+    Box(modifier.zillitSelectAnchor(anchor)) {
         SelectTrigger(shown?.second, placeholder, enabled, open) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.widthIn(min = 150.dp)) {
-            if (searchable) {
-                val focus = remember { FocusRequester() }
-                LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-                CompactField(
-                    query,
-                    { query = it },
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).focusRequester(focus),
-                    placeholder = t("csync_search"),
-                )
-            }
-            val needle = query.trim().lowercase()
-            val rows = if (needle.isEmpty()) options else options.filter { it.second.lowercase().contains(needle) }
-            Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
-                if (newLabel != null) {
-                    MenuRow("+ $newLabel", false) {
-                        open = false
-                        onNew()
-                    }
-                }
-                rows.take(MAX_ROWS).forEach { (v, label) ->
-                    MenuRow(label, v == value) {
-                        open = false
-                        onChange(v)
-                    }
-                }
-                if (rows.isEmpty() && newLabel == null) {
-                    ZillitText(
-                        "—",
-                        Modifier.padding(12.dp),
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                    )
-                }
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = anchor.popupWidth(),
+                options = options,
+                isSelected = { it.first == value },
+                onPick = { (v, _) ->
+                    open = false
+                    onChange(v)
+                },
+                label = { it.second },
+                searchable = searchable,
+                pinnedAction = newLabel?.let { ZillitOptionAction(it, onNew) },
+                emptyText = "—",
+            )
         }
     }
 }
@@ -213,22 +194,6 @@ private fun SelectTrigger(label: String?, placeholder: String, enabled: Boolean,
             maxLines = 1,
         )
         ZillitIcon(ZillitIcons.ChevronDown, tint = colors.textMuted, size = 12.dp)
-    }
-}
-
-private const val MAX_ROWS = 100
-
-@Composable
-private fun MenuRow(text: String, selected: Boolean, onClick: () -> Unit) {
-    val colors = ZillitTheme.colors
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .background(if (selected) colors.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 5.dp),
-    ) {
-        ZillitText(text, style = ZillitTheme.typography.bodyMedium.copy(fontSize = SMALL_TEXT), maxLines = 1)
     }
 }
 

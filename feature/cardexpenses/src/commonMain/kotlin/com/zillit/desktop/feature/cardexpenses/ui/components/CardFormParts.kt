@@ -5,18 +5,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,22 +21,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.ZillitSelectTrigger
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -48,12 +43,11 @@ import com.zillit.desktop.core.strings.str
 /**
  * A searchable picker whose options carry a second line — the web's
  * `RichSelect` as the card forms use it: a holder with their department and
- * role, a provider with its bank and company.
- *
- * A plain column in the popup rather than a lazy list: a lazy list inside a
- * popup crashes unless its height is fixed, and these lists are short.
+ * role, a provider with its bank and company. The app's one select field and
+ * list ([ZillitSelectTrigger], [ZillitOptionPopup]); built from the parts
+ * rather than `ZillitSearchSelect` so a pick that has since left [options]
+ * still shows in the field, as it always has.
  */
-@Suppress("LongMethod") // The field and its popup are one control.
 @Composable
 fun <T> CardRichSelect(
     value: T?,
@@ -67,19 +61,15 @@ fun <T> CardRichSelect(
     enabled: Boolean = true,
 ) {
     var open by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    val anchor = rememberZillitSelectAnchor()
     val colors = ZillitTheme.colors
-    Box(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = FIELD_HEIGHT)
-                .clip(ZillitTheme.shapes.medium)
-                .background(if (enabled) colors.surface else colors.surfaceSunken)
-                .border(1.dp, if (open) colors.focusRing else colors.border, ZillitTheme.shapes.medium)
-                .clickable(enabled = enabled) { open = !open }
-                .padding(horizontal = ZillitTheme.spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
+    Box(modifier = modifier.zillitSelectAnchor(anchor)) {
+        ZillitSelectTrigger(
+            open = open,
+            enabled = enabled,
+            onClick = { open = !open },
+            modifier = Modifier.fillMaxWidth(),
+            minHeight = FIELD_HEIGHT,
         ) {
             ZillitText(
                 text = value?.let(title) ?: placeholder,
@@ -88,66 +78,22 @@ fun <T> CardRichSelect(
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
-            ZillitIcon(ZillitIcons.ChevronDown, tint = colors.textMuted, size = ZillitDimens.iconSmall)
         }
         if (open) {
-            Popup(
-                offset = IntOffset(0, POPUP_DROP),
-                onDismissRequest = { open = false; query = "" },
-                properties = PopupProperties(focusable = true),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .width(POPUP_WIDTH)
-                        .shadow(8.dp, ZillitTheme.shapes.large)
-                        .clip(ZillitTheme.shapes.large)
-                        .background(colors.surfaceRaised)
-                        .border(1.dp, colors.border, ZillitTheme.shapes.large)
-                        .padding(ZillitTheme.spacing.sm),
-                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                ) {
-                    ZillitSearchField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth())
-                    val shown = options.filter { query.isBlank() || searchText(it).contains(query.trim(), true) }
-                    Column(Modifier.fillMaxWidth().heightIn(max = LIST_MAX).verticalScroll(rememberScrollState())) {
-                        if (shown.isEmpty()) {
-                            ZillitText(
-                                text = str(S.desktop_nothing_to_choose_from),
-                                style = ZillitTheme.typography.bodySmall,
-                                color = colors.textMuted,
-                                modifier = Modifier.padding(ZillitTheme.spacing.sm),
-                            )
-                        }
-                        shown.forEach { option ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(ZillitTheme.shapes.medium)
-                                    .background(if (option == value) colors.surfaceSelected else colors.surfaceRaised)
-                                    .clickable {
-                                        onSelect(option)
-                                        open = false
-                                        query = ""
-                                    }
-                                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-                            ) {
-                                ZillitText(
-                                    text = title(option),
-                                    style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    maxLines = 1,
-                                )
-                                subtitle(option).takeIf { it.isNotBlank() }?.let {
-                                    ZillitText(
-                                        text = it,
-                                        style = ZillitTheme.typography.bodySmall,
-                                        color = colors.textSecondary,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = anchor.popupWidth(),
+                options = options,
+                isSelected = { it == value },
+                onPick = { option ->
+                    open = false
+                    onSelect(option)
+                },
+                label = title,
+                searchable = true,
+                searchText = searchText,
+                subtitle = subtitle,
+            )
         }
     }
 }
@@ -327,6 +273,3 @@ private val BAR_HEIGHT = 44.dp
 private val SEGMENT_PADDING = 22.dp
 private val SEARCH_ICON = 16.dp
 private val TRAILING_ICON = 12.dp
-private val POPUP_WIDTH = 340.dp
-private val LIST_MAX = 280.dp
-private const val POPUP_DROP = 40

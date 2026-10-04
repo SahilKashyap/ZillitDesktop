@@ -2,24 +2,13 @@ package com.zillit.desktop.feature.home.calendar
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,9 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -39,9 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -69,7 +55,6 @@ internal fun InviteePicker(
     loadAvatar: suspend (String) -> ByteArray?,
 ) {
     var open by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         val chosen = invitees.filter { it.userId in selectedIds }
@@ -94,17 +79,30 @@ internal fun InviteePicker(
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.UserPlus,
-                onClick = { open = true; search = "" },
+                onClick = { open = true },
                 enabled = invitees.isNotEmpty(),
             )
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                CrewMenu(
-                    invitees = invitees,
-                    selectedIds = selectedIds,
-                    search = search,
-                    onSearch = { search = it },
-                    loadAvatar = loadAvatar,
-                    onToggle = onToggle,
+            if (open) {
+                // Searched by name or designation; a pick toggles and the
+                // list stays open, so a dozen invites need one opening.
+                ZillitOptionPopup(
+                    onDismiss = { open = false },
+                    width = MENU_WIDTH,
+                    options = invitees,
+                    isSelected = { it.userId in selectedIds },
+                    onPick = { onToggle(it.userId) },
+                    label = EventInvitee::name,
+                    searchable = true,
+                    searchPlaceholder = str(S.desktop_cal_search_name_or_designation),
+                    searchText = { "${it.name} ${it.designation.orEmpty()}" },
+                    subtitle = EventInvitee::designation,
+                    optionLeading = { invitee ->
+                        ZillitAvatar(
+                            name = invitee.name,
+                            image = rememberInviteeAvatar(invitee.userId, loadAvatar),
+                            size = ROW_AVATAR,
+                        )
+                    },
                 )
             }
         }
@@ -152,119 +150,6 @@ private fun InviteeChip(
     }
 }
 
-/** The searchable crew list inside the dropdown. */
-@Composable
-private fun CrewMenu(
-    invitees: List<EventInvitee>,
-    selectedIds: Set<String>,
-    search: String,
-    onSearch: (String) -> Unit,
-    loadAvatar: suspend (String) -> ByteArray?,
-    onToggle: (String) -> Unit,
-) {
-    Column(
-        modifier = Modifier.width(MENU_WIDTH).padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        ZillitTextField(
-            value = search,
-            onValueChange = onSearch,
-            placeholder = str(S.desktop_cal_search_name_or_designation),
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        val needle = search.trim()
-        val matches = invitees.filter {
-            needle.isBlank() ||
-                it.name.contains(needle, ignoreCase = true) ||
-                it.designation.orEmpty().contains(needle, ignoreCase = true)
-        }
-
-        val state = rememberLazyListState()
-        // Fixed, not heightIn: the menu asks its content for intrinsic
-        // measurements, which a lazy list cannot answer
-        // (the [TimePickerField] lesson).
-        LazyColumn(
-            state = state,
-            modifier = Modifier
-                .height(MENU_LIST_HEIGHT)
-                .then(rememberWheelScroll(state)),
-        ) {
-            items(matches, key = EventInvitee::userId) { invitee ->
-                CrewChoice(
-                    invitee = invitee,
-                    selected = invitee.userId in selectedIds,
-                    loadAvatar = loadAvatar,
-                    onClick = { onToggle(invitee.userId) },
-                )
-            }
-        }
-    }
-}
-
-/** One crew member in the list: face, name, designation, and a tick when on. */
-@Composable
-private fun CrewChoice(
-    invitee: EventInvitee,
-    selected: Boolean,
-    loadAvatar: suspend (String) -> ByteArray?,
-    onClick: () -> Unit,
-) {
-    val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.small)
-            .background(
-                when {
-                    selected -> colors.accentSoft
-                    hovered -> colors.surfaceHover
-                    else -> Color.Transparent
-                },
-            )
-            .hoverable(interaction)
-            .clickable(onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xxs),
-    ) {
-        ZillitAvatar(
-            name = invitee.name,
-            image = rememberInviteeAvatar(invitee.userId, loadAvatar),
-            size = ROW_AVATAR,
-        )
-        Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = invitee.name,
-                style = ZillitTheme.typography.bodySmall.copy(
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                ),
-                color = if (selected) colors.accentText else colors.textPrimary,
-                maxLines = 1,
-            )
-            invitee.designation?.let { role ->
-                ZillitText(
-                    text = role,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-        }
-        if (selected) {
-            ZillitIcon(
-                icon = ZillitIcons.Tick,
-                contentDescription = null,
-                tint = colors.accentText,
-                size = TICK,
-            )
-        }
-    }
-}
-
 /**
  * Fetch-and-decode for one face — null until it lands, and permanently for
  * crew without a picture, which [ZillitAvatar] answers with initials. The
@@ -279,8 +164,6 @@ private fun rememberInviteeAvatar(
 }.value
 
 private val MENU_WIDTH = 320.dp
-private val MENU_LIST_HEIGHT = 240.dp
 private val ROW_AVATAR = 28.dp
 private val CHIP_AVATAR = 20.dp
 private val CHIP_REMOVE = 14.dp
-private val TICK = 14.dp

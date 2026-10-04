@@ -20,10 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +41,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -566,7 +565,6 @@ private fun PersonRow(index: Int, person: PersonEditor, onEvent: (RecceEvent) ->
 private fun CrewPicker(available: List<RecceCrewMember>, onPick: (RecceCrewMember) -> Unit) {
     val colors = ZillitTheme.colors
     var open by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     Box {
@@ -578,10 +576,7 @@ private fun CrewPicker(available: List<RecceCrewMember>, onPick: (RecceCrewMembe
                 .background(colors.accentSoft)
                 .border(1.dp, if (hovered) RecceColors.BrandStrong else RecceColors.Brand, RoundedCornerShape(8.dp))
                 .hoverable(interaction)
-                .clickable {
-                    query = ""
-                    open = true
-                }
+                .clickable { open = true }
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -595,66 +590,27 @@ private fun CrewPicker(available: List<RecceCrewMember>, onPick: (RecceCrewMembe
             )
             ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.accentText, size = 14.dp)
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Column(Modifier.width(CREW_PICKER_WIDTH).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                ZillitTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = str(S.desktop_recce_crew_search_placeholder),
-                    leadingIcon = ZillitIcons.Search,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val needle = query.trim()
-                val matches = available.filter { member ->
-                    needle.isEmpty() || listOf(member.name, member.role.localised(), member.contact)
-                        .any { it.contains(needle, ignoreCase = true) }
-                }
-                if (matches.isEmpty()) {
-                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
-                        MutedText(if (available.isEmpty()) {
-                            str(S.desktop_recce_everyone_on_list)
-                        } else {
-                            str(S.desktop_sos_no_crew_match)
-                        })
-                    }
-                }
-                // A FIXED height: a lazy list inside a menu measures against infinity otherwise.
-                LazyColumn(Modifier.fillMaxWidth().height(CREW_LIST_HEIGHT)) {
-                    items(matches.size) { index ->
-                        val member = matches[index]
-                        CrewOption(member) {
-                            onPick(member)
-                            open = false
-                        }
-                    }
-                }
-            }
+        if (open) {
+            // Pick-to-add: nothing is "selected", the pick leaves the list.
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = CREW_PICKER_WIDTH,
+                options = available,
+                isSelected = { false },
+                onPick = { member ->
+                    open = false
+                    onPick(member)
+                },
+                label = RecceCrewMember::name,
+                searchable = true,
+                searchPlaceholder = str(S.desktop_recce_crew_search_placeholder),
+                searchText = { "${it.name} ${it.role.localised()} ${it.contact}" },
+                subtitle = { member ->
+                    listOf(member.role.localised(), member.contact).filter { it.isNotBlank() }.joinToString(" · ")
+                },
+                emptyText = str(S.desktop_recce_everyone_on_list),
+            )
         }
-    }
-}
-
-@Composable
-private fun CrewOption(member: RecceCrewMember, onClick: () -> Unit) {
-    val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val meta = listOf(member.role.localised(), member.contact).filter { it.isNotBlank() }.joinToString(" · ")
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (hovered) colors.surfaceHover else colors.surfaceRaised)
-            .hoverable(interaction)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-    ) {
-        ZillitText(
-            text = member.name,
-            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = colors.textPrimary,
-            maxLines = 1,
-        )
-        if (meta.isNotBlank()) MutedText(meta, size = 12.sp)
     }
 }
 
@@ -713,6 +669,5 @@ private val KIND_WIDTH = 170.dp
 private val W3W_MAX_WIDTH = 360.dp
 private val ROW_ACTION_WIDTH = 36.dp
 private val CREW_PICKER_WIDTH = 260.dp
-private val CREW_LIST_HEIGHT = 220.dp
 private val FOOTER_WIDTH = 1200.dp
 private const val WEATHER_WEIGHT = 1.6f

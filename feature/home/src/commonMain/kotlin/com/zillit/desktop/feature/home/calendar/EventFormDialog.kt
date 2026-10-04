@@ -13,16 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,9 +32,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
@@ -434,9 +428,9 @@ private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
     // A whole day is a whole day — no clock to reinterpret.
     if (draft.isAllDay) return
     val open = remember { mutableStateOf(false) }
-    val search = remember { mutableStateOf("") }
 
     val chosenZone = form.timezones.firstOrNull { it.identifier == draft.timezoneId }
+    val deviceZone = str(S.desktop_cal_device_timezone)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -449,86 +443,38 @@ private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
         )
         Box {
             ZillitButton(
-                text = chosenZone?.label ?: str(S.desktop_cal_device_timezone),
+                text = chosenZone?.label ?: deviceZone,
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
-                onClick = { open.value = true; search.value = "" },
+                onClick = { open.value = true },
                 enabled = form.timezones.isNotEmpty(),
             )
-            DropdownMenu(expanded = open.value, onDismissRequest = { open.value = false }) {
-                TimezoneMenu(
-                    form = form,
-                    search = search.value,
-                    onSearch = { search.value = it },
-                    onPick = { id ->
+            if (open.value) {
+                // null is the device's own zone, stored as "".
+                ZillitOptionPopup(
+                    onDismiss = { open.value = false },
+                    width = TIMEZONE_MENU_WIDTH,
+                    options = listOf<TimezoneOption?>(null) + form.timezones,
+                    isSelected = { zone ->
+                        if (zone == null) draft.timezoneId.isBlank() else zone.identifier == draft.timezoneId
+                    },
+                    onPick = { option ->
                         // The moment is kept and the clock moves, as on the
                         // web — switching zone must not silently reschedule.
-                        change(draft.inTimezone(id, form.zone))
+                        change(draft.inTimezone(option?.identifier ?: "", form.zone))
                         open.value = false
                     },
+                    label = { it?.label ?: deviceZone },
+                    searchable = true,
+                    searchPlaceholder = str(S.desktop_cal_search_timezones),
+                    searchText = { it?.let { zone -> "${zone.label} ${zone.identifier}" } ?: deviceZone },
+                    // "Device timezone" stays on top whatever is typed, as it always did.
+                    keepOnSearch = { it == null },
+                    showInitials = false,
                 )
             }
         }
     }
-}
-
-/** The searchable list inside the dropdown; picking "" means the device zone. */
-@Composable
-private fun TimezoneMenu(
-    form: EventFormState,
-    search: String,
-    onSearch: (String) -> Unit,
-    onPick: (String) -> Unit,
-) {
-    Column(
-        modifier = Modifier.width(TIMEZONE_MENU_WIDTH).padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        ZillitTextField(
-            value = search,
-            onValueChange = onSearch,
-            placeholder = str(S.desktop_cal_search_timezones),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        val matches = form.timezones.filter {
-            search.isBlank() || it.label.contains(search, ignoreCase = true) ||
-                it.identifier.contains(search, ignoreCase = true)
-        }
-        val zoneState = rememberLazyListState()
-        // Fixed, not heightIn: the menu asks its content for intrinsic
-        // measurements, which a lazy list cannot answer — opening the
-        // dropdown died on exactly that before the height was pinned.
-        LazyColumn(
-            state = zoneState,
-            modifier = Modifier
-                .height(TIMEZONE_LIST_HEIGHT)
-                .then(rememberWheelScroll(zoneState)),
-        ) {
-            item(key = "device") {
-                TimezoneChoice(str(S.desktop_cal_device_timezone), form.draft.timezoneId.isBlank()) { onPick("") }
-            }
-            items(matches, key = TimezoneOption::identifier) { option ->
-                TimezoneChoice(
-                    label = option.label,
-                    selected = option.identifier == form.draft.timezoneId,
-                ) { onPick(option.identifier) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimezoneChoice(label: String, selected: Boolean, onClick: () -> Unit) {
-    ZillitText(
-        text = label,
-        style = ZillitTheme.typography.bodySmall,
-        color = if (selected) ZillitTheme.colors.accent else ZillitTheme.colors.textPrimary,
-        maxLines = 1,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xxs),
-    )
 }
 
 /** The event's colour: a swatch per palette entry, the chosen one ringed. */
@@ -778,5 +724,4 @@ private val NOTES_HEIGHT = 72.dp
 private val SWATCH = 22.dp
 private val SECTION_ICON = 14.dp
 private val TIMEZONE_MENU_WIDTH = 340.dp
-private val TIMEZONE_LIST_HEIGHT = 260.dp
 private val SWATCH_RING = 2.dp

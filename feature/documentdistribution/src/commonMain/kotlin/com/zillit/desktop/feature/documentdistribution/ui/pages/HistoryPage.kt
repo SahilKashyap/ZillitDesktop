@@ -9,16 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -38,7 +33,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
@@ -46,6 +40,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
@@ -55,8 +50,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import com.zillit.desktop.feature.documentdistribution.domain.RecipientKind
 import com.zillit.desktop.feature.documentdistribution.domain.RecipientStatus
 import com.zillit.desktop.feature.documentdistribution.domain.SendStatus
@@ -532,13 +530,13 @@ private fun SaveAsListDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> U
 
 /**
  * The "Sent by" filter (ZL-21138): a button that says All or how many are
- * ticked, opening a checkbox list of every sender; a search box appears once
- * the list is long enough to need one. Multi-select, OR semantics.
+ * ticked, opening the app's one list ([ZillitOptionPopup]) of every sender —
+ * searchable once it is long enough to need it, staying open while people
+ * are toggled. Multi-select, OR semantics; the leading "All" row (null)
+ * clears the picks, and under it every person shows ticked.
  */
-@Suppress("LongMethod", "CyclomaticComplexMethod") // One screen section, one branch per state.
 @Composable
 private fun SentByMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
-    val colors = ZillitTheme.colors
     val picked = state.historySenderIds.size
     val label = when (picked) {
         0 -> "Sent by: All"
@@ -561,90 +559,32 @@ private fun SentByMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                 leadingIcon = ZillitIcons.User,
                 trailingIcon = ZillitIcons.ChevronDown,
             )
-            DropdownMenu(
-                expanded = state.historySenderMenuOpen,
-                onDismissRequest = { onEvent(DocDistEvent.HistorySenderMenu(false)) },
-            ) {
-                Column(
-                    Modifier
-                        .width(SENDER_MENU_WIDTH)
-                        .heightIn(max = SENDER_MENU_HEIGHT)
-                        .verticalScroll(rememberScrollState())
-                        .padding(ZillitTheme.spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-                ) {
-                    if (state.historySenders.size > SENDER_SEARCH_THRESHOLD) {
-                        ZillitSearchField(
-                            value = state.historySenderQuery,
-                            onValueChange = { onEvent(DocDistEvent.SearchHistorySenders(it)) },
-                            placeholder = "Search people",
+            if (state.historySenderMenuOpen) {
+                ZillitOptionPopup(
+                    onDismiss = { onEvent(DocDistEvent.HistorySenderMenu(false)) },
+                    width = SENDER_MENU_WIDTH,
+                    options = listOf<DistributionSender?>(null) + state.historySenders,
+                    isSelected = { sender -> picked == 0 || (sender != null && sender.id in state.historySenderIds) },
+                    onPick = { sender ->
+                        onEvent(
+                            if (sender == null) {
+                                DocDistEvent.ClearHistorySenders
+                            } else {
+                                DocDistEvent.ToggleHistorySender(sender.id)
+                            },
                         )
-                    }
-                    ZillitCheckbox(
-                        checked = picked == 0,
-                        onCheckedChange = { onEvent(DocDistEvent.ClearHistorySenders) },
-                        label = "All · everyone who has sent",
-                    )
-                    ZillitDivider()
-                    val query = state.historySenderQuery.trim()
-                    val shown = state.historySenders.filter { query.isBlank() || it.name.contains(
-                        query,
-                        ignoreCase = true,
-                    ) }
-                    shown.forEach { sender ->
-                        HoverRow(
-                            onClick = { onEvent(DocDistEvent.ToggleHistorySender(sender.id)) },
-                            padding = ZillitTheme.spacing.sm,
-                        ) {
-                            // "All" means everyone — every person shows checked under it.
-                            ZillitCheckbox(
-                                checked = picked == 0 || sender.id in state.historySenderIds,
-                                onCheckedChange = { onEvent(DocDistEvent.ToggleHistorySender(sender.id)) },
-                            )
-                            ZillitAvatar(name = sender.name.ifBlank { sender.id }, userId = sender.id, size = 24.dp)
-                            Column {
-                                ZillitText(
-                                    text = sender.name.ifBlank { sender.id },
-                                    style = ZillitTheme.typography.label,
-                                    maxLines = 1,
-                                )
-                                if (sender.designation.isNotBlank()) ZillitText(
-                                    text = sender.designation.localised(),
-                                    style = ZillitTheme.typography.bodySmall,
-                                    color = colors.textMuted,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                    if (shown.isEmpty()) ZillitText(
-                        text = if (query.isBlank()) "No senders found" else "No one matches that search",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                    )
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ZillitText(
-                            text = if (picked > 0) "$picked selected" else "Showing all",
-                            style = ZillitTheme.typography.bodySmall,
-                            color = colors.textMuted,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (picked > 0) ZillitButton(
-                            text = "Clear all",
-                            onClick = { onEvent(DocDistEvent.ClearHistorySenders) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                        )
-                        ZillitButton(
-                            text = "Done",
-                            onClick = { onEvent(DocDistEvent.HistorySenderMenu(false)) },
-                            size = ButtonSize.Small,
-                        )
-                    }
-                }
+                    },
+                    label = { sender -> sender?.name?.ifBlank { sender.id } ?: "All · everyone who has sent" },
+                    searchable = state.historySenders.size > SENDER_SEARCH_THRESHOLD,
+                    searchPlaceholder = str(S.dd_history_sender_picker_search_hint),
+                    searchText = { sender -> sender?.name.orEmpty() },
+                    // "All" stays on top while searching, as the old menu's own row did.
+                    keepOnSearch = { it == null },
+                    subtitle = { sender -> sender?.designation?.takeIf { it.isNotBlank() }?.localised() },
+                    optionLeading = { sender -> SenderMark(sender) },
+                    footer = { if (picked > 0) "$picked selected" else "Showing all" },
+                    emptyText = "No senders found",
+                )
             }
         }
         if (picked > 0) ZillitButton(
@@ -653,6 +593,21 @@ private fun SentByMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
         )
+    }
+}
+
+/** A sender's avatar; the "All" row (null) gets a group mark the same size. */
+@Composable
+private fun SenderMark(sender: DistributionSender?) {
+    if (sender != null) {
+        ZillitAvatar(name = sender.name.ifBlank { sender.id }, userId = sender.id, size = SENDER_MARK)
+    } else {
+        Box(
+            Modifier.size(SENDER_MARK).clip(CircleShape).background(ZillitTheme.colors.accentSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(icon = ZillitIcons.Users, tint = ZillitTheme.colors.accentText, size = SENDER_MARK_ICON)
+        }
     }
 }
 
@@ -665,5 +620,6 @@ private const val DETAIL_WEIGHT = 1.15f
 private const val DONUT_SIZE = 120
 private const val DONUT_STROKE = 18f
 private val SENDER_MENU_WIDTH = 320.dp
-private val SENDER_MENU_HEIGHT = 380.dp
+private val SENDER_MARK = 24.dp
+private val SENDER_MARK_ICON = 14.dp
 private const val SENDER_SEARCH_THRESHOLD = 6

@@ -315,7 +315,6 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
                 placeholder = str(S.desktop_all_vendors),
                 searchText = { "${it.display} ${vendorSubline(it)}" },
                 popupWidth = VENDOR_POPUP_WIDTH,
-                rowHeight = VENDOR_ROW_HEIGHT,
                 row = { VendorOption(it) },
                 modifier = Modifier.width(SELECT_WIDTH),
             )
@@ -660,7 +659,6 @@ private val DATE_WIDTH = 150.dp
 private val SELECT_WIDTH = 176.dp
 private val CURRENCY_WIDTH = 132.dp
 private val VENDOR_POPUP_WIDTH = 400.dp
-private val VENDOR_ROW_HEIGHT = 52.dp
 private val MONOGRAM = 32.dp
 private val MONOGRAM_RADIUS = 9.dp
 private val TOGGLE_DOT = 6.dp

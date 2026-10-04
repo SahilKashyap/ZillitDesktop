@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.boxschedule.ui.pages
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,8 +35,12 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -312,7 +314,9 @@ private fun TypeLegend(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) ->
 
 /**
  * "Set Default View" / "Set as Default" — the web's popover of radio cards,
- * the saved one marked Current.
+ * the saved one marked Current. The button stays; its list is the app's
+ * shared one, headed by the title and [description], each row a title over
+ * its hint.
  */
 @Composable
 internal fun <T> DefaultViewMenu(
@@ -326,7 +330,8 @@ internal fun <T> DefaultViewMenu(
 ) {
     var open by remember { mutableStateOf(false) }
     val colors = ZillitTheme.colors
-    Box {
+    val anchor = rememberZillitSelectAnchor()
+    Box(Modifier.zillitSelectAnchor(anchor)) {
         ZillitButton(
             text = buttonText,
             onClick = { open = true },
@@ -334,47 +339,42 @@ internal fun <T> DefaultViewMenu(
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.Grid,
         )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Column(Modifier.width(260.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ZillitText(str(S.dv_choose_title), style = ZillitTheme.typography.titleSmall)
-                ZillitText(description, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
-                options.forEach { option ->
-                    DefaultOption(
-                        title = label(option),
-                        hint = hint(option),
-                        selected = option == current,
-                        onClick = {
-                            open = false
-                            onChoose(option)
-                        },
-                    )
-                }
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = options,
+                isSelected = { it == current },
+                onPick = { option ->
+                    open = false
+                    onChoose(option)
+                },
+                label = label,
+                width = maxOf(anchor.popupWidth(), MENU_WIDTH),
+                searchable = false,
+                header = {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ZillitText(str(S.dv_choose_title), style = ZillitTheme.typography.titleSmall)
+                        ZillitText(description, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                    }
+                },
+                renderOption = { option, selected -> DefaultOption(label(option), hint(option), selected) },
+            )
         }
     }
 }
 
+/** A row's title over its hint; the saved one also says Current. */
 @Composable
-private fun DefaultOption(title: String, hint: String, selected: Boolean, onClick: () -> Unit) {
+private fun DefaultOption(title: String, hint: String, selected: Boolean) {
     val colors = ZillitTheme.colors
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) colors.accentSoft else colors.surface)
-            .border(
-                if (selected) 2.dp else 1.dp,
-                if (selected) colors.accent else colors.border,
-                RoundedCornerShape(8.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        RadioMark(selected)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(Modifier.weight(1f)) {
-            ZillitText(title, style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold))
+            ZillitText(
+                title,
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+                color = if (selected) colors.accentText else colors.textPrimary,
+                maxLines = 1,
+            )
             ZillitText(hint, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         }
         if (selected) ZillitText(str(S.dv_current), style = ZillitTheme.typography.labelSmall, color = colors.success)
@@ -382,3 +382,4 @@ private fun DefaultOption(title: String, hint: String, selected: Boolean, onClic
 }
 
 private const val LEGEND_MAX = 5
+private val MENU_WIDTH = 260.dp

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
@@ -230,11 +233,16 @@ internal fun pageWindow(page: Int, pages: Int): List<Int> {
 
 private const val WINDOW = 7
 
+/**
+ * The pager's "N / page" pill. A compact pill, not a form field, so it keeps
+ * its own look and opens the app's shared option list under it.
+ */
 @Composable
 private fun PageSizeChoice(size: Int, onChange: (Int) -> Unit) {
     val colors = SheetTheme.colors
     var open by remember { mutableStateOf(false) }
-    Box {
+    val anchor = rememberZillitSelectAnchor()
+    Box(Modifier.zillitSelectAnchor(anchor)) {
         Row(
             Modifier
                 .clip(RoundedCornerShape(6.dp))
@@ -246,27 +254,19 @@ private fun PageSizeChoice(size: Int, onChange: (Int) -> Unit) {
         ) {
             Text("$size / page", style = sheetText(12.sp), color = colors.textPrimary)
         }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            containerColor = colors.surface,
-        ) {
-            Column(Modifier.widthIn(min = 110.dp)) {
-                PermissionState.PAGE_SIZES.forEach { option ->
-                    Text(
-                        "$option / page",
-                        style = sheetText(13.sp, if (option == size) FontWeight.SemiBold else FontWeight.Normal),
-                        color = if (option == size) colors.accent else colors.textPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .plainClick {
-                                open = false
-                                onChange(option)
-                            }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = PermissionState.PAGE_SIZES,
+                isSelected = { it == size },
+                onPick = { option ->
+                    open = false
+                    onChange(option)
+                },
+                label = { "$it / page" },
+                width = anchor.popupWidth(),
+                showInitials = false,
+            )
         }
     }
 }

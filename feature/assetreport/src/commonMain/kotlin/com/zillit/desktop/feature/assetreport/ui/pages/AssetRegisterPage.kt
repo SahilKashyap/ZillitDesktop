@@ -184,7 +184,6 @@ private fun FilterBar(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
                     state.currencyCode.isNotBlank() && !state.currencyCode.equals(state.currencies.defaultCode, true)
                 },
                 placeholder = str(S.asset_currency),
-                rowHeight = CURRENCY_ROW_HEIGHT,
                 row = { CurrencyRow(it, state.currencies.symbolFor(it.code)) },
             )
         }
@@ -466,7 +465,6 @@ private fun Rule(color: androidx.compose.ui.graphics.Color) {
 private val TABLE_MIN_WIDTH = 1234.dp
 private val DEPARTMENT_WIDTH = 250.dp
 private val CURRENCY_WIDTH = 150.dp
-private val CURRENCY_ROW_HEIGHT = 56.dp
 private val EDGE_PADDING = 26.dp
 private val CELL_PADDING = 16.dp
 private val SKELETON_ROWS = 0 until 7

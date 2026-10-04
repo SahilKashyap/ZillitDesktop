@@ -5,15 +5,11 @@ package com.zillit.desktop.feature.invoices.ui.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,25 +18,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.CalcExpression
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCalcField
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
-import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.EntryCoding
@@ -63,9 +56,10 @@ internal fun EntryLayersField(
     onChange: (Map<String, String>) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
+    val anchor = rememberZillitSelectAnchor()
     val text = picked.values.filter { it.isNotBlank() }.joinToString(", ")
         .ifBlank { str(S.desktop_ce_process_add_layers) }
-    Box(modifier) {
+    Box(modifier.zillitSelectAnchor(anchor)) {
         ZillitButton(
             text = text,
             onClick = { open = true },
@@ -75,96 +69,37 @@ internal fun EntryLayersField(
             modifier = Modifier.fillMaxWidth(),
         )
         if (open) {
-            LayersPopup(sets, picked, onDismiss = { open = false }) { next -> onChange(next) }
+            val none = str(S.desktop_tax_none_dash)
+            val rows = sets.filter { it.active }.flatMap { set ->
+                listOf(LayerRow(set, null, none)) + set.pickable.map { LayerRow(set, it.code, it.optionLabel) }
+            }
+            // One pick per set: a code sets its set, "none" clears it, and the
+            // list stays open so every set can be coded in one visit.
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = maxOf(anchor.popupWidth(), LAYERS_POPUP_WIDTH),
+                options = rows,
+                isSelected = { row ->
+                    val current = picked[row.set.id].orEmpty()
+                    val currentCode = row.set.resolve(current)?.code ?: current
+                    if (row.code == null) currentCode.isBlank() else row.code == currentCode
+                },
+                onPick = { row ->
+                    onChange(if (row.code == null) picked - row.set.id else picked + (row.set.id to row.code))
+                },
+                label = LayerRow::label,
+                searchText = { "${it.heading} ${it.label}" },
+                showInitials = false,
+                section = LayerRow::heading,
+                emptyText = str(S.desktop_tax_no_layers),
+            )
         }
     }
 }
 
-@Composable
-private fun LayersPopup(
-    sets: List<TrackingSet>,
-    picked: Map<String, String>,
-    onDismiss: () -> Unit,
-    onChange: (Map<String, String>) -> Unit,
-) {
-    val colors = ZillitTheme.colors
-    Popup(
-        offset = IntOffset(0, POPUP_DROP),
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true),
-    ) {
-        Column(
-            modifier = Modifier
-                .width(LAYERS_POPUP_WIDTH)
-                .clip(ZillitTheme.shapes.large)
-                .background(colors.surfaceRaised)
-                .border(1.dp, colors.border, ZillitTheme.shapes.large)
-                .padding(vertical = ZillitTheme.spacing.xs),
-        ) {
-            val shown = sets.filter { it.active }
-            if (shown.isEmpty()) {
-                ZillitText(
-                    text = str(S.desktop_tax_no_layers),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = colors.textMuted,
-                    modifier = Modifier.padding(ZillitTheme.spacing.md),
-                )
-            }
-            ZillitScrollColumn(modifier = Modifier.heightIn(max = LAYERS_POPUP_HEIGHT)) {
-                shown.forEach { set ->
-                    LayersHeading(set.name.ifBlank { set.prefix })
-                    val current = picked[set.id].orEmpty()
-                    val currentCode = set.resolve(current)?.code ?: current
-                    LayersOption(str(S.desktop_tax_none_dash), selected = currentCode.isBlank()) {
-                        onChange(picked - set.id)
-                    }
-                    set.pickable.forEach { node ->
-                        LayersOption(node.optionLabel, selected = node.code == currentCode) {
-                            onChange(picked + (set.id to node.code))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LayersHeading(text: String) {
-    ZillitText(
-        text = text.uppercase(),
-        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-        color = ZillitTheme.colors.textMuted,
-        modifier = Modifier.padding(
-            start = ZillitTheme.spacing.md,
-            top = ZillitTheme.spacing.sm,
-            bottom = ZillitTheme.spacing.xxs,
-        ),
-        maxLines = 1,
-    )
-}
-
-@Composable
-private fun LayersOption(text: String, selected: Boolean, onClick: () -> Unit) {
-    val colors = ZillitTheme.colors
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(if (selected) colors.surfaceSelected else colors.surfaceRaised)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitText(
-            text = text,
-            style = ZillitTheme.typography.bodySmall,
-            color = if (selected) colors.accentText else colors.textPrimary,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
-        if (selected) ZillitIcon(icon = ZillitIcons.Check, tint = colors.accentText, size = CHECK_SIZE)
-    }
+/** One row of the Layers list: a set's code, or its "none" ([code] null). */
+private data class LayerRow(val set: TrackingSet, val code: String?, val label: String) {
+    val heading: String get() = set.name.ifBlank { set.prefix }
 }
 
 /** A line's account tags — the web's `TagMultiSelect` over Production Setup's `asset_tags`. */
@@ -293,6 +228,3 @@ internal fun EntryAmountWell(value: Double, currency: String, modifier: Modifier
 }
 
 private val LAYERS_POPUP_WIDTH = 280.dp
-private val LAYERS_POPUP_HEIGHT = 320.dp
-private val CHECK_SIZE = 14.dp
-private const val POPUP_DROP = 32

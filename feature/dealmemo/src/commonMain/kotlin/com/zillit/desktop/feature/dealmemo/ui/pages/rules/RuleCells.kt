@@ -8,18 +8,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
@@ -45,17 +40,18 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.dealmemo.domain.rules.RuleList
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
-import com.zillit.desktop.feature.dealmemo.ui.pages.preview.shadowed
 
 /** The rules grid's tokens (`BulkRulesEditor.jsx` `BRE_CSS`), light and dark. */
 @Immutable
@@ -140,7 +136,12 @@ internal data class GridOption(
     val disabled: Boolean = false,
 )
 
-/** A seamless spreadsheet select: the value and a chevron, a list dropping under it. */
+/**
+ * A seamless spreadsheet select: the value and a chevron, the cell's own, over
+ * the app's one select list — [GridOption.group] heads a section, a disabled
+ * option is greyed and cannot be picked, and the list is at least [menuWidth].
+ * A [mono] list is figures, so its rows go without initials.
+ */
 @Composable
 internal fun GridSelect(
     value: String,
@@ -155,7 +156,8 @@ internal fun GridSelect(
     val (source, hovered) = rememberHover()
     val label = options.firstOrNull { it.value == value && !it.disabled }?.label
     val shape = RoundedCornerShape(5.dp)
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val anchor = rememberZillitSelectAnchor()
+    Box(modifier = Modifier.fillMaxWidth().zillitSelectAnchor(anchor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -182,83 +184,20 @@ internal fun GridSelect(
             ZillitIcon(ZillitIcons.ChevronDown, size = 11.dp, tint = rp.ink3)
         }
         if (open) {
-            Popup(
-                popupPositionProvider = remember { BelowStartPosition(gap = 2) },
-                onDismissRequest = { open = false },
-                properties = PopupProperties(focusable = true),
-            ) {
-                OptionList(options, value, menuWidth) { picked ->
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = options,
+                isSelected = { it.value == value && !it.disabled },
+                onPick = { picked ->
                     open = false
-                    onPick(picked)
-                }
-            }
-        }
-    }
-}
-
-@Suppress("LongMethod")
-@Composable
-private fun OptionList(options: List<GridOption>, selected: String, width: Dp, onPick: (String) -> Unit) {
-    val shape = RoundedCornerShape(10.dp)
-    Column(
-        modifier = Modifier
-            .widthIn(min = width)
-            .heightIn(max = 320.dp)
-            .shadowed(shape)
-            .clip(shape)
-            .background(rp.surface)
-            .border(1.dp, rp.border, shape)
-            .verticalScroll(rememberScrollState())
-            .padding(5.dp),
-    ) {
-        var lastGroup: String? = null
-        options.forEach { option ->
-            if (option.group != null && option.group != lastGroup) {
-                lastGroup = option.group
-                ZillitText(
-                    text = option.group,
-                    style = DmType.sans(10.5.sp, FontWeight.Bold),
-                    color = rp.ink3,
-                    modifier = Modifier.padding(start = 9.dp, top = 8.dp, bottom = 3.dp),
-                )
-            }
-            val (source, hovered) = rememberHover()
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(if (hovered && !option.disabled) rp.surfaceAlt else Color.Transparent)
-                    .hoverable(source)
-                    .then(
-                        if (option.disabled) Modifier else Modifier.clickable(
-                            interactionSource = source,
-                            indication = null,
-                        ) {
-                            onPick(option.value)
-                        },
-                    )
-                    .pointerHoverIcon(if (option.disabled) PointerIcon.Default else PointerIcon.Hand)
-                    .padding(horizontal = 9.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ZillitText(
-                    text = option.label,
-                    style = DmType.sans(
-                        12.5.sp,
-                        if (option.value == selected) FontWeight.SemiBold else FontWeight.Medium,
-                    ),
-                    color = when {
-                        option.disabled -> rp.ink3
-                        option.value == selected -> rp.cta
-                        else -> rp.ink
-                    },
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f),
-                )
-                if (option.value == selected && !option.disabled) {
-                    ZillitIcon(ZillitIcons.Check, size = 11.dp, tint = rp.cta)
-                }
-            }
+                    onPick(picked.value)
+                },
+                label = { it.label },
+                width = maxOf(anchor.popupWidth(), menuWidth),
+                showInitials = !mono,
+                isEnabled = { !it.disabled },
+                section = { it.group },
+            )
         }
     }
 }

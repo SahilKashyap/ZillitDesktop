@@ -746,6 +746,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                                     update(draft.copy(phoneCountryCode = picked?.dialCode ?: draft.phoneCountryCode))
                                 },
                                 placeholder = "+44",
+                                showInitials = false,
                                 modifier = Modifier.width(DIAL_WIDTH),
                             )
                             ZillitTextField(

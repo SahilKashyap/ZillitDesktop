@@ -41,15 +41,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -274,18 +273,24 @@ private fun DepartmentSection(state: AnalyticsUiState, onEvent: (AnalyticsEvent)
     }
 }
 
+/**
+ * The department field: the panel's own "N selected" summary (the picks are
+ * the chips beside it), opening the app's one list ([ZillitOptionPopup]) —
+ * a tick per picked row, staying open while rows are toggled. A picked id
+ * the options no longer carry stays picked.
+ */
 @Composable
 private fun DepartmentSelect(options: List<AnalyticsOption>, selected: List<String>, onChange: (List<String>) -> Unit) {
     val colors = analyticsColors
     var open by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
+    val anchor = rememberZillitSelectAnchor()
     val shape = RoundedCornerShape(10.dp)
     val text = when (selected.size) {
         0 -> null
-        1 -> options.firstOrNull { it.value == selected.first() }?.label ?: "1 selected"
-        else -> "${selected.size} selected"
+        1 -> options.firstOrNull { it.value == selected.first() }?.label ?: str(S.desktop_n_selected, "1")
+        else -> str(S.desktop_n_selected, selected.size.toString())
     }
-    Box(Modifier.width(340.dp)) {
+    Box(Modifier.width(340.dp).zillitSelectAnchor(anchor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -306,80 +311,24 @@ private fun DepartmentSelect(options: List<AnalyticsOption>, selected: List<Stri
             ZillitIcon(ZillitIcons.ChevronDown, tint = colors.ink3, size = 14.dp)
         }
         if (open) {
-            Popup(
-                offset = IntOffset(0, POPUP_DROP),
-                onDismissRequest = {
-                    open = false
-                    search = ""
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                width = anchor.popupWidth(),
+                options = options,
+                isSelected = { it.value in selected },
+                onPick = { option ->
+                    onChange(if (option.value in selected) selected - option.value else selected + option.value)
                 },
-                properties = PopupProperties(focusable = true),
-            ) {
-                DepartmentList(options, selected, search, { search = it }, onChange)
-            }
+                label = { it.label },
+                searchable = true,
+                footer = { shown ->
+                    val plural = str(if (shown == 1) S.desktop_dm_one_option_suffix else S.desktop_dm_options_suffix)
+                    val picked = if (selected.isEmpty()) "" else str(S.desktop_selected_suffix, selected.size)
+                    str(S.desktop_cr_options_count, shown, plural, picked)
+                },
+                emptyText = str(S.desktop_cr_no_departments),
+            )
         }
-    }
-}
-
-@Composable
-private fun DepartmentList(
-    options: List<AnalyticsOption>,
-    selected: List<String>,
-    search: String,
-    onSearch: (String) -> Unit,
-    onChange: (List<String>) -> Unit,
-) {
-    val colors = analyticsColors
-    val shape = RoundedCornerShape(12.dp)
-    val shown = options.filter { search.isBlank() || it.label.contains(search, ignoreCase = true) }
-    Column(
-        Modifier
-            .width(320.dp)
-            .shadow(12.dp, shape)
-            .background(colors.surface, shape)
-            .border(1.dp, colors.line, shape)
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        ZillitSearchField(
-            value = search,
-            onValueChange = onSearch,
-            placeholder = str(S.search),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
-            if (shown.isEmpty()) {
-                ZillitText(
-                    if (options.isEmpty()) {
-                        str(S.desktop_cr_no_departments)
-                    } else {
-                        str(S.desktop_no_results_for, search)
-                    },
-                    style = AnalyticsType.text(12f),
-                    color = colors.ink3,
-                    modifier = Modifier.padding(8.dp),
-                )
-            }
-            shown.forEach { option ->
-                ZillitCheckbox(
-                    checked = option.value in selected,
-                    onCheckedChange = { on -> onChange(if (on) selected + option.value else selected - option.value) },
-                    label = option.label,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
-        }
-        val plural = if (shown.size == 1) {
-            str(S.desktop_dm_one_option_suffix)
-        } else {
-            str(S.desktop_dm_options_suffix)
-        }
-        val picked = if (selected.isEmpty()) "" else str(S.desktop_selected_suffix, selected.size)
-        ZillitText(
-            str(S.desktop_cr_options_count, shown.size, plural, picked),
-            style = AnalyticsType.text(11.5f, FontWeight.SemiBold),
-            color = colors.ink3,
-            modifier = Modifier.padding(4.dp),
-        )
     }
 }
 
@@ -418,4 +367,3 @@ private val PANEL_SHADOW = Color(0x4D0F1115)
 private val DATE_WIDTH = 160.dp
 private const val FADE_MS = 180
 private const val SLIDE_FRACTION = 12
-private const val POPUP_DROP = 44

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +43,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
@@ -381,7 +381,9 @@ internal fun clockText(time: LocalTime): String {
 
 /**
  * A dropdown whose rows can carry a leading mark — a type's colour, a
- * person's face — and, for a long list, a search box.
+ * person's face — and, for a long list, a search box. The app's shared
+ * select: [leading] marks both the picked value in the field and each row;
+ * [menuWidth] null opens the list as wide as the field.
  */
 @Composable
 internal fun <T> DiaryDropdown(
@@ -397,122 +399,24 @@ internal fun <T> DiaryDropdown(
     error: Boolean = false,
     enabled: Boolean = true,
     emptyText: String = str(S.desktop_nothing_to_choose_from),
-    menuWidth: Dp = MENU_WIDTH,
+    menuWidth: Dp? = null,
 ) {
-    var open by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    val colors = ZillitTheme.colors
-    Box(modifier) {
-        FieldBox(enabled = enabled, error = error, onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
-            if (selected != null) leading?.invoke(selected)
-            ZillitText(
-                text = selected?.let(label) ?: placeholder,
-                style = ZillitTheme.typography.bodyMedium,
-                color = if (selected == null) colors.textMuted else colors.textPrimary,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            if (onClear != null && selected != null && enabled) {
-                ZillitIconButton(
-                    icon = ZillitIcons.Close,
-                    contentDescription = str(S.ah_clear),
-                    onClick = onClear,
-                    size = 20.dp,
-                )
-            }
-            ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.textMuted, size = 14.dp)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false; query = "" }) {
-            ChoiceMenu(
-                options = options,
-                selected = selected,
-                label = label,
-                leading = leading,
-                query = query.takeIf { searchable },
-                onQuery = { query = it },
-                emptyText = emptyText,
-                width = menuWidth,
-                onPick = { option ->
-                    onSelect(option)
-                    open = false
-                    query = ""
-                },
-            )
-        }
-    }
-}
-
-/** The dropdown's open list: a search box when the list is long, then the matching rows. */
-@Composable
-private fun <T> ChoiceMenu(
-    options: List<T>,
-    selected: T?,
-    label: (T) -> String,
-    leading: (@Composable (T) -> Unit)?,
-    query: String?,
-    onQuery: (String) -> Unit,
-    emptyText: String,
-    width: Dp,
-    onPick: (T) -> Unit,
-) {
-    val colors = ZillitTheme.colors
-    Column(Modifier.width(width)) {
-        if (query != null) {
-            ZillitTextField(
-                value = query,
-                onValueChange = onQuery,
-                placeholder = str(S.search),
-                leadingIcon = ZillitIcons.Search,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            )
-        }
-        val needle = query.orEmpty().trim()
-        val shown = options.filter { needle.isEmpty() || label(it).contains(needle, ignoreCase = true) }
-        if (shown.isEmpty()) {
-            ZillitText(
-                text = if (options.isEmpty()) emptyText else str(S.dm_picker_empty),
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
-                modifier = Modifier.padding(12.dp),
-            )
-        }
-        Column(Modifier.heightIn(max = MENU_MAX_HEIGHT).zillitVerticalScroll(rememberScrollState())) {
-            shown.forEach { option ->
-                ChoiceRow(selected = option == selected, onClick = { onPick(option) }) {
-                    leading?.invoke(option)
-                    ZillitText(
-                        text = label(option),
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = if (option == selected) colors.accentText else colors.textPrimary,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChoiceRow(selected: Boolean, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
-    val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                when {
-                    selected -> colors.surfaceSelected
-                    hovered -> colors.surfaceHover
-                    else -> Color.Transparent
-                },
-            )
-            .hoverable(interaction)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) { content() }
+    ZillitSearchSelect(
+        value = selected,
+        options = options,
+        onSelect = onSelect,
+        label = label,
+        modifier = modifier,
+        placeholder = placeholder,
+        enabled = enabled,
+        isError = error,
+        dropdownWidth = menuWidth,
+        onClear = onClear,
+        searchable = searchable,
+        optionLeading = leading,
+        fieldLeading = leading,
+        emptyText = emptyText,
+    )
 }
 
 // Colour -------------------------------------------------------------------
@@ -630,8 +534,6 @@ private val CELL_SIZE = 32.dp
 private val TIME_MENU_WIDTH = 150.dp
 private val TIME_MENU_HEIGHT = 260.dp
 private val TIME_ROW = 32.dp
-private val MENU_WIDTH = 320.dp
-private val MENU_MAX_HEIGHT = 320.dp
 private val PALETTE_WIDTH = 190.dp
 private const val PALETTE_COLUMNS = 5
 private const val HEX_LENGTH = 7

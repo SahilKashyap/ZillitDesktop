@@ -68,7 +68,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
@@ -120,7 +124,11 @@ internal fun PaneLabel(text: String) {
 
 // Select -----------------------------------------------------------------------------------------
 
-/** A native-looking select: the value, a chevron, and a menu of options. */
+/**
+ * A native-looking select: the value, a chevron, and the app's one option list.
+ * The trigger keeps the printed document's look; only the list is shared.
+ * [showInitials] off drops the list's initials tiles, for figures (hours, minutes).
+ */
 @Composable
 internal fun PaneSelect(
     value: String,
@@ -131,12 +139,14 @@ internal fun PaneSelect(
     enabled: Boolean = true,
     borderless: Boolean = false,
     fontSize: Int = 14,
+    showInitials: Boolean = true,
 ) {
     val colors = ReportTheme.colors
     var open by remember { mutableStateOf(false) }
     val (source, hovered) = rememberHover()
     val label = options.firstOrNull { it.first == value }?.second
-    Box(modifier) {
+    val anchor = rememberZillitSelectAnchor()
+    Box(modifier.zillitSelectAnchor(anchor)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -175,22 +185,19 @@ internal fun PaneSelect(
                 modifier = Modifier.size(12.dp),
             )
         }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            offset = DpOffset(0.dp, 4.dp),
-            shape = RoundedCornerShape(10.dp),
-            containerColor = colors.surface,
-            modifier = Modifier.border(1.dp, colors.border, RoundedCornerShape(10.dp)).heightIn(max = 320.dp),
-        ) {
-            Column(Modifier.widthIn(min = 140.dp).padding(horizontal = 4.dp)) {
-                options.forEach { (key, text) ->
-                    MenuOption(text, selected = key == value) {
-                        open = false
-                        onSelect(key)
-                    }
-                }
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = options,
+                isSelected = { it.first == value },
+                onPick = { (key, _) ->
+                    open = false
+                    onSelect(key)
+                },
+                label = { it.second },
+                width = anchor.popupWidth(),
+                showInitials = showInitials,
+            )
         }
     }
 }
@@ -1095,11 +1102,11 @@ internal fun InOutSelector(
                 ) {
                     PaneSelect(hour, listOf("" to "HH") + (0..23).map { it.pad() to it.pad() }, { h ->
                         onChange("Time:" + ReportTime.toWireTime("$h:${minute.ifEmpty { "00" }}"))
-                    }, Modifier.weight(1f), placeholder = "HH", fontSize = 13)
+                    }, Modifier.weight(1f), placeholder = "HH", fontSize = 13, showInitials = false)
                     Text(":", style = reportText(14.sp, FontWeight.Bold), color = ReportTheme.colors.textSecondary)
                     PaneSelect(minute, listOf("" to "MM") + (0..59).map { it.pad() to it.pad() }, { m ->
                         onChange("Time:" + ReportTime.toWireTime("${hour.ifEmpty { "00" }}:$m"))
-                    }, Modifier.weight(1f), placeholder = "MM", fontSize = 13)
+                    }, Modifier.weight(1f), placeholder = "MM", fontSize = 13, showInitials = false)
                 }
             }
             "Others" -> ReportInput(

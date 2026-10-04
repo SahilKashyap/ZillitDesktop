@@ -3,9 +3,6 @@ package com.zillit.desktop.feature.budget.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,16 +10,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,10 +30,14 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntries
 import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -110,7 +106,8 @@ internal fun VersionsPane(
 private fun VersionPicker(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, seams: BudgetScreenSeams) {
     val colors = ZillitTheme.colors
     val selected = state.selected
-    Box(Modifier.fillMaxWidth()) {
+    val anchor = rememberZillitSelectAnchor()
+    Box(Modifier.fillMaxWidth().zillitSelectAnchor(anchor)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -147,69 +144,38 @@ private fun VersionPicker(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, 
                 size = 16.dp,
             )
         }
-        ZillitMenuSurface(
-            expanded = state.versionMenuOpen,
-            onDismissRequest = { onEvent(BudgetEvent.VersionMenu(false)) },
-            offset = DpOffset(0.dp, ZillitTheme.spacing.xs),
-        ) {
-            Column(Modifier.width(PICKER_WIDTH).padding(ZillitTheme.spacing.sm)) {
-                ZillitSearchField(
-                    value = state.versionSearch,
-                    onValueChange = { onEvent(BudgetEvent.VersionSearch(it)) },
-                    placeholder = str(S.desktop_search_by_uploader),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val rows = state.versionsMatching(seams.nameOf)
-                // A plain column in a scroll box: a lazy list inside a
-                // DropdownMenu measures against infinite height and crashes.
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = PICKER_MAX_HEIGHT)
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = ZillitTheme.spacing.xs),
-                ) {
-                    if (rows.isEmpty()) {
-                        ZillitText(
-                            text = str(S.desktop_budget_no_version_by_uploader),
-                            style = ZillitTheme.typography.bodySmall,
-                            color = colors.textMuted,
-                            modifier = Modifier.padding(ZillitTheme.spacing.sm),
-                        )
-                    }
-                    rows.forEach { row -> VersionRow(row, row.document.id == selected?.id, seams.nameOf, onEvent) }
-                }
-            }
+        if (state.versionMenuOpen) {
+            // The uploader search stays the ViewModel's (it clears on pick and
+            // on close, and matches the uploader only), so it is drawn as the
+            // list's header and the list's own search line is off.
+            ZillitOptionPopup(
+                onDismiss = { onEvent(BudgetEvent.VersionMenu(false)) },
+                options = state.versionsMatching(seams.nameOf),
+                isSelected = { it.document.id == selected?.id },
+                onPick = { onEvent(BudgetEvent.SelectVersion(it.document.id)) },
+                label = { it.document.displayTitle(seams.nameOf) },
+                width = maxOf(anchor.popupWidth(), PICKER_WIDTH),
+                searchable = false,
+                header = {
+                    ZillitSearchField(
+                        value = state.versionSearch,
+                        onValueChange = { onEvent(BudgetEvent.VersionSearch(it)) },
+                        placeholder = str(S.desktop_search_by_uploader),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                renderOption = { row, _ -> VersionRow(row, seams.nameOf) },
+                emptyText = str(S.desktop_budget_no_version_by_uploader),
+            )
         }
     }
 }
 
+/** A version's title and unread badge, over who uploaded it and when. */
 @Composable
-private fun VersionRow(
-    row: BudgetDirectoryVersion,
-    isOpen: Boolean,
-    nameOf: (String) -> String?,
-    onEvent: (BudgetEvent) -> Unit,
-) {
+private fun VersionRow(row: BudgetDirectoryVersion, nameOf: (String) -> String?) {
     val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(
-                when {
-                    isOpen -> colors.surfaceSelected
-                    hovered -> colors.surfaceHover
-                    else -> colors.surfaceRaised
-                },
-            )
-            .hoverable(interaction)
-            .clickable { onEvent(BudgetEvent.SelectVersion(row.document.id)) }
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -222,7 +188,6 @@ private fun VersionRow(
                 modifier = Modifier.weight(1f),
             )
             if (row.unread > 0) ZillitBadge(count = row.unread)
-            if (isOpen) ZillitIcon(ZillitIcons.Check, tint = colors.accentText, size = 14.dp)
         }
         ZillitText(
             text = str(S.desktop_budget_uploaded_by, row.document.uploaderLabel(nameOf)),
@@ -471,7 +436,6 @@ private const val TENTHS = 10.0
 private const val MONTH_ABBREVIATION = 3
 private const val HOURS_ON_CLOCK = 12
 private val PICKER_WIDTH = 332.dp
-private val PICKER_MAX_HEIGHT = 360.dp
 private val HINT_WIDTH = 220.dp
 private val MENU_LIFT = 8.dp
 private val CHAT_LIST_CLEARANCE = 88.dp

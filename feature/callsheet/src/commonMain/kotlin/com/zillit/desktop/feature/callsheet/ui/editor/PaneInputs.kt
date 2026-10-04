@@ -70,7 +70,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -118,7 +122,11 @@ internal fun PaneLabel(text: String, modifier: Modifier = Modifier) {
 
 // Select -----------------------------------------------------------------------------------------
 
-/** A native-looking select: the value, a chevron, and a menu of options. */
+/**
+ * A native-looking select: the value, a chevron, and the app's one option list.
+ * The trigger keeps the printed document's look; only the list is shared.
+ * [showInitials] off drops the list's initials tiles, for figures (hours, minutes).
+ */
 @Composable
 internal fun PaneSelect(
     value: String,
@@ -131,13 +139,15 @@ internal fun PaneSelect(
     fontSize: Int = 14,
     radius: Int = 8,
     centered: Boolean = false,
+    showInitials: Boolean = true,
     onOpen: () -> Unit = {},
 ) {
     val colors = SheetTheme.colors
     var open by remember { mutableStateOf(false) }
     val (source, hovered) = rememberHover()
     val label = options.firstOrNull { it.first == value }?.second
-    Box(modifier) {
+    val anchor = rememberZillitSelectAnchor()
+    Box(modifier.zillitSelectAnchor(anchor)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -183,23 +193,19 @@ internal fun PaneSelect(
                 modifier = Modifier.size(12.dp),
             )
         }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            offset = DpOffset(0.dp, 4.dp),
-            shape = RoundedCornerShape(10.dp),
-            containerColor = colors.surface,
-            modifier = Modifier.border(1.dp, colors.border, RoundedCornerShape(10.dp)).heightIn(max = 320.dp),
-        ) {
-            // A plain column: a lazy list inside a DropdownMenu crashes on its intrinsic measure.
-            Column(Modifier.widthIn(min = 120.dp).padding(horizontal = 4.dp)) {
-                options.forEach { (key, text) ->
-                    MenuOption(text, selected = key == value) {
-                        open = false
-                        onSelect(key)
-                    }
-                }
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = options,
+                isSelected = { it.first == value },
+                onPick = { (key, _) ->
+                    open = false
+                    onSelect(key)
+                },
+                label = { it.second },
+                width = anchor.popupWidth(),
+                showInitials = showInitials,
+            )
         }
     }
 }
@@ -1072,6 +1078,7 @@ internal fun InSelector(
                         { h -> write(h.toIntOrNull() ?: 0, minute ?: 0) },
                         Modifier.weight(1f),
                         placeholder = "HH",
+                        showInitials = false,
                         radius = 4,
                         centered = true,
                         onOpen = onFocus,
@@ -1083,6 +1090,7 @@ internal fun InSelector(
                         { m -> write(hour ?: 0, m.toIntOrNull() ?: 0) },
                         Modifier.weight(1f),
                         placeholder = "MM",
+                        showInitials = false,
                         radius = 4,
                         centered = true,
                         onOpen = onFocus,

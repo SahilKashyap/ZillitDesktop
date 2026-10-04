@@ -430,10 +430,9 @@ data class DocDistUiState(
     val historyTotal: Int = 0,
     val historyLoadingMore: Boolean = false,
     val historySearch: String = "",
-    /** The "Sent by" menu: everyone the history could have been sent by, the ids ticked, and the menu's own search. */
+    /** The "Sent by" menu: everyone the history could have been sent by, the ids ticked, and whether it is open. */
     val historySenders: List<DistributionSender> = emptyList(),
     val historySenderIds: Set<String> = emptySet(),
-    val historySenderQuery: String = "",
     val historySenderMenuOpen: Boolean = false,
     val expandedDistributionId: String? = null,
     val historyDetail: HistoryDetailState? = null,

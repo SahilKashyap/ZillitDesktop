@@ -167,7 +167,6 @@ sealed interface DocDistEvent {
     data class SearchHistory(val text: String) : DocDistEvent
     data class ToggleHistorySender(val senderId: String) : DocDistEvent
     data object ClearHistorySenders : DocDistEvent
-    data class SearchHistorySenders(val text: String) : DocDistEvent
     data class HistorySenderMenu(val open: Boolean) : DocDistEvent
     data object LoadMoreHistory : DocDistEvent
     /** Opens one send's detail (null closes it) and refreshes its per-recipient open status. */

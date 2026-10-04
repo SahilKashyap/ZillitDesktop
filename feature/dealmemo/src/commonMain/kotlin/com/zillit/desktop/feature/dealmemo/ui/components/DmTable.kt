@@ -27,14 +27,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.ZillitSelectTrigger
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
 /** One table column: a fixed width, or a share of what is left. */
@@ -67,7 +73,8 @@ fun DmTableHeader(columns: List<DmColumn>) {
 
 /**
  * The web's native-select pill: a value in a white hairline pill with a
- * chevron, dropping a list of options.
+ * chevron. The pill stays the filter row's own; its list is the app's one
+ * select list, at least [menuWidth] and never narrower than the pill.
  */
 @Composable
 fun <T> DmSelectPill(
@@ -81,8 +88,8 @@ fun <T> DmSelectPill(
     var open by remember { mutableStateOf(false) }
     val (source, hovered) = rememberHover()
     val shape = RoundedCornerShape(8.dp)
-    val drop = with(LocalDensity.current) { 36.dp.roundToPx() }
-    Box(modifier = modifier) {
+    val anchor = rememberZillitSelectAnchor()
+    Box(modifier = modifier.zillitSelectAnchor(anchor)) {
         Row(
             modifier = Modifier
                 .clip(shape)
@@ -103,31 +110,75 @@ fun <T> DmSelectPill(
             )
             ZillitIcon(ZillitIcons.ChevronDown, size = 11.dp, tint = dm.ink3)
         }
-        DmDropPanel(open = open, onDismiss = { open = false }, offsetY = drop, width = menuWidth, alignEnd = false) {
-            options.forEach { option ->
-                val selected = option == value
-                DmHoverRow(
-                    onClick = {
-                        open = false
-                        onSelect(option)
-                    },
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).padding(
-                        horizontal = 10.dp,
-                        vertical = 8.dp,
-                    ),
-                    hoverColor = dm.controlHoverBg,
-                ) {
-                    ZillitText(
-                        text = label(option),
-                        style = DmType.sans(13.sp, if (selected) FontWeight.SemiBold else FontWeight.Normal),
-                        color = if (selected) dm.accent else dm.ink,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (selected) ZillitIcon(ZillitIcons.Check, size = 12.dp, tint = dm.accent)
-                }
-            }
+        if (open) {
+            ZillitOptionPopup(
+                onDismiss = { open = false },
+                options = options,
+                isSelected = { it == value },
+                onPick = { option ->
+                    open = false
+                    onSelect(option)
+                },
+                label = label,
+                width = maxOf(anchor.popupWidth(), menuWidth),
+            )
         }
+    }
+}
+
+/**
+ * A deal-memo form select's closed field, in the app's one select style
+ * ([ZillitSelectTrigger]) but at the form's own [height] and type size, so it
+ * still lines up with the inputs beside it. [shown] null reads [placeholder],
+ * muted; [onClear] draws the ✕ only while something is shown, and [leading]
+ * sits before the shown text. While open, [list] — a [ZillitOptionPopup] — is
+ * composed in the field's box with the width to open at (the field's own,
+ * never under [minListWidth]) and a closer.
+ */
+@Suppress("LongParameterList")
+@Composable
+internal fun DmSelectField(
+    shown: String?,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    error: Boolean = false,
+    height: Dp = 40.dp,
+    textSize: Float = 14f,
+    minListWidth: Dp = 240.dp,
+    onClear: (() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
+    list: @Composable (width: Dp, close: () -> Unit) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val anchor = rememberZillitSelectAnchor()
+    val colors = ZillitTheme.colors
+    Box(modifier.zillitSelectAnchor(anchor)) {
+        ZillitSelectTrigger(
+            open = open,
+            enabled = enabled,
+            onClick = { open = !open },
+            modifier = Modifier.fillMaxWidth(),
+            isError = error,
+            minHeight = height,
+            contentPadding = 10.dp,
+            onClear = onClear?.takeIf { shown != null },
+        ) {
+            if (shown != null) leading?.invoke()
+            ZillitText(
+                text = shown ?: placeholder,
+                style = ZillitTheme.typography.bodyMedium.copy(fontSize = textSize.sp),
+                color = when {
+                    !enabled -> colors.textDisabled
+                    shown == null -> colors.textMuted
+                    else -> colors.textPrimary
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (open) list(maxOf(anchor.popupWidth(), minListWidth)) { open = false }
     }
 }
 
