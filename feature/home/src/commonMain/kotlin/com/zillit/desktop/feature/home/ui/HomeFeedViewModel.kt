@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.datetime.toLocalDateTime
 import com.zillit.desktop.feature.home.domain.HomeFeedRepository
+import com.zillit.desktop.feature.home.domain.pageStamp
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.BoardRow
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
@@ -134,6 +135,10 @@ data class HomeFeedUiState(
      * a record, not a conversation.
      */
     val isHistory: Boolean = false,
+    /** There may be posts behind the oldest one shown; scrolling up asks. */
+    val hasOlder: Boolean = false,
+    /** An older page is on its way. */
+    val loadingOlder: Boolean = false,
 ) {
     val tabs: List<HomeUnit> get() = units.visibleTabs()
 
@@ -411,6 +416,9 @@ sealed interface HomeFeedEvent {
     data class ShowReadBy(val noticeId: String, val commentId: String? = null) : HomeFeedEvent
     data object DismissReadBy : HomeFeedEvent
 
+    /** The board was scrolled to its top (or "Show older" clicked): the page behind. */
+    data object LoadOlder : HomeFeedEvent
+
     /** Gallery on any post's menu: the unit's Media / Docs / Links library. */
     data object ShowLibrary : HomeFeedEvent
     data object DismissLibrary : HomeFeedEvent
@@ -579,6 +587,7 @@ class HomeFeedViewModel(
             HomeFeedEvent.Load -> loadUnits()
             HomeFeedEvent.ProjectChanged -> forgetProject()
             HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
+            HomeFeedEvent.LoadOlder -> loadOlder()
             HomeFeedEvent.RequestPostingRights -> askForPostingRights()
             is HomeFeedEvent.DraftChanged -> setState {
                 // `copy`, not a fresh draft: rebuilding it dropped whatever
@@ -1683,7 +1692,15 @@ class HomeFeedViewModel(
             return
         }
 
-        setState { copy(selectedUnitId = unit.id, isLoadingNotices = true, error = null) }
+        setState {
+            copy(
+                selectedUnitId = unit.id,
+                isLoadingNotices = true,
+                error = null,
+                hasOlder = false,
+                loadingOlder = false,
+            )
+        }
 
         launchResult(
             // "now" is the newest page — the endpoint reads backwards from a
@@ -1693,7 +1710,9 @@ class HomeFeedViewModel(
             onSuccess = { notices ->
                 // Guard against a slow response for a tab the user has left.
                 if (currentState.selectedUnitId == unit.id) {
-                    setState { copy(isLoadingNotices = false, notices = notices) }
+                    // Anything past a lone post may have history behind it;
+                    // the older-page fetch retires the cue itself.
+                    setState { copy(isLoadingNotices = false, notices = notices, hasOlder = notices.size > 1) }
                     // The board is on screen — that is what "read" means on
                     // this API, as when the web's Notices tab is visible.
                     launch { onBoardViewed(unit.id) }
@@ -1703,6 +1722,39 @@ class HomeFeedViewModel(
                 if (currentState.selectedUnitId == unit.id) {
                     setState { copy(isLoadingNotices = false, error = error.localised()) }
                 }
+            },
+        )
+    }
+
+    /**
+     * The page behind the oldest post shown, merged in — an arrival during
+     * the fetch must not be replaced by the older window. Paged from the
+     * oldest `updated`, as Android does. Stops when a page brings nothing
+     * new: the server's window includes its boundary post.
+     */
+    private fun loadOlder() {
+        val unit = currentState.selectedUnit ?: return
+        if (currentState.loadingOlder || !currentState.hasOlder) return
+        val oldest = currentState.notices
+            .filter { it.sendState == NoticeSendState.Sent && it.pageStamp > 0 }
+            .minOfOrNull { it.pageStamp } ?: return
+        setState { copy(loadingOlder = true) }
+        launchResult(
+            block = { repository.loadOlderNotices(unit.id, oldest) },
+            onSuccess = { page ->
+                setState {
+                    if (selectedUnitId != unit.id) {
+                        copy(loadingOlder = false)
+                    } else {
+                        // What is on screen wins a duplicate: it may carry an
+                        // edit or a reply the older page predates.
+                        val merged = (notices + page).distinctBy { it.id }
+                        copy(notices = merged, loadingOlder = false, hasOlder = merged.size > notices.size)
+                    }
+                }
+            },
+            onError = { error ->
+                setState { copy(loadingOlder = false, error = error.localised()) }
             },
         )
     }

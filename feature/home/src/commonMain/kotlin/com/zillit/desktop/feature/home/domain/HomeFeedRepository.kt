@@ -10,6 +10,13 @@ interface HomeFeedRepository {
     suspend fun loadNotices(unitId: String, beforeMillis: Long): ZillitResult<List<Notice>>
 
     /**
+     * The page behind [beforeMillis] (a [Notice.pageStamp]) — [loadNotices]
+     * without filing it as the board's newest page in the offline cache.
+     */
+    suspend fun loadOlderNotices(unitId: String, beforeMillis: Long): ZillitResult<List<Notice>> =
+        loadNotices(unitId, beforeMillis)
+
+    /**
      * Posts a notice.
      *
      * [localId] is the client-generated `unique_id`, so the returned notice can

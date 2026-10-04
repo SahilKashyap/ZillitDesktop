@@ -710,6 +710,15 @@ private fun Messages(
         contentKey = state.peer?.userId,
     )
 
+    // Scrolled to the top: the next page back, as the phones do, without a
+    // trip to the button. Reversed, so the visual top is the list's END.
+    // A thread too short to scroll never fires; the button is still there.
+    androidx.compose.runtime.LaunchedEffect(listState, state.hasOlder) {
+        if (!state.hasOlder) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { !listState.canScrollForward && listState.lastScrolledForward }
+            .collect { atTop -> if (atTop) onEvent(ChatEvent.ShowOlder) }
+    }
+
     if (state.isLoading && state.messages.isEmpty()) {
         LoadingThread(modifier)
         return

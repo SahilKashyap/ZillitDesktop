@@ -1842,8 +1842,10 @@ private fun NoticeBoard(
     ui: BoardUi,
     currentMatch: String?,
     jumpTo: JumpTarget? = null,
+    paging: BoardPaging = BoardPaging(),
 ) {
     val listState = rememberLazyListState()
+    OlderPages(listState, rows, unit, paging, ui.onEvent)
 
     // Opens on the newest post, and follows arrivals only for a reader
     // already at the bottom — the messaging-list convention.
@@ -1868,6 +1870,9 @@ private fun NoticeBoard(
         contentPadding = PaddingValues(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
+        if (paging.hasOlder) {
+            item(key = OLDER_ROW_KEY) { OlderRow(paging.loading) { ui.onEvent(HomeFeedEvent.LoadOlder) } }
+        }
         items(rows, key = { row -> rowKey(row) }) { row ->
             when (row) {
                 is BoardRow.Separator -> DateSeparator(row.label)
@@ -1896,6 +1901,70 @@ private fun NoticeBoard(
         }
     }
 }
+
+/** Whether there are posts behind the oldest one shown, and whether they are coming. */
+private data class BoardPaging(val hasOlder: Boolean = false, val loading: Boolean = false)
+
+/**
+ * Older posts on reaching the top, as the phones load them (`Home.kt`'s
+ * scroll-up listener) — and the reader stays on the post they were reading.
+ *
+ * The board runs oldest-to-newest downwards, so a page lands ABOVE the
+ * reader. Left alone the list would stay pinned to the top, the new oldest
+ * posts would sit there in view, and the next "at the top" would fetch again
+ * — the whole history in one scroll. So the oldest post is remembered when
+ * the page is asked for, and the list is put back on it when the page lands.
+ */
+@Composable
+private fun OlderPages(
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    rows: List<BoardRow>,
+    unit: HomeUnit,
+    paging: BoardPaging,
+    onEvent: (HomeFeedEvent) -> Unit,
+) {
+    var anchor by remember(unit.id) { mutableStateOf<String?>(null) }
+    val currentRows by androidx.compose.runtime.rememberUpdatedState(rows)
+    LaunchedEffect(listState, paging.hasOlder, unit.id) {
+        if (!paging.hasOlder) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { !listState.canScrollBackward && listState.lastScrolledBackward }
+            .collect { atTop ->
+                if (atTop) {
+                    anchor = currentRows.firstNotNullOfOrNull { (it as? BoardRow.Post)?.notice?.id }
+                    onEvent(HomeFeedEvent.LoadOlder)
+                }
+            }
+    }
+    LaunchedEffect(rows, paging.loading) {
+        val held = anchor ?: return@LaunchedEffect
+        if (paging.loading) return@LaunchedEffect
+        anchor = null
+        val index = rows.indexOfFirst { it is BoardRow.Post && it.notice.id == held }
+        // The "Show older" row, when it is still there, sits above row 0.
+        if (index > 0) listState.scrollToItem(index + if (paging.hasOlder) 1 else 0)
+    }
+}
+
+/** The top of a board with more behind it: "Show older", or "Loading…" while it comes. */
+@Composable
+private fun OlderRow(loading: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.small)
+            .clickable(enabled = !loading, onClick = onClick)
+            .padding(ZillitTheme.spacing.sm),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(
+            text = if (loading) str(S.ah_loading) else str(S.desktop_show_older),
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.accent,
+        )
+    }
+}
+
+private const val OLDER_ROW_KEY = "show-older"
 
 /**
  * What a reader without posting rights gets instead of the composer.
@@ -2613,6 +2682,7 @@ private fun BoardArea(
                 uploadProgress = { localId -> state.uploadProgress[localId] },
             ),
             currentMatch = state.currentSearchMatch,
+            paging = BoardPaging(state.hasOlder, state.loadingOlder),
             jumpTo = state.jumpTo,
         )
     }

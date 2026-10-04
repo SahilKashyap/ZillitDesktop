@@ -1294,13 +1294,15 @@ class ChatViewModel(
     private fun loadOlder() {
         val peer = currentState.peer ?: return
         if (currentState.loadingOlder) return
+        // Not the lines that never left this machine: their stamps are local,
+        // and an old queued line would page from a time the server never saw.
         val oldest = currentState.messages
-            .filter { it.timestampMillis > 0 }
-            .minOfOrNull { it.timestampMillis } ?: return
+            .filter { it.pageStamp > 0 && it.sendState !in LOCAL_ONLY }
+            .minOfOrNull { it.pageStamp } ?: return
         val isGroup = currentState.peerIsGroup
         setState { copy(loadingOlder = true) }
         launchResult(
-            block = { repository.history(peer.userId, oldest, isGroup) },
+            block = { repository.olderHistory(peer.userId, oldest, isGroup) },
             onSuccess = { page ->
                 setState {
                     if (this.peer?.userId != peer.userId) {
@@ -1896,6 +1898,9 @@ class ChatViewModel(
 
 private const val TAG = "Chat"
 private const val RECORDING_TICK_MILLIS = 1_000L
+
+/** Lines that exist only on this computer — never a page cursor. */
+private val LOCAL_ONLY = setOf(ChatSendState.Queued, ChatSendState.Failed)
 
 /** The web's `forward_successfully` (`utils/language/en.js:6781`). */
 internal val FORWARDED: String get() = str(S.desktop_chat_forward_successfully)

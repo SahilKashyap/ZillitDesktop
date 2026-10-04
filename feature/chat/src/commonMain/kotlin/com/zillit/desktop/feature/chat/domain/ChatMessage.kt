@@ -30,7 +30,20 @@ data class ChatMessage(
     val isEdited: Boolean = false,
     /** The line this one quotes, when it is a reply; null for a plain message. */
     val replyTo: ChatReplyRef? = null,
-)
+    /**
+     * The wire's `updated` — moved on by edits and read receipts, so it can
+     * be far newer than [timestampMillis]. 0 when the row carried none.
+     */
+    val updatedMillis: Long = 0,
+) {
+    /**
+     * Where an older page starts from: `updated`, as Android pages
+     * (`ChatAndGroupDb.getTimeStamp` sorts on it) and the server windows.
+     * Paging from `created` asked for a window the server does not keep, so
+     * a page could come back with nothing new and "Show older" retired early.
+     */
+    val pageStamp: Long get() = if (updatedMillis > 0) updatedMillis else timestampMillis
+}
 
 /**
  * A shared place — the wire's own `location` object, field for field.

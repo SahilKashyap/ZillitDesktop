@@ -63,6 +63,12 @@ class ThreadPagingTest {
             asked += nowMillis
             return ZillitResult.Success(answer(nowMillis))
         }
+
+        override suspend fun olderHistory(
+            otherUserId: String,
+            beforeMillis: Long,
+            isGroup: Boolean,
+        ): ZillitResult<List<ChatMessage>> = history(otherUserId, beforeMillis, isGroup)
     }
 
     private fun message(n: Int, at: Long) = ChatMessage(
@@ -157,6 +163,26 @@ class ThreadPagingTest {
         advanceUntilIdle()
 
         assertFalse(model.currentState.hasOlder)
+    }
+
+    /**
+     * The server windows `previous` by `updated` (Android pages from the
+     * oldest row's `updated`). A read receipt moves an old line's `updated`
+     * on, so paging from `created` asked for the wrong window.
+     */
+    @Test
+    fun `an older page is asked from the oldest updated stamp, not created`() = runTest(dispatcher) {
+        val repository = PagingRepository()
+        val newest = (0 until 5).map { message(it, 10_000L + it).copy(updatedMillis = 15_000L + it) }
+        repository.answer = { before -> if (before == NOW_MS) newest else emptyList() }
+
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.ShowOlder)
+        advanceUntilIdle()
+
+        assertEquals(15_000L, repository.asked.last())
     }
 }
 

@@ -215,6 +215,17 @@ interface ChatRepository {
         isGroup: Boolean = false,
     ): ZillitResult<List<ChatMessage>>
 
+    /**
+     * The page behind [beforeMillis] (a [ChatMessage.pageStamp]) — the same
+     * route as [history], but it leaves the thread's newest-window caches
+     * alone: an older page stored as "the thread" reopened it on old lines.
+     */
+    suspend fun olderHistory(
+        otherUserId: String,
+        beforeMillis: Long,
+        isGroup: Boolean = false,
+    ): ZillitResult<List<ChatMessage>> = history(otherUserId, beforeMillis, isGroup)
+
     @Suppress("LongParameterList")
     suspend fun send(
         receiverId: String,
@@ -824,6 +835,27 @@ class ChatRepositoryImpl(
                         disk?.replaceThread(project, otherUserId, rows.map { it.toRow(otherUserId) })
                     }
                 }
+        }
+
+    override suspend fun olderHistory(
+        otherUserId: String,
+        beforeMillis: Long,
+        isGroup: Boolean,
+    ): ZillitResult<List<ChatMessage>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${config.apiV2(ZillitService.Chat)}" +
+                (if (isGroup) "group-chat" else "private-chat") +
+                "/messages/$otherUserId/$beforeMillis/previous",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            queryParameters = scope.messageParameters(),
+            // No cacheAs, and no write-back: this is not the newest window.
+            options = scoped(CallOptions()),
+        ).map { body ->
+            chatRows(body)
+                .mapNotNull { readChatMessage(it, myUserId(), decrypt, isGroup) }
+                .sortedBy(ChatMessage::timestampMillis)
         }
 
     @Suppress("LongParameterList")

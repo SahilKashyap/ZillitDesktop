@@ -345,6 +345,12 @@ private val Notice.orderingTimestamp: Long
     get() = if (updatedAtMillis > 0) updatedAtMillis else createdAtMillis
 
 /**
+ * Where an older page starts from — `updated`, as Android pages the board
+ * (`HomeChatDBManager.getTimeStamp` sorts on it) and the server windows it.
+ */
+val Notice.pageStamp: Long get() = orderingTimestamp
+
+/**
  * What a "Replace one document" upload may swap out: LIVE document messages
  * the server has acknowledged — never an image or text (the server acts on
  * nothing else), never a pending post (the server matches on `_id`). Newest

@@ -263,6 +263,7 @@ fun readChatMessage(
         body = decrypt(raw) ?: raw,
         replyTo = readReplyRef(obj, decrypt),
         timestampMillis = obj.long("created") ?: obj.long("timestamp") ?: 0L,
+        updatedMillis = obj.long("updated") ?: 0L,
         isMine = myUserId != null && sender == myUserId,
         bodyCipher = raw,
         isGroup = isGroup,

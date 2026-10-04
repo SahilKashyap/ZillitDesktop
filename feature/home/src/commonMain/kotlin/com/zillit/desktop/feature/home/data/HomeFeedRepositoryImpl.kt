@@ -151,6 +151,20 @@ class HomeFeedRepositoryImpl(
             rows.mapNotNull { readNotice(it, ::decryptBody) }.forDisplay()
         }
 
+    /** Scrolling back: the same route, kept out of the newest-page cache. */
+    override suspend fun loadOlderNotices(
+        unitId: String,
+        beforeMillis: Long,
+    ): ZillitResult<List<Notice>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${chat}$unitId/$beforeMillis/previous",
+            serializer = ListSerializer(JsonElement.serializer()),
+            module = RequestModule.ProjectUser,
+        ).map { rows ->
+            rows.mapNotNull { readNotice(it, ::decryptBody) }.forDisplay()
+        }
+
 
     /**
      * Decrypts one notice body.
