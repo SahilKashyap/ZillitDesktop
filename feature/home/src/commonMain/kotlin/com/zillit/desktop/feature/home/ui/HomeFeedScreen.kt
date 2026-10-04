@@ -2,16 +2,11 @@ package com.zillit.desktop.feature.home.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.CornerRadius
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -2110,31 +2104,21 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
         NoticeThread(notice, ui)
         }
     }
-    // The kebab, over the card's top-right on hover or while the menu is
-    // up — held open by the menu so it does not vanish under the pointer.
+    // The kebab, over the card's top-right — always shown. It used to fade
+    // in on hover only, in the faintest grey, and people did not find it:
+    // a menu nobody can see is a menu nobody uses. The card's hover lifts
+    // it a shade so it still reads as belonging to the card under the pointer.
     //
-    // Always composed, faded in on hover — NOT conditionally composed on
-    // hover. Verified live (2026-08-17) with a log on the kebab's press: gated
-    // by `if (hovered)`, the press never reached it. The card's hover state
-    // drops for the instant of the press (the pointer re-check after the
-    // press's relayout reads the card as un-hovered), the kebab left the
-    // composition, and the press landed on the card underneath — hence the
-    // long-press menu worked from the same spot while a click did nothing.
-    // Faded rather than removed, the button is there to take the press. It
-    // opens on the press and swallows the release, so nothing underneath
-    // sees a click. The fade is animated, but it is still only an alpha.
-    val kebabAlpha by animateFloatAsState(
-        if (hovered || menuOpen) 1f else 0f,
-        animationSpec = tween(MOTION_MILLIS),
-        label = "kebab",
-    )
+    // Always composed, never gated by `if (hovered)`: verified live
+    // (2026-08-17), a hover-gated kebab left the composition for the instant
+    // of the press and the click landed on the card underneath. It opens on
+    // the press and swallows the release, so nothing underneath sees a click.
     Box(
         Modifier
             .align(Alignment.TopEnd)
-            .padding(ZillitTheme.spacing.sm)
-            .alpha(kebabAlpha),
+            .padding(ZillitTheme.spacing.sm),
     ) {
-        KebabButton(onPress = { menuOpen = true })
+        KebabButton(cardHovered = hovered || menuOpen, onPress = { menuOpen = true })
         NoticeActionsMenu(open = menuOpen, items = menuItems, onDismiss = { menuOpen = false })
     }
     }
@@ -2146,14 +2130,18 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
  * this is a bare icon with its own pointer handling and not [ZillitIconButton].
  */
 @Composable
-private fun KebabButton(onPress: () -> Unit) {
+private fun KebabButton(cardHovered: Boolean, onPress: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(
         modifier = Modifier
             .size(KEBAB_SIZE)
             .clip(CircleShape)
-            .background(if (hovered) ZillitTheme.colors.surfaceSunken else Color.Transparent)
+            .background(
+                // A disc behind it always, so the dots have a shape to be found
+                // by — bare, they were three specks in the corner.
+                if (hovered || cardHovered) ZillitTheme.colors.surfaceHover else ZillitTheme.colors.surfaceSunken,
+            )
             .hoverable(hover)
             .semantics { contentDescription = str(S.desktop_board_message_actions); role = Role.Button }
             .pointerInput(Unit) {
@@ -2165,12 +2153,12 @@ private fun KebabButton(onPress: () -> Unit) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        ZillitIcon(
-            icon = ZillitIcons.MoreHorizontal,
-            contentDescription = null,
-            tint = ZillitTheme.colors.textMuted,
-            size = KEBAB_GLYPH,
-        )
+        // Three solid dots, drawn here: the icon set's MoreHorizontal is three
+        // zero-length strokes, which stay specks at any size.
+        val dot = if (hovered || cardHovered) ZillitTheme.colors.textPrimary else ZillitTheme.colors.textSecondary
+        Row(horizontalArrangement = Arrangement.spacedBy(KEBAB_DOT_GAP)) {
+            repeat(KEBAB_DOTS) { Box(Modifier.size(KEBAB_DOT).clip(CircleShape).background(dot)) }
+        }
     }
 }
 
@@ -2481,32 +2469,11 @@ private fun DeleteConfirmRow(prompt: String, onConfirm: () -> Unit, onDismiss: (
 /** Everything under the post: its replies, and the Reply / Try again actions. */
 @Composable
 private fun NoticeThread(notice: Notice, ui: BoardUi) {
-    // Replies live inside the parent's bubble, as on the web — a thread is
-    // read in the context of what it answers. A rail down the left binds
-    // them to it, the way every threaded reader draws a thread.
-    if (notice.comments.isNotEmpty()) {
-        // A wash of the page's ink rather than the border token: the border
-        // vanishes against the dark bubble, and the rail has to show on both.
-        val rail = ZillitTheme.colors.textMuted.copy(alpha = THREAD_RAIL_ALPHA)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawBehind {
-                    drawRoundRect(
-                        color = rail,
-                        topLeft = Offset.Zero,
-                        size = Size(THREAD_RAIL.toPx(), size.height),
-                        cornerRadius = CornerRadius(THREAD_RAIL.toPx() / 2),
-                    )
-                }
-                .padding(start = THREAD_RAIL + ZillitTheme.spacing.md),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            notice.comments.forEach { comment ->
-                CommentBubble(parentId = notice.id, comment = comment, ui = ui)
-            }
-        }
-    }
+    // Replies live inside the parent's card, as on the web — a thread is read
+    // in the context of what it answers — but in a panel of their own. On a
+    // thin rail in the same white they read as more of the post: the reply
+    // and the message it answered looked like one person's two paragraphs.
+    if (notice.comments.isNotEmpty()) RepliesPanel(notice, ui)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -2521,14 +2488,10 @@ private fun NoticeThread(notice: Notice, ui: BoardUi) {
                 onClick = { ui.onEvent(HomeFeedEvent.StartReply(notice.id)) },
             )
         }
+        // The count heads the panel now; it only stands here when the
+        // replies themselves are not on the card to be counted.
         val count = notice.commentCount
-        if (count > 0) {
-            ZillitText(
-                text = if (count == 1) str(S.desktop_board_one_reply) else str(S.desktop_board_reply_count, count),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
+        if (count > 0 && notice.comments.isEmpty()) ReplyCount(count)
         if (notice.sendState == NoticeSendState.Failed) {
             ActionPill(
                 label = str(S.docusign_token_gateway_retry),
@@ -2539,6 +2502,50 @@ private fun NoticeThread(notice: Notice, ui: BoardUi) {
             )
         }
     }
+}
+
+/**
+ * A post's replies: a panel in the page's own grey under the message, headed
+ * by how many there are, the replies divided by hairlines — part of the card,
+ * and plainly not the card's own words. (A softened tint was tried first; on
+ * the white card in light mode it all but vanished.)
+ */
+@Composable
+private fun RepliesPanel(notice: Notice, ui: BoardUi) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(colors.canvas)
+            .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitIcon(icon = ZillitIcons.Reply, contentDescription = null, tint = colors.textMuted, size = PIN_GLYPH)
+            ReplyCount(notice.commentCount.coerceAtLeast(notice.comments.size))
+        }
+        notice.comments.forEachIndexed { index, comment ->
+            if (index > 0) {
+                Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.border))
+            }
+            CommentBubble(parentId = notice.id, comment = comment, ui = ui)
+        }
+    }
+}
+
+/** "1 reply" / "3 replies", in the margin's grey. */
+@Composable
+private fun ReplyCount(count: Int) {
+    ZillitText(
+        text = if (count == 1) str(S.desktop_board_one_reply) else str(S.desktop_board_reply_count, count),
+        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+        color = ZillitTheme.colors.textMuted,
+    )
 }
 
 /** A small soft-filled pill with a glyph — the card's one inline action. */
@@ -3100,8 +3107,6 @@ private val BUBBLE_ELEVATION_HOVER = 6.dp
 private const val MOTION_MILLIS = 160
 
 /** The thread rail's width and the pinned ring's softness. */
-private val THREAD_RAIL = 2.dp
-private const val THREAD_RAIL_ALPHA = 0.45f
 
 /** The kinds whose size prints under the post — see [NoticeFooter]. */
 private val SIZED_IN_FOOTER = setOf(NoticeKind.Image, NoticeKind.Video)
@@ -3149,8 +3154,10 @@ private val TAB_ICON = 14.dp
 private val EMPTY_ICON = 32.dp
 private val HAIRLINE = 1.dp
 private val COMPOSER_MIN_HEIGHT = 44.dp
-private val KEBAB_SIZE = 24.dp
-private val KEBAB_GLYPH = 16.dp
+private val KEBAB_SIZE = 28.dp
+private const val KEBAB_DOTS = 3
+private val KEBAB_DOT = 4.dp
+private val KEBAB_DOT_GAP = 3.dp
 
 /** Matches the view model's UPLOAD_DONE: bytes done, server writing. */
 private const val UPLOAD_DONE_PERCENT = 100
