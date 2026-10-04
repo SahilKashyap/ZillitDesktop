@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.home.domain.asWebHref
 import com.zillit.desktop.feature.home.domain.editVerdict
 import com.zillit.desktop.feature.home.domain.firstUrlIn
 import com.zillit.desktop.feature.home.domain.isEditableBy
+import com.zillit.desktop.feature.home.domain.neighboursOf
 import com.zillit.desktop.feature.home.domain.toLibrary
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -85,5 +86,31 @@ class NoticeMenuRulesTest {
         assertNull(firstUrlIn("nothing to click"))
         assertEquals("https://www.a.b", "www.a.b".asWebHref())
         assertEquals("http://a.b", "http://a.b".asWebHref())
+    }
+
+    @Test
+    fun `the viewer's arrows step through the board's pictures and clips, left older and right newer`() {
+        fun post(id: String, at: Long, kind: NoticeKind) = mine.copy(
+            id = id,
+            createdAtMillis = at,
+            kind = kind,
+            attachment = NoticeAttachment(media = "home/$id"),
+        )
+        val gallery = listOf(
+            post("first", now, NoticeKind.Image),
+            post("doc", now + 1, NoticeKind.Document),
+            post("clip", now + 2, NoticeKind.Video),
+            post("last", now + 3, NoticeKind.Image),
+        ).toLibrary().media
+
+        val middle = gallery.neighboursOf("home/clip")
+        assertEquals("first", middle.older?.notice?.id)
+        assertEquals("last", middle.newer?.notice?.id)
+        // The ends have one arrow; a document is not on the run at all.
+        assertNull(gallery.neighboursOf("home/first").older)
+        assertNull(gallery.neighboursOf("home/last").newer)
+        val unknown = gallery.neighboursOf("home/doc")
+        assertNull(unknown.older)
+        assertNull(unknown.newer)
     }
 }

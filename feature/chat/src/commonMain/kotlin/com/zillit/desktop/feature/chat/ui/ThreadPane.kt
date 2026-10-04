@@ -98,6 +98,7 @@ import com.zillit.desktop.feature.chat.domain.MentionSpan
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
 import com.zillit.desktop.feature.chat.domain.chatClockTime
 import com.zillit.desktop.feature.chat.domain.sharedContent
+import com.zillit.desktop.feature.chat.domain.neighboursOf
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.mentionSpans
 import kotlinx.datetime.toLocalDateTime
@@ -248,8 +249,13 @@ internal fun ThreadPane(
         }
 
         viewing?.let { file ->
+            // Arrows to the conversation's other pictures and clips, so they
+            // can be looked through without going back to the thread.
+            val around = shared.neighboursOf(file.media)
             ChatMediaViewer(
                 file = file,
+                onPrevious = stepTo(around.older) { viewing = it },
+                onNext = stepTo(around.newer) { viewing = it },
                 // The full object where the host offers it; the poster otherwise.
                 loadImage = { seams.loadFullImage?.invoke(it) ?: loadThumbnail(it) },
                 videoUrl = seams.videoUrl,

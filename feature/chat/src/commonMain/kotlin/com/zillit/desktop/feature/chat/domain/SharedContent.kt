@@ -19,6 +19,21 @@ data class SharedContent(
     val total: Int get() = media.size + docs.size + links.size
 }
 
+/**
+ * The pictures and clips either side of the one open in the viewer: [older]
+ * behind the left arrow, [newer] behind the right, as the thread reads top to
+ * bottom. Null at either end, or both when the open file is not listed.
+ */
+data class MediaNeighbours(val older: ChatAttachment?, val newer: ChatAttachment?)
+
+/** [MediaNeighbours] of the file stored under [mediaKey] among this conversation's media. */
+fun SharedContent.neighboursOf(mediaKey: String): MediaNeighbours {
+    // Newest first, so the older neighbour is the next one down the list.
+    val at = media.indexOfFirst { it.file.media == mediaKey }
+    if (at < 0) return MediaNeighbours(null, null)
+    return MediaNeighbours(older = media.getOrNull(at + 1)?.file, newer = media.getOrNull(at - 1)?.file)
+}
+
 /** One shared file and the message that carried it. */
 data class SharedFile(
     val messageId: String,

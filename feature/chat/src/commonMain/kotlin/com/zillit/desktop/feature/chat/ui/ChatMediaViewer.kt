@@ -28,6 +28,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitVideoView
 import com.zillit.desktop.core.designsystem.component.ZillitViewerClose
+import com.zillit.desktop.core.designsystem.component.ZillitViewerPager
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
@@ -56,12 +57,17 @@ internal fun ChatMediaViewer(
     onDownload: (ChatAttachment) -> Unit,
     onOpenOutside: (ChatAttachment) -> Unit,
     onClose: () -> Unit,
+    /** Steps to the conversation's older / newer picture or clip; null at the end. */
+    onPrevious: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     if (file.kind == "video") {
-        ChatVideoViewer(file, videoUrl, canDownload, onDownload, onOpenOutside, onClose)
+        ChatVideoViewer(file, videoUrl, canDownload, onDownload, onOpenOutside, onClose, onPrevious, onNext)
         return
     }
     val image by produceState<ImageBitmap?>(initialValue = null, file.media) {
+        // Stepped to another file: "loading", not the last picture under its name.
+        value = null
         value = loadImage(file)
     }
     var refused by remember(file.media) { mutableStateOf(false) }
@@ -80,7 +86,7 @@ internal fun ChatMediaViewer(
             ViewerHeader(file.name, refused, onClose) {
                 if (canDownload()) onDownload(file) else refused = true
             }
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            ZillitViewerPager(onPrevious, onNext, Modifier.fillMaxWidth().weight(1f)) {
                 val loaded = image
                 if (loaded == null) {
                     ZillitText(
@@ -156,9 +162,13 @@ private fun ChatVideoViewer(
     onDownload: (ChatAttachment) -> Unit,
     onOpenOutside: (ChatAttachment) -> Unit,
     onClose: () -> Unit,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
 ) {
     var refused by remember(file.media) { mutableStateOf(false) }
     val link by produceState<StreamLink?>(initialValue = null, file.media, videoUrl) {
+        // Stepped to another clip: the last one's player goes, not plays on.
+        value = null
         value = StreamLink(videoUrl?.invoke(file))
     }
 
@@ -167,21 +177,27 @@ private fun ChatVideoViewer(
             ViewerHeader(file.name, refused, onClose) {
                 if (canDownload()) onDownload(file) else refused = true
             }
-            ZillitVideoView(
-                url = link?.url,
-                // Resolved, and there was nothing to resolve to.
-                failed = link != null && link?.url == null,
-                onOpenOutside = {
-                    // The viewer first: a dead player left standing behind the
-                    // OS's window is the next thing the user comes back to.
-                    onClose()
-                    onOpenOutside(file)
-                },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
+            ZillitViewerPager(onPrevious, onNext, Modifier.fillMaxWidth().weight(1f)) {
+                ZillitVideoView(
+                    url = link?.url,
+                    // Resolved, and there was nothing to resolve to.
+                    failed = link != null && link?.url == null,
+                    onOpenOutside = {
+                        // The viewer first: a dead player left standing behind
+                        // the OS's window is the next thing the user comes back to.
+                        onClose()
+                        onOpenOutside(file)
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
+
+/** An arrow that opens [file], or no arrow when there is nothing that way. */
+internal fun stepTo(file: ChatAttachment?, open: (ChatAttachment) -> Unit): (() -> Unit)? =
+    file?.let { next -> { open(next) } }
 
 /** Distinguishes "not resolved yet" (null) from "resolved to nothing" (url null). */
 private data class StreamLink(val url: String?)

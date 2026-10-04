@@ -84,6 +84,9 @@ import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.BoardRow
 import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.toLibrary
+import com.zillit.desktop.feature.home.domain.LibraryEntry
+import com.zillit.desktop.feature.home.domain.NoticeLibrary
+import com.zillit.desktop.feature.home.domain.neighboursOf
 import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.ReadReceipt
 import com.zillit.desktop.feature.home.domain.toClockTime
@@ -242,6 +245,8 @@ internal fun HomeFeedScreen(
     var dropHover by remember { mutableStateOf(false) }
 
     HandOffOpens(state.pendingOpen, onOpenAttachment, onEvent)
+    // Android's Gallery, from the posts on screen; the viewer's arrows too.
+    val library = remember(state.notices) { state.notices.toLibrary() }
 
     Box(modifier = modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -284,6 +289,7 @@ internal fun HomeFeedScreen(
     BoardDialogs(
         state = state,
         onEvent = onEvent,
+        library = library,
         media = media,
         resolveAuthor = resolveAuthor,
         loadAvatar = loadAvatar,
@@ -298,9 +304,10 @@ internal fun HomeFeedScreen(
     // opened from; drawn before the dialogs it sat underneath them.
     BoardViewers(
         viewer = viewer,
+        gallery = library.media,
         media = media,
         onOpenAttachment = { id, file -> onEvent(HomeFeedEvent.OpenAttachment(id, file)) },
-        onClose = { viewer = null },
+        onShow = { viewer = it },
     )
     }
 }
@@ -332,28 +339,50 @@ private fun BoardHeader(
     PinnedBanner(state.pinnedBanner, resolveAuthor, onEvent)
 }
 
-/** Whichever viewer is open, over everything else. */
+/**
+ * Whichever viewer is open, over everything else, with arrows to the board's
+ * [gallery] either side of it — a picture can step to a clip and back.
+ */
 @Composable
 private fun BoardViewers(
     viewer: BoardViewer?,
+    gallery: List<LibraryEntry.Media>,
     media: NoticeMediaSource?,
     onOpenAttachment: (noticeId: String, NoticeAttachment) -> Unit,
-    onClose: () -> Unit,
+    /** Another item to step to, or null to close. */
+    onShow: (BoardViewer?) -> Unit,
 ) {
+    val onClose = { onShow(null) }
+    val open = when (viewer) {
+        null -> return
+        is BoardViewer.Picture -> viewer.attachment
+        is BoardViewer.Clip -> viewer.attachment
+    }
+    val around = gallery.neighboursOf(open.media)
+    val onPrevious = around.older?.let { entry -> { onShow(entry.asViewer()) } }
+    val onNext = around.newer?.let { entry -> { onShow(entry.asViewer()) } }
     when (viewer) {
-        null -> Unit
-
-        is BoardViewer.Picture ->
-            MediaLightbox(attachment = viewer.attachment, media = media, onClose = onClose)
+        is BoardViewer.Picture -> MediaLightbox(
+            attachment = viewer.attachment,
+            media = media,
+            onClose = onClose,
+            onPrevious = onPrevious,
+            onNext = onNext,
+        )
 
         is BoardViewer.Clip -> VideoLightbox(
             attachment = viewer.attachment,
             media = media,
             onOpenOutside = { onOpenAttachment(viewer.noticeId, viewer.attachment) },
             onClose = onClose,
+            onPrevious = onPrevious,
+            onNext = onNext,
         )
     }
 }
+
+private fun LibraryEntry.Media.asViewer(): BoardViewer =
+    if (isVideo) BoardViewer.Clip(notice.id, attachment) else BoardViewer.Picture(attachment)
 
 /**
  * The model named the rendition to open (a call sheet's watermarked copy
@@ -383,6 +412,7 @@ private fun HandOffOpens(
 private fun BoardDialogs(
     state: HomeFeedUiState,
     onEvent: (HomeFeedEvent) -> Unit,
+    library: NoticeLibrary,
     media: NoticeMediaSource?,
     resolveAuthor: (String?) -> String?,
     loadAvatar: suspend (String) -> ByteArray?,
@@ -394,8 +424,6 @@ private fun BoardDialogs(
 ) {
     ForwardPicker(state, onEvent)
     ReadByPanel(state.readBy, canNotify = state.canCompose, resolveAuthor, loadAvatar, onEvent)
-    // Android's Gallery — built from the posts on screen, as there.
-    val library = remember(state.notices) { state.notices.toLibrary() }
     NoticeLibraryPanel(
         visible = state.libraryOpen,
         unitLabel = state.selectedUnit?.label,
@@ -1665,6 +1693,14 @@ private fun UnitTabs(
     // In the tab strip, not the composer: find works in history and on
     // read-only boards too, where the composer has other rules.
     if (selected != null && selected.kind != HomeUnitKind.Calendar) {
+        // The Gallery, where it can be found — before, only a post's menu
+        // opened it, and only on a board that already had a post.
+        ZillitIconButton(
+            icon = ZillitIcons.Photo,
+            contentDescription = str(S.desktop_media_links_docs),
+            tint = if (state.libraryOpen) colors.accent else null,
+            onClick = { onEvent(HomeFeedEvent.ShowLibrary) },
+        )
         val searching = state.searchQuery != null
         ZillitIconButton(
             icon = ZillitIcons.Search,

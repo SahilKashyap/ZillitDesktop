@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitVideoView
 import com.zillit.desktop.core.designsystem.component.ZillitViewerClose
+import com.zillit.desktop.core.designsystem.component.ZillitViewerPager
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.AudioPlayer
@@ -612,6 +613,8 @@ internal fun MediaLightbox(
     attachment: NoticeAttachment,
     media: NoticeMediaSource?,
     onClose: () -> Unit,
+    onPrevious: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     val bitmap by rememberAttachmentImage(attachment, media, preview = false)
 
@@ -626,25 +629,27 @@ internal fun MediaLightbox(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        when (val loaded = bitmap) {
-            null -> ZillitText(
-                text = str(S.ah_loading),
-                style = ZillitTheme.typography.bodyMedium,
-                color = Color.White,
-            )
+        ZillitViewerPager(onPrevious, onNext, Modifier.fillMaxSize()) {
+            when (val loaded = bitmap) {
+                null -> ZillitText(
+                    text = str(S.ah_loading),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = Color.White,
+                )
 
-            is AttachmentImage.Failed -> ZillitText(
-                text = str(S.desktop_could_not_load_image),
-                style = ZillitTheme.typography.bodyMedium,
-                color = Color.White,
-            )
+                is AttachmentImage.Failed -> ZillitText(
+                    text = str(S.desktop_could_not_load_image),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = Color.White,
+                )
 
-            is AttachmentImage.Ready -> Image(
-                bitmap = loaded.bitmap,
-                contentDescription = attachment.fileName,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().padding(LIGHTBOX_PADDING),
-            )
+                is AttachmentImage.Ready -> Image(
+                    bitmap = loaded.bitmap,
+                    contentDescription = attachment.fileName,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(LIGHTBOX_PADDING),
+                )
+            }
         }
 
         ZillitViewerClose(
@@ -672,8 +677,12 @@ internal fun VideoLightbox(
     media: NoticeMediaSource?,
     onOpenOutside: () -> Unit,
     onClose: () -> Unit,
+    onPrevious: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     val link by produceState<StreamLink?>(initialValue = null, attachment.media, media) {
+        // Stepped to another clip: the last one's player goes, not plays on.
+        value = null
         value = StreamLink(media?.streamUrl(attachment))
     }
 
@@ -697,19 +706,21 @@ internal fun VideoLightbox(
                 )
                 ZillitViewerClose(onClose = onClose)
             }
-            ZillitVideoView(
-                url = link?.url,
-                // Resolved, and there was nothing to resolve to.
-                failed = link != null && link?.url == null,
-                onOpenOutside = {
-                    // The viewer goes first: a dead player left standing
-                    // behind the OS's own window is the next thing the user
-                    // comes back to.
-                    onClose()
-                    onOpenOutside()
-                },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
+            ZillitViewerPager(onPrevious, onNext, Modifier.fillMaxWidth().weight(1f)) {
+                ZillitVideoView(
+                    url = link?.url,
+                    // Resolved, and there was nothing to resolve to.
+                    failed = link != null && link?.url == null,
+                    onOpenOutside = {
+                        // The viewer goes first: a dead player left standing
+                        // behind the OS's own window is the next thing the
+                        // user comes back to.
+                        onClose()
+                        onOpenOutside()
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -732,6 +743,8 @@ internal fun rememberAttachmentImage(
     media: NoticeMediaSource?,
     preview: Boolean,
 ) = produceState<AttachmentImage?>(initialValue = null, attachment.media, preview) {
+    // A new object: say "loading", not the last one's picture under its name.
+    value = null
     // An optimistic card carries its own bytes; nothing to fetch yet.
     attachment.localBytes?.let { local ->
         value = decodeImageBitmap(local)

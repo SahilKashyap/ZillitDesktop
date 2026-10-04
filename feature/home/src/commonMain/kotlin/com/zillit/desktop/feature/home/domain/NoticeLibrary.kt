@@ -62,6 +62,21 @@ fun List<Notice>.toLibrary(): NoticeLibrary {
 }
 
 /**
+ * The pictures and clips either side of the one open in the viewer, keyed by
+ * its storage key: [older] behind the left arrow, [newer] behind the right —
+ * the board reads oldest-to-newest downwards, so left is up the board. Null at
+ * either end, or both when the open file is not on the board (still sending).
+ */
+data class MediaNeighbours(val older: LibraryEntry.Media?, val newer: LibraryEntry.Media?)
+
+/** [MediaNeighbours] of [mediaKey] in this newest-first list. */
+fun List<LibraryEntry.Media>.neighboursOf(mediaKey: String): MediaNeighbours {
+    val at = indexOfFirst { it.attachment.media == mediaKey }
+    if (at < 0) return MediaNeighbours(null, null)
+    return MediaNeighbours(older = getOrNull(at + 1), newer = getOrNull(at - 1))
+}
+
+/**
  * The first web address in a text, or null. Android's pattern
  * (`(?i)\b(?:https?://|www\.)[^\s<>"']+`) with the trailing punctuation a
  * sentence leaves on a link (`.`, `,`, `)` …) trimmed off.
