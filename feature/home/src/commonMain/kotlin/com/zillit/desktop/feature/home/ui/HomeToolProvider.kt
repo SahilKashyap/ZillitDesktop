@@ -71,6 +71,10 @@ class HomeToolProvider(
      * the Join button is not drawn.
      */
     private val onJoinEventCall: ((CalendarEvent) -> Unit)? = null,
+    /** The viewer's department identifier, read when the grid draws — a tool's ⓘ can depend on it. */
+    private val viewerDepartment: () -> String? = { null },
+    /** Whether the open production is a non-film one (`project_type_id == "other"`). */
+    private val isOtherProject: () -> Boolean = { false },
 ) : ToolProvider {
 
     override val path: String = "/home"
@@ -141,6 +145,8 @@ class HomeToolProvider(
             // The whole slice, not a lookup: the grid orders tiles by unread
             // count, so it needs something it can compare between frames.
             toolBadges = counts.toolMap(),
+            viewerDepartment = viewerDepartment(),
+            isOtherProject = isOtherProject(),
             onCustomiseTools = customiseToolsRoute?.let { route ->
                 { navigator.navigate(WorkspaceRoute.Tool(route)) }
             },

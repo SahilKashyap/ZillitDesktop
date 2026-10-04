@@ -64,6 +64,8 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolPresentation
+import com.zillit.desktop.feature.home.domain.ToolInfoViewer
+import com.zillit.desktop.feature.home.domain.toolDescription
 
 /**
  * The production dashboard — every tool this person may open.
@@ -91,6 +93,10 @@ fun HomeScreen(
      * the host decides where the page lives, this screen only offers the way.
      */
     onCustomiseTools: (() -> Unit)? = null,
+    /** The viewer's department identifier — the Deal Memo's ⓘ speaks to the accounts team as dealers. */
+    viewerDepartment: String? = null,
+    /** A non-film production: the ⓘ texts say "staff" where a film's say "crew". */
+    isOtherProject: Boolean = false,
 ) {
     // The find box is the screen's own: forty tiles is a wall, and the phones
     // put a search over theirs. Local state — a query is not a fact about the
@@ -99,6 +105,10 @@ fun HomeScreen(
     val shown = remember(state.sections, query, toolBadges) {
         state.sections.matching(query).sortedForDisplay(toolBadges)
     }
+    // The tool whose ⓘ was clicked; null keeps its description shut.
+    var aboutTool by remember { mutableStateOf<ToolPresentation?>(null) }
+    val describe = toolDescriber(state, viewerDepartment, isOtherProject)
+    val open: (ToolPresentation) -> Unit = { tool -> onEvent(HomeEvent.OpenTool(tool.route)) }
 
     Column(
         modifier = modifier
@@ -140,9 +150,17 @@ fun HomeScreen(
 
             shown.isEmpty() -> Centred(str(S.desktop_tools_no_match, query.trim()))
 
-            else -> ToolGrid(shown, onEvent, toolBadges, query)
+            else -> ToolSections(
+                sections = shown,
+                badges = toolBadges,
+                query = query,
+                onOpen = open,
+                onInfo = { aboutTool = it },
+            )
         }
     }
+
+    ToolInfoDialog(tool = aboutTool, describe = describe, onOpen = open, onDismiss = { aboutTool = null })
 
     ReorderGroupsDialog(
         visible = state.isReordering,
@@ -154,6 +172,25 @@ fun HomeScreen(
         onSave = { onEvent(HomeEvent.SaveGroupOrder(it)) },
         onDismiss = { onEvent(HomeEvent.CancelReorder) },
     )
+}
+
+/** Each tool's ⓘ text for this viewer — see [toolDescription]. */
+private fun toolDescriber(
+    state: HomeUiState,
+    department: String?,
+    isOtherProject: Boolean,
+): (ToolPresentation) -> String {
+    val viewer = ToolInfoViewer(
+        isAdmin = state.isAdmin,
+        isOtherProject = isOtherProject,
+        departmentIdentifier = department,
+        // The right as the server sent it, as the web reads `posting_access`.
+        canPost = { id -> state.permissions.tools.any { it.identifier == id && it.canPost } },
+    )
+    return { tool ->
+        val described = toolDescription(tool.identifier, tool.label, viewer)
+        described.toolName?.let { str(described.key, it) } ?: str(described.key)
+    }
 }
 
 /**
@@ -444,195 +481,6 @@ private fun GridHeader(
     }
 }
 
-/**
- * The grid, in the production's own sections.
- *
- * Headers span the full width so the run beneath them reads as one group —
- * thirty-odd unlabelled tiles is a wall, and the crew already know these tools
- * by their department.
- */
-@Composable
-private fun ToolGrid(
-    sections: List<ToolSection>,
-    onEvent: (HomeEvent) -> Unit,
-    toolBadges: Map<String, Int> = emptyMap(),
-    /** Lights the matched letters in each tile's name. */
-    query: String = "",
-) {
-    val gridState = rememberLazyGridState()
-
-    ZillitLazyVerticalGrid(
-        // Adaptive rather than a fixed column count: this is a desktop window
-        // that can be a third of a screen or all of it, and a fixed grid would
-        // be either cramped or a row of stamps.
-        columns = GridCells.Adaptive(minSize = TILE_MIN),
-        state = gridState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(PAGE_PADDING),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        sections.forEach { section ->
-            // Every non-empty section is headed, always — one header per group
-            // is what both phones emit, with no single-group special case.
-            // Suppressing it left a production that keeps its tools in one
-            // group showing an unlabelled grid here and a labelled one on the
-            // same user's phone.
-            item(key = "section-${section.title}", span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(section.title, section.tools.size)
-            }
-            items(section.tools, key = ToolPresentation::identifier) { tool ->
-                ToolTile(
-                    tool = tool,
-                    badge = toolBadges[tool.identifier] ?: 0,
-                    query = query,
-                    onClick = { onEvent(HomeEvent.OpenTool(tool.route)) },
-                )
-            }
-        }
-    }
-}
-
-/**
- * A section's name, wearing the section's own colour.
- *
- * The bar takes its hue from the group name by the same rule the tiles take
- * theirs — so a department reads as one block of colour down the page rather
- * than a heading that happens to sit above some tiles. The count rides in a
- * soft pill because a bare number beside a title reads as part of it.
- */
-@Composable
-private fun SectionHeader(title: String, count: Int) {
-    val hue = avatarHue(title)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = ZillitTheme.spacing.lg, bottom = ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        // The name rides its own tinted pill rather than sitting bare on the
-        // page: a heading over a wall of white tiles needs a shape of its own
-        // to be found while scrolling, and the tint ties it to the department's
-        // colour without ever printing text in a hue that dark mode would bury.
-        Row(
-            modifier = Modifier
-                .clip(ZillitTheme.shapes.pill)
-                .background(hue.copy(alpha = CHIP_TINT))
-                .padding(
-                    start = ZillitTheme.spacing.sm,
-                    end = ZillitTheme.spacing.md,
-                    top = ZillitTheme.spacing.xs,
-                    bottom = ZillitTheme.spacing.xs,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            Box(
-                Modifier
-                    .size(SECTION_DOT)
-                    .clip(CircleShape)
-                    .background(hue),
-            )
-            ZillitText(
-                text = title,
-                style = ZillitTheme.typography.titleSmall,
-                color = ZillitTheme.colors.textPrimary,
-            )
-            ZillitText(
-                text = count.toString(),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
-
-        // The rule finishes the line rather than dividing it — it fades to
-        // nothing so the eye stays on the name.
-        Box(
-            Modifier
-                .weight(1f)
-                .height(HAIRLINE)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(hue.copy(alpha = RULE_TINT), Color.Transparent),
-                    ),
-                ),
-        )
-    }
-}
-
-@Composable
-private fun ToolTile(tool: ToolPresentation, onClick: () -> Unit, badge: Int = 0, query: String = "") {
-    val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-
-    Box {
-    Column(
-        modifier = Modifier
-            .aspectRatio(1f)
-            .shadow(if (hovered) TILE_LIFT else 0.dp, ZillitTheme.shapes.medium)
-            .clip(ZillitTheme.shapes.medium)
-            .background(colors.surface)
-            .border(
-                width = HAIRLINE,
-                color = if (hovered) colors.borderStrong else colors.border,
-                shape = ZillitTheme.shapes.medium,
-            )
-            .hoverable(interaction)
-            .clickable(onClickLabel = tool.label, onClick = onClick)
-            .padding(ZillitTheme.spacing.md),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        // The phone's artwork on a disc in the tool's own hue — the same
-        // one-name, one-colour rule the avatars keep, so Accounting is
-        // findable by colour after the first visit. The disc is tinted softly
-        // and the glyph carries the full hue: these icons are filled, and a
-        // white silhouette on saturated colour loses their detail.
-        val hue = avatarHue(tool.label)
-        Box(
-            modifier = Modifier
-                .size(TILE_DISC)
-                .clip(CircleShape)
-                .background(hue.copy(alpha = DISC_TINT)),
-            contentAlignment = Alignment.Center,
-        ) {
-            ZillitIcon(
-                icon = tool.icon,
-                contentDescription = null,
-                tint = hue,
-                size = TILE_ICON,
-            )
-        }
-        Box(Modifier.padding(top = ZillitTheme.spacing.sm)) {
-            ZillitText(
-                text = highlightedLabel(tool.label, query),
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textPrimary,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-            )
-        }
-    }
-    // Over the tile's corner, like the phone's launcher — the count must
-    // survive any tile art behind it, hence on top rather than beside.
-    if (badge > 0) {
-        com.zillit.desktop.core.designsystem.component.ZillitBadge(
-            count = badge,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(ZillitTheme.spacing.xs),
-            // Uncapped here, capped everywhere else: a tile has room for the
-            // real number and both phones print it in full, while the rail and
-            // tab strip — where "99+" was introduced — still cannot.
-            cap = null,
-        )
-    }
-    }
-}
-
 @Composable
 private fun ErrorState(message: String, onEvent: (HomeEvent) -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -666,21 +514,13 @@ private fun Centred(text: String) {
     }
 }
 
-private val TILE_MIN = 132.dp
 private val SEARCH_WIDTH = 260.dp
 private val REORDER_WIDTH = 420.dp
 private val REORDER_ROW_HEIGHT = 40.dp
 private val GRIP_SIZE = 28.dp
 private const val HALF_TURN = 180f
-private val TILE_ICON = 24.dp
-private const val DISC_TINT = 0.16f
-private val SECTION_DOT = 8.dp
-private const val CHIP_TINT = 0.14f
-private const val RULE_TINT = 0.35f
-private val TILE_DISC = 44.dp
-private val TILE_LIFT = 6.dp
 private val TITLE_ACCENT_WIDTH = 4.dp
 private val TITLE_ACCENT_HEIGHT = 40.dp
 private val PAGE_PADDING = 24.dp
-private val HAIRLINE = 1.dp
 private const val MESSAGE_WIDTH_FRACTION = 0.6f
+private val SECTION_DOT = 8.dp

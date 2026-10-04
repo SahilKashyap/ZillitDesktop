@@ -95,7 +95,7 @@ private fun crewListText(key: String, fallback: String): String =
     Labels.current.exact(key)?.takeIf { it.isNotBlank() } ?: fallback
 
 /** An `other` production is a workspace, not a shoot: its roster is a Staff List. */
-private fun AppGraph.Ready.isOtherProduction(): Boolean =
+internal fun AppGraph.Ready.isOtherProduction(): Boolean =
     projectContext?.context?.value?.project?.type.equals(OTHER_PROJECT_TYPE, ignoreCase = true)
 
 /**

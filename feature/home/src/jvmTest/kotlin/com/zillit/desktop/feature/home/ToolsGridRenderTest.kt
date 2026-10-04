@@ -6,6 +6,8 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import com.zillit.desktop.feature.home.ui.HomeEvent
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.permissions.ProjectPermissions
@@ -14,6 +16,7 @@ import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.ui.HomeScreen
 import com.zillit.desktop.feature.home.ui.HomeUiState
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
  * Composes the real grid, because the rules brought into line with the phones
@@ -133,6 +136,35 @@ class ToolsGridRenderTest {
             // Uncapped on a tile, where both phones print the real number.
             onNodeWithText("120").assertExists()
             onAllNodesWithText("99+").assertCountEquals(0)
+        }
+    }
+
+    /**
+     * The ⓘ: a tool Android describes wears one, and clicking it says what the
+     * tool is for — in the crew's words for crew — with Open as the way in.
+     * Every tool wears one, Timecards included.
+     */
+    @Test
+    fun `the info icon explains a tool and Open goes into it`() {
+        val events = mutableListOf<HomeEvent>()
+        val state = oneGroup.copy(
+            permissions = ProjectPermissions(
+                listOf(
+                    tool("purchase_order_tool", "Purchase Orders", "accounts"),
+                    tool("timecard_tool", "Timecards", "accounts"),
+                ),
+            ),
+        )
+        runComposeUiTest {
+            setContent { ZillitTheme { HomeScreen(state = state, onEvent = { events += it }) } }
+
+            onNodeWithContentDescription("About Timecards").assertExists()
+            onNodeWithContentDescription("About Purchase Orders").performClick()
+            onNodeWithText("Raise purchase orders, upload invoices", substring = true).assertExists()
+
+            onNodeWithText("Open").performClick()
+            waitForIdle()
+            assertTrue(events.any { it is HomeEvent.OpenTool }, "Open opened the tool")
         }
     }
 }

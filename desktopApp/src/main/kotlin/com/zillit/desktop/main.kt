@@ -3580,6 +3580,15 @@ private fun buildRegistry(
                 onJoinEventCall = viewModels.calls?.let { vm ->
                     { event -> vm.onEvent(joinEventCall(event)) }
                 },
+                // What the tools' ⓘ texts branch on, as the web reads them:
+                // the profile's department (crew row as fallback), and
+                // whether this is a non-film production.
+                viewerDepartment = {
+                    (graph as? AppGraph.Ready)?.projectContext?.context?.value?.let { context ->
+                        context.profile?.departmentIdentifier ?: context.user(context.profile?.userId)?.department
+                    }
+                },
+                isOtherProject = { (graph as? AppGraph.Ready)?.isOtherProduction() == true },
             )
         }
     }
