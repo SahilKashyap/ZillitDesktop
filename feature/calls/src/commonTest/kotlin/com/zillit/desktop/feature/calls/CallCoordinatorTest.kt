@@ -10,6 +10,7 @@ import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.data.allOthersGone
+import com.zillit.desktop.feature.calls.data.privateCallDeserted
 import com.zillit.desktop.feature.calls.data.CallCoordinator
 import com.zillit.desktop.feature.calls.data.CallEndReason
 import com.zillit.desktop.feature.calls.data.CallStatusPlane
@@ -1220,6 +1221,65 @@ class CallCoordinatorTest {
         // Nothing used to notice this: the desktop sat in an empty room with
         // the timer running and the microphone live until the user looked.
         assertEquals(CallPhase.Idle, coordinator.phase.value)
+    }
+
+    /**
+     * The case users hit (Line 2, 2026-10-04): a call this device received,
+     * where the caller's row says `caller` and no `in_call` ever arrives for
+     * them. Their media came and went — and nothing ended the call, because
+     * nobody had ever been "connected" on the roster.
+     */
+    @Test
+    fun `a received 1 to 1 call ends when the caller's media goes, with no roster word`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            engine.push(CallEngineEvent.PeerJoined(7))
+            runCurrent()
+            engine.push(CallEngineEvent.PeerLeft(7))
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value, "must not end before the grace")
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
+
+    /** Answered, and the caller's stream has not arrived yet: that is not an ending. */
+    @Test
+    fun `a 1 to 1 call never seen to carry media is not ended for being empty`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            // Something that re-asks "is anyone here" with no peer ever seen.
+            engine.push(CallEngineEvent.PeerLeft(7))
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+        }
+
+    @Test
+    fun `the media rule is for private calls only, and yields to a roster row still in the call`() {
+        val them = CallParticipant(userId = "them", status = CallStatus.Caller)
+        assertTrue(privateCallDeserted(CallMode.Private, true, 0, listOf(them), "me"))
+        assertFalse(privateCallDeserted(CallMode.Group, true, 0, listOf(them), "me"))
+        assertFalse(privateCallDeserted(CallMode.Private, false, 0, listOf(them), "me"))
+        assertFalse(privateCallDeserted(CallMode.Private, true, 1, listOf(them), "me"))
+        val stillIn = CallParticipant(userId = "them", status = CallStatus.InCall)
+        assertFalse(privateCallDeserted(CallMode.Private, true, 0, listOf(stillIn), "me"))
     }
 
     @Test

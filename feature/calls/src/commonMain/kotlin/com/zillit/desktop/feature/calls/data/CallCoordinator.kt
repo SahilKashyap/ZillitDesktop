@@ -91,6 +91,32 @@ internal fun allOthersGone(
     return everConnected.none { it in stillHere }
 }
 
+/**
+ * Whether a 1:1 call's other person has walked out, judged from the media.
+ *
+ * [allOthersGone] needs someone to have read `in_call` on the roster, and on a
+ * call this device RECEIVED the other person's row says `caller` — a status
+ * no update need ever move. With nobody "ever connected", their leaving ended
+ * nothing: this side sat in an empty room (Line 2, 2026-10-04). Their media is
+ * the other witness: once it has been seen on this call ([sawRemoteMedia]) and
+ * none is left, and nobody else's row reads `in_call`, the call is over.
+ *
+ * Only after media was seen, so the moment between answering and the caller's
+ * stream arriving — no peers yet — never reads as an ending; private calls
+ * only, where "everyone else" is exactly one person.
+ */
+internal fun privateCallDeserted(
+    mode: CallMode,
+    sawRemoteMedia: Boolean,
+    livePeerCount: Int,
+    participants: List<CallParticipant>,
+    selfUserId: String,
+): Boolean =
+    mode == CallMode.Private &&
+        sawRemoteMedia &&
+        livePeerCount == 0 &&
+        participants.none { it.userId != selfUserId && it.status.isConnected }
+
 /** One entry for the "call ended" toast: what happened and to whom. */
 data class CallEndEvent(val session: CallSession, val reason: CallEndReason)
 
@@ -533,6 +559,9 @@ class CallCoordinator(
      * See [allOthersGone] for why it is monotonic. Cleared with the call.
      */
     private val everConnected = mutableSetOf<String>()
+
+    /** Somebody's media reached this call at least once — see [privateCallDeserted]. */
+    private var sawRemoteMedia = false
 
     /** The pending "is anyone still here?" re-check, if one is armed. */
     private var emptyRoomCheck: Job? = null
@@ -1333,8 +1362,11 @@ class CallCoordinator(
         val couldEnd = _phase.value == CallPhase.InCall &&
             !reconnect.isArmed &&
             !current.isCalendarCall
-        return couldEnd &&
-            allOthersGone(current.participants, everConnected, _media.value.peers.size)
+        val peers = _media.value.peers.size
+        return couldEnd && (
+            allOthersGone(current.participants, everConnected, peers) ||
+                privateCallDeserted(current.mode, sawRemoteMedia, peers, current.participants, current.selfUserId)
+            )
     }
 
     private fun onSomeoneAnswered() {
@@ -1515,7 +1547,7 @@ class CallCoordinator(
             // phase transition cares about — the speaking rings and the link
             // pips are exactly those, and dropping them is what left the UI
             // with nothing live to show.
-            _media.value = _media.value.reduce(event)
+            foldMedia(event)
             when (event) {
                 is CallEngineEvent.Joined -> onMediaJoined(event.uid)
                 CallEngineEvent.TokenExpiring ->
@@ -1554,6 +1586,12 @@ class CallCoordinator(
                 else -> onPeerEvent(event)
             }
         }
+    }
+
+    /** Folds an engine event into the media picture, noting the first remote media seen. */
+    private fun foldMedia(event: CallEngineEvent) {
+        _media.value = _media.value.reduce(event)
+        if (_media.value.peers.isNotEmpty()) sawRemoteMedia = true
     }
 
     /** What the other people on the call did, as the engine saw it. */
@@ -1918,6 +1956,7 @@ class CallCoordinator(
         emptyRoomCheck?.cancel()
         emptyRoomCheck = null
         everConnected.clear()
+        sawRemoteMedia = false
         line3Ring.reset()
         // Neither the ring's progress nor the server's add-user list means
         // anything outside the call they were said in.
