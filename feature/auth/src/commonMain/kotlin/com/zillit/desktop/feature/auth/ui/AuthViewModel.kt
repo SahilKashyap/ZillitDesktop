@@ -368,22 +368,43 @@ class AuthViewModel(
      * an empty picker telling someone they are on no production.
      */
     private fun loadProjects() {
-        val saved = projectListStore?.load().orEmpty()
-        if (saved.isNotEmpty() && currentState.projects.isEmpty()) {
-            setState { copy(step = AuthStep.ProjectSelection, projects = saved, isShowingSavedProjects = true) }
+        // Whatever is already known shows at once — this session's list (a
+        // project switch), else the one saved on this computer — and the
+        // refresh lands behind it. Showing it is NOT busy: selectProject drops
+        // every click while busy, and a refresh on a dead network can hang
+        // for the whole request timeout, so "busy until the server answers"
+        // was a picker you could see and not open anything from — the
+        // "can't open a project offline" report. Busy is only for a first
+        // load with nothing to show.
+        val known = currentState.projects.ifEmpty { projectListStore?.load().orEmpty() }
+        val waiting = known.isEmpty()
+        if (!waiting) {
+            setState {
+                // No offline banner yet: the refresh has not failed, and
+                // flashing "you're offline" on every switch would be a lie.
+                copy(step = AuthStep.ProjectSelection, projects = known, isBusy = false)
+            }
         }
         launchResult(
             block = { projectRepository.listProjects() },
             onSuccess = { projects ->
                 projectListStore?.save(projects)
+                // Opened (or opening) one while this was in flight: refresh
+                // the list, but leave the screen, the busy flag and the error
+                // to the open — a late answer must not pull the user back out.
+                val opening = currentState.step == AuthStep.Complete || (!waiting && currentState.isBusy)
                 setState {
-                    copy(
-                        isBusy = false,
-                        step = AuthStep.ProjectSelection,
-                        projects = projects,
-                        isShowingSavedProjects = false,
-                        error = null,
-                    )
+                    if (opening) {
+                        copy(projects = projects, isShowingSavedProjects = false)
+                    } else {
+                        copy(
+                            isBusy = false,
+                            step = AuthStep.ProjectSelection,
+                            projects = projects,
+                            isShowingSavedProjects = false,
+                            error = null,
+                        )
+                    }
                 }
                 // Which production has news — asked alongside the list, not
                 // before it: cards render immediately and the counts join.
@@ -398,16 +419,20 @@ class AuthViewModel(
                 }
                 // A device attached to exactly one production has nothing to
                 // choose; making the user pick from a list of one is friction.
-                projects.singleOrNull()?.let(::selectProject)
+                if (!opening) projects.singleOrNull()?.let(::selectProject)
             },
             onError = { error ->
-                // A saved list beats an error banner over an empty grid: the
-                // productions are still real, only the refresh failed.
-                if (currentState.projects.isNotEmpty() && currentState.isShowingSavedProjects) {
-                    ZillitLog.w(TAG) { "project list refresh failed, keeping the saved list: ${error.technical}" }
-                    setState { copy(isBusy = false) }
-                } else {
-                    fail(error)
+                when {
+                    // Already inside a production: the picker is not on screen.
+                    currentState.step == AuthStep.Complete ->
+                        ZillitLog.w(TAG) { "project list refresh failed behind an open project: ${error.technical}" }
+                    // A known list beats an error banner over an empty grid:
+                    // the productions are still real, only the refresh failed.
+                    currentState.projects.isNotEmpty() -> {
+                        ZillitLog.w(TAG) { "project list refresh failed, keeping the saved list: ${error.technical}" }
+                        setState { copy(isShowingSavedProjects = true, isBusy = if (waiting) false else isBusy) }
+                    }
+                    else -> fail(error)
                 }
             },
         )

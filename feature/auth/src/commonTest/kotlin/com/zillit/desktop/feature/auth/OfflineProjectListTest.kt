@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.auth.domain.ProjectListStore
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.feature.auth.ui.AuthStep
 import com.zillit.desktop.feature.auth.ui.AuthViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -174,4 +175,53 @@ class OfflineProjectListTest {
         assertFalse(state.isShowingSavedProjects)
         assertEquals("No internet connection.", state.error)
     }
+
+    /** A refresh the test answers when it chooses — a dead network hangs until the timeout. */
+    private class SlowProjects(
+        private val base: ProjectRepository,
+    ) : ProjectRepository by base {
+        var pending = CompletableDeferred<ZillitResult<List<Project>>>()
+        override suspend fun listProjects() = pending.await()
+    }
+
+    /**
+     * The "can't open a project offline" report. A switch used to hold the
+     * picker busy until the list refresh answered, and a busy picker drops
+     * every click — so on a network that hangs rather than refuses, the
+     * saved projects sat there unopenable for the whole request timeout.
+     */
+    @Test
+    fun `a hanging refresh does not stop a saved project from opening, and its late answer does not pull back out`() =
+        runTest(dispatcher) {
+            val projects = SlowProjects(Projects { ZillitResult.Success(saved) })
+            projects.pending.complete(ZillitResult.Success(saved))
+            val viewModel = AuthViewModel(
+                LinkedDevice(),
+                projects,
+                qrLoginRepository = null,
+                projectListStore = MemoryStore(saved),
+            )
+            advanceUntilIdle()
+            viewModel.onEvent(com.zillit.desktop.feature.auth.ui.AuthEvent.SelectProject(saved[0]))
+            advanceUntilIdle()
+            assertEquals(AuthStep.Complete, viewModel.currentState.step)
+
+            // The network goes; the user switches production. The refresh hangs.
+            projects.pending = CompletableDeferred()
+            viewModel.onEvent(com.zillit.desktop.feature.auth.ui.AuthEvent.SwitchProject)
+            advanceUntilIdle()
+            assertEquals(AuthStep.ProjectSelection, viewModel.currentState.step)
+            assertEquals(listOf("a", "b"), viewModel.currentState.projects.map { it.id })
+            assertFalse(viewModel.currentState.isBusy, "the known list is clickable while the refresh hangs")
+
+            viewModel.onEvent(com.zillit.desktop.feature.auth.ui.AuthEvent.SelectProject(saved[1]))
+            advanceUntilIdle()
+            assertEquals(AuthStep.Complete, viewModel.currentState.step, "the click opened Beta")
+
+            // The refresh finally answers, long after: the user stays inside.
+            projects.pending.complete(ZillitResult.Failure(ZillitError.Timeout()))
+            advanceUntilIdle()
+            assertEquals(AuthStep.Complete, viewModel.currentState.step)
+            assertNull(viewModel.currentState.error)
+        }
 }
