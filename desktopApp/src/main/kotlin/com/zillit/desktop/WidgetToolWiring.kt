@@ -49,12 +49,10 @@ import java.util.UUID
 
 /** The crew, as chat addresses them — the same rules the rail's chat applies. */
 internal fun List<UserSnapshot>.toCrewContacts(): List<CrewContact> = this
-    // The keep-name-private honour, applied before the screen ever sees the
-    // list — the same rule Android's members tab keeps.
-    .filterNot { it.keepNamePrivate }
+    // A private name or a pending/rejected join keeps someone out of the
+    // directory (Contacts, the pickers), never out of Chats — as the main
+    // window's chat, and as Android's chat list, which filters neither.
     .filter { it.fullName.isNotBlank() }
-    // Invited-but-not-joined people are not someone to message yet.
-    .filter { it.hasJoined() }
     .map { user ->
         CrewContact(
             userId = user.userId,
@@ -72,6 +70,8 @@ internal fun List<UserSnapshot>.toCrewContacts(): List<CrewContact> = this
             // "left"/"removed" stay listed (Android keeps them in the roster)
             // but the thread shows Disconnected and refuses sends.
             hasLeft = user.status == "left" || user.status == "removed",
+            inDirectory = !user.keepNamePrivate && user.hasJoined(),
+            sortingActivity = user.sortingActivity,
         )
     }
 

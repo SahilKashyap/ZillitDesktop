@@ -22,6 +22,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -468,6 +470,10 @@ internal data class ProjectUserDto(
     // Whether the production requires a signed deal memo from them — the
     // web's roster of "crew with a deal" (`ProductionReportPayrollModule`).
     @SerialName("signing_required") val signingRequired: Boolean? = null,
+    // The newest message between the viewer and this person — what Android's
+    // chat list shows a DM by (`JoinProjectResponse.kt:122`). A number on the
+    // wire; read loosely so a string-typed value cannot fail the crew list.
+    @SerialName("sorting_activity") val sortingActivity: JsonElement? = null,
 ) {
     fun toSnapshot(): UserSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -490,6 +496,9 @@ internal data class ProjectUserDto(
             status = status?.takeIf { it.isNotBlank() },
             mailboxAddress = mailBoxDetail?.emailAddress?.trim()?.takeIf { it.isNotBlank() },
             signingRequired = signingRequired == true,
+            sortingActivity = (sortingActivity as? JsonPrimitive)
+                ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }
+                ?.takeIf { it > 0 } ?: 0L,
         )
     }
 }

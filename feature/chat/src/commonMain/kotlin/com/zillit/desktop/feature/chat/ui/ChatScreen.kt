@@ -75,6 +75,7 @@ import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.RecentRow
 import com.zillit.desktop.feature.chat.domain.admits
+import com.zillit.desktop.feature.chat.domain.chatPeople
 import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.lastEntryDate
@@ -232,7 +233,7 @@ private fun NewGroupLayer(
     GroupEditorHost(
         // Nobody puts themselves in the member list — the server adds the
         // creator, as Android's picker leaves them out.
-        contacts = crew.filterNot { it.userId == selfId },
+        contacts = crew.filterNot { it.userId == selfId || !it.inDirectory },
         createRoom = createRoom,
         visible = visible,
         onDismiss = onClose,
@@ -484,7 +485,7 @@ private fun OpenThread(
         resolveContact = { id -> crew.firstOrNull { it.userId == id } },
         // Forward's people: everyone still here, minus oneself — the same
         // cut the Contacts tab makes.
-        forwardPeople = crew.filterNot { it.userId == selfId || it.hasLeft },
+        forwardPeople = crew.filterNot { it.userId == selfId || it.hasLeft || !it.inDirectory },
         onOpenUser = { id ->
             crew.firstOrNull { it.userId == id }?.let { tagged ->
                 viewModel.onEvent(ChatEvent.OpenThread(tagged))
@@ -587,7 +588,9 @@ private fun DirectoryPane(
                 // Android's Contacts tab drops `left` and `removed`
                 // (`MembersVM.kt:473`). Their thread stays in the Chats list,
                 // captioned, because the history is still theirs to read.
-                crew = crew.filterNot { it.userId == selfId || it.hasLeft }.searchCrew(query),
+                // So is someone outside the directory — a private name, a
+                // pending or rejected join — though their threads still list.
+                crew = crew.filterNot { it.userId == selfId || it.hasLeft || !it.inDirectory }.searchCrew(query),
                 // Follows whichever thread is open, however it was opened —
                 // picking someone in Chats and then switching to Contacts should
                 // show that person as the one being read, not nobody.
@@ -709,7 +712,7 @@ private fun RecentsList(
 
     val rows = recentRows(
         groups = state.groups,
-        contacts = state.recents.mapNotNull { id -> crew.firstOrNull { it.userId == id } },
+        contacts = chatPeople(state.recents, crew, selfId),
         newest = state.activity,
     ).filter { row -> chosen.admits(row, state.activity, state.unread, state.favourites) }
         .searchRecents(query)

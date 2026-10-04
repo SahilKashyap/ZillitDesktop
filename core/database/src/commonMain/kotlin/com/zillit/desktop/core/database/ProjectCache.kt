@@ -166,6 +166,14 @@ data class UserSnapshot(
      * better than one built from a stale flag.
      */
     val signingRequired: Boolean = false,
+    /**
+     * When the signed-in user and this crew member last exchanged a message —
+     * `sorting_activity` on the users list, per viewer. Android lists a DM
+     * whenever this is above zero (`MembersVM.kt:215-217`), so it is what
+     * proves a conversation the socket's `user:list` or this computer's cache
+     * happens not to know. Not cached: offline, the kept listing stands in.
+     */
+    val sortingActivity: Long = 0L,
 )
 
 data class ToolSnapshot(

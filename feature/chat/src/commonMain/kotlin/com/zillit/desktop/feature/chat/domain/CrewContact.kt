@@ -33,6 +33,20 @@ data class CrewContact(
      * crew and older cached rows with no status at all.
      */
     val hasLeft: Boolean = false,
+    /**
+     * Whether they belong in the directory — the Contacts tab and the people
+     * pickers (forward, new group). False for someone who keeps their name
+     * private or whose joining is pending or rejected: not someone to look up
+     * and reach. Their existing conversations still list under Chats, as on
+     * Android, whose chat list filters neither (`MembersVM.kt:113-152`).
+     */
+    val inDirectory: Boolean = true,
+    /**
+     * When the signed-in user and they last exchanged a message — the users
+     * list's per-viewer `sorting_activity`. Above zero proves a DM, which is
+     * how Android builds its chat list (`MembersVM.kt:215-217`).
+     */
+    val sortingActivity: Long = 0L,
 )
 
 /**
@@ -102,6 +116,21 @@ fun recentRows(
         .sortedByDescending { it.newestStamp(newest) }
 
 /**
+ * Everyone the signed-in user has a DM with, as crew cards: the ids the
+ * server's `user:list`, this computer's threads and the notification backlog
+ * name ([listed]), plus anyone whose users-list `sorting_activity` says a
+ * message has passed — Android's whole rule, and the one that catches a
+ * conversation the other sources missed. An id with no crew card (nobody on
+ * this production by that id) has nothing to show and is left out; the self
+ * card never lists.
+ */
+fun chatPeople(listed: List<String>, crew: List<CrewContact>, selfId: String?): List<CrewContact> {
+    val byId = crew.associateBy(CrewContact::userId)
+    val proven = crew.filter { it.sortingActivity > 0L }.map(CrewContact::userId)
+    return (listed + proven).distinct().filter { it != selfId }.mapNotNull(byId::get)
+}
+
+/**
  * A row's ordering stamp: the live map's word when it has one, else the
  * room's own `sorting_activity` — the durable stamp Android sorts rooms by.
  * The live map is backlog-fed and forgets a conversation once its rows are
@@ -111,7 +140,7 @@ fun RecentRow.newestStamp(newest: Map<String, Long>): Long {
     val live = newest[id] ?: Long.MIN_VALUE
     val durable = when (this) {
         is RecentRow.Group -> room.sortingActivity.takeIf { it > 0L } ?: Long.MIN_VALUE
-        is RecentRow.Direct -> Long.MIN_VALUE
+        is RecentRow.Direct -> contact.sortingActivity.takeIf { it > 0L } ?: Long.MIN_VALUE
     }
     return maxOf(live, durable)
 }

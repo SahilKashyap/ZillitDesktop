@@ -461,6 +461,33 @@ class ChatsTabSearchAndGroupsTest {
         onAllNodesWithText("Disconnected").assertCountEquals(1)
     }
 
+    /**
+     * Someone who keeps their name private is not in the directory — no
+     * Contacts row, not offered to message — but a conversation with them is
+     * still the user's, and lists under Chats (users reported it vanishing).
+     */
+    @Test
+    fun `a private-name crew member's thread lists under Chats but not in Contacts`() = runComposeUiTest {
+        val private = CrewContact(userId = "u3", fullName = "Priya Sharma", inDirectory = false)
+        val repository = StubChatRepository().apply { recentsAnswer = listOf("u3") }
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew + private, loadAvatar = { null }, viewModel = model)
+            }
+        }
+
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        onNodeWithText("Priya Sharma").assertExists()
+
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Priya Sharma").assertDoesNotExist()
+    }
+
     /** QA#3: a room nobody has spoken in still lists under the Groups chip. */
     @Test
     fun `a silent room shows under the Groups chip`() = runComposeUiTest {

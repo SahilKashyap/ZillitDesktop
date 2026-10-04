@@ -2521,14 +2521,13 @@ private fun chatProvider(
     // Chat & Calls is a tool like any other, so a missing download right is
     // something an admin can grant — the refusal offers to ask for it.
     requestDownloadRights = { ready.rightsRequests.ask(str(S.desktop_chat_calls), RightsKind.Download) },
-    // The keep-name-private honour is applied here, before the screen ever
-    // sees the list — the same rule Android's members tab keeps.
+    // Everyone with a name: a private name or a pending/rejected join keeps
+    // them out of the directory (Contacts, the pickers), never out of Chats —
+    // their conversations list there, as on Android, whose chat list filters
+    // neither. Dropping them here is how users "lost" whole conversations.
     crew = {
         ready.projectContext?.context?.value?.users.orEmpty()
-            .filterNot { it.keepNamePrivate }
             .filter { it.fullName.isNotBlank() }
-            // Invited-but-not-joined people are not someone to message yet.
-            .filter { it.hasJoined() }
             .map { user ->
                 CrewContact(
                     userId = user.userId,
@@ -2547,6 +2546,8 @@ private fun chatProvider(
                     // roster) but the thread shows Disconnected and refuses
                     // sends — ChatAndGroupPage.kt:362.
                     hasLeft = user.status == "left" || user.status == "removed",
+                    inDirectory = !user.keepNamePrivate && user.hasJoined(),
+                    sortingActivity = user.sortingActivity,
                 )
             }
     },
