@@ -119,6 +119,10 @@ import com.zillit.desktop.core.security.KeychainSecureStore
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -133,6 +137,7 @@ import kotlinx.coroutines.runBlocking
 import com.zillit.desktop.core.security.SecureStore
 import com.zillit.desktop.feature.auth.data.ProjectLifecycle
 import com.zillit.desktop.feature.auth.data.projectLifecycle
+import com.zillit.desktop.feature.auth.data.projectMembershipChanges
 import com.zillit.desktop.feature.auth.data.AuthRepositoryImpl
 import com.zillit.desktop.feature.auth.data.ProjectRepositoryImpl
 import com.zillit.desktop.feature.auth.domain.AuthRepository
@@ -425,6 +430,38 @@ private fun CoroutineScope.followOpenProject(
         }
     }
 }
+
+/**
+ * Keeps the crew current: someone joining, being accepted, removed or leaving
+ * re-reads `project/users`, as both phones do on the same events — and so
+ * does a socket that came back, since anything said while it was down was
+ * said to nobody (the web's `refreshProjectUsers` on reconnect).
+ *
+ * Every screen that lists people reads the crew from the project context, so
+ * this one re-read is what puts a new member in Chat's Contacts, the pickers
+ * and a call's Add list. Debounced: an approval arrives as two or three frames
+ * at once, and one fetch answers all of them.
+ */
+@OptIn(kotlinx.coroutines.FlowPreview::class)
+private fun CoroutineScope.followProjectMembers(
+    events: SocketEventBus,
+    activeProject: MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>,
+    projectContext: ProjectContextLoader?,
+) = launch {
+    val reconnected = events.connectionState
+        .filterIsInstance<SocketConnectionState.Connected>()
+        .drop(1)
+        .map { }
+    merge(projectMembershipChanges(events) { activeProject.value?.id }, reconnected)
+        .debounce(MEMBERS_REFRESH_DEBOUNCE_MILLIS)
+        .collect {
+            val projectId = activeProject.value?.id ?: return@collect
+            ZillitLog.i("Socket") { "project membership may have moved; re-reading the crew" }
+            projectContext?.refreshUsers(projectId)
+        }
+}
+
+private const val MEMBERS_REFRESH_DEBOUNCE_MILLIS = 750L
 
 /**
  * Everything that has to happen when the open production changes.
@@ -1230,6 +1267,9 @@ sealed interface AppGraph {
                 projectContext = projectContext,
                 onProjectDeleted = { projectRepository.leaveProject() },
             )
+
+            // Somebody joined, left or was removed: the crew is re-read.
+            appScope.followProjectMembers(socketEvents, activeProject, projectContext)
 
             // Notice bodies are AES-encrypted with the header key, in both
             // directions.

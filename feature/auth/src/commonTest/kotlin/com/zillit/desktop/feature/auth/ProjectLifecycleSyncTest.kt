@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.auth.data.PROJECT_LIFECYCLE_EVENTS
 import com.zillit.desktop.feature.auth.data.ProjectLifecycle
 import com.zillit.desktop.feature.auth.data.projectIdOf
 import com.zillit.desktop.feature.auth.data.projectLifecycle
+import com.zillit.desktop.feature.auth.data.projectMembershipChanges
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
@@ -104,6 +105,22 @@ class ProjectLifecycleSyncTest {
         val bus = busOf("project:tools:update" to """{"project_id":"p1"}""")
 
         assertTrue(projectLifecycle(bus) { "p1" }.toList().isEmpty())
+    }
+
+    /** A member joining, accepted or leaving re-reads the crew; another production's never does. */
+    @Test
+    fun `membership moves of the open production tick, others do not`() = runTest {
+        val bus = busOf(
+            "project:user:accepted" to """{"project_id":"p1","user_id":"u7"}""",
+            "project:user:left" to """{"data":{"_id":"u8"}}""",
+            "project:pre-approved:user:joined" to """{"project_id":"p9"}""",
+            "project:update" to """{"project_id":"p1"}""",
+        )
+
+        // The accept, and the nameless leave — one stray re-read is cheap, a
+        // missed join is the bug. The other production's frame and a
+        // lifecycle frame are not membership.
+        assertEquals(2, projectMembershipChanges(bus) { "p1" }.toList().size)
     }
 
     private fun busOf(vararg frames: Pair<String, String>) = SocketEventBus(

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.chat.ui
 
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -18,6 +20,13 @@ import com.zillit.desktop.feature.chat.domain.CrewContact
 @Suppress("LongParameterList") // Every host seam the screen needs, one each; a bag would only hide them.
 class ChatToolProvider(
     private val crew: () -> List<CrewContact>,
+    /**
+     * Whatever [crew] is read from, observed. [crew] is a plain read, so an
+     * open Chat never redrew when the crew was re-fetched — a member who
+     * joined stayed missing from Contacts until something else recomposed it.
+     * Watching the source here re-reads [crew] the moment it moves.
+     */
+    private val crewChanges: StateFlow<*>? = null,
     /** The signed-in user's id, hidden from the Contacts list. */
     private val selfId: () -> String? = { null },
     private val loadAvatar: suspend (String) -> ImageBitmap?,
@@ -114,6 +123,8 @@ class ChatToolProvider(
                 shareAsEmail = shareAsEmail?.let { share -> { message -> share(message, navigator) } },
             ),
         ) {
+            // Read so this recomposes when the crew is re-fetched; see [crewChanges].
+            crewChanges?.collectAsState()?.value
             ChatScreen(
                 crew = crew(),
                 selfId = selfId(),

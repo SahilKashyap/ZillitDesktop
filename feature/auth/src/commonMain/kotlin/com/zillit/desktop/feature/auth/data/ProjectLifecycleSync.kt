@@ -78,3 +78,46 @@ fun projectIdOf(payload: JsonElement): String? {
         ?: (detail["projectId"] as? JsonPrimitive)?.contentOrNull
     return id?.takeIf { it.isNotBlank() }
 }
+
+/**
+ * The open production's membership moved: a join request arrived or was
+ * answered, someone was accepted, added, removed, left, or had their profile
+ * or admin rights changed.
+ *
+ * Both phones re-fetch `project/users` on exactly these
+ * (`listenerSocket.js:1153-1201`, `BaseSocketListener.kt:4197-4441`); the
+ * desktop read the crew once, on open, so a new member was invisible until
+ * the production was opened again.
+ */
+val PROJECT_MEMBERSHIP_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("project:user:join:request:received"),
+    SocketEventName("project:user:join:request:accepted"),
+    SocketEventName("project:user:join:request:rejected"),
+    SocketEventName("project:pre-approved:user:joined"),
+    SocketEventName("project:user:accepted"),
+    SocketEventName("admin:add:project:user"),
+    SocketEventName("project:user:removed"),
+    SocketEventName("project:user:left"),
+    SocketEventName("project:user:profile:created"),
+    SocketEventName("project:user:profile:update"),
+    SocketEventName("project:user:admin:access"),
+    SocketEventName("project:user:reordered"),
+)
+
+/**
+ * A tick for every membership frame that concerns [openProject].
+ *
+ * Unlike [projectLifecycle], a frame naming no production still counts: the
+ * worst a stray one costs is one re-read of the crew, where missing a real
+ * join is the bug this exists for. A frame naming ANOTHER production is
+ * dropped.
+ */
+fun projectMembershipChanges(
+    events: SocketEventBus,
+    openProject: () -> String?,
+): Flow<Unit> =
+    events.onAny(PROJECT_MEMBERSHIP_EVENTS).mapNotNull { message ->
+        val open = openProject() ?: return@mapNotNull null
+        val named = message.payload?.let(::projectIdOf)
+        if (named != null && named != open) null else Unit
+    }

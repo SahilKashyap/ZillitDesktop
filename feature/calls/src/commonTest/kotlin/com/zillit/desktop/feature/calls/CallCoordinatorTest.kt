@@ -1438,7 +1438,7 @@ class CallCoordinatorTest {
      * The report of 2026-10-05: on Line 1 the other person's phone joined the
      * room under a different id than their row, so their leaving matched no
      * row — the row read `in_call` for ever and the call never ended. Their
-     * media leaving is the witness, on Android's 30 s grace.
+     * media leaving is the witness, on a 5 s grace.
      */
     @Test
     fun `a Line 1 call ends once every stream is gone, whatever a stale row says`() =
@@ -1454,7 +1454,7 @@ class CallCoordinatorTest {
             runCurrent()
             engine.push(CallEngineEvent.PeerLeft(4242))
             runCurrent()
-            advanceTimeBy(29_000)
+            advanceTimeBy(4_000)
             runCurrent()
             assertEquals(CallPhase.InCall, coordinator.phase.value, "a peer gets its reconnect grace")
 

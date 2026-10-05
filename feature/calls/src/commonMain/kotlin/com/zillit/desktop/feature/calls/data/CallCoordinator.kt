@@ -1626,14 +1626,14 @@ class CallCoordinator(
 
     /**
      * Line 1's own witness: every other peer's media has left the SFU, whatever
-     * the roster still says — Android's `UserOffline` rule, on its 30 s grace.
+     * the roster still says — Android's `UserOffline` rule, on a 5 s grace.
      *
      * On Line 1 being in the call IS being a peer in the room, so a row still
      * reading `in_call` with no peer behind it is stale. Rows go stale for good
      * there: a phone that joined under a different id than its row carries
      * leaves under that id too, the `left` the SFU writes matches no row, and
-     * the call never ended (2026-10-05). The longer grace covers a peer's own
-     * reconnect, which the roster-backed rule does not need to.
+     * the call never ended (2026-10-05). The longer grace gives a peer's own
+     * reconnect a moment, which the roster-backed rule does not need to.
      *
      * Not while anyone is still ringing — Android's condition too — and only
      * after media was seen, so a room nobody has joined yet is not an ending.
@@ -3106,8 +3106,13 @@ class CallCoordinator(
         /** The server's word for an accept that came too late. */
         const val CALL_ENDED = "call_ended"
 
-        /** Android's mediasoup `reconnectionGraceMs`: long enough for a peer's own reconnect. */
-        const val MEDIA_GONE_GRACE_MILLIS = 30_000L
+        /**
+         * How long Line 1's media-only empty room waits before it ends the call.
+         * Set by the user (2026-10-05) between the web's 3 s and Android's 30 s:
+         * a peer whose socket drops and comes back with a fresh peer id inside
+         * this window keeps the call; one that takes longer ends it.
+         */
+        const val MEDIA_GONE_GRACE_MILLIS = 5_000L
 
 
     }

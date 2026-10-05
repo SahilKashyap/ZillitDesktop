@@ -2542,6 +2542,7 @@ private fun chatProvider(
     // them out of the directory (Contacts, the pickers), never out of Chats —
     // their conversations list there, as on Android, whose chat list filters
     // neither. Dropping them here is how users "lost" whole conversations.
+    crewChanges = ready.projectContext?.context,
     crew = {
         ready.projectContext?.context?.value?.users.orEmpty()
             .filter { it.fullName.isNotBlank() }

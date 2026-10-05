@@ -190,7 +190,13 @@ class ProjectContextLoader(
             options = CallOptions(projectId = projectId, userId = userId),
         ).map { rows -> rows.mapNotNull { it.toSnapshot() }.onePerUser() }
 
-    private suspend fun refreshUsers(projectId: String) {
+    /**
+     * Re-reads the crew alone. Called on project open, and again whenever the
+     * membership moves — someone joins, is accepted, removed or leaves — which
+     * is what both phones do on the same socket events (a full re-fetch, never
+     * a patch from the payload).
+     */
+    suspend fun refreshUsers(projectId: String) {
         val result = apiClient.request(
             verb = HttpVerb.Get,
             url = "${api}project/users",
