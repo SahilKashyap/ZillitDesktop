@@ -95,6 +95,7 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     CallEngineEvent.TokenExpired -> this
     is CallEngineEvent.ScreenShare -> copy(selfSharing = event.sharing)
     is CallEngineEvent.Devices -> this
+    is CallEngineEvent.DeviceMissing -> this
     is CallEngineEvent.Failed -> this
     // The call carries on; only the UI has something to say about it.
     is CallEngineEvent.Degraded -> this

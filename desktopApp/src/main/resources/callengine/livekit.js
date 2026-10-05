@@ -889,6 +889,10 @@
                 onHold = false;
                 r.remoteParticipants.forEach(function (p) { peerJoined(p); });
                 send({ type: 'joined', channel: identity, uid: uidOf(userIdOf(identity)) });
+                // A warm room connected during the ring, before `wire` was
+                // listening, so its CONNECTED edge was never sent — and that
+                // edge is what tells Kotlin there is no outage to wait out.
+                if (adopted && isConnected()) { sendConnection('CONNECTED'); }
                 // Hands and the recorder as they stand: the room replays neither as events.
                 if (r.metadata) { reportRecording(r.metadata); }
                 // A stale hand from a previous session on this device would

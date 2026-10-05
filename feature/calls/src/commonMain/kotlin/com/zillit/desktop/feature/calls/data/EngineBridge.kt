@@ -94,6 +94,11 @@ object EngineBridge {
                 microphoneId = obj.str("microphoneId").orEmpty(),
                 speakerId = obj.str("speakerId").orEmpty(),
             )
+            "device-missing" -> when (obj.str("kind")) {
+                "microphone" -> CallEngineEvent.DeviceMissing(CallDeviceKind.Microphone)
+                "speaker" -> CallEngineEvent.DeviceMissing(CallDeviceKind.Speaker)
+                else -> null
+            }
             "error" -> CallEngineEvent.Failed(obj.str("message") ?: "call page error")
             // WebRTC facts only the page can measure, on their way to
             // `CallDiagnostics`. Read as strings whatever their JSON type: the

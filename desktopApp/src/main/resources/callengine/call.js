@@ -66,6 +66,24 @@
         send({ type: 'warning', where: context, message: describe(context, error) });
     }
 
+    /**
+     * The remembered device is gone — unplugged, or renamed by Chromium (ids
+     * are salted per profile). Kotlin forgets it, so the next call starts on
+     * the OS default instead of failing the same way again.
+     */
+    function deviceMissing(kind, error) {
+        warn(kind + ' missing', error);
+        if (kind === 'microphone') { chosenMic = ''; } else if (kind === 'speaker') { chosenSpeaker = ''; }
+        send({ type: 'device-missing', kind: kind });
+    }
+
+    /** True when an error says the requested device does not exist. */
+    function isDeviceGone(error) {
+        const text = String((error && (error.name || error.code)) || '') + ' ' +
+            String((error && error.message) || error || '');
+        return /NotFoundError|OverconstrainedError|DEVICE_NOT_FOUND|not found/i.test(text);
+    }
+
     // ZillitIcons.Pin's outline, so the page's pin and the app's are one glyph.
     const PIN_SVG =
         '<svg viewBox="0 0 24 24"><path d="M12 14v7M8 3h8l-1.5 7 2.5 4H7l2.5-4z"/></svg>';
@@ -552,7 +570,9 @@
         // 'default' is Chromium's own id for the OS output, so choosing
         // "System default" mid-call moves the voices back rather than leaving
         // them on the device picked before.
-        track.setPlaybackDevice(chosenSpeaker || 'default').catch(e => warn('setPlaybackDevice', e));
+        track.setPlaybackDevice(chosenSpeaker || 'default').catch(e => {
+            if (chosenSpeaker && isDeviceGone(e)) { deviceMissing('speaker', e); } else { warn('setPlaybackDevice', e); }
+        });
     }
 
     /**
@@ -563,7 +583,11 @@
      */
     function applySink(element, force) {
         if ((!chosenSpeaker && !force) || !element || !element.setSinkId) { return; }
-        element.setSinkId(chosenSpeaker).catch(e => warn('setSinkId', e));
+        // A failed setSinkId leaves the element on the OS default, so the
+        // voice still plays; only the stale choice needs forgetting.
+        element.setSinkId(chosenSpeaker).catch(e => {
+            if (chosenSpeaker && isDeviceGone(e)) { deviceMissing('speaker', e); } else { warn('setSinkId', e); }
+        });
     }
 
     /** The three lists Kotlin draws its pickers from, plus what is chosen now. */
@@ -1050,6 +1074,9 @@
 
     window.zillitCall = {
 
+        /** For mediasoup.js, which opens its own microphone; see [deviceMissing]. */
+        deviceMissing(kind, error) { deviceMissing(kind, error); },
+
         /** Binds one consumed remote track so it is actually heard or seen. */
         attachRemote(consumerId, peerId, kind, stream, share, lk) {
             try {
@@ -1185,9 +1212,19 @@
                 trace('joined uid=' + joined + ' (asked for ' + (uid || 'auto') + ')');
                 if (stale()) { await abandon(c, mic, cam); return; }
 
-                mic = await AgoraRTC.createMicrophoneAudioTrack(
-                    chosenMic ? { microphoneId: chosenMic } : {},
-                );
+                try {
+                    mic = await AgoraRTC.createMicrophoneAudioTrack(
+                        chosenMic ? { microphoneId: chosenMic } : {},
+                    );
+                } catch (e) {
+                    // The SDK demands the remembered device exactly, and its
+                    // error for a missing one is an opaque UNEXPECTED_ERROR —
+                    // so any failure on a chosen mic gets one try on the OS
+                    // default. If that works, the choice was the problem.
+                    if (!chosenMic) { throw e; }
+                    mic = await AgoraRTC.createMicrophoneAudioTrack({});
+                    deviceMissing('microphone', e);
+                }
                 if (stale()) { await abandon(c, mic, cam); return; }
                 micTrack = mic;
 

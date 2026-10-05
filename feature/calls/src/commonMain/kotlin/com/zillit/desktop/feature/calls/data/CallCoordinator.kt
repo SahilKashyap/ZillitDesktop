@@ -1541,6 +1541,22 @@ class CallCoordinator(
 
     // ── Engine reactions ────────────────────────────────────────────────
 
+    private fun onConnectionChanged(state: EngineConnection) {
+        if (state == EngineConnection.Connected && joinStartedAtMillis > 0) {
+            // Once per call: a ring-warmed room connected during the ring and
+            // the page has already sent this, so the first writer wins rather
+            // than two lines disagreeing.
+            diagnostics.logOnce(
+                "warm_connect",
+                mapOf("ok" to true, "ms" to now() - joinStartedAtMillis),
+            )
+        }
+        // Not between calls: a failed call's page reports its socket closing
+        // AFTER the teardown, and a clock armed by that ran on into the next
+        // call and ended it 45 s later.
+        if (_session.value != null) reconnect.onConnectionChanged(state)
+    }
+
     private suspend fun listenEngine() {
         engine.events.collect { event ->
             // Every event folds into the media picture, including the ones no
@@ -1557,18 +1573,7 @@ class CallCoordinator(
                 // the phones tear down here too. Reported as an error so the
                 // user is told, rather than the call simply vanishing.
                 CallEngineEvent.TokenExpired -> fail("call token expired")
-                is CallEngineEvent.ConnectionChanged -> {
-                    if (event.state == EngineConnection.Connected && joinStartedAtMillis > 0) {
-                        // Once per call: a ring-warmed room connected during
-                        // the ring and the page has already sent this, so the
-                        // first writer wins rather than two lines disagreeing.
-                        diagnostics.logOnce(
-                            "warm_connect",
-                            mapOf("ok" to true, "ms" to now() - joinStartedAtMillis),
-                        )
-                    }
-                    reconnect.onConnectionChanged(event.state)
-                }
+                is CallEngineEvent.ConnectionChanged -> onConnectionChanged(event.state)
                 // Diagnostics the page measured, and our own speaking edge.
                 // Neither touches the call; both are dropped outside one.
                 is CallEngineEvent.Telemetry -> diagnostics.log(event.event, event.fields)
@@ -1581,6 +1586,7 @@ class CallCoordinator(
                     mirrorMediaState(mapOf(FIELD_SHARING_WIRE to event.sharing))
                 }
                 is CallEngineEvent.Devices -> audio.onEngineDevices(event)
+                is CallEngineEvent.DeviceMissing -> audio.forget(event.kind)
                 is CallEngineEvent.Failed -> fail(event.message)
                 is CallEngineEvent.Degraded -> onDegraded(event)
                 else -> onPeerEvent(event)
@@ -1784,6 +1790,8 @@ class CallCoordinator(
         // call the connect already happened during the ring and the page owns
         // that line, so this one is `logOnce` and the first writer wins.
         joinStartedAtMillis = now()
+        // A fresh join starts with no outage, whatever the last call left.
+        reconnect.cancel()
         engine.join(session.toJoin(selfDeviceId().orEmpty(), selfName().orEmpty()))
         // Publishes the lists so a picker opened mid-call has something to
         // draw without waiting for a hot-plug event.
@@ -1955,6 +1963,9 @@ class CallCoordinator(
         _cameraOn.value = false
         emptyRoomCheck?.cancel()
         emptyRoomCheck = null
+        // The watchdog's only question is "is a call in progress?", so a clock
+        // left running would end whichever call came next.
+        reconnect.cancel()
         everConnected.clear()
         sawRemoteMedia = false
         line3Ring.reset()

@@ -916,6 +916,61 @@ class CallCoordinatorTest {
             assertEquals(CallPhase.Idle, coordinator.phase.value)
         }
 
+    @Test
+    fun `an outage on a call that failed does not end the next call`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            // The first call drops and then fails outright, clock running.
+            engine.push(CallEngineEvent.ConnectionChanged(EngineConnection.Reconnecting))
+            runCurrent()
+            engine.push(CallEngineEvent.Failed("produce-mic: OverconstrainedError"))
+            runCurrent()
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+
+            // Seconds later the next call is answered, and outlives the grace.
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring.replace("u1", "u2").replace("r1", "r2"))
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+        }
+
+    @Test
+    fun `a failed call's page closing after the teardown arms nothing`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            engine.push(CallEngineEvent.Failed("produce-mic: OverconstrainedError"))
+            runCurrent()
+
+            // What the logs showed: the dead page's socket reports its close
+            // only after the call is gone. Line 3's warm-room accept sends no
+            // CONNECTED to cancel it, so nothing else would have stopped it.
+            engine.push(CallEngineEvent.ConnectionChanged(EngineConnection.Disconnected))
+            runCurrent()
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring.replace("u1", "u2").replace("r1", "r2"))
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+        }
+
     /** Everything handed to the sender, so a test can read what was posted. */
     private class RecordingSink : com.zillit.desktop.feature.calls.domain.CallRecordingShare {
         val sent = mutableListOf<

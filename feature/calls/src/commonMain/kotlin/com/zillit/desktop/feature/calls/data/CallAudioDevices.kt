@@ -61,6 +61,30 @@ class CallAudioDevices(
         if (savedSpeaker.isNotBlank()) engine.setDevice(CallDeviceKind.Speaker, savedSpeaker)
     }
 
+    /**
+     * Drops a remembered device the page could not open.
+     *
+     * Back to "System default" in the saved choice, the engine's copy and an
+     * open picker. Left in place it failed every Line 1 and Line 2 call on the
+     * machine, because those ask for the device exactly.
+     *
+     * Not via [chooseMicrophone]: that saves the other half from [devices],
+     * which is still blank when this arrives before the page's first device
+     * report — a mic forgotten mid-join would have taken the speaker with it.
+     */
+    fun forget(kind: CallDeviceKind) {
+        if (kind == CallDeviceKind.Camera) return
+        engine.setDevice(kind, "")
+        _devices.value = when (kind) {
+            CallDeviceKind.Microphone -> _devices.value.copy(microphoneId = "")
+            else -> _devices.value.copy(speakerId = "")
+        }
+        scope.launch {
+            val (savedMic, savedSpeaker) = load()
+            if (kind == CallDeviceKind.Microphone) save("", savedSpeaker) else save(savedMic, "")
+        }
+    }
+
     /** Publishes what the engine reported, so an open picker fills in. */
     fun onEngineDevices(event: CallEngineEvent.Devices) {
         _devices.value = CallDevices(

@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls
 import com.zillit.desktop.feature.calls.data.EngineBridge
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 import kotlin.test.Test
@@ -146,6 +147,20 @@ class EngineBridgeTest {
         assertEquals("m2", event.microphoneId)
         // Blank is the OS default, not a missing field.
         assertEquals("", event.speakerId)
+    }
+
+    @Test
+    fun `a remembered device the page could not open crosses as missing`() {
+        assertEquals(
+            CallEngineEvent.DeviceMissing(CallDeviceKind.Microphone),
+            EngineBridge.parse("""{"type":"device-missing","kind":"microphone"}"""),
+        )
+        assertEquals(
+            CallEngineEvent.DeviceMissing(CallDeviceKind.Speaker),
+            EngineBridge.parse("""{"type":"device-missing","kind":"speaker"}"""),
+        )
+        // A kind nothing remembers is not worth an event.
+        assertNull(EngineBridge.parse("""{"type":"device-missing","kind":"camera"}"""))
     }
 
     @Test

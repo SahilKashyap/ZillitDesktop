@@ -230,8 +230,21 @@
         produceMic: async function (deviceId) {
             try {
                 if (micProducer && !micProducer.closed) { return; }
-                var constraints = deviceId ? { deviceId: { exact: deviceId } } : true;
-                var stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+                var stream;
+                try {
+                    var constraints = deviceId ? { deviceId: { exact: deviceId } } : true;
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+                } catch (e) {
+                    // `exact` on a remembered mic that has since gone is an
+                    // OverconstrainedError, and failed every Line 1 call on
+                    // that machine. One try on the OS default; if it works,
+                    // the remembered choice was the problem and is dropped.
+                    if (!deviceId) { throw e; }
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    if (window.zillitCall && window.zillitCall.deviceMissing) {
+                        window.zillitCall.deviceMissing('microphone', e);
+                    }
+                }
                 localStream = stream;
                 micProducer = await sendTransport.produce({ track: stream.getAudioTracks()[0] });
                 emit('ms-producer', { kind: 'audio', producerId: micProducer.id });

@@ -167,6 +167,12 @@ sealed interface CallEngineEvent {
      */
     data class SelfSpeaking(val speaking: Boolean, val level: Double) : CallEngineEvent
 
+    /**
+     * The remembered device could not be opened and the page fell back to the
+     * OS default. The choice is forgotten, or every later call would retry it.
+     */
+    data class DeviceMissing(val kind: CallDeviceKind) : CallEngineEvent
+
     data class Devices(
         val microphones: List<MediaDevice>,
         val speakers: List<MediaDevice>,
