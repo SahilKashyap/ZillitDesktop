@@ -8,7 +8,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -37,6 +39,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitHorizontalScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -56,6 +59,11 @@ import com.zillit.desktop.core.workspace.WorkspaceState
  * Ported from the web `ToolTabStrip.jsx`, including the "N open" counter and the
  * per-tab badge — so the two clients read as the same product. The layout
  * switch is also on the keyboard (see `WorkspaceShortcuts`).
+ *
+ * Tabs that overflow scroll sideways, and a trackpad or Shift+wheel was the
+ * only way to find that out. The app's horizontal rail sits under the strip
+ * while there is anything to scroll, and draws nothing (taking no height)
+ * while every tab fits.
  */
 @Composable
 fun WorkspaceTabStrip(
@@ -65,23 +73,27 @@ fun WorkspaceTabStrip(
     iconFor: (ToolWindow) -> ImageVector = { ZillitIcons.Tools },
     badgeFor: (ToolWindow) -> Int = { 0 },
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(ZillitDimens.tabStripHeight)
-            .background(ZillitTheme.colors.tabBar)
-            .padding(horizontal = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        TabList(
-            state = state,
-            onEvent = onEvent,
-            iconFor = iconFor,
-            badgeFor = badgeFor,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        LayoutControls(state = state, onEvent = onEvent)
+    val tabScroll = rememberScrollState()
+    Column(modifier = modifier.fillMaxWidth().background(ZillitTheme.colors.tabBar)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ZillitDimens.tabStripHeight)
+                .padding(horizontal = ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TabList(
+                state = state,
+                onEvent = onEvent,
+                iconFor = iconFor,
+                badgeFor = badgeFor,
+                scroll = tabScroll,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+            LayoutControls(state = state, onEvent = onEvent)
+        }
+        ZillitHorizontalScrollRail(tabScroll, Modifier.padding(horizontal = ZillitTheme.spacing.sm))
     }
 }
 
@@ -91,6 +103,7 @@ private fun TabList(
     onEvent: (WorkspaceEvent) -> Unit,
     iconFor: (ToolWindow) -> ImageVector,
     badgeFor: (ToolWindow) -> Int,
+    scroll: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -110,7 +123,7 @@ private fun TabList(
             onEvent = onEvent,
             iconFor = iconFor,
             badgeFor = badgeFor,
-            modifier = Modifier.weight(1f, fill = false).zillitHorizontalScroll(),
+            modifier = Modifier.weight(1f, fill = false).zillitHorizontalScroll(scroll),
         )
     }
 }
