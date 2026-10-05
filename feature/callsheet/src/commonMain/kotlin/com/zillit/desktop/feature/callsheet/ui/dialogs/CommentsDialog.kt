@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
+import com.zillit.desktop.core.designsystem.component.ZillitSelectable
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
@@ -360,7 +361,10 @@ private fun Bubble(
                     )
                 }
             }
-            else -> Text(comment.text, style = sheetText(13.sp, lineHeight = 21.sp), color = ink)
+            // A comment can be highlighted and copied, like any message.
+            else -> ZillitSelectable {
+                Text(comment.text, style = sheetText(13.sp, lineHeight = 21.sp), color = ink)
+            }
         }
     }
 }

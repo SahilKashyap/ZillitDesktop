@@ -48,6 +48,8 @@ fun NoticeMenuItem.asEntry(): ZillitMenuEntry.Action =
 @Composable
 fun NoticeContextMenu(
     items: () -> List<NoticeMenuItem>,
+    /** Called at the press, before the menu exists — the moment to read anything its popup's focus would clear. */
+    onOpen: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     var anchor by remember { mutableStateOf<Offset?>(null) }
@@ -57,6 +59,7 @@ fun NoticeContextMenu(
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
                     event.changes.forEach { it.consume() }
+                    onOpen()
                     anchor = event.changes.first().position
                 }
             }

@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +72,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.TextSelectionProbe
+import com.zillit.desktop.core.designsystem.component.ZillitSelectable
+import com.zillit.desktop.core.designsystem.component.rememberTextSelectionProbe
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitDropOverlay
@@ -1362,20 +1366,31 @@ private fun Bubble(
     // The bubble's own menu — a right-click or a long-press, in a room or a
     // DM alike: the phones' long-press sheet, the desktop's right button.
     var menuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // The words the pointer highlighted, taken as the menu opens — its popup
+    // takes focus, and the highlight goes with it. Copy prefers them.
+    val selection = rememberTextSelectionProbe()
+    var selectedAtOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    val openMenu = {
+        selectedAtOpen = selection.selectedText
+        menuOpen = true
+    }
     Box(
         Modifier
             .fillMaxWidth()
             .hoverable(hover)
             .pointerInput(message.id) {
                 awaitEachGesture {
-                    val event = awaitPointerEvent()
+                    // Caught on the way down, before the words' own text menu
+                    // (Copy / Select all) sees it: consumed here, that one
+                    // stays shut and the bubble's menu is the only one.
+                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                     if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
                         event.changes.forEach { it.consume() }
-                        menuOpen = true
+                        openMenu()
                     }
                 }
             }
-            .pointerInput(message.id) { detectTapGestures(onLongPress = { menuOpen = true }) },
+            .pointerInput(message.id) { detectTapGestures(onLongPress = { openMenu() }) },
         contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         // The menu's anchor sits at the bubble's own corner, not the row's
@@ -1395,6 +1410,7 @@ private fun Bubble(
                     media = media,
                     actions = actions,
                     alignEnd = mine,
+                    selected = selectedAtOpen,
                 )
             }
         }
@@ -1427,6 +1443,7 @@ private fun Bubble(
                 message, senderName, media, onReact, mine,
                 uploadPercent, resolveName, mentions, onJumpTo, translation,
                 tail = run.first,
+                selection = selection,
             )
             if (!mine) {
                 Box(Modifier.alpha(if (revealed) 1f else 0f)) {
@@ -1458,6 +1475,8 @@ private fun BubbleBody(
     translation: String? = null,
     /** The run's first line wears the tail; the others are plain. */
     tail: Boolean = true,
+    /** Where the words report what the pointer highlighted in them. */
+    selection: TextSelectionProbe? = null,
 ) {
     // WhatsApp's bubble: a soft 8dp rectangle on a hairline shadow, the
     // run's first line pointing at its writer from the top corner.
@@ -1504,12 +1523,36 @@ private fun BubbleBody(
         // The clock tucks in at the end of the last line of words when it
         // fits, and drops below them when it does not — WhatsApp's float.
         if (words && translation == null) {
-            MentionedBody(message.body, mentions, footer = { FooterLine(message) })
+            BubbleWords(message, mentions, translation = null, selection = selection)
             ReactionChips(message, onReact, resolveName)
             return@Column
         }
-        if (words) {
-            MentionedBody(message.body, mentions)
+        if (words || translation != null) {
+            BubbleWords(message.takeIf { words }, mentions, translation, selection)
+        }
+        BubbleFooter(message)
+        ReactionChips(message, onReact, resolveName)
+    }
+}
+
+/**
+ * The words, selectable and copyable; the clock beside them is not. With
+ * no [translation] the clock floats in after the last line (pass the
+ * message); with one, the original — when there are words — reads above it.
+ */
+@Composable
+private fun BubbleWords(
+    message: ChatMessage?,
+    mentions: MentionHooks,
+    translation: String?,
+    selection: TextSelectionProbe?,
+) {
+    ZillitSelectable(probe = selection) {
+        if (translation == null) {
+            if (message != null) {
+                MentionedBody(message.body, mentions, footer = { DisableSelection { FooterLine(message) } })
+            }
+            return@ZillitSelectable
         }
         // The web replaces the words with "original / rule / Translated
         // Message: / translation" (`unitChatUtils.js` `generateTranslatedMessage`);
@@ -1517,17 +1560,18 @@ private fun BubbleBody(
         // No full-width rule between them: the bubble is content-sized,
         // and a fillMaxWidth child would stretch every translated line to
         // the bubble's ceiling (seen in the first render).
-        if (translation != null) {
-            ZillitText(
-                text = str(S.translated),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-                modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
-            )
+        Column {
+            if (message != null) MentionedBody(message.body, mentions)
+            DisableSelection {
+                ZillitText(
+                    text = str(S.translated),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                    modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
+                )
+            }
             ZillitText(text = translation, style = ZillitTheme.typography.bodyMedium)
         }
-        BubbleFooter(message)
-        ReactionChips(message, onReact, resolveName)
     }
 }
 
@@ -1682,6 +1726,8 @@ private fun BubbleMenu(
     media: BubbleMedia,
     actions: BubbleActions,
     alignEnd: Boolean = false,
+    /** Words highlighted in the bubble as the menu opened — Copy takes them over the whole. */
+    selected: String = "",
 ) {
     val seams = LocalChatSeams.current
     val onReact = actions.onReact
@@ -1734,7 +1780,9 @@ private fun BubbleMenu(
             if (message.body.isNotBlank()) {
                 add(
                     menuLine(str(S.copy), ZillitIcons.Copy) {
-                        com.zillit.desktop.core.designsystem.component.copyTextToClipboard(message.body)
+                        com.zillit.desktop.core.designsystem.component.copyTextToClipboard(
+                            selected.ifEmpty { message.body },
+                        )
                     },
                 )
             }

@@ -63,7 +63,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.DroppedFile
 import com.zillit.desktop.core.designsystem.component.ZillitDropOverlay
 import com.zillit.desktop.core.designsystem.component.externalFileDrop
+import com.zillit.desktop.core.designsystem.component.ZillitSelectable
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.rememberTextSelectionProbe
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
@@ -2025,7 +2027,14 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     // long-press (what the phones teach, and what a trackpad hand reaches
     // for), and a "⋯" that appears on hover — the web's kebab — so the
     // actions are discoverable without knowing any gesture at all.
-    val menuItems = noticeMenuItems(notice, ui) { confirmingDelete = true }
+    // The words the pointer highlighted, taken as the menu opens — its popup
+    // takes focus, and the highlight goes with it. Copy prefers them.
+    val selection = rememberTextSelectionProbe()
+    var selectedAtOpen by remember(notice.id) { mutableStateOf("") }
+    val noteSelection = { selectedAtOpen = selection.selectedText }
+    val menuItems = noticeMenuItems(notice, ui, { selectedAtOpen.ifEmpty { notice.body } }) {
+        confirmingDelete = true
+    }
     var menuOpen by remember(notice.id) { mutableStateOf(false) }
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
@@ -2037,12 +2046,17 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
         animationSpec = tween(MOTION_MILLIS),
         label = "noticeLift",
     )
-    NoticeContextMenu(items = menuItems) {
+    NoticeContextMenu(items = menuItems, onOpen = noteSelection) {
     Box(
         modifier = Modifier
             .hoverable(hoverSource)
             .pointerInput(notice.id) {
-                detectTapGestures(onLongPress = { menuOpen = true })
+                detectTapGestures(
+                    onLongPress = {
+                        noteSelection()
+                        menuOpen = true
+                    },
+                )
             },
     ) {
     Column(
@@ -2081,11 +2095,13 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
         NoticeAttachment(notice.id, notice.kind, notice.attachment, notice.location, ui)
 
         if (notice.showsBody) {
-            ZillitText(
-                text = highlighted(notice.body, ui.highlightQuery, ui.crewNames),
-                style = ZillitTheme.typography.bodyLarge,
-                color = if (pending) ZillitTheme.colors.textMuted else ZillitTheme.colors.textPrimary,
-            )
+            ZillitSelectable(probe = selection) {
+                ZillitText(
+                    text = highlighted(notice.body, ui.highlightQuery, ui.crewNames),
+                    style = ZillitTheme.typography.bodyLarge,
+                    color = if (pending) ZillitTheme.colors.textMuted else ZillitTheme.colors.textPrimary,
+                )
+            }
         }
 
         NoticeFooter(notice)
@@ -2118,7 +2134,13 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
             .align(Alignment.TopEnd)
             .padding(ZillitTheme.spacing.sm),
     ) {
-        KebabButton(cardHovered = hovered || menuOpen, onPress = { menuOpen = true })
+        KebabButton(
+            cardHovered = hovered || menuOpen,
+            onPress = {
+                noteSelection()
+                menuOpen = true
+            },
+        )
         NoticeActionsMenu(open = menuOpen, items = menuItems, onDismiss = { menuOpen = false })
     }
     }
@@ -2219,14 +2241,17 @@ private fun NoticeAttachment(
 private fun noticeMenuItems(
     notice: Notice,
     ui: BoardUi,
+    /** What Copy puts on the clipboard — the highlighted words, else the whole post. */
+    copyText: () -> String,
     onArmDelete: () -> Unit,
 ): () -> List<NoticeMenuItem> = {
     if (notice.sendState == NoticeSendState.Sent) {
-        replyItems(notice, ui) + fileItems(notice, ui) + boardItems(notice, ui) + ownerItems(notice, ui, onArmDelete)
+        replyItems(notice, ui) + fileItems(notice, ui, copyText) + boardItems(notice, ui) +
+            ownerItems(notice, ui, onArmDelete)
     } else {
         // Nothing to say about a post the server has not taken yet — its
         // Try again is on the card. Copy still works on the words.
-        fileItems(notice, ui)
+        fileItems(notice, ui, copyText)
     }
 }
 
@@ -2245,9 +2270,9 @@ private fun replyItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buil
 }
 
 /** Copy on any words (iOS), Download on any file — gated by the model on `download_access`. */
-private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
+private fun fileItems(notice: Notice, ui: BoardUi, copyText: () -> String): List<NoticeMenuItem> = buildList {
     if (notice.body.isNotBlank()) {
-        add(NoticeMenuItem(str(S.copy), ZillitIcons.Copy) { copyTextToClipboard(notice.body) })
+        add(NoticeMenuItem(str(S.copy), ZillitIcons.Copy) { copyTextToClipboard(copyText()) })
     }
     val file = notice.attachment ?: return@buildList
     val isFile = notice.kind != NoticeKind.Text && notice.kind != NoticeKind.Location
@@ -2795,11 +2820,14 @@ private fun PinnedChip() {
 private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi) {
     val canAct = ui.canActOnComment(comment)
     var confirmingDelete by remember(comment.id) { mutableStateOf(false) }
+    val selection = rememberTextSelectionProbe()
+    var selectedAtOpen by remember(comment.id) { mutableStateOf("") }
 
     NoticeContextMenu(
-        items = commentMenuItems(parentId, comment, canAct, ui.onEvent) {
+        items = commentMenuItems(parentId, comment, canAct, ui.onEvent, { selectedAtOpen.ifEmpty { comment.body } }) {
             confirmingDelete = true
         },
+        onOpen = { selectedAtOpen = selection.selectedText },
     ) {
     // A row on the thread's rail, not a slab: a small avatar, the name and
     // time on one line, the words under them. The grey inset it replaced
@@ -2825,11 +2853,13 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
             NoticeAttachment(parentId, comment.kind, comment.attachment, comment.location, ui)
 
             if (comment.showsBody) {
-                ZillitText(
-                    text = highlighted(comment.body, ui.highlightQuery, ui.crewNames),
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textPrimary,
-                )
+                ZillitSelectable(probe = selection) {
+                    ZillitText(
+                        text = highlighted(comment.body, ui.highlightQuery, ui.crewNames),
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = ZillitTheme.colors.textPrimary,
+                    )
+                }
             }
 
             if (comment.isEdited) EditedMark()
@@ -2857,11 +2887,13 @@ private fun commentMenuItems(
     comment: NoticeComment,
     canAct: Boolean,
     onEvent: (HomeFeedEvent) -> Unit,
+    /** What Copy puts on the clipboard — the highlighted words, else the whole reply. */
+    copyText: () -> String,
     onArmDelete: () -> Unit,
 ): () -> List<NoticeMenuItem> = {
     buildList {
         if (comment.body.isNotBlank()) {
-            add(NoticeMenuItem(str(S.copy), ZillitIcons.Copy) { copyTextToClipboard(comment.body) })
+            add(NoticeMenuItem(str(S.copy), ZillitIcons.Copy) { copyTextToClipboard(copyText()) })
         }
         // A reply has its own receipts — Android's `Read By User` on the
         // comment menu, the same route with the reply's id.

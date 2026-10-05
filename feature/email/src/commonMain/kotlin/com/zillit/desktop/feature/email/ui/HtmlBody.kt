@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitColors
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitSelectable
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.feature.email.domain.BodySpan
@@ -70,7 +71,11 @@ internal fun HtmlBody(
         }
     }
 
-    ZillitText(text = text, style = style, color = colors.textPrimary, modifier = modifier)
+    // Mail is quoted, forwarded and pasted elsewhere: the body selects with
+    // the mouse and copies with the keys or the right-click menu.
+    ZillitSelectable(modifier) {
+        ZillitText(text = text, style = style, color = colors.textPrimary)
+    }
 }
 
 /** What the renderer needs from the theme, gathered so the builder is a plain function. */

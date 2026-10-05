@@ -55,6 +55,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
+import com.zillit.desktop.core.designsystem.component.ZillitSelectable
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -258,12 +259,14 @@ internal fun MessageTrail(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         item(key = "subject") {
-            ZillitText(
-                text = newest.subject.ifBlank { str(S.no_subject_parenthesis) },
-                style = ZillitTheme.typography.titleLarge,
-                maxLines = 3,
-                modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xs),
-            )
+            ZillitSelectable {
+                ZillitText(
+                    text = newest.subject.ifBlank { str(S.no_subject_parenthesis) },
+                    style = ZillitTheme.typography.titleLarge,
+                    maxLines = 3,
+                    modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xs),
+                )
+            }
         }
         items(newestFirst, key = EmailMessage::id) { message ->
             val isNewest = message.id == newest.id
