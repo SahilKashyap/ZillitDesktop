@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -153,6 +155,34 @@ class AppShellTest {
         onNodeWithText("Switch Theme").assertThemeIs("Dark theme").performClick()
         onNodeWithText("Switch Theme").assertThemeIs("Following system theme").performClick()
         onNodeWithText("Switch Theme").assertThemeIs("Light theme")
+    }
+
+    @Test
+    fun `check for updates sits in the bar only when the app offers it`() = runComposeUiTest {
+        setShell()
+        onAllNodesWithText("Check for updates").assertCountEquals(0)
+    }
+
+    @Test
+    fun `check for updates says up to date, then goes back to its label`() = runComposeUiTest {
+        var checks = 0
+        setShell(onCheckForUpdates = { checks++; UpdateCheckOutcome.UpToDate })
+
+        onNode(hasText("Check for updates") and hasClickAction()).performClick()
+
+        onNode(hasText("You're on the latest version.") and hasClickAction()).assertIsDisplayed()
+        assertEquals(1, checks)
+        mainClock.advanceTimeBy(UPDATE_RESULT_MILLIS)
+        onNode(hasText("Check for updates") and hasClickAction()).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a newer build leaves the label alone - the strip answers`() = runComposeUiTest {
+        setShell(onCheckForUpdates = { UpdateCheckOutcome.Available })
+
+        onNode(hasText("Check for updates") and hasClickAction()).performClick()
+
+        onNode(hasText("Check for updates") and hasClickAction()).assertIsDisplayed()
     }
 
     @Test
@@ -379,6 +409,7 @@ class AppShellTest {
         notificationBadge: Int = 0,
         railCollapsed: Boolean = false,
         onRailCollapsedChange: ((Boolean) -> Unit)? = {},
+        onCheckForUpdates: (suspend () -> UpdateCheckOutcome)? = null,
     ) {
         setContent {
             var mode by remember { mutableStateOf(initialMode) }
@@ -411,6 +442,7 @@ class AppShellTest {
                     notificationBadge = notificationBadge,
                     railCollapsed = railCollapsed,
                     onRailCollapsedChange = onRailCollapsedChange,
+                    onCheckForUpdates = onCheckForUpdates,
                 )
             }
         }
@@ -424,6 +456,9 @@ private val MIN_DIALOG_BUTTON_HEIGHT = 24.dp
 private const val SECOND = 1_000L
 private const val MINUTE = 60 * SECOND
 private const val HOUR = 60 * MINUTE
+
+/** Past the bar's "up to date" hold. */
+private const val UPDATE_RESULT_MILLIS = 6 * SECOND
 
 /** The notification list, for a frame whose real one lives in another module. */
 private const val TEST_NOTIFICATIONS_PATH = "/notifications"

@@ -26,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,7 @@ import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import com.zillit.desktop.core.workspace.ui.Workspace
 import com.zillit.desktop.core.workspace.ui.WorkspaceTabStrip
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * The application frame (plan §3.3): top bar, left rail, workspace, status bar.
@@ -147,6 +149,13 @@ fun AppShell(
     onOpenUpdate: () -> Unit = {},
     /** Hands the staged build to the installer and quits; the helper reopens Zillit. */
     onRestartToUpdate: () -> Unit = {},
+    /**
+     * The top bar's "Check for updates", beside language and theme; null hides
+     * it. Asks now and says what came back — a newer build answers through the
+     * strip under the bar, so the app should put that up when it reports
+     * [UpdateCheckOutcome.Available].
+     */
+    onCheckForUpdates: (suspend () -> UpdateCheckOutcome)? = null,
     /** Quit, offered on [ForceUpdateScreen]; null leaves it off. */
     onQuit: (() -> Unit)? = null,
     /**
@@ -190,6 +199,7 @@ fun AppShell(
                         { viewModel.onEvent(WorkspaceEvent.Open(it)) }
                     },
                     notificationBadge = notificationBadge,
+                    onCheckForUpdates = onCheckForUpdates,
                 )
                 HorizontalDivider(color = ZillitTheme.colors.divider)
 
@@ -324,6 +334,7 @@ private fun TopBar(
     /** What the Zillit mark opens — the notification list. Null makes it plain text. */
     onOpenNotifications: (() -> Unit)? = null,
     notificationBadge: Int = 0,
+    onCheckForUpdates: (suspend () -> UpdateCheckOutcome)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -351,18 +362,23 @@ private fun TopBar(
             deletionDueAtMillis?.let { DeletionCountdown(dueAtMillis = it) }
         }
 
-        // Language and theme, nothing else. Search and Profile stood here
-        // doing nothing — a magnifier that searched nothing and a person that
-        // opened nobody. Search lives in each tool that has something to
-        // search, and the account is in Settings; two dead controls in the
-        // app's most-looked-at corner taught people the bar is decorative.
+        // Updates, language and theme: controls that do something to the app
+        // itself. Search and Profile stood here doing nothing — a magnifier
+        // that searched nothing and a person that opened nobody. Search lives
+        // in each tool that has something to search, and the account is in
+        // Settings; two dead controls in the app's most-looked-at corner
+        // taught people the bar is decorative.
         //
-        // Both wear their words: a globe and a monitor side by side were two
+        // All wear their words: a globe and a monitor side by side were two
         // grey glyphs nobody could tell apart without clicking one.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
+            // First in the group: its label grows while it reports, and the
+            // bar's right edge is anchored, so the growth pushes leftward
+            // into empty bar rather than shoving language and theme about.
+            onCheckForUpdates?.let { CheckForUpdatesButton(onCheck = it) }
             ZillitLanguageMenu(
                 selected = language,
                 onSelect = onLanguageChange,
@@ -580,6 +596,62 @@ private fun ThemeToggle(themeMode: ThemeMode, onChange: (ThemeMode) -> Unit) {
 }
 
 /**
+ * Asks for a newer build now, and says how it went on the button itself.
+ *
+ * Up to date replaces the label for a few seconds — the answer someone clicked
+ * for, where they are looking. A newer build needs no word here: the strip
+ * under the bar is the answer, with its download. A failed check keeps the
+ * label and turns the icon to a warning, its reason in the tooltip: the reason
+ * is a sentence, too long for a button in the bar.
+ */
+@Composable
+private fun CheckForUpdatesButton(onCheck: suspend () -> UpdateCheckOutcome) {
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var outcome by remember { mutableStateOf<UpdateCheckOutcome?>(null) }
+    LaunchedEffect(outcome) {
+        if (outcome != null) {
+            delay(UPDATE_RESULT_SHOWN_MILLIS)
+            outcome = null
+        }
+    }
+
+    val label = str(S.desktop_check_for_updates)
+    val upToDate = str(S.desktop_update_up_to_date)
+    val failed = str(S.desktop_update_check_failed)
+    val (text, icon, tip) = when (outcome) {
+        UpdateCheckOutcome.UpToDate -> Triple(upToDate, ZillitIcons.Check, upToDate)
+        UpdateCheckOutcome.Failed -> Triple(label, ZillitIcons.Warning, failed)
+        UpdateCheckOutcome.Available, null -> Triple(label, ZillitIcons.Reload, label)
+    }
+    ZillitTooltip(text = tip) {
+        ZillitButton(
+            text = text,
+            onClick = {
+                // A second click while one is in flight is ignored: the
+                // answer it would get is the one already coming.
+                if (!checking) {
+                    checking = true
+                    outcome = null
+                    scope.launch {
+                        try {
+                            outcome = onCheck().takeIf { it != UpdateCheckOutcome.Available }
+                        } finally {
+                            checking = false
+                        }
+                    }
+                }
+            },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = icon,
+            loading = checking,
+            modifier = Modifier.semantics { if (outcome != null) stateDescription = tip },
+        )
+    }
+}
+
+/**
  * Connection and sync state.
  *
  * Deliberately does *not* repeat the open-window count — the tab strip already
@@ -684,6 +756,20 @@ data class UpdateNotice(
     val blocking: Boolean = false,
 )
 
+/**
+ * What the top bar's "Check for updates" heard back — the frame's own words
+ * for `core:appupdate`'s `UpdateStatus`, for the same reason as [UpdateNotice].
+ */
+enum class UpdateCheckOutcome {
+    UpToDate,
+
+    /** A newer build; the app puts the strip up, and the button says nothing more. */
+    Available,
+
+    /** Offline, or this build is not set up to check. */
+    Failed,
+}
+
 /** The strip the person closed: which version, and how many asks for it had been made by then. */
 internal data class UpdateDismissal(val version: String, val requests: Int)
 
@@ -748,6 +834,9 @@ private val SWITCHER_NAME_MAX = 260.dp
 
 /** The rule between the app's mark and the production's name. */
 private val BAR_DIVIDER_HEIGHT = 24.dp
+
+/** How long "You're on the latest version." stands in for the button's label. */
+private const val UPDATE_RESULT_SHOWN_MILLIS = 5_000L
 
 private const val COUNTDOWN_TICK_MILLIS = 1_000L
 private const val MILLIS_PER_SECOND = 1_000L
