@@ -11961,4 +11961,9 @@
     <string name="desktop_tool_info_wardrobe">Share photos and videos of costume fittings and communicate on them.</string>
     <string name="desktop_tool_info_zillit_draft">Write and format scripts on this computer, Final Draft style, and export them when they are ready.</string>
     <string name="desktop_tool_info_generic">Opens %1$s for this production.</string>
+    <string name="desktop_csync_setup_sub">Upload the script and its scenes and characters are read for you. You review them before anything is saved, then Scene Breakdown opens.</string>
+    <string name="desktop_csync_setup_drop_change">Click or drop another file to change it</string>
+    <string name="desktop_csync_setup_need_script">Add the script to create the production.</string>
+    <string name="desktop_csync_setup_need_type">Choose Feature or TV Series to create the production.</string>
+    <string name="desktop_csync_setup_dates_label">Estimated dates</string>
 </resources>

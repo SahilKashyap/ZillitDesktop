@@ -56,6 +56,8 @@ internal class ScriptUpload(
     val existingScenes: Int,
     private val onImported: () -> Unit,
     val cues: CueExtraction,
+    /** A name handed in is kept as given, blank included (the first-run form starts empty on purpose). */
+    private val initialRevision: String? = null,
 ) {
     var file by mutableStateOf<PickedFile?>(null)
     var doc by mutableStateOf<Rec?>(null)
@@ -107,11 +109,15 @@ internal class ScriptUpload(
     /** The file chooser, then the same path a listed document takes. */
     fun chooseFile() {
         ctx.scope.launch {
-            val picked = ctx.host.pick(SCRIPT_EXTENSIONS, multiple = false).firstOrNull() ?: return@launch
-            file = picked
-            doc = null
-            if (existingScenes > 0 && !replacing) confirmReplace = true else parse()
+            ctx.host.pick(SCRIPT_EXTENSIONS, multiple = false).firstOrNull()?.let(::pickFile)
         }
+    }
+
+    /** A file already in hand (chosen on the first-run form): the same path a chosen file takes. */
+    fun pickFile(picked: PickedFile) {
+        file = picked
+        doc = null
+        if (existingScenes > 0 && !replacing) confirmReplace = true else parse()
     }
 
     fun pickDoc(d: Rec) {
@@ -162,7 +168,7 @@ internal class ScriptUpload(
         result = r
         actions = emptyMap()
         edits = emptyMap()
-        revision = if (r.bool("first_upload")) "White" else "Revision ${ctx.now().let(::isoDay)}"
+        revision = initialRevision ?: if (r.bool("first_upload")) "White" else "Revision ${ctx.now().let(::isoDay)}"
         rows = initialRows(r.recs("characters"), r.recs("existing_characters"))
         // Land on whichever tab needs a decision.
         tab = if (r.recs("characters").any { !it.bool("exists") }) "characters" else "scenes"
@@ -284,10 +290,13 @@ internal fun rememberScriptUpload(
     existingScenes: Int,
     onImported: () -> Unit,
     onClose: () -> Unit,
+    initialRevision: String? = null,
 ): ScriptUpload {
     val ctx = LocalSync.current
     val cues = remember(open, ctx) { CueExtraction(ctx) }
-    val upload = remember(open, ctx, existingScenes) { ScriptUpload(ctx, docs, existingScenes, onImported, cues) }
+    val upload = remember(open, ctx, existingScenes) {
+        ScriptUpload(ctx, docs, existingScenes, onImported, cues, initialRevision)
+    }
     upload.done = onClose
     return upload
 }

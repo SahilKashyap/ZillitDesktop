@@ -74,8 +74,7 @@ data class SyncTabModel(
  * The tool's tab strip as the web draws it: the strip sits on the page colour, each tab an icon and a 15px
  * label with a caret and a dropdown of pages (with live figures) on the groups; the lit tab is raised onto
  * the surface with a 3px accent underline. When the tabs overflow, the edge with more past it fades out and
- * carries a small round arrow that pages the row by about 70% (the web's `TabStrip`). [trailing] is one more
- * tab at the end of the row (Setup).
+ * carries a small round arrow that pages the row by about 70% (the web's `TabStrip`).
  */
 @Composable
 fun SyncTabBar(
@@ -84,8 +83,6 @@ fun SyncTabBar(
     activeItem: String,
     onGo: (String) -> Unit,
     modifier: Modifier = Modifier,
-    trailing: SyncTabModel? = null,
-    onTrailing: () -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
     val scroll = rememberScrollState()
@@ -120,7 +117,6 @@ fun SyncTabBar(
                     },
                 )
             }
-            trailing?.let { TabCell(it, active = false, activeItem = activeItem, onGo = { onTrailing() }) }
         }
         TabArrows(canLeft, canRight, scroll, viewport)
     }

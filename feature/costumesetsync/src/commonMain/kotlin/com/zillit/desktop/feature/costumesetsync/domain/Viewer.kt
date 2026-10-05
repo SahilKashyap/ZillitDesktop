@@ -70,10 +70,9 @@ data class SyncProject(val rec: Rec?, val financeRoles: Set<String>) {
             return listOf("scenes", "characters", "costumes", "actors").all { counts.long(it) == 0L }
         }
 
-    /** The roles that may set a production up (the web's `SETUP_ROLES`). */
-    fun canSetUp(canPost: Boolean): Boolean = canPost && myRole in SETUP_ROLES
-
-    private companion object {
-        val SETUP_ROLES = setOf("ADMIN", "PRODUCTION_MANAGER", "COSTUME_DESIGNER")
-    }
+    /**
+     * Who may set a production up: anyone with Zillit posting rights on the tool. The in-tool role plays no part
+     * (the web dropped its role check on 2026-10-02; the service treats anyone who can post as ADMIN).
+     */
+    fun canSetUp(canPost: Boolean): Boolean = canPost
 }

@@ -42,7 +42,6 @@ import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.SCAN_ENABLED
 import com.zillit.desktop.feature.costumesetsync.ui.screens.FirstRun
-import com.zillit.desktop.feature.costumesetsync.ui.screens.ProductionSetupWizard
 import kotlin.time.Clock
 
 private val SEARCH_WIDTH = 380.dp
@@ -203,15 +202,15 @@ internal fun SyncFrame(
     // A production with nothing in it opens to the first-run landing instead of the tabs (the web's `FirstRun`).
     if (ctx.project.notSetUp && !setUpHere) {
         TopBar(bellTick, search = false)
-        ZillitScrollColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(ZillitTheme.spacing.xl),
-        ) {
-            FirstRun(onChanged = onReloadProject, onDone = onSetUp)
-        }
+        FirstRun(
+            onChanged = onReloadProject,
+            onDone = {
+                onSetUp()
+                ctx.nav.go("breakdown")
+            },
+        )
         return
     }
-    var setupOpen by remember { mutableStateOf(false) }
     val route = ctx.nav.current
     val activeTab = tabOf(route.head)
     val tabs = TABS.filter { (!it.financeOnly || ctx.isFinance) && (!it.scanOnly || SCAN_ENABLED) }
@@ -231,13 +230,6 @@ internal fun SyncFrame(
         activeId = activeTab,
         activeItem = itemOf(route),
         onGo = ctx.nav::go,
-        // The Setup tab: the production's setup, filled in, to change (setup roles only).
-        trailing = if (ctx.project.canSetUp(ctx.canPost)) {
-            SyncTabModel("setup", t("csync_nav_setup"), ZillitIcons.Settings, "setup")
-        } else {
-            null
-        },
-        onTrailing = { setupOpen = true },
     )
     ZillitScrollColumn(
         modifier = Modifier.fillMaxSize().background(ZillitTheme.colors.surfaceSunken),
@@ -245,14 +237,6 @@ internal fun SyncFrame(
     ) {
         SyncRoutes(route)
     }
-    ProductionSetupWizard(
-        open = setupOpen,
-        project = ctx.project.rec,
-        edit = true,
-        onClose = { setupOpen = false },
-        onChanged = onReloadProject,
-        onDone = { setupOpen = false; ctx.nav.go("breakdown") },
-    )
 }
 
 /** The top bar. [search] is off on the first-run landing, where there is nothing to find yet (the web's `bare`). */

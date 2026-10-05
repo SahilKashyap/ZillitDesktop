@@ -21308,4 +21308,9 @@ object S {
     const val zillit_mailing_address: String = "zillit_mailing_address"
     const val zillit_notice: String = "zillit_notice"
     const val zip_code_txt: String = "zip_code_txt"
+    const val desktop_csync_setup_dates_label: String = "desktop_csync_setup_dates_label"
+    const val desktop_csync_setup_drop_change: String = "desktop_csync_setup_drop_change"
+    const val desktop_csync_setup_need_script: String = "desktop_csync_setup_need_script"
+    const val desktop_csync_setup_need_type: String = "desktop_csync_setup_need_type"
+    const val desktop_csync_setup_sub: String = "desktop_csync_setup_sub"
 }
