@@ -268,6 +268,29 @@ class MediasoupSessionTest {
         assertTrue(events.isEmpty(), "got $events")
     }
 
+    /** The web's rule: one person on two devices is here until the last of them leaves. */
+    @Test
+    fun `a person leaves only with their last device`() = runTest(StandardTestDispatcher()) {
+        val events = mutableListOf<CallEngineEvent>()
+        val peer = ProtooPeer(backgroundScope, { })
+        val session = MediasoupSession(
+            backgroundScope, peer, FakeSignalling(), FakePage(),
+            turn = { TurnCredentials(emptyList(), 600) }, emit = { events += it },
+        )
+        fun note(method: String, id: String) = ProtooMessage.Notification(
+            method,
+            buildJsonObject { put(if (method == MediasoupNotification.NEW_PEER) "id" else "peerId", id) },
+        )
+        session.onNotification(note(MediasoupNotification.NEW_PEER, "them:phone"))
+        session.onNotification(note(MediasoupNotification.NEW_PEER, "them:laptop"))
+
+        session.onNotification(note(MediasoupNotification.PEER_CLOSED, "them:phone"))
+        assertTrue(events.none { it is CallEngineEvent.PeerLeft }, "still on the laptop")
+
+        session.onNotification(note(MediasoupNotification.PEER_CLOSED, "them:laptop"))
+        assertEquals(1, events.count { it is CallEngineEvent.PeerLeft })
+    }
+
     @Test
     fun `a peer keeps its uid across a rejoin`() = runTest(StandardTestDispatcher()) {
         val events = mutableListOf<CallEngineEvent>()

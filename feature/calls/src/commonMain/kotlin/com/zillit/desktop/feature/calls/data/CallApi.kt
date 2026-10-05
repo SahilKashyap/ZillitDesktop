@@ -194,13 +194,15 @@ class CallApi(
         projectId: String?,
         /** Whose request this is; the responder themselves unless we answer for someone. */
         headerUserId: String = fromUserId,
+        /** The wire word, when it is not [status]'s own — `cancelled` has no roster status. */
+        word: String = status.line1ResponseWord,
     ): ZillitResult<Unit> {
         if (roomId.isBlank() || fromUserId.isBlank()) {
             return ZillitResult.Success(Unit)
         }
         return post(
             "mediasoup-call/call-response",
-            callResponseEnvelope(roomId, status, fromUserId),
+            callResponseEnvelope(roomId, status, fromUserId, word),
             projectId,
             // The responder's own id in the call's production — the same
             // pairing iOS sends here.

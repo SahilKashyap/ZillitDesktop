@@ -9,6 +9,9 @@ import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallType
 import kotlinx.serialization.json.Json
+import com.zillit.desktop.feature.calls.data.callResponseEnvelope
+import com.zillit.desktop.feature.calls.data.LINE1_RESPONSE_CANCELLED
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -184,6 +187,20 @@ class CallWireTest {
             CallStatus.Left,
             readStatusChange(parse("""{"roomId":"r","userId":"u","status":"left"}"""))?.status,
         )
+    }
+
+    @Test
+    fun `Line 1 call-response speaks the words the other clients act on`() {
+        // The web and Android send `incall` and `left`; `in_call`/`leave` were ignored by them.
+        fun word(status: CallStatus, override: String? = null): String? {
+            val envelope = override?.let { callResponseEnvelope("r", status, "u", it) }
+                ?: callResponseEnvelope("r", status, "u")
+            return envelope["response"]?.jsonPrimitive?.content
+        }
+        assertEquals("incall", word(CallStatus.InCall))
+        assertEquals("left", word(CallStatus.Left))
+        assertEquals("declined", word(CallStatus.Declined))
+        assertEquals("cancelled", word(CallStatus.Left, LINE1_RESPONSE_CANCELLED))
     }
 
     @Test

@@ -1147,8 +1147,13 @@ class CallCoordinatorTest {
             assertEquals("screen:1:0", engine.sharedSource)
         }
 
+    /**
+     * A second ring over a live call is the user's to answer, on every line:
+     * the Decline / End & Accept banner, never an automatic refusal. It rings
+     * for the caller while the user decides.
+     */
     @Test
-    fun `a busy decline is told to the roster as well as the caller`() =
+    fun `a second ring over a live call is offered, not declined`() =
         runTest(StandardTestDispatcher()) {
             val socket = FakeSocket()
             val plane = FakePlane()
@@ -1159,19 +1164,64 @@ class CallCoordinatorTest {
             runCurrent()
             plane.announced.clear()
 
-            // A second call arrives while this one is live.
             val second = ring.replace("\"u1\"", "\"u2\"").replace("caller-device", "other-device")
             socket.deliver(ZillitSocketEvents.Calls.Incoming, second)
             runCurrent()
 
-            // The REST response is inert on the Agora line, where the roster
-            // row is the only channel the caller watches — without this write
-            // they ring for the full minute and file a missed call for a call
-            // that was refused instantly.
-            assertEquals(
-                listOf(com.zillit.desktop.feature.calls.domain.CallStatus.Declined),
-                plane.announced,
-            )
+            assertEquals("u2", coordinator.secondCall.value?.callUuid)
+            assertEquals(CallPhase.InCall, coordinator.phase.value, "the live call carries on")
+            assertEquals(listOf(CallStatus.Ringing), plane.announced)
+
+            // Decline: told to the roster as well as the caller — on the Agora
+            // line the row is the only channel the caller watches.
+            coordinator.declineSecondCall()
+            runCurrent()
+            assertNull(coordinator.secondCall.value)
+            assertEquals(listOf(CallStatus.Ringing, CallStatus.Declined), plane.announced)
+            assertEquals("u1", coordinator.session.value?.callUuid)
+        }
+
+    @Test
+    fun `End and Accept leaves the live call and answers the waiting one`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = coordinator(socket, plane = FakePlane())
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            val second = ring.replace("\"u1\"", "\"u2\"").replace("caller-device", "other-device")
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, second)
+            runCurrent()
+
+            coordinator.endAndAcceptSecondCall()
+            // The hang-up's REST round trip runs on Ktor's own dispatcher.
+            settle { coordinator.session.value?.callUuid == "u2" }
+
+            assertEquals("u2", coordinator.session.value?.callUuid)
+            assertNull(coordinator.secondCall.value)
+        }
+
+    @Test
+    fun `a second ring nobody answers goes away as not answered`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val plane = FakePlane()
+            val coordinator = coordinator(socket, plane = plane)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            val second = ring.replace("\"u1\"", "\"u2\"").replace("caller-device", "other-device")
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, second)
+            runCurrent()
+            plane.announced.clear()
+
+            advanceTimeBy(46_000)
+            runCurrent()
+
+            assertNull(coordinator.secondCall.value)
+            assertTrue(CallStatus.NotAnswered in plane.announced)
         }
 
     @Test
@@ -1442,6 +1492,27 @@ class CallCoordinatorTest {
                 CallStatus.InCall,
                 coordinator.session.value?.participants?.single { it.userId == "them" }?.status,
             )
+        }
+
+    /**
+     * A phone joins the Line 1 room while it is still ringing. The web holds
+     * the caller's ring for that (`gateOnAnswer`): only their media is an answer.
+     */
+    @Test
+    fun `on Line 1 a ringing phone joining the room is not an answer, its media is`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = ringing(socket, engine = engine)
+            val them = com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf("them")
+
+            engine.push(CallEngineEvent.PeerJoined(them, "them:phone"))
+            runCurrent()
+            assertEquals(CallPhase.Outgoing, coordinator.phase.value, "a prewarmed join is still a ring")
+
+            engine.push(CallEngineEvent.PeerJoined(them, "them:phone", withMedia = true))
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
         }
 
     /** Answered, and the caller's stream has not arrived yet: that is not an ending. */

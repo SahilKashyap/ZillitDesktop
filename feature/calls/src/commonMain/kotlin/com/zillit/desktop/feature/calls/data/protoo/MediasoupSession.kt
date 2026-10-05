@@ -89,6 +89,14 @@ class MediasoupSession(
 
     private val consumersById = mutableMapOf<String, ConsumerInfo>()
 
+    /** Live peer ids behind each uid; a uid leaves only with its last peer. */
+    private val peersByUid = mutableMapOf<Int, MutableSet<String>>()
+
+    private fun rememberPeer(peerId: String) {
+        if (mediasoupIdentityOf(peerId) == selfIdentity) return
+        peersByUid.getOrPut(uidOf(peerId)) { mutableSetOf() }.add(peerId)
+    }
+
     /**
      * Opens the socket. The join proper begins when it connects.
      *
@@ -131,6 +139,7 @@ class MediasoupSession(
         deviceCaps = null
         sctpCaps = null
         consumersById.clear()
+        peersByUid.clear()
         page.leave()
     }
 
@@ -302,6 +311,7 @@ class MediasoupSession(
                 // The peer id is `user:device`; its user half is what a roster
                 // row must carry for the stream to land on that person's tile.
                 ZillitLog.i(TAG) { "peer joined $it uid=${uidOf(it)}" }
+                rememberPeer(it)
                 emitForPeer(it) { uid -> CallEngineEvent.PeerJoined(uid, it) }
             }
 
@@ -316,6 +326,12 @@ class MediasoupSession(
                     page.closeConsumer(id)
                     consumersById.remove(id)
                 }
+                // One person, two peers — a second device, or the old socket
+                // of a reconnect closing after the new one is live. They are
+                // still here until the last of them goes (the web's rule).
+                val stillHere = peersByUid[uidOf(closed)]?.apply { remove(closed) }?.isNotEmpty() == true
+                if (stillHere) return
+                peersByUid.remove(uidOf(closed))
                 emitForPeer(closed) { uid -> CallEngineEvent.PeerLeft(uid) }
             }
 
@@ -382,7 +398,8 @@ class MediasoupSession(
             ZillitLog.i(TAG) { "first $kind from $peerId uid=${uidOf(peerId)}" }
         }
         consumersById[consumerId] = ConsumerInfo(peerId, kind, share)
-        emitForPeer(peerId) { uid -> CallEngineEvent.PeerJoined(uid, peerId) }
+        rememberPeer(peerId)
+        emitForPeer(peerId) { uid -> CallEngineEvent.PeerJoined(uid, peerId, withMedia = true) }
         when {
             share -> emitForPeer(peerId) { uid -> CallEngineEvent.PeerScreenShare(uid, sharing = true) }
             kind == "video" ->
@@ -458,6 +475,7 @@ class MediasoupSession(
             val id = row.text("id") ?: return@forEach
             if (mediasoupIdentityOf(id) == selfIdentity) return@forEach
             val uid = uidOf(id)
+            rememberPeer(id)
             emit(CallEngineEvent.PeerJoined(uid, id))
             // The phones write these flags under several spellings; read them all.
             if (row.flag("raisedHand", "raise_hand")) {
@@ -478,6 +496,7 @@ class MediasoupSession(
     suspend fun leave(reason: String = "left") {
         joined = false
         consumersById.clear()
+        peersByUid.clear()
         page.leave()
         peer.close(reason)
         signalling.close(reason)

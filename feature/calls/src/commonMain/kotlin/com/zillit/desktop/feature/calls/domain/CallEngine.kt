@@ -22,7 +22,12 @@ sealed interface CallEngineEvent {
     data class Left(val channel: String) : CallEngineEvent
 
     /** A remote participant's media appeared. */
-    data class PeerJoined(val uid: Int, val peerId: String? = null) : CallEngineEvent
+    /**
+     * [withMedia]: their media reached us, not merely their join. On Line 1 a
+     * phone joins the room while it is still ringing (ring-time prewarm), so
+     * only a consumer is an answer — the web's `gateOnAnswer`.
+     */
+    data class PeerJoined(val uid: Int, val peerId: String? = null, val withMedia: Boolean = false) : CallEngineEvent
 
     /** A remote participant's media went away. [reason] is the SDK's code. */
     data class PeerLeft(val uid: Int, val reason: Int = 0) : CallEngineEvent

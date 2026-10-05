@@ -422,9 +422,9 @@ class CallCoordinator(
     fun inviteLink(): String? = line3InCall.inviteLink()
 
     /**
-     * A second Line 3 ring while we are on a call — the web's compact
-     * "Decline / End & Accept" banner. Never auto-declined: the server rings
-     * busy devices on purpose, and the choice is the user's.
+     * A second ring while we are on a call — the web's compact
+     * "Decline / End & Accept" banner, on every line. Never auto-declined:
+     * the server rings busy devices on purpose, and the choice is the user's.
      */
     private val _secondCall = MutableStateFlow<CallSession?>(null)
     val secondCall: StateFlow<CallSession?> = _secondCall.asStateFlow()
@@ -440,7 +440,11 @@ class CallCoordinator(
     fun declineSecondCall() {
         val waiting = _secondCall.value ?: return
         dismissSecondCall()
-        scope.launch { line3?.decline(waiting) }
+        if (waiting.provider == CallProvider.LiveKit) {
+            scope.launch { line3?.decline(waiting) }
+        } else {
+            declineRing(waiting)
+        }
     }
 
     /**
@@ -465,7 +469,14 @@ class CallCoordinator(
                 }
             } else {
                 plane.announceSelf(current, CallStatus.Left)
-                sendFinalStatus(current, CallStatus.Left)
+                // A Line 1 call of ours still ringing is withdrawn, as a hang-up would.
+                val cancelsRing = current.provider == CallProvider.Mediasoup &&
+                    current.direction == CallDirection.Outgoing && !wasInCall
+                sendFinalStatus(
+                    current,
+                    CallStatus.Left,
+                    word = if (cancelsRing) LINE1_RESPONSE_CANCELLED else CallStatus.Left.line1ResponseWord,
+                )
             }
             finish(current, CallEndReason.Hungup)
             onInvite(waiting)
@@ -606,6 +617,9 @@ class CallCoordinator(
 
     /** How long [emptyRoomCheck] was told to wait, so a shorter verdict can replace it. */
     private var emptyRoomGrace = 0L
+
+    /** Uids whose media has reached us — on Line 1 the only proof of an answer. See [adoptAnswersFromMedia]. */
+    private val mediaUids = mutableSetOf<Int>()
 
     /** One clock per invitee still ringing; see [watchInviteExpiry]. */
     private val inviteExpiry = mutableMapOf<String, Job>()
@@ -763,13 +777,7 @@ class CallCoordinator(
                     // Cancelled while the POST was in flight. The call exists
                     // on the server regardless, so end it rather than adopting
                     // a call the user already walked away from.
-                    ZillitLog.i(TAG) { "create-call landed after cancel; ending ${session.callUuid}" }
-                    api.endCall(
-                        callUuid = session.callUuid,
-                        deviceId = selfDeviceId().orEmpty(),
-                        projectId = session.projectId.takeIf(String::isNotBlank),
-                        provider = session.provider,
-                    )
+                    abandonLateCall(session)
                 } else {
                     // The response describes the caller — us. The callee's
                     // name came from the screen that pressed the button.
@@ -841,15 +849,19 @@ class CallCoordinator(
                 offerSecondCall(invite)
                 return
             }
-            scope.launch {
-                api.sendCallResponse(
-                    roomId = invite.roomId.ifBlank { invite.callUuid },
-                    status = CallStatus.Declined,
-                    fromUserId = invite.selfUserId,
-                    projectId = invite.projectId.takeIf(String::isNotBlank),
-                )
+            // The call we are on, rung again (a re-invite to our own room), is
+            // not a second call; neither is anything while we are still
+            // ringing or leaving — those keep the old busy decline.
+            val current = _session.value
+            if (current != null && invite.callUuid.matches(current)) return
+            val canChoose = _phase.value == CallPhase.InCall || _phase.value == CallPhase.Outgoing
+            if (canChoose && offerSecondCall(invite)) {
+                // Ringing, as any ring we show is: the caller hears it ring
+                // while the user decides, not an instant refusal.
+                acknowledgeRing(invite)
+            } else {
+                declineRing(invite)
             }
-            scope.launch { plane.announceSelf(invite, CallStatus.Declined) }
             return
         }
 
@@ -859,15 +871,7 @@ class CallCoordinator(
         // Line 3 acknowledged the ring on its own socket; the v2 response and
         // the Firestore mirror are Lines 1 and 2's.
         if (invite.provider != CallProvider.LiveKit) {
-            scope.launch {
-                api.sendCallResponse(
-                    roomId = invite.roomId.ifBlank { invite.callUuid },
-                    status = CallStatus.Ringing,
-                    fromUserId = invite.selfUserId,
-                    projectId = invite.projectId.takeIf(String::isNotBlank),
-                )
-            }
-            scope.launch { plane.announceSelf(invite, CallStatus.Ringing) }
+            acknowledgeRing(invite)
             watchPlane(invite)
         }
         startRingTimeout(CallTimeouts.INCOMING_MS) { incomingRangOut() }
@@ -879,17 +883,88 @@ class CallCoordinator(
      * keeps one pending invite; the ring window is the server's, so a banner
      * nobody answers simply goes away when it closes.
      */
-    private fun offerSecondCall(invite: CallSession) {
+    private fun offerSecondCall(invite: CallSession): Boolean {
         val current = _session.value
-        if (current != null && invite.callUuid.matches(current)) return
-        if (_secondCall.value != null) return
+        if (current != null && invite.callUuid.matches(current)) return false
+        if (_secondCall.value != null) return false
         _secondCall.value = invite
         _chimes.tryEmit(Unit)
         secondCallTimeout?.cancel()
         secondCallTimeout = scope.launch {
             delay(SECOND_CALL_BANNER_MILLIS)
-            if (_secondCall.value?.callUuid == invite.callUuid) _secondCall.value = null
+            if (_secondCall.value?.callUuid != invite.callUuid) return@launch
+            _secondCall.value = null
+            // Lines 1 and 2 ring until somebody says otherwise; Line 3's
+            // server closes its own ring window.
+            if (invite.provider != CallProvider.LiveKit) {
+                // Own coroutines, as [declineRing]: neither channel waits on the other.
+                scope.launch { sendFinalStatus(invite, CallStatus.NotAnswered) }
+                scope.launch { plane.announceSelf(invite, CallStatus.NotAnswered) }
+                toastMissed(invite)
+            }
         }
+        return true
+    }
+
+    /** A Line 1/2 ring this device is showing: `ringing` to the caller, on both channels. */
+    private fun acknowledgeRing(invite: CallSession) {
+        scope.launch {
+            api.sendCallResponse(
+                roomId = invite.roomId.ifBlank { invite.callUuid },
+                status = CallStatus.Ringing,
+                fromUserId = invite.selfUserId,
+                projectId = invite.projectId.takeIf(String::isNotBlank),
+            )
+        }
+        scope.launch { plane.announceSelf(invite, CallStatus.Ringing) }
+    }
+
+    /**
+     * Refuses a Line 1/2 ring, scoped to the RINGING call's ids, never the
+     * live one's. Two channels on their own coroutines so neither waits for
+     * the other: the REST response is what a Line 1 caller hears, and the
+     * roster row is the only thing a Line 2 caller is watching.
+     */
+    private fun declineRing(invite: CallSession) {
+        scope.launch {
+            api.sendCallResponse(
+                roomId = invite.roomId.ifBlank { invite.callUuid },
+                status = CallStatus.Declined,
+                fromUserId = invite.selfUserId,
+                projectId = invite.projectId.takeIf(String::isNotBlank),
+            )
+        }
+        scope.launch { plane.announceSelf(invite, CallStatus.Declined) }
+    }
+
+    /**
+     * The banner's ring went away on the caller's side — they gave up, it
+     * ended, or we answered it elsewhere. The banner's call when [roomId] was it.
+     */
+    private fun dismissWaitingFor(roomId: String): CallSession? {
+        val waiting = _secondCall.value ?: return null
+        if (roomId.isBlank() || !roomId.matches(waiting)) return null
+        dismissSecondCall()
+        return waiting
+    }
+
+    /**
+     * A status about the banner's call rather than ours: the caller giving up
+     * closes it with a missed-call notice, our answering it on another device
+     * closes it quietly. True when the change was the banner's.
+     */
+    private fun onWaitingCallStatus(change: CallStatusChange): Boolean {
+        val waiting = _secondCall.value ?: return false
+        if (change.roomId.isBlank() || !change.roomId.matches(waiting)) return false
+        val callerGaveUp = change.userId == waiting.callerUserId && change.status in CALLER_GAVE_UP
+        val answeredElsewhere = change.userId == waiting.selfUserId && change.status.isConnected
+        if (callerGaveUp || answeredElsewhere) dismissSecondCall()
+        if (callerGaveUp) toastMissed(waiting)
+        return true
+    }
+
+    private fun toastMissed(waiting: CallSession) {
+        _toasts.tryEmit(str(S.desktop_call_missed_call_from, waiting.callerName))
     }
 
     /** The user pressed accept. */
@@ -1240,18 +1315,10 @@ class CallCoordinator(
         if (_phase.value == CallPhase.Idle || _phase.value == CallPhase.Ending) return
         val wasInCall = _phase.value == CallPhase.InCall
         _phase.value = CallPhase.Ending
-        if (current.provider == CallProvider.LiveKit) {
-            scope.launch {
-                engine.leave()
-                // Unanswered and ours: a cancel, so the far side stops ringing.
-                if (current.direction == CallDirection.Outgoing && !wasInCall) {
-                    line3?.cancel(current.callUuid, current.projectId.takeIf(String::isNotBlank), current.selfUserId)
-                } else {
-                    line3?.leave(current)
-                }
-                finish(current, CallEndReason.Hungup)
-            }
-            return
+        when (current.provider) {
+            CallProvider.LiveKit -> return hangUpLine3(current, wasInCall)
+            CallProvider.Mediasoup -> return hangUpLine1(current, wasInCall)
+            else -> Unit
         }
         // Android's rule: the last one out ends the call for everyone; anyone
         // else merely leaves. Ending a room three people are talking in
@@ -1289,6 +1356,39 @@ class CallCoordinator(
         }
     }
 
+    private fun hangUpLine3(current: CallSession, wasInCall: Boolean) {
+        scope.launch {
+            engine.leave()
+            // Unanswered and ours: a cancel, so the far side stops ringing.
+            if (current.direction == CallDirection.Outgoing && !wasInCall) {
+                line3?.cancel(current.callUuid, current.projectId.takeIf(String::isNotBlank), current.selfUserId)
+            } else {
+                line3?.leave(current)
+            }
+            finish(current, CallEndReason.Hungup)
+        }
+    }
+
+    /**
+     * Line 1 never ends a call by uuid — not the web, not Android. A ring we
+     * placed is withdrawn with `cancelled`, the backend's cue to stop the
+     * callees and log their misses; anything else is `left`, and the server
+     * closes the room when the SFU empties (`callStore.js:2225-2283`).
+     */
+    private fun hangUpLine1(current: CallSession, wasInCall: Boolean) {
+        val cancelsRing = current.direction == CallDirection.Outgoing && !wasInCall
+        scope.launch { plane.announceSelf(current, CallStatus.Left) }
+        scope.launch {
+            engine.leave()
+            sendFinalStatus(
+                current,
+                CallStatus.Left,
+                word = if (cancelsRing) LINE1_RESPONSE_CANCELLED else CallStatus.Left.line1ResponseWord,
+            )
+            finish(current, CallEndReason.Hungup)
+        }
+    }
+
     // ── Socket reactions ────────────────────────────────────────────────
 
     private suspend fun listenStatusChanges() {
@@ -1300,6 +1400,11 @@ class CallCoordinator(
     }
 
     private fun applyStatusChange(change: CallStatusChange) {
+        if (!onWaitingCallStatus(change)) applyOwnCallStatus(change)
+    }
+
+    /** A status about the call we are on. */
+    private fun applyOwnCallStatus(change: CallStatusChange) {
         val current = _session.value ?: return
         if (!change.roomId.matches(current)) return
 
@@ -1477,7 +1582,13 @@ class CallCoordinator(
      */
     private fun onSomeoneUnavailable(status: CallStatus) {
         val current = _session.value ?: return
-        if (current.mode != CallMode.Private || _phase.value != CallPhase.Outgoing) return
+        if (_phase.value != CallPhase.Outgoing) return
+        // A group rings on until every invitee has said no — the web's
+        // `_declinedUserIds` rule (callStore.js:5030-5085); one refusal is not an ending.
+        val everyoneRefused = current.participants
+            .filter { it.userId != current.selfUserId && it.status != CallStatus.Caller }
+            .let { others -> others.isNotEmpty() && others.all { it.status in REFUSED } }
+        if (current.mode != CallMode.Private && !everyoneRefused) return
         val reason = if (status == CallStatus.Declined) CallEndReason.Declined else CallEndReason.Timeout
         scope.launch { engine.leave() }
         finish(current, reason)
@@ -1569,6 +1680,10 @@ class CallCoordinator(
         val events = listOf(ZillitSocketEvents.Calls.Ended, ZillitSocketEvents.Calls.GroupCallEnded)
         bus.onAny(events).collect { message ->
             val ended = message.payload?.let(::readCallEnded) ?: return@collect
+            dismissWaitingFor(ended.roomId)?.let {
+                toastMissed(it)
+                return@collect
+            }
             val current = _session.value ?: return@collect
             if (ended.roomId.matches(current)) {
                 engine.leave()
@@ -1580,6 +1695,10 @@ class CallCoordinator(
     private suspend fun listenTimeout() {
         bus.on(ZillitSocketEvents.Calls.Timeout).collect { message ->
             val ended = message.payload?.let(::readCallEnded) ?: return@collect
+            dismissWaitingFor(ended.roomId)?.let {
+                toastMissed(it)
+                return@collect
+            }
             val current = _session.value ?: return@collect
             if (ended.roomId.matches(current) && _phase.value != CallPhase.InCall) {
                 engine.leave()
@@ -1779,9 +1898,14 @@ class CallCoordinator(
     private fun foldMedia(event: CallEngineEvent) {
         _media.value = _media.value.reduce(event)
         if (_media.value.peers.isNotEmpty()) sawRemoteMedia = true
-        if (event is CallEngineEvent.PeerJoined) {
-            adoptAnswersFromMedia()
-            checkRoomStillOccupied()
+        when (event) {
+            is CallEngineEvent.PeerJoined -> {
+                if (event.withMedia) mediaUids += event.uid
+                adoptAnswersFromMedia()
+                checkRoomStillOccupied()
+            }
+            is CallEngineEvent.PeerLeft -> mediaUids -= event.uid
+            else -> Unit
         }
     }
 
@@ -1794,7 +1918,9 @@ class CallCoordinator(
         val current = _session.value ?: return
         if (_phase.value == CallPhase.Ending) return
         val before = current.participants
-        val after = before.answeredByMedia(current.provider, _media.value.peers.keys, current.selfUserId)
+        // Line 1: media, not a join — a ringing phone is already in the room.
+        val answered = if (current.provider == CallProvider.Mediasoup) mediaUids else _media.value.peers.keys
+        val after = before.answeredByMedia(current.provider, answered, current.selfUserId)
         if (after === before) return
         _session.value = current.copy(participants = after)
         after.filter { it.status.isConnected && before.first { b -> b.userId == it.userId }.status != it.status }
@@ -2045,6 +2171,16 @@ class CallCoordinator(
             }
             return
         }
+        if (current.provider == CallProvider.Mediasoup) {
+            // The same withdrawal a hang-up sends: the backend logs every
+            // unanswered callee's miss itself, so none is logged here twice.
+            scope.launch {
+                engine.leave()
+                sendFinalStatus(current, CallStatus.Left, word = LINE1_RESPONSE_CANCELLED)
+                finish(current, CallEndReason.Timeout)
+            }
+            return
+        }
         scope.launch {
             engine.leave()
             val projectId = current.projectId.takeIf(String::isNotBlank)
@@ -2081,6 +2217,21 @@ class CallCoordinator(
         }
     }
 
+    /** A call the server created after the user had already cancelled it — withdrawn, never adopted. */
+    private suspend fun abandonLateCall(session: CallSession) {
+        ZillitLog.i(TAG) { "create-call landed after cancel; ending ${session.callUuid}" }
+        if (session.provider == CallProvider.Mediasoup) {
+            sendFinalStatus(session, CallStatus.Left, word = LINE1_RESPONSE_CANCELLED)
+        } else {
+            api.endCall(
+                callUuid = session.callUuid,
+                deviceId = selfDeviceId().orEmpty(),
+                projectId = session.projectId.takeIf(String::isNotBlank),
+                provider = session.provider,
+            )
+        }
+    }
+
     private fun incomingRangOut() {
         val current = _session.value ?: return
         // Answered a moment before the timeout fired: accept() has already
@@ -2106,7 +2257,11 @@ class CallCoordinator(
      * the "caller cancelled but callee still rings" class of bug is exactly a
      * final status dying with the coroutine that sent it.
      */
-    private suspend fun sendFinalStatus(session: CallSession, status: CallStatus) =
+    private suspend fun sendFinalStatus(
+        session: CallSession,
+        status: CallStatus,
+        word: String = status.line1ResponseWord,
+    ) =
         withContext(NonCancellable) {
             if (session.provider == CallProvider.LiveKit) return@withContext
             api.sendCallResponse(
@@ -2114,6 +2269,7 @@ class CallCoordinator(
                 status = status,
                 fromUserId = session.selfUserId,
                 projectId = session.projectId.takeIf(String::isNotBlank),
+                word = word,
             )
         }
 
@@ -2173,6 +2329,7 @@ class CallCoordinator(
         inviteExpiry.values.forEach(Job::cancel)
         inviteExpiry.clear()
         addedByUs.clear()
+        mediaUids.clear()
         // The watchdog's only question is "is a call in progress?", so a clock
         // left running would end whichever call came next.
         reconnect.cancel()
@@ -2710,6 +2867,12 @@ class CallCoordinator(
 
 /** Who may be rung again from the users panel: gone from the call, never ringing or in it. */
 internal val RE_RINGABLE = setOf(CallStatus.Declined, CallStatus.Left, CallStatus.NotAnswered)
+
+/** The caller's own words for walking away from a ring. */
+private val CALLER_GAVE_UP = setOf(CallStatus.Left, CallStatus.Declined, CallStatus.Ended)
+
+/** A ring that will not be answered: refused, rung out, or withdrawn. */
+private val REFUSED = setOf(CallStatus.Declined, CallStatus.NotAnswered, CallStatus.Left)
 
 /**
  * [userId] as a Ringing row — appended when they were never on the call,

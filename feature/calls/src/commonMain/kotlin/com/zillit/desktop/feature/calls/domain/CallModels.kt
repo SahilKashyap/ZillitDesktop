@@ -83,6 +83,10 @@ enum class CallStatus(val wire: String) {
             "invited" to Ringing,
             // The seed row every client writes for someone added mid-call.
             "add_in_call" to Ringing,
+            // The web's ringing family (`callStore.js:4946`) and its explicit end (`:5164`).
+            "connecting" to Ringing,
+            "invited_ringing" to Ringing,
+            "ended" to Left,
         )
 
         /**

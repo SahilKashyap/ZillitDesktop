@@ -285,12 +285,36 @@ fun readInCallData(payload: JsonElement): InCallData? {
  * Field names are the cross-platform contract — web and iOS read the same
  * keys, so renaming one here silently drops this device out of their rosters.
  */
-fun callResponseEnvelope(roomId: String, status: CallStatus, fromUserId: String): JsonObject =
+fun callResponseEnvelope(
+    roomId: String,
+    status: CallStatus,
+    fromUserId: String,
+    word: String = status.line1ResponseWord,
+): JsonObject =
     buildJsonObject {
         put("roomId", roomId)
-        put("response", status.wire)
+        put("response", word)
         put("fromUserId", fromUserId)
     }
+
+/**
+ * The word Line 1's `call-response` speaks for [this] — not the roster's.
+ *
+ * The web and Android answer `incall` and hang up `left`
+ * (`callStore.js:1578, 2272`; Android `Constants.LEFT`), and every other
+ * client acts on exactly those. The desktop sent the roster spellings
+ * `in_call` and `leave`: a web peer's 1:1 handler ignored the `leave`, so a
+ * desktop hang-up left them in a dead call until their 30 s grace ran out.
+ */
+val CallStatus.line1ResponseWord: String
+    get() = when (this) {
+        CallStatus.InCall -> "incall"
+        CallStatus.Left -> "left"
+        else -> wire
+    }
+
+/** A caller withdrawing a ring it placed — the backend's cue to stop the callees and log their misses. */
+const val LINE1_RESPONSE_CANCELLED = "cancelled"
 
 /**
  * In-call reactions ride the CNC's generic relay rather than a call event.
