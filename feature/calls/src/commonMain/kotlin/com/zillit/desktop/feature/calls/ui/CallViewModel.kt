@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls.ui
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
 import com.zillit.desktop.feature.calls.data.CallCoordinator
 import com.zillit.desktop.feature.calls.data.CallEndEvent
 import com.zillit.desktop.feature.calls.data.CallEndReason
@@ -215,6 +216,8 @@ data class CallUiState(
     val hostControlsOpen: Boolean = false,
     /** The admit-guests list is open. */
     val guestsOpen: Boolean = false,
+    /** Line 1's guests at the door, in the same shape Line 3's arrive in. */
+    val line1Guests: List<LiveKitGuest> = emptyList(),
     /** A second Line 3 ring while we are on a call — the Decline / End & Accept banner. */
     val secondCall: CallSession? = null,
     /** The roster row whose ⋮ menu is open, by user id. */
@@ -253,6 +256,9 @@ data class CallUiState(
      * own fallback wording takes over.
      */
     val outgoingRing: CallRingState? get() = CallRingState.best(ringStatuses.values)
+
+    /** Everyone waiting to be let in, whichever line they knock on. */
+    val waitingGuests: List<LiveKitGuest> get() = line3.pendingGuests + line1Guests
 
     /**
      * Which line this call is on, as the phones label it.
@@ -549,6 +555,12 @@ class CallViewModel(
         }
         launch { coordinator.onHold.collect { held -> setState { copy(onHold = held) } } }
         launch { coordinator.secondCall.collect { waiting -> setState { copy(secondCall = waiting) } } }
+        launch {
+            coordinator.line1Guests.collect { requests ->
+                val guests = requests.map { LiveKitGuest(guestId = it.requestId, name = it.guestName) }
+                setState { copy(line1Guests = guests) }
+            }
+        }
         launch { coordinator.recording.collect { on -> setState { copy(recording = on) } } }
         launch { coordinator.recordedBy.collect { name -> setState { copy(recordedBy = name) } } }
         // The parting-notice bar doubles as the in-call toast: "recording
@@ -954,6 +966,7 @@ class CallViewModel(
         isHost = false,
         hostControlsOpen = false,
         guestsOpen = false,
+        line1Guests = emptyList(),
         rosterMenuFor = "",
         pins = emptyList(),
         // The next call may belong to another production, with other people.

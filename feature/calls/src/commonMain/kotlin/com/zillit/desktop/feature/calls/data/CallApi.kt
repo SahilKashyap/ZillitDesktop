@@ -277,8 +277,14 @@ class CallApi(
             // direct connection and then nobody answers it.
         }
         return post("mediasoup-call/initiate-call", body, projectId, callerUserId).map { data ->
+            // The backend found the callee already ringing us and answered with
+            // THEIR call (`mutual_call`, web callStore.js:1006-1081).
+            val crossed = ((data as? JsonObject)?.get("mutual_call") as? JsonPrimitive)?.content == "true"
             val session = data?.let {
-                readCallSession(it, selfUserId, selfDeviceId, CallDirection.Outgoing)
+                readCallSession(
+                    it, selfUserId, selfDeviceId,
+                    if (crossed) CallDirection.Incoming else CallDirection.Outgoing,
+                )
             }
             // Everything the request asserted and the response may not echo.
             // The mode especially: this endpoint omits `call_mode`, which
@@ -291,6 +297,9 @@ class CallApi(
                 type = type,
                 hasVideo = session.hasVideo || type == CallType.Video,
                 provider = CallProvider.Mediasoup,
+                crossedCall = crossed,
+                // Their call: we are its callee whatever the row says.
+                selfUserId = if (crossed) selfUserId else session.selfUserId,
             )
         }
     }

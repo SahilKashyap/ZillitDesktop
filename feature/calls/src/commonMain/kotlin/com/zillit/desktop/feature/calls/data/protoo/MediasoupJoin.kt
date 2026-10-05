@@ -40,6 +40,13 @@ object MediasoupJoin {
      * quartet because the server relays them to web clients verbatim.
      */
     const val TOGGLE_HAND_RAISE = "toggleHandRaise"
+
+    /** A share announced to the room: phones learn of it only from `peerScreenShareStarted` (web ZL-20264). */
+    const val START_SCREEN_SHARE = "startScreenShare"
+    const val STOP_SCREEN_SHARE = "stopScreenShare"
+
+    /** An in-call chat line or reaction, relayed to every other peer — guests included. */
+    const val SEND_IN_CALL_DATA = "sendInCallData"
     const val START_CLIENT_RECORDING = "startClientRecording"
     const val STOP_CLIENT_RECORDING = "stopClientRecording"
 
@@ -140,6 +147,7 @@ object MediasoupNotification {
     const val PEER_RECORDING_STOPPED = "peerRecordingStopped"
     const val RECORDING = "recording"
     const val END_CALL = "endCall"
+    const val PEER_IN_CALL_DATA = "peerInCallData"
 
     /**
      * The two the SFU sends as REQUESTS rather than notifications, and which

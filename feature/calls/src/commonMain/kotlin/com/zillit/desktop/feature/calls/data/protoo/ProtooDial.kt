@@ -86,6 +86,13 @@ const val CLOSE_REPLACED_BY_OTHER_DEVICE = 4409
 
 private const val REPLACED_BY_OTHER_DEVICE = "replaced-by-other-device"
 
+/**
+ * The give-up reason for a terminal close: this user's other device took the
+ * call. The engine reports it as `SessionReplaced`, not a failure — the web's
+ * "Call moved to another device", never "Call failed".
+ */
+const val PROTOO_SESSION_REPLACED = REPLACED_BY_OTHER_DEVICE
+
 private val RECOVERABLE_CLOSE_REASONS = listOf(
     "closed by protoo-server",
     "session replaced",

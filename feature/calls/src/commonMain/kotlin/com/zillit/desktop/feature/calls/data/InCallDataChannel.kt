@@ -37,6 +37,8 @@ class InCallDataChannel(
      * True means it went that way and the socket relay is not used.
      */
     private val direct: (InCallData) -> Boolean = { false },
+    /** Line 1's second copy, over the SFU, for guests the socket relay cannot reach. */
+    private val alsoToRoom: (InCallData) -> Unit = { },
 ) {
     /**
      * What arrived, and what we sent — one stream, so the sender's view and
@@ -117,6 +119,9 @@ class InCallDataChannel(
         scope.launch { _data.emit(outgoing) }
 
         if (direct(outgoing)) return
+        // Before the member check: a call whose only other party is a guest
+        // has no member to relay to, and still someone to tell.
+        alsoToRoom(outgoing)
         val recipients = recipientsOf(current)
         if (recipients.isEmpty()) return
         scope.launch {

@@ -46,9 +46,11 @@ import kotlinx.coroutines.yield
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
+import com.zillit.desktop.feature.calls.domain.CallRingState
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -95,11 +97,20 @@ class CallCoordinatorTest {
         override suspend fun emit(event: SocketEventName): ZillitResult<Unit> =
             ZillitResult.Success(Unit)
 
+        /** What every ack answers; the CNC's call-response ack is `{success, message}`. */
+        var ack = "{}"
+
+        /** Everything sent for an ack, in order. */
+        val asked = mutableListOf<Pair<SocketEventName, JsonElement>>()
+
         override suspend fun <T> emitForAck(
             event: SocketEventName,
             payload: T,
             serializer: KSerializer<T>,
-        ): ZillitResult<JsonElement> = ZillitResult.Success(Json.parseToJsonElement("{}"))
+        ): ZillitResult<JsonElement> {
+            asked += event to Json.encodeToJsonElement(serializer, payload)
+            return ZillitResult.Success(Json.parseToJsonElement(ack))
+        }
 
         suspend fun deliver(event: SocketEventName, json: String) {
             _messages.emit(SocketMessage(event, Json.parseToJsonElement(json)))
@@ -441,6 +452,14 @@ class CallCoordinatorTest {
 
             assertEquals(CallPhase.InCall, coordinator.phase.value)
         }
+
+    /** A Line 1 ring, with the SFU it would join. */
+    private val line1Ring = """
+        {"call_uuid":"m1","room_id":"m1","project_id":"p1","call_mode":"private",
+         "call_type":"audio","line":"mediasoup","mediasoup_server_url":"sfu.test",
+         "sender_user_id":"caller","sender_device_id":"caller-device","caller_name":"Vivek",
+         "receiver_user_id":"me"}
+    """.trimIndent()
 
     private val ring = """
         {"call_uuid":"u1","room_id":"r1","project_id":"p1","call_mode":"private",
@@ -1513,6 +1532,145 @@ class CallCoordinatorTest {
             engine.push(CallEngineEvent.PeerJoined(them, "them:phone", withMedia = true))
             runCurrent()
             assertEquals(CallPhase.InCall, coordinator.phase.value)
+        }
+
+    /** Line 1 answers over the socket first, in the words the web sends: `incall`, never `in_call`. */
+    @Test
+    fun `a Line 1 accept goes over the socket as incall`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = coordinator(socket)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, line1Ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            val (event, body) = socket.asked.last()
+            assertEquals(ZillitSocketEvents.Calls.Response, event)
+            assertEquals("incall", (body as JsonObject)["response"]?.jsonPrimitive?.content)
+        }
+
+    /** The caller gave up as we pressed accept: the server says so, and we do not sit in an empty room. */
+    @Test
+    fun `an accept the server answers call_ended does not join`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket().apply { ack = """{"success":false,"message":"call_ended"}""" }
+            val coordinator = coordinator(socket)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, line1Ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
+
+    /** A Line 1 caller hears "Ringing…" once the callee's device acknowledges, as Line 3's does. */
+    @Test
+    fun `a Line 1 callee's ringing reaches the caller's status line`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = ringing(socket)
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"ringing"}""")
+            runCurrent()
+            assertEquals(CallRingState.Ringing, coordinator.ringStatuses.value["them"])
+        }
+
+    /** Our other device took the call (protoo 4409): we let go quietly, never "Call failed". */
+    @Test
+    fun `a call taken over by another device ends as picked up elsewhere`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = ringing(socket, engine = engine)
+            val ended = mutableListOf<CallEndReason>()
+            backgroundScope.launch { coordinator.ended.collect { ended += it.reason } }
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"in_call"}""")
+            runCurrent()
+
+            engine.push(CallEngineEvent.SessionReplaced)
+            runCurrent()
+
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+            assertEquals(listOf(CallEndReason.PickedElsewhere), ended)
+        }
+
+    /** A Line 1 guest knocking is listed for the host, and goes when anyone answers it. */
+    @Test
+    fun `a Line 1 guest request is listed until it is answered`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = ringing(socket)
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"in_call"}""")
+            runCurrent()
+
+            socket.deliver(
+                ZillitSocketEvents.Calls.GuestJoinRequest,
+                """{"room_id":"r1","request_id":"g1","guest_name":"Ann"}""",
+            )
+            runCurrent()
+            assertEquals(listOf("Ann"), coordinator.line1Guests.value.map { it.guestName })
+
+            socket.deliver(ZillitSocketEvents.Calls.GuestJoinResponded, """{"room_id":"r1","request_id":"g1"}""")
+            runCurrent()
+            assertTrue(coordinator.line1Guests.value.isEmpty())
+        }
+
+    /** A guest's chat reaches us over the SFU — they have no socket to relay through. */
+    @Test
+    fun `a chat line relayed by the SFU is shown`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = ringing(socket, engine = engine)
+            val lines = mutableListOf<String>()
+            backgroundScope.launch { coordinator.inCallData.collect { lines += it.text } }
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"in_call"}""")
+            runCurrent()
+
+            engine.push(
+                CallEngineEvent.RoomData(
+                    """{"kind":"message","room_id":"r1","from_user_id":"guest_7","text":"hello","id":"x1"}""",
+                ),
+            )
+            runCurrent()
+
+            assertEquals(listOf("hello"), lines)
+        }
+
+    /**
+     * Line 2: a phone whose row names a different user id than the roster's
+     * never healed onto a roster row, and its stream drew as "Guest". The row
+     * still says who that uid is.
+     */
+    @Test
+    fun `a Line 2 stream is named by its Firestore row whatever the roster says`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val plane = FakePlane()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, plane = plane, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            plane.events.emit(
+                PlaneEvent.UserFlags(
+                    deviceId = "phone",
+                    userId = "u-other-project",
+                    agoraUid = 555,
+                    sharing = false,
+                    handRaised = false,
+                    userName = "Sahil Kashyap",
+                ),
+            )
+            runCurrent()
+            engine.push(CallEngineEvent.PeerJoined(555))
+            runCurrent()
+
+            val peer = coordinator.media.value.peers.getValue(555)
+            assertEquals("Sahil Kashyap", peer.displayName)
+            assertEquals("u-other-project", peer.identity)
         }
 
     /** Answered, and the caller's stream has not arrived yet: that is not an ending. */

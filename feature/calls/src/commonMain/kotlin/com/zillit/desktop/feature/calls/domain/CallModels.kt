@@ -310,6 +310,11 @@ data class CallSession(
     val participants: List<CallParticipant> = emptyList(),
     val isRandomCall: Boolean = false,
     val isCalendarCall: Boolean = false,
+    /**
+     * Line 1's create-call said `mutual_call`: the person we dialled is already
+     * ringing us. This session is THEIR call, to be answered, not ours to ring.
+     */
+    val crossedCall: Boolean = false,
     val is247Call: Boolean = false,
     /** How many others besides us and the caller — drives "and 3 others". */
     val othersCount: Int = 0,

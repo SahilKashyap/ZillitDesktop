@@ -415,4 +415,19 @@ class CallTilesTest {
 
         assertEquals("Guest", tiles.single { it.uid == 77 }.name)
     }
+
+    /** The web's naming for a stream no row claims: the crew's name for the room's id, else the joined name. */
+    @Test
+    fun `an unclaimed Line 1 stream is named by who the room says it is`() {
+        val crew = mapOf("u-priya" to CallDirectoryEntry("Priya"))
+        val media = CallMedia(
+            peers = mapOf(
+                77 to MediaPeer(77, identity = "u-priya"),
+                78 to MediaPeer(78, identity = "guest_1", displayName = "Visitor Ann"),
+            ),
+        )
+        val tiles = buildTiles(session(), media, "Me", false, false, directory = crew::get)
+        assertEquals("Priya", tiles.single { it.uid == 77 }.name)
+        assertEquals("Visitor Ann", tiles.single { it.uid == 78 }.name)
+    }
 }

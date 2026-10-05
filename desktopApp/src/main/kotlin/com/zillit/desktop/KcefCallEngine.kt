@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallJoin
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitScripts
 import com.zillit.desktop.feature.calls.domain.CallProvider
+import com.zillit.desktop.feature.calls.data.protoo.PROTOO_SESSION_REPLACED
 import com.zillit.desktop.feature.calls.data.protoo.MediasoupPage
 import com.zillit.desktop.feature.calls.data.protoo.MediasoupScripts
 import com.zillit.desktop.feature.calls.data.protoo.MediasoupSession
@@ -16,6 +17,7 @@ import com.zillit.desktop.feature.calls.data.protoo.OkHttpProtooSocket
 import com.zillit.desktop.feature.calls.data.protoo.ProtooPeer
 import com.zillit.desktop.feature.calls.data.protoo.ProtooSignalling
 import com.zillit.desktop.feature.calls.data.protoo.TurnCredentials
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import com.zillit.desktop.feature.calls.data.protoo.MediasoupPageEvent
 import com.zillit.desktop.feature.calls.data.protoo.parseMediasoupPageEvent
@@ -303,6 +305,8 @@ class KcefCallEngine(
             if (event is CallEngineEvent.Failed) {
                 ZillitLog.w(TAG) { "page error: ${event.message}" }
             }
+            // Line 1's share is told to the room too, or phones never see it.
+            if (event is CallEngineEvent.ScreenShare) mediasoup?.announceScreenShare(event.sharing)
             _events.tryEmit(event)
         }
     }
@@ -477,7 +481,13 @@ class KcefCallEngine(
                 session.join(params.displayName, chosenMicrophoneId, params.hasVideo)
             },
             onGiveUp = { reason ->
-                _events.emit(CallEngineEvent.Failed(reason))
+                // Our other device took the call: not a failure, a hand-over.
+                val event = if (reason == PROTOO_SESSION_REPLACED) {
+                    CallEngineEvent.SessionReplaced
+                } else {
+                    CallEngineEvent.Failed(reason)
+                }
+                _events.emit(event)
             },
         )
         protoo = socket
@@ -660,6 +670,12 @@ class KcefCallEngine(
      * Line-branched like the microphone: the Agora function publishes an
      * Agora track, and on a mediasoup call it would silently share nothing.
      */
+    override fun sendRoomData(payload: String) {
+        val session = mediasoup ?: return
+        val json = runCatching { Json.parseToJsonElement(payload) as? JsonObject }.getOrNull() ?: return
+        session.sendInCallData(json)
+    }
+
     override suspend fun startScreenShare(sourceId: String?): Boolean {
         val target = browser ?: return false
         run(

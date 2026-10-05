@@ -27,7 +27,25 @@ sealed interface CallEngineEvent {
      * phone joins the room while it is still ringing (ring-time prewarm), so
      * only a consumer is an answer — the web's `gateOnAnswer`.
      */
-    data class PeerJoined(val uid: Int, val peerId: String? = null, val withMedia: Boolean = false) : CallEngineEvent
+    data class PeerJoined(
+        val uid: Int,
+        val peerId: String? = null,
+        val withMedia: Boolean = false,
+        /** The name the peer joined under, where the room announced one. */
+        val displayName: String = "",
+    ) : CallEngineEvent
+
+    /**
+     * Line 1: an in-call chat line or reaction relayed by the SFU
+     * (`peerInCallData`) — how a guest's reach us. [payload] is its JSON.
+     */
+    data class RoomData(val payload: String) : CallEngineEvent
+
+    /**
+     * This user's other device took the call over (Line 1's protoo close
+     * 4409). The call goes on there; this device just steps out.
+     */
+    data object SessionReplaced : CallEngineEvent
 
     /** A remote participant's media went away. [reason] is the SDK's code. */
     data class PeerLeft(val uid: Int, val reason: Int = 0) : CallEngineEvent
@@ -313,6 +331,14 @@ interface CallEngine {
      * it the socket way (Lines 1 and 2).
      */
     fun sendChat(id: String, text: String, atMillis: Long): Boolean = false
+
+    /**
+     * Line 1: relays one in-call chat line or reaction over the SFU as well —
+     * the only channel that reaches a link guest, who has no CNC socket
+     * (`sendInCallData`, the web's ZL-20267). [payload] is the same JSON the
+     * socket relay carries. No-op on the other lines.
+     */
+    fun sendRoomData(payload: String) = Unit
 
     /**
      * Switches one live device by id, or arms the choice for the next join.

@@ -121,7 +121,15 @@ fun buildTiles(
                         owner.userId,
                     ),
                 )
-                else -> add(guestTile(uid, media))
+                // Nobody the roster knows: who the room says they are — the
+                // crew's name for that id, else the name they joined under.
+                else -> {
+                    val peer = media.peers.getValue(uid)
+                    // No id, no lookup: a directory asked about nobody answers with somebody.
+                    val known = peer.identity.takeIf(String::isNotBlank)?.let(directory)?.name.orEmpty()
+                    val name = known.ifBlank { peer.displayName }
+                    add(guestTile(uid, media, name, peer.identity))
+                }
             }
         }
     }

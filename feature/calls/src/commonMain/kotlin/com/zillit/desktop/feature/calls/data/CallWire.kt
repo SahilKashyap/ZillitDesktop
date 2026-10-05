@@ -180,6 +180,8 @@ data class CallStatusChange(
     val userId: String,
     val status: CallStatus,
     val projectId: String = "",
+    /** The word was `busy` — on another call, which reads as Declined but is told apart. */
+    val busy: Boolean = false,
 )
 
 fun readStatusChange(payload: JsonElement): CallStatusChange? {
@@ -190,11 +192,13 @@ fun readStatusChange(payload: JsonElement): CallStatusChange? {
     val room = obj.str("roomId", "room_id").orEmpty()
     // Not a status at all (`audio_mute`, `hand_raise`, …) or one this build
     // does not know: dropped, as Android drops it, rather than read as Ringing.
-    val status = CallStatus.ofWireOrNull(obj.str("status", "current_status")) ?: return null
+    val word = obj.str("status", "current_status")
+    val status = CallStatus.ofWireOrNull(word) ?: return null
     return CallStatusChange(
         roomId = room,
         userId = userId,
         status = status,
+        busy = word?.trim()?.lowercase() == "busy",
         projectId = obj.str("projectId", "project_id").orEmpty(),
     )
 }
@@ -335,20 +339,21 @@ fun inCallDataEnvelope(roomId: String, data: InCallData, recipients: List<String
             "rooms",
             buildJsonArray { recipients.forEach { add(JsonPrimitive(it)) } },
         )
-        put(
-            "eventData",
-            buildJsonObject {
-                put("v", IN_CALL_DATA_VERSION)
-                put("kind", data.kind)
-                put("room_id", roomId)
-                if (data.emoji.isNotEmpty()) put("emoji", data.emoji)
-                if (data.text.isNotEmpty()) put("text", data.text)
-                put("name", data.name)
-                put("from_user_id", data.fromUserId)
-                put("id", data.id)
-                put("ts", data.atMillis)
-            },
-        )
+        put("eventData", inCallEventData(roomId, data))
+    }
+
+/** One in-call item as every client reads it — the socket relay's and the SFU's payload alike. */
+fun inCallEventData(roomId: String, data: InCallData): JsonObject =
+    buildJsonObject {
+        put("v", IN_CALL_DATA_VERSION)
+        put("kind", data.kind)
+        put("room_id", roomId)
+        if (data.emoji.isNotEmpty()) put("emoji", data.emoji)
+        if (data.text.isNotEmpty()) put("text", data.text)
+        put("name", data.name)
+        put("from_user_id", data.fromUserId)
+        put("id", data.id)
+        put("ts", data.atMillis)
     }
 
 private const val IN_CALL_DATA_VERSION = 1

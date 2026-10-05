@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.calls.ui
 
 import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.domain.CallMedia
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 
@@ -24,7 +25,13 @@ fun projectCallUi(
     directory: (String) -> CallDirectoryEntry? = { null },
 ): CallUiState {
     val tiles = buildTiles(session, media, selfName, micMuted, cameraOn, previous.handRaised, directory)
+    // Line 1's stage is the room, as the web draws it (callStore.js:4058-4225):
+    // a face is on it while their media is. A row that still reads in_call
+    // with nobody behind it — a `left` that matched no row — stays in the
+    // users panel, never as an empty tile on the stage.
+    val line1 = session?.provider == CallProvider.Mediasoup
     val stage = tiles.filterNot { it.presence == CallStatus.Ringing }
+        .filter { !line1 || it.isSelf || it.media != null }
     val names = previous.participantNames + session?.participants.orEmpty()
         .mapNotNull { row ->
             val name = row.name.ifBlank { directory(row.userId)?.name.orEmpty() }

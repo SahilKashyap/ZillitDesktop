@@ -312,7 +312,8 @@ class MediasoupSession(
                 // row must carry for the stream to land on that person's tile.
                 ZillitLog.i(TAG) { "peer joined $it uid=${uidOf(it)}" }
                 rememberPeer(it)
-                emitForPeer(it) { uid -> CallEngineEvent.PeerJoined(uid, it) }
+                val name = note.text("displayName").orEmpty()
+                emitForPeer(it) { uid -> CallEngineEvent.PeerJoined(uid, it, displayName = name) }
             }
 
             MediasoupNotification.PEER_CLOSED -> note.peerId()?.let { closed ->
@@ -377,6 +378,9 @@ class MediasoupSession(
                     CallEngineEvent.PeerRecording(mediasoupIdentityOf(who), recording)
                 }
             }
+
+            MediasoupNotification.PEER_IN_CALL_DATA ->
+                (note.data["data"] as? JsonObject)?.let { emit(CallEngineEvent.RoomData(it.toString())) }
 
             MediasoupNotification.END_CALL ->
                 emit(CallEngineEvent.ConnectionChanged(EngineConnection.Disconnected))
@@ -443,6 +447,32 @@ class MediasoupSession(
         }
     }
 
+    /**
+     * Announces this machine's screen share to the room. Tagging the producer
+     * is invisible to iOS and Android, which only learn of a share from the
+     * SFU's `peerScreenShareStarted` — the web sends these for exactly that.
+     * Fire and forget: an SFU without the handler must never break the share.
+     */
+    fun announceScreenShare(sharing: Boolean) {
+        scope.launch {
+            runCatching {
+                peer.request(
+                    if (sharing) MediasoupJoin.START_SCREEN_SHARE else MediasoupJoin.STOP_SCREEN_SHARE,
+                    buildJsonObject { },
+                )
+            }.onFailure { ZillitLog.w(TAG) { "screen share announcement not delivered: ${it.message}" } }
+        }
+    }
+
+    /** One in-call item to every other peer over the SFU; see [CallEngine.sendRoomData]. Fire and forget. */
+    fun sendInCallData(payload: JsonObject) {
+        scope.launch {
+            runCatching {
+                peer.request(MediasoupJoin.SEND_IN_CALL_DATA, buildJsonObject { put("data", payload) })
+            }.onFailure { ZillitLog.w(TAG) { "sendInCallData not delivered: ${it.message}" } }
+        }
+    }
+
     /** This machine started or stopped recording — request AND notification, as iOS sends. */
     fun sendRecording(recording: Boolean) {
         val userId = selfIdentity
@@ -476,7 +506,7 @@ class MediasoupSession(
             if (mediasoupIdentityOf(id) == selfIdentity) return@forEach
             val uid = uidOf(id)
             rememberPeer(id)
-            emit(CallEngineEvent.PeerJoined(uid, id))
+            emit(CallEngineEvent.PeerJoined(uid, id, displayName = row.text("displayName").orEmpty()))
             // The phones write these flags under several spellings; read them all.
             if (row.flag("raisedHand", "raise_hand")) {
                 emit(CallEngineEvent.PeerHand(mediasoupIdentityOf(id), raised = true))

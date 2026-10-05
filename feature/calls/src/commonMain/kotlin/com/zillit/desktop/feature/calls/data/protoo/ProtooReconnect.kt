@@ -49,9 +49,7 @@ class ProtooReconnect(
      * [isRecoverableProtooClose].
      */
     fun onCleanClose(code: Int, reason: String): ProtooNextStep {
-        if (isTerminalProtooClose(code, reason)) {
-            return ProtooNextStep.Stop(reason.ifBlank { "closed by server ($code)" })
-        }
+        if (isTerminalProtooClose(code, reason)) return ProtooNextStep.Stop(PROTOO_SESSION_REPLACED)
         if (isRecoverableProtooClose(code, reason) && attempt < maxRetries) {
             val delay = protooRetryDelayMillis(attempt)
             attempt++
@@ -65,9 +63,7 @@ class ProtooReconnect(
      * read a terminal verdict out of.
      */
     fun onAbruptClose(code: Int, reason: String): ProtooNextStep {
-        if (isTerminalProtooClose(code, reason)) {
-            return ProtooNextStep.Stop(reason.ifBlank { "terminal close ($code)" })
-        }
+        if (isTerminalProtooClose(code, reason)) return ProtooNextStep.Stop(PROTOO_SESSION_REPLACED)
         if (attempt >= maxRetries) {
             return ProtooNextStep.Stop("gave up after $maxRetries attempts")
         }

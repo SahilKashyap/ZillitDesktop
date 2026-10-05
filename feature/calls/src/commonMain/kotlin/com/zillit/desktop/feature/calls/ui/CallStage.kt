@@ -199,7 +199,7 @@ private fun SidePanels(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     }
     if (state.guestsOpen) {
         CallGuestsPanel(
-            guests = state.line3.pendingGuests,
+            guests = state.waitingGuests,
             onAdmit = { onEvent(CallEvent.AdmitGuest(it)) },
             onDecline = { onEvent(CallEvent.DeclineGuest(it)) },
             onClose = { onEvent(CallEvent.ToggleGuests) },
@@ -432,7 +432,7 @@ private fun HoldPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
  */
 @Composable
 private fun GuestsPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
-    val waiting = state.line3.pendingGuests.size
+    val waiting = state.waitingGuests.size
     if (waiting == 0) return
     Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleGuests) }) {
         StatusPill(

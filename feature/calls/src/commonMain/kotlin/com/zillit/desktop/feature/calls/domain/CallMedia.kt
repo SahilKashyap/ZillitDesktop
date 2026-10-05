@@ -46,6 +46,14 @@ data class MediaPeer(
      * stream whose "on" was never reported keeps showing, as it always did.
      */
     val cameraOff: Boolean = false,
+    /**
+     * Line 1: who the room says this stream is — the user half of their peer
+     * id — and the name they joined under. A stream no roster row claims is
+     * named from these (the web's `peerIdToUid` + `displayName`, callStore.js
+     * 4111-4122) instead of reading "Guest".
+     */
+    val identity: String = "",
+    val displayName: String = "",
 )
 
 /**
@@ -78,7 +86,12 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.Joined ->
         copy(channel = event.channel, selfUid = event.uid, connection = EngineConnection.Connected)
     is CallEngineEvent.Left -> CallMedia()
-    is CallEngineEvent.PeerJoined -> withPeer(event.uid) { it }
+    is CallEngineEvent.PeerJoined -> withPeer(event.uid) {
+        it.copy(
+            identity = event.peerId?.substringBefore(':')?.takeIf(String::isNotBlank) ?: it.identity,
+            displayName = event.displayName.ifBlank { it.displayName },
+        )
+    }
     is CallEngineEvent.PeerLeft -> copy(peers = peers - event.uid, speaking = speaking - event.uid)
     is CallEngineEvent.PeerAudioMuted -> withPeer(event.uid) { it.copy(audioMuted = event.muted) }
     is CallEngineEvent.PeerVideoMuted ->
@@ -97,6 +110,8 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.Devices -> this
     is CallEngineEvent.DeviceMissing -> this
     is CallEngineEvent.Failed -> this
+    CallEngineEvent.SessionReplaced -> this
+    is CallEngineEvent.RoomData -> this
     // The call carries on; only the UI has something to say about it.
     is CallEngineEvent.Degraded -> this
     // Hands and recording are roster facts keyed by user, not media facts

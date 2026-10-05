@@ -162,6 +162,57 @@
                 : state === 'closed' ? 'DISCONNECTING'
                 : null;
             if (mapped) { emit('connection', { state: mapped }); }
+            if (state === 'connected') {
+                if (recoverTimer) { clearTimeout(recoverTimer); recoverTimer = null; }
+            } else if (state === 'disconnected' || state === 'failed') {
+                recoverConnection();
+            }
+        });
+    }
+
+    var recoverTimer = null;
+
+    /**
+     * A transport lost its path — a Wi-Fi change, a sleeping laptop — while
+     * the protoo socket stayed up. Nothing else recovers that: the socket's
+     * own redial never fires, and the call sat silent until the watchdog
+     * failed it 45 s later. The web restarts ICE on both transports (its
+     * `_recoverConnection`): debounced, because both flap at once and a
+     * `disconnected` is often a blip that heals by itself.
+     */
+    function recoverConnection() {
+        if (recoverTimer) { return; }
+        recoverTimer = setTimeout(function () {
+            recoverTimer = null;
+            restartIce().then(function (ok) {
+                if (!ok) { warn('restart-ice', 'the SFU no longer has our transports'); }
+            });
+        }, 1500);
+    }
+
+    /**
+     * Asks the SFU for fresh ICE parameters for each transport and applies
+     * them. The SFU replies with the parameters FLAT, not wrapped in
+     * `iceParameters` — the web learned that the hard way — so both shapes
+     * are read. Resolves false when the server no longer knows a transport.
+     */
+    function restartIce() {
+        var transports = [sendTransport, recvTransport].filter(Boolean);
+        if (!transports.length) { return Promise.resolve(false); }
+        return Promise.all(transports.map(function (transport) {
+            return ask('restartIce', { transportId: transport.id }).then(function (reply) {
+                var iceParameters = (reply && reply.iceParameters) || reply;
+                if (!iceParameters || !iceParameters.usernameFragment) {
+                    throw new Error('restartIce: no iceParameters in the reply');
+                }
+                if (!currentTransport(transport.id)) { return false; }
+                return transport.restartIce({ iceParameters: iceParameters }).then(function () { return true; });
+            }).catch(function (error) {
+                warn('restart-ice', error);
+                return false;
+            });
+        })).then(function (results) {
+            return results.every(Boolean);
         });
     }
 
@@ -465,6 +516,7 @@
             });
             sendTransport = null;
             recvTransport = null;
+            if (recoverTimer) { clearTimeout(recoverTimer); recoverTimer = null; }
             [localStream, camStream].forEach(function (stream) {
                 if (stream) { stream.getTracks().forEach(function (track) { track.stop(); }); }
             });
