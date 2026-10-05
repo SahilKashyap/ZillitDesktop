@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Tinjau dan tanda tangani voucher untuk hari syuting, periksa riwayat pembayaran, dan ajukan pertanyaan kepada AD tentang voucher mana pun. Selalu perbarui profil dengan detail pribadi, pajak, bank, dan identitas.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Buat dan publikasikan lembar panggilan harian proyek. Bagikan draf kepada orang lain untuk dikomentari atau kirimkan ke penyetuju untuk ditandatangani.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Lihat dan komentari lembar panggilan harian yang dibagikan kepada Anda untuk dikomentari. Penyetuju juga dapat menyetujui atau menolak lembar panggilan yang dikirimkan kepada mereka untuk ditandatangani.</string>
+    <string name="desktop_chat_delete_message">Hapus pesan</string>
+    <string name="desktop_chat_delete_message_confirm">Apakah Anda yakin ingin menghapus pesan ini?</string>
 </resources>

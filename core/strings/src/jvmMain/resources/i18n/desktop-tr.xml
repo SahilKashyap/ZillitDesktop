@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Çekim günlerine ait voucher\'ları inceleyip imzalayın, ödeme geçmişinizi kontrol edin ve herhangi bir voucher hakkında AD\'ye soru iletin. Profilinizi kişisel, vergi, banka ve kimlik bilgilerinizle güncel tutun.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Projenin günlük çağrı listelerini oluşturun ve yayınlayın. Taslakları yorum için başkalarıyla paylaşın veya imza için onaylayanlara gönderin.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Yorum için sizinle paylaşılan günlük çağrı listelerini görüntüleyin ve yorumlayın. Onaylayanlar ayrıca imza için kendilerine gönderilen çağrı listelerini onaylayabilir veya reddedebilir.</string>
+    <string name="desktop_chat_delete_message">Mesajı sil</string>
+    <string name="desktop_chat_delete_message_confirm">Bu mesajı silmek istediğinizden emin misiniz?</string>
 </resources>

@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">审核并签署拍摄日的凭单，查看薪酬记录，并就任何凭单向 AD 提出疑问。及时更新个人资料中的个人、税务、银行和身份证件信息。</string>
     <string name="desktop_tool_info_call_sheet_info_admin">创建并发布项目的每日通告单。与他人共享草稿以征求评论，或发送给审批人签署。</string>
     <string name="desktop_tool_info_call_sheet_info_user">查看并评论与您共享以征求评论的每日通告单。审批人还可以批准或拒绝发送给他们签署的通告单。</string>
+    <string name="desktop_chat_delete_message">删除消息</string>
+    <string name="desktop_chat_delete_message_confirm">确定要删除这条消息吗？</string>
 </resources>

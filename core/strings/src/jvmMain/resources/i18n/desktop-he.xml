@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">סקור וחתום על השוברים של ימי הצילום, בדוק את היסטוריית התשלומים, ופתח פניות מול ה-AD לגבי כל שובר. שמור על הפרופיל שלך מעודכן עם פרטים אישיים, פרטי מס, פרטי בנק ופרטי זיהוי.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">צור ופרסם את דפי הקריאה היומיים של הפרויקט. שתף טיוטות עם אחרים לקבלת תגובות, או שלח אותן למאשרים לחתימה.</string>
     <string name="desktop_tool_info_call_sheet_info_user">צפה בדפי הקריאה היומיים ששותפו איתך לקבלת תגובות והגב עליהם. מאשרים יכולים גם לאשר או לדחות דפי קריאה שנשלחו אליהם לחתימה.</string>
+    <string name="desktop_chat_delete_message">מחיקת הודעה</string>
+    <string name="desktop_chat_delete_message_confirm">האם אתה בטוח שברצונך למחוק הודעה זו?</string>
 </resources>

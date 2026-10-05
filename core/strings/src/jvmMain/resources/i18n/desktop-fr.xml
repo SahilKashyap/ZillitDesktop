@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Vérifiez et signez les bons de paie des jours de tournage, consultez l\'historique des paiements et posez des questions à l\'AD au sujet de n\'importe quel bon de paie. Tenez votre profil à jour avec vos informations personnelles, fiscales, bancaires et d\'identité.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Créez et publiez les feuilles d\'appel quotidiennes du projet. Partagez les brouillons avec d\'autres pour recueillir leurs commentaires ou envoyez-les aux approbateurs pour signature.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Consultez et commentez les feuilles d\'appel quotidiennes partagées avec vous pour commentaires. Les approbateurs peuvent également approuver ou rejeter les feuilles d\'appel qui leur sont envoyées pour signature.</string>
+    <string name="desktop_chat_delete_message">Supprimer le message</string>
+    <string name="desktop_chat_delete_message_confirm">Voulez-vous vraiment supprimer ce message ?</string>
 </resources>

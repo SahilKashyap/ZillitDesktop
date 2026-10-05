@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">撮影日のバウチャーを確認して署名し、支払い履歴を確認し、どのバウチャーについてもADに問い合わせできます。個人情報、税務、銀行口座、身分証明書の情報でプロフィールを常に最新の状態に保ちます。</string>
     <string name="desktop_tool_info_call_sheet_info_admin">プロジェクトの日々のコールシートを作成して公開します。下書きを他の人と共有してコメントをもらうか、承認者に送って署名を依頼します。</string>
     <string name="desktop_tool_info_call_sheet_info_user">コメント用に共有された日々のコールシートを閲覧し、コメントします。承認者は、署名用に送られてきたコールシートを承認または拒否することもできます。</string>
+    <string name="desktop_chat_delete_message">メッセージを削除</string>
+    <string name="desktop_chat_delete_message_confirm">このメッセージを削除してもよろしいですか？</string>
 </resources>

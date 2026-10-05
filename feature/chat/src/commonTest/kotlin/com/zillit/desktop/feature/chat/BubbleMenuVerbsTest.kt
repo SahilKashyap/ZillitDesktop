@@ -246,6 +246,43 @@ class BubbleMenuVerbsTest {
     }
 
     @Test
+    fun `Delete asks first, and only the confirmation withdraws the line`() = runTest(dispatcher) {
+        val model = viewModel(VerbsFake())
+        model.openDm()
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.Arrived(mine("srv-1", "Withdraw me")))
+
+        // The menu only opens the question; nothing is sent yet.
+        model.onEvent(ChatEvent.AskDelete("srv-1"))
+        advanceUntilIdle()
+        assertEquals("srv-1", model.currentState.confirmingDelete?.id)
+        assertEquals(1, model.currentState.messages.size)
+
+        model.onEvent(ChatEvent.CancelDelete)
+        advanceUntilIdle()
+        assertNull(model.currentState.confirmingDelete)
+        assertEquals(1, model.currentState.messages.size, "cancel keeps the line")
+
+        model.onEvent(ChatEvent.AskDelete("srv-1"))
+        model.onEvent(ChatEvent.Delete("srv-1"))
+        advanceUntilIdle()
+        assertNull(model.currentState.confirmingDelete)
+        assertEquals(0, model.currentState.messages.size)
+    }
+
+    @Test
+    fun `a line past the clock is refused before the question`() = runTest(dispatcher) {
+        val model = viewModel(VerbsFake())
+        model.openDm()
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.Arrived(mine("srv-old", "Yesterday", createdAt = NOW - 3 * HOUR)))
+
+        model.onEvent(ChatEvent.AskDelete("srv-old"))
+        assertNull(model.currentState.confirmingDelete)
+        assertEquals(ChatComposerRules.REWRITE_WINDOW_CLOSED, model.currentState.error)
+    }
+
+    @Test
     fun `an edit from the socket changes the line in place`() = runTest(dispatcher) {
         val repository = VerbsFake()
         val model = viewModel(repository)

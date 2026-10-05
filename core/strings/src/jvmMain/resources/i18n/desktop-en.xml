@@ -11966,4 +11966,6 @@
     <string name="desktop_csync_setup_need_script">Add the script to create the production.</string>
     <string name="desktop_csync_setup_need_type">Choose Feature or TV Series to create the production.</string>
     <string name="desktop_csync_setup_dates_label">Estimated dates</string>
+    <string name="desktop_chat_delete_message">Delete message</string>
+    <string name="desktop_chat_delete_message_confirm">Are you sure you want to delete this message?</string>
 </resources>

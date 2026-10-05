@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Granska och signera vouchrarna för inspelningsdagar, kontrollera betalningshistorik och ställ frågor till AD om valfri voucher. Håll profilen uppdaterad med personliga uppgifter samt skatte-, bank- och ID-uppgifter.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Skapa och publicera projektets dagliga inspelningsscheman. Dela utkast med andra för kommentarer eller skicka dem till godkännare för signatur.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Visa och kommentera de dagliga inspelningsscheman som delats med dig för kommentarer. Godkännare kan även godkänna eller avvisa inspelningsscheman som skickats till dem för signatur.</string>
+    <string name="desktop_chat_delete_message">Radera meddelande</string>
+    <string name="desktop_chat_delete_message_confirm">Är du säker på att du vill radera det här meddelandet?</string>
 </resources>

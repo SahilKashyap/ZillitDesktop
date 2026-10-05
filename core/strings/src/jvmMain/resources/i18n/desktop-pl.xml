@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Przeglądaj i podpisuj vouchery za dni zdjęciowe, sprawdzaj historię wypłat i zgłaszaj do AD zapytania dotyczące dowolnego vouchera. Dbaj o aktualność profilu: dane osobowe, podatkowe, bankowe i dane dokumentu tożsamości.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Twórz i publikuj dzienne arkusze wezwania projektu. Udostępniaj wersje robocze innym do komentowania lub wysyłaj je zatwierdzającym do podpisu.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Wyświetlaj i komentuj dzienne arkusze wezwania udostępnione Ci do komentowania. Zatwierdzający mogą również zatwierdzać lub odrzucać arkusze wezwania wysłane im do podpisu.</string>
+    <string name="desktop_chat_delete_message">Usuń wiadomość</string>
+    <string name="desktop_chat_delete_message_confirm">Czy na pewno chcesz usunąć tę wiadomość?</string>
 </resources>

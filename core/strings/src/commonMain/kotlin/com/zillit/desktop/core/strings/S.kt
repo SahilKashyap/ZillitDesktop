@@ -5641,6 +5641,8 @@ object S {
     const val desktop_chat_calls: String = "desktop_chat_calls"
     const val desktop_chat_caption_changes_for_everyone: String = "desktop_chat_caption_changes_for_everyone"
     const val desktop_chat_create_new_group: String = "desktop_chat_create_new_group"
+    const val desktop_chat_delete_message: String = "desktop_chat_delete_message"
+    const val desktop_chat_delete_message_confirm: String = "desktop_chat_delete_message_confirm"
     const val desktop_chat_drop_hint: String = "desktop_chat_drop_hint"
     const val desktop_chat_everyone_has_read: String = "desktop_chat_everyone_has_read"
     const val desktop_chat_forward_successfully: String = "desktop_chat_forward_successfully"

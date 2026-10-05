@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Controleer en onderteken de vouchers voor draaidagen, bekijk de betalingsgeschiedenis en stel vragen aan de AD over elke voucher. Houd uw profiel up-to-date met persoonlijke, fiscale, bank- en identiteitsgegevens.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Maak en publiceer de dagelijkse callsheets van het project. Deel concepten met anderen voor opmerkingen of stuur ze ter ondertekening naar goedkeurders.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Bekijk en becommentarieer de dagelijkse callsheets die met u zijn gedeeld voor opmerkingen. Goedkeurders kunnen callsheets die hun ter ondertekening zijn toegestuurd ook goedkeuren of afwijzen.</string>
+    <string name="desktop_chat_delete_message">Bericht verwijderen</string>
+    <string name="desktop_chat_delete_message_confirm">Weet je zeker dat je dit bericht wilt verwijderen?</string>
 </resources>

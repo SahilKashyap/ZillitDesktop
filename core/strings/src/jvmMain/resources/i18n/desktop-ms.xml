@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Semak dan tandatangani baucar untuk hari penggambaran, lihat sejarah bayaran, dan bangkitkan pertanyaan dengan AD mengenai mana-mana baucar. Pastikan profil sentiasa dikemas kini dengan butiran peribadi, cukai, bank, dan pengenalan diri.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Cipta dan terbitkan lembaran panggilan harian projek. Kongsi draf dengan orang lain untuk mendapatkan komen atau hantar kepada pelulus untuk ditandatangani.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Lihat dan beri komen pada lembaran panggilan harian yang dikongsi dengan anda untuk komen. Pelulus juga boleh meluluskan atau menolak lembaran panggilan yang dihantar kepada mereka untuk ditandatangani.</string>
+    <string name="desktop_chat_delete_message">Padam mesej</string>
+    <string name="desktop_chat_delete_message_confirm">Adakah anda pasti mahu memadam mesej ini?</string>
 </resources>

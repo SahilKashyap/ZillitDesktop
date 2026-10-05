@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Gå gjennom og signer voucherne for opptaksdager, sjekk betalingshistorikken, og send spørsmål til AD om enhver voucher. Hold profilen oppdatert med personlige opplysninger samt skatte-, bank- og ID-opplysninger.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Opprett og publiser prosjektets daglige kallblad. Del utkast med andre for kommentarer, eller send dem til godkjennere for signatur.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Se og kommenter de daglige kallbladene som er delt med deg for kommentarer. Godkjennere kan også godkjenne eller avvise kallblad som er sendt til dem for signatur.</string>
+    <string name="desktop_chat_delete_message">Slett melding</string>
+    <string name="desktop_chat_delete_message_confirm">Er du sikker på at du vil slette denne meldingen?</string>
 </resources>

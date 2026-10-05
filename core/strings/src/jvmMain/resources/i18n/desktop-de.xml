@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Prüfen und unterschreiben Sie die Gagenbelege für Drehtage, sehen Sie die Zahlungshistorie ein und stellen Sie beim AD Rückfragen zu jedem Gagenbeleg. Halten Sie das Profil mit persönlichen, Steuer-, Bank- und Ausweisdaten aktuell.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Erstellen und veröffentlichen Sie die täglichen Dispositionslisten des Projekts. Teilen Sie Entwürfe zur Kommentierung mit anderen oder senden Sie sie zur Unterschrift an Genehmiger.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Sehen Sie sich die täglichen Dispositionslisten an, die zur Kommentierung mit Ihnen geteilt wurden, und kommentieren Sie sie. Genehmiger können außerdem Dispositionslisten, die ihnen zur Unterschrift gesendet wurden, genehmigen oder ablehnen.</string>
+    <string name="desktop_chat_delete_message">Nachricht löschen</string>
+    <string name="desktop_chat_delete_message_confirm">Möchten Sie diese Nachricht wirklich löschen?</string>
 </resources>

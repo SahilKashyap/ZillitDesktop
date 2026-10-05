@@ -272,6 +272,7 @@ internal fun ThreadPane(
 
         // The bubble menu's dialogs, over the thread.
         EditMessageDialog(state, onEvent)
+        DeleteMessageDialog(state, onEvent)
         ForwardDialog(state, forwardPeople, onEvent)
         ReadByDialog(state, selfId, resolveContact, onEvent)
         ChatImageReplyDialog(
@@ -1106,7 +1107,7 @@ private fun bubbleActions(
         onReact = { emoji -> onEvent(ChatEvent.React(message.id, emoji)) },
         onReply = { onEvent(ChatEvent.StartReply(message.id)) },
         onEdit = { onEvent(ChatEvent.StartEdit(message.id)) }.takeIf { message.isMine && delivered && hasWords },
-        onDelete = { onEvent(ChatEvent.Delete(message.id)) }.takeIf { message.isDeletable },
+        onDelete = { onEvent(ChatEvent.AskDelete(message.id)) }.takeIf { message.isDeletable },
         onForward = { onEvent(ChatEvent.StartForward(message.id)) }.takeIf { delivered },
         onShare = seams.shareAsEmail?.let { share ->
             {

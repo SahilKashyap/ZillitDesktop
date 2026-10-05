@@ -101,6 +101,45 @@ internal fun EditMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit)
 }
 
 /**
+ * The question before a line is withdrawn for everyone — the web's
+ * "Delete message" modal (`MyMessage.jsx`). Delete used to fire from the
+ * menu on one click, and there is no undo.
+ */
+@Composable
+internal fun DeleteMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
+    // Held through the exit animation, as the Edit dialog's target is.
+    var shown by remember { mutableStateOf(state.confirmingDelete) }
+    if (state.confirmingDelete != null) shown = state.confirmingDelete
+    val target = shown ?: return
+
+    ZillitDialogShell(
+        title = str(S.desktop_chat_delete_message),
+        icon = ZillitIcons.Trash,
+        visible = state.confirmingDelete != null,
+        onDismiss = { onEvent(ChatEvent.CancelDelete) },
+        actions = {
+            Spacer(Modifier.weight(1f))
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = { onEvent(ChatEvent.CancelDelete) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(
+                text = str(S.delete),
+                onClick = { onEvent(ChatEvent.Delete(target.id)) },
+                variant = ButtonVariant.Danger,
+            )
+        },
+    ) {
+        ZillitText(
+            text = str(S.desktop_chat_delete_message_confirm),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
+    }
+}
+
+/**
  * Where to send a copy — the web's "Forward In App" picker
  * (`ForwardMsgModal.jsx`), reduced to the two chat halves this client can
  * reach: rooms first, then people, one search over both, any number ticked.

@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Kontrolujte a podepisujte vouchery za natáčecí dny, sledujte historii plateb a s dotazy k jakémukoli voucheru se obracejte na AD. Udržujte svůj profil aktuální, včetně osobních, daňových, bankovních a identifikačních údajů.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Vytvářejte a zveřejňujte denní call sheety projektu. Sdílejte koncepty s ostatními ke komentářům nebo je odešlete schvalovatelům k podpisu.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Prohlížejte a komentujte denní call sheety, které s vámi byly sdíleny ke komentářům. Schvalovatelé mohou také schvalovat nebo zamítat call sheety, které jim byly odeslány k podpisu.</string>
+    <string name="desktop_chat_delete_message">Smazat zprávu</string>
+    <string name="desktop_chat_delete_message_confirm">Opravdu chcete tuto zprávu smazat?</string>
 </resources>

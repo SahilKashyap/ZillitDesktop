@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Revise e assine os vouchers dos dias de filmagem, consulte o histórico de pagamentos e envie dúvidas ao AD sobre qualquer voucher. Mantenha o perfil atualizado com dados pessoais, fiscais, bancários e de identificação.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Crie e publique as listas de chamadas diárias do projeto. Compartilhe rascunhos com outras pessoas para receber comentários ou envie-os aos aprovadores para assinatura.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Veja e comente as listas de chamadas diárias compartilhadas com você para comentários. Os aprovadores também podem aprovar ou rejeitar as listas de chamadas enviadas a eles para assinatura.</string>
+    <string name="desktop_chat_delete_message">Excluir mensagem</string>
+    <string name="desktop_chat_delete_message_confirm">Tem certeza de que deseja excluir esta mensagem?</string>
 </resources>

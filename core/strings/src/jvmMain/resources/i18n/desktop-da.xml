@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Gennemgå og underskriv voucherne for optagedage, tjek lønhistorik, og send forespørgsler til AD\'en om enhver voucher. Hold profilen opdateret med personlige oplysninger samt skatte-, bank- og ID-oplysninger.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Opret og udgiv projektets daglige call sheets. Del udkast med andre til kommentarer, eller send dem til godkendere til underskrift.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Se og kommenter de daglige call sheets, der er delt med dig til kommentarer. Godkendere kan også godkende eller afvise call sheets, der er sendt til dem til underskrift.</string>
+    <string name="desktop_chat_delete_message">Slet besked</string>
+    <string name="desktop_chat_delete_message_confirm">Er du sikker på, at du vil slette denne besked?</string>
 </resources>

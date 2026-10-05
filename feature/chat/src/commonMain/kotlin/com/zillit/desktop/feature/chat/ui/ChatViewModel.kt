@@ -123,6 +123,8 @@ data class ChatUiState(
      * `message.success`, shown as a toast and gone on its own.
      */
     val info: String? = null,
+    /** The message the delete confirmation is open for; null keeps it closed. */
+    val confirmingDelete: ChatMessage? = null,
     /** The message open in the Edit dialog, and the words as they are being rewritten. */
     val editing: ChatMessage? = null,
     val editDraft: String = "",
@@ -251,7 +253,11 @@ sealed interface ChatEvent {
     /** The quiet button atop the thread: fetch the page before the oldest loaded. */
     data object ShowOlder : ChatEvent
 
-    /** Withdraws one of our own messages, for everyone in the thread. */
+    /** The menu's Delete: asks first, as the web's modal does. */
+    data class AskDelete(val messageId: String) : ChatEvent
+    data object CancelDelete : ChatEvent
+
+    /** Withdraws one of our own messages, for everyone in the thread. Confirmed. */
     data class Delete(val messageId: String) : ChatEvent
 
     /** The server says these ids are gone — ours from another device, or theirs. */
@@ -537,7 +543,12 @@ class ChatViewModel(
             }
             ChatEvent.CancelReply -> setState { copy(replyTo = null) }
             ChatEvent.ShowOlder -> loadOlder()
-            is ChatEvent.Delete -> deleteMessage(event.messageId)
+            is ChatEvent.AskDelete -> askDelete(event.messageId)
+            ChatEvent.CancelDelete -> setState { copy(confirmingDelete = null) }
+            is ChatEvent.Delete -> {
+                setState { copy(confirmingDelete = null) }
+                deleteMessage(event.messageId)
+            }
             is ChatEvent.Deleted -> dropDeleted(event.messageIds)
             is ChatEvent.React -> react(event.messageId, event.emoji)
             is ChatEvent.StartEdit -> startEdit(event.messageId)
@@ -1411,6 +1422,19 @@ class ChatViewModel(
             setState { copy(favourites = stars) }
             onEvent(ChatEvent.RefreshRecents)
         }
+    }
+
+    /**
+     * Opens the confirmation. The clock is checked here too, so a line past
+     * the window is refused before the question rather than after the answer.
+     */
+    private fun askDelete(messageId: String) {
+        val target = currentState.messages.firstOrNull { it.id == messageId } ?: return
+        if (!ChatComposerRules.canRewrite(target.timestampMillis, nowMillis(), isAdmin())) {
+            setState { copy(error = ChatComposerRules.REWRITE_WINDOW_CLOSED) }
+            return
+        }
+        setState { copy(confirmingDelete = target) }
     }
 
     /**

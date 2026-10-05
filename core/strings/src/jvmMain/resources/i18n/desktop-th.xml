@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">ตรวจสอบและลงนามในใบวอยเชอร์ของวันถ่ายทำ ดูประวัติการจ่ายเงิน และส่งข้อซักถามถึง AD เกี่ยวกับใบวอยเชอร์ใดก็ได้ อัปเดตโปรไฟล์ให้เป็นปัจจุบันอยู่เสมอด้วยข้อมูลส่วนตัว ภาษี บัญชีธนาคาร และบัตรประจำตัว</string>
     <string name="desktop_tool_info_call_sheet_info_admin">สร้างและเผยแพร่แผ่นเรียกประจำวันของโครงการ แชร์ฉบับร่างกับผู้อื่นเพื่อรับความคิดเห็น หรือส่งไปยังผู้อนุมัติเพื่อลงนาม</string>
     <string name="desktop_tool_info_call_sheet_info_user">ดูและแสดงความคิดเห็นในแผ่นเรียกประจำวันที่แชร์กับคุณเพื่อขอความคิดเห็น ผู้อนุมัติยังสามารถอนุมัติหรือปฏิเสธแผ่นเรียกที่ส่งถึงตนเพื่อลงนามได้</string>
+    <string name="desktop_chat_delete_message">ลบข้อความ</string>
+    <string name="desktop_chat_delete_message_confirm">คุณแน่ใจหรือไม่ว่าต้องการลบข้อความนี้</string>
 </resources>

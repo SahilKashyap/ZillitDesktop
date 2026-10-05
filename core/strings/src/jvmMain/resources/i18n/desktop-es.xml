@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Revisa y firma los vales de los días de rodaje, consulta el historial de pagos y plantea consultas al AD sobre cualquier vale. Mantén tu perfil actualizado con tus datos personales, fiscales, bancarios y de identificación.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Crea y publica las hojas de llamadas diarias del proyecto. Comparte borradores con otros para recibir comentarios o envíalos a los aprobadores para su firma.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Consulta y comenta las hojas de llamadas diarias compartidas contigo para recibir comentarios. Los aprobadores también pueden aprobar o rechazar las hojas de llamadas que se les envían para su firma.</string>
+    <string name="desktop_chat_delete_message">Eliminar mensaje</string>
+    <string name="desktop_chat_delete_message_confirm">¿Seguro que quieres eliminar este mensaje?</string>
 </resources>

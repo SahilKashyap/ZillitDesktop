@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Suriin at pirmahan ang mga voucher para sa mga shoot day, tingnan ang kasaysayan ng bayad, at magpadala ng mga query sa AD tungkol sa anumang voucher. Panatilihing updated ang profile gamit ang mga personal, buwis, bangko at ID na detalye.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Gumawa at i-publish ang mga pang-araw-araw na call sheet ng proyekto. Ibahagi ang mga draft sa iba para sa mga komento o ipadala ang mga ito sa mga approver para sa pirma.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Tingnan at magkomento sa mga pang-araw-araw na call sheet na ibinahagi sa iyo para sa mga komento. Maaari ring aprubahan o tanggihan ng mga approver ang mga call sheet na ipinadala sa kanila para sa pirma.</string>
+    <string name="desktop_chat_delete_message">Burahin ang mensahe</string>
+    <string name="desktop_chat_delete_message_confirm">Sigurado ka bang gusto mong burahin ang mensaheng ito?</string>
 </resources>

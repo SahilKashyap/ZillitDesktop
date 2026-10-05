@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">Controlla e firma i voucher dei giorni di riprese, consulta lo storico dei pagamenti e invia richieste all\'AD su qualsiasi voucher. Mantieni il profilo aggiornato con i dati personali, fiscali, bancari e di identità.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">Crea e pubblica i fogli di chiamata giornalieri del progetto. Condividi le bozze con altri per ricevere commenti o inviale agli approvatori per la firma.</string>
     <string name="desktop_tool_info_call_sheet_info_user">Visualizza e commenta i fogli di chiamata giornalieri condivisi con te per i commenti. Gli approvatori possono anche approvare o rifiutare i fogli di chiamata inviati loro per la firma.</string>
+    <string name="desktop_chat_delete_message">Elimina messaggio</string>
+    <string name="desktop_chat_delete_message_confirm">Vuoi davvero eliminare questo messaggio?</string>
 </resources>

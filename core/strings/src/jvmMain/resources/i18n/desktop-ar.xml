@@ -8355,4 +8355,6 @@
     <string name="desktop_tool_info_supporting_artistes_tool_tooltip">راجِع قسائم أيام التصوير ووقّعها، وتحقّق من سجل الأجور، وارفع استفساراتك إلى الـ AD بشأن أي قسيمة. حافظ على تحديث ملفك الشخصي بالبيانات الشخصية والضريبية والمصرفية وبيانات الهوية.</string>
     <string name="desktop_tool_info_call_sheet_info_admin">أنشئ أوراق الاستدعاء اليومية للمشروع وانشرها. شارك المسودات مع الآخرين للتعليق عليها أو أرسلها إلى الموافقين للتوقيع.</string>
     <string name="desktop_tool_info_call_sheet_info_user">اعرض أوراق الاستدعاء اليومية التي تمت مشاركتها معك للتعليق وعلّق عليها. يمكن للموافقين أيضًا الموافقة على أوراق الاستدعاء المرسلة إليهم للتوقيع أو رفضها.</string>
+    <string name="desktop_chat_delete_message">حذف الرسالة</string>
+    <string name="desktop_chat_delete_message_confirm">هل أنت متأكد أنك تريد حذف هذه الرسالة؟</string>
 </resources>
