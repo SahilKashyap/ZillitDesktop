@@ -93,6 +93,7 @@ import com.zillit.desktop.core.appupdate.InAppUpdater
 import com.zillit.desktop.core.appupdate.InstallState
 import com.zillit.desktop.core.appupdate.UpdateFailure
 import com.zillit.desktop.core.appupdate.installer
+import com.zillit.desktop.feature.shell.UpdateCheckOutcome
 import com.zillit.desktop.feature.shell.UpdateInstall
 import com.zillit.desktop.feature.shell.UpdateNotice
 import com.zillit.desktop.feature.shell.UpdateSurface
@@ -1764,6 +1765,7 @@ private fun SignedInShell(
         // Quits only once the helper is running; if it would not start, the
         // state turns to Failed and the strip says so.
         onRestartToUpdate = { scope.launch { ready.restartToUpdate(onQuit) } },
+        onCheckForUpdates = { ready.checkForUpdatesFromBar() },
         // The force-update screen's way out that is not the update.
         onQuit = onQuit,
         railCollapsed = railCollapsed,
@@ -1952,6 +1954,21 @@ private const val ONE_SECOND_MILLIS = 1_000L
  */
 private suspend fun AppGraph.Ready.checkForUpdatesNow(): UpdateStatus =
     appUpdateChecker.check().also { status -> if (status != UpdateStatus.Unknown) appUpdateStatus.value = status }
+
+/**
+ * The top bar's "Check for updates": the same check, and a newer build brings
+ * the strip back even if it was dismissed — it is where the answer and its
+ * download show.
+ */
+private suspend fun AppGraph.Ready.checkForUpdatesFromBar(): UpdateCheckOutcome =
+    when (checkForUpdatesNow()) {
+        UpdateStatus.UpToDate -> UpdateCheckOutcome.UpToDate
+        is UpdateStatus.Available, is UpdateStatus.Required -> {
+            appUpdateRequests.value += 1
+            UpdateCheckOutcome.Available
+        }
+        UpdateStatus.Unknown -> UpdateCheckOutcome.Failed
+    }
 
 /** The update button: install in place where it can, else download in the app and open the installer. */
 private fun InAppUpdater.installOrDownload(status: UpdateStatus) {
