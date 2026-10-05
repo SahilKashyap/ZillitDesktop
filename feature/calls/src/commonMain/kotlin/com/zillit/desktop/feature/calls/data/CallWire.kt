@@ -188,10 +188,13 @@ fun readStatusChange(payload: JsonElement): CallStatusChange? {
     // Both spellings appear on this event, and Android's model carries a field
     // for each because the server has sent either depending on the emitter.
     val room = obj.str("roomId", "room_id").orEmpty()
+    // Not a status at all (`audio_mute`, `hand_raise`, …) or one this build
+    // does not know: dropped, as Android drops it, rather than read as Ringing.
+    val status = CallStatus.ofWireOrNull(obj.str("status", "current_status")) ?: return null
     return CallStatusChange(
         roomId = room,
         userId = userId,
-        status = CallStatus.ofWire(obj.str("status", "current_status")),
+        status = status,
         projectId = obj.str("projectId", "project_id").orEmpty(),
     )
 }

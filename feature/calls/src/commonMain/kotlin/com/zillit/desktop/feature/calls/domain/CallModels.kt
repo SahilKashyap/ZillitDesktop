@@ -61,19 +61,48 @@ enum class CallStatus(val wire: String) {
     val isConnected: Boolean get() = this == InCall
 
     companion object {
-        private const val IN_CALL_ALTERNATE = "incall"
+        /**
+         * The other words the server and the phones use for the same states.
+         *
+         * Line 1's SFU writes `left` (not `leave`) when a peer closes, and
+         * Android sends `cancelled`, `busy` and `missed` on `call:response`
+         * (`callingv2/ui/CallViewModel.kt:5912`, `:6121`). Unlisted, each one
+         * read as Ringing — a person who had just hung up came back on the
+         * stage as a grey "Ringing" tile, and nothing ever ended the call.
+         */
+        private val ALIASES = mapOf(
+            "incall" to InCall,
+            "left" to Left,
+            "cancelled" to Left,
+            "canceled" to Left,
+            "end_call" to Left,
+            "busy" to Declined,
+            "rejected" to Declined,
+            "missed" to NotAnswered,
+            "requested" to Ringing,
+            "invited" to Ringing,
+            // The seed row every client writes for someone added mid-call.
+            "add_in_call" to Ringing,
+        )
 
         /**
          * Reads a status off the wire, tolerating case, padding and the
-         * `in_call`/`incall` split. An unrecognised value is [Ringing] rather
+         * spellings in [ALIASES]. An unrecognised value is [Ringing] rather
          * than null: an invited participant whose status we cannot read is
          * still someone the roster must show.
+         *
+         * Only for roster ROWS. A status EVENT must use [ofWireOrNull]: Line 1's
+         * `call:update` also carries `audio_mute`, `video_unmute`, `hand_raise`
+         * and the like, and read through this they put a person in the middle
+         * of the call back to Ringing every time they touched their mic.
          */
-        fun ofWire(raw: String?): CallStatus {
+        fun ofWire(raw: String?): CallStatus = ofWireOrNull(raw) ?: Ringing
+
+        /** A status this build knows, or null — blank and unknown words alike. */
+        fun ofWireOrNull(raw: String?): CallStatus? {
             val value = raw?.trim()?.lowercase().orEmpty()
-            if (value.isEmpty()) return Ringing
-            if (value == IN_CALL_ALTERNATE) return InCall
-            return entries.firstOrNull { it.wire.lowercase() == value } ?: Ringing
+            if (value.isEmpty()) return null
+            return ALIASES[value] ?: entries.firstOrNull { it.wire.lowercase() == value }
         }
 
         /** The `in_call`/`incall` test on its own, for raw wire strings. */

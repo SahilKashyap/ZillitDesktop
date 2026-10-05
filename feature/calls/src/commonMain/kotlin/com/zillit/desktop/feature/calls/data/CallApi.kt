@@ -92,9 +92,30 @@ class CallApi(
         provider: CallProvider = CallProvider.Agora,
     ) = put("call/end-call", callRef(callUuid, deviceId, provider), projectId)
 
-    /** Records that this device never picked up. */
-    suspend fun logMissedCall(callUuid: String, deviceId: String, projectId: String?) =
-        put("call/log-miss-call", callRef(callUuid, deviceId), projectId)
+    /**
+     * Records that this device never picked up.
+     *
+     * Line 1 knows a person rather than a device: given [userId] there, the
+     * body names the room and them, as the web's does for a mid-call invite.
+     */
+    suspend fun logMissedCall(
+        callUuid: String,
+        deviceId: String,
+        projectId: String?,
+        userId: String = "",
+    ) = put(
+        "call/log-miss-call",
+        if (userId.isBlank()) {
+            callRef(callUuid, deviceId)
+        } else {
+            buildJsonObject {
+                put("line", CallProvider.Mediasoup.wire)
+                put("call_uuid", callUuid)
+                put("user_id", userId)
+            }
+        },
+        projectId,
+    )
 
     /** The group form: everyone who let it ring out. */
     suspend fun logMissedCalls(callUuid: String, deviceIds: List<String>, projectId: String?) =
@@ -171,6 +192,8 @@ class CallApi(
         status: CallStatus,
         fromUserId: String,
         projectId: String?,
+        /** Whose request this is; the responder themselves unless we answer for someone. */
+        headerUserId: String = fromUserId,
     ): ZillitResult<Unit> {
         if (roomId.isBlank() || fromUserId.isBlank()) {
             return ZillitResult.Success(Unit)
@@ -181,7 +204,7 @@ class CallApi(
             projectId,
             // The responder's own id in the call's production — the same
             // pairing iOS sends here.
-            userId = fromUserId,
+            userId = headerUserId,
         ).map { }
     }
 
@@ -570,6 +593,36 @@ internal suspend fun CallApi.invite(
         )
     }
 }
+
+/**
+ * Withdraws a Line 1 ring started from this call — the web's ✕ on an invited
+ * row (`AddUserDrawer.jsx:504-552`).
+ *
+ * There is no cancel route: the web declines the ring on the invitee's behalf,
+ * `call-response` with `response: declined` and THEIR id as `fromUserId`, and
+ * the server stops their phone and echoes `call:update declined` to everyone.
+ * Sent with our own id in the header, as the web does — the request is ours.
+ */
+internal suspend fun CallApi.withdrawMediasoupInvite(session: CallSession, inviteeUserId: String) =
+    sendCallResponse(
+        roomId = session.restRoomId,
+        status = CallStatus.Declined,
+        fromUserId = inviteeUserId,
+        projectId = session.projectId.takeIf(String::isNotBlank),
+        headerUserId = session.selfUserId,
+    )
+
+/**
+ * Logs one mid-call invite that rang out or was withdrawn, so it lands in their
+ * call history as missed — the web's `log-miss-call` after its 60 s timer and
+ * its ✕ alike. Line 1 names the room and a person, Line 2 the call and a device.
+ */
+internal suspend fun CallApi.logMissedInvite(session: CallSession, userId: String, deviceId: String) =
+    if (session.provider == CallProvider.Mediasoup) {
+        logMissedCall(session.restRoomId, "", session.projectId.takeIf(String::isNotBlank), userId = userId)
+    } else {
+        logMissedCall(session.callUuid, deviceId, session.projectId.takeIf(String::isNotBlank))
+    }
 
 /** Log tag for the calling REST surface. */
 private const val CALL_API_TAG = "CallApi"

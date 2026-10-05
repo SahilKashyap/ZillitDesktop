@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls.ui
 import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.CallStatus
 
 /**
  * The whole UI projection as one function.
@@ -23,6 +24,12 @@ fun projectCallUi(
     directory: (String) -> CallDirectoryEntry? = { null },
 ): CallUiState {
     val tiles = buildTiles(session, media, selfName, micMuted, cameraOn, previous.handRaised, directory)
+    val stage = tiles.filterNot { it.presence == CallStatus.Ringing }
+    val names = previous.participantNames + session?.participants.orEmpty()
+        .mapNotNull { row ->
+            val name = row.name.ifBlank { directory(row.userId)?.name.orEmpty() }
+            if (row.userId.isBlank() || name.isBlank()) null else row.userId to name
+        }
     // Latched, never unlatched mid-call: the stage swapping between a Compose
     // grid and a browser surface every time somebody toggled a camera would
     // move a native window between parents on each toggle.
@@ -38,7 +45,9 @@ fun projectCallUi(
         micMuted = micMuted,
         cameraOn = cameraOn,
         tiles = tiles,
+        stageTiles = stage,
+        participantNames = names,
         videoSeen = seen,
-        stageJson = if (tiles.isEmpty()) "" else stageJson(tiles, columnsFor(tiles.size), previous.pins),
+        stageJson = if (stage.isEmpty()) "" else stageJson(stage, columnsFor(stage.size), previous.pins),
     )
 }

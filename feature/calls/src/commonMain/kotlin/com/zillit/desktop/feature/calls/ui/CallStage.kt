@@ -149,23 +149,28 @@ private fun StageBody(
         ) {
             if (!showsVideo) {
                 // A lone tile has nothing to be pinned above, so it gets no pin.
-                val several = state.tiles.size > 1
+                val several = state.stageTiles.size > 1
                 val pins = TilePins(state.pins, if (several) { key -> onEvent(CallEvent.TogglePin(key)) } else null)
                 val fill = Modifier.fillMaxSize()
                 // Assigned once for the whole stage, not per tile: the
                 // collision bump that keeps two people called Sahil from
                 // sharing a colour needs the whole list, and the three layouts
                 // below must agree on the answer.
-                val colours = remember(state.tiles) { CallTileColors.assign(state.tiles) }
+                val colours = remember(state.stageTiles) { CallTileColors.assign(state.stageTiles) }
                 CompositionLocalProvider(LocalCallTileColors provides colours) {
                     when {
-                        several && pinnedTiles(state.tiles, state.pins).isNotEmpty() ->
-                            PinnedStage(tiles = state.tiles, pins = pins, modifier = fill, loadAvatar = loadAvatar)
-                        isDuo(state.tiles) -> DuoStage(state.tiles, fill, loadAvatar, pins)
-                        else -> AvatarGrid(tiles = state.tiles, modifier = fill, loadAvatar = loadAvatar, pins = pins)
+                        several && pinnedTiles(state.stageTiles, state.pins).isNotEmpty() ->
+                            PinnedStage(tiles = state.stageTiles, pins = pins, modifier = fill, loadAvatar = loadAvatar)
+                        isDuo(state.stageTiles) -> DuoStage(state.stageTiles, fill, loadAvatar, pins)
+                        else -> AvatarGrid(
+                            tiles = state.stageTiles,
+                            modifier = fill,
+                            loadAvatar = loadAvatar,
+                            pins = pins,
+                        )
                     }
                 }
-                if (state.tiles.size <= 1) WaitingForOthers()
+                if (state.stageTiles.size <= 1) WaitingForOthers()
             }
         }
         SidePanels(state, onEvent)
@@ -614,7 +619,7 @@ private fun PresentingBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 /** Who else is presenting, named — the web's "<name> is presenting" (`CallRoom.tsx:975`). */
 @Composable
 private fun PresenterPill(state: CallUiState) {
-    val presenter = state.tiles.firstOrNull { !it.isSelf && it.media?.sharing == true } ?: return
+    val presenter = state.stageTiles.firstOrNull { !it.isSelf && it.media?.sharing == true } ?: return
     StatusPill(
         text = str(S.desktop_call_name_is_presenting, presenter.name),
         background = CallPalette.accent,

@@ -53,6 +53,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,7 +94,7 @@ internal fun allOthersGone(
 }
 
 /**
- * Whether a 1:1 call's other person has walked out, judged from the media.
+ * Whether everybody else has walked out, judged from the media.
  *
  * [allOthersGone] needs someone to have read `in_call` on the roster, and on a
  * call this device RECEIVED the other person's row says `caller` — a status
@@ -101,19 +103,22 @@ internal fun allOthersGone(
  * the other witness: once it has been seen on this call ([sawRemoteMedia]) and
  * none is left, and nobody else's row reads `in_call`, the call is over.
  *
- * Only after media was seen, so the moment between answering and the caller's
- * stream arriving — no peers yet — never reads as an ending; private calls
- * only, where "everyone else" is exactly one person.
+ * Group calls too, as Android's `UserOffline` rule ends them: a Line 1 group
+ * whose roster never reached `in_call` — or read a departure as something
+ * else — otherwise kept the last person in an empty room for good
+ * (2026-10-05). An invitee still ringing does not hold the room open, the
+ * same as in [allOthersGone].
+ *
+ * Only after media was seen, so the moment between answering and the first
+ * stream arriving — no peers yet — never reads as an ending.
  */
-internal fun privateCallDeserted(
-    mode: CallMode,
+internal fun callDeserted(
     sawRemoteMedia: Boolean,
     livePeerCount: Int,
     participants: List<CallParticipant>,
     selfUserId: String,
 ): Boolean =
-    mode == CallMode.Private &&
-        sawRemoteMedia &&
+    sawRemoteMedia &&
         livePeerCount == 0 &&
         participants.none { it.userId != selfUserId && it.status.isConnected }
 
@@ -363,13 +368,46 @@ class CallCoordinator(
 
     fun blockChat(userId: String, blocked: Boolean) = line3InCall.blockChat(userId, blocked)
 
-    /** Retracts a mid-call invite that is still ringing; the row goes back to addable. */
+    /**
+     * Retracts an invite that is still ringing; the row goes back to addable.
+     *
+     * Line 3 asks its server. Lines 1 and 2 do what the web's ✕ does
+     * (`AddUserDrawer.jsx:504-552`): decline the ring on the invitee's behalf —
+     * over REST on Line 1, on their Firestore row on Line 2 — and log it as a
+     * missed call for them.
+     */
     fun cancelInvite(userId: String) {
         val current = _session.value ?: return
-        line3InCall.cancelInvite(userId)
+        val row = current.participants.firstOrNull { it.userId == userId && it.status == CallStatus.Ringing }
+        if (current.provider == CallProvider.LiveKit) {
+            line3InCall.cancelInvite(userId)
+        } else if (row != null) {
+            withdrawRing(current, row)
+        }
+        inviteExpiry.remove(userId)?.cancel()
         _session.value = current.copy(
             participants = current.participants.filterNot { it.userId == userId && it.status == CallStatus.Ringing },
         )
+    }
+
+    private fun withdrawRing(current: CallSession, row: CallParticipant) {
+        scope.launch {
+            val withdrawn = if (current.provider == CallProvider.Mediasoup) {
+                api.withdrawMediasoupInvite(current, row.userId).isSuccess
+            } else {
+                true
+            }
+            // Line 2's withdrawal itself; on Line 1 it retires the seed row
+            // [addUser] wrote, which otherwise read "ringing" to every other
+            // desktop on the call for as long as it lasted.
+            plane.updateUserFields(
+                current,
+                row.deviceId.ifBlank { row.userId },
+                mapOf(FIELD_CURRENT_STATUS to CallStatus.Declined.wire),
+            )
+            if (!withdrawn) ZillitLog.w(TAG) { "cancel invite not delivered" }
+            if (!current.isCalendarCall) api.logMissedInvite(current, row.userId, row.deviceId)
+        }
     }
 
     fun setCallPolicy(policy: LiveKitCallPolicy) = line3InCall.setCallPolicy(policy)
@@ -560,11 +598,20 @@ class CallCoordinator(
      */
     private val everConnected = mutableSetOf<String>()
 
-    /** Somebody's media reached this call at least once — see [privateCallDeserted]. */
+    /** Somebody's media reached this call at least once — see [callDeserted]. */
     private var sawRemoteMedia = false
 
     /** The pending "is anyone still here?" re-check, if one is armed. */
     private var emptyRoomCheck: Job? = null
+
+    /** How long [emptyRoomCheck] was told to wait, so a shorter verdict can replace it. */
+    private var emptyRoomGrace = 0L
+
+    /** One clock per invitee still ringing; see [watchInviteExpiry]. */
+    private val inviteExpiry = mutableMapOf<String, Job>()
+
+    /** Who this device rang mid-call — their ring running out is logged as missed. */
+    private val addedByUs = mutableSetOf<String>()
 
     /** Server truth for a Line 3 ring this device is showing — see [LiveKitRingWatch]. */
     private val line3Ring = LiveKitRingWatch()
@@ -620,6 +667,8 @@ class CallCoordinator(
         scope.launch { listenHandoffEvict() }
         scope.launch { inCall.listen() }
         scope.launch { listenEngine() }
+        scope.launch { watchInviteExpiry() }
+        scope.launch { logRosterChanges() }
     }
 
     // ── Outgoing ────────────────────────────────────────────────────────
@@ -950,6 +999,7 @@ class CallCoordinator(
         if (existing != null && existing.status !in RE_RINGABLE) return
 
         _session.value = current.withRinging(userId, deviceId, name)
+        addedByUs.add(userId)
         scope.launch {
             if (current.provider == CallProvider.LiveKit) {
                 // Line 3 invites over its own socket; the roster row above is the seed.
@@ -1293,6 +1343,16 @@ class CallCoordinator(
 
     /** The row moves, and whatever the new status means for the call follows. */
     private fun applyRosterChange(current: CallSession, change: CallStatusChange) {
+        // A `ringing` that lands after the answer — the phone's ringing-ack
+        // overtaking its join — must not put a person whose media is live back
+        // on the ring: their tile left the stage for a beat on every Line 1
+        // answer, and anything timing the ring started counting (2026-10-05).
+        val live = current.participants.firstOrNull { it.userId == change.userId }
+            ?.takeIf { it.status.isConnected && mediaUidOf(current, it) in _media.value.peers }
+        if (change.status == CallStatus.Ringing && live != null) {
+            ZillitLog.i(TAG) { "late ringing for ${change.userId} ignored; their media is live" }
+            return
+        }
         _session.value = current.copy(
             participants = current.participants.withStatus(change.userId, change.status),
         )
@@ -1330,22 +1390,56 @@ class CallCoordinator(
      * empty room that is not empty.
      */
     private fun checkRoomStillOccupied() {
-        if (!roomLooksEmpty()) {
-            emptyRoomCheck?.cancel()
-            emptyRoomCheck = null
-            return
+        val grace = when {
+            roomLooksEmpty() -> EMPTY_ROOM_GRACE_MILLIS
+            line1MediaGone() -> MEDIA_GONE_GRACE_MILLIS
+            else -> {
+                emptyRoomCheck?.cancel()
+                emptyRoomCheck = null
+                return
+            }
         }
-        if (emptyRoomCheck?.isActive == true) return
+        // A shorter verdict replaces a longer one already counting down.
+        if (emptyRoomCheck?.isActive == true && grace >= emptyRoomGrace) return
+        emptyRoomCheck?.cancel()
+        emptyRoomGrace = grace
         emptyRoomCheck = scope.launch {
-            delay(EMPTY_ROOM_GRACE_MILLIS)
+            delay(grace)
             // Asked a second time, and only the second answer is acted on.
-            if (!roomLooksEmpty()) return@launch
+            if (!roomLooksEmpty() && !line1MediaGone()) return@launch
             val session = _session.value ?: return@launch
             ZillitLog.i(TAG) { "everyone else left ${session.callUuid}; ending" }
             engine.leave()
             finish(session, CallEndReason.RemoteEnded)
         }
     }
+
+    /**
+     * Line 1's own witness: every other peer's media has left the SFU, whatever
+     * the roster still says — Android's `UserOffline` rule, on its 30 s grace.
+     *
+     * On Line 1 being in the call IS being a peer in the room, so a row still
+     * reading `in_call` with no peer behind it is stale. Rows go stale for good
+     * there: a phone that joined under a different id than its row carries
+     * leaves under that id too, the `left` the SFU writes matches no row, and
+     * the call never ended (2026-10-05). The longer grace covers a peer's own
+     * reconnect, which the roster-backed rule does not need to.
+     *
+     * Not while anyone is still ringing — Android's condition too — and only
+     * after media was seen, so a room nobody has joined yet is not an ending.
+     */
+    private fun line1MediaGone(): Boolean {
+        val current = _session.value ?: return false
+        return current.provider == CallProvider.Mediasoup &&
+            couldEndNow(current) &&
+            sawRemoteMedia &&
+            _media.value.peers.isEmpty() &&
+            current.participants.none { it.userId != current.selfUserId && it.status == CallStatus.Ringing }
+    }
+
+    /** In the call, not reconnecting, and not a calendar room — see [roomLooksEmpty]. */
+    private fun couldEndNow(current: CallSession): Boolean =
+        _phase.value == CallPhase.InCall && !reconnect.isArmed && !current.isCalendarCall
 
     /**
      * Whether this device appears to be the last one on a call it is still in.
@@ -1359,13 +1453,10 @@ class CallCoordinator(
         // Being first into a calendar room is normal rather than an ending:
         // someone who opens it five minutes early would otherwise be hung up
         // on two seconds later, and the room is the event's, not theirs.
-        val couldEnd = _phase.value == CallPhase.InCall &&
-            !reconnect.isArmed &&
-            !current.isCalendarCall
         val peers = _media.value.peers.size
-        return couldEnd && (
+        return couldEndNow(current) && (
             allOthersGone(current.participants, everConnected, peers) ||
-                privateCallDeserted(current.mode, sawRemoteMedia, peers, current.participants, current.selfUserId)
+                callDeserted(sawRemoteMedia, peers, current.participants, current.selfUserId)
             )
     }
 
@@ -1390,6 +1481,88 @@ class CallCoordinator(
         val reason = if (status == CallStatus.Declined) CallEndReason.Declined else CallEndReason.Timeout
         scope.launch { engine.leave() }
         finish(current, reason)
+    }
+
+    /**
+     * Gives every ring on the call [CallTimeouts.OUTGOING_MS] to be answered.
+     *
+     * Whoever is still ringing after that moves to Left / Declined as "No
+     * answer" — the web's 60 s timer on a mid-call add (`AddUserDrawer.jsx:469`)
+     * and Android's ring expiry, which demotes any row still ringing to
+     * `not_answered`. Without it a phone that never picked up sat in the
+     * Ringing section for the rest of the call.
+     *
+     * Keyed off the roster itself, so every way a row starts ringing — the
+     * first invite, an Add, a re-ring — gets its own clock, and a row that
+     * stops ringing for any reason drops it. Line 3 is left out: its server
+     * runs the ring timeout and pushes the missed state itself.
+     */
+    private suspend fun watchInviteExpiry() {
+        _session
+            .map { session ->
+                session?.participants.orEmpty()
+                    .filter { it.status == CallStatus.Ringing && it.userId != session?.selfUserId }
+                    .map(CallParticipant::userId)
+                    .filter(String::isNotBlank)
+                    .toSet()
+            }
+            .distinctUntilChanged()
+            .collect { ringing ->
+                (inviteExpiry.keys - ringing).forEach { inviteExpiry.remove(it)?.cancel() }
+                (ringing - inviteExpiry.keys).forEach { userId ->
+                    inviteExpiry[userId] = scope.launch {
+                        delay(CallTimeouts.OUTGOING_MS)
+                        inviteExpiry.remove(userId)
+                        inviteRangOut(userId)
+                    }
+                }
+            }
+    }
+
+    /**
+     * Every roster change, as ids and statuses with the uid each row binds to.
+     *
+     * Ids only, never names. Without this a Line 1 row and the stream it should
+     * own could disagree on who someone is and the log could not say so: the
+     * `call:update` payloads are not logged, and the Guest-tile bug of
+     * 2026-10-05 had to be argued from the code instead of read.
+     */
+    private suspend fun logRosterChanges() {
+        _session
+            .map { session ->
+                session?.participants.orEmpty().joinToString { row ->
+                    "${row.userId}=${row.status.wire}#${mediasoupUidOf(row.userId)}"
+                }
+            }
+            .distinctUntilChanged()
+            .collect { roster -> if (roster.isNotEmpty()) ZillitLog.i(TAG) { "roster: $roster" } }
+    }
+
+    private fun inviteRangOut(userId: String) {
+        val current = _session.value ?: return
+        // While our own call is still ringing out, its ring timeout owns the
+        // ending; Line 3's server owns its rings.
+        if (_phase.value != CallPhase.InCall || current.provider == CallProvider.LiveKit) return
+        val row = current.participants.firstOrNull { it.userId == userId && it.status == CallStatus.Ringing } ?: return
+        // Their media is here: they answered and nothing said so. In, not out.
+        adoptAnswersFromMedia()
+        if (_session.value?.participants?.any { it.userId == userId && it.status == CallStatus.Ringing } != true) return
+        ZillitLog.i(TAG) { "invite to $userId rang out; not answered" }
+        _session.value = current.copy(
+            participants = current.participants.withStatus(userId, CallStatus.NotAnswered),
+        )
+        if (addedByUs.remove(userId)) {
+            scope.launch {
+                // The seed row we wrote, retired the same way — see [withdrawRing].
+                plane.updateUserFields(
+                    current,
+                    row.deviceId.ifBlank { userId },
+                    mapOf(FIELD_CURRENT_STATUS to CallStatus.NotAnswered.wire),
+                )
+                if (!current.isCalendarCall) api.logMissedInvite(current, userId, row.deviceId)
+            }
+        }
+        checkRoomStillOccupied()
     }
 
     private suspend fun listenEnded() {
@@ -1478,7 +1651,15 @@ class CallCoordinator(
                 mediasoupUidOf(event.userId)
             else -> 0
         }
-        if (uid != 0) {
+        // Lines 1 and 3 learn who is in the room from the SFU alone. A row's
+        // flags folded through the reducer CREATE a peer for whoever the row
+        // names — and every row has flags: the seed written for someone added
+        // mid-call (who may never answer), and the row of someone who already
+        // left. Each became a stream nobody owned, drawn as "Guest" or as the
+        // departed person's face, and kept the call from ever reading empty
+        // (2026-10-05). There, a row may only describe a peer that is live.
+        val mediaFromRoom = session.provider == CallProvider.Mediasoup || session.provider == CallProvider.LiveKit
+        if (uid != 0 && (!mediaFromRoom || uid in _media.value.peers)) {
             _media.value = _media.value.reduce(CallEngineEvent.PeerScreenShare(uid, event.sharing))
             // Mute and camera ride the same row, and on the Agora line the row
             // is the only place they exist for someone who was already muted
@@ -1598,6 +1779,32 @@ class CallCoordinator(
     private fun foldMedia(event: CallEngineEvent) {
         _media.value = _media.value.reduce(event)
         if (_media.value.peers.isNotEmpty()) sawRemoteMedia = true
+        if (event is CallEngineEvent.PeerJoined) {
+            adoptAnswersFromMedia()
+            checkRoomStillOccupied()
+        }
+    }
+
+    /** The uid [row]'s stream arrives under: hashed on Lines 1 and 3, issued on Line 2. */
+    private fun mediaUidOf(session: CallSession, row: CallParticipant): Int =
+        if (session.provider == CallProvider.Agora) row.numericUid else mediasoupUidOf(row.userId)
+
+    /** See [answeredByMedia]: a stream arriving is an answer nobody announced. */
+    private fun adoptAnswersFromMedia() {
+        val current = _session.value ?: return
+        if (_phase.value == CallPhase.Ending) return
+        val before = current.participants
+        val after = before.answeredByMedia(current.provider, _media.value.peers.keys, current.selfUserId)
+        if (after === before) return
+        _session.value = current.copy(participants = after)
+        after.filter { it.status.isConnected && before.first { b -> b.userId == it.userId }.status != it.status }
+            .forEach {
+                ZillitLog.i(TAG) { "${it.userId}'s media arrived; in the call" }
+                rememberIfConnected(it.userId, it.deviceId, status = CallStatus.InCall)
+                addedByUs.remove(it.userId)
+            }
+        onSomeoneAnswered()
+        checkRoomStillOccupied()
     }
 
     /** What the other people on the call did, as the engine saw it. */
@@ -1963,6 +2170,9 @@ class CallCoordinator(
         _cameraOn.value = false
         emptyRoomCheck?.cancel()
         emptyRoomCheck = null
+        inviteExpiry.values.forEach(Job::cancel)
+        inviteExpiry.clear()
+        addedByUs.clear()
         // The watchdog's only question is "is a call in progress?", so a clock
         // left running would end whichever call came next.
         reconnect.cancel()
@@ -2490,6 +2700,9 @@ class CallCoordinator(
          * same couple of seconds for the same reason.
          */
         const val EMPTY_ROOM_GRACE_MILLIS = 2_000L
+
+        /** Android's mediasoup `reconnectionGraceMs`: long enough for a peer's own reconnect. */
+        const val MEDIA_GONE_GRACE_MILLIS = 30_000L
 
 
     }

@@ -1,6 +1,9 @@
 package com.zillit.desktop.feature.calls
 
+import com.zillit.desktop.feature.calls.data.answeredByMedia
+import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallSession
@@ -34,6 +37,42 @@ class CallTilesTest {
         status: CallStatus = CallStatus.InCall,
         name: String = id,
     ) = CallParticipant(userId = id, agoraUid = uid, status = status, name = name)
+
+    @Test
+    fun `an added person whose stream arrived unannounced is in the call by name, not a Guest`() {
+        // Line 1 says nothing when a mid-call add answers; their stream is the answer.
+        val added = person("sat", status = CallStatus.NotAnswered, name = "Sahil Android Test")
+        val call = session(added).copy(provider = CallProvider.Mediasoup)
+        val uid = mediasoupUidOf("sat")
+        val live = CallMedia(selfUid = 1, peers = mapOf(uid to MediaPeer(uid)))
+
+        val rows = call.participants.answeredByMedia(call.provider, live.peers.keys, call.selfUserId)
+        assertEquals(CallStatus.InCall, rows.single().status)
+
+        // Even unpromoted, the stage names the stream after its owner.
+        val tiles = buildTiles(call, live, "Me", micMuted = false, cameraOn = false)
+        assertEquals(listOf("Me", "Sahil Android Test"), tiles.map { it.name })
+    }
+
+    @Test
+    fun `on Line 1 a stream under an unknown id is the one in-call row without a stream`() {
+        // The phone joined as "phone-id"; its row says "them". Not a Guest
+        // beside an empty tile — one face, theirs.
+        val call = session(person("them", name = "Sahil Kashyap")).copy(provider = CallProvider.Mediasoup)
+        val uid = mediasoupUidOf("phone-id")
+        val tiles = buildTiles(call, CallMedia(selfUid = 1, peers = mapOf(uid to MediaPeer(uid))), "Me", false, false)
+        assertEquals(listOf("Me", "Sahil Kashyap"), tiles.map { it.name })
+        assertEquals(uid, tiles.last().uid)
+        assertNotNull(tiles.last().media)
+    }
+
+    @Test
+    fun `a departure whose stream has not closed yet is not read back as an answer`() {
+        val gone = person("sk", status = CallStatus.Left)
+        val uid = mediasoupUidOf("sk")
+        val rows = listOf(gone)
+        assertTrue(rows.answeredByMedia(CallProvider.Mediasoup, setOf(uid), "me") === rows)
+    }
 
     @Test
     fun `we come first, and we are always on the stage`() {

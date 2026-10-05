@@ -107,12 +107,32 @@ fun buildTiles(
             add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson, directory))
         }
         unclaimed.forEach { uid ->
-            if (uid == loneStranger) {
-                add(guestTile(uid, media, session.displayName, session.displayUserId))
-            } else {
-                add(guestTile(uid, media))
+            val owner = offStageOwner(session, uid)
+            when {
+                uid == loneStranger -> add(guestTile(uid, media, session.displayName, session.displayUserId))
+                // Someone the roster knows, under a status that is not on the
+                // stage (a "left" that beat their stream closing, say): still
+                // them, by name — never a stranger called Guest.
+                owner != null -> add(
+                    guestTile(
+                        uid,
+                        media,
+                        owner.name.ifBlank { directory(owner.userId)?.name.orEmpty() },
+                        owner.userId,
+                    ),
+                )
+                else -> add(guestTile(uid, media))
             }
         }
+    }
+}
+
+/** The roster row, in any status, whose identity a leftover stream [uid] is. */
+private fun offStageOwner(session: CallSession, uid: Int): CallParticipant? {
+    val hashed = session.provider == CallProvider.Mediasoup || session.provider == CallProvider.LiveKit
+    return session.participants.firstOrNull { row ->
+        row.userId.isNotBlank() && row.userId != session.selfUserId &&
+            (if (hashed) mediasoupUidOf(row.userId) else row.numericUid) == uid
     }
 }
 
@@ -138,8 +158,23 @@ private fun bindUids(
 ): Map<String, Int> {
     // Lines 1 and 3 number a peer by hashing their identity — the page and
     // Kotlin agree on the hash — so a roster row binds without a uid on it.
-    if (session.provider == CallProvider.Mediasoup || session.provider == CallProvider.LiveKit) {
+    if (session.provider == CallProvider.LiveKit) {
         return roster.associate { it.userId to mediasoupUidOf(it.userId) }
+    }
+    if (session.provider == CallProvider.Mediasoup) {
+        val hashed = roster.associate { it.userId to mediasoupUidOf(it.userId) }
+        // A phone can join the room under a different id than its row carries
+        // (2026-10-05): its stream then matched nobody and drew as "Guest"
+        // beside the person's own tile, empty. One row in the room with no
+        // stream and one stream with no row are each other — beyond that this
+        // refuses to guess, as Line 2's pairing below does.
+        val silent = roster.filter { it.status in IN_CHANNEL && hashed.getValue(it.userId) !in media.peers }
+        val orphan = media.peers.keys.filter { it != selfUid && it !in hashed.values }
+        return if (silent.size == 1 && orphan.size == 1) {
+            hashed + (silent.first().userId to orphan.first())
+        } else {
+            hashed
+        }
     }
     val known = roster.filter { it.numericUid != 0 }.associate { it.userId to it.numericUid }
     // The caller counts as in the channel: on an incoming call the other

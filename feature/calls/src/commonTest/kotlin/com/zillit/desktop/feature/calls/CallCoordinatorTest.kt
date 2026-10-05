@@ -10,7 +10,7 @@ import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.data.allOthersGone
-import com.zillit.desktop.feature.calls.data.privateCallDeserted
+import com.zillit.desktop.feature.calls.data.callDeserted
 import com.zillit.desktop.feature.calls.data.CallCoordinator
 import com.zillit.desktop.feature.calls.data.CallEndReason
 import com.zillit.desktop.feature.calls.data.CallStatusPlane
@@ -323,8 +323,10 @@ class CallCoordinatorTest {
         socket: FakeSocket,
         receiverUserId: String = "them",
         is247Call: Boolean = false,
+        engine: CallEngine = NoopCallEngine(),
+        plane: FakePlane? = null,
     ): CallCoordinator {
-        val coordinator = coordinator(socket, callApi = placingApi())
+        val coordinator = coordinator(socket, callApi = placingApi(), engine = engine, plane = plane)
         coordinator.placeCall(
             chatRoomId = "",
             receiverDeviceId = "their-device",
@@ -1199,6 +1201,63 @@ class CallCoordinatorTest {
 
 
     @Test
+    fun `an invite nobody answers in a minute is marked not answered`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = coordinator(socket, plane = FakePlane())
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            coordinator.addUser(userId = "u9", deviceId = "dev9", name = "Asha")
+            runCurrent()
+            advanceTimeBy(59_000)
+            runCurrent()
+            assertEquals(
+                CallStatus.Ringing,
+                coordinator.session.value?.participants?.single { it.userId == "u9" }?.status,
+            )
+
+            advanceTimeBy(2_000)
+            runCurrent()
+            // Out of the Ringing section and into Left / Declined as "No answer",
+            // where its Add rings them again.
+            assertEquals(
+                CallStatus.NotAnswered,
+                coordinator.session.value?.participants?.single { it.userId == "u9" }?.status,
+            )
+        }
+
+    @Test
+    fun `cancelling a ring declines it for them and puts them back to addable`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val plane = FakePlane()
+            val coordinator = coordinator(socket, plane = plane)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            coordinator.addUser(userId = "u9", deviceId = "dev9", name = "Asha")
+            runCurrent()
+            plane.rows.clear()
+
+            coordinator.cancelInvite("u9")
+            runCurrent()
+
+            assertTrue(coordinator.session.value?.participants.orEmpty().none { it.userId == "u9" })
+            // Line 2: their own row says declined, which is what stops their phone.
+            val (key, fields) = plane.rows.single()
+            assertEquals("dev9", key)
+            assertEquals("declined", fields["current_status"])
+            // And no expiry fires later for a ring that is gone.
+            advanceTimeBy(61_000)
+            runCurrent()
+            assertTrue(coordinator.session.value?.participants.orEmpty().none { it.userId == "u9" })
+        }
+
+    @Test
     fun `nobody ever answering is not an empty room`() {
         // A ringing call has no connected peers either, and ending it because
         // of that would hang up on every outgoing call the moment it started.
@@ -1306,6 +1365,85 @@ class CallCoordinatorTest {
             assertEquals(CallPhase.Idle, coordinator.phase.value)
         }
 
+    /**
+     * The report of 2026-10-05: on Line 1 the other person's phone joined the
+     * room under a different id than their row, so their leaving matched no
+     * row — the row read `in_call` for ever and the call never ended. Their
+     * media leaving is the witness, on Android's 30 s grace.
+     */
+    @Test
+    fun `a Line 1 call ends once every stream is gone, whatever a stale row says`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = ringing(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"in_call"}""")
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+
+            engine.push(CallEngineEvent.PeerJoined(4242))
+            runCurrent()
+            engine.push(CallEngineEvent.PeerLeft(4242))
+            runCurrent()
+            advanceTimeBy(29_000)
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value, "a peer gets its reconnect grace")
+
+            advanceTimeBy(2_000)
+            runCurrent()
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
+
+    /**
+     * The "Guest" of 2026-10-05: the seed row written for someone added
+     * mid-call carries flags, and folding them created a media peer for a
+     * person who never joined — a stream nobody owned.
+     */
+    @Test
+    fun `on Line 1 a Firestore row never invents a peer`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val plane = FakePlane()
+            val coordinator = ringing(socket, engine = ScriptableEngine(), plane = plane)
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"in_call"}""")
+            runCurrent()
+
+            plane.events.emit(
+                PlaneEvent.UserFlags(
+                    deviceId = "seed-device",
+                    userId = "added",
+                    agoraUid = 0,
+                    sharing = false,
+                    handRaised = false,
+                    muted = true,
+                ),
+            )
+            runCurrent()
+
+            assertTrue(coordinator.media.value.peers.isEmpty(), "peers: ${coordinator.media.value.peers}")
+        }
+
+    /** The phone's ringing-ack overtaking its join must not put a live person back on the ring. */
+    @Test
+    fun `a late ringing does not undo an answer whose media is live`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = ringing(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"in_call"}""")
+            runCurrent()
+            engine.push(CallEngineEvent.PeerJoined(com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf("them")))
+            runCurrent()
+
+            socket.deliver(ZillitSocketEvents.Calls.Update, """{"roomId":"r1","userId":"them","status":"ringing"}""")
+            runCurrent()
+
+            assertEquals(
+                CallStatus.InCall,
+                coordinator.session.value?.participants?.single { it.userId == "them" }?.status,
+            )
+        }
+
     /** Answered, and the caller's stream has not arrived yet: that is not an ending. */
     @Test
     fun `a 1 to 1 call never seen to carry media is not ended for being empty`() =
@@ -1327,14 +1465,17 @@ class CallCoordinatorTest {
         }
 
     @Test
-    fun `the media rule is for private calls only, and yields to a roster row still in the call`() {
+    fun `the media rule covers groups too, and yields to a roster row still in the call`() {
         val them = CallParticipant(userId = "them", status = CallStatus.Caller)
-        assertTrue(privateCallDeserted(CallMode.Private, true, 0, listOf(them), "me"))
-        assertFalse(privateCallDeserted(CallMode.Group, true, 0, listOf(them), "me"))
-        assertFalse(privateCallDeserted(CallMode.Private, false, 0, listOf(them), "me"))
-        assertFalse(privateCallDeserted(CallMode.Private, true, 1, listOf(them), "me"))
+        assertTrue(callDeserted(true, 0, listOf(them), "me"))
+        assertFalse(callDeserted(false, 0, listOf(them), "me"))
+        assertFalse(callDeserted(true, 1, listOf(them), "me"))
         val stillIn = CallParticipant(userId = "them", status = CallStatus.InCall)
-        assertFalse(privateCallDeserted(CallMode.Private, true, 0, listOf(stillIn), "me"))
+        assertFalse(callDeserted(true, 0, listOf(stillIn), "me"))
+        // A group whose last talker left, with one invite still unanswered.
+        val ringing = CallParticipant(userId = "late", status = CallStatus.Ringing)
+        val gone = CallParticipant(userId = "them", status = CallStatus.Left)
+        assertTrue(callDeserted(true, 0, listOf(gone, ringing), "me"))
     }
 
     @Test

@@ -164,6 +164,29 @@ class CallWireTest {
     }
 
     @Test
+    fun `the spellings the SFU and the phones use for a departure are read as one`() {
+        assertEquals(CallStatus.Left, CallStatus.ofWire("left"))
+        assertEquals(CallStatus.Left, CallStatus.ofWire("leave"))
+        assertEquals(CallStatus.Left, CallStatus.ofWire("cancelled"))
+        assertEquals(CallStatus.Declined, CallStatus.ofWire("busy"))
+        assertEquals(CallStatus.NotAnswered, CallStatus.ofWire("missed"))
+        assertEquals(CallStatus.Ringing, CallStatus.ofWire("requested"))
+    }
+
+    @Test
+    fun `a status event that is not a status moves nobody`() {
+        // Line 1 carries mic, camera and hand flips on the same event: read as
+        // Ringing, a person mid-call went back on the ring every time.
+        listOf("audio_mute", "video_unmute", "hand_raise", "", "something_new").forEach { word ->
+            assertNull(readStatusChange(parse("""{"roomId":"r","userId":"u","status":"$word"}""")), word)
+        }
+        assertEquals(
+            CallStatus.Left,
+            readStatusChange(parse("""{"roomId":"r","userId":"u","status":"left"}"""))?.status,
+        )
+    }
+
+    @Test
     fun `status change reads either room key spelling`() {
         val snake = readStatusChange(parse("""{"room_id":"r","user_id":"u","status":"declined"}"""))
         val camel = readStatusChange(parse("""{"roomId":"r","userId":"u","status":"declined"}"""))

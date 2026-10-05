@@ -110,14 +110,18 @@ class FirestoreCallStatusPlane(
                 val deviceId = row.value(FIELD_DEVICE_ID) ?: return@forEach
                 val status = row.value(FIELD_STATUS) ?: return@forEach
                 if (lastStatuses[deviceId] != status) {
-                    emit(
-                        PlaneEvent.UserStatus(
-                            deviceId = deviceId,
-                            userId = row.value(FIELD_USER_ID).orEmpty(),
-                            status = CallStatus.ofWire(status),
-                            updatedFrom = row.value(FIELD_UPDATED_FROM).orEmpty(),
-                        ),
-                    )
+                    // A word this build does not know moves nobody: read as
+                    // Ringing it put a person mid-call back on the ring.
+                    CallStatus.ofWireOrNull(status)?.let { known ->
+                        emit(
+                            PlaneEvent.UserStatus(
+                                deviceId = deviceId,
+                                userId = row.value(FIELD_USER_ID).orEmpty(),
+                                status = known,
+                                updatedFrom = row.value(FIELD_UPDATED_FROM).orEmpty(),
+                            ),
+                        )
+                    }
                     lastStatuses = lastStatuses + (deviceId to status)
                 }
 

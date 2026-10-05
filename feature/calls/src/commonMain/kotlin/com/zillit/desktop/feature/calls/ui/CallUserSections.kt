@@ -49,6 +49,7 @@ internal fun callUserSections(state: CallUiState, query: String): CallUserSectio
             .filter { it.status in DROPPED && it.userId.isNotBlank() && it.userId != selfId }
             .filter { it.userId !in staged && !it.isGuest }
             .distinctBy(CallParticipant::userId)
+            .map { row -> row.copy(name = row.name.ifBlank { state.nameOf(row.userId) }) }
             .filter { matches(it.name, it.designation) }
             .sortedBy { it.name.lowercase() },
         addable = if (!canAdd) {
@@ -66,3 +67,8 @@ internal fun callUserSections(state: CallUiState, query: String): CallUserSectio
 }
 
 private val DROPPED = setOf(CallStatus.Declined, CallStatus.NotAnswered, CallStatus.Left)
+
+/** The name this call knows [userId] by: what it showed them as, else the crew list's. */
+private fun CallUiState.nameOf(userId: String): String =
+    participantNames[userId].orEmpty()
+        .ifBlank { addableCrew.firstOrNull { it.userId == userId }?.name.orEmpty() }

@@ -1,8 +1,10 @@
 package com.zillit.desktop.feature.calls
 
 import com.zillit.desktop.feature.calls.domain.CallMedia
+import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.MediaPeer
 import com.zillit.desktop.feature.calls.ui.CallStageKind
 import com.zillit.desktop.feature.calls.ui.CallUiState
@@ -62,6 +64,20 @@ class CallProjectionTest {
         // browser back to its parking window while the call is still leaving.
         assertTrue(inCall.copy(phase = CallPhase.Ending).videoMounted)
         assertFalse(inCall.copy(phase = CallPhase.Idle).videoMounted)
+    }
+
+    @Test
+    fun `an invitee still ringing is in the users panel but not on the stage`() {
+        val group = audioCall.copy(
+            participants = listOf(
+                CallParticipant(userId = "a", name = "Ann", status = CallStatus.InCall),
+                CallParticipant(userId = "b", name = "Ben", status = CallStatus.Ringing),
+            ),
+        )
+        val state = project(session = group)
+        assertEquals(listOf("Me", "Ann", "Ben"), state.tiles.map { it.name })
+        assertEquals(listOf("Me", "Ann"), state.stageTiles.map { it.name })
+        assertFalse(state.stageJson.contains("Ben"))
     }
 
     @Test

@@ -340,21 +340,21 @@ private fun RosterBadges(tile: CallTile, state: CallUiState?) {
 }
 
 /**
- * Cancel on a Line 3 ring still out; ⋮ on anyone in the room, ourselves
+ * Cancel on a ring still out; ⋮ on anyone in the room, ourselves
  * included — Pin is on every line, and it is the menu's first row.
  */
 @Composable
 private fun RosterActions(tile: CallTile, state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
     when {
-        tile.presence == CallStatus.Ringing && tile.hasLine3Menu(state) -> ZillitText(
+        tile.presence == CallStatus.Ringing && tile.canCancelRing(state) -> ZillitText(
             text = str(S.cancel),
             style = ZillitTheme.typography.labelSmall,
             color = colors.accent,
             modifier = Modifier.clickable { onEvent(CallEvent.CancelInvite(tile.userId)) },
         )
         tile.presence == CallStatus.InCall && tile.userId.isNotBlank() &&
-            (state.tiles.size > 1 || tile.hasLine3Menu(state)) ->
+            (state.stageTiles.size > 1 || tile.hasLine3Menu(state)) ->
             Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleRosterMenu(tile.userId)) }) {
                 ZillitIcon(
                     icon = ZillitIcons.MoreHorizontal,
@@ -396,7 +396,7 @@ private fun RosterMenuItems(tile: CallTile, state: CallUiState, pick: (CallEvent
     val id = tile.userId
     Column(modifier = Modifier.fillMaxWidth()) {
         // Only while there is someone to be pinned above; the web's first row.
-        if (state.tiles.size > 1) {
+        if (state.stageTiles.size > 1) {
             MenuRow(if (tile.key in state.pins) str(S.desktop_board_unpin) else str(S.desktop_board_pin)) {
                 pick(CallEvent.TogglePin(tile.key))
             }
@@ -452,6 +452,19 @@ private fun MenuRow(label: String, danger: Boolean = false, onClick: () -> Unit)
 /** Line 3's per-person verbs apply to somebody else in a LiveKit room — never to ourselves. */
 private fun CallTile.hasLine3Menu(state: CallUiState): Boolean =
     state.session?.provider == CallProvider.LiveKit && !isSelf
+
+/**
+ * Whether this ring may be withdrawn from here: Line 3 by its own rule, the
+ * other lines by anyone who may add people — the web's ✕ on an invited row.
+ */
+private fun CallTile.canCancelRing(state: CallUiState): Boolean {
+    val session = state.session ?: return false
+    return if (session.provider == CallProvider.LiveKit) {
+        hasLine3Menu(state)
+    } else {
+        !isSelf && userId.isNotBlank() && !session.is247Call
+    }
+}
 
 /** "Sahil (you)" — the web's own-row label — or plain "You" when we have no name for ourselves. */
 private val CallTile.selfLabel: String

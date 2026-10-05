@@ -234,6 +234,40 @@ class MediasoupSessionTest {
      * A rejoin changes the device half of a peer id but not the user half, so
      * the same person must keep the same tile rather than appearing as new.
      */
+    /**
+     * 2026-10-05: the SFU's `consumerClosed` for a departed peer's camera came
+     * after its `peerClosed`, reported a camera-off for that uid, and the
+     * reducer re-created the peer that had just left — a stuck face on the
+     * stage, and a room that never read empty.
+     */
+    @Test
+    fun `nothing is said about a peer after it closed`() = runTest(StandardTestDispatcher()) {
+        val events = mutableListOf<CallEngineEvent>()
+        val peer = ProtooPeer(backgroundScope, { })
+        val session = MediasoupSession(
+            backgroundScope, peer, FakeSignalling(), FakePage(),
+            turn = { TurnCredentials(emptyList(), 600) }, emit = { events += it },
+        )
+        session.onPageConsumer("cam-1", "them:phone", "video", share = false)
+        session.onNotification(
+            ProtooMessage.Notification(
+                MediasoupNotification.PEER_CLOSED,
+                buildJsonObject { put("peerId", "them:phone") },
+            ),
+        )
+        events.clear()
+
+        session.onNotification(
+            ProtooMessage.Notification(
+                MediasoupNotification.CONSUMER_CLOSED,
+                buildJsonObject { put("consumerId", "cam-1") },
+            ),
+        )
+        runCurrent()
+
+        assertTrue(events.isEmpty(), "got $events")
+    }
+
     @Test
     fun `a peer keeps its uid across a rejoin`() = runTest(StandardTestDispatcher()) {
         val events = mutableListOf<CallEngineEvent>()

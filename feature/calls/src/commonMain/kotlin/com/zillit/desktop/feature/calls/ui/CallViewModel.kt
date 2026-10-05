@@ -110,7 +110,26 @@ data class CallUiState(
      * immediately rather than after the slowest capture.
      */
     val sharePicker: SharePicker? = null,
+    /** Everyone on the roster, invitees still ringing included — the users panel's list. */
     val tiles: List<CallTile> = emptyList(),
+    /**
+     * The faces the stage draws: [tiles] without anybody still ringing.
+     *
+     * An unanswered invite is not a person in the room. Drawn as a grey
+     * "Ringing" tile it read as somebody there, and a row the server left
+     * reading `ringing` after its owner walked out sat on the stage for the
+     * rest of the call. Ringing invitees live in the users panel instead.
+     */
+    val stageTiles: List<CallTile> = emptyList(),
+    /**
+     * User id → the name this call has shown for them, kept for the whole call.
+     *
+     * Line 1 rows arrive nameless; the tiles name them from the crew directory.
+     * Once somebody left, the users panel read the bare row and listed them
+     * under Left / Declined as a face with no name. This keeps the name they
+     * were shown under.
+     */
+    val participantNames: Map<String, String> = emptyMap(),
     /** The page's copy of the model. Empty when there is nothing to push. */
     val stageJson: String = "",
     val expanded: Boolean = true,
@@ -905,6 +924,8 @@ class CallViewModel(
         session = null,
         media = CallMedia(),
         tiles = emptyList(),
+        stageTiles = emptyList(),
+        participantNames = emptyMap(),
         stageJson = "",
         expanded = true,
         pipOpen = false,

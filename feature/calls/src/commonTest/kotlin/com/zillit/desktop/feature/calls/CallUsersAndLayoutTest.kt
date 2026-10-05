@@ -87,6 +87,23 @@ class CallUsersAndLayoutTest {
     }
 
     @Test
+    fun `someone who left keeps the name the call showed them under`() {
+        // Line 1 rows carry no name: the tiles name them from the directory.
+        val call = CallSession(
+            callUuid = "c",
+            selfUserId = "me",
+            participants = listOf(CallParticipant(userId = "sk", status = CallStatus.InCall)),
+        )
+        val directory = mapOf("sk" to com.zillit.desktop.feature.calls.domain.CallDirectoryEntry("Sahil Kashyap"))
+        val inCall = projectCallUi(CallUiState(), call, CallMedia(), false, false, "Me", directory::get)
+        // They hang up, and the directory has nothing for them any more.
+        val left = call.copy(participants = listOf(CallParticipant(userId = "sk", status = CallStatus.Left)))
+        val after = projectCallUi(inCall, left, CallMedia(), false, false, "Me")
+
+        assertEquals(listOf("Sahil Kashyap"), callUserSections(after, query = "").dropped.map { it.name })
+    }
+
+    @Test
     fun `a support call offers nobody to add`() {
         val support = state.copy(session = session.copy(is247Call = true))
         val sections = callUserSections(support, query = "")

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.calls.data
 
+import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.domain.CallParticipant
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallStatus
 
 /**
@@ -70,3 +72,43 @@ fun List<CallParticipant>.healedFromPlane(
     if (row.numericUid == 0 && agoraUid != 0) healed = healed.copy(agoraUid = agoraUid.toString())
     healed
 }
+
+/**
+ * Rows still waiting on an answer whose owner's media is already live, moved
+ * to `in_call` — Android's rule (`buildInCallParticipants`): anyone the engine
+ * sees is in the call, whatever their row says.
+ *
+ * Line 1 tells nobody when someone added mid-call answers: no `call:update`,
+ * and Android writes no Firestore row for it. Their row sat at Ringing, the
+ * 60 s expiry then marked it No answer, and their live stream — now claimed
+ * by no row on the stage — was drawn as a nameless "Guest" (2026-10-05).
+ *
+ * Only Ringing and NotAnswered move. A Left or Declined row whose stream has
+ * not closed yet is a departure the media has not caught up with; reading it
+ * back as in_call would keep an empty room open.
+ *
+ * Returns the same list when nothing moved.
+ */
+fun List<CallParticipant>.answeredByMedia(
+    provider: CallProvider,
+    liveUids: Set<Int>,
+    selfUserId: String,
+): List<CallParticipant> {
+    if (liveUids.isEmpty() || none { it.status in AWAITING_ANSWER }) return this
+    val hashed = provider == CallProvider.Mediasoup || provider == CallProvider.LiveKit
+    var moved = false
+    val next = map { row ->
+        val uid = if (hashed) mediasoupUidOf(row.userId) else row.numericUid
+        val live = row.status in AWAITING_ANSWER && row.userId.isNotBlank() &&
+            row.userId != selfUserId && uid != 0 && uid in liveUids
+        if (live) {
+            moved = true
+            row.copy(status = CallStatus.InCall)
+        } else {
+            row
+        }
+    }
+    return if (moved) next else this
+}
+
+private val AWAITING_ANSWER = setOf(CallStatus.Ringing, CallStatus.NotAnswered)

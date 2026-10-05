@@ -86,7 +86,7 @@ fun CallPill(
                     .onGloballyPositioned(onSlot),
                 contentAlignment = Alignment.Center,
             ) {
-                if (!showsVideo) FaceStack(state.tiles)
+                if (!showsVideo) FaceStack(state.stageTiles)
             }
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(

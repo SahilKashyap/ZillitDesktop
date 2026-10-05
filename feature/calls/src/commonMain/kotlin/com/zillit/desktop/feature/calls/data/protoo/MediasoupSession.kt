@@ -299,11 +299,24 @@ class MediasoupSession(
     suspend fun onNotification(note: ProtooMessage.Notification) {
         when (note.method) {
             MediasoupNotification.NEW_PEER -> note.text("id", "peerId")?.let {
+                // The peer id is `user:device`; its user half is what a roster
+                // row must carry for the stream to land on that person's tile.
+                ZillitLog.i(TAG) { "peer joined $it uid=${uidOf(it)}" }
                 emitForPeer(it) { uid -> CallEngineEvent.PeerJoined(uid, it) }
             }
 
-            MediasoupNotification.PEER_CLOSED -> note.peerId()?.let {
-                emitForPeer(it) { uid -> CallEngineEvent.PeerLeft(uid) }
+            MediasoupNotification.PEER_CLOSED -> note.peerId()?.let { closed ->
+                ZillitLog.i(TAG) { "peer closed $closed uid=${uidOf(closed)}" }
+                // Their consumers are gone with them. The SFU's `consumerClosed`
+                // for each can arrive AFTER this, and finding the consumer still
+                // registered it reported a camera-off for the uid — which
+                // re-created the peer that had just left: a stuck face, and a
+                // room that never read empty.
+                consumersById.entries.filter { it.value.peerId == closed }.forEach { (id, _) ->
+                    page.closeConsumer(id)
+                    consumersById.remove(id)
+                }
+                emitForPeer(closed) { uid -> CallEngineEvent.PeerLeft(uid) }
             }
 
             MediasoupNotification.ACTIVE_SPEAKER -> note.peerId()?.let {
@@ -363,6 +376,11 @@ class MediasoupSession(
      */
     suspend fun onPageConsumer(consumerId: String, peerId: String, kind: String, share: Boolean) {
         if (consumerId.isBlank() || peerId.isBlank()) return
+        // Peers already in the room when we joined never send `newPeer`; their
+        // first consumer is the first this side hears of them.
+        if (consumersById.values.none { it.peerId == peerId }) {
+            ZillitLog.i(TAG) { "first $kind from $peerId uid=${uidOf(peerId)}" }
+        }
         consumersById[consumerId] = ConsumerInfo(peerId, kind, share)
         emitForPeer(peerId) { uid -> CallEngineEvent.PeerJoined(uid, peerId) }
         when {
