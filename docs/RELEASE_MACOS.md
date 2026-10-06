@@ -42,6 +42,26 @@ credentials in seconds, before spending a build on them:
 xcrun notarytool history --apple-id <id> --team-id <TEAMID> --password <pw>
 ```
 
+**A second Mac.** Every Mac that builds releases needs the same three things,
+and none of them travel with the repo:
+
+- *The certificate with its private key.* Either export it from a Mac that
+  already signs — Keychain Access ▸ My Certificates ▸ *Developer ID Application:
+  Zillit LLC* (expand it: the private key must be under it) ▸ Export ▸ `.p12`
+  with a password — and import that on the new Mac; or have the Account Holder
+  issue a second Developer ID Application certificate from a CSR made on the new
+  Mac. Either way it must be the **same team**: the in-app updater refuses a
+  build signed by a different team than the one installed.
+- *Notarization credentials* — the four `~/.gradle/gradle.properties` lines
+  above, with an app-specific password of that Mac's own (a separate one per
+  person can be revoked without breaking anyone else's builds).
+- *`~/.zillit/zillit.properties`* — the same file, if the Mac builds the DMGs
+  we hand out (below). It carries the AES header keys: move it the way you
+  would move a password, not over chat or email.
+
+`scripts/release-dmg.sh <version> --check` then says whether the Mac is ready,
+without building anything.
+
 ## Building
 
 **Version first.** The build number lives in one place — `zillit.version` in
@@ -75,6 +95,29 @@ throws, and Gradle cannot serialise the task. `packageDmg` is unaffected.
 A bundled-config build carries the AES header key in plain text inside the app.
 That is the accepted trade for a build a tester can install with nothing to copy
 — keep those artifacts on internal distribution only.
+
+**What we hand out** is the production build *with* the config bundled: a
+plain build starts only where the person already has `~/.zillit/zillit.properties`,
+which nobody outside the team does. That is at odds with the *internal
+distribution only* above, and it is a decision to keep making on purpose, not
+by default. `scripts/release-dmg.sh` is that recipe, so it comes out the same on
+whichever Mac runs it, and it bundles only the `PROD_` lines: a production app
+reads nothing else, and the staging and QA header keys stay off users' machines.
+
+```bash
+scripts/release-dmg.sh 1.1.1 --check      # is this Mac set up? builds nothing
+scripts/release-dmg.sh 1.1.1              # build, notarize, verify, copy to ~/Downloads
+scripts/release-dmg.sh 1.1.1 --plain      # the plain production build above instead
+scripts/release-dmg.sh 1.1.1 --verify <file.dmg>   # check a DMG without building
+```
+
+It retries only what fails on Apple's side (the notary upload timing out, the
+timestamp server not answering). It copies a DMG only once every check in
+*Verifying* passes, plus the ones an install makes before updating: Zillit
+LLC's team, Apple Silicon, the bundle id, and the version the update check
+reads. It then prints the SHA-256 and the `_mac` keys to set. Two Macs building
+the same commit with different flags ship different apps; one script avoids
+that.
 
 **Build variants.** `-PzillitEnv` also picks the DMG's **variant** (override on
 its own with `-PzillitVariant=qa`/`develop` if it should ever need to differ
