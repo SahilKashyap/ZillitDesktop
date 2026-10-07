@@ -15,15 +15,19 @@ import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
+import com.zillit.desktop.feature.settings.admin.domain.CrewProfileChange
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
+import com.zillit.desktop.feature.settings.admin.domain.RightsSection
+import com.zillit.desktop.feature.settings.admin.domain.RightsWrite
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
+import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
@@ -133,16 +137,60 @@ class AdminRepositoryImpl(
 
     override suspend fun setCrewStatus(
         userId: String,
-        deviceId: String,
+        deviceId: String?,
         status: CrewStatus,
     ): ZillitResult<Unit> = post(
         endpoints.crewStatus,
         buildJsonObject {
+            if (deviceId != null) put("device_id", deviceId)
             put("user_id", userId)
-            put("device_id", deviceId)
             put("status", status.wire)
         },
     )
+
+    /** A real boolean for `keep_name_private` on this route, as the web sends it. */
+    override suspend fun updateCrewProfile(change: CrewProfileChange): ZillitResult<Unit> =
+        put(
+            endpoints.crewProfile,
+            buildJsonObject {
+                put("user_id", change.userId)
+                put("department_id", change.departmentId)
+                put("designation_id", change.designationId)
+                change.joinUnitId?.let { put("join_unit_id", it) }
+                put("keep_name_private", change.keepNamePrivate)
+            },
+        )
+
+    override suspend fun rights(userId: String): ZillitResult<List<ToolRights>> =
+        get(endpoints.userAccess(userId), ListSerializer(ToolAccessDto.serializer()))
+            .map { rows -> rows.flatMap { it.toDomain() } }
+
+    override suspend fun writeRight(
+        userId: String,
+        section: RightsSection,
+        write: RightsWrite,
+    ): ZillitResult<Unit> = post(
+        endpoints.writeAccess(section.wire),
+        buildJsonObject {
+            put("unit_id", write.unitId)
+            put("user_id", userId)
+            put("access_type", write.access.wire)
+            put("enable", write.enable)
+        },
+    )
+
+    override suspend fun chatAllowList(userId: String): ZillitResult<List<String>> =
+        get(endpoints.chatAllowList(userId), ChatAllowListDto.serializer())
+            .map { list -> list.entries.mapNotNull { it.toUserId?.takeIf(String::isNotBlank) } }
+
+    override suspend fun setChatAllowList(userId: String, allowed: List<String>): ZillitResult<Unit> =
+        put(
+            endpoints.chatAllow,
+            buildJsonObject {
+                put("from_user_id", userId)
+                put("to_user_ids", allowed.toJsonArray())
+            },
+        )
 
     // -- pre-approved crew ----------------------------------------------------------
 

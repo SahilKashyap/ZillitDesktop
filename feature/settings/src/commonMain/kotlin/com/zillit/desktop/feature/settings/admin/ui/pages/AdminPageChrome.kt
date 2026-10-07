@@ -68,6 +68,8 @@ fun AdminPage(
      * rather than degrading. Pages that stack sections leave this false.
      */
     bodyScrolls: Boolean = false,
+    /** How wide the page may grow — a wide table, like User Management's, wants more than a form. */
+    maxWidth: Dp = PAGE_WIDTH,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -76,7 +78,7 @@ fun AdminPage(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(
-                modifier = Modifier.widthIn(max = PAGE_WIDTH).fillMaxSize(),
+                modifier = Modifier.widthIn(max = maxWidth).fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
                 Header(title, description, state, onBack, action)

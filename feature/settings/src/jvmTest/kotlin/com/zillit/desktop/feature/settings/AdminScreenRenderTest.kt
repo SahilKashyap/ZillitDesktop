@@ -20,9 +20,11 @@ import com.zillit.desktop.feature.settings.admin.domain.JobTitle
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
+import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
+import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
@@ -221,12 +223,17 @@ class AdminScreenRenderTest {
         }
     }
 
+    /** The web's columns, and a switched-off person still listed so Active can bring them back. */
     @Test
-    fun `the crew page marks admins and people who are off the production`() {
+    fun `user management draws the web's columns`() {
         render(AdminDestination.Crew) {
+            // ZillitDataTable upper-cases its headings.
+            onNodeWithText("PROFILE PICTURE").assertExists()
+            onNodeWithText("USER NAME").assertExists()
+            onNodeWithText("EDIT USER DETAILS").assertExists()
+            onNodeWithText("POSTING RIGHTS").assertExists()
             onNodeWithText("Ada Lovelace").assertExists()
-            onNodeWithText("Admin").assertExists()
-            onNodeWithText("Off the project").assertExists()
+            onNodeWithText("Grace Hopper").assertExists()
         }
     }
 
@@ -331,6 +338,21 @@ class AdminScreenRenderTest {
                 CompanyDetails(name = "Zillit Films", customFields = listOf(CompanyField("VAT", "GB1"))),
             ),
             AdminDestination.ProductionName to AdminForm.ProductionName("Feature One"),
+            AdminDestination.Crew to AdminForm.EditCrew(
+                userId = "user-1",
+                name = "Ada Lovelace",
+                departmentId = "dept-1",
+                designationId = "role-1",
+            ),
+            AdminDestination.Crew to AdminForm.PostingRights(
+                userId = "user-1",
+                isLoading = false,
+                rows = listOf(
+                    ToolRights("t1", "drive_tool", "Drive", RightsSection.Home, canView = true, viewUpdatable = true),
+                ),
+            ),
+            AdminDestination.Crew to
+                AdminForm.AllowChat(userId = "user-1", selected = setOf("user-3"), isLoading = false),
         )
 
         forms.forEach { (destination, form) ->
@@ -392,8 +414,7 @@ class AdminScreenRenderTest {
             AdminConfirmation.RemoveToolGroup("g2", "Second unit"),
             AdminConfirmation.RemoveUnit(UnitKind.Home, "unit-2", "Second unit"),
             AdminConfirmation.RemoveSos("sos-2", "St Mary's"),
-            AdminConfirmation.RemoveFromCrew("user-2", "device-2", "Grace Hopper"),
-            AdminConfirmation.GrantAdmin("user-3", "Katherine Johnson"),
+            AdminConfirmation.GrantAdmin("user-3", "Katherine Johnson", designation = "Driver", department = "Art"),
             AdminConfirmation.ClearWatermark(),
             AdminConfirmation.ClearCompanyLogo(),
             AdminConfirmation.DeleteProduction(48, "Feature One"),

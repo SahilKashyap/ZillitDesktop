@@ -3287,6 +3287,8 @@ private fun rememberAppViewModels(
                     // Crew, departments and the join queues move under a second
                     // coordinator; the page being looked at should say so.
                     events = graph.socketEvents,
+                    // User Management leaves the reader off their own list, as the web does.
+                    selfUserId = { graph.projectContext?.context?.value?.profile?.userId },
                 )
             },
             account = ready?.let(::buildAccount),

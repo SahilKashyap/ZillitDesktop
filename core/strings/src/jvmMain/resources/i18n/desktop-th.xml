@@ -8375,4 +8375,15 @@
     <string name="desktop_pg_nothing_to_download">ไม่มีข้อมูลให้ดาวน์โหลด</string>
     <string name="desktop_pg_click_here">คลิกที่นี่</string>
     <string name="desktop_ft_watch_video">ดูวิดีโอ</string>
+    <string name="desktop_um_confirm_admin_rights">ยืนยันสิทธิ์ผู้ดูแลระบบ</string>
+    <string name="desktop_um_select_department_required">กรุณาเลือกแผนก</string>
+    <string name="desktop_um_select_designation_required">กรุณาเลือกตำแหน่ง</string>
+    <string name="desktop_um_updated">อัปเดตสำเร็จ</string>
+    <string name="desktop_um_profile_picture">รูปโปรไฟล์</string>
+    <string name="desktop_um_edit_user_details">แก้ไขรายละเอียดผู้ใช้</string>
+    <string name="desktop_um_downloading_rights">สิทธิ์ในการดาวน์โหลด</string>
+    <string name="desktop_um_change_department">เปลี่ยนแผนก</string>
+    <string name="desktop_um_change_designation">เปลี่ยนตำแหน่ง</string>
+    <string name="desktop_um_change_unit">เปลี่ยนหน่วยถ่ายทำ</string>
+    <string name="desktop_um_edit_user_info">แก้ไขข้อมูลผู้ใช้</string>
 </resources>

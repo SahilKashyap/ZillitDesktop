@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">点击此处</string>
     <string name="desktop_ft_watch_video">观看视频</string>
     <string name="desktop_ft_no_tools">没有工具数据</string>
+    <string name="desktop_um_confirm_admin_rights">确认管理员权限</string>
+    <string name="desktop_um_select_department_required">请选择部门</string>
+    <string name="desktop_um_select_designation_required">请选择职务</string>
+    <string name="desktop_um_updated">更新成功</string>
+    <string name="desktop_um_profile_picture">头像</string>
+    <string name="desktop_um_edit_user_details">编辑用户详情</string>
+    <string name="desktop_um_downloading_rights">下载权限</string>
+    <string name="desktop_um_change_department">更改部门</string>
+    <string name="desktop_um_change_designation">更改职务</string>
+    <string name="desktop_um_change_unit">更改摄制组</string>
+    <string name="desktop_um_edit_user_info">编辑用户信息</string>
 </resources>

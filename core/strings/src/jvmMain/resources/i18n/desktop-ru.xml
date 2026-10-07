@@ -8375,4 +8375,15 @@
     <string name="desktop_pg_nothing_to_download">Нет данных для загрузки</string>
     <string name="desktop_pg_click_here">Нажмите здесь</string>
     <string name="desktop_ft_watch_video">смотреть видео</string>
+    <string name="desktop_um_confirm_admin_rights">Подтвердить права администратора</string>
+    <string name="desktop_um_select_department_required">Выберите отдел</string>
+    <string name="desktop_um_select_designation_required">Выберите должность</string>
+    <string name="desktop_um_updated">Успешно обновлено</string>
+    <string name="desktop_um_profile_picture">Фото профиля</string>
+    <string name="desktop_um_edit_user_details">Редактировать данные пользователя</string>
+    <string name="desktop_um_downloading_rights">Права на скачивание</string>
+    <string name="desktop_um_change_department">Сменить отдел</string>
+    <string name="desktop_um_change_designation">Сменить должность</string>
+    <string name="desktop_um_change_unit">Сменить подразделение</string>
+    <string name="desktop_um_edit_user_info">Редактировать сведения о пользователе</string>
 </resources>

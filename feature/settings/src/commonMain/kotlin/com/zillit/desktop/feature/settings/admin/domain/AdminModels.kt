@@ -78,19 +78,34 @@ data class CrewMember(
     val deviceId: String? = null,
     val status: CrewStatus = CrewStatus.Accepted,
     val keepNamePrivate: Boolean = false,
+    /** The shooting unit they joined — a name on `project/users`, matched to `join/unit` by name. */
+    val joinUnitName: String? = null,
 ) {
     val isActive: Boolean get() = status == CrewStatus.Accepted
 
-    /** Both switches are refused on someone already off the production. */
-    val isActionable: Boolean get() = isActive && deviceId != null
+    /**
+     * Someone User Management lists at all.
+     *
+     * The web drops people who left, are still waiting to be let in, or were
+     * turned away (`AllUserInfo.jsx`, ZL-15269) — they have their own queues,
+     * and a switch beside them would act on a membership that does not exist.
+     * Someone *removed* stays: the Active switch is how they are put back.
+     */
+    val isListed: Boolean
+        get() = status != CrewStatus.Left && status != CrewStatus.Pending && status != CrewStatus.Rejected
 
-    fun matches(query: String): Boolean {
+    /** Taken off the production — every action but Active is refused, as the web warns. */
+    val isRemoved: Boolean get() = status == CrewStatus.Removed
+
+    /**
+     * The web's search: name, or the designation **as shown** — the key is
+     * matched through [label] so a search in the reader's language finds it.
+     */
+    fun matches(query: String, label: (String) -> String = { it }): Boolean {
         val needle = query.trim()
         return needle.isEmpty() ||
             fullName.contains(needle, ignoreCase = true) ||
-            email.orEmpty().contains(needle, ignoreCase = true) ||
-            designation.orEmpty().contains(needle, ignoreCase = true) ||
-            department.orEmpty().contains(needle, ignoreCase = true)
+            designation?.let(label).orEmpty().contains(needle, ignoreCase = true)
     }
 }
 
@@ -105,6 +120,8 @@ enum class CrewStatus(val wire: String) {
     Accepted("accepted"),
     Removed("removed"),
     Pending("pending"),
+    Left("left"),
+    Rejected("rejected"),
     Unknown(""),
     ;
 
@@ -328,6 +345,8 @@ data class AdminUnit(
     val id: String,
     val name: String,
     val kind: UnitKind,
+    /** `home_unit_calendar` and friends — the web keeps those out of the Change Unit picker. */
+    val identifier: String? = null,
     val enabled: Boolean = true,
     /**
      * Some units are the production's own and cannot be removed or renamed.
@@ -378,5 +397,121 @@ data class DeletionSchedule(
     companion object {
         /** What the confirmation offers, matching the phone clients' alert. */
         val OFFERED_HOURS = listOf(12, 24, 48)
+    }
+}
+
+/**
+ * An admin's edit to someone else's placement — User Management's Change
+ * Profile dialog, `PUT user/profile` with the person named by `user_id`.
+ *
+ * Ids rather than names on the wire, though the web *picks* by name: it looks
+ * the names back up in the department tree and the unit list before sending.
+ */
+data class CrewProfileChange(
+    val userId: String,
+    val departmentId: String,
+    val designationId: String,
+    /** Null on a corporate or event production, which has no unit picker. */
+    val joinUnitId: String?,
+    val keepNamePrivate: Boolean,
+)
+
+/** Which list of the Posting Rights dialog a row sits in — and the write route's path segment. */
+enum class RightsSection(val wire: String, private val labelKey: String) {
+    Home("home", S.home),
+    Tools("tools", S.tools),
+    ;
+
+    val label: String get() = str(labelKey)
+}
+
+/** The three rights one switch each grants. `access_type` on the wire. */
+enum class AccessType(val wire: String) {
+    View("view"),
+    Post("post"),
+    Download("download"),
+}
+
+/**
+ * One person's rights over one tool, as `GET user/access/{userId}` answers.
+ *
+ * The web's per-person Posting Rights dialog (`AlluserPostingRights.jsx`), not
+ * the Film Tools grid: one person, every tool, Home and Tools as two lists.
+ * A switch is offered only where the server's `*_updatable` says so — the web
+ * disables on a bare `!record.posting_updatable`, so absence locks too.
+ */
+data class ToolRights(
+    val unitId: String,
+    val identifier: String,
+    /** A translation key; the dialog sorts by its label. */
+    val name: String,
+    val section: RightsSection,
+    val canView: Boolean = false,
+    val canPost: Boolean = false,
+    val canDownload: Boolean = false,
+    val viewUpdatable: Boolean = false,
+    val postUpdatable: Boolean = false,
+    val downloadUpdatable: Boolean = false,
+) {
+    fun granted(access: AccessType): Boolean = when (access) {
+        AccessType.View -> canView
+        AccessType.Post -> canPost
+        AccessType.Download -> canDownload
+    }
+
+    fun updatable(access: AccessType): Boolean = when (access) {
+        AccessType.View -> viewUpdatable
+        AccessType.Post -> postUpdatable
+        AccessType.Download -> downloadUpdatable
+    }
+
+    fun with(access: AccessType, on: Boolean): ToolRights = when (access) {
+        AccessType.View -> copy(canView = on)
+        AccessType.Post -> copy(canPost = on)
+        AccessType.Download -> copy(canDownload = on)
+    }
+
+    companion object {
+        /** Its view and post switches drag the department budget's along — see [rightsCascade]. */
+        const val MAIN_BUDGET = "main_budget_tool"
+        const val DEPARTMENT_BUDGET = "department_budget_tool"
+    }
+}
+
+/** One write of a right — `POST permissions/users/{section}/access`. */
+data class RightsWrite(val unitId: String, val access: AccessType, val enable: Boolean)
+
+/**
+ * Every write one switch in the Posting Rights dialog sends, in the web's order.
+ *
+ * The server does not cascade on this route, so `AlluserPostingRights.jsx`
+ * chains the consequences itself, and this follows it call for call:
+ * - **Main Budget view or post** goes first, then the Department Budget's same
+ *   right — only when switching *on* and the department budget lacks it.
+ * - **Download** is the one write and nothing else.
+ * - **Post on** writes post, then view if it was off; **post off** writes only post.
+ * - **View off** writes view, then download and post off if they were on.
+ * - **View on** is the one write.
+ */
+fun rightsCascade(row: ToolRights, access: AccessType, enable: Boolean, siblings: List<ToolRights>): List<RightsWrite> {
+    val own = RightsWrite(row.unitId, access, enable)
+    // View in either list; post only on the Tools list, as the web branches.
+    val budgetFollows = access == AccessType.View || (access == AccessType.Post && row.section == RightsSection.Tools)
+    if (row.identifier == ToolRights.MAIN_BUDGET && budgetFollows) {
+        val department = siblings.firstOrNull { it.identifier == ToolRights.DEPARTMENT_BUDGET }
+        val follow = department?.takeIf { enable && !it.granted(access) }
+            ?.let { RightsWrite(it.unitId, access, true) }
+        return listOfNotNull(own, follow)
+    }
+    return when {
+        access == AccessType.Download -> listOf(own)
+        access == AccessType.Post && enable && !row.canView ->
+            listOf(own, RightsWrite(row.unitId, AccessType.View, true))
+        access == AccessType.View && !enable -> listOfNotNull(
+            own,
+            RightsWrite(row.unitId, AccessType.Download, false).takeIf { row.canDownload },
+            RightsWrite(row.unitId, AccessType.Post, false).takeIf { row.canPost },
+        )
+        else -> listOf(own)
     }
 }

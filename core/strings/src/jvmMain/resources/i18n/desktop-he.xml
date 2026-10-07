@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">לחץ כאן</string>
     <string name="desktop_ft_watch_video">צפה בסרטון</string>
     <string name="desktop_ft_no_tools">אין נתונים על כלים</string>
+    <string name="desktop_um_confirm_admin_rights">אישור הרשאות מנהל</string>
+    <string name="desktop_um_select_department_required">יש לבחור מחלקה</string>
+    <string name="desktop_um_select_designation_required">יש לבחור תפקיד</string>
+    <string name="desktop_um_updated">עודכן בהצלחה</string>
+    <string name="desktop_um_profile_picture">תמונת פרופיל</string>
+    <string name="desktop_um_edit_user_details">עריכת פרטי משתמש</string>
+    <string name="desktop_um_downloading_rights">הרשאות הורדה</string>
+    <string name="desktop_um_change_department">שינוי מחלקה</string>
+    <string name="desktop_um_change_designation">שינוי תפקיד</string>
+    <string name="desktop_um_change_unit">שינוי יחידה</string>
+    <string name="desktop_um_edit_user_info">עריכת פרטי משתמש</string>
 </resources>

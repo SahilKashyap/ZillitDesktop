@@ -1,8 +1,10 @@
 package com.zillit.desktop.feature.settings.admin.ui
 
+import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
+import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 
 /**
  * Everything an administrator can do on these pages.
@@ -73,8 +75,26 @@ sealed interface AdminEvent {
     /** Grants or revokes administering the production. Granting asks first. */
     data class AdminAccessChanged(val userId: String, val isAdmin: Boolean) : AdminEvent
 
-    /** Takes someone off the production, or puts them back. Removing asks first. */
+    /** Takes someone off the production, or puts them back — at once, as the web's switch does. */
     data class CrewActiveChanged(val userId: String, val isActive: Boolean) : AdminEvent
+
+    // -- user management ------------------------------------------------------
+
+    /** Opens Change Profile; [withUnit] is false on a production with no shooting units. */
+    data class OpenEditCrew(val userId: String, val withUnit: Boolean) : AdminEvent
+
+    data class EditCrewChanged(val draft: AdminForm.EditCrew) : AdminEvent
+
+    data class OpenPostingRights(val userId: String) : AdminEvent
+
+    /** The dialog's Home / Tools picker. */
+    data class RightsSectionChanged(val section: RightsSection) : AdminEvent
+
+    data class RightToggled(val unitId: String, val access: AccessType, val enable: Boolean) : AdminEvent
+
+    data class OpenAllowChat(val userId: String) : AdminEvent
+
+    data class AllowChatChanged(val draft: AdminForm.AllowChat) : AdminEvent
 
     /**
      * Ticks a tool on the availability page.

@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Klikněte zde</string>
     <string name="desktop_ft_watch_video">podívejte se na video</string>
     <string name="desktop_ft_no_tools">Žádná data nástrojů</string>
+    <string name="desktop_um_confirm_admin_rights">Potvrdit práva správce</string>
+    <string name="desktop_um_select_department_required">Vyberte prosím oddělení</string>
+    <string name="desktop_um_select_designation_required">Vyberte prosím pozici</string>
+    <string name="desktop_um_updated">Úspěšně aktualizováno</string>
+    <string name="desktop_um_profile_picture">Profilový obrázek</string>
+    <string name="desktop_um_edit_user_details">Upravit údaje uživatele</string>
+    <string name="desktop_um_downloading_rights">Práva ke stahování</string>
+    <string name="desktop_um_change_department">Změnit oddělení</string>
+    <string name="desktop_um_change_designation">Změnit pozici</string>
+    <string name="desktop_um_change_unit">Změnit jednotku</string>
+    <string name="desktop_um_edit_user_info">Upravit informace o uživateli</string>
 </resources>

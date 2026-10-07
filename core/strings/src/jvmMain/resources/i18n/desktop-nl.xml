@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Klik Hier</string>
     <string name="desktop_ft_watch_video">bekijk video</string>
     <string name="desktop_ft_no_tools">Geen Tools Beschikbaar</string>
+    <string name="desktop_um_confirm_admin_rights">Beheerdersrechten bevestigen</string>
+    <string name="desktop_um_select_department_required">Selecteer een afdeling</string>
+    <string name="desktop_um_select_designation_required">Selecteer een functie</string>
+    <string name="desktop_um_updated">Succesvol bijgewerkt</string>
+    <string name="desktop_um_profile_picture">Profielfoto</string>
+    <string name="desktop_um_edit_user_details">Gebruikersgegevens bewerken</string>
+    <string name="desktop_um_downloading_rights">Downloadrechten</string>
+    <string name="desktop_um_change_department">Afdeling wijzigen</string>
+    <string name="desktop_um_change_designation">Functie wijzigen</string>
+    <string name="desktop_um_change_unit">Unit wijzigen</string>
+    <string name="desktop_um_edit_user_info">Gebruikersinfo bewerken</string>
 </resources>

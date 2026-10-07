@@ -12311,4 +12311,15 @@
     <string name="desktop_ft_sub_location">Locations, transport &amp; logistics</string>
     <string name="desktop_ft_sub_productions">Documents, distribution &amp; script</string>
     <string name="desktop_ft_sub_admin">Access, signing &amp; storage</string>
+    <string name="desktop_um_confirm_admin_rights">Confirm Admin Rights</string>
+    <string name="desktop_um_select_department_required">Please select department</string>
+    <string name="desktop_um_select_designation_required">Please select a designation</string>
+    <string name="desktop_um_updated">Updated successfully</string>
+    <string name="desktop_um_profile_picture">Profile Picture</string>
+    <string name="desktop_um_edit_user_details">Edit User Details</string>
+    <string name="desktop_um_downloading_rights">Downloading rights</string>
+    <string name="desktop_um_change_department">Change Department</string>
+    <string name="desktop_um_change_designation">Change Designation</string>
+    <string name="desktop_um_change_unit">Change Unit</string>
+    <string name="desktop_um_edit_user_info">Edit User Info</string>
 </resources>

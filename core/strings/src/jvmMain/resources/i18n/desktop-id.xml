@@ -8375,4 +8375,15 @@
     <string name="desktop_pg_nothing_to_download">Tidak ada data untuk diunduh</string>
     <string name="desktop_pg_click_here">Klik di sini</string>
     <string name="desktop_ft_watch_video">tonton video</string>
+    <string name="desktop_um_confirm_admin_rights">Konfirmasi Hak Admin</string>
+    <string name="desktop_um_select_department_required">Silakan pilih departemen</string>
+    <string name="desktop_um_select_designation_required">Silakan pilih jabatan</string>
+    <string name="desktop_um_updated">Berhasil diperbarui</string>
+    <string name="desktop_um_profile_picture">Foto Profil</string>
+    <string name="desktop_um_edit_user_details">Ubah Detail Pengguna</string>
+    <string name="desktop_um_downloading_rights">Hak unduh</string>
+    <string name="desktop_um_change_department">Ubah Departemen</string>
+    <string name="desktop_um_change_designation">Ubah Jabatan</string>
+    <string name="desktop_um_change_unit">Ubah Unit</string>
+    <string name="desktop_um_edit_user_info">Ubah Info Pengguna</string>
 </resources>

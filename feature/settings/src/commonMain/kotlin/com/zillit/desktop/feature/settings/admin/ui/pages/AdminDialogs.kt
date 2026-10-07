@@ -26,6 +26,7 @@ import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.JobTitle
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
+import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
 import com.zillit.desktop.feature.settings.admin.ui.AdminField
 import com.zillit.desktop.feature.settings.admin.ui.AdminForm
@@ -48,6 +49,9 @@ fun AdminDialogs(state: AdminUiState, onEvent: (AdminEvent) -> Unit) {
         is AdminForm.Sos -> SosDialog(form, state, onEvent)
         is AdminForm.Company -> CompanyDialog(form, state, onEvent)
         is AdminForm.ProductionName -> ProductionNameDialog(form, state, onEvent)
+        is AdminForm.EditCrew -> EditCrewDialog(form, state, onEvent)
+        is AdminForm.PostingRights -> PostingRightsDialog(form, state, onEvent)
+        is AdminForm.AllowChat -> AllowChatDialog(form, state, onEvent)
         null -> Unit
     }
 }
@@ -437,6 +441,10 @@ private fun CustomFields(fields: List<CompanyField>, onEvent: (AdminEvent) -> Un
 @Composable
 private fun ConfirmationDialog(state: AdminUiState, onEvent: (AdminEvent) -> Unit) {
     val confirmation = state.confirming ?: return
+    if (confirmation is AdminConfirmation.GrantAdmin) {
+        GrantAdminDialog(confirmation, onEvent)
+        return
+    }
 
     ZillitDialogShell(
         title = confirmation.title,

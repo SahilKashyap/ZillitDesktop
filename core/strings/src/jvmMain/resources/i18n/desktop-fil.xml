@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Pindutin Dito</string>
     <string name="desktop_ft_watch_video">panoorin ang video</string>
     <string name="desktop_ft_no_tools">Walang Datos ng Tools</string>
+    <string name="desktop_um_confirm_admin_rights">Kumpirmahin ang Mga Karapatan ng Admin</string>
+    <string name="desktop_um_select_department_required">Pumili ng departamento</string>
+    <string name="desktop_um_select_designation_required">Pumili ng designation</string>
+    <string name="desktop_um_updated">Matagumpay na na-update</string>
+    <string name="desktop_um_profile_picture">Larawan sa Profile</string>
+    <string name="desktop_um_edit_user_details">I-edit ang Mga Detalye ng User</string>
+    <string name="desktop_um_downloading_rights">Mga karapatan sa pag-download</string>
+    <string name="desktop_um_change_department">Palitan ang Departamento</string>
+    <string name="desktop_um_change_designation">Palitan ang Designation</string>
+    <string name="desktop_um_change_unit">Palitan ang Unit</string>
+    <string name="desktop_um_edit_user_info">I-edit ang Impormasyon ng User</string>
 </resources>

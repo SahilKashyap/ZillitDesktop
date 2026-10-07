@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Klik her</string>
     <string name="desktop_ft_watch_video">se video</string>
     <string name="desktop_ft_no_tools">Ingen værktøjsdata</string>
+    <string name="desktop_um_confirm_admin_rights">Bekræft administratorrettigheder</string>
+    <string name="desktop_um_select_department_required">Vælg en afdeling</string>
+    <string name="desktop_um_select_designation_required">Vælg en stilling</string>
+    <string name="desktop_um_updated">Opdateret</string>
+    <string name="desktop_um_profile_picture">Profilbillede</string>
+    <string name="desktop_um_edit_user_details">Rediger brugeroplysninger</string>
+    <string name="desktop_um_downloading_rights">Downloadrettigheder</string>
+    <string name="desktop_um_change_department">Skift afdeling</string>
+    <string name="desktop_um_change_designation">Skift stilling</string>
+    <string name="desktop_um_change_unit">Skift enhed</string>
+    <string name="desktop_um_edit_user_info">Rediger brugerinfo</string>
 </resources>

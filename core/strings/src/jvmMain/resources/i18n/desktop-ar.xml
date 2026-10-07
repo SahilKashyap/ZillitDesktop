@@ -8375,4 +8375,15 @@
     <string name="desktop_pg_nothing_to_download">لا توجد بيانات للتنزيل</string>
     <string name="desktop_pg_click_here">انقر هنا</string>
     <string name="desktop_ft_watch_video">شاهد الفيديو</string>
+    <string name="desktop_um_confirm_admin_rights">تأكيد صلاحيات المسؤول</string>
+    <string name="desktop_um_select_department_required">يرجى اختيار القسم</string>
+    <string name="desktop_um_select_designation_required">يرجى اختيار المسمى الوظيفي</string>
+    <string name="desktop_um_updated">تم التحديث بنجاح</string>
+    <string name="desktop_um_profile_picture">صورة الملف الشخصي</string>
+    <string name="desktop_um_edit_user_details">تعديل بيانات المستخدم</string>
+    <string name="desktop_um_downloading_rights">صلاحيات التنزيل</string>
+    <string name="desktop_um_change_department">تغيير القسم</string>
+    <string name="desktop_um_change_designation">تغيير المسمى الوظيفي</string>
+    <string name="desktop_um_change_unit">تغيير الوحدة</string>
+    <string name="desktop_um_edit_user_info">تعديل معلومات المستخدم</string>
 </resources>

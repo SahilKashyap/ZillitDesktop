@@ -7,15 +7,19 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.settings.account.allowsPrivateName
 import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_EVENTS
 import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_PAGES
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
+import com.zillit.desktop.feature.settings.admin.domain.CrewMember
+import com.zillit.desktop.feature.settings.admin.domain.CrewProfileChange
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
 import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
 import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
+import com.zillit.desktop.feature.settings.admin.domain.rightsCascade
 
 /**
  * The administration pages.
@@ -84,6 +88,11 @@ class AdminViewModel(
      * the app passes the real thing.
      */
     private val isAdmin: () -> Boolean = { true },
+    /**
+     * The admin at the keyboard. User Management leaves them off its list, as
+     * the web does — an admin cannot switch off their own access or rights.
+     */
+    private val selfUserId: () -> String? = { null },
 ) : ZillitViewModel<AdminUiState, AdminEvent, AdminEffect>(AdminUiState()) {
 
     /** Destinations already read, so returning to one is not a refetch. */
@@ -169,6 +178,20 @@ class AdminViewModel(
             is AdminEvent.AdminAccessChanged -> onAdminAccessChanged(event)
             is AdminEvent.CrewActiveChanged -> onCrewActiveChanged(event)
 
+            is AdminEvent.OpenEditCrew -> openEditCrew(event)
+            is AdminEvent.EditCrewChanged -> setState {
+                copy(form = (form as? AdminForm.EditCrew)?.let { event.draft.copy(error = null) } ?: form)
+            }
+            is AdminEvent.OpenPostingRights -> openPostingRights(event.userId)
+            is AdminEvent.RightsSectionChanged -> setState {
+                copy(form = (form as? AdminForm.PostingRights)?.copy(section = event.section, error = null) ?: form)
+            }
+            is AdminEvent.RightToggled -> onRightToggled(event)
+            is AdminEvent.OpenAllowChat -> openAllowChat(event.userId)
+            is AdminEvent.AllowChatChanged -> setState {
+                copy(form = (form as? AdminForm.AllowChat)?.let { event.draft.copy(error = null) } ?: form)
+            }
+
             is AdminEvent.ToolEnabledChanged -> setState {
                 copy(
                     tools = tools.map { tool ->
@@ -223,6 +246,7 @@ class AdminViewModel(
         setState {
             copy(
                 destination = destination,
+                selfUserId = selfUserId(),
                 query = "",
                 error = null,
                 outcome = null,
@@ -277,8 +301,7 @@ class AdminViewModel(
                     }
                 }
 
-                AdminDestination.Crew ->
-                    repository.crew().onLoaded { rows -> setState { copy(crew = rows) } }
+                AdminDestination.Crew -> loadCrew()
 
                 AdminDestination.PreApproved ->
                     repository.preApproved().onLoaded { rows -> setState { copy(preApproved = rows) } }
@@ -344,6 +367,18 @@ class AdminViewModel(
         }
     }
 
+    /**
+     * User Management: the people, plus what Change Profile picks from — the
+     * department tree and the shooting units, both read on arrival as the web
+     * does. Only the crew list failing fails the page; a picker with nothing
+     * in it says so when it is opened.
+     */
+    private suspend fun loadCrew(): ZillitResult<Unit> {
+        repository.departments().getOrNull()?.let { rows -> setState { copy(departments = rows) } }
+        repository.units(UnitKind.Shooting).getOrNull()?.let { rows -> setState { copy(joinUnits = rows) } }
+        return repository.crew().onLoaded { rows -> setState { copy(crew = rows) } }
+    }
+
     private suspend fun loadUnits(kind: UnitKind): ZillitResult<Unit> =
         repository.units(kind).onLoaded { rows -> setState { copy(units = rows) } }
 
@@ -385,6 +420,10 @@ class AdminViewModel(
             is AdminForm.Sos -> submitSos(form)
             is AdminForm.Company -> submitCompany(form)
             is AdminForm.ProductionName -> submitProductionName(form)
+            is AdminForm.EditCrew -> submitEditCrew(form)
+            is AdminForm.AllowChat -> submitAllowChat(form)
+            // Each switch writes as it is thrown; there is nothing to submit.
+            is AdminForm.PostingRights -> Unit
             null -> Unit
         }
     }
@@ -532,11 +571,20 @@ class AdminViewModel(
     private fun selectDepartment(departmentId: String?) =
         setState { copy(selection = selection.copy(departmentId = departmentId)) }
 
-    /** Granting asks first; revoking does not. Both phone clients agree. */
+    /** Granting asks first; revoking does not. All three clients agree. */
     private fun onAdminAccessChanged(event: AdminEvent.AdminAccessChanged) {
-        val person = currentState.crew.firstOrNull { it.userId == event.userId } ?: return
+        val person = activePerson(event.userId) ?: return
         if (event.isAdmin) {
-            setState { copy(confirming = AdminConfirmation.GrantAdmin(person.userId, person.fullName)) }
+            setState {
+                copy(
+                    confirming = AdminConfirmation.GrantAdmin(
+                        userId = person.userId,
+                        name = person.fullName,
+                        designation = person.designation,
+                        department = person.department,
+                    ),
+                )
+            }
         } else {
             mutate(str(S.desktop_no_longer_administrator, person.fullName)) {
                 repository.setAdminAccess(person.userId, false)
@@ -544,20 +592,177 @@ class AdminViewModel(
         }
     }
 
-    /** Removing asks first; putting someone back does not. */
+    /**
+     * Either way at once, as the web's Active switch does — `accepted` and
+     * `removed` are each other's undo, one click apart on the same row.
+     */
     private fun onCrewActiveChanged(event: AdminEvent.CrewActiveChanged) {
         val person = currentState.crew.firstOrNull { it.userId == event.userId } ?: return
-        val device = person.deviceId ?: return
-
-        if (event.isActive) {
-            mutate(str(S.desktop_back_on_the_project, person.fullName)) {
-                repository.setCrewStatus(person.userId, device, CrewStatus.Accepted)
-            }
+        val (status, said) = if (event.isActive) {
+            CrewStatus.Accepted to str(S.desktop_back_on_the_project, person.fullName)
         } else {
+            CrewStatus.Removed to str(S.desktop_is_off_the_project, person.fullName)
+        }
+        mutate(said) { repository.setCrewStatus(person.userId, person.deviceId, status) }
+    }
+
+    /**
+     * The person a User Management action is for — or null, with the web's
+     * warning, when they have been switched off: only Active works on them.
+     */
+    private fun activePerson(userId: String): CrewMember? {
+        val person = currentState.crew.firstOrNull { it.userId == userId } ?: return null
+        if (person.isRemoved) {
+            setState { copy(error = str(S.you_can_not_perform_this_action_msg)) }
+            return null
+        }
+        return person
+    }
+
+    /**
+     * Change Profile, opened on where the person is now. The web picks by
+     * name, so the ids are found by matching the row's department, designation
+     * and unit names against the department tree and the unit list.
+     */
+    private fun openEditCrew(event: AdminEvent.OpenEditCrew) {
+        val person = activePerson(event.userId) ?: return
+        val state = currentState
+        val department = state.departments.firstOrNull { it.name == person.department }
+        val designation = department?.jobTitles?.firstOrNull { it.name == person.designation }
+        val unit = state.joinUnits.firstOrNull { it.name == person.joinUnitName }
+        setState {
+            copy(
+                form = AdminForm.EditCrew(
+                    userId = person.userId,
+                    name = person.fullName,
+                    departmentId = department?.id,
+                    designationId = designation?.id,
+                    unitId = unit?.id,
+                    keepNamePrivate = person.keepNamePrivate,
+                    withUnit = event.withUnit,
+                ),
+            )
+        }
+    }
+
+    /** The web's three required fields, each with its own message, then one `PUT`. */
+    private fun submitEditCrew(form: AdminForm.EditCrew) {
+        val department = currentState.departments.firstOrNull { it.id == form.departmentId }
+        val designation = department?.jobTitles?.firstOrNull { it.id == form.designationId }
+        val missing = when {
+            department == null -> str(S.desktop_um_select_department_required)
+            designation == null -> str(S.desktop_um_select_designation_required)
+            form.withUnit && form.unitId == null -> str(S.please_select_unit)
+            else -> null
+        }
+        if (missing != null || department == null || designation == null) {
+            setState { copy(form = form.copy(error = missing)) }
+            return
+        }
+        val change = CrewProfileChange(
+            userId = form.userId,
+            departmentId = department.id,
+            designationId = designation.id,
+            joinUnitId = form.unitId.takeIf { form.withUnit },
+            // Only the three designations that may hide a name keep the switch;
+            // moving someone off one of them shows their name again.
+            keepNamePrivate = form.keepNamePrivate && allowsPrivateName(designation.name),
+        )
+        mutate(str(S.desktop_um_updated)) { repository.updateCrewProfile(change) }
+    }
+
+    private fun openPostingRights(userId: String) {
+        val person = activePerson(userId) ?: return
+        setState { copy(form = AdminForm.PostingRights(userId = person.userId)) }
+        launch { reloadRights(person.userId) }
+    }
+
+    /**
+     * Re-reads the dialog's rows, sorted by the name shown as the web sorts
+     * them. Dropped if the dialog was closed or moved to someone else meanwhile.
+     */
+    private suspend fun reloadRights(userId: String, error: String? = null) {
+        val result = repository.rights(userId)
+        setState {
+            val open = form as? AdminForm.PostingRights
+            if (open?.userId != userId) return@setState this
+            copy(
+                form = when (result) {
+                    is ZillitResult.Success -> open.copy(
+                        rows = result.data.sortedBy { it.name.localised().lowercase() },
+                        isLoading = false,
+                        busy = emptySet(),
+                        error = error,
+                    )
+                    is ZillitResult.Failure -> open.copy(
+                        isLoading = false,
+                        busy = emptySet(),
+                        error = error ?: result.error.readable,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
+     * One switch in the Posting Rights dialog: painted at once, then every
+     * write the web sends for it ([rightsCascade]) in order, stopping at the
+     * first refusal, then a fresh read so the rows show what the server kept.
+     */
+    private fun onRightToggled(event: AdminEvent.RightToggled) {
+        val open = currentState.form as? AdminForm.PostingRights ?: return
+        val row = open.shown.firstOrNull { it.unitId == event.unitId } ?: return
+        val key = event.unitId + event.access.wire
+        if (key in open.busy || !row.updatable(event.access)) return
+        if (!isAdmin()) {
+            setState { copy(form = open.copy(error = str(S.desktop_only_admin_can_change))) }
+            return
+        }
+
+        val writes = rightsCascade(row, event.access, event.enable, open.shown)
+        setState {
+            copy(
+                form = open.copy(
+                    rows = open.rows.map { candidate ->
+                        if (candidate.section != open.section) return@map candidate
+                        writes.filter { it.unitId == candidate.unitId }
+                            .fold(candidate) { acc, write -> acc.with(write.access, write.enable) }
+                    },
+                    busy = open.busy + key,
+                    error = null,
+                ),
+            )
+        }
+        launch {
+            val refusal = writes.firstNotNullOfOrNull { write ->
+                repository.writeRight(open.userId, open.section, write).errorOrNull()
+            }
+            reloadRights(open.userId, refusal?.readable)
+        }
+    }
+
+    /** The people a private-name crew member may chat with, read when the dialog opens. */
+    private fun openAllowChat(userId: String) {
+        val person = activePerson(userId) ?: return
+        if (!person.keepNamePrivate) return
+        setState { copy(form = AdminForm.AllowChat(userId = person.userId)) }
+        launch {
+            val result = repository.chatAllowList(person.userId)
             setState {
-                copy(confirming = AdminConfirmation.RemoveFromCrew(person.userId, device, person.fullName))
+                val open = form as? AdminForm.AllowChat
+                if (open?.userId != person.userId) return@setState this
+                copy(
+                    form = when (result) {
+                        is ZillitResult.Success -> open.copy(selected = result.data.toSet(), isLoading = false)
+                        is ZillitResult.Failure -> open.copy(isLoading = false, error = result.error.readable)
+                    },
+                )
             }
         }
+    }
+
+    private fun submitAllowChat(form: AdminForm.AllowChat) {
+        mutate(str(S.desktop_um_updated)) { repository.setChatAllowList(form.userId, form.selected.toList()) }
     }
 
     private fun saveOrder() {
@@ -605,11 +810,6 @@ class AdminViewModel(
             is AdminConfirmation.RemoveSos ->
                 mutate(str(S.desktop_name_removed, confirmation.name)) {
                     repository.removeSosRecipient(confirmation.id)
-                }
-
-            is AdminConfirmation.RemoveFromCrew ->
-                mutate(str(S.desktop_is_off_the_project, confirmation.name)) {
-                    repository.setCrewStatus(confirmation.userId, confirmation.deviceId, CrewStatus.Removed)
                 }
 
             is AdminConfirmation.GrantAdmin ->
@@ -722,6 +922,9 @@ private fun AdminForm?.withError(message: String): AdminForm? = when (this) {
     is AdminForm.Sos -> copy(error = message)
     is AdminForm.Company -> copy(error = message)
     is AdminForm.ProductionName -> copy(error = message)
+    is AdminForm.EditCrew -> copy(error = message)
+    is AdminForm.PostingRights -> copy(error = message)
+    is AdminForm.AllowChat -> copy(error = message)
     null -> null
 }
 

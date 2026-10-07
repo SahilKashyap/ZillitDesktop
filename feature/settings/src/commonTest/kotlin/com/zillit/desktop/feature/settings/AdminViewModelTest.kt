@@ -2,10 +2,12 @@ package com.zillit.desktop.feature.settings
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
+import com.zillit.desktop.feature.settings.admin.domain.CrewProfileChange
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.JobTitle
@@ -13,9 +15,13 @@ import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
+import com.zillit.desktop.feature.settings.admin.domain.RightsSection
+import com.zillit.desktop.feature.settings.admin.domain.RightsWrite
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
+import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
+import com.zillit.desktop.feature.settings.admin.domain.rightsCascade
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
@@ -24,13 +30,6 @@ import com.zillit.desktop.feature.settings.admin.ui.AdminForm
 import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
 import com.zillit.desktop.feature.settings.admin.ui.NameKind
 import com.zillit.desktop.feature.settings.admin.ui.moved
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -39,6 +38,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 
 /**
  * The administration pages' behaviour, against a recording repository.
@@ -109,8 +115,32 @@ class AdminViewModelTest {
         override suspend fun setAdminAccess(userId: String, isAdmin: Boolean) =
             record("setAdminAccess:$userId:$isAdmin")
 
-        override suspend fun setCrewStatus(userId: String, deviceId: String, status: CrewStatus) =
+        override suspend fun setCrewStatus(userId: String, deviceId: String?, status: CrewStatus) =
             record("setCrewStatus:$userId:${status.wire}")
+
+        override suspend fun updateCrewProfile(change: CrewProfileChange) =
+            record(
+                "updateCrewProfile:${change.userId}:${change.departmentId}:${change.designationId}:" +
+                    "${change.joinUnitId}:${change.keepNamePrivate}",
+            )
+
+        var rightsAnswer: List<ToolRights> = emptyList()
+
+        override suspend fun rights(userId: String): ZillitResult<List<ToolRights>> {
+            calls += "rights:$userId"
+            return ZillitResult.Success(rightsAnswer)
+        }
+
+        override suspend fun writeRight(userId: String, section: RightsSection, write: RightsWrite) =
+            record("writeRight:$userId:${section.wire}:${write.unitId}:${write.access.wire}:${write.enable}")
+
+        override suspend fun chatAllowList(userId: String): ZillitResult<List<String>> {
+            calls += "chatAllowList:$userId"
+            return ZillitResult.Success(listOf("u2"))
+        }
+
+        override suspend fun setChatAllowList(userId: String, allowed: List<String>) =
+            record("setChatAllowList:$userId:${allowed.sorted().joinToString(",")}")
 
         override suspend fun preApproved(): ZillitResult<List<PreApprovedCrew>> {
             calls += "preApproved"
@@ -168,9 +198,11 @@ class AdminViewModelTest {
         override suspend fun addSosRecipient(request: NewSosRecipient) = record("addSosRecipient")
         override suspend fun removeSosRecipient(recipientId: String) = record("removeSos:$recipientId")
 
+        var unitsAnswer: List<AdminUnit> = emptyList()
+
         override suspend fun units(kind: UnitKind): ZillitResult<List<AdminUnit>> {
             calls += "units:$kind"
-            return ZillitResult.Success(emptyList())
+            return ZillitResult.Success(unitsAnswer)
         }
 
         override suspend fun createUnit(kind: UnitKind, name: String) = record("createUnit:$kind:$name")
@@ -186,7 +218,10 @@ class AdminViewModelTest {
     }
 
     private fun viewModel(repository: Recorder = Recorder()) =
-        AdminViewModel(repository, productionName = { "Feature One" })
+        AdminViewModel(repository, productionName = { "Feature One" }, selfUserId = { "me" })
+
+    /** What User Management reads on arrival: the Change Profile pickers, then the people. */
+    private val crewReads = listOf("departments", "units:Shooting", "crew")
 
     // -- loading -----------------------------------------------------------
 
@@ -329,7 +364,7 @@ class AdminViewModelTest {
         model.onEvent(AdminEvent.AdminAccessChanged("u1", true))
         advanceUntilIdle()
         // Nothing sent yet — the dialog is up.
-        assertEquals(listOf("crew"), repository.calls)
+        assertEquals(crewReads, repository.calls)
         assertTrue(model.state.value.confirming is AdminConfirmation.GrantAdmin)
 
         model.onEvent(AdminEvent.ConfirmAction)
@@ -342,8 +377,9 @@ class AdminViewModelTest {
         assertNull(model.state.value.confirming)
     }
 
+    /** The web's Active switch writes at once in both directions; each is the other's undo. */
     @Test
-    fun `removing someone from the crew asks first and restoring does not`() = runTest {
+    fun `switching someone off the project and back writes at once`() = runTest {
         val repository = Recorder()
         val model = viewModel(repository)
 
@@ -352,12 +388,12 @@ class AdminViewModelTest {
 
         model.onEvent(AdminEvent.CrewActiveChanged("u1", false))
         advanceUntilIdle()
-        assertTrue(model.state.value.confirming is AdminConfirmation.RemoveFromCrew)
-        assertFalse(repository.calls.any { it.startsWith("setCrewStatus") })
-
-        model.onEvent(AdminEvent.ConfirmAction)
-        advanceUntilIdle()
+        assertNull(model.state.value.confirming)
         assertTrue(repository.calls.contains("setCrewStatus:u1:removed"))
+
+        model.onEvent(AdminEvent.CrewActiveChanged("u1", true))
+        advanceUntilIdle()
+        assertTrue(repository.calls.contains("setCrewStatus:u1:accepted"))
     }
 
     @Test
@@ -367,11 +403,11 @@ class AdminViewModelTest {
 
         model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
         advanceUntilIdle()
-        model.onEvent(AdminEvent.Ask(AdminConfirmation.RemoveFromCrew("u1", "dev-1", "Ada")))
+        model.onEvent(AdminEvent.Ask(AdminConfirmation.GrantAdmin("u1", "Ada")))
         model.onEvent(AdminEvent.DismissConfirmation)
         advanceUntilIdle()
 
-        assertEquals(listOf("crew"), repository.calls)
+        assertEquals(crewReads, repository.calls)
         assertNull(model.state.value.confirming)
     }
 
@@ -688,5 +724,163 @@ class AdminViewModelTest {
         assertNotNull(model.state.value.error)
     }
 
+    // -- user management --------------------------------------------------------
 
+    @Test
+    fun `user management lists neither the reader nor anyone who left or is pending`() = runTest {
+        val repository = Recorder().apply {
+            crewAnswer = ZillitResult.Success(
+                listOf(
+                    CrewMember("me", "The Admin"),
+                    CrewMember("u1", "Ada Lovelace"),
+                    CrewMember("u2", "Gone", status = CrewStatus.Left),
+                    CrewMember("u3", "Waiting", status = CrewStatus.Pending),
+                    CrewMember("u4", "Turned away", status = CrewStatus.Rejected),
+                    CrewMember("u5", "Switched off", status = CrewStatus.Removed),
+                ),
+            )
+        }
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+
+        assertEquals(listOf("u1", "u5"), model.state.value.crewMatching.map { it.userId })
+    }
+
+    @Test
+    fun `a switched off person refuses everything but Active, with the web's warning`() = runTest {
+        val repository = Recorder().apply {
+            crewAnswer = ZillitResult.Success(listOf(CrewMember("u1", "Ada", status = CrewStatus.Removed)))
+        }
+        val model = viewModel(repository)
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+
+        model.onEvent(AdminEvent.AdminAccessChanged("u1", true))
+        model.onEvent(AdminEvent.OpenEditCrew("u1", withUnit = true))
+        model.onEvent(AdminEvent.OpenPostingRights("u1"))
+        advanceUntilIdle()
+
+        assertEquals(crewReads, repository.calls)
+        assertNull(model.state.value.confirming)
+        assertNull(model.state.value.form)
+        assertNotNull(model.state.value.error)
+    }
+
+    @Test
+    fun `change profile opens on where the person is and sends ids`() = runTest {
+        val repository = Recorder().apply {
+            crewAnswer = ZillitResult.Success(
+                listOf(CrewMember("u1", "Ada", department = "Art", designation = "Standby Art", joinUnitName = "Main")),
+            )
+            unitsAnswer = listOf(AdminUnit("unit-1", "Main", UnitKind.Shooting))
+        }
+        val model = viewModel(repository)
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+
+        model.onEvent(AdminEvent.OpenEditCrew("u1", withUnit = true))
+        val form = model.state.value.form as AdminForm.EditCrew
+        assertEquals("d1", form.departmentId)
+        assertEquals("r1", form.designationId)
+        assertEquals("unit-1", form.unitId)
+
+        model.onEvent(AdminEvent.SubmitForm)
+        advanceUntilIdle()
+        assertTrue(repository.calls.contains("updateCrewProfile:u1:d1:r1:unit-1:false"), "${repository.calls}")
+        assertNull(model.state.value.form)
+    }
+
+    @Test
+    fun `change profile refuses a missing designation without a call`() = runTest {
+        val repository = Recorder()
+        val model = viewModel(repository)
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+
+        model.onEvent(AdminEvent.OpenEditCrew("u1", withUnit = false))
+        val form = model.state.value.form as AdminForm.EditCrew
+        model.onEvent(AdminEvent.EditCrewChanged(form.copy(departmentId = "d2")))
+        model.onEvent(AdminEvent.SubmitForm)
+        advanceUntilIdle()
+
+        assertFalse(repository.calls.any { it.startsWith("updateCrewProfile") })
+        assertNotNull((model.state.value.form as AdminForm.EditCrew).error)
+    }
+
+    @Test
+    fun `switching viewing off takes posting and downloading with it, then rereads`() = runTest {
+        val repository = Recorder().apply {
+            rightsAnswer = listOf(
+                ToolRights(
+                    unitId = "t1", identifier = "drive_tool", name = "Drive", section = RightsSection.Home,
+                    canView = true, canPost = true, canDownload = true,
+                    viewUpdatable = true, postUpdatable = true, downloadUpdatable = true,
+                ),
+            )
+        }
+        val model = viewModel(repository)
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.OpenPostingRights("u1"))
+        advanceUntilIdle()
+        repository.calls.clear()
+
+        model.onEvent(AdminEvent.RightToggled("t1", AccessType.View, false))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                "writeRight:u1:home:t1:view:false",
+                "writeRight:u1:home:t1:download:false",
+                "writeRight:u1:home:t1:post:false",
+                "rights:u1",
+            ),
+            repository.calls,
+        )
+    }
+
+    @Test
+    fun `main budget view on drags the department budget along`() {
+        val main = ToolRights(
+            "m", ToolRights.MAIN_BUDGET, "Main", RightsSection.Tools, viewUpdatable = true,
+        )
+        val department = ToolRights("d", ToolRights.DEPARTMENT_BUDGET, "Dept", RightsSection.Tools)
+
+        assertEquals(
+            listOf(RightsWrite("m", AccessType.View, true), RightsWrite("d", AccessType.View, true)),
+            rightsCascade(main, AccessType.View, true, listOf(main, department)),
+        )
+        assertEquals(
+            listOf(RightsWrite("m", AccessType.View, false)),
+            rightsCascade(main, AccessType.View, false, listOf(main, department)),
+        )
+    }
+
+    @Test
+    fun `allow chat opens on the saved list and sends the whole selection`() = runTest {
+        val repository = Recorder().apply {
+            crewAnswer = ZillitResult.Success(
+                listOf(
+                    CrewMember("u1", "Ada", keepNamePrivate = true),
+                    CrewMember("u2", "Grace"),
+                    CrewMember("u3", "Katherine"),
+                ),
+            )
+        }
+        val model = viewModel(repository)
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+
+        model.onEvent(AdminEvent.OpenAllowChat("u1"))
+        advanceUntilIdle()
+        val form = model.state.value.form as AdminForm.AllowChat
+        assertEquals(setOf("u2"), form.selected)
+
+        model.onEvent(AdminEvent.AllowChatChanged(form.copy(selected = form.selected + "u3")))
+        model.onEvent(AdminEvent.SubmitForm)
+        advanceUntilIdle()
+        assertTrue(repository.calls.contains("setChatAllowList:u1:u2,u3"))
+    }
 }

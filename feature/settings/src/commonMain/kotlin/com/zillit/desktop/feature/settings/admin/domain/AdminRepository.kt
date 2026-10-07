@@ -55,14 +55,28 @@ interface AdminRepository {
      * Takes someone off the production, or puts them back.
      *
      * Keyed on the device as well as the person — the server's shape, matching
-     * the join queue. A crew member with no device id cannot be moved this way
-     * and the page withholds the switch rather than sending a partial body.
+     * the join queue. The web sends `device_id: undefined` for someone added
+     * without one, which is no key at all, and so does this.
      */
     suspend fun setCrewStatus(
         userId: String,
-        deviceId: String,
+        deviceId: String?,
         status: CrewStatus,
     ): ZillitResult<Unit>
+
+    /** Moves someone to another department, designation or unit. */
+    suspend fun updateCrewProfile(change: CrewProfileChange): ZillitResult<Unit>
+
+    /** What one person may view, post and download, per tool, in both lists. */
+    suspend fun rights(userId: String): ZillitResult<List<ToolRights>>
+
+    suspend fun writeRight(userId: String, section: RightsSection, write: RightsWrite): ZillitResult<Unit>
+
+    /** The people a private-name crew member may chat with. */
+    suspend fun chatAllowList(userId: String): ZillitResult<List<String>>
+
+    /** Replaces that list — the whole selection, as the web's Submit sends it. */
+    suspend fun setChatAllowList(userId: String, allowed: List<String>): ZillitResult<Unit>
 
     // -- pre-approved crew ---------------------------------------------------
 

@@ -87,7 +87,7 @@ class AdminWireShapeTest {
     }
 
     @Test
-    fun `a removed crew member is not actionable`() {
+    fun `a removed crew member is still listed but marked removed`() {
         val removed = json.decodeFromString(
             CrewDto.serializer(),
             """{ "user_id": "u1", "full_name": "Ada", "status": "removed", "device_id": "d1" }""",
@@ -95,7 +95,8 @@ class AdminWireShapeTest {
 
         assertEquals(CrewStatus.Removed, removed.status)
         assertFalse(removed.isActive)
-        assertFalse(removed.isActionable)
+        assertTrue(removed.isRemoved)
+        assertTrue(removed.isListed)
     }
 
     /**
@@ -113,16 +114,17 @@ class AdminWireShapeTest {
         assertEquals(CrewStatus.Unknown, row.status)
     }
 
-    /** Someone with no device cannot be enabled or disabled — the call needs one. */
+    /** Left, pending and rejected people are not User Management's to list (`AllUserInfo.jsx`). */
     @Test
-    fun `a crew member with no device is not actionable`() {
-        val row = json.decodeFromString(
-            CrewDto.serializer(),
-            """{ "user_id": "u1", "full_name": "Ada", "status": "accepted" }""",
-        ).toDomain()!!
-
-        assertTrue(row.isActive)
-        assertFalse(row.isActionable)
+    fun `left pending and rejected crew are not listed`() {
+        listOf("left", "pending", "rejected").forEach { status ->
+            val row = json.decodeFromString(
+                CrewDto.serializer(),
+                """{ "user_id": "u1", "full_name": "Ada", "status": "$status", "join_unit_name": "Main" }""",
+            ).toDomain()!!
+            assertFalse(row.isListed, status)
+            assertEquals("Main", row.joinUnitName)
+        }
     }
 
     /**

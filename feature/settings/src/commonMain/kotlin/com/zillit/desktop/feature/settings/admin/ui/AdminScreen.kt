@@ -65,7 +65,7 @@ fun AdminScreen(
             AdminDestination.CrewOrder ->
                 CrewOrderPage(state, onEvent, onBack, isOtherType = production.isOtherType)
 
-            AdminDestination.Crew -> CrewPage(state, onEvent, onBack)
+            AdminDestination.Crew -> CrewPage(state, onEvent, onBack, isOtherType = production.isOtherType)
             AdminDestination.PreApproved -> PreApprovedPage(state, onEvent, onBack)
             AdminDestination.ToolAvailability -> ToolAvailabilityPage(state, onEvent, onBack)
             AdminDestination.ToolGroups -> ToolGroupsPage(state, onEvent, onBack)

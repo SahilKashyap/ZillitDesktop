@@ -8370,4 +8370,15 @@
     <string name="desktop_pg_nothing_to_download">İndirilecek veri yok</string>
     <string name="desktop_pg_click_here">Buraya tıklayın</string>
     <string name="desktop_ft_watch_video">video izle</string>
+    <string name="desktop_um_confirm_admin_rights">Yönetici Yetkilerini Onayla</string>
+    <string name="desktop_um_select_department_required">Lütfen bir departman seçin</string>
+    <string name="desktop_um_select_designation_required">Lütfen bir unvan seçin</string>
+    <string name="desktop_um_updated">Başarıyla güncellendi</string>
+    <string name="desktop_um_profile_picture">Profil Fotoğrafı</string>
+    <string name="desktop_um_edit_user_details">Kullanıcı Ayrıntılarını Düzenle</string>
+    <string name="desktop_um_downloading_rights">İndirme yetkileri</string>
+    <string name="desktop_um_change_department">Departmanı Değiştir</string>
+    <string name="desktop_um_change_designation">Unvanı Değiştir</string>
+    <string name="desktop_um_change_unit">Birimi Değiştir</string>
+    <string name="desktop_um_edit_user_info">Kullanıcı Bilgilerini Düzenle</string>
 </resources>

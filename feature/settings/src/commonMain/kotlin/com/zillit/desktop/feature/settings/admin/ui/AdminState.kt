@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.settings.admin.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
@@ -11,9 +12,11 @@ import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
+import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
+import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 
 /**
@@ -53,6 +56,10 @@ data class AdminUiState(
     val toolGroups: List<ToolGroup> = emptyList(),
     val sos: List<SosRecipient> = emptyList(),
     val units: List<AdminUnit> = emptyList(),
+    /** The shooting units User Management's Change Unit picker offers — `join/unit`. */
+    val joinUnits: List<AdminUnit> = emptyList(),
+    /** The admin at the keyboard: User Management never lists them, as the web does not. */
+    val selfUserId: String? = null,
     val company: CompanyDetails = CompanyDetails(),
     val watermarkUrl: String? = null,
     val productionName: String = "",
@@ -69,7 +76,15 @@ data class AdminUiState(
     val departmentsMatching: List<Department>
         get() = departments.filter { it.name.contains(query.trim(), ignoreCase = true) }
 
-    val crewMatching: List<CrewMember> get() = crew.filter { it.matches(query) }
+    /**
+     * User Management's rows: the web's filter — no one who left, is pending
+     * or was rejected, never the reader — then its search over name and the
+     * designation as shown.
+     */
+    val crewMatching: List<CrewMember>
+        get() = crew.filter {
+            it.isListed && it.userId != selfUserId && it.matches(query) { key -> key.localised() }
+        }
 
     val preApprovedMatching: List<PreApprovedCrew> get() = preApproved.filter { it.matches(query) }
 
@@ -185,6 +200,54 @@ sealed interface AdminForm {
     /** The company block, edited as a whole and saved in one go. */
     data class Company(val draft: CompanyDetails, val error: String? = null) : AdminForm
 
+    /**
+     * User Management's Change Profile dialog — department, designation, unit
+     * and, for the three designations that may hide a name, Keep Name Private.
+     *
+     * [withUnit] is false on a corporate or event production, which the web
+     * offers no unit picker on (`isOtherProject()`).
+     */
+    data class EditCrew(
+        val userId: String,
+        val name: String,
+        val departmentId: String? = null,
+        val designationId: String? = null,
+        val unitId: String? = null,
+        val keepNamePrivate: Boolean = false,
+        val withUnit: Boolean = true,
+        val error: String? = null,
+    ) : AdminForm
+
+    /**
+     * User Management's Posting Rights dialog for one person.
+     *
+     * Not submitted — each switch writes at once, as on the web. [busy] holds
+     * the switches whose writes are out, keyed by [ToolRights.unitId] plus the
+     * access type, so a second click on one cannot race its own first.
+     */
+    data class PostingRights(
+        val userId: String,
+        val section: RightsSection = RightsSection.Home,
+        val rows: List<ToolRights> = emptyList(),
+        val isLoading: Boolean = true,
+        val busy: Set<String> = emptySet(),
+        val error: String? = null,
+    ) : AdminForm {
+        val shown: List<ToolRights> get() = rows.filter { it.section == section }
+    }
+
+    /**
+     * Who a private-name crew member may chat with — the web's Select User
+     * dialog. The whole selection is sent on Submit.
+     */
+    data class AllowChat(
+        val userId: String,
+        val selected: Set<String> = emptySet(),
+        val query: String = "",
+        val isLoading: Boolean = true,
+        val error: String? = null,
+    ) : AdminForm
+
     /** The production's name. */
     data class ProductionName(val value: String, val error: String? = null) : AdminForm {
         /** 3–25, which is the tighter of the two limits the clients enforce. */
@@ -258,18 +321,19 @@ sealed interface AdminConfirmation {
         override val confirmLabel: String get() = str(S.remove)
     }
 
-    data class RemoveFromCrew(val userId: String, val deviceId: String, val name: String) :
-        AdminConfirmation {
-        override val title: String get() = str(S.desktop_remove_from_crew_title)
-        override val message: String get() = str(S.desktop_remove_from_crew_message, name)
-        override val confirmLabel: String get() = str(S.desktop_remove_from_crew)
-    }
-
-    /** Granting is asked about; revoking is not. Both phone clients agree. */
-    data class GrantAdmin(val userId: String, val name: String) : AdminConfirmation {
-        override val title: String get() = str(S.desktop_grant_admin_title)
-        override val message: String get() = str(S.desktop_grant_admin_message, name)
-        override val confirmLabel: String get() = str(S.desktop_grant_admin_rights)
+    /**
+     * Granting is asked about; revoking is not — all three clients agree. The
+     * web's dialog shows who: picture, name, designation, a department pill.
+     */
+    data class GrantAdmin(
+        val userId: String,
+        val name: String,
+        val designation: String? = null,
+        val department: String? = null,
+    ) : AdminConfirmation {
+        override val title: String get() = str(S.desktop_um_confirm_admin_rights)
+        override val message: String get() = str(S.admin_rights_message)
+        override val confirmLabel: String get() = str(S.yes)
     }
 
     data class ClearWatermark(val nothing: Unit = Unit) : AdminConfirmation {

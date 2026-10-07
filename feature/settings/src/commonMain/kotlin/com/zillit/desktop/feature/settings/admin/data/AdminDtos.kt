@@ -11,9 +11,11 @@ import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.JobTitle
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
+import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
+import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -106,6 +108,7 @@ internal data class CrewDto(
     @SerialName("device_id") val deviceId: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("keep_name_private") val keepNamePrivate: Boolean? = null,
+    @SerialName("join_unit_name") val joinUnitName: String? = null,
 ) {
     fun toDomain(): CrewMember? {
         val resolved = userId?.takeIf { it.isNotBlank() } ?: id?.takeIf { it.isNotBlank() } ?: return null
@@ -128,6 +131,7 @@ internal data class CrewDto(
             deviceId = deviceId?.takeIf { it.isNotBlank() },
             status = CrewStatus.from(status),
             keepNamePrivate = keepNamePrivate == true,
+            joinUnitName = joinUnitName?.takeIf { it.isNotBlank() },
         )
     }
 }
@@ -354,6 +358,7 @@ internal data class AdminUnitDto(
      * a protected unit grows a delete button.
      */
     @SerialName("priority") val priority: String? = null,
+    @SerialName("identifier") val identifier: String? = null,
 ) {
     fun toDomain(kind: UnitKind): AdminUnit? {
         val resolved = id?.takeIf { it.isNotBlank() } ?: unitId?.takeIf { it.isNotBlank() } ?: return null
@@ -361,6 +366,7 @@ internal data class AdminUnitDto(
             id = resolved,
             name = (unitName ?: name).orEmpty().ifBlank { resolved },
             kind = kind,
+            identifier = identifier?.takeIf { it.isNotBlank() },
             // Absent means on. A unit that arrives without the flag is one the
             // production has never switched off.
             enabled = visibility ?: enabled ?: true,
@@ -389,3 +395,65 @@ private val IMAGE_KEYS = listOf("media", "thumbnail", "url", "path", "file_name"
 
 private fun JsonObject.text(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+
+// -- user management ------------------------------------------------------------
+
+/**
+ * One person's rights over one tool — a row of `GET user/access/{userId}`.
+ *
+ * A tool can sit on the dashboard and the Film Tools grid at once (`home` and
+ * `tool` both true), so a wire row becomes a row in each list it claims; one
+ * claiming neither is under no heading and is dropped, as the web's two
+ * filters drop it. No `unit_id` is no row: it is what the write is keyed on.
+ */
+@Serializable
+internal data class ToolAccessDto(
+    @SerialName("unit_id") val unitId: String? = null,
+    @SerialName("identifier") val identifier: String? = null,
+    /** The tool's name — `unit_name` here, as on the tools list. */
+    @SerialName("unit_name") val unitName: String? = null,
+    @SerialName("view_access") val viewAccess: Boolean? = null,
+    @SerialName("posting_access") val postingAccess: Boolean? = null,
+    @SerialName("download_access") val downloadAccess: Boolean? = null,
+    @SerialName("viewing_updatable") val viewingUpdatable: Boolean? = null,
+    @SerialName("posting_updatable") val postingUpdatable: Boolean? = null,
+    @SerialName("download_updatable") val downloadUpdatable: Boolean? = null,
+    @SerialName("home") val home: Boolean? = null,
+    @SerialName("tool") val tool: Boolean? = null,
+) {
+    fun toDomain(): List<ToolRights> {
+        val unit = unitId?.takeIf { it.isNotBlank() } ?: return emptyList()
+        return listOfNotNull(
+            RightsSection.Home.takeIf { home == true },
+            RightsSection.Tools.takeIf { tool == true },
+        ).map { section ->
+            ToolRights(
+                unitId = unit,
+                identifier = identifier.orEmpty(),
+                name = unitName?.takeIf { it.isNotBlank() } ?: identifier.orEmpty(),
+                section = section,
+                canView = viewAccess == true,
+                canPost = postingAccess == true,
+                canDownload = downloadAccess == true,
+                // The web disables on `!record.*_updatable` — absent is locked.
+                viewUpdatable = viewingUpdatable == true,
+                postUpdatable = postingUpdatable == true,
+                downloadUpdatable = downloadUpdatable == true,
+            )
+        }
+    }
+}
+
+/**
+ * `GET communication-settings/list/{userId}` on the chat service — who a
+ * private-name crew member may chat with: `data.UserCommunication[].to_user_id`.
+ */
+@Serializable
+internal data class ChatAllowListDto(
+    @SerialName("UserCommunication") val entries: List<ChatAllowEntryDto> = emptyList(),
+)
+
+@Serializable
+internal data class ChatAllowEntryDto(
+    @SerialName("to_user_id") val toUserId: String? = null,
+)

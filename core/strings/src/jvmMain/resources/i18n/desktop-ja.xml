@@ -8375,4 +8375,15 @@
     <string name="desktop_pg_nothing_to_download">ダウンロードするデータがありません</string>
     <string name="desktop_pg_click_here">ここをクリック</string>
     <string name="desktop_ft_watch_video">ビデオを見る</string>
+    <string name="desktop_um_confirm_admin_rights">管理者権限の確認</string>
+    <string name="desktop_um_select_department_required">部門を選択してください</string>
+    <string name="desktop_um_select_designation_required">役職を選択してください</string>
+    <string name="desktop_um_updated">更新しました</string>
+    <string name="desktop_um_profile_picture">プロフィール画像</string>
+    <string name="desktop_um_edit_user_details">ユーザー詳細を編集</string>
+    <string name="desktop_um_downloading_rights">ダウンロード権限</string>
+    <string name="desktop_um_change_department">部門を変更</string>
+    <string name="desktop_um_change_designation">役職を変更</string>
+    <string name="desktop_um_change_unit">ユニットを変更</string>
+    <string name="desktop_um_edit_user_info">ユーザー情報を編集</string>
 </resources>

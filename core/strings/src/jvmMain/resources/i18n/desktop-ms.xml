@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Klik Di Sini</string>
     <string name="desktop_ft_watch_video">tonton video</string>
     <string name="desktop_ft_no_tools">Tiada Data Alat</string>
+    <string name="desktop_um_confirm_admin_rights">Sahkan Hak Admin</string>
+    <string name="desktop_um_select_department_required">Sila pilih jabatan</string>
+    <string name="desktop_um_select_designation_required">Sila pilih jawatan</string>
+    <string name="desktop_um_updated">Berjaya dikemas kini</string>
+    <string name="desktop_um_profile_picture">Gambar Profil</string>
+    <string name="desktop_um_edit_user_details">Edit Butiran Pengguna</string>
+    <string name="desktop_um_downloading_rights">Hak muat turun</string>
+    <string name="desktop_um_change_department">Tukar Jabatan</string>
+    <string name="desktop_um_change_designation">Tukar Jawatan</string>
+    <string name="desktop_um_change_unit">Tukar Unit</string>
+    <string name="desktop_um_edit_user_info">Edit Maklumat Pengguna</string>
 </resources>

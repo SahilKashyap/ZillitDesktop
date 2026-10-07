@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Klikk her</string>
     <string name="desktop_ft_watch_video">se video</string>
     <string name="desktop_ft_no_tools">Ingen verktøydata</string>
+    <string name="desktop_um_confirm_admin_rights">Bekreft administratorrettigheter</string>
+    <string name="desktop_um_select_department_required">Velg en avdeling</string>
+    <string name="desktop_um_select_designation_required">Velg en stilling</string>
+    <string name="desktop_um_updated">Oppdatert</string>
+    <string name="desktop_um_profile_picture">Profilbilde</string>
+    <string name="desktop_um_edit_user_details">Rediger brukerdetaljer</string>
+    <string name="desktop_um_downloading_rights">Nedlastingsrettigheter</string>
+    <string name="desktop_um_change_department">Endre avdeling</string>
+    <string name="desktop_um_change_designation">Endre stilling</string>
+    <string name="desktop_um_change_unit">Endre unit</string>
+    <string name="desktop_um_edit_user_info">Rediger brukerinfo</string>
 </resources>

@@ -16,6 +16,7 @@ import com.zillit.desktop.core.config.ZillitService
  * | Core (project) | departments, crew, tools, the production record, deletion, rights |
  * | Units | shooting units and join units |
  * | Core (SOS prefix) | SOS recipients |
+ * | Chat | who a private-name crew member may chat with |
  *
  * Remote units are the trap: `project/remote-unit` is on **core**, while the
  * other two unit kinds are on the units service. Putting all three together
@@ -25,6 +26,7 @@ internal class AdminEndpoints(private val config: AppConfig) {
 
     private val core get() = config.apiV2(ZillitService.Core)
     private val units get() = config.apiV2(ZillitService.Units)
+    private val chat get() = config.apiV2(ZillitService.Chat)
 
     // -- departments --------------------------------------------------------
 
@@ -61,6 +63,31 @@ internal class AdminEndpoints(private val config: AppConfig) {
 
     /** `POST` — take someone off the production, or put them back. */
     val crewStatus get() = "${core}user/status"
+
+    /**
+     * `PUT` — an admin moving someone else: department, designation, unit and
+     * the private-name switch, keyed by `user_id` in the body. The same route
+     * a person's own Edit Profile saves through.
+     */
+    val crewProfile get() = "${core}user/profile"
+
+    /**
+     * `GET` — one person's rights over every tool, as a flat list. What User
+     * Management's Posting Rights dialog reads; the Film Tools grid reads the
+     * whole production instead.
+     */
+    fun userAccess(userId: String) = "${core}user/access/$userId"
+
+    /** `POST` — one right; [section] is `home` or `tools`, from the row's list. */
+    fun writeAccess(section: String) = "${core}permissions/users/$section/access"
+
+    /**
+     * `GET …/list/{userId}` · `PUT` — who a private-name crew member may chat
+     * with. On the **chat** service, the web's `cncBase`, not core.
+     */
+    fun chatAllowList(userId: String) = "${chat}communication-settings/list/$userId"
+
+    val chatAllow get() = "${chat}communication-settings"
 
     val preApproved get() = "${core}user/pre-approved"
 

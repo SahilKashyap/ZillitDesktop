@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Hier klicken</string>
     <string name="desktop_ft_watch_video">Video ansehen</string>
     <string name="desktop_ft_no_tools">Keine Tools-Daten verfügbar</string>
+    <string name="desktop_um_confirm_admin_rights">Admin-Rechte bestätigen</string>
+    <string name="desktop_um_select_department_required">Bitte Abteilung auswählen</string>
+    <string name="desktop_um_select_designation_required">Bitte eine Position auswählen</string>
+    <string name="desktop_um_updated">Erfolgreich aktualisiert</string>
+    <string name="desktop_um_profile_picture">Profilbild</string>
+    <string name="desktop_um_edit_user_details">Benutzerdetails bearbeiten</string>
+    <string name="desktop_um_downloading_rights">Download-Rechte</string>
+    <string name="desktop_um_change_department">Abteilung ändern</string>
+    <string name="desktop_um_change_designation">Position ändern</string>
+    <string name="desktop_um_change_unit">Unit ändern</string>
+    <string name="desktop_um_edit_user_info">Benutzerinfo bearbeiten</string>
 </resources>

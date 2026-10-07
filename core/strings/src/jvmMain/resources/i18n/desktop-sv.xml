@@ -8376,4 +8376,15 @@
     <string name="desktop_pg_click_here">Klicka här</string>
     <string name="desktop_ft_watch_video">titta på video</string>
     <string name="desktop_ft_no_tools">Inga verktygsdata</string>
+    <string name="desktop_um_confirm_admin_rights">Bekräfta administratörsrättigheter</string>
+    <string name="desktop_um_select_department_required">Välj en avdelning</string>
+    <string name="desktop_um_select_designation_required">Välj en befattning</string>
+    <string name="desktop_um_updated">Uppdaterad</string>
+    <string name="desktop_um_profile_picture">Profilbild</string>
+    <string name="desktop_um_edit_user_details">Redigera användaruppgifter</string>
+    <string name="desktop_um_downloading_rights">Nedladdningsrättigheter</string>
+    <string name="desktop_um_change_department">Ändra avdelning</string>
+    <string name="desktop_um_change_designation">Ändra befattning</string>
+    <string name="desktop_um_change_unit">Ändra enhet</string>
+    <string name="desktop_um_edit_user_info">Redigera användarinfo</string>
 </resources>

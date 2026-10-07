@@ -8375,4 +8375,15 @@
     <string name="desktop_pg_nothing_to_download">Aucune donnée à télécharger</string>
     <string name="desktop_pg_click_here">Cliquez ici</string>
     <string name="desktop_ft_watch_video">regarder la vidéo</string>
+    <string name="desktop_um_confirm_admin_rights">Confirmer les droits d\'administrateur</string>
+    <string name="desktop_um_select_department_required">Veuillez sélectionner un département</string>
+    <string name="desktop_um_select_designation_required">Veuillez sélectionner une fonction</string>
+    <string name="desktop_um_updated">Mis à jour avec succès</string>
+    <string name="desktop_um_profile_picture">Photo de profil</string>
+    <string name="desktop_um_edit_user_details">Modifier les détails de l\'utilisateur</string>
+    <string name="desktop_um_downloading_rights">Droits de téléchargement</string>
+    <string name="desktop_um_change_department">Changer de département</string>
+    <string name="desktop_um_change_designation">Changer de fonction</string>
+    <string name="desktop_um_change_unit">Changer d\'unité</string>
+    <string name="desktop_um_edit_user_info">Modifier les infos de l\'utilisateur</string>
 </resources>
