@@ -1,34 +1,55 @@
 package com.zillit.desktop.feature.budgetbuilder.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
 /**
- * The Budget Builder's launch page.
+ * The Budget Builder's window.
  *
- * A page rather than the tool: the budget application is a complete web app
- * hosted in the desktop's embedded Chromium, in a window of its own. This
- * screen is what the workspace shows for the tool's tab — who may enter,
- * whether the environment knows where the tool lives, and the door.
+ * The budget application is a complete web app hosted rather than
+ * reimplemented — the same decision the web client made, for the same reason —
+ * and here it is the window's whole content, in the app's embedded Chromium.
+ *
+ * ## Full-bleed, and why
+ *
+ * [application] is given the window outright: no padding, no page header, no
+ * strip of ours above it. The web arrived at the same place by steps —
+ * zeroing the shell's content padding, then dropping its own header row once
+ * the application grew a "← Film Tools" button of its own (`zillit:exit`,
+ * which this tool answers by closing the window). Budget Builder carries its
+ * own left nav and topbar; anything we draw around it is a second set of
+ * chrome in front of the first number.
+ *
+ * What is left here is the three reasons the application is *not* what gets
+ * drawn, each stated as the web states it.
  */
 @Composable
-fun BudgetBuilderScreen(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEvent) -> Unit) {
+fun BudgetBuilderScreen(
+    state: BudgetBuilderUiState,
+    /**
+     * The embedded application, filling whatever it is given. Injected
+     * because the browser is the host's to own — this module has no Chromium
+     * and no loopback gateway.
+     */
+    application: @Composable () -> Unit,
+) {
+    if (state.showsApplication) {
+        Box(Modifier.fillMaxSize()) { application() }
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -56,46 +77,11 @@ fun BudgetBuilderScreen(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEven
                 icon = ZillitIcons.Info,
             )
 
-            state.offline -> ZillitNotice(
+            else -> ZillitNotice(
                 text = str(S.desktop_bb_offline),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
             )
-
-            else -> LaunchCard(state, onEvent)
-        }
-    }
-}
-
-@Composable
-private fun LaunchCard(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEvent) -> Unit) {
-    ZillitSectionCard(
-        title = str(S.desktop_bb_card_title),
-        icon = ZillitIcons.BarChart,
-        action = {
-            ZillitButton(
-                text = str(S.desktop_bb_open),
-                onClick = { onEvent(BudgetBuilderEvent.Open) },
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.BarChart,
-            )
-        },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitText(
-                text = str(S.desktop_bb_opens_in_window),
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textSecondary,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (state.viewer.ready && !state.viewer.canPost) {
-                ZillitText(
-                    text = str(S.desktop_bb_view_only),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textSecondary,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
         }
     }
 }

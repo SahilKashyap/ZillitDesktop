@@ -22,9 +22,10 @@ import kotlin.test.assertTrue
  *
  * Everything the embedded page relies on is asserted through real HTTP —
  * the bridge landing ahead of the app's scripts, the API prefix swap, the
- * blob minted fresh per handshake — because each of these fails silently in
- * the browser: the page just sits on its splash screen with nothing in any
- * Kotlin log to say why.
+ * credentials minted fresh per push, the `?api=` it is told to call, the exit
+ * it posts on its way out — because each of these fails silently in the
+ * browser: the page just sits on its splash screen with nothing in any Kotlin
+ * log to say why.
  */
 class BudgetBuilderGatewayTest {
 
@@ -32,9 +33,16 @@ class BudgetBuilderGatewayTest {
     private lateinit var apiUpstream: HttpServer
     private lateinit var gateway: BudgetBuilderGateway
     private lateinit var origin: String
+    private lateinit var pageUrl: String
 
     private val blobAsks = AtomicInteger()
     private var blob: () -> String? = { "blob-${blobAsks.incrementAndGet()}" }
+
+    private val tokenAsks = AtomicInteger()
+    private val reauthAsks = mutableListOf<Boolean>()
+    private var token: (Boolean) -> String? = { "token-${tokenAsks.incrementAndGet()}" }
+
+    private val exits = AtomicInteger()
 
     /** What the API upstream saw last: method, path+query, moduledata, body. */
     private var seenMethod: String? = null
@@ -94,9 +102,11 @@ class BudgetBuilderGatewayTest {
             pageUpstream = "http://127.0.0.1:${pageUpstream.address.port}",
             apiUpstream = "http://127.0.0.1:${apiUpstream.address.port}",
             moduledata = { blob() },
+            bearer = { reauth -> reauthAsks += reauth; token(reauth) },
+            onExit = { exits.incrementAndGet() },
         )
-        val pageUrl = gateway.start()
-        origin = pageUrl.removeSuffix(BudgetBuilderGateway.PAGE_PATH)
+        pageUrl = gateway.start()
+        origin = pageUrl.substringBefore(BudgetBuilderGateway.PAGE_PATH)
     }
 
     @AfterTest
@@ -125,6 +135,14 @@ class BudgetBuilderGatewayTest {
     private fun get(path: String): HttpResponse<String> =
         client.send(
             HttpRequest.newBuilder(URI.create("$origin$path")).build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+    private fun post(path: String): HttpResponse<String> =
+        client.send(
+            HttpRequest.newBuilder(URI.create("$origin$path"))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build(),
             HttpResponse.BodyHandlers.ofString(),
         )
 
@@ -208,16 +226,82 @@ class BudgetBuilderGatewayTest {
         assertEquals(503, get("/zillit-moduledata").statusCode())
     }
 
+    /**
+     * The page cannot derive another host's API base, so the web passes it on
+     * the frame's URL and so does this — `?api=` naming this gateway's own
+     * prefix, which `proxyApi` then swaps for the service's.
+     */
     @Test
-    fun `the bridge forces embed mode and answers the ready message`() {
+    fun `the page is told where its API is, on its own URL`() {
+        assertTrue(pageUrl.endsWith("${BudgetBuilderGateway.PAGE_PATH}?api=%2Fapi%2Fv2%2Fbudget"), pageUrl)
+        // And the query reaches the deployment without disturbing the page.
+        assertEquals(200, get("${BudgetBuilderGateway.PAGE_PATH}?api=%2Fapi%2Fv2%2Fbudget").statusCode())
+    }
+
+    /**
+     * A fresh token per push. It is short-lived where the blob never expired,
+     * which is the whole reason the bridge keeps asking.
+     */
+    @Test
+    fun `each push mints a fresh token`() {
+        assertEquals("token-1", get("/zillit-token").body())
+        assertEquals("token-2", get("/zillit-token").body())
+        assertEquals(listOf(false, false), reauthAsks)
+    }
+
+    /**
+     * `?reauth=1` is the page's post-401 ask. Handing back the cached string
+     * the server just refused is the one answer that cannot work, so the flag
+     * has to reach the minting side.
+     */
+    @Test
+    fun `a post-401 ask arrives as a reauth`() {
+        get("/zillit-token?reauth=1")
+
+        assertEquals(listOf(true), reauthAsks)
+    }
+
+    @Test
+    fun `no token answers 503, not an empty 200`() {
+        token = { null }
+
+        assertEquals(503, get("/zillit-token").statusCode())
+    }
+
+    /**
+     * The application's own "← Film Tools" button. The host gives the page the
+     * whole window on the strength of it, so a dropped exit traps the user.
+     */
+    @Test
+    fun `the exit the page posts reaches the host`() {
+        assertEquals(204, post("/zillit-exit").statusCode())
+
+        assertEquals(1, exits.get())
+    }
+
+    @Test
+    fun `the bridge forces embed mode and plays the host's part`() {
         val response = get("/zillit-bridge.js")
 
         assertEquals(200, response.statusCode())
         val script = response.body()
         assertTrue("window.ZILLIT_EMBED = true" in script)
         assertTrue("zillit:ready" in script)
+        // Both credentials: the Bearer the page prefers, and the legacy blob a
+        // cached older copy of the page is the only thing that understands.
+        assertTrue("zillit:token" in script)
+        assertTrue("/zillit-token" in script)
         assertTrue("zillit:moduledata" in script)
         assertTrue("/zillit-moduledata" in script)
+        // The way out, and the three triggers that keep the token alive.
+        assertTrue("zillit:exit" in script)
+        assertTrue("/zillit-exit" in script)
+        assertTrue("setInterval" in script)
+        assertTrue("visibilitychange" in script)
+        assertTrue("'online'" in script)
+        // Addressed to our own origin, never '*' — the page's own handshake
+        // makes the same check in the other direction.
+        assertFalse("'*'" in script, script)
     }
 
     @Test

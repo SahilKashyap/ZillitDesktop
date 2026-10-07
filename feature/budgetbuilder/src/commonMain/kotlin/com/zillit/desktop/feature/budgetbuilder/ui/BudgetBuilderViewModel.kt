@@ -5,18 +5,19 @@ import com.zillit.desktop.feature.budgetbuilder.domain.BudgetBuilderViewer
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * The launch page's view model.
+ * The tool window's view model.
  *
  * There is no repository behind this screen: the budget application talks to
- * its own service from inside its own window, and nothing it does round-trips
- * through here. What is left is the rights question and the launch itself.
+ * its own service from inside the embedded browser, and nothing it does
+ * round-trips through here. What is left is the rights question, whether this
+ * environment has the tool at all, and the application's request to leave.
  */
 class BudgetBuilderViewModel(
     /**
      * Resolves the viewer *now*. A lambda rather than a value because view
      * models are built with the app, before any production is open — and
      * because rights can arrive after this screen has mounted, so [start]
-     * and every open re-ask instead of trusting a snapshot.
+     * re-asks instead of trusting a snapshot.
      */
     private val resolveViewer: () -> BudgetBuilderViewer,
     private val configured: Boolean,
@@ -41,17 +42,7 @@ class BudgetBuilderViewModel(
 
     override fun onEvent(event: BudgetBuilderEvent) {
         when (event) {
-            BudgetBuilderEvent.Open -> open()
+            BudgetBuilderEvent.ExitRequested -> sendEffect(BudgetBuilderEffect.Exit)
         }
-    }
-
-    private fun open() {
-        // Re-resolved at the moment of the click, not read from state: the
-        // tools call may have answered since the page mounted, and the fresh
-        // answer is the one that should decide.
-        val resolved = resolveViewer()
-        setState { copy(viewer = resolved) }
-        if (!configured || resolved.isBlocked || currentState.offline) return
-        sendEffect(BudgetBuilderEffect.Launch)
     }
 }

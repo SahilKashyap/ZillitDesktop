@@ -50,6 +50,10 @@ internal object Shutdown {
     @Volatile
     private var locationPicker: KcefLocationPickerHost? = null
 
+    /** The budget application's browser — a fourth parking window, and its gateway. */
+    @Volatile
+    private var budgetBuilder: BudgetBuilderHost? = null
+
     /**
      * The last known window geometry.
      *
@@ -83,6 +87,11 @@ internal object Shutdown {
     /** The location picker's engine, for the same letting-go. */
     fun locationPicker(host: KcefLocationPickerHost) {
         this.locationPicker = host
+    }
+
+    /** The budget application's browser, and the gateway kept alive behind it. */
+    fun budgetBuilder(host: BudgetBuilderHost) {
+        this.budgetBuilder = host
     }
 
     /** Records where the window is now, for whenever the process ends. */
@@ -142,10 +151,13 @@ internal object Shutdown {
         // and one left behind keeps the JVM alive after the main window has
         // closed — an app that appears to ignore ⌘Q.
         DocumentEditorWindow.closeAll()
-        // Also closes the loopback gateway behind the budget window, which is
-        // kept alive past the window on purpose — see BudgetBuilderWindow.
-        BudgetBuilderWindow.close()
+        budgetBuilder?.releaseHolder()
         KcefRuntime.stop()
+        // After Chromium, deliberately: the budget application flushes an
+        // unsaved budget on `pagehide`, which fires as its browser is torn
+        // down — and that save goes through this gateway. See
+        // BudgetBuilderHost.stopGateway.
+        budgetBuilder?.stopGateway()
         // The OS frees this when the process ends, so this is only about being
         // prompt: it shortens the window in which a relaunch races the old
         // process's teardown and is told Zillit is still running.

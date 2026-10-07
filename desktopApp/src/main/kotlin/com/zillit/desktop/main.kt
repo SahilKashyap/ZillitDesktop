@@ -241,7 +241,6 @@ import com.zillit.desktop.feature.weather.ui.WeatherViewModel
 import com.zillit.desktop.feature.budget.ui.DEPARTMENT_BUDGET_PATH
 import com.zillit.desktop.feature.budget.ui.MAIN_BUDGET_PATH
 import com.zillit.desktop.feature.budgetbuilder.domain.BudgetBuilderViewer
-import com.zillit.desktop.feature.budgetbuilder.ui.BudgetBuilderToolProvider
 import com.zillit.desktop.feature.budgetbuilder.ui.BudgetBuilderViewModel
 import com.zillit.desktop.feature.callsheet.ui.CallSheetViewModel
 import com.zillit.desktop.feature.esignature.data.EsignRepositoryImpl
@@ -3026,7 +3025,7 @@ internal class AppViewModels(
     val taxFiling: TaxFilingViewModel?,
     /** Bank Reconciliation — also reached from the console's sidebar. */
     val bankRec: BankRecViewModel?,
-    /** The embedded budget application's launch page. */
+    /** The embedded budget application, hosted in its own tool window. */
     val budgetBuilder: BudgetBuilderViewModel?,
     /** Standard forms, documents for signature, and the signature block. */
     val formSignature: FormSignatureViewModel?,
@@ -3379,12 +3378,10 @@ private fun rememberAppViewModels(
             budgetBuilder = ready?.let { graph ->
                 BudgetBuilderViewModel(
                     resolveViewer = { BudgetBuilderViewer.from(permissions()) },
-                    // Both halves, or the launch page says "unconfigured": the
-                    // service API and the web deployment that serves the page.
-                    configured = graph.config.services
-                        .containsKey(com.zillit.desktop.core.config.ZillitService.BudgetBuilder) &&
-                        graph.config.services
-                            .containsKey(com.zillit.desktop.core.config.ZillitService.BudgetBuilderWeb),
+                    // Both halves, or the window says "unconfigured" instead of
+                    // showing a browser that cannot load: the service API and
+                    // the web deployment that serves the page.
+                    configured = graph.budgetBuilderConfigured(),
                     online = graph.connectivity.online,
                 )
             },
@@ -4021,13 +4018,15 @@ private fun buildRegistry(
     // reached from — see TaxFilingToolProvider.
     val taxFiling = viewModels.taxFiling?.let { taxFilingProvider(it) }
     val bankRec = viewModels.bankRec?.let { bankRecProvider(it) }
-    // The launch is the host's act — a loopback gateway plus a Chromium
-    // window — so the provider is handed a launcher, not a repository.
+    // The budget application is embedded in the tool's own window, as the web
+    // embeds it in its content area, so the provider is handed a Chromium
+    // surface rather than a launcher. One host for the process: a second copy
+    // autosaving the same budget is last-write-wins.
     val budgetBuilder = viewModels.budgetBuilder?.let { viewModel ->
-        BudgetBuilderToolProvider(viewModel) { onProblem ->
-            (graph as? AppGraph.Ready)?.let { ready ->
-                BudgetBuilderWindow.open(ready, scope, onProblem)
-            }
+        (graph as? AppGraph.Ready)?.let { ready ->
+            val host = BudgetBuilderHost(ready, scope)
+            Shutdown.budgetBuilder(host)
+            ready.budgetBuilderProvider(viewModel, host)
         }
     }
     // The picker runs on IO and answers back on the caller's thread; a null
