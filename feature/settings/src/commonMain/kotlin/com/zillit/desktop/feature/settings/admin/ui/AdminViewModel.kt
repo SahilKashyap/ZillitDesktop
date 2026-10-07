@@ -95,6 +95,11 @@ class AdminViewModel(
     private val selfUserId: () -> String? = { null },
 ) : ZillitViewModel<AdminUiState, AdminEvent, AdminEffect>(AdminUiState()) {
 
+    /** The File Cabinet page's logic, kept out of this class — see [FileCabinetController]. */
+    private val cabinet = FileCabinetController(
+        repository, isAdmin, { currentState }, ::setState, { launch { it() } },
+    ) { load(AdminDestination.FileCabinet) }
+
     /** Destinations already read, so returning to one is not a refetch. */
     private val loaded = mutableSetOf<AdminDestination>()
 
@@ -133,6 +138,8 @@ class AdminViewModel(
             is AdminEvent.SearchChanged -> setState { copy(query = event.query) }
             AdminEvent.DismissOutcome -> setState { copy(outcome = null) }
             AdminEvent.DismissError -> setState { copy(error = null) }
+
+            is AdminEvent.Cabinet -> cabinet.onEvent(event)
 
             is AdminEvent.OpenName -> setState {
                 copy(
@@ -328,6 +335,7 @@ class AdminViewModel(
                     repository.sosRecipients().onLoaded { rows -> setState { copy(sos = rows) } }
 
                 AdminDestination.HomeUnits -> loadUnits(UnitKind.Home)
+                AdminDestination.FileCabinet -> cabinet.load()
                 AdminDestination.RemoteUnits -> loadUnits(UnitKind.Remote)
                 AdminDestination.ShootingUnits -> loadUnits(UnitKind.Shooting)
 
@@ -937,7 +945,7 @@ private fun AdminForm?.withError(message: String): AdminForm? = when (this) {
  * through, which is the right failure: an unresolved key still names the
  * problem.
  */
-private val ZillitError.readable: String get() = userMessage.localised()
+internal val ZillitError.readable: String get() = userMessage.localised()
 
 /** Good enough to catch a typo, and no stricter. Addresses are validated by use. */
 private val String.looksLikeEmail: Boolean

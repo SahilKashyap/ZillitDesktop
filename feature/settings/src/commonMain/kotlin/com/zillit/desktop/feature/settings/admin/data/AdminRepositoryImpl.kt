@@ -18,6 +18,8 @@ import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.CrewProfileChange
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
 import com.zillit.desktop.feature.settings.admin.domain.Department
+import com.zillit.desktop.feature.settings.admin.domain.DownloadRequest
+import com.zillit.desktop.feature.settings.admin.domain.DownloadStatus
 import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
@@ -234,6 +236,68 @@ class AdminRepositoryImpl(
             if (includeAlwaysOn) endpoints.allTools else endpoints.adminTools,
             ListSerializer(ToolDto.serializer()),
         ).map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    // -- file cabinet -------------------------------------------------------------------------------
+
+    override suspend fun downloadRequest(): ZillitResult<DownloadRequest?> =
+        cabinet { answer(HttpVerb.Get, endpoints.downloadRequest, null).map(::toDownloadRequest) }
+
+    /** `identifiers` is one comma-joined **string** here, not an array — as the web sends it. */
+    override suspend fun requestDownload(identifiers: List<String>): ZillitResult<DownloadRequest?> =
+        cabinet {
+            answer(
+                HttpVerb.Post,
+                endpoints.downloadRequest,
+                buildJsonObject { put("identifiers", identifiers.joinToString(",")) },
+            ).map(::toDownloadRequest)
+        }
+
+    override suspend fun cancelDownload(requestId: String): ZillitResult<Unit> =
+        cabinet {
+            delete(
+                endpoints.downloadRequest,
+                buildJsonObject { put("requestIds", listOf(requestId).toJsonArray()) },
+            )
+        }
+
+    override suspend fun downloadUrl(requestId: String): ZillitResult<String> =
+        cabinet {
+            answer(HttpVerb.Get, endpoints.downloadZip(requestId), null).flatMap { data ->
+                val url = (data as? JsonObject)?.get("url")?.let { it as? JsonPrimitive }?.content
+                if (url.isNullOrBlank()) {
+                    ZillitResult.Failure(ZillitError.Validation(str(S.desktop_fc_no_download_address)))
+                } else {
+                    ZillitResult.Success(url)
+                }
+            }
+        }
+
+    /**
+     * The server's request object, or null for the empty `{}` it answers with
+     * when nothing is waiting — the web tests `Object.keys(...).length === 0`.
+     */
+    private fun toDownloadRequest(data: JsonElement): DownloadRequest? {
+        val row = data as? JsonObject ?: return null
+        val id = (row["_id"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: return null
+        return DownloadRequest(id, DownloadStatus.of((row["status"] as? JsonPrimitive)?.content))
+    }
+
+    /** The envelope's `data`, with `{ status: 0 }` on an HTTP 200 turned into the failure it is. */
+    private suspend fun answer(verb: HttpVerb, url: String, body: JsonObject?): ZillitResult<JsonElement> =
+        apiClient.envelope(verb = verb, url = url, module = RequestModule.ProjectUser, body = body)
+            .flatMap { envelope -> envelope.checked().map { envelope.data ?: JsonObject(emptyMap()) } }
+
+    /**
+     * This service has a host of its own, and an installation whose config
+     * predates it has no key for it: read that as a sentence, not a crash on
+     * first use.
+     */
+    private suspend fun <T> cabinet(block: suspend () -> ZillitResult<T>): ZillitResult<T> =
+        try {
+            block()
+        } catch (_: IllegalArgumentException) {
+            ZillitResult.Failure(ZillitError.Validation(str(S.desktop_fc_not_configured)))
+        }
 
     override suspend fun setToolsEnabled(tools: List<ProductionTool>): ZillitResult<Unit> =
         put(

@@ -27,6 +27,15 @@ internal class AdminEndpoints(private val config: AppConfig) {
     private val core get() = config.apiV2(ZillitService.Core)
     private val units get() = config.apiV2(ZillitService.Units)
     private val chat get() = config.apiV2(ZillitService.Chat)
+    private val cabinet get() = config.apiV2(ZillitService.FileCabinet)
+
+    // -- file cabinet -------------------------------------------------------
+
+    /** `GET` the current request · `POST` a new one · `DELETE` to cancel. */
+    val downloadRequest get() = "${cabinet}download-request"
+
+    /** `GET` — answers `{ url }`, the ZIP's address. */
+    fun downloadZip(requestId: String) = "${cabinet}download-request/download/$requestId"
 
     // -- departments --------------------------------------------------------
 

@@ -12433,4 +12433,13 @@
     <string name="desktop_info_recovery_user">Add/Edit your recovery email for recovering your project in case you lose your phone or change your phone.</string>
     <string name="desktop_info_leave_admin">Allows you to leave the project. Admin can only leave if there is another Admin on the project. Once you leave the project you can come back again only thru \'Join a Project\'.</string>
     <string name="desktop_info_leave_user">Allows you to leave the project. Once you leave the project you can come back again only thru \'Join a Project.</string>
+    <string name="desktop_fc_not_configured">File Cabinet is not set up on this installation.</string>
+    <string name="desktop_fc_no_download_address">The server did not give a download address for this file.</string>
+    <string name="desktop_fc_no_documents">No documents found</string>
+    <string name="desktop_fc_request_download">Request Download</string>
+    <string name="desktop_fc_cancel_request">Cancel Request</string>
+    <string name="desktop_fc_download_in_progress">Download in progress</string>
+    <string name="desktop_fc_ready_message">When the preparation for download is completed, we will send you a notification. You can continue working on other pages or even go to another project while preparation for downloading is going on</string>
+    <string name="desktop_fc_download_started">Your download has started in the browser.</string>
+    <string name="desktop_file_cabinet_detail">A ZIP of this production\'s documents, by module</string>
 </resources>

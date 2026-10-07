@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.settings.admin.ui.pages.CrewOrderPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.CrewPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.DeleteProductionPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.DepartmentsPage
+import com.zillit.desktop.feature.settings.admin.ui.pages.FileCabinetPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.JobTitlesPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.PreApprovedPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.ProductionNamePage
@@ -79,6 +80,7 @@ fun AdminScreen(
             AdminDestination.ShootingUnits,
             -> UnitsPage(destination, state, onEvent, onBack)
 
+            AdminDestination.FileCabinet -> FileCabinetPage(state, onEvent, onBack)
             AdminDestination.DeleteProduction -> DeleteProductionPage(state, onEvent, onBack)
         }
 

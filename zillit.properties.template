@@ -83,6 +83,9 @@ PROD_STILL_KILLS_BASE_URL=
 PROD_SYNC_ONSET_BASE_URL=
 # Bank Reconciliation. Its own host; answers in all three environments.
 PROD_BANK_RECONCILIATION_BASE_URL=
+# File Cabinet (filecabinetapi — spelled -cabinet, not the web's -cabinate). Answers
+# in all three environments (probed 2026-10-07).
+PROD_FILE_CABINET_BASE_URL=
 
 # -- Consolidated services. Thirteen per-module backends were merged into four
 # -- hosts; the per-module keys above are kept so a rollback is a config edit.

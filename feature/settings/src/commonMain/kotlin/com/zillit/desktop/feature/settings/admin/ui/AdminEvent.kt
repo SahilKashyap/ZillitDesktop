@@ -26,6 +26,27 @@ sealed interface AdminEvent {
 
     data object DismissError : AdminEvent
 
+    // -- file cabinet -------------------------------------------------------
+
+    /** Everything the File Cabinet page can do, routed to one handler. */
+    sealed interface Cabinet : AdminEvent
+
+    data class CabinetToggled(val identifier: String) : Cabinet
+
+    /** Selects every module, or clears the selection when all are already selected. */
+    data object CabinetSelectAllToggled : Cabinet
+
+    data object CabinetRequestDownload : Cabinet
+
+    data object CabinetCancelRequest : Cabinet
+
+    data object CabinetDownload : Cabinet
+
+    /** The page handed the ZIP's address to the browser. */
+    data object CabinetUrlOpened : Cabinet
+
+    data object CabinetNoticeDismissed : Cabinet
+
     // -- forms ---------------------------------------------------------------
 
     /** Opens the name form — for a new thing, or to rename [targetId]. */

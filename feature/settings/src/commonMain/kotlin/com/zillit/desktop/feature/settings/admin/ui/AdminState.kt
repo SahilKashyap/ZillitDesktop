@@ -4,11 +4,13 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
+import com.zillit.desktop.feature.settings.admin.domain.CabinetModule
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
 import com.zillit.desktop.feature.settings.admin.domain.CompanyField
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
+import com.zillit.desktop.feature.settings.admin.domain.DownloadRequest
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
@@ -72,7 +74,13 @@ data class AdminUiState(
 
     /** Job titles and crew order both work inside one selection. */
     val selection: AdminSelection = AdminSelection(),
+
+    val fileCabinet: FileCabinetState = FileCabinetState(),
 ) {
+    /** The File Cabinet rows the search box leaves, by the label as the reader sees it. */
+    val cabinetMatching: List<CabinetModule>
+        get() = fileCabinet.modules.filter { it.name.contains(query.trim(), ignoreCase = true) }
+
     val departmentsMatching: List<Department>
         get() = departments.filter { it.name.contains(query.trim(), ignoreCase = true) }
 
@@ -366,3 +374,26 @@ typealias CompanyFieldDraft = CompanyField
 
 /** Which kind of SOS recipient the form is adding. */
 typealias SosKind = SosEntryType
+
+/**
+ * The File Cabinet page.
+ *
+ * One request at a time, as on the web: while it is [DownloadRequest.isPreparing]
+ * the only action is cancelling it, and once it has completed the only action is
+ * downloading it.
+ */
+data class FileCabinetState(
+    val modules: List<CabinetModule> = emptyList(),
+    /** What the next request will carry, by module identifier. */
+    val selected: Set<String> = emptySet(),
+    val request: DownloadRequest? = null,
+    /** A request, a cancel or a download is in flight. */
+    val isWorking: Boolean = false,
+    /** The "we will notify you" message after a request, until it is dismissed. */
+    val showNotice: Boolean = false,
+    /** A ZIP address waiting to be handed to the browser. */
+    val downloadUrl: String? = null,
+) {
+    val allSelected: Boolean
+        get() = modules.isNotEmpty() && modules.all { it.identifier in selected }
+}

@@ -175,6 +175,20 @@ enum class ZillitService(val configKey: String) {
      * `/api/v2/projects/{projectId}/...`.
      */
     SyncOnset("SYNC_ONSET_BASE_URL"),
+
+    /**
+     * File Cabinet (`zillit_file_cabinate`) — the admin's ZIP of a production's
+     * records: request one, watch it prepare, download it.
+     *
+     * Its own host, `filecabinetapi` (note the spelling: `-cabinet`, where the
+     * web's variable and the backend's repository say `cabinate`). All three
+     * environments answer on `/api/v2/download-request` — dev 401
+     * `libs_moduledata_not_accepted`, QA and production 406 — and the same path
+     * on the old spelling is a 503, probed 2026-10-07. The web's
+     * `VITE_FILE_CABINATE_BASE_URL` ends at `/api` and appends `/v2/…`, the
+     * same split [AppConfig.apiV2] makes.
+     */
+    FileCabinet("FILE_CABINET_BASE_URL"),
     Units("UNITS_BASE_URL"),
     Wardrobe("WARDROBE_BASE_URL"),
     ;

@@ -53,6 +53,9 @@ val ADMIN_SYNC_PAGES: Map<SocketEventName, Set<AdminDestination>> = buildMap {
 
     // Requests waiting to be let in, and profile changes waiting to be signed
     // off. Both queues live on the pre-approved page.
+    // The File Cabinet's ZIP is ready: reread the request, which is now `completed`.
+    put(SocketEventName("filecabinate:zip-generated"), setOf(AdminDestination.FileCabinet))
+
     val queuePages = setOf(AdminDestination.PreApproved, AdminDestination.Crew)
     listOf(
         "project:user:join:request:received",

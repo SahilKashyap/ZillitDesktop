@@ -96,6 +96,20 @@ interface AdminRepository {
      */
     suspend fun tools(includeAlwaysOn: Boolean = false): ZillitResult<List<ProductionTool>>
 
+    // -- file cabinet -------------------------------------------------------
+
+    /** The request in flight or ready for download; null when there is none. */
+    suspend fun downloadRequest(): ZillitResult<DownloadRequest?>
+
+    /** Asks for a ZIP of the modules named by [identifiers]. */
+    suspend fun requestDownload(identifiers: List<String>): ZillitResult<DownloadRequest?>
+
+    /** Withdraws a request that has not completed. */
+    suspend fun cancelDownload(requestId: String): ZillitResult<Unit>
+
+    /** The address a completed request's ZIP is fetched from. */
+    suspend fun downloadUrl(requestId: String): ZillitResult<String>
+
     /**
      * Switches tools on and off for the whole production.
      *

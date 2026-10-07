@@ -80,6 +80,7 @@ data class InfoGuide(val docs: String, val video: String? = null) {
         val UserManagement = InfoGuide("${DOCS}user-management", "${VIDEOS}user%20management%20Web.mp4")
         val PermissionGrid = InfoGuide("${DOCS}viewing-and-posting-rights-grid", "${VIDEOS}How%20to%20view%2C%20grant%20or%20revoke%20Viewing%20%26%20Posting%20Rights%20%20for%20settings%20Web%20TARAN.mp4")
         val Watermark = InfoGuide("${DOCS}watermark-logo-of-company", "${VIDEOS}How%20to%20upload%20watermark%20logo%20%20Web.mp4")
+        val FileCabinet = InfoGuide("${DOCS}file-cabinet-documents", "${VIDEOS}File%20cabinet%20web.mp4")
         val CompanyDetails = InfoGuide("${DOCS}company-details", "${VIDEOS}How%20to%20make%20Company%20Details%20Web.mp4")
 
         /** The web names a guide page for this tile and no clip, so Watch video plays the generic one. */

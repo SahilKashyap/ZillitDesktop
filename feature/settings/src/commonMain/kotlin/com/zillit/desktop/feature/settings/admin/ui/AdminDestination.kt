@@ -34,6 +34,7 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
     HomeUnits("home-units", S.desktop_admin_create_update_on_home_unit),
     RemoteUnits("remote-units", S.desktop_admin_create_remote_shooting_unit),
     ShootingUnits("shooting-units", S.create_join_unit),
+    FileCabinet("file-cabinet", S.file_cabinet_documents),
     DeleteProduction("delete", S.delete_project),
     ;
 
@@ -62,6 +63,9 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
         // A personal production has no crew, which takes most of the page with
         // it: nobody to approve, nobody to rank, nobody to grant rights to.
         Crew, CrewOrder, PreApproved, Sos -> !production.isPersonal
+
+        // The web hides this tile in its production build only.
+        FileCabinet -> production.showFileCabinet && !production.isPersonal
 
         else -> true
     }
@@ -96,6 +100,7 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
             SettingsDestination.RemoteUnit -> RemoteUnits
             SettingsDestination.JoinedUnits -> ShootingUnits
             SettingsDestination.DeleteProduction -> DeleteProduction
+            SettingsDestination.FileCabinet -> FileCabinet
 
             // Handled elsewhere: the approval queues have their own screens,
             // the documentation rows open a browser, the rights grid is the

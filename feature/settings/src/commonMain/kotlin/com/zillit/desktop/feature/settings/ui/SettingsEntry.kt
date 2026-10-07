@@ -52,6 +52,7 @@ enum class SettingsDestination {
     ProductionName,
     ProductionSetup,
     Watermark,
+    FileCabinet,
     CompanyDetails,
     SosRecipients,
     SetupNotes,
@@ -248,6 +249,8 @@ data class ProductionFacts(
     val markedForDeletion: Boolean = false,
     /** The production's `project_type`, which the documentation site is told about. */
     val projectType: String = "",
+    /** False on a production build, as the web hides its File Cabinet tile there. */
+    val showFileCabinet: Boolean = true,
 )
 
 /**
@@ -264,6 +267,7 @@ fun productionFacts(
     type: String?,
     parentName: String? = null,
     markedForDeletion: Boolean = false,
+    showFileCabinet: Boolean = true,
 ): ProductionFacts = ProductionFacts(
     name = name.orEmpty(),
     isOtherType = type.equals(OTHER_PRODUCTION, ignoreCase = true),
@@ -271,6 +275,7 @@ fun productionFacts(
     isRemoteUnit = !parentName.isNullOrBlank(),
     markedForDeletion = markedForDeletion,
     projectType = type.orEmpty(),
+    showFileCabinet = showFileCabinet,
 )
 
 private const val OTHER_PRODUCTION = "other"
@@ -428,6 +433,12 @@ fun adminSettingsEntries(
                 title = str(S.water_mark_logo),
                 detail = str(S.desktop_watermark_detail),
                 icon = ZillitToolIcons.IcSignedDocument,
+            ),
+            SettingsEntry(
+                destination = SettingsDestination.FileCabinet,
+                title = str(S.file_cabinet_documents),
+                detail = str(S.desktop_file_cabinet_detail),
+                icon = ZillitIcons.File,
             ),
             SettingsEntry(
                 destination = SettingsDestination.SosRecipients,

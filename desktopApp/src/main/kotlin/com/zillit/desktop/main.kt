@@ -4434,6 +4434,8 @@ private fun buildSettings(
                     // which cannot spawn units of its own.
                     parentName = context?.project?.parentName,
                     markedForDeletion = context?.project?.markedForDeletion == true,
+                    // The web hides its File Cabinet tile in its production build.
+                    showFileCabinet = ready?.config?.environment?.isProduction != true,
                 ),
             ),
         ),

@@ -515,3 +515,30 @@ fun rightsCascade(row: ToolRights, access: AccessType, enable: Boolean, siblings
         else -> listOf(own)
     }
 }
+
+/**
+ * Where a File Cabinet ZIP has got to — the web's `canDownloadFile.status`.
+ *
+ * Anything the server says that is not one of the three is read as [Pending]:
+ * a request this client does not recognise is still one it must not start a
+ * second of.
+ */
+enum class DownloadStatus {
+    Pending,
+    InProgress,
+    Completed,
+    ;
+
+    companion object {
+        fun of(raw: String?): DownloadStatus = when (raw?.trim()?.lowercase()) {
+            "completed" -> Completed
+            "in-progress" -> InProgress
+            else -> Pending
+        }
+    }
+}
+
+/** The one ZIP the server is preparing, or has prepared, for this production. */
+data class DownloadRequest(val id: String, val status: DownloadStatus) {
+    val isPreparing: Boolean get() = status != DownloadStatus.Completed
+}
