@@ -132,6 +132,7 @@ private fun StillsPages(state: StillsUiState, uploads: UploadQueueState, onEvent
 @Composable
 private fun StillsTopBar(state: StillsUiState, uploads: UploadQueueState, onEvent: (StillsEvent) -> Unit) {
     val k = StillsTheme.c
+    Column(Modifier.fillMaxWidth()) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -163,6 +164,8 @@ private fun StillsTopBar(state: StillsUiState, uploads: UploadQueueState, onEven
         }
 
         if (ready) StatusSlot(state, uploads, onEvent)
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
     }
 }
 

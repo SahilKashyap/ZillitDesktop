@@ -83,7 +83,7 @@ internal fun FaceRow(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(if (active) Color.White.copy(alpha = 0.04f) else Color.Transparent)
+            .background(if (active) k.overlay.copy(alpha = ACTIVE_WASH) else Color.Transparent)
             .padding(vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -217,3 +217,6 @@ internal fun faceNote(face: Face, byCrew: Boolean): String = when {
     face.state == FaceState.Suggested -> str(S.desktop_stk_face_suggested)
     else -> str(S.desktop_stk_face_not_recognised)
 }
+
+/** The row a face box points at, picked out without a border. */
+private const val ACTIVE_WASH = 0.05f

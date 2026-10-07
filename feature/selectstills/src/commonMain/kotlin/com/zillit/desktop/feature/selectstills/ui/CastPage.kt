@@ -155,7 +155,7 @@ private fun MemberRow(state: StillsUiState, member: Member, onEvent: (StillsEven
         Modifier
             .fillMaxWidth()
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-            .background(if (canPost && hovered) Color.White.copy(alpha = 0.05f) else Color.Transparent)
+            .background(if (canPost && hovered) k.overlay.copy(alpha = ROW_HOVER) else Color.Transparent)
             .then(
                 if (canPost) {
                     Modifier.hoverable(source).clickable(interactionSource = source, indication = null) { onEvent(StillsEvent.OpenMember(member.id)) }
@@ -201,7 +201,7 @@ private fun MemberRow(state: StillsUiState, member: Member, onEvent: (StillsEven
                         }
                         if (member.isMyClient) SPill(str(S.desktop_stk_your_actor), SPillKind.Yours)
                         if (canPost && member.recognition != Recognition.Auto) {
-                            SPill(str(recognitionLabel(member.recognition)), SPillKind.Ghost)
+                            SPill(str(recognitionLabel(member.recognition)), SPillKind.Ghost, onPhoto = false)
                         }
                     }
                 }
@@ -215,7 +215,7 @@ private fun MemberRow(state: StillsUiState, member: Member, onEvent: (StillsEven
                     color = if (hovered) k.accent else k.muted,
                     modifier = Modifier
                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
-                        .background(Color.White.copy(alpha = 0.06f))
+                        .background(k.overlay.copy(alpha = CHIP_WASH))
                         .padding(horizontal = 9.dp, vertical = 3.dp),
                 )
                 }
@@ -245,6 +245,9 @@ internal fun recognitionHint(mode: Recognition) = when (mode) {
     Recognition.SuggestOnly -> S.desktop_stk_recognition_suggest_only_hint
     Recognition.Off -> S.desktop_stk_recognition_off_hint
 }
+
+private const val ROW_HOVER = 0.06f
+private const val CHIP_WASH = 0.07f
 
 private val NARROW = 760.dp
 private val SIDE = 360.dp

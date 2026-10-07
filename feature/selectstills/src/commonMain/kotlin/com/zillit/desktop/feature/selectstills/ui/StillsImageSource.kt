@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 
@@ -43,6 +44,12 @@ internal fun SImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     description: String? = null,
+    /**
+     * What fills the frame until the bytes arrive. A card surface by default;
+     * the lightbox passes nothing, because a white rectangle flashing on the
+     * photo's dark mount is worse than the mount showing through.
+     */
+    placeholder: Color = StillsTheme.c.panel2,
     content: @Composable () -> Unit = {},
 ) {
     val source = LocalStillsImages.current
@@ -52,7 +59,7 @@ internal fun SImage(
         bitmap = source.bytes(url)?.let(::decodeStillBitmap)
     }
     val shown = bitmap
-    Box(modifier.background(StillsTheme.c.panel2), contentAlignment = Alignment.Center) {
+    Box(modifier.background(placeholder), contentAlignment = Alignment.Center) {
         if (shown != null) {
             Image(
                 bitmap = shown,

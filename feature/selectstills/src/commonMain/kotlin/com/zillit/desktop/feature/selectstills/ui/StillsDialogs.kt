@@ -57,7 +57,7 @@ internal fun SDialog(
     Box(
         modifier
             .fillMaxSize()
-            .background(k.bg.copy(alpha = 0.72f))
+            .background(k.scrim)
             .then(if (busy) Modifier else Modifier.onBackdropTap(onClose))
             // A dialog owns its keys: whatever is underneath (the lightbox's
             // arrows, K and D) must not hear them.

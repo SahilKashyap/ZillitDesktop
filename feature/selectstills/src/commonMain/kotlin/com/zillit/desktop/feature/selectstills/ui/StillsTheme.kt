@@ -55,18 +55,27 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.feature.selectstills.domain.PillTone
 import kotlinx.coroutines.delay
 
 /**
- * The Select Stills palette — the web's `StillKills.css` custom properties.
+ * The Select Stills palette — the web's `StillKills.css` custom properties,
+ * and a light set beside them.
  *
- * **Dark only.** The web sheet says so in its first line: this is the
- * stills-tagger's dark studio theme, there is no light palette and no toggle.
- * The tool therefore draws in its own colours whatever the app's theme is, so
- * a photographer sees the same tool on both clients.
+ * The web sheet is dark-only ("there is no light palette and no toggle"), but
+ * this app has a theme switch and a tool that ignored it would be the one
+ * black window in a white workspace. So the dark set is the web's, value for
+ * value, and the light set is its counterpart: the same amber identity, the
+ * same meaning per token, inverted surfaces.
+ *
+ * Two things stay dark in both, on purpose. The lightbox's [stageBg] is the
+ * mount a photograph hangs on — a white surround changes how an image reads,
+ * which is the one thing a stills tool must not do. And everything drawn ON a
+ * photo (the tile's gradient, the face boxes, the arrows, the counter) is
+ * legible against an unknown picture, not against the page.
  */
 internal class StillsColors(
     val bg: Color,
@@ -76,10 +85,11 @@ internal class StillsColors(
     val muted: Color,
     val line: Color,
     val accent: Color,
+    /** The accent as TEXT, which needs different weight on each surface. */
     val accentInk: Color,
     val ok: Color,
     val warn: Color,
-    /** The top bar, a shade below the page. */
+    /** The top bar, a shade apart from the page. */
     val bar: Color,
     /** Text on the accent (`#1b1405`), and the count beside it. */
     val onAccent: Color,
@@ -95,12 +105,31 @@ internal class StillsColors(
     val okFg: Color,
     val hintBg: Color,
     val hintLine: Color,
+    /** The lightbox's photo mount. Dark in both themes — see the class note. */
     val stageBg: Color,
+    /** What a dialog or the lightbox lays over the page. Dark in both: a veil dims. */
+    val scrim: Color,
+    /**
+     * What a wash is made of: white on a dark page, black on a light one.
+     * Call sites keep their own alpha, so a hovered row is the same weight of
+     * tint either way.
+     */
+    val overlay: Color,
+    /** A decision's own colour, as a word rather than a chip. */
+    val okText: Color,
+    val badText: Color,
+    /** The pill behind a count on an unselected tab or chip. */
+    val countBg: Color,
+    /** "your actor" — the one marker that is read on a panel, not on a photo. */
+    val yoursBg: Color,
+    val yoursFg: Color,
+    val isDark: Boolean,
 )
 
 private fun c(hex: Long) = Color(0xFF000000 or hex)
 
-private val StillsDark = StillsColors(
+/** The web's sheet, value for value. */
+internal val StillsDark = StillsColors(
     bg = c(0x131416),
     panel = c(0x1b1d20),
     panel2 = c(0x24272b),
@@ -126,6 +155,59 @@ private val StillsDark = StillsColors(
     hintBg = c(0x382c15),
     hintLine = c(0x574322),
     stageBg = c(0x0c0d0e),
+    scrim = Color(0xDB08080A),
+    overlay = Color.White,
+    okText = c(0xa6e3c2),
+    badText = c(0xffb3a0),
+    countBg = Color.White.copy(alpha = 0.07f),
+    yoursBg = c(0x3cc878).copy(alpha = 0.16f),
+    yoursFg = c(0xa6e3c2),
+    isDark = true,
+)
+
+/**
+ * The same tool on a white page.
+ *
+ * The amber stays the amber: as a BACKGROUND it carries dark text and needs no
+ * change, and only where it is text does it darken to [accentInk] — a pale
+ * amber word on white is unreadable. Green and red do the same: the washes
+ * lighten, the words darken.
+ */
+internal val StillsLight = StillsColors(
+    bg = c(0xf3f3f5),
+    panel = c(0xffffff),
+    panel2 = c(0xf1f2f4),
+    ink = c(0x1b1d20),
+    muted = c(0x5f6670),
+    line = c(0xe1e3e8),
+    accent = c(0xe8a33d),
+    accentInk = c(0x8a5a06),
+    ok = c(0x2f9e6a),
+    warn = c(0xb3362c),
+    bar = c(0xffffff),
+    onAccent = c(0x1b1405),
+    onAccentMuted = c(0x4a3509),
+    placeholder = c(0x8a9099),
+    lineHover = c(0xc7cbd2),
+    dashed = c(0xc2c6cc),
+    danger = c(0xa03222),
+    dangerSolid = c(0x9c3524),
+    errorBg = c(0xfde7e4),
+    errorFg = c(0x9c2e22),
+    okBg = c(0xe2f4ea),
+    okFg = c(0x1a6d47),
+    hintBg = c(0xfbf1dc),
+    hintLine = c(0xe8d5a6),
+    // Dark in the light theme too: a photograph is mounted, not framed in white.
+    stageBg = c(0x17181a),
+    scrim = Color(0x8C0A0C10),
+    overlay = Color.Black,
+    okText = c(0x1a6d47),
+    badText = c(0x9c2e22),
+    countBg = Color.Black.copy(alpha = 0.06f),
+    yoursBg = c(0x2f9e6a).copy(alpha = 0.14f),
+    yoursFg = c(0x176b45),
+    isDark = false,
 )
 
 private val LocalStillsColors = staticCompositionLocalOf { StillsDark }
@@ -134,10 +216,11 @@ internal object StillsTheme {
     val c: StillsColors @Composable get() = LocalStillsColors.current
 }
 
-/** Provides the palette. One palette: the tool is dark on a light app too. */
+/** Provides the palette: the app's own light/dark unless [dark] says otherwise. */
 @Composable
-internal fun StillsThemeProvider(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalStillsColors provides StillsDark, content = content)
+internal fun StillsThemeProvider(dark: Boolean? = null, content: @Composable () -> Unit) {
+    val isDark = dark ?: ZillitTheme.colors.isDark
+    CompositionLocalProvider(LocalStillsColors provides if (isDark) StillsDark else StillsLight, content = content)
 }
 
 internal val SemiBold = FontWeight.SemiBold
@@ -362,8 +445,8 @@ internal fun SChip(
     val shape = RoundedCornerShape(999.dp)
 
     val activeFg = when (tone) {
-        SChipTone.Ok -> c(0xa6e3c2)
-        SChipTone.Bad -> k.errorFg
+        SChipTone.Ok -> k.okText
+        SChipTone.Bad -> k.badText
         else -> k.accentInk
     }
     val activeBorder = when (tone) {
@@ -448,7 +531,7 @@ private fun SCount(count: Int, active: Boolean, small: Boolean) {
         color = if (active) k.onAccent else k.ink,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(if (active) Color.Black.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.07f))
+            .background(if (active) Color.Black.copy(alpha = 0.16f) else k.countBg)
             .padding(horizontal = 6.dp, vertical = 1.dp),
         maxLines = 1,
     )
@@ -466,27 +549,35 @@ internal fun SPill(
     kind: SPillKind = SPillKind.Ghost,
     modifier: Modifier = Modifier,
     hint: String? = null,
+    /**
+     * Whether this pill is drawn over a photograph. The neutral ones are dark
+     * because they have to read against an unknown picture; on a panel they
+     * follow the page instead, or a light theme gets a black blob.
+     */
+    onPhoto: Boolean = true,
 ) {
     val k = StillsTheme.c
+    val neutral = onPhoto || k.isDark
     val (background, foreground) = when (kind) {
         SPillKind.Member -> k.accent.copy(alpha = 0.92f) to c(0x221503)
-        SPillKind.Unknown -> c(0x282a2e).copy(alpha = 0.85f) to c(0xc3c7cc)
+        SPillKind.Unknown -> if (neutral) c(0x282a2e).copy(alpha = 0.85f) to c(0xc3c7cc) else k.panel2 to k.muted
         SPillKind.Working -> c(0x233542).copy(alpha = 0.85f) to c(0x9fcde8)
         SPillKind.Failed -> c(0x5a1e14).copy(alpha = 0.9f) to k.errorFg
-        SPillKind.Ghost -> Color.Black.copy(alpha = 0.65f) to c(0xbbbbbb)
+        SPillKind.Ghost -> if (neutral) Color.Black.copy(alpha = 0.65f) to c(0xbbbbbb) else k.panel2 to k.muted
         SPillKind.GateOk -> k.ok.copy(alpha = 0.92f) to c(0x0a2316)
         SPillKind.GateWait -> c(0xe0a856).copy(alpha = 0.9f) to c(0x2a1a04)
         SPillKind.GateNo -> c(0xbe4a3a).copy(alpha = 0.92f) to c(0xfff0ec)
-        SPillKind.Yours -> c(0x3cc878).copy(alpha = 0.16f) to c(0xa6e3c2)
+        SPillKind.Yours -> k.yoursBg to k.yoursFg
     }
     val dashed = kind == SPillKind.Unknown
+    val dashColour = if (neutral) c(0x5a5f66) else k.lineHover
     val shape = RoundedCornerShape(999.dp)
     val body: @Composable () -> Unit = {
         Box(
             modifier
                 .clip(shape)
                 .background(background)
-                .then(if (dashed) Modifier.border(BorderStroke(1.dp, c(0x5a5f66)), shape) else Modifier)
+                .then(if (dashed) Modifier.border(BorderStroke(1.dp, dashColour), shape) else Modifier)
                 .padding(horizontal = if (kind == SPillKind.Yours) 7.dp else 10.dp, vertical = 2.dp),
         ) {
             SText(text, if (kind == SPillKind.Yours) 10 else 12, SemiBold, foreground, maxLines = 1)

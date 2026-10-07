@@ -104,7 +104,7 @@ internal fun PhotoLightbox(state: StillsUiState, box: LightboxState, onEvent: (S
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xDB08080A))
+            .background(k.scrim)
             .focusRequester(focus)
             .focusable()
             // `onKeyEvent`, not `onPreviewKeyEvent`: a focused text field answers
@@ -187,7 +187,13 @@ private fun Stage(box: LightboxState, onEvent: (StillsEvent) -> Unit) {
                     .then(if (ratio >= 1f) Modifier.fillMaxWidth() else Modifier.fillMaxHeight())
                     .aspectRatio(ratio),
             ) {
-                SImage(photo.previewUrl, Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)), ContentScale.Fit, photo.originalName)
+                SImage(
+                    url = photo.previewUrl,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)),
+                    contentScale = ContentScale.Fit,
+                    description = photo.originalName,
+                    placeholder = Color.Transparent,
+                )
                 FaceBoxes(photo, box, onEvent)
             }
         } else {
@@ -363,7 +369,7 @@ private fun SidePanel(
                 }
             }
             if (showState) SStatePill(meta.tone, str(meta.key), str(meta.hint))
-            if (done) SPill(peopleWords(photo.people), SPillKind.Ghost)
+            if (done) SPill(peopleWords(photo.people), SPillKind.Ghost, onPhoto = false)
             SBtn("✕", { onEvent(StillsEvent.ClosePhoto) }, small = true, tooltip = str(S.close))
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))

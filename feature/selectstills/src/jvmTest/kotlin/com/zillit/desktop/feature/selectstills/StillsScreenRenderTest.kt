@@ -62,6 +62,8 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class StillsScreenRenderTest {
 
+
+
     /** Wider than any plausible pair of neighbouring controls. */
     private val minArrowGap = 400f
 

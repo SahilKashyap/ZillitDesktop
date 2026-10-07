@@ -63,7 +63,7 @@ internal fun ApprovalPanel(state: StillsUiState, photo: Photo, box: LightboxStat
         Modifier
             .fillMaxWidth()
             .semantics { contentDescription = label }
-            .background(Color.White.copy(alpha = 0.02f))
+            .background(k.overlay.copy(alpha = PANEL_WASH))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
@@ -226,12 +226,15 @@ private fun GalleryRows(
     }
 }
 
+/** A hair of tint, so the gate reads as its own block on either page. */
+private const val PANEL_WASH = 0.03f
+
 @Composable
 private fun toneOf(state: Decision): Color {
     val k = StillsTheme.c
     return when (state) {
-        Decision.Rejected -> k.errorFg
-        Decision.Approved -> Color(0xFFA6E3C2)
+        Decision.Rejected -> k.badText
+        Decision.Approved -> k.okText
         Decision.Pending -> k.muted
     }
 }

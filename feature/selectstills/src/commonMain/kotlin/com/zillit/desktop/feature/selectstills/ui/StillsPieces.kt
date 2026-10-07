@@ -124,14 +124,17 @@ private fun PhotoTileBody(photo: PhotoTile, onOpen: () -> Unit, modifier: Modifi
                 modifier = Modifier.padding(12.dp),
             )
         }
-        // `.stk-shade` — so the chips read over a bright frame.
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(SHADE)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))),
-        )
+        // `.stk-shade` — so the chips read over a bright frame. Only where
+        // there IS a frame: over a placeholder it is just a grey smear.
+        if (photo.thumbUrl.isNotBlank()) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(SHADE)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))),
+            )
+        }
 
         // `.stk-flag`
         Row(
@@ -445,8 +448,8 @@ private fun SFilterRow(label: String, count: Int?, active: Boolean, onClick: () 
 internal fun SDecisionChip(name: String, state: Decision, note: String = "", modifier: Modifier = Modifier) {
     val k = StillsTheme.c
     val (edge, ink) = when (state) {
-        Decision.Rejected -> k.warn to k.errorFg
-        Decision.Approved -> k.ok to c2(0xa6e3c2)
+        Decision.Rejected -> k.warn to k.badText
+        Decision.Approved -> k.ok to k.okText
         Decision.Pending -> k.line to k.muted
     }
     Row(
@@ -472,7 +475,7 @@ internal fun SDecisionChip(name: String, state: Decision, note: String = "", mod
     }
 }
 
-private fun c2(hex: Long) = Color(0xFF000000 or hex)
+
 /**
  * The three places a decision is taken, and their words — the web's
  * `DecisionBar`:
