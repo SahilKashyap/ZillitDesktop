@@ -157,24 +157,4 @@ internal class AdminEndpoints(private val config: AppConfig) {
      * On **core**, not the units service, unlike the other two kinds.
      */
     val remoteUnits get() = "${core}project/remote-unit"
-
-    // -- rights grid -----------------------------------------------------------------
-
-    /**
-     * `GET` — one person's rights over every tool, as a flat list.
-     *
-     * Not the web's `permissions/crewlist/tools/access`, which answers a whole
-     * spreadsheet. Both phone clients read this one instead, and so does this
-     * client — see `ToolRights` for why.
-     */
-    fun userAccess(userId: String) = "${core}user/access/$userId"
-
-    /**
-     * `POST` — grants or revokes one right.
-     *
-     * `section` is which half of the page the row came from (`home`, `tools`);
-     * a tool that appears in both has separate rights in each, written here
-     * separately.
-     */
-    fun writeAccess(section: String) = "${core}permissions/users/$section/access"
 }

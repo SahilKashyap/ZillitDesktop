@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Prohlížejte a komentujte denní call sheety, které s vámi byly sdíleny ke komentářům. Schvalovatelé mohou také schvalovat nebo zamítat call sheety, které jim byly odeslány k podpisu.</string>
     <string name="desktop_chat_delete_message">Smazat zprávu</string>
     <string name="desktop_chat_delete_message_confirm">Opravdu chcete tuto zprávu smazat?</string>
+    <string name="desktop_pg_user_permissions">Uživatelská oprávnění</string>
+    <string name="desktop_pg_based_on_crew_list">Na základě seznamu štábu</string>
+    <string name="desktop_pg_department_permissions">Oprávnění oddělení</string>
+    <string name="desktop_pg_designation_permissions">Oprávnění podle označení</string>
+    <string name="desktop_pg_all_designations">Všechna označení</string>
+    <string name="desktop_pg_hired_crew_designations">Obsazené pozice štábu</string>
+    <string name="desktop_pg_all_designations_hint">Seznam všech pozic.</string>
+    <string name="desktop_pg_hired_designations_hint">Toto jsou označení, kde jsou uživatelé</string>
+    <string name="desktop_pg_view_default_grid">Zobrazit výchozí mřížku</string>
+    <string name="desktop_pg_no_record_found">Nebyl nalezen žádný záznam.</string>
+    <string name="desktop_pg_download_excel">Stáhnout Excel</string>
+    <string name="desktop_pg_department_permission_file">Oprávnění oddělení</string>
+    <string name="desktop_pg_go">Přejít</string>
+    <string name="desktop_pg_go_to">Přejít na</string>
+    <string name="desktop_pg_range">%1$d-%2$d z %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Žádná data ke stažení</string>
+    <string name="desktop_pg_click_here">Klikněte zde</string>
 </resources>

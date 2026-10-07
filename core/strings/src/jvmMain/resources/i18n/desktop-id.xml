@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Lihat dan komentari lembar panggilan harian yang dibagikan kepada Anda untuk dikomentari. Penyetuju juga dapat menyetujui atau menolak lembar panggilan yang dikirimkan kepada mereka untuk ditandatangani.</string>
     <string name="desktop_chat_delete_message">Hapus pesan</string>
     <string name="desktop_chat_delete_message_confirm">Apakah Anda yakin ingin menghapus pesan ini?</string>
+    <string name="desktop_pg_user_permissions">Izin Pengguna</string>
+    <string name="desktop_pg_based_on_crew_list">Berdasarkan Daftar Kru</string>
+    <string name="desktop_pg_department_permissions">Izin Departemen</string>
+    <string name="desktop_pg_designation_permissions">Izin Jabatan</string>
+    <string name="desktop_pg_all_designations">Semua Jabatan</string>
+    <string name="desktop_pg_hired_crew_designations">Jabatan Kru yang Direkrut</string>
+    <string name="desktop_pg_all_designations_hint">Daftar semua jabatan.</string>
+    <string name="desktop_pg_hired_designations_hint">Ini adalah jabatan di mana ada pengguna</string>
+    <string name="desktop_pg_view_default_grid">Lihat Grid Default</string>
+    <string name="desktop_pg_no_record_found">Tidak ada catatan ditemukan.</string>
+    <string name="desktop_pg_download_excel">Unduh Excel</string>
+    <string name="desktop_pg_department_permission_file">Izin Departemen</string>
+    <string name="desktop_pg_go">Buka</string>
+    <string name="desktop_pg_go_to">Ke halaman</string>
+    <string name="desktop_pg_range">%1$d-%2$d dari %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Tidak ada data untuk diunduh</string>
+    <string name="desktop_pg_click_here">Klik di sini</string>
 </resources>

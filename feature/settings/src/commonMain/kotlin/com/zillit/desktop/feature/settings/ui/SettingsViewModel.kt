@@ -300,6 +300,11 @@ class SettingsViewModel(
             SettingsDestination.ProductionSetup ->
                 sendEffect(SettingsEffect.OpenTool(ACCOUNT_HUB_ROUTE))
 
+            // The same grid Film Tools opens — the web's admin button goes to
+            // `/film-tools/permission-grid?s=admin`, not a page of its own.
+            SettingsDestination.PermissionGrid ->
+                sendEffect(SettingsEffect.OpenTool(PERMISSION_GRID_ROUTE))
+
             SettingsDestination.ApproveNewCrew ->
                 sendEffect(SettingsEffect.OpenApprovals(ApprovalQueue.NewCrew))
 

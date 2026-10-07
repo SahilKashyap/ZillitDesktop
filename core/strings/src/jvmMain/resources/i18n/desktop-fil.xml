@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Tingnan at magkomento sa mga pang-araw-araw na call sheet na ibinahagi sa iyo para sa mga komento. Maaari ring aprubahan o tanggihan ng mga approver ang mga call sheet na ipinadala sa kanila para sa pirma.</string>
     <string name="desktop_chat_delete_message">Burahin ang mensahe</string>
     <string name="desktop_chat_delete_message_confirm">Sigurado ka bang gusto mong burahin ang mensaheng ito?</string>
+    <string name="desktop_pg_user_permissions">Mga Pahintulot ng User</string>
+    <string name="desktop_pg_based_on_crew_list">Batay sa Listahan ng Crew</string>
+    <string name="desktop_pg_department_permissions">Mga Pahintulot ng Departamento</string>
+    <string name="desktop_pg_designation_permissions">Mga Pahintulot ng Posisyon</string>
+    <string name="desktop_pg_all_designations">Lahat ng Mga Posisyon</string>
+    <string name="desktop_pg_hired_crew_designations">Mga Itinalagang Posisyon ng Kinuha na Crew</string>
+    <string name="desktop_pg_all_designations_hint">Listahan ng lahat ng mga posisyon.</string>
+    <string name="desktop_pg_hired_designations_hint">Ito ang mga posisyon kung saan may mga user</string>
+    <string name="desktop_pg_view_default_grid">Tingnan ang Default na Grid</string>
+    <string name="desktop_pg_no_record_found">Walang nahanap na rekord.</string>
+    <string name="desktop_pg_download_excel">I-download ang Excel</string>
+    <string name="desktop_pg_department_permission_file">Pahintulot ng Departamento</string>
+    <string name="desktop_pg_go">Pumunta</string>
+    <string name="desktop_pg_go_to">Pumunta sa</string>
+    <string name="desktop_pg_range">%1$d-%2$d sa %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Walang datos na mada-download</string>
+    <string name="desktop_pg_click_here">Pindutin Dito</string>
 </resources>

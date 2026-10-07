@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">코멘트용으로 공유된 일일 콜 시트를 보고 코멘트를 남깁니다. 승인자는 서명을 위해 전송된 콜 시트를 승인하거나 거부할 수도 있습니다.</string>
     <string name="desktop_chat_delete_message">메시지 삭제</string>
     <string name="desktop_chat_delete_message_confirm">이 메시지를 삭제하시겠습니까?</string>
+    <string name="desktop_pg_user_permissions">사용자 권한</string>
+    <string name="desktop_pg_based_on_crew_list">크루 리스트 기준</string>
+    <string name="desktop_pg_department_permissions">부서 권한</string>
+    <string name="desktop_pg_designation_permissions">직위 권한</string>
+    <string name="desktop_pg_all_designations">모든 직위</string>
+    <string name="desktop_pg_hired_crew_designations">채용된 크루 직책</string>
+    <string name="desktop_pg_all_designations_hint">모든 직책 목록.</string>
+    <string name="desktop_pg_hired_designations_hint">사용자가 있는 직위입니다</string>
+    <string name="desktop_pg_view_default_grid">기본 그리드 보기</string>
+    <string name="desktop_pg_no_record_found">기록을 찾을 수 없습니다.</string>
+    <string name="desktop_pg_download_excel">Excel 다운로드</string>
+    <string name="desktop_pg_department_permission_file">부서 권한</string>
+    <string name="desktop_pg_go">이동</string>
+    <string name="desktop_pg_go_to">이동할 페이지</string>
+    <string name="desktop_pg_range">%1$d-%2$d / %3$d</string>
+    <string name="desktop_pg_nothing_to_download">다운로드할 데이터가 없습니다</string>
+    <string name="desktop_pg_click_here">여기를 클릭하세요</string>
 </resources>

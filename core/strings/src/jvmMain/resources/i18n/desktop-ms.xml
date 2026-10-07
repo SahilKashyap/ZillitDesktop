@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Lihat dan beri komen pada lembaran panggilan harian yang dikongsi dengan anda untuk komen. Pelulus juga boleh meluluskan atau menolak lembaran panggilan yang dihantar kepada mereka untuk ditandatangani.</string>
     <string name="desktop_chat_delete_message">Padam mesej</string>
     <string name="desktop_chat_delete_message_confirm">Adakah anda pasti mahu memadam mesej ini?</string>
+    <string name="desktop_pg_user_permissions">Kebenaran Pengguna</string>
+    <string name="desktop_pg_based_on_crew_list">Berdasarkan Senarai Kru</string>
+    <string name="desktop_pg_department_permissions">Kebenaran Jabatan</string>
+    <string name="desktop_pg_designation_permissions">Kebenaran Jawatan</string>
+    <string name="desktop_pg_all_designations">Semua Jawatan</string>
+    <string name="desktop_pg_hired_crew_designations">Jawatan Kru yang Diambil Bekerja</string>
+    <string name="desktop_pg_all_designations_hint">Senarai semua jawatan.</string>
+    <string name="desktop_pg_hired_designations_hint">Ini adalah jawatan yang mempunyai pengguna</string>
+    <string name="desktop_pg_view_default_grid">Lihat Grid Lalai</string>
+    <string name="desktop_pg_no_record_found">Tiada rekod ditemui.</string>
+    <string name="desktop_pg_download_excel">Muat Turun Excel</string>
+    <string name="desktop_pg_department_permission_file">Kebenaran Jabatan</string>
+    <string name="desktop_pg_go">Pergi</string>
+    <string name="desktop_pg_go_to">Pergi ke</string>
+    <string name="desktop_pg_range">%1$d-%2$d daripada %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Tiada data untuk dimuat turun</string>
+    <string name="desktop_pg_click_here">Klik Di Sini</string>
 </resources>

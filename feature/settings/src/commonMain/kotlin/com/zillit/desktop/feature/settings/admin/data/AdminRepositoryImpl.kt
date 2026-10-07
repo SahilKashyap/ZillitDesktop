@@ -21,11 +21,9 @@ import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
-import com.zillit.desktop.feature.settings.admin.domain.RightsChange
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
@@ -388,32 +386,6 @@ class AdminRepositoryImpl(
         put(
             endpoints.shootingUnitVisibility(unitId),
             buildJsonObject { put("visibility", enabled) },
-        )
-
-    // -- rights ---------------------------------------------------------------------------
-
-    /**
-     * One tool can answer twice.
-     *
-     * A tool that appears on both the dashboard and the Film Tools grid carries
-     * separate rights in each, and arrives as one wire row with both flags set
-     * — so the flat list is longer than the response.
-     */
-    override suspend fun rights(userId: String): ZillitResult<List<ToolRights>> =
-        get(endpoints.userAccess(userId), ListSerializer(ToolAccessDto.serializer()))
-            .map { rows -> rows.flatMap { it.toDomain() } }
-
-    override suspend fun changeRights(change: RightsChange): ZillitResult<Unit> =
-        post(
-            // The section is in the path, and the two halves of the page write
-            // to genuinely different routes.
-            endpoints.writeAccess(change.section.wire),
-            buildJsonObject {
-                put("user_id", change.userId)
-                put("unit_id", change.unitId)
-                put("access_type", change.access.wire)
-                put("enable", change.enable)
-            },
         )
 
     // -- deletion ---------------------------------------------------------------------------------

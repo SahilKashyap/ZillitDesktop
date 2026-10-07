@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">コメント用に共有された日々のコールシートを閲覧し、コメントします。承認者は、署名用に送られてきたコールシートを承認または拒否することもできます。</string>
     <string name="desktop_chat_delete_message">メッセージを削除</string>
     <string name="desktop_chat_delete_message_confirm">このメッセージを削除してもよろしいですか？</string>
+    <string name="desktop_pg_user_permissions">ユーザー権限</string>
+    <string name="desktop_pg_based_on_crew_list">クルーリストに基づく</string>
+    <string name="desktop_pg_department_permissions">部門権限</string>
+    <string name="desktop_pg_designation_permissions">役職権限</string>
+    <string name="desktop_pg_all_designations">すべての役職</string>
+    <string name="desktop_pg_hired_crew_designations">採用済みクルーの役職</string>
+    <string name="desktop_pg_all_designations_hint">すべての役職の一覧。</string>
+    <string name="desktop_pg_hired_designations_hint">これは役職のユーザーです</string>
+    <string name="desktop_pg_view_default_grid">デフォルトグリッドを表示</string>
+    <string name="desktop_pg_no_record_found">レコードが見つかりません。</string>
+    <string name="desktop_pg_download_excel">Excel をダウンロード</string>
+    <string name="desktop_pg_department_permission_file">部門の権限</string>
+    <string name="desktop_pg_go">移動</string>
+    <string name="desktop_pg_go_to">ページ指定</string>
+    <string name="desktop_pg_range">%1$d-%2$d / %3$d 件</string>
+    <string name="desktop_pg_nothing_to_download">ダウンロードするデータがありません</string>
+    <string name="desktop_pg_click_here">ここをクリック</string>
 </resources>

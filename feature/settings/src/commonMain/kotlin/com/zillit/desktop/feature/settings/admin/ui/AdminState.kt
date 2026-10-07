@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.settings.admin.ui
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
 import com.zillit.desktop.feature.settings.admin.domain.CompanyField
@@ -12,11 +11,9 @@ import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
-import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 
 /**
@@ -66,25 +63,13 @@ data class AdminUiState(
     /** The destructive action waiting on a yes. */
     val confirming: AdminConfirmation? = null,
 
-    /** Job titles, crew order and rights all work inside one selection. */
+    /** Job titles and crew order both work inside one selection. */
     val selection: AdminSelection = AdminSelection(),
 ) {
     val departmentsMatching: List<Department>
         get() = departments.filter { it.name.contains(query.trim(), ignoreCase = true) }
 
     val crewMatching: List<CrewMember> get() = crew.filter { it.matches(query) }
-
-    /**
-     * Who the rights grid offers, which is not everyone the crew page lists.
-     *
-     * Only people actually on the production. The crew page has to keep the
-     * removed and the not-yet-accepted — putting somebody back is done from
-     * there — but setting rights on them grants access to a production they
-     * cannot open, and it pads a picker an admin has to scroll. This is the
-     * set Contacts shows for the same reason (`ChatScreen.kt:484` drops the
-     * ones who left; the host drops those who never joined).
-     */
-    val activeCrewMatching: List<CrewMember> get() = crewMatching.filter { it.isActive }
 
     val preApprovedMatching: List<PreApprovedCrew> get() = preApproved.filter { it.matches(query) }
 
@@ -97,13 +82,6 @@ data class AdminUiState(
     /** The department whose job titles or crew order are open. */
     val selectedDepartment: Department?
         get() = departments.firstOrNull { it.id == selection.departmentId }
-
-    /** The crew member whose rights are open. */
-    val selectedCrew: CrewMember?
-        get() = crew.firstOrNull { it.userId == selection.userId }
-
-    fun rights(section: RightsSection): List<ToolRights> =
-        selection.rights.filter { it.section == section }
 
     /** Which unit kind this destination is about. */
     val unitKind: UnitKind?
@@ -118,37 +96,13 @@ data class AdminUiState(
 /**
  * What is picked on the pages that work inside one thing.
  *
- * Job titles are inside a department, rights are inside a person, and the crew
- * order is a list being rearranged before it is saved. Held together rather
- * than as three loose fields so that leaving a page can clear all of it at
- * once — a stale department id surviving into the rights page is how a screen
- * ends up showing someone else's data.
+ * Job titles are inside a department, and the crew order is a list being
+ * rearranged before it is saved. Held together rather than as loose fields so
+ * that leaving a page can clear all of it at once — a stale id surviving into
+ * the next page is how a screen ends up showing someone else's data.
  */
 data class AdminSelection(
     val departmentId: String? = null,
-    val userId: String? = null,
-    /** The person's rights, once fetched. */
-    val rights: List<ToolRights> = emptyList(),
-    val isLoadingRights: Boolean = false,
-    /**
-     * The read was refused or failed, rather than answering with nothing.
-     *
-     * An empty list means two opposite things — a production with no tools,
-     * and a person the server would not answer about (`project_no_access` is
-     * a real answer here, for somebody whose membership has lapsed). Told
-     * apart because the page said "This project has no tools to grant access
-     * to" over a production with thirty-eight of them.
-     */
-    val rightsUnreadable: Boolean = false,
-    /**
-     * The boxes with a write in flight.
-     *
-     * Per box rather than one flag for the row or the page: the web made the
-     * same move deliberately (`AccessGrid.jsx:543-546`) because a single flag
-     * greyed View, Post and Download together on every click. Only the box
-     * being written needs the double-click guard.
-     */
-    val savingRights: Set<RightsCell> = emptySet(),
     /**
      * The order being arranged, before it is saved.
      *
@@ -342,24 +296,6 @@ sealed interface AdminConfirmation {
         override val confirmLabel: String get() = str(S.desktop_schedule_deletion)
     }
 }
-
-/** Which access checkbox was clicked, for the rights page. */
-data class RightsToggle(
-    val toolIdentifier: String,
-    val section: RightsSection,
-    val access: AccessType,
-    val enable: Boolean,
-) {
-    /** Which box this moved, whichever way it moved it. */
-    val cell: RightsCell get() = RightsCell(toolIdentifier, section, access)
-}
-
-/** One box on the grid: a tool, in a section, and one of the three rights. */
-data class RightsCell(
-    val toolIdentifier: String,
-    val section: RightsSection,
-    val access: AccessType,
-)
 
 /** A row of the company form's repeatable field list. */
 typealias CompanyFieldDraft = CompanyField

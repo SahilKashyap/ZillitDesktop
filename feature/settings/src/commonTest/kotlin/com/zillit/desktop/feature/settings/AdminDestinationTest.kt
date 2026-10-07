@@ -114,7 +114,6 @@ class AdminDestinationTest {
         listOf(
             AdminDestination.Crew,
             AdminDestination.CrewOrder,
-            AdminDestination.Rights,
             AdminDestination.PreApproved,
             AdminDestination.Sos,
         ).forEach { page ->
@@ -196,6 +195,8 @@ class AdminDestinationTest {
             SettingsDestination.Help,
             SettingsDestination.SetupNotes,
             SettingsDestination.ProductionSetup,
+            // Opens the Film Tools rights grid, as the web's admin button does.
+            SettingsDestination.PermissionGrid,
         )
     }
 }

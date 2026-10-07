@@ -68,9 +68,6 @@ sealed interface AdminEvent {
     /** Opens a department's job titles, or picks the one being reordered. */
     data class SelectDepartment(val departmentId: String?) : AdminEvent
 
-    /** Opens one person's rights. */
-    data class SelectCrew(val userId: String?) : AdminEvent
-
     // -- direct actions -----------------------------------------------------------
 
     /** Grants or revokes administering the production. Granting asks first. */
@@ -92,9 +89,6 @@ sealed interface AdminEvent {
 
     /** Moves a tool between groups. A blank [groupIdentifier] ungroups it. */
     data class MoveTool(val identifier: String, val groupIdentifier: String) : AdminEvent
-
-    /** Grants or revokes one right, with whatever else that implies. */
-    data class RightsToggled(val toggle: RightsToggle) : AdminEvent
 
     /** Shooting units only. */
     data class UnitEnabledChanged(val unitId: String, val enabled: Boolean) : AdminEvent

@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Bekijk en becommentarieer de dagelijkse callsheets die met u zijn gedeeld voor opmerkingen. Goedkeurders kunnen callsheets die hun ter ondertekening zijn toegestuurd ook goedkeuren of afwijzen.</string>
     <string name="desktop_chat_delete_message">Bericht verwijderen</string>
     <string name="desktop_chat_delete_message_confirm">Weet je zeker dat je dit bericht wilt verwijderen?</string>
+    <string name="desktop_pg_user_permissions">Gebruikersrechten</string>
+    <string name="desktop_pg_based_on_crew_list">Gebaseerd op crewlijst</string>
+    <string name="desktop_pg_department_permissions">Afdelingsrechten</string>
+    <string name="desktop_pg_designation_permissions">Functietitelrechten</string>
+    <string name="desktop_pg_all_designations">Alle Functietitels</string>
+    <string name="desktop_pg_hired_crew_designations">Aangenomen crewfuncties</string>
+    <string name="desktop_pg_all_designations_hint">Lijst van alle functies.</string>
+    <string name="desktop_pg_hired_designations_hint">Dit zijn de functietitels waar gebruikers zijn</string>
+    <string name="desktop_pg_view_default_grid">Bekijk standaard grid</string>
+    <string name="desktop_pg_no_record_found">Geen record gevonden.</string>
+    <string name="desktop_pg_download_excel">Excel Downloaden</string>
+    <string name="desktop_pg_department_permission_file">Afdelingsmachtiging</string>
+    <string name="desktop_pg_go">Ga</string>
+    <string name="desktop_pg_go_to">Ga naar</string>
+    <string name="desktop_pg_range">%1$d-%2$d van %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Geen gegevens om te downloaden</string>
+    <string name="desktop_pg_click_here">Klik Hier</string>
 </resources>

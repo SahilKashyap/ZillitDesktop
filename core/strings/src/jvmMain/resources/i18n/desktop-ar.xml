@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">اعرض أوراق الاستدعاء اليومية التي تمت مشاركتها معك للتعليق وعلّق عليها. يمكن للموافقين أيضًا الموافقة على أوراق الاستدعاء المرسلة إليهم للتوقيع أو رفضها.</string>
     <string name="desktop_chat_delete_message">حذف الرسالة</string>
     <string name="desktop_chat_delete_message_confirm">هل أنت متأكد أنك تريد حذف هذه الرسالة؟</string>
+    <string name="desktop_pg_user_permissions">أذونات المستخدم</string>
+    <string name="desktop_pg_based_on_crew_list">بناءً على قائمة الطاقم</string>
+    <string name="desktop_pg_department_permissions">أذونات القسم</string>
+    <string name="desktop_pg_designation_permissions">أذونات اللقب</string>
+    <string name="desktop_pg_all_designations">جميع الألقاب</string>
+    <string name="desktop_pg_hired_crew_designations">المسميات الوظيفية للطاقم المُعيَّن</string>
+    <string name="desktop_pg_all_designations_hint">قائمة بجميع المسميات الوظيفية.</string>
+    <string name="desktop_pg_hired_designations_hint">هذه هي الألقاب حيث يوجد مستخدمون</string>
+    <string name="desktop_pg_view_default_grid">عرض الشبكة الافتراضية</string>
+    <string name="desktop_pg_no_record_found">لم يتم العثور على سجل.</string>
+    <string name="desktop_pg_download_excel">تحميل إكسل</string>
+    <string name="desktop_pg_department_permission_file">صلاحيات القسم</string>
+    <string name="desktop_pg_go">انتقال</string>
+    <string name="desktop_pg_go_to">انتقل إلى</string>
+    <string name="desktop_pg_range">%1$d-%2$d من %3$d</string>
+    <string name="desktop_pg_nothing_to_download">لا توجد بيانات للتنزيل</string>
+    <string name="desktop_pg_click_here">انقر هنا</string>
 </resources>

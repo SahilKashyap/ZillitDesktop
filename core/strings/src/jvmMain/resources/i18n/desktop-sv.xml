@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Visa och kommentera de dagliga inspelningsscheman som delats med dig för kommentarer. Godkännare kan även godkänna eller avvisa inspelningsscheman som skickats till dem för signatur.</string>
     <string name="desktop_chat_delete_message">Radera meddelande</string>
     <string name="desktop_chat_delete_message_confirm">Är du säker på att du vill radera det här meddelandet?</string>
+    <string name="desktop_pg_user_permissions">Användarbehörigheter</string>
+    <string name="desktop_pg_based_on_crew_list">Baserat på crewlistan</string>
+    <string name="desktop_pg_department_permissions">Avdelningsbehörigheter</string>
+    <string name="desktop_pg_designation_permissions">Beteckningsbehörigheter</string>
+    <string name="desktop_pg_all_designations">Alla beteckningar</string>
+    <string name="desktop_pg_hired_crew_designations">Anställda crewbefattningar</string>
+    <string name="desktop_pg_all_designations_hint">Lista över alla befattningar.</string>
+    <string name="desktop_pg_hired_designations_hint">Detta är beteckningar där det finns användare.</string>
+    <string name="desktop_pg_view_default_grid">Visa standardrutnät</string>
+    <string name="desktop_pg_no_record_found">Ingen post hittades.</string>
+    <string name="desktop_pg_download_excel">Ladda Ner Excel</string>
+    <string name="desktop_pg_department_permission_file">Avdelningstillstånd</string>
+    <string name="desktop_pg_go">Gå</string>
+    <string name="desktop_pg_go_to">Gå till</string>
+    <string name="desktop_pg_range">%1$d-%2$d av %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Inga data att ladda ner</string>
+    <string name="desktop_pg_click_here">Klicka här</string>
 </resources>

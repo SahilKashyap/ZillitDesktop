@@ -9,25 +9,30 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
+import com.zillit.desktop.core.strings.Strings
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
+import com.zillit.desktop.feature.permissiongrid.domain.DefaultGridPage
+import com.zillit.desktop.feature.permissiongrid.domain.DesignationFilter
 import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
 import com.zillit.desktop.feature.permissiongrid.domain.GridPage
+import com.zillit.desktop.feature.permissiongrid.domain.GridQuery
 import com.zillit.desktop.feature.permissiongrid.domain.GridSection
 import com.zillit.desktop.feature.permissiongrid.domain.PermissionGridRepository
 import com.zillit.desktop.feature.permissiongrid.domain.RightsSync
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketEventName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 
 /**
  * `permissions/{axis}/{section}/access` — the production's rights spreadsheet.
  *
- * The same pair of URLs the web uses. The admin settings page deliberately
- * reads the *per-user* route instead (`user/access/{id}`, one person at a
- * time, as both phones do); this tool is the spreadsheet, so it reads the one
- * the phones skip. The write is the same endpoint either way, which is why a
- * cell toggled here shows up on the admin page and vice versa.
+ * The same pair of URLs the web uses, read under the axis's read name
+ * (`crewlist` for the crew-list axis) and written under its write name
+ * (`users`). Admin Settings opens this same grid, as the web's admin button
+ * does (`/film-tools/permission-grid?s=admin`).
  *
  * @param currentUserId whose row to hide — see [toPage].
  */
@@ -38,6 +43,8 @@ class PermissionGridRepositoryImpl(
     /** Null keeps the grid socket-less — tests, and hosts without a bus. */
     private val bus: SocketEventBus? = null,
     private val currentProjectId: () -> String? = { null },
+    /** The language the server matches and sorts translated labels in. */
+    private val languageCode: () -> String = { Strings.language.code },
 ) : PermissionGridRepository {
 
     private val base = config.apiV2()
@@ -56,23 +63,52 @@ class PermissionGridRepositoryImpl(
             }
             ?: emptyFlow()
 
-    private fun accessUrl(axis: GridAxis, section: GridSection) =
-        "${base}permissions/${axis.wire}/${section.wire}/access"
+    override val departmentsReordered: Flow<Unit> =
+        bus?.on(DEPARTMENT_REORDERED)
+            ?.map { }
+            ?: emptyFlow()
 
-    override suspend fun load(
-        axis: GridAxis,
-        section: GridSection,
-        page: Int,
-        limit: Int,
-    ): ZillitResult<GridPage> =
-        apiClient.request(
+    private fun readUrl(axis: GridAxis, section: GridSection) =
+        "${base}permissions/${axis.readWire}/${section.wire}/access"
+
+    private fun writeUrl(axis: GridAxis, section: GridSection) =
+        "${base}permissions/${axis.writeWire}/${section.wire}/access"
+
+    /**
+     * One page, searched and sorted by the server (web, 2026-09-14): `search`
+     * filters before paging, `lang` says which language the translated labels
+     * are matched and sorted in, and `only_used_designation=1` narrows the
+     * designations axis to the hired ones. Each is sent only when it applies —
+     * the contract is `=1`, and a `0` would lean on the server reading the
+     * string "0" as false.
+     */
+    override suspend fun load(query: GridQuery): ZillitResult<GridPage> {
+        val params = buildMap<String, Any> {
+            put("page", query.page)
+            put("limit", query.limit)
+            if (query.search.isNotBlank()) put("search", query.search)
+            if (query.axis == GridAxis.Designations && query.designations == DesignationFilter.Used) {
+                put("only_used_designation", 1)
+            }
+            put("lang", languageCode())
+        }
+        return apiClient.request(
             verb = HttpVerb.Get,
-            url = accessUrl(axis, section),
+            url = readUrl(query.axis, query.section),
             serializer = GridPageDto.serializer(),
             // Rights are per-person, per-production; a lighter header answers 406.
             module = RequestModule.ProjectUser,
-            queryParameters = mapOf("page" to page, "limit" to limit),
-        ).map { it.toPage(axis = axis, mine = currentUserId()) }
+            queryParameters = params,
+        ).map { it.toPage(axis = query.axis, mine = currentUserId()) }
+    }
+
+    override suspend fun loadDefaults(axis: GridAxis, section: GridSection): ZillitResult<DefaultGridPage> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = readUrl(axis, section),
+            serializer = GridPageDto.serializer(),
+            module = RequestModule.ProjectUser,
+        ).map { it.toDefaultPage(axis) }
 
     /**
      * One cell.
@@ -95,14 +131,14 @@ class PermissionGridRepositoryImpl(
             unitId = unitId,
             enable = enable,
             accessType = kind.wire,
-            userId = entityId.takeIf { axis == GridAxis.Crew },
+            userId = entityId.takeIf { axis.isPeople },
             departmentId = entityId.takeIf { axis == GridAxis.Departments },
             designationId = entityId.takeIf { axis == GridAxis.Designations },
         )
         return when (
             val outcome = apiClient.envelope(
                 verb = HttpVerb.Post,
-                url = accessUrl(axis, section),
+                url = writeUrl(axis, section),
                 module = RequestModule.ProjectUser,
                 body = jsonBody(body),
             )
@@ -122,5 +158,6 @@ class PermissionGridRepositoryImpl(
 
     private companion object {
         const val HTTP_OK = 200
+        val DEPARTMENT_REORDERED = SocketEventName("department:reordered")
     }
 }

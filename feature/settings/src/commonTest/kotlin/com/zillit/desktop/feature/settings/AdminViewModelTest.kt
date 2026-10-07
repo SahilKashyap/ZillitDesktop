@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.settings
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
@@ -14,11 +13,8 @@ import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
-import com.zillit.desktop.feature.settings.admin.domain.RightsChange
-import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
@@ -27,7 +23,6 @@ import com.zillit.desktop.feature.settings.admin.ui.AdminField
 import com.zillit.desktop.feature.settings.admin.ui.AdminForm
 import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
 import com.zillit.desktop.feature.settings.admin.ui.NameKind
-import com.zillit.desktop.feature.settings.admin.ui.RightsToggle
 import com.zillit.desktop.feature.settings.admin.ui.moved
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -82,24 +77,8 @@ class AdminViewModelTest {
                 CrewMember("u2", "Grace Hopper", deviceId = "dev-2", isAdmin = true),
             ),
         )
-        var rightsAnswer: ZillitResult<List<ToolRights>> = ZillitResult.Success(
-            listOf(
-                ToolRights(
-                    toolIdentifier = "budget_tool",
-                    toolName = "Budget",
-                    unitId = "unit-1",
-                    section = RightsSection.Tools,
-                    canView = true,
-                    canPost = true,
-                    canDownload = true,
-                ),
-            ),
-        )
-
         /** What every mutation answers. Set to a failure to test the sad path. */
         var mutationAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
-
-        val rightsChanges = mutableListOf<RightsChange>()
 
         private fun record(name: String): ZillitResult<Unit> {
             calls += name
@@ -201,16 +180,6 @@ class AdminViewModelTest {
         override suspend fun deleteUnit(kind: UnitKind, unitId: String) = record("deleteUnit:$kind:$unitId")
         override suspend fun setUnitEnabled(unitId: String, enabled: Boolean) =
             record("setUnitEnabled:$unitId:$enabled")
-
-        override suspend fun rights(userId: String): ZillitResult<List<ToolRights>> {
-            calls += "rights:$userId"
-            return rightsAnswer
-        }
-
-        override suspend fun changeRights(change: RightsChange): ZillitResult<Unit> {
-            rightsChanges += change
-            return record("changeRights:${change.access.wire}:${change.enable}")
-        }
 
         override suspend fun scheduleDeletion(hours: Int) = record("scheduleDeletion:$hours")
         override suspend fun cancelDeletion() = record("cancelDeletion")
@@ -405,305 +374,6 @@ class AdminViewModelTest {
         assertEquals(listOf("crew"), repository.calls)
         assertNull(model.state.value.confirming)
     }
-
-    // -- rights ------------------------------------------------------------------
-
-    @Test
-    fun `picking someone reads their rights`() = runTest {
-        val repository = Recorder()
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-
-        assertEquals(listOf("crew", "rights:u1"), repository.calls)
-        assertEquals(1, model.state.value.selection.rights.size)
-    }
-
-    /**
-     * One click, one call, then a re-read.
-     *
-     * The server cascades view/post/download itself (`ZL-17812` on the web —
-     * see [com.zillit.desktop.feature.settings.admin.domain.RightsChange]'s
-     * doc); this client no longer chains extra calls by hand, so revoking view
-     * sends only the view change and relies on the re-read to show whatever the
-     * server did to posting and downloading.
-     */
-    @Test
-    fun `revoking view sends a single change and re-reads`() = runTest {
-        val repository = Recorder()
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-        repository.calls.clear()
-
-        model.onEvent(
-            AdminEvent.RightsToggled(
-                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
-            ),
-        )
-        advanceUntilIdle()
-
-        assertEquals(listOf(AccessType.View), repository.rightsChanges.map { it.access })
-        assertEquals(false, repository.rightsChanges.single().enable)
-        assertEquals("rights:u1", repository.calls.last())
-    }
-
-    /**
-     * The rights grid offers only people actually on the production.
-     *
-     * The crew page has to keep the removed and the not-yet-accepted — putting
-     * somebody back is done from there — but setting rights on them grants
-     * access to a production they cannot open, and it pads a picker an admin
-     * scrolls. Contacts draws its own list the same way.
-     */
-    @Test
-    fun `the rights picker lists only active crew`() = runTest {
-        val repository = Recorder()
-        repository.crewAnswer = ZillitResult.Success(
-            listOf(
-                CrewMember("u1", "Ada Lovelace", deviceId = "dev-1"),
-                CrewMember("u2", "Grace Hopper", deviceId = "dev-2", status = CrewStatus.Removed),
-                CrewMember("u3", "Katherine Johnson", deviceId = "dev-3", status = CrewStatus.Pending),
-            ),
-        )
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-
-        assertEquals(listOf("Ada Lovelace"), model.state.value.activeCrewMatching.map { it.fullName })
-        // The crew page still sees all three.
-        assertEquals(3, model.state.value.crewMatching.size)
-    }
-
-    /**
-     * The box moves on the click, not on the answer.
-     *
-     * This used to write and then re-read the whole person, which emptied the
-     * panel to a "Reading access" line and rebuilt it scrolled to the top — one
-     * click appeared to do nothing except throw the page away.
-     */
-    @Test
-    fun `a toggle paints at once and keeps the panel`() = runTest {
-        val repository = Recorder()
-        repository.mutationAnswer = ZillitResult.Success(Unit)
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-
-        model.onEvent(
-            AdminEvent.RightsToggled(
-                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
-            ),
-        )
-
-        // Before the call has answered: the box has moved and the list is still there.
-        val mid = model.state.value.selection
-        assertFalse(mid.rights.single().canView)
-        assertEquals(1, mid.rights.size)
-        assertFalse(mid.isLoadingRights)
-
-        advanceUntilIdle()
-    }
-
-    /** A refusal puts the box back where the admin left it. */
-    @Test
-    fun `a refused toggle rolls the box back`() = runTest {
-        val repository = Recorder()
-        repository.mutationAnswer = ZillitResult.Failure(ZillitError.Validation("Not yours to change."))
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-
-        model.onEvent(
-            AdminEvent.RightsToggled(
-                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
-            ),
-        )
-        advanceUntilIdle()
-
-        assertTrue(model.state.value.selection.rights.single().canView)
-        assertNotNull(model.state.value.error)
-    }
-
-    /** One box at a time, not one page at a time. */
-    @Test
-    fun `a second click on the same box while it is in flight is ignored`() = runTest {
-        val repository = Recorder()
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-        repository.rightsChanges.clear()
-
-        val toggle = RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false)
-        model.onEvent(AdminEvent.RightsToggled(toggle))
-        model.onEvent(AdminEvent.RightsToggled(toggle))
-        advanceUntilIdle()
-
-        assertEquals(1, repository.rightsChanges.size)
-    }
-
-    /**
-     * `ZL-16376` costs no second call: the cascade is the server's, and this
-     * client only moves the tick to where the next read will confirm it. The
-     * rule itself is asserted in `RightsGridDisplayTest`, where it is a pure
-     * function rather than a race against the read that follows.
-     */
-    @Test
-    fun `granting a deal memo's viewing sends one call, not two`() = runTest {
-        val repository = Recorder()
-        repository.rightsAnswer = ZillitResult.Success(
-            listOf(
-                ToolRights(
-                    toolIdentifier = "deal_memo_label",
-                    toolName = "deal_memo_label",
-                    unitId = "unit-1",
-                    section = RightsSection.Tools,
-                ),
-            ),
-        )
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-        repository.rightsChanges.clear()
-
-        model.onEvent(
-            AdminEvent.RightsToggled(
-                RightsToggle("deal_memo_label", RightsSection.Tools, AccessType.View, enable = true),
-            ),
-        )
-        advanceUntilIdle()
-
-        assertEquals(1, repository.rightsChanges.size)
-        assertEquals(AccessType.View, repository.rightsChanges.single().access)
-    }
-
-    /**
-     * Nothing back and nothing wrong are different answers.
-     *
-     * The server refuses a read about somebody whose membership has lapsed
-     * (`project_no_access`), and the page captioned that "This project has no
-     * tools to grant access to" — over a production with thirty-eight of them.
-     */
-    @Test
-    fun `a refused read is not an empty production`() = runTest {
-        val repository = Recorder()
-        repository.rightsAnswer = ZillitResult.Failure(ZillitError.Validation("project_no_access"))
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-
-        assertTrue(model.state.value.selection.rightsUnreadable)
-        assertTrue(model.state.value.selection.rights.isEmpty())
-    }
-
-    /** A production that really has no tools still reads as empty, not broken. */
-    @Test
-    fun `an empty answer is not a refusal`() = runTest {
-        val repository = Recorder()
-        repository.rightsAnswer = ZillitResult.Success(emptyList())
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-
-        assertFalse(model.state.value.selection.rightsUnreadable)
-    }
-
-    /**
-     * Whatever went wrong reading the last person is not news about this one.
-     * The banner used to survive the switch and sit over a grid that had
-     * loaded perfectly well.
-     */
-    @Test
-    fun `picking someone else clears the last one's error`() = runTest {
-        val repository = Recorder()
-        repository.rightsAnswer = ZillitResult.Failure(ZillitError.Validation("project_no_access"))
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-        assertNotNull(model.state.value.error)
-
-        repository.rightsAnswer = ZillitResult.Success(
-            listOf(
-                ToolRights(
-                    toolIdentifier = "budget_tool",
-                    toolName = "Budget",
-                    unitId = "unit-1",
-                    section = RightsSection.Tools,
-                ),
-            ),
-        )
-        model.onEvent(AdminEvent.SelectCrew("u2"))
-        advanceUntilIdle()
-
-        assertNull(model.state.value.error)
-        assertFalse(model.state.value.selection.rightsUnreadable)
-        assertEquals(1, model.state.value.selection.rights.size)
-    }
-
-    /** A right the server says is not ours to change is not sent. */
-    @Test
-    fun `a locked right sends nothing`() = runTest {
-        val repository = Recorder()
-        repository.rightsAnswer = ZillitResult.Success(
-            listOf(
-                ToolRights(
-                    toolIdentifier = "budget_tool",
-                    toolName = "Budget",
-                    unitId = "unit-1",
-                    section = RightsSection.Tools,
-                    canView = true,
-                    postLocked = true,
-                ),
-            ),
-        )
-        val model = viewModel(repository)
-
-        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
-        advanceUntilIdle()
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-        repository.calls.clear()
-
-        model.onEvent(
-            AdminEvent.RightsToggled(
-                RightsToggle("budget_tool", RightsSection.Tools, AccessType.Post, enable = true),
-            ),
-        )
-        advanceUntilIdle()
-
-        assertTrue(repository.rightsChanges.isEmpty())
-        assertTrue(repository.calls.isEmpty())
-    }
-
-    // -- reordering ------------------------------------------------------------------
 
     @Test
     fun `reordering is local until it is saved`() = runTest {
@@ -1018,43 +688,5 @@ class AdminViewModelTest {
         assertNotNull(model.state.value.error)
     }
 
-    /**
-     * `RightsToggled` reaches `onRightsToggled` directly from `onEvent`,
-     * bypassing `mutate()` — the one choke point every other write in this
-     * file is guarded through. It needs its own `isAdmin()` check, or a
-     * directly-dispatched event changes another crew member's rights with
-     * no client-side gate at all (the screen still refuses to render the
-     * Rights panel for a non-admin, but that is not this test's subject).
-     *
-     * A selection has to be read first: with nothing picked,
-     * `onRightsToggled` returns on its own for lack of a `userId` and the
-     * test would pass without the guard it exists to prove.
-     */
-    @Test
-    fun `a non-admin cannot toggle rights`() = runTest {
-        val repository = Recorder()
-        val model = AdminViewModel(
-            repository,
-            productionName = { "Feature One" },
-            isAdmin = { false },
-        )
-
-        model.onEvent(AdminEvent.SelectCrew("u1"))
-        advanceUntilIdle()
-        repository.calls.clear()
-
-        model.onEvent(
-            AdminEvent.RightsToggled(
-                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
-            ),
-        )
-        advanceUntilIdle()
-
-        assertTrue(
-            repository.rightsChanges.isEmpty(),
-            "a non-admin changed rights: ${repository.rightsChanges}",
-        )
-        assertNotNull(model.state.value.error)
-    }
 
 }

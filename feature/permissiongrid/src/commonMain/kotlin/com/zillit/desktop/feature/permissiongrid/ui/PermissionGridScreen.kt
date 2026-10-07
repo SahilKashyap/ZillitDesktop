@@ -1,7 +1,9 @@
 package com.zillit.desktop.feature.permissiongrid.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -11,14 +13,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
@@ -27,86 +28,148 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ButtonSize
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorState
+import com.zillit.desktop.core.designsystem.component.ZillitHorizontalScrollRail
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
+import com.zillit.desktop.feature.permissiongrid.domain.DesignationFilter
 import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
-import com.zillit.desktop.feature.permissiongrid.domain.GridCell
 import com.zillit.desktop.feature.permissiongrid.domain.GridRow
 import com.zillit.desktop.feature.permissiongrid.domain.GridSection
+import com.zillit.desktop.feature.permissiongrid.domain.SubjectColumn
 
 /**
- * The production's viewing & posting rights, as a spreadsheet.
+ * The Viewing & Posting Rights Grid — the web's `AccessGrid.jsx`, the one
+ * screen Film Tools and Admin Settings both open.
  *
- * One frozen column of subjects on the left and a tool per column across,
- * every cell three checkboxes — view, post, download. The matrix scrolls
- * sideways under a header that scrolls with it, because a production runs
- * forty tools and no window is that wide.
+ * The amber toolbar (search, Home/Tools, the four types, the hired-designations
+ * filter, View Default Grid), the crew-list banner for admins, then a bordered
+ * table: frozen subject columns on the left and a tool per column after them,
+ * each cell Viewing, Download and Posting stacked, with the pager under it.
  */
 @Composable
 fun PermissionGridScreen(
     state: PermissionGridUiState,
     onEvent: (PermissionGridEvent) -> Unit,
     modifier: Modifier = Modifier,
+    onViewDefaultGrid: () -> Unit = {},
+    onOpenListingOrder: (() -> Unit)? = null,
 ) {
-    Column(
-        modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas),
-    ) {
-        ZillitPageHeader(
-            title = str(S.desktop_pg_title),
-            description = str(S.desktop_pg_description),
+    Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+        Column(Modifier.fillMaxSize()) {
+            Toolbar(state, onEvent, onViewDefaultGrid)
+            if (state.showsListingOrderBanner) ListingOrderBanner(onOpenListingOrder)
+            Box(Modifier.weight(1f)) { Body(state, onEvent) }
+        }
+        ZillitToast(
+            message = state.toast?.text,
+            onDismiss = { onEvent(PermissionGridEvent.DismissToast) },
+            tone = if (state.toast?.success == true) ZillitToastTone.Success else ZillitToastTone.Danger,
         )
+    }
+}
 
-        Controls(state, onEvent)
-
-        state.notice?.let { notice ->
-            ZillitNotice(
-                text = notice,
-                tone = StatusTone.Rejected,
-                icon = ZillitIcons.Info,
-                modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+@Composable
+private fun Toolbar(
+    state: PermissionGridUiState,
+    onEvent: (PermissionGridEvent) -> Unit,
+    onViewDefaultGrid: () -> Unit,
+) {
+    GridToolbar {
+        ZillitSearchField(
+            value = state.query,
+            onValueChange = { onEvent(PermissionGridEvent.Search(it)) },
+            placeholder = str(S.search),
+            containerColor = ZillitTheme.colors.surface,
+            modifier = Modifier.width(SEARCH_WIDTH),
+        )
+        ZillitSelect(
+            value = state.section,
+            options = GridSection.entries,
+            onSelect = { onEvent(PermissionGridEvent.SelectSection(it)) },
+            label = { it.label },
+            showInitials = false,
+            modifier = Modifier.width(SECTION_WIDTH),
+        )
+        ZillitSelect(
+            value = state.axis,
+            options = GridAxis.entries,
+            onSelect = { onEvent(PermissionGridEvent.SelectAxis(it)) },
+            label = { it.label },
+            showInitials = false,
+            modifier = Modifier.width(TYPE_WIDTH),
+        )
+        if (state.axis == GridAxis.Designations) {
+            ZillitSelect(
+                value = state.designations,
+                options = DesignationFilter.entries,
+                onSelect = { onEvent(PermissionGridEvent.SelectDesignations(it)) },
+                label = { it.label },
+                subtitle = { it.hint },
+                showInitials = false,
+                modifier = Modifier.width(FILTER_WIDTH),
             )
         }
+        ZillitButton(
+            text = str(S.desktop_pg_view_default_grid),
+            onClick = onViewDefaultGrid,
+            variant = ButtonVariant.Secondary,
+        )
+    }
+}
 
-        if (!state.canEdit && state.viewer.ready && state.viewer.canView) {
-            ZillitNotice(
-                text = str(S.desktop_pg_read_only_notice),
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Info,
-                modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
-                action = {
-                    ZillitButton(
-                        text = str(S.desktop_ask_an_admin),
-                        onClick = { onEvent(PermissionGridEvent.RequestPostingRights) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
-                },
+/**
+ * ZL-16967 / ZL-17040: on the crew-list axis an admin is told where the order
+ * comes from, with a Click Here that opens the department listing order.
+ */
+@Composable
+private fun ListingOrderBanner(onOpenListingOrder: (() -> Unit)?) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.infoSoft)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Info, tint = colors.info, size = 16.dp)
+        ZillitText(
+            text = "${str(S.desktop_cl_header_text)} ${str(S.or)}",
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.textPrimary,
+            maxLines = 2,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (onOpenListingOrder != null) {
+            ZillitText(
+                text = str(S.desktop_pg_click_here),
+                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.accent,
+                modifier = Modifier.clip(ZillitTheme.shapes.small).clickable(onClick = onOpenListingOrder),
             )
         }
-
-        Box(Modifier.weight(1f)) { Body(state, onEvent) }
-
-        if (state.viewer.canView && state.grid.rows.isNotEmpty()) Footer(state, onEvent)
     }
 }
 
@@ -114,346 +177,307 @@ fun PermissionGridScreen(
 @Composable
 private fun Body(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
     when {
-        !state.viewer.ready -> Centred(str(S.desktop_pg_checking_access))
+        !state.viewer.ready -> GridCentred(str(S.desktop_pg_checking_access))
 
         !state.viewer.canView -> ZillitEmptyState(
             title = str(S.dd_publish_no_access_badge),
             message = str(S.desktop_pg_no_viewing_rights),
         )
 
-        state.error != null -> ZillitErrorState(
+        state.error != null && state.grid.columns.isEmpty() -> ZillitErrorState(
             message = state.error,
             onRetry = { onEvent(PermissionGridEvent.Reload) },
         )
 
-        state.isBusy && state.grid.rows.isEmpty() -> Centred(str(S.desktop_pg_loading_grid))
+        // The web swaps the table for its loader on every read.
+        state.isBusy -> GridLoading()
 
-        state.grid.rows.isEmpty() -> ZillitEmptyState(
-            title = str(S.desktop_nothing_to_show),
-            message = str(S.desktop_pg_nothing_to_grant, state.axis.label.lowercase()),
-        )
-
-        state.rows.isEmpty() -> Centred(str(S.desktop_no_one_matches_query, state.query.trim()))
-
-        else -> Matrix(state, onEvent)
-    }
-}
-
-/** The two selects, the search box — the web's own row of controls. */
-@Composable
-private fun Controls(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        ZillitSelect(
-            value = state.section,
-            options = GridSection.entries,
-            onSelect = { onEvent(PermissionGridEvent.SelectSection(it)) },
-            label = { it.label },
-            enabled = !state.isBusy,
-            modifier = Modifier.width(SELECT_WIDTH),
-        )
-        ZillitSelect(
-            value = state.axis,
-            options = GridAxis.entries,
-            onSelect = { onEvent(PermissionGridEvent.SelectAxis(it)) },
-            label = { it.label },
-            enabled = !state.isBusy,
-            modifier = Modifier.width(SELECT_WIDTH),
-        )
-        Spacer(Modifier.weight(1f))
-        ZillitSearchField(
-            value = state.query,
-            onValueChange = { onEvent(PermissionGridEvent.Search(it)) },
-            placeholder = str(S.desktop_search_axis_placeholder, state.axis.label.lowercase()),
-            modifier = Modifier.width(SEARCH_WIDTH),
-        )
+        else -> Table(state, onEvent)
     }
 }
 
 @Composable
-private fun Matrix(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
-    // One scroll state for the header and every row, so the frozen column
-    // stays put while the tools move together underneath their own titles.
+private fun Table(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
     val across = rememberScrollState()
     val down = rememberLazyListState()
+    val subjects = state.grid.subjects.ifEmpty { SubjectColumn.defaultFor(state.axis) }
+    val titles = remember(state.columns) { state.columns.associateWith { it.localised() } }
 
-    // The matrix wears a card, like every other surface in the app — the
-    // spreadsheet floats on the canvas instead of bleeding to the edges.
     Column(
         Modifier
             .fillMaxSize()
-            .padding(start = PAGE_PADDING, end = PAGE_PADDING, bottom = ZillitTheme.spacing.md)
+            .padding(ZillitTheme.spacing.sm)
             .clip(ZillitTheme.shapes.medium)
             .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.medium)
             .background(ZillitTheme.colors.surface),
     ) {
-        MatrixHeader(state, across)
-        ZillitLazyColumn(
-            state = down,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            itemsIndexed(state.rows, key = { _, row -> row.subject.id }) { index, row ->
-                SubjectRow(row, index, state, across, onEvent)
+        HeaderRow(subjects, state.columns, titles, across)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (state.rows.isEmpty()) {
+                EmptyRows(state, onEvent)
+            } else {
+                ZillitLazyColumn(state = down, modifier = Modifier.fillMaxSize()) {
+                    items(state.rows, key = { it.subject.id }) { row ->
+                        BodyRow(row, subjects, state, titles, across, onEvent)
+                    }
+                }
             }
+        }
+        ZillitHorizontalScrollRail(across, Modifier.fillMaxWidth())
+        Divider()
+        GridPager(
+            page = state.page,
+            pageSize = state.pageSize,
+            total = state.grid.total,
+            onPage = { onEvent(PermissionGridEvent.GoToPage(it)) },
+            onPageSize = { onEvent(PermissionGridEvent.SetPageSize(it)) },
+        )
+    }
+}
+
+@Composable
+private fun EmptyRows(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
+            text = if (state.search.isNotBlank()) {
+                "${str(S.desktop_drive_no_results_found)} — ${state.query.trim()}"
+            } else {
+                str(S.desktop_pg_no_record_found)
+            },
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        if (state.search.isNotBlank()) {
+            ZillitButton(
+                text = str(S.txt_clear),
+                onClick = { onEvent(PermissionGridEvent.ClearSearch) },
+                variant = ButtonVariant.Tertiary,
+            )
         }
     }
 }
 
-/** The card's top band: the axis on the frozen side, a title per tool after. */
+/** The sticky header: subject titles frozen, tool titles scrolling with the body. */
 @Composable
-private fun MatrixHeader(state: PermissionGridUiState, across: androidx.compose.foundation.ScrollState) {
+private fun HeaderRow(
+    subjects: List<SubjectColumn>,
+    columns: List<String>,
+    titles: Map<String, String>,
+    across: ScrollState,
+) {
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .background(ZillitTheme.colors.surfaceSunken)
-            .padding(horizontal = CARD_PADDING)
             .height(IntrinsicSize.Min),
     ) {
-        Box(Modifier.width(SUBJECT_WIDTH).height(HEADER_HEIGHT), Alignment.CenterStart) {
-            ZillitText(
-                text = state.axis.label.uppercase(),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
+        subjects.forEach { column ->
+            HeaderCell(column.title, subjectWidth(column))
+            ColumnLine()
         }
-        FreezeLine()
         Row(Modifier.horizontalScroll(across)) {
-            state.columns.forEach { unitName ->
-                Box(Modifier.width(CELL_WIDTH).height(HEADER_HEIGHT), Alignment.Center) {
-                    ZillitText(
-                        text = unitName.localised(),
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textPrimary,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                    )
-                }
+            columns.forEach { unit ->
+                val title = titles[unit] ?: unit
+                HeaderCell(title, headerWidth(title))
                 ColumnLine()
             }
         }
     }
-    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+    Divider()
 }
 
-/** The frozen column's edge — what says "this side stays put". */
 @Composable
-private fun FreezeLine() {
+private fun HeaderCell(text: String, width: Dp) {
     Box(
-        Modifier
-            .padding(end = ZillitTheme.spacing.sm)
-            .width(HAIRLINE)
-            .fillMaxHeight()
-            .background(ZillitTheme.colors.border),
-    )
+        Modifier.width(width).padding(horizontal = 12.dp, vertical = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        ZillitText(
+            text = text,
+            style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = ZillitTheme.colors.textPrimary,
+        )
+    }
 }
 
-/** The faint rule between tools, so forty columns read as a grid. */
+@Suppress("LongParameterList")
 @Composable
-private fun ColumnLine() {
-    Box(
-        Modifier
-            .width(HAIRLINE)
-            .fillMaxHeight()
-            .padding(vertical = ZillitTheme.spacing.sm)
-            .background(ZillitTheme.colors.border.copy(alpha = COLUMN_LINE_ALPHA)),
-    )
-}
-
-@Composable
-private fun SubjectRow(
+private fun BodyRow(
     row: GridRow,
-    index: Int,
+    subjects: List<SubjectColumn>,
     state: PermissionGridUiState,
-    across: androidx.compose.foundation.ScrollState,
+    titles: Map<String, String>,
+    across: ScrollState,
     onEvent: (PermissionGridEvent) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            .background(
-                when {
-                    // Lights under the cursor like every list in the app;
-                    // the zebra keeps a long row on its line without it.
-                    hovered -> ZillitTheme.colors.surfaceHover
-                    index % 2 == 1 -> ZillitTheme.colors.surfaceSunken.copy(alpha = ZEBRA_ALPHA)
-                    else -> ZillitTheme.colors.surface
-                },
-            )
+            .background(if (hovered) ZillitTheme.colors.surfaceHover else ZillitTheme.colors.surface)
             .hoverable(interaction)
-            .padding(horizontal = CARD_PADDING)
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SubjectCell(row, isPerson = state.axis == GridAxis.Crew)
-        FreezeLine()
-        Row(Modifier.horizontalScroll(across)) {
-            state.columns.forEach { unitName ->
-                CellBoxes(
-                    cell = row.cells[unitName],
-                    enabled = state.canEdit,
+        subjects.forEach { column ->
+            SubjectCell(row, column, isPerson = state.axis.isPeople)
+            ColumnLine()
+        }
+        Row(Modifier.horizontalScroll(across).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+            state.columns.forEach { unit ->
+                RightsCell(
+                    row = row,
+                    unitName = unit,
+                    width = headerWidth(titles[unit] ?: unit),
+                    canEdit = state.canEdit,
                     onToggle = { kind, enable ->
-                        onEvent(
-                            PermissionGridEvent.Toggle(
-                                subjectId = row.subject.id,
-                                unitName = unitName,
-                                kind = kind,
-                                enable = enable,
-                            ),
-                        )
+                        onEvent(PermissionGridEvent.Toggle(row.subject.id, unit, kind, enable))
                     },
                 )
                 ColumnLine()
             }
         }
     }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(HAIRLINE)
-            .background(ZillitTheme.colors.border.copy(alpha = COLUMN_LINE_ALPHA)),
-    )
+    Divider()
 }
 
-/** The frozen half of a row: a face for the name, the name, its context. */
 @Composable
-private fun SubjectCell(row: GridRow, isPerson: Boolean) {
-    Row(
-        modifier = Modifier.width(SUBJECT_WIDTH).padding(vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        // Only the crew axis names people; a department's id is nobody's face.
-        ZillitAvatar(name = row.subject.name, userId = row.subject.id.takeIf { isPerson }, size = SUBJECT_AVATAR)
-        Column {
-            ZillitText(
-                text = row.subject.name,
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textPrimary,
-                maxLines = 1,
-            )
-            // Only the people axis carries these; a department row would
-            // otherwise print its own name twice.
-            listOfNotNull(row.subject.department, row.subject.designation)
-                .takeIf { it.isNotEmpty() }
-                ?.let { extra ->
-                    ZillitText(
-                        text = extra.joinToString(" · "),
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textMuted,
-                        maxLines = 1,
-                    )
-                }
+private fun SubjectCell(row: GridRow, column: SubjectColumn, isPerson: Boolean) {
+    val subject = row.subject
+    Box(Modifier.width(subjectWidth(column)).padding(horizontal = 12.dp, vertical = 8.dp)) {
+        when (column) {
+            SubjectColumn.User -> PersonCell(row, showFace = isPerson)
+            SubjectColumn.Department -> PlainCell(subject.department ?: subject.name.takeIf { !isPerson })
+            SubjectColumn.Designation -> PlainCell(subject.designation ?: subject.name.takeIf { !isPerson })
         }
     }
 }
 
+/** Face, name with its Admin chip, and the job title under a hairline. */
+@Composable
+private fun PersonCell(row: GridRow, showFace: Boolean) {
+    val subject = row.subject
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ZillitAvatar(name = subject.name, userId = subject.id.takeIf { showFace }, size = AVATAR)
+        Column(Modifier.weight(1f)) {
+            ZillitTooltip(subject.name) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ZillitText(
+                        text = subject.name,
+                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = ZillitTheme.colors.textPrimary,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (subject.isAdmin) AdminChip()
+                }
+            }
+            subject.designation?.let { role ->
+                Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+                ZillitTooltip(role) {
+                    ZillitText(
+                        text = role,
+                        style = ZillitTheme.typography.labelSmall,
+                        color = ZillitTheme.colors.textMuted,
+                        maxLines = 2,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminChip() {
+    ZillitText(
+        text = str(S.admin).uppercase(),
+        style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+        color = ZillitTheme.colors.accent,
+        maxLines = 1,
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .clip(ZillitTheme.shapes.small)
+            .background(ZillitTheme.colors.accentSoft)
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
+}
+
+@Composable
+private fun PlainCell(text: String?) {
+    ZillitText(
+        text = text.orEmpty(),
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textPrimary,
+    )
+}
+
 /**
- * One tool's three rights for one subject.
- *
- * A cell the server did not send is a tool this subject cannot be granted at
- * all — it renders empty rather than as three unchecked boxes, which would
- * invite a click that goes nowhere.
+ * One tool's three rights for one subject — Viewing, Download, Posting,
+ * stacked as the web stacks them. A tool the row did not carry renders a
+ * dash rather than three boxes that would invite a click going nowhere.
  */
 @Composable
-private fun CellBoxes(
-    cell: GridCell?,
-    enabled: Boolean,
+private fun RightsCell(
+    row: GridRow,
+    unitName: String,
+    width: Dp,
+    canEdit: Boolean,
     onToggle: (AccessKind, Boolean) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.width(CELL_WIDTH).padding(vertical = ZillitTheme.spacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        Modifier.width(width).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (cell == null) {
-            ZillitText(
-                text = "—",
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-            return@Row
+        if (row.cells[unitName] == null) {
+            ZillitText(text = "—", style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
+            return@Column
         }
         AccessKind.entries.forEach { kind ->
             ZillitCheckbox(
-                checked = cell.granted(kind),
+                checked = row.shownGranted(unitName, kind),
                 onCheckedChange = { onToggle(kind, it) },
-                enabled = enabled && !cell.locked(kind) && !cell.busy,
-                // The whole word. "V / P / D" reads as a legend you have to
-                // learn, and the three rights are the one thing on this screen
-                // nobody should have to guess at.
+                enabled = canEdit && row.editable(unitName, kind),
                 label = kind.label,
             )
         }
     }
 }
 
-/** Page N of M, and the two steps between them. */
 @Composable
-private fun Footer(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(ZillitTheme.colors.surface)
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        ZillitText(
-            text = str(
-                S.desktop_pg_footer_count,
-                state.grid.total,
-                state.axis.label.lowercase(),
-                state.page,
-                state.lastPage,
-            ),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-        Spacer(Modifier.weight(1f))
-        ZillitButton(
-            text = str(S.docusign_tour_prev),
-            variant = ButtonVariant.Secondary,
-            enabled = state.canGoBack && !state.isBusy,
-            onClick = { onEvent(PermissionGridEvent.GoToPage(state.page - 1)) },
-        )
-        ZillitButton(
-            text = str(S.next),
-            variant = ButtonVariant.Secondary,
-            enabled = state.canGoForward && !state.isBusy,
-            onClick = { onEvent(PermissionGridEvent.GoToPage(state.page + 1)) },
-        )
-    }
+private fun ColumnLine() {
+    Box(Modifier.width(HAIRLINE).fillMaxHeight().background(ZillitTheme.colors.border))
 }
 
 @Composable
-private fun Centred(text: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        ZillitText(
-            text = text,
-            style = ZillitTheme.typography.bodyMedium,
-            color = ZillitTheme.colors.textMuted,
-            textAlign = TextAlign.Center,
-        )
-    }
+private fun Divider() {
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
 }
 
-private val PAGE_PADDING = 24.dp
-private val CARD_PADDING = 16.dp
-private val SUBJECT_WIDTH = 220.dp
-private val SUBJECT_AVATAR = 32.dp
-private const val ZEBRA_ALPHA = 0.4f
-private const val COLUMN_LINE_ALPHA = 0.5f
-/** Wide enough for "View  Post  Download" on one line, boxes included. */
-private val CELL_WIDTH = 250.dp
-private val HEADER_HEIGHT = 56.dp
-private val SELECT_WIDTH = 180.dp
-private val SEARCH_WIDTH = 260.dp
+private val SubjectColumn.title: String
+    get() = when (this) {
+        SubjectColumn.User -> str(S.invitees_tab_users)
+        SubjectColumn.Department -> str(S.departments)
+        SubjectColumn.Designation -> str(S.designations)
+    }
+
+private fun subjectWidth(column: SubjectColumn): Dp = when (column) {
+    SubjectColumn.User -> USER_WIDTH
+    else -> headerWidth(column.title)
+}
+
 private val HAIRLINE = 1.dp
+private val AVATAR = 44.dp
+private val USER_WIDTH = 260.dp
+private val SEARCH_WIDTH = 320.dp
+private val SECTION_WIDTH = 160.dp
+private val TYPE_WIDTH = 280.dp
+private val FILTER_WIDTH = 240.dp

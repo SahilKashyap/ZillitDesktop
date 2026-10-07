@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">ดูและแสดงความคิดเห็นในแผ่นเรียกประจำวันที่แชร์กับคุณเพื่อขอความคิดเห็น ผู้อนุมัติยังสามารถอนุมัติหรือปฏิเสธแผ่นเรียกที่ส่งถึงตนเพื่อลงนามได้</string>
     <string name="desktop_chat_delete_message">ลบข้อความ</string>
     <string name="desktop_chat_delete_message_confirm">คุณแน่ใจหรือไม่ว่าต้องการลบข้อความนี้</string>
+    <string name="desktop_pg_user_permissions">สิทธิ์ผู้ใช้</string>
+    <string name="desktop_pg_based_on_crew_list">อ้างอิงตามรายชื่อทีมงาน</string>
+    <string name="desktop_pg_department_permissions">สิทธิ์แผนก</string>
+    <string name="desktop_pg_designation_permissions">สิทธิ์ตำแหน่ง</string>
+    <string name="desktop_pg_all_designations">การกำหนดตำแหน่งทั้งหมด</string>
+    <string name="desktop_pg_hired_crew_designations">ตำแหน่งทีมงานที่ว่าจ้าง</string>
+    <string name="desktop_pg_all_designations_hint">รายการตำแหน่งทั้งหมด</string>
+    <string name="desktop_pg_hired_designations_hint">การกำหนดตำแหน่งที่มีผู้ใช้</string>
+    <string name="desktop_pg_view_default_grid">ดูกริดเริ่มต้น</string>
+    <string name="desktop_pg_no_record_found">ไม่พบบันทึก</string>
+    <string name="desktop_pg_download_excel">ดาวน์โหลด Excel</string>
+    <string name="desktop_pg_department_permission_file">สิทธิ์แผนก</string>
+    <string name="desktop_pg_go">ไป</string>
+    <string name="desktop_pg_go_to">ไปที่</string>
+    <string name="desktop_pg_range">%1$d-%2$d จาก %3$d</string>
+    <string name="desktop_pg_nothing_to_download">ไม่มีข้อมูลให้ดาวน์โหลด</string>
+    <string name="desktop_pg_click_here">คลิกที่นี่</string>
 </resources>

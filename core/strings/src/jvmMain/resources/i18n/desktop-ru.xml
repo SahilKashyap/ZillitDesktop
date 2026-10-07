@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Просматривайте и комментируйте ежедневные листы вызова, которыми с вами поделились для комментариев. Утверждающие также могут утверждать или отклонять листы вызова, отправленные им на подпись.</string>
     <string name="desktop_chat_delete_message">Удалить сообщение</string>
     <string name="desktop_chat_delete_message_confirm">Вы уверены, что хотите удалить это сообщение?</string>
+    <string name="desktop_pg_user_permissions">Права пользователя</string>
+    <string name="desktop_pg_based_on_crew_list">На основе списка съёмочной группы</string>
+    <string name="desktop_pg_department_permissions">Права отдела</string>
+    <string name="desktop_pg_designation_permissions">Права должности</string>
+    <string name="desktop_pg_all_designations">Все должности</string>
+    <string name="desktop_pg_hired_crew_designations">Нанятые должности съёмочной группы</string>
+    <string name="desktop_pg_all_designations_hint">Список всех должностей.</string>
+    <string name="desktop_pg_hired_designations_hint">Это должности, где есть пользователи</string>
+    <string name="desktop_pg_view_default_grid">Посмотреть стандартную сетку</string>
+    <string name="desktop_pg_no_record_found">Запись не найдена.</string>
+    <string name="desktop_pg_download_excel">Скачать Excel</string>
+    <string name="desktop_pg_department_permission_file">Разрешение отдела</string>
+    <string name="desktop_pg_go">Перейти</string>
+    <string name="desktop_pg_go_to">Перейти к</string>
+    <string name="desktop_pg_range">%1$d-%2$d из %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Нет данных для загрузки</string>
+    <string name="desktop_pg_click_here">Нажмите здесь</string>
 </resources>

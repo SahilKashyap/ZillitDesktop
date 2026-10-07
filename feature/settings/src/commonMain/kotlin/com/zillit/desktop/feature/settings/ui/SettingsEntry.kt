@@ -325,7 +325,7 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.PermissionGrid,
                 title = str(S.permission_grid_2),
-                detail = str(S.desktop_rights_grid_detail),
+                detail = str(S.permission_grid_info2),
                 icon = ZillitToolIcons.PostingRights,
             ),
             SettingsEntry(
@@ -483,7 +483,12 @@ private fun List<SettingsGroup>.availableOn(production: ProductionFacts): List<S
     mapNotNull { group ->
         group.entries
             .filter { entry ->
-                AdminDestination.of(entry.destination)?.availableTo(production) ?: true
+                when (entry.destination) {
+                    // Not an admin page — it opens the Film Tools grid — but a
+                    // personal production has nobody to grant rights to.
+                    SettingsDestination.PermissionGrid -> !production.isPersonal
+                    else -> AdminDestination.of(entry.destination)?.availableTo(production) ?: true
+                }
             }
             .takeIf { it.isNotEmpty() }
             ?.let { group.copy(entries = it) }
@@ -500,3 +505,6 @@ const val SETUP_NOTES_URL = "https://documentation.zillit.com/#project-setup-not
  * round. `AdminSettingsRoutingTest` pins the two together.
  */
 const val ACCOUNT_HUB_ROUTE = "/film-tools/account-hub"
+
+/** The Viewing & Posting Rights Grid window — `PERMISSION_GRID_PATH` in `feature:permissiongrid`. */
+const val PERMISSION_GRID_ROUTE = "/film-tools/permission-grid"

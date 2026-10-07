@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Sehen Sie sich die täglichen Dispositionslisten an, die zur Kommentierung mit Ihnen geteilt wurden, und kommentieren Sie sie. Genehmiger können außerdem Dispositionslisten, die ihnen zur Unterschrift gesendet wurden, genehmigen oder ablehnen.</string>
     <string name="desktop_chat_delete_message">Nachricht löschen</string>
     <string name="desktop_chat_delete_message_confirm">Möchten Sie diese Nachricht wirklich löschen?</string>
+    <string name="desktop_pg_user_permissions">Benutzerberechtigungen</string>
+    <string name="desktop_pg_based_on_crew_list">Basierend auf der Crew-Liste</string>
+    <string name="desktop_pg_department_permissions">Abteilungsberechtigungen</string>
+    <string name="desktop_pg_designation_permissions">Bezeichnungsberechtigungen</string>
+    <string name="desktop_pg_all_designations">Alle Bezeichnungen</string>
+    <string name="desktop_pg_hired_crew_designations">Eingestellte Crew-Positionen</string>
+    <string name="desktop_pg_all_designations_hint">Liste aller Positionen.</string>
+    <string name="desktop_pg_hired_designations_hint">Dies sind die Bezeichnungen, bei denen Benutzer vorhanden sind</string>
+    <string name="desktop_pg_view_default_grid">Standard-Raster anzeigen</string>
+    <string name="desktop_pg_no_record_found">Kein Datensatz gefunden.</string>
+    <string name="desktop_pg_download_excel">Excel herunterladen</string>
+    <string name="desktop_pg_department_permission_file">Abteilungsberechtigung</string>
+    <string name="desktop_pg_go">Los</string>
+    <string name="desktop_pg_go_to">Gehe zu</string>
+    <string name="desktop_pg_range">%1$d-%2$d von %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Keine Daten zum Herunterladen verfügbar</string>
+    <string name="desktop_pg_click_here">Hier klicken</string>
 </resources>

@@ -18,7 +18,6 @@ import com.zillit.desktop.feature.settings.admin.ui.pages.DepartmentsPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.JobTitlesPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.PreApprovedPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.ProductionNamePage
-import com.zillit.desktop.feature.settings.admin.ui.pages.RightsPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.SosPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.ToolAvailabilityPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.ToolGroupsPage
@@ -67,7 +66,6 @@ fun AdminScreen(
                 CrewOrderPage(state, onEvent, onBack, isOtherType = production.isOtherType)
 
             AdminDestination.Crew -> CrewPage(state, onEvent, onBack)
-            AdminDestination.Rights -> RightsPage(state, onEvent, onBack)
             AdminDestination.PreApproved -> PreApprovedPage(state, onEvent, onBack)
             AdminDestination.ToolAvailability -> ToolAvailabilityPage(state, onEvent, onBack)
             AdminDestination.ToolGroups -> ToolGroupsPage(state, onEvent, onBack)

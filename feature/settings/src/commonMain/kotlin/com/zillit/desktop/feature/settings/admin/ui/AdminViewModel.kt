@@ -5,23 +5,17 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
-import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_EVENTS
 import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_PAGES
-import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
-import com.zillit.desktop.feature.settings.admin.domain.DEAL_MEMO_TOOL
 import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
 import com.zillit.desktop.feature.settings.admin.domain.NewPreApproval
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
-import com.zillit.desktop.feature.settings.admin.domain.RightsChange
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
-import com.zillit.desktop.feature.settings.admin.domain.isEditable
 
 /**
  * The administration pages.
@@ -118,16 +112,6 @@ class AdminViewModel(
                 if (currentState.destination in touched) load(currentState.destination)
             }
         }
-
-        // A second coordinator moving rights while this page is open. Only the
-        // person on screen is re-read: the frame names whose rights moved, but
-        // reading the one open panel is the whole of what this page shows.
-        launch {
-            bus.onAny(ZillitSocketEvents.AccessGrid.AllSync).collect {
-                val open = currentState.selection.userId ?: return@collect
-                if (currentState.destination == AdminDestination.Rights) refreshRights(open)
-            }
-        }
     }
 
     // Exhaustive dispatch over the sealed event set. The branch count is the
@@ -181,7 +165,6 @@ class AdminViewModel(
             AdminEvent.SubmitForm -> submit()
 
             is AdminEvent.SelectDepartment -> selectDepartment(event.departmentId)
-            is AdminEvent.SelectCrew -> selectCrew(event.userId)
 
             is AdminEvent.AdminAccessChanged -> onAdminAccessChanged(event)
             is AdminEvent.CrewActiveChanged -> onCrewActiveChanged(event)
@@ -201,8 +184,6 @@ class AdminViewModel(
 
             is AdminEvent.MoveTool ->
                 mutate(str(S.desktop_tool_moved)) { repository.moveTool(event.identifier, event.groupIdentifier) }
-
-            is AdminEvent.RightsToggled -> onRightsToggled(event)
 
             is AdminEvent.UnitEnabledChanged -> mutate(
                 if (event.enabled) str(S.desktop_unit_switched_on) else str(S.desktop_unit_switched_off),
@@ -296,7 +277,7 @@ class AdminViewModel(
                     }
                 }
 
-                AdminDestination.Crew, AdminDestination.Rights ->
+                AdminDestination.Crew ->
                     repository.crew().onLoaded { rows -> setState { copy(crew = rows) } }
 
                 AdminDestination.PreApproved ->
@@ -551,79 +532,6 @@ class AdminViewModel(
     private fun selectDepartment(departmentId: String?) =
         setState { copy(selection = selection.copy(departmentId = departmentId)) }
 
-    /**
-     * Opens one person's rights, and reads them.
-     *
-     * Read on selection rather than with the crew list: a production has forty
-     * people and an admin opens one of them, so forty rights calls at load time
-     * would be thirty-nine nobody asked for.
-     */
-    private fun selectCrew(userId: String?) {
-        setState {
-            copy(
-                // Whatever went wrong reading the *last* person is not news
-                // about this one. The banner used to survive the switch and
-                // sit over a grid that had loaded perfectly well.
-                error = null,
-                selection = selection.copy(
-                    userId = userId,
-                    rights = emptyList(),
-                    savingRights = emptySet(),
-                    rightsUnreadable = false,
-                ),
-            )
-        }
-        val resolved = userId ?: return
-
-        setState { copy(selection = selection.copy(isLoadingRights = true)) }
-        launch { readRights(resolved) }
-    }
-
-    /**
-     * Reads the open person's rights again without taking the panel away.
-     *
-     * Used after a write, where [selectCrew]'s empty list and spinner would
-     * throw away a page the admin is still looking at — and the scroll position
-     * with it — to show them what they already have.
-     */
-    private fun refreshRights(userId: String) {
-        launch { readRights(userId) }
-    }
-
-    private suspend fun readRights(userId: String) {
-        when (val result = repository.rights(userId)) {
-            is ZillitResult.Success -> setState {
-                // Dropped if the admin has moved on, or if a box is mid-write:
-                // a read that started before that write would put the old value
-                // back under their cursor.
-                if (selection.userId != userId || selection.savingRights.isNotEmpty()) {
-                    copy(selection = selection.copy(isLoadingRights = false))
-                } else {
-                    copy(
-                        selection = selection.copy(
-                            rights = result.data,
-                            isLoadingRights = false,
-                            rightsUnreadable = false,
-                        ),
-                    )
-                }
-            }
-
-            is ZillitResult.Failure -> setState {
-                // Marked unreadable only while this is still the person on
-                // screen: a refusal about somebody the admin has already moved
-                // on from must not caption the page they are looking at now.
-                copy(
-                    selection = selection.copy(
-                        isLoadingRights = false,
-                        rightsUnreadable = selection.userId == userId,
-                    ),
-                    error = result.error.readable,
-                )
-            }
-        }
-    }
-
     /** Granting asks first; revoking does not. Both phone clients agree. */
     private fun onAdminAccessChanged(event: AdminEvent.AdminAccessChanged) {
         val person = currentState.crew.firstOrNull { it.userId == event.userId } ?: return
@@ -648,95 +556,6 @@ class AdminViewModel(
         } else {
             setState {
                 copy(confirming = AdminConfirmation.RemoveFromCrew(person.userId, device, person.fullName))
-            }
-        }
-    }
-
-    /**
-     * One click, one call, and the box moves at once.
-     *
-     * Downloading implies viewing and clearing viewing clears the rest, but the
-     * server performs that cascade itself and broadcasts the result — see
-     * [RightsChange]'s own doc for why this stopped chaining calls by hand.
-     *
-     * The box is painted **before** the call rather than after it. This used to
-     * write, then re-read the whole person, which blanked the panel to "Reading
-     * access for X…" and rebuilt it scrolled back to the top — a click on the
-     * one box appeared to do nothing except throw the page away for a round
-     * trip. The web moved the same way and for the same reason
-     * (`AccessGrid.jsx:548-566`): the request is unchanged and still
-     * authoritative, only the moment the admin sees the result moved. A refusal
-     * puts the box back where they left it.
-     */
-    private fun onRightsToggled(event: AdminEvent.RightsToggled) {
-        if (!isAdmin()) {
-            setState { copy(error = str(S.desktop_only_admin_can_change)) }
-            return
-        }
-        val toggle = event.toggle
-        val userId = currentState.selection.userId
-        val current = currentState.selection.rights.firstOrNull {
-            it.toolIdentifier == toggle.toolIdentifier && it.section == toggle.section
-        }
-        val unitId = current?.unitId
-        if (userId == null || current == null || unitId == null) return
-        if (!current.isEditable(toggle.access, isAdmin = currentState.selectedCrew?.isAdmin == true)) return
-        // Claimed before the coroutine: a second click while the first is still
-        // queued must find the box already taken.
-        if (toggle.cell in currentState.selection.savingRights) return
-
-        setState {
-            copy(
-                error = null,
-                selection = selection.copy(
-                    rights = selection.rights.paint(toggle, toggle.enable),
-                    savingRights = selection.savingRights + toggle.cell,
-                ),
-            )
-        }
-
-        launch {
-            val change = RightsChange(
-                userId = userId,
-                unitId = unitId,
-                section = toggle.section,
-                access = toggle.access,
-                enable = toggle.enable,
-            )
-            when (val result = repository.changeRights(change)) {
-                is ZillitResult.Success -> {
-                    setState {
-                        copy(
-                            selection = selection.copy(
-                                // Granting a deal memo's viewing grants
-                                // downloading with it, on the server's side
-                                // (`ZL-16376`; the web paints the same box for
-                                // the same reason and posts nothing extra).
-                                // Painted here so the tick is not held back
-                                // until the read below returns.
-                                rights = selection.rights.withDealMemoDownload(toggle),
-                                savingRights = selection.savingRights - toggle.cell,
-                            ),
-                        )
-                    }
-                    // Quietly, and without emptying the panel: this is where a
-                    // cascade the server made on its own becomes visible.
-                    refreshRights(userId)
-                }
-
-                is ZillitResult.Failure -> setState {
-                    // Back where the admin left it. The value to restore is
-                    // simply the opposite of the one just asked for — no lookup,
-                    // and it lands where they saw it rather than where the list
-                    // happened to be.
-                    copy(
-                        error = result.error.readable,
-                        selection = selection.copy(
-                            rights = selection.rights.paint(toggle, !toggle.enable),
-                            savingRights = selection.savingRights - toggle.cell,
-                        ),
-                    )
-                }
             }
         }
     }
@@ -920,33 +739,3 @@ private val ZillitError.readable: String get() = userMessage.localised()
 /** Good enough to catch a typo, and no stricter. Addresses are validated by use. */
 private val String.looksLikeEmail: Boolean
     get() = matches(Regex("[^@\\s]+@[^@\\s]+\\.[^@\\s]+"))
-
-/** The one box [toggle] names, moved to [on]; every other row untouched. */
-private fun List<ToolRights>.paint(toggle: RightsToggle, on: Boolean): List<ToolRights> = map { row ->
-    if (row.toolIdentifier == toggle.toolIdentifier && row.section == toggle.section) {
-        row.with(toggle.access, on)
-    } else {
-        row
-    }
-}
-
-/**
- * Granting a deal memo's viewing grants downloading with it.
- *
- * `ZL-16376`. The server does this itself — neither this client nor the web
- * posts a second time (`AccessGrid.jsx:586-610`) — so this only moves the tick
- * to where the next read will confirm it belongs.
- */
-internal fun List<ToolRights>.withDealMemoDownload(toggle: RightsToggle): List<ToolRights> {
-    if (toggle.access != AccessType.View || !toggle.enable) return this
-    return map { row ->
-        if (row.toolIdentifier == toggle.toolIdentifier &&
-            row.section == toggle.section &&
-            row.isTool(DEAL_MEMO_TOOL)
-        ) {
-            row.with(AccessType.Download, true)
-        } else {
-            row
-        }
-    }
-}

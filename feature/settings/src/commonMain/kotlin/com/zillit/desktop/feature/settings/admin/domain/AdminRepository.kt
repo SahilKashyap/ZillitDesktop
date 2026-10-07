@@ -144,24 +144,6 @@ interface AdminRepository {
     /** Shooting units only; the other two kinds have no switch. */
     suspend fun setUnitEnabled(unitId: String, enabled: Boolean): ZillitResult<Unit>
 
-    // -- rights -----------------------------------------------------------------
-
-    /**
-     * What one person may see, post to and download, across every tool.
-     *
-     * Per person rather than the whole production at once — see [ToolRights]
-     * for why this follows the phone clients rather than the web's grid.
-     */
-    suspend fun rights(userId: String): ZillitResult<List<ToolRights>>
-
-    /**
-     * Applies one right.
-     *
-     * One call per click — see [RightsChange]'s doc for why this stopped being
-     * more than one.
-     */
-    suspend fun changeRights(change: RightsChange): ZillitResult<Unit>
-
     // -- deletion ---------------------------------------------------------------
 
     /**

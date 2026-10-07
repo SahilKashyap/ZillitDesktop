@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Se og kommenter de daglige kallbladene som er delt med deg for kommentarer. Godkjennere kan også godkjenne eller avvise kallblad som er sendt til dem for signatur.</string>
     <string name="desktop_chat_delete_message">Slett melding</string>
     <string name="desktop_chat_delete_message_confirm">Er du sikker på at du vil slette denne meldingen?</string>
+    <string name="desktop_pg_user_permissions">Brukertillatelser</string>
+    <string name="desktop_pg_based_on_crew_list">Basert på crewlisten</string>
+    <string name="desktop_pg_department_permissions">Avdelings tillatelser</string>
+    <string name="desktop_pg_designation_permissions">Betegnelse tillatelser</string>
+    <string name="desktop_pg_all_designations">Alle betegnelser</string>
+    <string name="desktop_pg_hired_crew_designations">Ansatte crew-roller</string>
+    <string name="desktop_pg_all_designations_hint">Liste over alle roller.</string>
+    <string name="desktop_pg_hired_designations_hint">Dette er betegnelser hvor det er brukere</string>
+    <string name="desktop_pg_view_default_grid">Se standardrutenett</string>
+    <string name="desktop_pg_no_record_found">Ingen post funnet.</string>
+    <string name="desktop_pg_download_excel">Last ned Excel</string>
+    <string name="desktop_pg_department_permission_file">Avdelingsrettigheter</string>
+    <string name="desktop_pg_go">Gå</string>
+    <string name="desktop_pg_go_to">Gå til</string>
+    <string name="desktop_pg_range">%1$d-%2$d av %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Ingen data å laste ned</string>
+    <string name="desktop_pg_click_here">Klikk her</string>
 </resources>

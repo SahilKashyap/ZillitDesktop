@@ -5,13 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -21,26 +19,18 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
-import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
-import com.zillit.desktop.feature.settings.admin.domain.isEditable
-import com.zillit.desktop.feature.settings.admin.domain.shownAs
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
 import com.zillit.desktop.feature.settings.admin.ui.AdminUiState
-import com.zillit.desktop.feature.settings.admin.ui.RightsCell
-import com.zillit.desktop.feature.settings.admin.ui.RightsToggle
 
 /**
  * The pages about people: the crew, their rights, and who is pre-approved.
@@ -143,205 +133,6 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
             // undo, but not one worth being able to create.
             enabled = person.isActive,
         )
-    }
-}
-
-/**
- * The permission grid — one person at a time.
- *
- * The web renders every crew member against every tool as one enormous table.
- * This picks a person and shows theirs, which is the same task with a shape
- * that fits on a screen and cannot silently misalign a column. See
- * [ToolRights] for the full argument.
- */
-@Composable
-fun RightsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
-    AdminPage(
-        title = AdminDestination.Rights.title,
-        description = str(S.desktop_rights_grid_detail),
-        state = state,
-        onEvent = onEvent,
-        onBack = onBack,
-        search = str(S.desktop_search_by_name_or_role),
-        bodyScrolls = true,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            CrewPicker(state, onEvent, Modifier.width(PICKER_WIDTH))
-            RightsPanel(state, onEvent, Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun CrewPicker(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modifier: Modifier) {
-    // Only people actually on the production — see [activeCrewMatching].
-    val rows = state.activeCrewMatching
-    RowCard(modifier) {
-        if (rows.isEmpty() && state.hasLoaded) {
-            EmptyRow(if (state.query.isBlank()) str(S.desktop_no_crew_yet) else str(S.desktop_nobody_matches))
-            return@RowCard
-        }
-
-        val listState = rememberLazyListState()
-        ZillitLazyColumn(state = listState) {
-            items(rows, key = { it.userId }) { person ->
-                SelectableRow(
-                    selected = person.userId == state.selection.userId,
-                    onClick = { onEvent(AdminEvent.SelectCrew(person.userId)) },
-                ) {
-                    // Faces, as Contacts lists them: an admin picking between
-                    // forty names recognises a face faster than a job title,
-                    // and the loader is shared, so this costs one cached fetch.
-                    ZillitAvatar(
-                        name = person.fullName,
-                        userId = person.userId,
-                        size = PICKER_AVATAR,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        ZillitText(
-                            text = person.fullName,
-                            style = ZillitTheme.typography.bodyMedium,
-                            maxLines = 1,
-                        )
-                        person.designation?.let { role ->
-                            ZillitText(
-                                text = role.localised(),
-                                style = ZillitTheme.typography.labelSmall,
-                                color = ZillitTheme.colors.textMuted,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modifier: Modifier) {
-    val person = state.selectedCrew
-    if (person == null) {
-        RowCard(modifier) { EmptyRow(str(S.desktop_pick_someone_for_rights)) }
-        return
-    }
-
-    // Only on the first read. A re-read after a write leaves the page where it
-    // is: taking it away to say "Reading access" loses the admin's place in a
-    // long list to tell them something they can already see.
-    if (state.selection.isLoadingRights && state.selection.rights.isEmpty()) {
-        RowCard(modifier) { EmptyRow(str(S.desktop_reading_access, person.fullName)) }
-        return
-    }
-
-    val listState = rememberLazyListState()
-    ZillitLazyColumn(
-        state = listState,
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        // An administrator passes every check already, so the boxes are theirs
-        // to read and not to move — bar one. The web shows the same grid
-        // disabled rather than a sentence in its place (`AccessGrid.jsx:150`),
-        // and excepts transportation posting, which is still an admin's to be
-        // given (`:185`) and has no other door.
-        if (person.isAdmin) {
-            item(key = "admin-notice") {
-                RowCard { EmptyRow(str(S.desktop_admin_reaches_everything, person.fullName)) }
-            }
-        }
-
-        RightsSection.entries.forEach { section ->
-            val tools = state.rights(section)
-            if (tools.isEmpty()) return@forEach
-
-            item(key = "header-${section.wire}") {
-                ZillitSectionLabel(section.label)
-            }
-            item(key = "card-${section.wire}") {
-                RowCard {
-                    tools.forEachIndexed { index, rights ->
-                        if (index > 0) RowRule()
-                        RightsRow(
-                            rights = rights,
-                            // The whole person, not this section: the main
-                            // budget a department budget derives from is a row
-                            // in its own right and may be listed under the
-                            // other one. The web reads across the person's
-                            // whole row for the same reason.
-                            among = state.selection.rights,
-                            isAdmin = person.isAdmin,
-                            saving = state.selection.savingRights,
-                            onEvent = onEvent,
-                        )
-                    }
-                }
-            }
-        }
-
-        if (RightsSection.entries.all { state.rights(it).isEmpty() }) {
-            item {
-                RowCard {
-                    // Nothing back and nothing wrong are different answers:
-                    // the server refuses a read about somebody whose
-                    // membership has lapsed, and saying the production has no
-                    // tools over one with thirty-eight of them sends an admin
-                    // looking for the wrong fault.
-                    EmptyRow(
-                        if (state.selection.rightsUnreadable) {
-                            str(S.desktop_access_unreadable, person.fullName)
-                        } else {
-                            str(S.desktop_no_tools_to_grant)
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RightsRow(
-    rights: ToolRights,
-    among: List<ToolRights>,
-    isAdmin: Boolean,
-    saving: Set<RightsCell>,
-    onEvent: (AdminEvent) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitText(
-            text = rights.toolName.localised(),
-            style = ZillitTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-        )
-        AccessType.entries.forEach { access ->
-            val cell = RightsCell(rights.toolIdentifier, rights.section, access)
-            ZillitCheckbox(
-                // Not always this row's own flag: a department budget's rights
-                // are held through the main budget — see [shownAs].
-                checked = rights.shownAs(access, among),
-                onCheckedChange = { on ->
-                    onEvent(
-                        AdminEvent.RightsToggled(
-                            RightsToggle(rights.toolIdentifier, rights.section, access, on),
-                        ),
-                    )
-                },
-                label = access.label,
-                // The server says which of these are not this admin's to
-                // change, and some columns are nobody's — see [isEditable].
-                // Disabled rather than springing back after the call.
-                enabled = rights.isEditable(access, isAdmin) && cell !in saving,
-            )
-        }
     }
 }
 
@@ -503,7 +294,3 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
     }
 }
 
-private val PICKER_WIDTH = 260.dp
-
-/** Small enough that a name and a role still fit beside it at [PICKER_WIDTH]. */
-private val PICKER_AVATAR = 28.dp

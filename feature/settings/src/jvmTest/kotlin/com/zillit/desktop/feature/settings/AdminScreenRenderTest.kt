@@ -20,11 +20,9 @@ import com.zillit.desktop.feature.settings.admin.domain.JobTitle
 import com.zillit.desktop.feature.settings.admin.domain.NewSosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
-import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
@@ -92,25 +90,6 @@ class AdminScreenRenderTest {
         CrewMember(userId = "user-3", fullName = "Katherine Johnson"),
     )
 
-    private val rights = listOf(
-        ToolRights(
-            toolIdentifier = "budget_tool",
-            toolName = "Main budget",
-            unitId = "unit-1",
-            section = RightsSection.Tools,
-            canView = true,
-            canDownload = true,
-            postLocked = true,
-        ),
-        ToolRights(
-            toolIdentifier = "callsheet_tool",
-            toolName = "Call sheet",
-            unitId = "unit-2",
-            section = RightsSection.Home,
-            canView = true,
-        ),
-    )
-
     private val tools = listOf(
         ProductionTool("permission_grid_tool", "Permission grid", enabled = true, isLocked = true),
         ProductionTool("casting_main_tool", "Casting", enabled = true, groupIdentifier = "group_ads"),
@@ -176,11 +155,7 @@ class AdminScreenRenderTest {
         productionName = "Feature One",
         form = form,
         confirming = confirming,
-        selection = AdminSelection(
-            departmentId = "dept-1",
-            userId = "user-3",
-            rights = rights,
-        ),
+        selection = AdminSelection(departmentId = "dept-1"),
     )
 
     private fun render(
@@ -252,156 +227,6 @@ class AdminScreenRenderTest {
             onNodeWithText("Ada Lovelace").assertExists()
             onNodeWithText("Admin").assertExists()
             onNodeWithText("Off the project").assertExists()
-        }
-    }
-
-    /**
-     * An administrator gets the grid, read-only, and is told why.
-     *
-     * The page used to put a sentence where the grid goes. That also took away
-     * the one box an administrator's rights are still set through —
-     * transportation posting — which has no other door on this client.
-     */
-    @Test
-    fun `an administrator sees the grid as well as the explanation`() {
-        val adminSelected = state(AdminDestination.Rights)
-            .copy(selection = AdminSelection(userId = "user-1", rights = rights))
-
-        render(AdminDestination.Rights, state = adminSelected) {
-            onNodeWithText(
-                "Ada Lovelace is an administrator and can reach everything. " +
-                    "Take their admin rights away on the crew page to set rights individually.",
-            ).assertExists()
-            onNodeWithText("Main budget").assertExists()
-            onNodeWithText("Call sheet").assertExists()
-        }
-    }
-
-    /**
-     * A refused read used to be captioned "This project has no tools to grant
-     * access to" — over a production with thirty-eight of them, which sends an
-     * admin looking for the wrong fault entirely.
-     */
-    @Test
-    fun `a refused read names the person, not an empty production`() {
-        val refused = state(AdminDestination.Rights).copy(
-            selection = AdminSelection(userId = "user-3", rights = emptyList(), rightsUnreadable = true),
-        )
-
-        render(AdminDestination.Rights, state = refused) {
-            onNodeWithText("Katherine Johnson's access could not be read.").assertExists()
-            onNodeWithText("This project has no tools to grant access to.").assertDoesNotExist()
-        }
-    }
-
-    /** A production that really has no tools still says so. */
-    @Test
-    fun `a production with no tools says so`() {
-        val empty = state(AdminDestination.Rights).copy(
-            selection = AdminSelection(userId = "user-3", rights = emptyList()),
-        )
-
-        render(AdminDestination.Rights, state = empty) {
-            onNodeWithText("This project has no tools to grant access to.").assertExists()
-        }
-    }
-
-    /**
-     * `ZL-20803` — Account Hub access follows the person's department and
-     * designation, so none of its three boxes is this page's to set.
-     */
-    @Test
-    fun `the account hub row offers nothing to switch`() {
-        val accountHub = state(AdminDestination.Rights).copy(
-            selection = AdminSelection(
-                userId = "user-3",
-                // One row, so each label appears once and can be addressed.
-                rights = listOf(
-                    ToolRights(
-                        toolIdentifier = "account_hub",
-                        toolName = "Account Hub",
-                        unitId = "unit-1",
-                        section = RightsSection.Tools,
-                        canView = true,
-                    ),
-                ),
-            ),
-        )
-
-        render(AdminDestination.Rights, state = accountHub) {
-            onNodeWithText("Account Hub").assertExists()
-            onNodeWithText("View").assertIsNotEnabled()
-            onNodeWithText("Post").assertIsNotEnabled()
-            onNodeWithText("Download").assertIsNotEnabled()
-        }
-    }
-
-    /**
-     * A department budget's rights are held through the main budget, and its
-     * own row can still say false — so it draws disabled, and the tick has to
-     * come from the main budget's row or it reads as "no rights" over a right
-     * that is in fact granted.
-     *
-     * Only the locked half is asserted here: `ZillitCheckbox` is built on
-     * `Modifier.clickable` rather than `toggleable`, so it publishes no
-     * `ToggleableState` for a test to read. The tick itself is
-     * `RightsGridDisplayTest`'s to prove.
-     */
-    @Test
-    fun `a department budget row draws locked, across sections`() {
-        val budgets = state(AdminDestination.Rights).copy(
-            selection = AdminSelection(
-                userId = "user-3",
-                rights = listOf(
-                    // Deliberately the other section: the row a department
-                    // budget derives from need not be beside it.
-                    ToolRights(
-                        toolIdentifier = "main_budget_label",
-                        toolName = "Main budget",
-                        unitId = "unit-1",
-                        section = RightsSection.Home,
-                        canView = true,
-                    ),
-                    ToolRights(
-                        toolIdentifier = "department_budget_label",
-                        toolName = "Department budget",
-                        unitId = "unit-2",
-                        section = RightsSection.Tools,
-                        viewLocked = true,
-                    ),
-                ),
-            ),
-        )
-
-        render(AdminDestination.Rights, state = budgets) {
-            onNodeWithText("Department budget").assertExists()
-            onNodeWithText("Main budget").assertExists()
-            onAllNodesWithText("View").onLast().assertIsNotEnabled()
-        }
-    }
-
-    @Test
-    fun `the rights page shows both sections for the person picked`() {
-        render(AdminDestination.Rights) {
-            onNodeWithText("Main budget").assertExists()
-            onNodeWithText("Call sheet").assertExists()
-        }
-    }
-
-    /**
-     * Grace Hopper is off the production in this fixture. The crew page still
-     * has to list her — putting somebody back is done there — but granting her
-     * rights would open a production she cannot reach.
-     */
-    @Test
-    fun `the rights picker leaves out crew who are off the production`() {
-        render(AdminDestination.Rights) {
-            onNodeWithText("Ada Lovelace").assertExists()
-            onNodeWithText("Grace Hopper").assertDoesNotExist()
-        }
-
-        render(AdminDestination.Crew) {
-            onNodeWithText("Grace Hopper").assertExists()
         }
     }
 

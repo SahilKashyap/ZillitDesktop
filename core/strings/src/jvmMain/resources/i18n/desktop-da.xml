@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Se og kommenter de daglige call sheets, der er delt med dig til kommentarer. Godkendere kan også godkende eller afvise call sheets, der er sendt til dem til underskrift.</string>
     <string name="desktop_chat_delete_message">Slet besked</string>
     <string name="desktop_chat_delete_message_confirm">Er du sikker på, at du vil slette denne besked?</string>
+    <string name="desktop_pg_user_permissions">Brugerrettigheder</string>
+    <string name="desktop_pg_based_on_crew_list">Baseret på holdlisten</string>
+    <string name="desktop_pg_department_permissions">Afdelingsrettigheder</string>
+    <string name="desktop_pg_designation_permissions">Betegnelsesrettigheder</string>
+    <string name="desktop_pg_all_designations">Alle betegnelser</string>
+    <string name="desktop_pg_hired_crew_designations">Ansatte holdbetegnelser</string>
+    <string name="desktop_pg_all_designations_hint">Liste over alle betegnelser.</string>
+    <string name="desktop_pg_hired_designations_hint">Dette er betegnelser, hvor der er brugere</string>
+    <string name="desktop_pg_view_default_grid">Vis standardgitter</string>
+    <string name="desktop_pg_no_record_found">Ingen post fundet.</string>
+    <string name="desktop_pg_download_excel">Download Excel</string>
+    <string name="desktop_pg_department_permission_file">Afdelingsrettigheder</string>
+    <string name="desktop_pg_go">Gå</string>
+    <string name="desktop_pg_go_to">Gå til</string>
+    <string name="desktop_pg_range">%1$d-%2$d af %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Ingen data at downloade</string>
+    <string name="desktop_pg_click_here">Klik her</string>
 </resources>

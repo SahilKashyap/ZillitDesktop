@@ -5,10 +5,8 @@ import com.zillit.desktop.feature.settings.admin.data.CrewDto
 import com.zillit.desktop.feature.settings.admin.data.DepartmentDto
 import com.zillit.desktop.feature.settings.admin.data.ProductionRecordDto
 import com.zillit.desktop.feature.settings.admin.data.SosContactDto
-import com.zillit.desktop.feature.settings.admin.data.ToolAccessDto
 import com.zillit.desktop.feature.settings.admin.data.ToolDto
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
-import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import kotlinx.serialization.builtins.ListSerializer
@@ -162,102 +160,6 @@ class AdminWireShapeTest {
 
             assertTrue(tool.isLocked, "$identifier must be locked")
         }
-    }
-
-    /**
-     * A tool on both the dashboard and the grid is two rows.
-     *
-     * They are separate rights written to separate routes, so collapsing them
-     * into one would silently write dashboard access to the tools section.
-     */
-    @Test
-    fun `an access row becomes one entry per section it appears in`() {
-        val rows = json.decodeFromString(
-            ToolAccessDto.serializer(),
-            """
-            {
-              "unit_id": "unit-9", "identifier": "budget_tool", "unit_name": "main_budget_label",
-              "view_access": true, "posting_access": false, "download_access": true,
-              "viewing_updatable": false, "home": true, "tool": true
-            }
-            """.trimIndent(),
-        ).toDomain()
-
-        assertEquals(2, rows.size)
-        assertEquals(setOf(RightsSection.Home, RightsSection.Tools), rows.map { it.section }.toSet())
-        rows.forEach { row ->
-            assertEquals("unit-9", row.unitId)
-            assertTrue(row.canView)
-            assertFalse(row.canPost)
-            assertTrue(row.canDownload)
-            // An explicit false is what locks viewing.
-            assertTrue(row.viewLocked)
-            // Posting is the exception — see the test below.
-            assertTrue(row.postLocked)
-        }
-    }
-
-    /**
-     * Posting locks on a missing flag; viewing and downloading do not.
-     *
-     * Not symmetry the wire earned, and not a reading to tidy up: the web's
-     * grid asks `viewingUpdatable === false` and `downloadUpdatable === false`
-     * but a bare `!postingUpdatable` (`AccessGrid.jsx:150,191,221`). Offering a
-     * posting box the server then refuses springs back on the next read.
-     */
-    @Test
-    fun `a missing updatable flag locks posting only`() {
-        val row = json.decodeFromString(
-            ToolAccessDto.serializer(),
-            """
-            {
-              "unit_id": "unit-9", "identifier": "budget_tool", "unit_name": "main_budget_label",
-              "view_access": true, "tool": true
-            }
-            """.trimIndent(),
-        ).toDomain().single()
-
-        assertTrue(row.postLocked)
-        assertFalse(row.viewLocked)
-        assertFalse(row.downloadLocked)
-    }
-
-    @Test
-    fun `an explicit posting flag is honoured both ways`() {
-        fun rowWith(posting: Boolean) = json.decodeFromString(
-            ToolAccessDto.serializer(),
-            """
-            {
-              "unit_id": "unit-9", "identifier": "budget_tool", "unit_name": "main_budget_label",
-              "posting_updatable": $posting, "tool": true
-            }
-            """.trimIndent(),
-        ).toDomain().single()
-
-        assertFalse(rowWith(true).postLocked)
-        assertTrue(rowWith(false).postLocked)
-    }
-
-    /** A row belonging to neither section has nowhere to render. */
-    @Test
-    fun `an access row in no section is dropped`() {
-        val rows = json.decodeFromString(
-            ToolAccessDto.serializer(),
-            """{ "unit_id": "unit-1", "unit_name": "x", "home": false, "tool": false }""",
-        ).toDomain()
-
-        assertTrue(rows.isEmpty())
-    }
-
-    /** Without a unit id the write is unaddressable, so the row is dropped. */
-    @Test
-    fun `an access row with no unit id is dropped`() {
-        val rows = json.decodeFromString(
-            ToolAccessDto.serializer(),
-            """{ "unit_name": "x", "tool": true, "view_access": true }""",
-        ).toDomain()
-
-        assertTrue(rows.isEmpty())
     }
 
     /**

@@ -24,7 +24,6 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
     JobTitles("job-titles", S.create_new_designation),
     CrewOrder("crew-order", S.desktop_change_department_listing_order),
     Crew("crew", S.txt_user_managment),
-    Rights("rights", S.permission_grid_2),
     PreApproved("pre-approved", S.pre_approved_users),
     ToolAvailability("tools", S.project_tools_enable_disable),
     ToolGroups("tool-groups", S.manage_tool_groups),
@@ -62,7 +61,7 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
 
         // A personal production has no crew, which takes most of the page with
         // it: nobody to approve, nobody to rank, nobody to grant rights to.
-        Crew, CrewOrder, Rights, PreApproved, Sos -> !production.isPersonal
+        Crew, CrewOrder, PreApproved, Sos -> !production.isPersonal
 
         else -> true
     }
@@ -85,7 +84,6 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
             SettingsDestination.JobTitles -> JobTitles
             SettingsDestination.CrewListOrder -> CrewOrder
             SettingsDestination.CrewAndAdmins -> Crew
-            SettingsDestination.PermissionGrid -> Rights
             SettingsDestination.PreApprovedCrew -> PreApproved
             SettingsDestination.ToolAvailability -> ToolAvailability
             SettingsDestination.ToolGroups -> ToolGroups
@@ -100,8 +98,10 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
             SettingsDestination.DeleteProduction -> DeleteProduction
 
             // Handled elsewhere: the approval queues have their own screens,
-            // the documentation rows open a browser, and the rest are the
-            // reader's own settings rather than the production's.
+            // the documentation rows open a browser, the rights grid is the
+            // Film Tools window, and the rest are the reader's own settings
+            // rather than the production's.
+            SettingsDestination.PermissionGrid,
             SettingsDestination.ApproveNewCrew,
             SettingsDestination.ApproveProfileChanges,
             SettingsDestination.Help,

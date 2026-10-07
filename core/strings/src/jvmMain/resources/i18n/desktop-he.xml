@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">צפה בדפי הקריאה היומיים ששותפו איתך לקבלת תגובות והגב עליהם. מאשרים יכולים גם לאשר או לדחות דפי קריאה שנשלחו אליהם לחתימה.</string>
     <string name="desktop_chat_delete_message">מחיקת הודעה</string>
     <string name="desktop_chat_delete_message_confirm">האם אתה בטוח שברצונך למחוק הודעה זו?</string>
+    <string name="desktop_pg_user_permissions">הרשאות משתמש</string>
+    <string name="desktop_pg_based_on_crew_list">מבוסס על רשימת הצוות</string>
+    <string name="desktop_pg_department_permissions">הרשאות מחלקה</string>
+    <string name="desktop_pg_designation_permissions">הרשאות תפקיד</string>
+    <string name="desktop_pg_all_designations">כל המשרות</string>
+    <string name="desktop_pg_hired_crew_designations">תפקידי צוות שנשכרו</string>
+    <string name="desktop_pg_all_designations_hint">רשימת כל התפקידים.</string>
+    <string name="desktop_pg_hired_designations_hint">זוהי רשימה של תפקידים בהם יש משתמשים</string>
+    <string name="desktop_pg_view_default_grid">צפה ברשת ברירת המחדל</string>
+    <string name="desktop_pg_no_record_found">לא נמצאה רשומה.</string>
+    <string name="desktop_pg_download_excel">הורד Excel</string>
+    <string name="desktop_pg_department_permission_file">הרשאת מחלקה</string>
+    <string name="desktop_pg_go">עבור</string>
+    <string name="desktop_pg_go_to">עבור אל</string>
+    <string name="desktop_pg_range">%1$d-%2$d מתוך %3$d</string>
+    <string name="desktop_pg_nothing_to_download">אין נתונים להורדה</string>
+    <string name="desktop_pg_click_here">לחץ כאן</string>
 </resources>

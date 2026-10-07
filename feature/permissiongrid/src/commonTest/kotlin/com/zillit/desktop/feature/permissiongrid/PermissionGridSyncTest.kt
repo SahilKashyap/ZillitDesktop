@@ -7,7 +7,9 @@ import com.zillit.desktop.feature.permissiongrid.data.RightsSyncDto
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
 import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
 import com.zillit.desktop.feature.permissiongrid.domain.GridCell
+import com.zillit.desktop.feature.permissiongrid.domain.DefaultGridPage
 import com.zillit.desktop.feature.permissiongrid.domain.GridPage
+import com.zillit.desktop.feature.permissiongrid.domain.GridQuery
 import com.zillit.desktop.feature.permissiongrid.domain.GridRow
 import com.zillit.desktop.feature.permissiongrid.domain.GridSection
 import com.zillit.desktop.feature.permissiongrid.domain.GridSubject
@@ -56,7 +58,8 @@ class PermissionGridSyncTest {
         canView = true,
         canPost = false,
         canDownload = true,
-        busy = true,
+        busyView = true,
+        busyPost = true,
     )
 
     @Test
@@ -70,7 +73,10 @@ class PermissionGridSyncTest {
         assertTrue(merged.canDownload)
         assertTrue(merged.locked(AccessKind.Post), "postingUpdatable=false locks the right")
         assertFalse(merged.locked(AccessKind.View))
-        assertFalse(merged.busy, "the server's word clears the in-flight flag")
+        assertFalse(
+            merged.busyView || merged.busyPost || merged.busyDownload,
+            "the server's word clears the in-flight flags",
+        )
     }
 
     @Test
@@ -122,8 +128,9 @@ class PermissionGridSyncTest {
         )
         val model = PermissionGridViewModel(object : PermissionGridRepository {
             override val syncs: Flow<RightsSync> = events
-            override suspend fun load(axis: GridAxis, section: GridSection, page: Int, limit: Int) =
-                ZillitResult.Success(fixture)
+            override suspend fun load(query: GridQuery) = ZillitResult.Success(fixture)
+            override suspend fun loadDefaults(axis: GridAxis, section: GridSection) =
+                ZillitResult.Success(DefaultGridPage.Empty)
             override suspend fun setAccess(
                 axis: GridAxis, section: GridSection, entityId: String,
                 unitId: String, kind: AccessKind, enable: Boolean,

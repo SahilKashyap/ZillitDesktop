@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Wyświetlaj i komentuj dzienne arkusze wezwania udostępnione Ci do komentowania. Zatwierdzający mogą również zatwierdzać lub odrzucać arkusze wezwania wysłane im do podpisu.</string>
     <string name="desktop_chat_delete_message">Usuń wiadomość</string>
     <string name="desktop_chat_delete_message_confirm">Czy na pewno chcesz usunąć tę wiadomość?</string>
+    <string name="desktop_pg_user_permissions">Uprawnienia użytkownika</string>
+    <string name="desktop_pg_based_on_crew_list">Na podstawie listy ekipy</string>
+    <string name="desktop_pg_department_permissions">Uprawnienia działu</string>
+    <string name="desktop_pg_designation_permissions">Uprawnienia stanowiska</string>
+    <string name="desktop_pg_all_designations">Wszystkie stanowiska</string>
+    <string name="desktop_pg_hired_crew_designations">Zatrudnione stanowiska ekipy</string>
+    <string name="desktop_pg_all_designations_hint">Lista wszystkich stanowisk.</string>
+    <string name="desktop_pg_hired_designations_hint">To są stanowiska, w których są użytkownicy</string>
+    <string name="desktop_pg_view_default_grid">Zobacz domyślną siatkę</string>
+    <string name="desktop_pg_no_record_found">Nie znaleziono rekordu.</string>
+    <string name="desktop_pg_download_excel">Pobierz Excel</string>
+    <string name="desktop_pg_department_permission_file">Uprawnienia działu</string>
+    <string name="desktop_pg_go">Przejdź</string>
+    <string name="desktop_pg_go_to">Przejdź do</string>
+    <string name="desktop_pg_range">%1$d-%2$d z %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Brak danych do pobrania</string>
+    <string name="desktop_pg_click_here">Kliknij tutaj</string>
 </resources>

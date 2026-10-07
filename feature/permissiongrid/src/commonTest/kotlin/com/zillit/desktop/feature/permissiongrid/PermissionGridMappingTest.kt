@@ -4,6 +4,7 @@ import com.zillit.desktop.feature.permissiongrid.data.GridPageDto
 import com.zillit.desktop.feature.permissiongrid.data.toPage
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
 import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
+import com.zillit.desktop.feature.permissiongrid.domain.SubjectColumn
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,7 +42,7 @@ class PermissionGridMappingTest {
     """.trimIndent()
 
     private fun parsed(mine: String? = null) =
-        json.decodeFromString(GridPageDto.serializer(), page).toPage(GridAxis.Crew, mine)
+        json.decodeFromString(GridPageDto.serializer(), page).toPage(GridAxis.CrewList, mine)
 
     @Test
     fun `a row becomes a subject and its cells`() {
@@ -58,18 +59,21 @@ class PermissionGridMappingTest {
     }
 
     @Test
-    fun `an omitted right is denied, and only an explicit false locks one`() {
-        val drive = parsed().rows.first().cells.getValue("drive_label")
+    fun `an omitted right is denied, and the locks read as the web reads them`() {
+        val row = parsed().rows.first()
+        val drive = row.cells.getValue("drive_label")
+        val catering = row.cells.getValue("catering_label")
 
         // Nothing said about posting or download, so neither is granted.
         assertFalse(drive.canPost)
         assertFalse(drive.canDownload)
-        // `postingUpdatable: false` is the server saying "not yours to change".
-        assertTrue(drive.locked(AccessKind.Post))
-        // The other two were never mentioned — absent must not read as locked,
-        // or a server predating the flags renders the whole grid read-only.
+        // View and Download shut only on an explicit `false` …
         assertFalse(drive.locked(AccessKind.View))
         assertFalse(drive.locked(AccessKind.Download))
+        // … Posting opens only on an explicit `postingUpdatable: true`
+        // (`AccessGrid.jsx`: `disabled={… || !postingUpdatable}`).
+        assertTrue(drive.locked(AccessKind.Post))
+        assertTrue(catering.locked(AccessKind.Post))
     }
 
     @Test
@@ -83,11 +87,30 @@ class PermissionGridMappingTest {
     }
 
     @Test
-    fun `columns are the tools, in the production's order`() {
+    fun `label headers are frozen subject columns, the rest are tools by title`() {
         // `department_label` and `designation_label` head frozen subject
         // columns, not tools — carrying them across would put two empty
         // checkbox columns at the front of every row.
         assertEquals(listOf("catering_label", "drive_label"), parsed().columns)
+        assertEquals(listOf(SubjectColumn.Department, SubjectColumn.Designation), parsed().subjects)
+    }
+
+    @Test
+    fun `the crew-list axis keeps the server's order, user permissions sort by name`() {
+        val unsorted = """
+            {"headers":["user_label","department_label"],"total_users":2,
+             "rows":[[{"user_id":"z","full_name":"Zara","admin_access":true}],
+                     [{"user_id":"a","full_name":"Amir"}]]}
+        """.trimIndent()
+        val dto = json.decodeFromString(GridPageDto.serializer(), unsorted)
+
+        assertEquals(listOf("z", "a"), dto.toPage(GridAxis.CrewList, null).rows.map { it.subject.id })
+        assertEquals(listOf("a", "z"), dto.toPage(GridAxis.Users, null).rows.map { it.subject.id })
+        assertTrue(dto.toPage(GridAxis.CrewList, null).rows.first().subject.isAdmin)
+        assertEquals(
+            listOf(SubjectColumn.User, SubjectColumn.Department),
+            dto.toPage(GridAxis.CrewList, null).subjects,
+        )
     }
 
     /**
@@ -117,8 +140,8 @@ class PermissionGridMappingTest {
         assertEquals(2, page.rows.map { it.subject.id }.distinct().size)
         // Titled by its own name, not by the department it belongs to.
         assertEquals(listOf("Ad", "Director"), page.rows.map { it.subject.name })
-        // And the department is not repeated as a sub-label on this axis.
-        assertNull(page.rows.first().subject.department)
+        // Its department is kept for the frozen Department column.
+        assertEquals("Direction", page.rows.first().subject.department)
     }
 
     @Test
@@ -144,7 +167,7 @@ class PermissionGridMappingTest {
                       {"unit_id":"a1","unit_name":"account_hub_label"}]]}
         """.trimIndent()
         val columns = json.decodeFromString(GridPageDto.serializer(), extra)
-            .toPage(GridAxis.Crew, null).columns
+            .toPage(GridAxis.Users, null).columns
 
         // Alphabetical by translated title once the headers run out, so a
         // column the server did not announce still reaches the screen.

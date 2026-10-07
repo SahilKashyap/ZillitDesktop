@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">查看并评论与您共享以征求评论的每日通告单。审批人还可以批准或拒绝发送给他们签署的通告单。</string>
     <string name="desktop_chat_delete_message">删除消息</string>
     <string name="desktop_chat_delete_message_confirm">确定要删除这条消息吗？</string>
+    <string name="desktop_pg_user_permissions">用户权限</string>
+    <string name="desktop_pg_based_on_crew_list">基于剧组列表</string>
+    <string name="desktop_pg_department_permissions">部门权限</string>
+    <string name="desktop_pg_designation_permissions">职位权限</string>
+    <string name="desktop_pg_all_designations">所有职位</string>
+    <string name="desktop_pg_hired_crew_designations">已聘用剧组职位</string>
+    <string name="desktop_pg_all_designations_hint">所有职位列表。</string>
+    <string name="desktop_pg_hired_designations_hint">这是拥有用户的职位</string>
+    <string name="desktop_pg_view_default_grid">查看默认网格</string>
+    <string name="desktop_pg_no_record_found">未找到记录。</string>
+    <string name="desktop_pg_download_excel">下载Excel</string>
+    <string name="desktop_pg_department_permission_file">部门权限</string>
+    <string name="desktop_pg_go">前往</string>
+    <string name="desktop_pg_go_to">跳至</string>
+    <string name="desktop_pg_range">第 %1$d-%2$d 条，共 %3$d 条</string>
+    <string name="desktop_pg_nothing_to_download">没有可下载的数据</string>
+    <string name="desktop_pg_click_here">点击此处</string>
 </resources>

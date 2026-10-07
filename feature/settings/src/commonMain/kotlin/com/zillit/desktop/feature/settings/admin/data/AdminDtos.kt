@@ -11,11 +11,9 @@ import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.JobTitle
 import com.zillit.desktop.feature.settings.admin.domain.PreApprovedCrew
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
-import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.SosRecipient
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
-import com.zillit.desktop.feature.settings.admin.domain.ToolRights
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -368,78 +366,6 @@ internal data class AdminUnitDto(
             enabled = visibility ?: enabled ?: true,
             locked = systemDefined == true || priority == "false",
         )
-    }
-}
-
-// -- rights grid -------------------------------------------------------------------------
-
-/**
- * One person's rights over one tool.
- *
- * From `user/access/{userId}`, which answers a flat list — the shape both phone
- * clients read. Each row says which half of the page it belongs to through
- * [home] and [tool], and a row that claims neither is dropped: it would render
- * under no heading.
- *
- * The `*_updatable` flags are the server saying this particular right is not
- * this admin's to change. Read so the page can disable the box rather than send
- * a write the server will discard.
- */
-@Serializable
-internal data class ToolAccessDto(
-    @SerialName("unit_id") val unitId: String? = null,
-    @SerialName("identifier") val identifier: String? = null,
-    /** The tool's name. Nothing to do with production units — see [ToolDto]. */
-    @SerialName("unit_name") val unitName: String? = null,
-    @SerialName("view_access") val viewAccess: Boolean? = null,
-    @SerialName("posting_access") val postingAccess: Boolean? = null,
-    @SerialName("download_access") val downloadAccess: Boolean? = null,
-    @SerialName("viewing_updatable") val viewingUpdatable: Boolean? = null,
-    @SerialName("posting_updatable") val postingUpdatable: Boolean? = null,
-    @SerialName("download_updatable") val downloadUpdatable: Boolean? = null,
-    /** On the dashboard. */
-    @SerialName("home") val home: Boolean? = null,
-    /** On the Film Tools grid. */
-    @SerialName("tool") val tool: Boolean? = null,
-) {
-    /**
-     * A row per section it appears in.
-     *
-     * A tool can be both — the dashboard and the grid are separate rights over
-     * the same thing, written to separate routes — so one wire row can become
-     * two rows on the page.
-     */
-    fun toDomain(): List<ToolRights> {
-        // The write is keyed on `unit_id`; without one the row has switches
-        // that could never be saved.
-        val unit = unitId?.takeIf { it.isNotBlank() } ?: return emptyList()
-        val name = unitName?.takeIf { it.isNotBlank() } ?: identifier ?: return emptyList()
-
-        return listOfNotNull(
-            RightsSection.Home.takeIf { home == true },
-            RightsSection.Tools.takeIf { tool == true },
-        ).map { section ->
-            ToolRights(
-                toolIdentifier = identifier?.takeIf { it.isNotBlank() } ?: unit,
-                toolName = name,
-                unitId = unit,
-                section = section,
-                canView = viewAccess == true,
-                canPost = postingAccess == true,
-                canDownload = downloadAccess == true,
-                // Viewing and downloading lock on an explicit `false` only:
-                // treating absence as locked would grey out the whole page on
-                // a production whose server predates the flag. **Posting locks
-                // on absence too**, which is not symmetry the wire earned —
-                // the web's grid reads `viewingUpdatable === false` and
-                // `downloadUpdatable === false` but a bare `!postingUpdatable`
-                // (`AccessGrid.jsx:150,191,221`), and a box this client offers
-                // that the server then refuses springs back on the next read.
-                viewLocked = viewingUpdatable == false,
-                postLocked = postingUpdatable != true,
-                downloadLocked = downloadUpdatable == false,
-            )
-        }
     }
 }
 

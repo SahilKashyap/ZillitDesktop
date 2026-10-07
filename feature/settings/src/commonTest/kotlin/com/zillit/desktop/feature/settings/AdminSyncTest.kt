@@ -37,16 +37,14 @@ class AdminSyncTest {
     }
 
     @Test
-    fun `who is on the production reloads the crew page and the rights grid`() {
-        // The grid is indexed by person: a departure leaves a row pointing at
-        // nobody, which is worse than a stale name.
+    fun `who is on the production reloads the crew page`() {
         listOf(
             "project:user:accepted", "project:user:removed", "project:user:left",
             "project:user:admin:access", "project:user:profile:update",
             "project:user:profile:created", "project:user:reordered",
             "project:pre-approved:user:joined",
         ).forEach {
-            assertEquals(setOf(AdminDestination.Crew, AdminDestination.Rights), pagesFor(it), it)
+            assertEquals(setOf(AdminDestination.Crew), pagesFor(it), it)
         }
     }
 

@@ -38,9 +38,8 @@ val ADMIN_SYNC_PAGES: Map<SocketEventName, Set<AdminDestination>> = buildMap {
         "department:reordered",
     ).forEach { put(SocketEventName(it), departmentPages) }
 
-    // Who is on the production. The crew page lists them; the rights grid is
-    // indexed by them, so a departure leaves a row pointing at nobody.
-    val crewPages = setOf(AdminDestination.Crew, AdminDestination.Rights)
+    // Who is on the production — what the crew page lists.
+    val crewPages = setOf(AdminDestination.Crew)
     listOf(
         "project:user:accepted",
         "project:user:removed",

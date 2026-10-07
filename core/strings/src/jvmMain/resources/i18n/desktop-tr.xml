@@ -8357,4 +8357,16 @@
     <string name="desktop_tool_info_call_sheet_info_user">Yorum için sizinle paylaşılan günlük çağrı listelerini görüntüleyin ve yorumlayın. Onaylayanlar ayrıca imza için kendilerine gönderilen çağrı listelerini onaylayabilir veya reddedebilir.</string>
     <string name="desktop_chat_delete_message">Mesajı sil</string>
     <string name="desktop_chat_delete_message_confirm">Bu mesajı silmek istediğinizden emin misiniz?</string>
+    <string name="desktop_pg_based_on_crew_list">Ekip Listesine Göre</string>
+    <string name="desktop_pg_hired_crew_designations">İşe Alınan Ekip Pozisyonları</string>
+    <string name="desktop_pg_all_designations_hint">Tüm pozisyonların listesi.</string>
+    <string name="desktop_pg_view_default_grid">Varsayılan ızgarayı görüntüle</string>
+    <string name="desktop_pg_no_record_found">Kayıt bulunamadı.</string>
+    <string name="desktop_pg_download_excel">Excel’i İndir</string>
+    <string name="desktop_pg_department_permission_file">Departman İzinleri</string>
+    <string name="desktop_pg_go">Git</string>
+    <string name="desktop_pg_go_to">Şuraya git</string>
+    <string name="desktop_pg_range">%1$d-%2$d / %3$d</string>
+    <string name="desktop_pg_nothing_to_download">İndirilecek veri yok</string>
+    <string name="desktop_pg_click_here">Buraya tıklayın</string>
 </resources>

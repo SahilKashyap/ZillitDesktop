@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.settings
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.ui.ACCOUNT_HUB_ROUTE
+import com.zillit.desktop.feature.settings.ui.PERMISSION_GRID_ROUTE
 import com.zillit.desktop.feature.settings.ui.AccountSummary
 import com.zillit.desktop.feature.settings.ui.AdminSettingsUiState
 import com.zillit.desktop.feature.settings.ui.EntryStatus
@@ -213,13 +214,31 @@ class SettingsListingTest {
         val effects = mutableListOf<SettingsEffect>()
         val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
 
-        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.PermissionGrid))
+        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.Departments))
         advanceUntilIdle()
 
         assertEquals(
-            listOf<SettingsEffect>(SettingsEffect.OpenAdminPage(AdminDestination.Rights)),
+            listOf<SettingsEffect>(SettingsEffect.OpenAdminPage(AdminDestination.Departments)),
             effects.toList(),
         )
+        job.cancel()
+    }
+
+    /**
+     * The web's admin button goes to `/film-tools/permission-grid?s=admin` —
+     * the Film Tools grid, not a page of its own — and so does this row.
+     */
+    @Test
+    fun `the rights grid row opens the film tools grid`() = runTest {
+        val settings = viewModel()
+        val effects = mutableListOf<SettingsEffect>()
+        val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
+
+        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.PermissionGrid))
+        advanceUntilIdle()
+
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenTool(PERMISSION_GRID_ROUTE)), effects.toList())
+        assertEquals("/film-tools/permission-grid", PERMISSION_GRID_ROUTE)
         job.cancel()
     }
 

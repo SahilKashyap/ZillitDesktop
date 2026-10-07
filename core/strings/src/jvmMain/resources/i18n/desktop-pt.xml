@@ -8357,4 +8357,21 @@
     <string name="desktop_tool_info_call_sheet_info_user">Veja e comente as listas de chamadas diárias compartilhadas com você para comentários. Os aprovadores também podem aprovar ou rejeitar as listas de chamadas enviadas a eles para assinatura.</string>
     <string name="desktop_chat_delete_message">Excluir mensagem</string>
     <string name="desktop_chat_delete_message_confirm">Tem certeza de que deseja excluir esta mensagem?</string>
+    <string name="desktop_pg_user_permissions">Permissões do Usuário</string>
+    <string name="desktop_pg_based_on_crew_list">Com base na lista de equipe</string>
+    <string name="desktop_pg_department_permissions">Permissões do Departamento</string>
+    <string name="desktop_pg_designation_permissions">Permissões da Designação</string>
+    <string name="desktop_pg_all_designations">Todas as Designações</string>
+    <string name="desktop_pg_hired_crew_designations">Funções da equipe contratada</string>
+    <string name="desktop_pg_all_designations_hint">Lista de todas as funções.</string>
+    <string name="desktop_pg_hired_designations_hint">Estas são as designações onde há usuários</string>
+    <string name="desktop_pg_view_default_grid">Ver Grid Padrão</string>
+    <string name="desktop_pg_no_record_found">Nenhum registro encontrado.</string>
+    <string name="desktop_pg_download_excel">Baixar Excel</string>
+    <string name="desktop_pg_department_permission_file">Permissão do Departamento</string>
+    <string name="desktop_pg_go">Ir</string>
+    <string name="desktop_pg_go_to">Ir para</string>
+    <string name="desktop_pg_range">%1$d-%2$d de %3$d</string>
+    <string name="desktop_pg_nothing_to_download">Não há dados para baixar</string>
+    <string name="desktop_pg_click_here">Clique Aqui</string>
 </resources>
