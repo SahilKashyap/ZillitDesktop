@@ -4071,8 +4071,6 @@ private fun buildRegistry(
                     homeViewModel?.state?.value?.permissions ?: ProjectPermissions.Empty,
                 )
             },
-            onSaveFile = { fileName, bytes -> scope.launch { savePermissionGridFile(fileName, bytes) } },
-            onOpenListingOrder = permissionGridListingOrder(viewModels),
         )
     }
     val productionReport = viewModels.productionReport?.let {
