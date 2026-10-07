@@ -76,6 +76,12 @@ fun CallLogPane(
     state: CallLogUiState,
     onEvent: (CallLogEvent) -> Unit,
     nameFor: (String) -> String?,
+    /**
+     * The counterpart's job title, under their name on the row — the same
+     * designation the stage tiles and the roster show. Null, or a blank, and
+     * the row is the name alone, as it was.
+     */
+    designationFor: (String) -> String? = { null },
     nowMillis: Long,
     /** Names "You" in the detail sheet's roster; null leaves everyone by name. */
     selfUserId: String? = null,
@@ -126,7 +132,7 @@ fun CallLogPane(
             state.entries.isEmpty() && state.missedOnly -> PaneNote(str(S.desktop_call_no_missed_calls))
             state.entries.isEmpty() -> PaneNote(str(S.desktop_call_no_calls_yet))
             shown.isEmpty() -> PaneNote(str(S.desktop_call_no_calls_match, state.query.trim()))
-            else -> CallLogList(state, shown, onEvent, nameFor, nowMillis, lines, inlineDetail)
+            else -> CallLogList(state, shown, onEvent, nameFor, designationFor, nowMillis, lines, inlineDetail)
         }
     }
 
@@ -403,11 +409,13 @@ private fun WindowOverlay(onDismiss: () -> Unit, content: @Composable () -> Unit
 }
 
 @Composable
+@Suppress("LongParameterList") // One row's data and the pane's hooks, passed through.
 private fun CallLogList(
     state: CallLogUiState,
     shown: List<CallLogEntry>,
     onEvent: (CallLogEvent) -> Unit,
     nameFor: (String) -> String?,
+    designationFor: (String) -> String?,
     nowMillis: Long,
     lines: List<CallLine>,
     inlineDetail: Boolean,
@@ -418,6 +426,7 @@ private fun CallLogList(
             CallLogRow(
                 entry = entry,
                 nameFor = nameFor,
+                designationFor = designationFor,
                 nowMillis = nowMillis,
                 lines = lines,
                 onRedial = { line -> onEvent(CallLogEvent.Redial(entry, line)) },
@@ -465,6 +474,7 @@ private fun CallLogList(
 private fun CallLogRow(
     entry: CallLogEntry,
     nameFor: (String) -> String?,
+    designationFor: (String) -> String?,
     nowMillis: Long,
     lines: List<CallLine>,
     onRedial: (CallLine) -> Unit,
@@ -474,6 +484,7 @@ private fun CallLogRow(
 ) {
     val colors = ZillitTheme.colors
     val title = entry.displayTitle(nameFor)
+    val designation = entry.displayDesignation(designationFor)
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     // The line picker, anchored to the row. Its open state lives here, not
@@ -533,6 +544,18 @@ private fun CallLogRow(
                             text = callListStamp(entry.startedAtMillis, nowMillis),
                             style = ZillitTheme.typography.labelSmall,
                             color = colors.textMuted,
+                            maxLines = 1,
+                        )
+                    }
+                    // Its own line under the name, never beside it — the rule
+                    // the stage tiles follow: squeezed in next to the name the
+                    // designation is the first thing truncated, and it is the
+                    // half that says WHICH Sam this was.
+                    if (designation != null) {
+                        ZillitText(
+                            text = designation,
+                            style = ZillitTheme.typography.labelSmall,
+                            color = colors.textSecondary,
                             maxLines = 1,
                         )
                     }

@@ -357,6 +357,20 @@ fun CallLogEntry.displayTitle(nameFor: (String) -> String?): String = when {
 }
 
 /**
+ * The counterpart's job title, where there is one person and the book knows
+ * it — the designation the stage tiles and the roster already print under a
+ * name (`CallTiles`, `CallRosterPanel`).
+ *
+ * A group row has no one person to title, so it has none. Resolved through
+ * the same book as [displayTitle], which leaves out anyone keeping their name
+ * private: their title must not be the thing that identifies them.
+ */
+fun CallLogEntry.displayDesignation(designationFor: (String) -> String?): String? =
+    peerUserId.takeIf { mode != CallMode.Group && it.isNotBlank() }
+        ?.let(designationFor)
+        ?.takeIf(String::isNotBlank)
+
+/**
  * The line under the name: when it happened, and how long it lasted.
  *
  * When comes first because it is what a call list is scanned for — Android's

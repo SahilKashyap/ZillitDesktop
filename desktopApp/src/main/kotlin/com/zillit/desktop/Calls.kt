@@ -319,6 +319,7 @@ internal fun rememberCallsPanes(
                     state = state,
                     onEvent = logs::onEvent,
                     nameFor = { id -> crewNameOf(ready, id) },
+                    designationFor = { id -> crewDesignationOf(ready, id) },
                     // Read once per composition rather than per row, so every
                     // row in one frame decides "today" against the same instant.
                     nowMillis = remember(state.entries) { System.currentTimeMillis() },
@@ -335,6 +336,7 @@ internal fun rememberCallsPanes(
                     state = state,
                     onEvent = logs::onEvent,
                     nameFor = { id -> crewNameOf(ready, id) },
+                    designationFor = { id -> crewDesignationOf(ready, id) },
                     nowMillis = remember(state.detail) { System.currentTimeMillis() },
                     selfUserId = selfUserId(),
                     lines = lines,
@@ -429,6 +431,21 @@ internal fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =
     ready.projectContext?.context?.value?.user(userId)
         ?.takeUnless { it.keepNamePrivate }
         ?.fullName
+
+/**
+ * Their job title, for the call log's rows — the same reading the stage tiles
+ * and the roster use.
+ *
+ * `designationText` is the shared reader: a label key through the dictionary
+ * (`armourer_label`, never shown raw), and the bare "member" placeholder
+ * dropped rather than printed under every name. Keep-name-private members
+ * are skipped exactly as [crewNameOf] skips them — a title under an unnamed
+ * row would be the thing that identifies them.
+ */
+internal fun crewDesignationOf(ready: AppGraph.Ready, userId: String): String? =
+    ready.projectContext?.context?.value?.user(userId)
+        ?.takeUnless { it.keepNamePrivate }
+        ?.designationText()
 
 
 /**

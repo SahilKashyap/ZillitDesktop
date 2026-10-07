@@ -74,6 +74,57 @@ class CallLogPaneRenderTest {
         onNodeWithText("Line 3").assertExists()
     }
 
+    private val designations = mapOf("u1" to "Line producer", "u2" to "Armourer")
+
+    @Test
+    fun `a row names the job title under the person`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(
+                        entries = listOf(
+                            entry("c1", CallLine.One, "u1"),
+                            // Nobody's title: the book has no entry for u3.
+                            entry("c2", CallLine.One, "u3"),
+                            // A room, which is not a person and has no title.
+                            entry("c3", CallLine.One, "u2")
+                                .copy(mode = CallMode.Group, title = "Stunt unit"),
+                        ),
+                    ),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    designationFor = { designations[it] },
+                    nowMillis = now,
+                )
+            }
+        }
+
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Line producer").assertExists("the title belongs under the name")
+        onNodeWithText("Priya Nair").assertExists()
+        // A group row is a room; its members' titles are not its own.
+        onNodeWithText("Stunt unit").assertExists()
+        onNodeWithText("Armourer").assertDoesNotExist()
+    }
+
+    /** No book, no extra line: every row reads exactly as it did before. */
+    @Test
+    fun `a row with no title to show is the name alone`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.One, "u1"))),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                )
+            }
+        }
+
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Line producer").assertDoesNotExist()
+    }
+
     @Test
     fun `an older row with no line on the wire still says Line 1`() = runComposeUiTest {
         setContent {

@@ -56,6 +56,8 @@ fun CallLogSide(
     state: CallLogUiState,
     onEvent: (CallLogEvent) -> Unit,
     nameFor: (String) -> String?,
+    /** Their job title, under the name — as the list's rows show it. */
+    designationFor: (String) -> String? = { null },
     nowMillis: Long,
     selfUserId: String? = null,
     lines: List<CallLine> = CallLine.DEFAULT,
@@ -68,7 +70,7 @@ fun CallLogSide(
         if (entry == null) {
             CallsInvitation(onStartCall)
         } else {
-            CallInfo(entry, nameFor, nowMillis, selfUserId, lines, onEvent)
+            CallInfo(entry, nameFor, designationFor, nowMillis, selfUserId, lines, onEvent)
         }
     }
 }
@@ -139,12 +141,14 @@ private fun RoundAction(icon: ImageVector, label: String, onClick: () -> Unit) {
 private fun CallInfo(
     entry: CallLogEntry,
     nameFor: (String) -> String?,
+    designationFor: (String) -> String?,
     nowMillis: Long,
     selfUserId: String?,
     lines: List<CallLine>,
     onEvent: (CallLogEvent) -> Unit,
 ) {
     val title = entry.displayTitle(nameFor)
+    val designation = entry.displayDesignation(designationFor)
     Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -176,6 +180,16 @@ private fun CallInfo(
                 size = INFO_AVATAR,
             )
             ZillitText(text = title, style = ZillitTheme.typography.titleLarge, textAlign = TextAlign.Center)
+            // Between the name and how the call went: the title belongs to
+            // the person, the subtitle to the call.
+            if (designation != null) {
+                ZillitText(
+                    text = designation,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                    textAlign = TextAlign.Center,
+                )
+            }
             ZillitText(
                 text = entry.detailSubtitle(),
                 style = ZillitTheme.typography.bodyMedium,
