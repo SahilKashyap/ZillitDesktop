@@ -4,10 +4,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.LocalVideoEngine
@@ -122,6 +126,78 @@ class ChatVideoViewerRenderTest {
     }
 
     @Test
+    fun `a click on the dark around the clip closes the viewer and stops it`() = runComposeUiTest {
+        val engine = FakeVideoEngine()
+        setContent {
+            ZillitTheme {
+                CompositionLocalProvider(
+                    LocalChatSeams provides ChatSeams(videoUrl = { SIGNED_URL }),
+                    LocalVideoEngine provides engine,
+                ) {
+                    ThreadPane(
+                        state = ChatUiState(peer = aisha, messages = listOf(theirClip)),
+                        onEvent = {},
+                        loadThumbnail = { ImageBitmap(4, 4) },
+                    )
+                }
+            }
+        }
+
+        waitForIdle()
+        onNodeWithContentDescription("stunt.mp4").performClick()
+        waitForIdle()
+        val playing = engine.opened.single()
+
+        // Down the left edge, below the header: the scrim, not the clip. (The
+        // real player is a platform surface and a click on it never reaches
+        // Compose at all; this fake draws in Compose, so the test aims past it.)
+        val header = onNodeWithContentDescription("Close viewer").fetchSemanticsNode().boundsInRoot
+        onRoot().performMouseInput { click(Offset(SCRIM_EDGE, header.bottom + SCRIM_BELOW)) }
+        waitForIdle()
+
+        onNodeWithContentDescription("Close viewer").assertDoesNotExist()
+        // Not merely hidden: a player left alive is sound from a window nobody
+        // can see any more.
+        assertEquals(true, playing.closed)
+    }
+
+    @Test
+    fun `a click on the viewer's own chrome is not a click outside it`() = runComposeUiTest {
+        val engine = FakeVideoEngine()
+        setContent {
+            ZillitTheme {
+                CompositionLocalProvider(
+                    LocalChatSeams provides ChatSeams(videoUrl = { SIGNED_URL }),
+                    LocalVideoEngine provides engine,
+                ) {
+                    ThreadPane(
+                        state = ChatUiState(peer = aisha, messages = listOf(theirClip)),
+                        onEvent = {},
+                        loadThumbnail = { ImageBitmap(4, 4) },
+                    )
+                }
+            }
+        }
+
+        waitForIdle()
+        onNodeWithContentDescription("stunt.mp4").performClick()
+        waitForIdle()
+
+        // Beside the Download, and beside the play button: the two strips of
+        // chrome a thumb lands on when it misses, neither of which is "outside".
+        val header = onNodeWithContentDescription("Close viewer").fetchSemanticsNode().boundsInRoot
+        onRoot().performMouseInput { click(Offset(SCRIM_EDGE, header.center.y)) }
+        waitForIdle()
+        onNodeWithContentDescription("Close viewer").assertExists("the header closed the viewer")
+
+        val transport = onNodeWithContentDescription("Mute").fetchSemanticsNode().boundsInRoot
+        onRoot().performMouseInput { click(Offset(SCRIM_EDGE, transport.center.y)) }
+        waitForIdle()
+        onNodeWithContentDescription("Close viewer").assertExists("the transport closed the viewer")
+        assertEquals(false, engine.opened.single().closed)
+    }
+
+    @Test
     fun `with no seam to sign one, the clip says so and offers the hand-off`() = runComposeUiTest {
         var handedOut: ChatAttachment? = null
         setContent {
@@ -151,6 +227,12 @@ class ChatVideoViewerRenderTest {
 
     private companion object {
         const val SIGNED_URL = "https://b.s3.r.amazonaws.com/s3/stunt.mp4?X-Amz-Signature=abc"
+
+        /** Hard against the window's left edge — no picture, no control, ever. */
+        const val SCRIM_EDGE = 2f
+
+        /** Clear of the header row, into the band the picture sits in. */
+        const val SCRIM_BELOW = 24f
     }
 }
 

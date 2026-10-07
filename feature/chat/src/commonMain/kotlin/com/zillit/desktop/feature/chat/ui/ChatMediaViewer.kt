@@ -2,8 +2,6 @@ package com.zillit.desktop.feature.chat.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitVideoView
 import com.zillit.desktop.core.designsystem.component.ZillitViewerClose
 import com.zillit.desktop.core.designsystem.component.ZillitViewerPager
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.onBackdropTap
+import com.zillit.desktop.core.designsystem.component.swallowPresses
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -76,11 +76,7 @@ internal fun ChatMediaViewer(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = VIEWER_SCRIM))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClose,
-            ),
+            .onBackdropTap(onClose),
     ) {
         Column(Modifier.fillMaxSize()) {
             ViewerHeader(file.name, refused, onClose) {
@@ -116,7 +112,12 @@ private fun ViewerHeader(
     onDownload: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
+        modifier = Modifier
+            .fillMaxWidth()
+            // Inside the viewer, not around it: the gap beside the Download is
+            // not "outside the picture", so it must not close anything.
+            .swallowPresses()
+            .padding(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
@@ -150,9 +151,13 @@ private fun ViewerHeader(
  *
  * Its own composable rather than a branch inside the image one because the
  * player is a *heavyweight* surface: it paints over anything composed on top
- * of it, so the header has to sit beside it in a column, and the
- * click-anywhere-to-close scrim the picture carries would be a click the
- * player's own controls never receive. The cross is the way out here.
+ * of it, so the header has to sit beside it in a column rather than over it.
+ *
+ * The scrim closes this one too, and the surface is what makes that safe: it
+ * is a platform component, so a click on the picture is Swing's and never
+ * reaches Compose. Clicking the clip plays on; clicking the dark around it
+ * closes, as it does for a picture — and the transport and the header swallow
+ * their own clicks so neither is mistaken for the surround.
  */
 @Composable
 private fun ChatVideoViewer(
@@ -172,7 +177,12 @@ private fun ChatVideoViewer(
         value = StreamLink(videoUrl?.invoke(file))
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = VIEWER_SCRIM))) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = VIEWER_SCRIM))
+            .onBackdropTap(onClose),
+    ) {
         Column(Modifier.fillMaxSize()) {
             ViewerHeader(file.name, refused, onClose) {
                 if (canDownload()) onDownload(file) else refused = true

@@ -3,10 +3,14 @@ package com.zillit.desktop.feature.home
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
@@ -269,6 +273,61 @@ class VideoViewerRenderTest {
     }
 
     @Test
+    fun `a click on the dark around a clip closes the viewer and stops it`() = runComposeUiTest {
+        val engine = FakeVideoEngine()
+        setContent {
+            ZillitTheme {
+                CompositionLocalProvider(LocalVideoEngine provides engine) {
+                    HomeFeedScreen(state = board(videoPost), onEvent = {}, media = Source(SIGNED_URL))
+                }
+            }
+        }
+
+        onNodeWithContentDescription("Play").performClick()
+        waitForIdle()
+        val playing = engine.opened.single()
+
+        // Down the left edge, below the name and the cross: the scrim. (The real
+        // player is a platform surface a Compose click never reaches; this fake
+        // draws in Compose, so the test aims past it.)
+        val header = onNodeWithContentDescription("Close viewer").fetchSemanticsNode().boundsInRoot
+        onRoot().performMouseInput { click(Offset(SCRIM_EDGE, header.bottom + SCRIM_BELOW)) }
+        waitForIdle()
+
+        onNodeWithContentDescription("Close viewer").assertDoesNotExist()
+        // The same rule the cross follows: closing a viewer stops the clip.
+        assertEquals(true, playing.closed)
+    }
+
+    @Test
+    fun `a click on the clip's own chrome leaves it playing`() = runComposeUiTest {
+        val engine = FakeVideoEngine()
+        setContent {
+            ZillitTheme {
+                CompositionLocalProvider(LocalVideoEngine provides engine) {
+                    HomeFeedScreen(state = board(videoPost), onEvent = {}, media = Source(SIGNED_URL))
+                }
+            }
+        }
+
+        onNodeWithContentDescription("Play").performClick()
+        waitForIdle()
+
+        // The strip beside the name, and the strip beside the play button: a
+        // miss, not a dismissal.
+        val header = onNodeWithContentDescription("Close viewer").fetchSemanticsNode().boundsInRoot
+        onRoot().performMouseInput { click(Offset(SCRIM_EDGE, header.center.y)) }
+        waitForIdle()
+        onNodeWithContentDescription("Close viewer").assertExists("the header closed the viewer")
+
+        val transport = onNodeWithContentDescription("Mute").fetchSemanticsNode().boundsInRoot
+        onRoot().performMouseInput { click(Offset(SCRIM_EDGE, transport.center.y)) }
+        waitForIdle()
+        onNodeWithContentDescription("Close viewer").assertExists("the transport closed the viewer")
+        assertEquals(false, engine.opened.single().closed)
+    }
+
+    @Test
     fun `the picture lightbox has a cross of its own`() = runComposeUiTest {
         setContent {
             ZillitTheme {
@@ -288,6 +347,12 @@ class VideoViewerRenderTest {
 
     private companion object {
         const val SIGNED_URL = "https://b.s3.r.amazonaws.com/home/clip.mp4?X-Amz-Signature=abc"
+
+        /** Hard against the window's left edge — no picture, no control, ever. */
+        const val SCRIM_EDGE = 2f
+
+        /** Clear of the header row, into the band the picture sits in. */
+        const val SCRIM_BELOW = 24f
 
         /** A decodable poster, so bubbles draw pictures rather than file chips. */
         val POSTER: ByteArray = ByteArrayOutputStream().also { out ->

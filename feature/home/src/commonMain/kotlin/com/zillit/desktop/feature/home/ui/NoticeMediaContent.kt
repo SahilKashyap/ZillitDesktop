@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitVideoView
 import com.zillit.desktop.core.designsystem.component.ZillitViewerClose
 import com.zillit.desktop.core.designsystem.component.ZillitViewerPager
+import com.zillit.desktop.core.designsystem.component.onBackdropTap
+import com.zillit.desktop.core.designsystem.component.swallowPresses
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.AudioPlayer
@@ -622,11 +624,7 @@ internal fun MediaLightbox(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = LIGHTBOX_SCRIM))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClose,
-            ),
+            .onBackdropTap(onClose),
         contentAlignment = Alignment.Center,
     ) {
         ZillitViewerPager(onPrevious, onNext, Modifier.fillMaxSize()) {
@@ -670,6 +668,11 @@ internal fun MediaLightbox(
  * Laid out as a column rather than as chrome floating over the picture,
  * because the player is a heavyweight surface: anything composed on top of it
  * is painted over. Side by side, both are visible; stacked, only one is.
+ *
+ * A click on the scrim closes it, as it does in the picture lightbox. That the
+ * surface is a platform component is what makes it safe here: a click on the
+ * clip is the host's and never reaches Compose, so playback is never
+ * interrupted by the gesture that dismisses the dark around it.
  */
 @Composable
 internal fun VideoLightbox(
@@ -689,11 +692,17 @@ internal fun VideoLightbox(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = LIGHTBOX_SCRIM)),
+            .background(Color.Black.copy(alpha = LIGHTBOX_SCRIM))
+            .onBackdropTap(onClose),
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // The viewer's own strip: a click here is not a click
+                    // outside the clip, so it closes nothing.
+                    .swallowPresses()
+                    .padding(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {

@@ -220,6 +220,9 @@ private fun VideoControls(state: VideoPlaybackState, playback: VideoPlayback) {
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.Black.copy(alpha = CONTROLS_SCRIM))
+            // The transport belongs to the viewer, not to the scrim around it:
+            // a click that misses the play button must not close the clip.
+            .swallowPresses()
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
