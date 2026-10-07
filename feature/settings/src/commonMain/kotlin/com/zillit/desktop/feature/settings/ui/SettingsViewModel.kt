@@ -182,6 +182,8 @@ class SettingsViewModel(
 
             is SettingsEvent.OpenEntry -> open(event.destination)
 
+            is SettingsEvent.OpenLink -> sendEffect(SettingsEffect.OpenExternal(event.url))
+
             is SettingsEvent.AdminSearchChanged ->
                 setState { copy(admin = admin.copy(query = event.query)) }
 

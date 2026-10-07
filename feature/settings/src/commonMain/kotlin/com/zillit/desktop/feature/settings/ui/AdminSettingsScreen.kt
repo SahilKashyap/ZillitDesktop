@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,7 +81,16 @@ fun AdminSettingsScreen(
                 val groups = remember(admin.production, admin.pendingNewCrew, admin.pendingProfileChanges) {
                     adminSettingsEntries(admin.production, admin.pendingNewCrew, admin.pendingProfileChanges)
                 }
+                var info by remember { mutableStateOf<SettingsEntry?>(null) }
                 val visible = remember(groups, admin.query) { groups.matching(admin.query) }
+
+                EntryInfoDialog(
+                    entry = info,
+                    projectType = admin.production.projectType,
+                    forAdmin = true,
+                    onOpenUrl = { onEvent(SettingsEvent.OpenLink(it)) },
+                    onDismiss = { info = null },
+                )
 
                 ZillitSearchField(
                     value = admin.query,
@@ -100,6 +112,8 @@ fun AdminSettingsScreen(
                         SettingsEntryGroup(
                             group = group,
                             onOpen = { onEvent(SettingsEvent.OpenEntry(it)) },
+                            // The web draws no ⓘ on a personal production.
+                            onInfo = if (admin.production.isPersonal) null else { entry -> info = entry },
                         )
                     }
                 }

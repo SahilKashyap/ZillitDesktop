@@ -179,7 +179,7 @@ class AdminDestinationTest {
             .firstOrNull { it.destination == SettingsDestination.CrewListOrder }
 
         assertNotNull(row)
-        assertEquals("Change Department Listing Order for Staff List", row.title)
+        assertEquals("Listing Order for Staff List", row.title)
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.settings.admin.ui.pages
 
+import com.zillit.desktop.feature.settings.ui.crewListOrderTitle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -252,7 +253,7 @@ fun CrewOrderPage(
     AdminPage(
         // The only page whose name depends on the production: Android swaps
         // the same two words (`set_department_priority_staff_list`).
-        title = if (isOtherType) str(S.set_department_priority_staff_list) else str(S.desktop_crew_list_order_crew),
+        title = crewListOrderTitle(isOtherType),
         description = if (isOtherType) {
             str(S.desktop_crew_list_order_description_staff)
         } else {

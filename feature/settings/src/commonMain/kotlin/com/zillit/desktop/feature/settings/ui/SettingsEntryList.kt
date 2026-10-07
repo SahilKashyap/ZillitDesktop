@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -29,6 +32,7 @@ import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitTag
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -48,6 +52,8 @@ fun SettingsEntryGroup(
     group: SettingsGroup,
     onOpen: (SettingsDestination) -> Unit,
     modifier: Modifier = Modifier,
+    /** Asked to explain a row; null draws no ⓘ, as on a personal production. */
+    onInfo: ((SettingsEntry) -> Unit)? = null,
 ) {
     Column(
         modifier = modifier,
@@ -80,7 +86,11 @@ fun SettingsEntryGroup(
         ) {
             group.entries.forEachIndexed { index, entry ->
                 if (index > 0) RowDivider()
-                EntryRow(entry = entry, onOpen = { onOpen(entry.destination) })
+                EntryRow(
+                    entry = entry,
+                    onOpen = { onOpen(entry.destination) },
+                    onInfo = onInfo?.takeIf { entry.info != null }?.let { ask -> { ask(entry) } },
+                )
             }
         }
     }
@@ -94,7 +104,7 @@ fun SettingsEntryGroup(
  * feels broken.
  */
 @Composable
-private fun EntryRow(entry: SettingsEntry, onOpen: () -> Unit) {
+private fun EntryRow(entry: SettingsEntry, onOpen: () -> Unit, onInfo: (() -> Unit)?) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -154,7 +164,24 @@ private fun EntryRow(entry: SettingsEntry, onOpen: () -> Unit) {
         }
 
         ZillitBadge(count = entry.badge)
+        onInfo?.let { InfoGlyph(entry = entry, onClick = it) }
         EntryAffordance(entry = entry, hovered = hovered)
+    }
+}
+
+/** The blue ⓘ: the web's message on hover, and on a click the dialog with More and Watch video. */
+@Composable
+private fun InfoGlyph(entry: SettingsEntry, onClick: () -> Unit) {
+    val about = str(S.desktop_sa_about_code, entry.title)
+    ZillitTooltip(entry.info?.message.orEmpty()) {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .semantics { contentDescription = about }
+                .clickable(onClickLabel = about, onClick = onClick),
+        ) {
+            ZillitIcon(icon = ZillitIcons.Info, contentDescription = null, tint = INFO_BLUE, size = INFO_GLYPH)
+        }
     }
 }
 
@@ -290,6 +317,7 @@ private val DISC = 34.dp
 private val GLYPH = 17.dp
 private val HEADING_GLYPH = 14.dp
 private val CHEVRON = 16.dp
+private val INFO_GLYPH = 20.dp
 private val CHEVRON_NUDGE = 2.dp
 private val NOTICE_GLYPH = 16.dp
 private val EMPTY_GLYPH = 22.dp

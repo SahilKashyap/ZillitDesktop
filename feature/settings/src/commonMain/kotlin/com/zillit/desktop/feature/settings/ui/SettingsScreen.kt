@@ -105,7 +105,7 @@ fun SettingsScreen(
                 }
 
                 AccountCard(state, onEvent)
-                Destinations(onEvent)
+                Destinations(state, onEvent)
                 AppearanceSection(state, onEvent)
                 ProductionSection(state, onEvent)
                 NotificationsSection(state, onEvent)
@@ -189,14 +189,26 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
  * reading, and it is the Admin Settings tab now.
  */
 @Composable
-private fun Destinations(onEvent: (SettingsEvent) -> Unit) {
-    val groups = remember { settingsEntries() }
+private fun Destinations(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
+    val isAdmin = state.account.isAdmin
+    val production = state.admin.production
+    val groups = remember(isAdmin) { settingsEntries(isAdmin) }
+    var info by remember { mutableStateOf<SettingsEntry?>(null) }
     groups.forEach { group ->
         SettingsEntryGroup(
             group = group,
             onOpen = { onEvent(SettingsEvent.OpenEntry(it)) },
+            // The web draws no ⓘ on a personal production.
+            onInfo = if (production.isPersonal) null else { entry -> info = entry },
         )
     }
+    EntryInfoDialog(
+        entry = info,
+        projectType = production.projectType,
+        forAdmin = isAdmin,
+        onOpenUrl = { onEvent(SettingsEvent.OpenLink(it)) },
+        onDismiss = { info = null },
+    )
 }
 
 @Composable

@@ -12322,4 +12322,21 @@
     <string name="desktop_um_change_designation">Change Designation</string>
     <string name="desktop_um_change_unit">Change Unit</string>
     <string name="desktop_um_edit_user_info">Edit User Info</string>
+    <string name="desktop_admin_approve_new_user_request">Approve New User Request</string>
+    <string name="desktop_admin_create_update_on_home_unit">Create/Update on Home Unit</string>
+    <string name="desktop_admin_create_remote_shooting_unit">Create Remote shooting unit</string>
+    <string name="desktop_admin_customization_of_tools">Customization of Tools</string>
+    <string name="desktop_admin_project_set_up_notes">Project Set Up Notes</string>
+    <string name="desktop_admin_create_join_unit_info">Admins can create, edit, and delete joinable units that members select when joining a project, while the default Main Unit stays locked.</string>
+    <string name="desktop_admin_create_dept_info">Admin can create department not listed in drop down list.</string>
+    <string name="desktop_admin_create_desg_info">Admin can create designation under department not listed in the drop down list.</string>
+    <string name="desktop_admin_remote_unit_info">Admin uses this functionality when a project shoots in a different city and/or country. It creates a new project, with a new project code, which shows up on your project list page, however it has the current project name in brackets . To this new project, Admin can add new Admin from outside by sharing code, or add Admin and users from existing project.</string>
+    <string name="desktop_admin_tool_customization_info">Admin selects the Tools that can be used on the project.</string>
+    <string name="desktop_admin_production_setup_info">Manage the project\'s companies, for use across tools such as Deal Memo, Purchase Orders, Production Expense Cards, and Petty Cash Expenses.</string>
+    <string name="desktop_info_edit_profile">Update name, department, designation and See your private email i.d. for the project.</string>
+    <string name="desktop_info_invite_user">Code to be shared with others to join the project.</string>
+    <string name="desktop_info_recovery_admin">Add/Edit your recovery email for recovering your project in case you lose or change your phone.</string>
+    <string name="desktop_info_recovery_user">Add/Edit your recovery email for recovering your project in case you lose your phone or change your phone.</string>
+    <string name="desktop_info_leave_admin">Allows you to leave the project. Admin can only leave if there is another Admin on the project. Once you leave the project you can come back again only thru \'Join a Project\'.</string>
+    <string name="desktop_info_leave_user">Allows you to leave the project. Once you leave the project you can come back again only thru \'Join a Project.</string>
 </resources>

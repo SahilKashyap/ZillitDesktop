@@ -349,8 +349,8 @@ class SettingsListingTest {
             .flatMap { it.entries }
             .first { it.destination == SettingsDestination.CrewListOrder }
 
-        assertEquals("Change Department Listing Order for Crew List", film.title)
-        assertEquals("Change Department Listing Order for Staff List", other.title)
+        assertEquals("Listing Order for Crew List", film.title)
+        assertEquals("Listing Order for Staff List", other.title)
     }
 
     // -- destruction, kept apart -------------------------------------------

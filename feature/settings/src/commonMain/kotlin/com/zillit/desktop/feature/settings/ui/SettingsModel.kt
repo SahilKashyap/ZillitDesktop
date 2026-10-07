@@ -224,6 +224,9 @@ sealed interface SettingsEvent {
     /** Filters the administration page. */
     data class AdminSearchChanged(val query: String) : SettingsEvent
 
+    /** A row's ⓘ was opened and More or Watch video was clicked; [url] goes to the browser. */
+    data class OpenLink(val url: String) : SettingsEvent
+
     /** The approval queues reported how much is waiting in them. */
     data class ApprovalsCounted(val newCrew: Int, val profileChanges: Int) : SettingsEvent
 

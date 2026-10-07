@@ -88,6 +88,8 @@ data class SettingsEntry(
     val badge: Int = 0,
     val tone: EntryTone = EntryTone.Normal,
     val status: EntryStatus = EntryStatus.Ready,
+    /** The web's ⓘ for this row: its message, and the guide behind More and Watch video. */
+    val info: EntryInfo? = null,
 ) {
     val isOpenable: Boolean get() = status == EntryStatus.Ready
 
@@ -158,10 +160,10 @@ val List<SettingsGroup>.anyPlanned: Boolean
  * to hide: it is a rail destination of its own, offered to coordinators and
  * absent for everyone else. See [adminSettingsEntries] for what it holds.
  */
-fun settingsEntries(): List<SettingsGroup> = listOf(
+fun settingsEntries(isAdmin: Boolean = false): List<SettingsGroup> = listOf(
     accountGroup(),
     productionGroup(),
-).filter { it.entries.isNotEmpty() }
+).filter { it.entries.isNotEmpty() }.withInfo { profileInfo(it, isAdmin) }
 
 private fun accountGroup(): SettingsGroup =
     SettingsGroup(
@@ -244,6 +246,8 @@ data class ProductionFacts(
      * production in this state the only thing to offer is stopping it.
      */
     val markedForDeletion: Boolean = false,
+    /** The production's `project_type`, which the documentation site is told about. */
+    val projectType: String = "",
 )
 
 /**
@@ -266,6 +270,7 @@ fun productionFacts(
     isPersonal = type.equals(PERSONAL_PRODUCTION, ignoreCase = true),
     isRemoteUnit = !parentName.isNullOrBlank(),
     markedForDeletion = markedForDeletion,
+    projectType = type.orEmpty(),
 )
 
 private const val OTHER_PRODUCTION = "other"
@@ -292,7 +297,7 @@ fun adminSettingsEntries(
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ApproveNewCrew,
-                title = str(S.approve_new_user_request),
+                title = str(S.desktop_admin_approve_new_user_request),
                 detail = str(S.desktop_approve_new_crew_detail),
                 icon = ZillitToolIcons.IcInviteUser,
                 badge = pendingNewCrew,
@@ -324,7 +329,7 @@ fun adminSettingsEntries(
             ),
             SettingsEntry(
                 destination = SettingsDestination.PermissionGrid,
-                title = str(S.permission_grid_2),
+                title = str(S.desktop_pg_title),
                 detail = str(S.permission_grid_info2),
                 icon = ZillitToolIcons.PostingRights,
             ),
@@ -345,11 +350,7 @@ fun adminSettingsEntries(
                 // "Crew list" is a film production's word for it; corporate and
                 // event productions call the same page a staff list, and both
                 // phone clients switch the label rather than the page.
-                title = if (production.isOtherType) {
-                    str(S.set_department_priority_staff_list)
-                } else {
-                    str(S.desktop_crew_list_order_crew)
-                },
+                title = crewListOrderTitle(production.isOtherType),
                 detail = str(S.desktop_crew_list_order_detail),
                 icon = ZillitToolIcons.AdDash,
             ),
@@ -361,13 +362,13 @@ fun adminSettingsEntries(
         entries = listOf(
                 SettingsEntry(
                     destination = SettingsDestination.ShootingUnits,
-                    title = str(S.desktop_home_units_title),
+                    title = str(S.desktop_admin_create_update_on_home_unit),
                     detail = str(S.desktop_home_units_detail),
                     icon = ZillitToolIcons.IcContinuity,
                 ),
                 SettingsEntry(
                     destination = SettingsDestination.RemoteUnit,
-                    title = str(S.create_remote_unit),
+                    title = str(S.desktop_admin_create_remote_shooting_unit),
                     detail = str(S.desktop_remote_units_detail),
                     icon = ZillitToolIcons.Location,
                 ),
@@ -385,7 +386,7 @@ fun adminSettingsEntries(
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ToolAvailability,
-                title = str(S.project_tools_enable_disable),
+                title = str(S.desktop_admin_customization_of_tools),
                 detail = str(S.desktop_tool_customisation_detail),
                 icon = ZillitIcons.Tools,
             ),
@@ -439,7 +440,7 @@ fun adminSettingsEntries(
             // production's setup.
             SettingsEntry(
                 destination = SettingsDestination.SetupNotes,
-                title = str(S.project_set_up_notes),
+                title = str(S.desktop_admin_project_set_up_notes),
                 detail = str(S.desktop_setup_notes_detail),
                 icon = ZillitIcons.Info,
             ).takeUnless { production.isOtherType },
@@ -466,7 +467,17 @@ fun adminSettingsEntries(
             ),
         ),
     ),
-).availableOn(production)
+).availableOn(production).withInfo { adminInfo(it, production) }
+
+/**
+ * The web's `change_priority` template with the tool's name filled in:
+ * "Listing Order for Crew List", or "… Staff List" on a corporate production.
+ */
+fun crewListOrderTitle(isOtherType: Boolean): String =
+    str(S.desktop_cl_listing_order_for_tool).replace(
+        "{tool_name}",
+        if (isOtherType) str(S.txt_staff_list) else str(S.generate_crew_list),
+    )
 
 /**
  * Drops the rows this production has no page for.

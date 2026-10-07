@@ -316,7 +316,7 @@ class AdminScreenRenderTest {
             state = state(AdminDestination.HomeUnits),
             production = ProductionFacts(name = "Conference", isOtherType = true),
         ) {
-            onNodeWithText("Create/Update Home Units").assertExists()
+            onNodeWithText("Create/Update on Home Unit").assertExists()
         }
     }
 
