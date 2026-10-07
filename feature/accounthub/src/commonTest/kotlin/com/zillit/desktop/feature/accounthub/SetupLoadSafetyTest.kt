@@ -11,10 +11,13 @@ import com.zillit.desktop.feature.accounthub.data.AccountHubRepositoryImpl
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.HubArea
+import com.zillit.desktop.feature.accounthub.domain.HybridDefault
 import com.zillit.desktop.feature.accounthub.domain.PayRuleKind
 import com.zillit.desktop.feature.accounthub.domain.PayRuleTemplate
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PoDescriptionFormat
+import com.zillit.desktop.feature.accounthub.domain.TimecardControlModel
+import com.zillit.desktop.feature.accounthub.domain.TimecardSetup
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
 import com.zillit.desktop.feature.accounthub.ui.SetupModal
@@ -70,6 +73,15 @@ private const val COMPANIES = """
 """
 
 /** A legacy sort code with hyphens and details stored as a JSON string, as older clients saved them. */
+private const val TIMECARD_CONFIG = """
+{"status":1,"data":{"overall_control_model":"hybrid","hybrid_default":"department","approval_cadence":"weekly",
+ "department_summary":{"configured":4,"completers":2,"split":{"department":2,"crew":1,"production":1},
+  "completerUserIds":["u1","u2"]},
+ "approval_summary":{"defaultLevels":2,"customOverrides":1,"approverCount":3,"approverUserIds":["u1"]}}}
+"""
+
+private enum class TimecardConfigAnswer { Stored, Missing, Down }
+
 private const val BANKS = """
 {"status":1,"data":[
  {"id":"b-1","name":"Barclays","entity_id":"co-1","account_holder_name":"Zillit Films","account_number":"41508833",
@@ -106,6 +118,7 @@ class SetupLoadSafetyTest {
     private var companiesDown = false
     private var payrollSettingsDown = false
     private var poWriteRefused = false
+    private var timecardConfigAnswer = TimecardConfigAnswer.Stored
     private var payrollAccounts = """["6000","6010","9999"]"""
 
     // -- companies ------------------------------------------------------------------
@@ -351,6 +364,56 @@ class SetupLoadSafetyTest {
         assertFalse(model.state.value.setup.nonUnionPay.dirty)
     }
 
+    @Test
+    fun `time card setup reads the stored model, and a save sends the cadence it carried`() = runTest(dispatcher) {
+        val model = openSetup { it.setup.slices.isLoaded(SetupSection.Companies) }
+        model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.TimeCards))
+        settle { model.state.value.setup.modal?.loading == false }
+
+        val loaded = model.state.value.setup.timecardSetup.edited
+        assertEquals(TimecardControlModel.Hybrid, loaded.model)
+        assertEquals(HybridDefault.Department, loaded.hybridDefault)
+        assertEquals(4, loaded.departments.configured)
+        assertEquals(3, loaded.departments.controlled, "department-controlled plus production-controlled")
+        assertEquals(1, loaded.approvals.customOverrides)
+        assertFalse(model.state.value.setup.modalDirty)
+
+        model.onEvent(AccountHubEvent.EditTimecardSetup(loaded.copy(model = TimecardControlModel.Crew)))
+        assertTrue(model.state.value.setup.modalDirty)
+        model.onEvent(AccountHubEvent.SaveSetupModal)
+        settle { writes.value.any { it.first == "PUT /api/v2/payroll/timecards/config" } }
+
+        val sent = Json.parseToJsonElement(
+            writes.value.single { it.first == "PUT /api/v2/payroll/timecards/config" }.second,
+        ).jsonObject
+        assertEquals("crew", sent["overall_control_model"]?.jsonPrimitive?.content)
+        assertIs<JsonNull>(sent["hybrid_default"], "only a hybrid production has a default")
+        assertEquals("weekly", sent["approval_cadence"]?.jsonPrimitive?.content, "the stored cadence goes back")
+        settle { !model.state.value.setup.modalDirty }
+        assertEquals(TimecardControlModel.Crew, model.state.value.setup.timecardSetup.saved.model)
+    }
+
+    @Test
+    fun `a project with no time card config opens on the defaults, and a failed read saves nothing`() =
+        runTest(dispatcher) {
+            timecardConfigAnswer = TimecardConfigAnswer.Missing
+            val model = openSetup { it.setup.slices.isLoaded(SetupSection.Companies) }
+            model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.TimeCards))
+            settle { model.state.value.setup.modal?.loading == false }
+            assertNull(model.state.value.setup.modal?.loadError, "a 404 is a fresh project, not an error")
+            assertEquals(TimecardControlModel.Hybrid, model.state.value.setup.timecardSetup.edited.model)
+            assertEquals(HybridDefault.Crew, model.state.value.setup.timecardSetup.edited.hybridDefault)
+
+            model.onEvent(AccountHubEvent.CloseSetupModal)
+            timecardConfigAnswer = TimecardConfigAnswer.Down
+            model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.TimeCards))
+            settle { model.state.value.setup.modal?.loadError != null }
+            model.onEvent(AccountHubEvent.EditTimecardSetup(TimecardSetup(model = TimecardControlModel.Production)))
+            model.onEvent(AccountHubEvent.SaveSetupModal)
+            settle { false }
+            assertTrue(writes.value.none { it.first.startsWith("PUT /api/v2/payroll/timecards/config") })
+        }
+
     // -- harness ------------------------------------------------------------------------
 
     private fun companyWrites(): List<String> =
@@ -396,6 +459,12 @@ class SetupLoadSafetyTest {
                 } else {
                     ok to """{"status":1,"data":{"payroll_approvers":["u1"],"payroll_accounts":$payrollAccounts}}"""
                 }
+            path.endsWith("/payroll/timecards/config") && method == HttpMethod.Get -> when (timecardConfigAnswer) {
+                TimecardConfigAnswer.Stored -> ok to TIMECARD_CONFIG
+                TimecardConfigAnswer.Missing -> HttpStatusCode.NotFound to "{}"
+                TimecardConfigAnswer.Down -> HttpStatusCode.InternalServerError to "{}"
+            }
+            path.endsWith("/payroll/timecards/config") -> ok to """{"status":1,"data":$body}"""
             path.endsWith("/payroll-settings/custom-accounts") -> ok to """{"status":1,"data":{"coa_rows":[]}}"""
             path.endsWith("/project-settings/asset-tags") && method == HttpMethod.Patch ->
                 ok to """{"status":0,"message":"asset_tags_rejected","data":{"value":["VFX"]}}"""

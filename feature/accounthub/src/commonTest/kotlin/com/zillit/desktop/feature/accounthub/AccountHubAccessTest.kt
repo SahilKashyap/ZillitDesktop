@@ -235,6 +235,8 @@ class AccountHubAccessTest {
 
         assertEquals(
             listOf(
+                // First under Setup, ahead of Production Setup, as on the web.
+                HubArea.Guide,
                 HubArea.ProductionSetup,
                 // Reports comes before Management in the sidebar.
                 HubArea.PeriodClose,

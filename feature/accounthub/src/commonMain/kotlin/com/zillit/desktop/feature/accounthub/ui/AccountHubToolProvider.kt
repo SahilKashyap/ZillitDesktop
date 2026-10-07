@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
@@ -50,6 +51,8 @@ class AccountHubToolProvider(
     private val tools: ((String) -> ToolProvider?)? = null,
     /** A crew member's photo by user id, for the people the console draws; null shows initials. */
     private val loadAvatar: suspend (String) -> ImageBitmap? = { null },
+    /** Shows a web address in the browser; null falls back to the platform's URI handler. */
+    private val onOpenUrl: ((String) -> Unit)? = null,
 ) : ToolProvider {
     /** The provider for a tool route the console may embed — never the console itself. */
     internal fun resolveTool(path: String): ToolProvider? =
@@ -73,6 +76,7 @@ class AccountHubToolProvider(
         // Held here rather than in the state so a failure that has been read
         // does not reappear when the window is switched away from and back.
         var failure by remember { mutableStateOf<String?>(null) }
+        val uriHandler = LocalUriHandler.current
 
         // The first time this tool is shown: the view model is built with the
         // app, before a production is open, so it resolves who the viewer is
@@ -86,6 +90,7 @@ class AccountHubToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is AccountHubEffect.Failed -> failure = effect.message
+                    is AccountHubEffect.OpenUrl -> (onOpenUrl ?: uriHandler::openUri)(effect.url)
                     // A *different* window, not this one. Purchase Orders and
                     // Payroll are their own tools with their own routes; taking
                     // over the console's window would mean the way back to the

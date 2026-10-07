@@ -55,6 +55,7 @@ import com.zillit.desktop.feature.accounthub.domain.PoDescriptionFormat
 import com.zillit.desktop.feature.accounthub.domain.PoSplitType
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
 import com.zillit.desktop.feature.accounthub.domain.RunAuthorisationTier
+import com.zillit.desktop.feature.accounthub.domain.SpendKind
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupModal
@@ -125,6 +126,9 @@ internal fun SetupModals(
                 SetupModal.PurchaseOrders -> PoModalBody(sectionId, state, onEvent, canAttach, canOpen)
                 SetupModal.Invoices -> InvoicesModalBody(sectionId, state, onEvent)
                 SetupModal.Payroll -> PayrollModalBody(sectionId, state, onEvent)
+                SetupModal.TimeCards -> TimecardModalBody(sectionId, state, onEvent)
+                SetupModal.CardExpenses -> SpendModalBody(sectionId, SpendKind.Cards, state, onEvent)
+                SetupModal.PettyCash -> SpendModalBody(sectionId, SpendKind.Cash, state, onEvent)
             }
         }
     }
@@ -132,6 +136,7 @@ internal fun SetupModals(
     PayrollGroupDialog(state, onEvent)
     PayrollAccountsDialog(state, onEvent)
     SharedUserPicker(state, onEvent)
+    SpendDialogs(state, onEvent)
 }
 
 private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<SetupModalSection> = when (modal) {
@@ -170,6 +175,17 @@ private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<Setup
         ),
         SetupModalSection("payroll_groups", str(S.desktop_payroll_groups), state.setup.payrollGroups.size),
     )
+    SetupModal.TimeCards -> listOf(
+        SetupModalSection(SECTION_CONTROL, str(S.desktop_hub_tc_sec_control), null),
+        SetupModalSection(
+            SECTION_DEPARTMENTS,
+            str(S.desktop_hub_tc_sec_departments),
+            state.setup.departments.size,
+        ),
+        SetupModalSection(SECTION_APPROVALS, str(S.ah_approval_chain)),
+    )
+    SetupModal.CardExpenses -> spendSections(SpendKind.Cards, state)
+    SetupModal.PettyCash -> spendSections(SpendKind.Cash, state)
 }
 
 // -- purchase orders --------------------------------------------------------------
@@ -832,7 +848,7 @@ private fun ColumnScope.PayPeriodFields(
  */
 @Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
-private fun ColumnScope.AssignmentRulesSection(
+internal fun ColumnScope.AssignmentRulesSection(
     rules: List<AssignmentRule>,
     module: String,
     showVendors: Boolean,

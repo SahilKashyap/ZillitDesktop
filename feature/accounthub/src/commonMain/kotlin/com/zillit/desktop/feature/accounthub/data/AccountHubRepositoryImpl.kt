@@ -23,6 +23,9 @@ import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
 import com.zillit.desktop.feature.accounthub.domain.CustomDay
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import com.zillit.desktop.feature.accounthub.domain.SpendKind
+import com.zillit.desktop.feature.accounthub.domain.SpendSettings
+import com.zillit.desktop.feature.accounthub.domain.TimecardSetup
 import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
@@ -133,6 +136,12 @@ class AccountHubRepositoryImpl(
 
     /** The PO, invoices and payroll settings documents — see [HubSettingsSource]. */
     private val settings = HubSettingsSource(apiClient, config)
+
+    /** The time card configuration — see [HubTimecardSource]. */
+    private val timecards = HubTimecardSource(apiClient, config)
+
+    /** The Card and Petty Cash settings documents — see [HubSpendSource]. */
+    private val spend = HubSpendSource(apiClient, config)
 
     /** The chart of accounts — see [HubChartSource]. */
     private val chartSource = HubChartSource(apiClient, config)
@@ -339,6 +348,14 @@ class AccountHubRepositoryImpl(
     override suspend fun savePurchaseOrderSetup(setup: PurchaseOrderSetup) = settings.savePurchaseOrderSetup(setup)
 
     override suspend fun payrollSettings() = settings.payrollSettings()
+
+    override suspend fun timecardSetup() = timecards.load()
+
+    override suspend fun saveTimecardSetup(setup: TimecardSetup) = timecards.save(setup)
+
+    override suspend fun spendSetup(kind: SpendKind) = spend.load(kind)
+
+    override suspend fun saveSpendSetup(saved: SpendSettings, edited: SpendSettings) = spend.save(saved, edited)
 
     override suspend fun savePayrollSettings(settings: PayrollSettings) = this.settings.savePayrollSettings(settings)
 

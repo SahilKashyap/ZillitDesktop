@@ -28,6 +28,7 @@ sealed interface HubTarget {
 
 /** A screen the hub itself renders. */
 enum class HubArea(val slug: String, private val labelKey: String) {
+    Guide("guide", S.guide),
     ProductionSetup("production-setup", S.ps_production_setup),
     ChartOfAccounts("chart-of-accounts", S.desktop_chart_of_accounts),
     Vendors("vendors", S.ah_vendors),
@@ -95,6 +96,13 @@ object HubNavigation {
         HubSection(
             titleKey = S.desktop_setup,
             items = listOf(
+                // First under Setup, as on the web: a page of cards that open
+                // each module's documentation. See [HubGuides].
+                HubItem(
+                    id = "guide",
+                    labelKey = S.guide,
+                    target = HubTarget.Page(HubArea.Guide),
+                ),
                 HubItem(
                     id = "production-setup",
                     labelKey = S.ps_production_setup,

@@ -144,7 +144,7 @@ private fun Header(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit,
 
 /** A bordered tile rather than a bare glyph, as the web draws it, so it reads as the page's way out. */
 @Composable
-private fun BackButton(onClick: () -> Unit) {
+internal fun BackButton(label: String = BACK_LABEL, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -158,14 +158,14 @@ private fun BackButton(onClick: () -> Unit) {
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = BACK_LABEL,
+                onClickLabel = label,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
         ZillitIcon(
             icon = ZillitIcons.ArrowLeft,
-            contentDescription = BACK_LABEL,
+            contentDescription = label,
             tint = if (hovered) colors.textPrimary else colors.textSecondary,
             size = 14.dp,
         )

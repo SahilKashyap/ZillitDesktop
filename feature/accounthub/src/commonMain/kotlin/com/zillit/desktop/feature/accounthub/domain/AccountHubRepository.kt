@@ -143,6 +143,21 @@ interface AccountHubRepository {
 
     suspend fun payrollSettings(): ZillitResult<PayrollSettings>
 
+    /** The time card configuration: control model, hybrid default, and the department and approval summaries. */
+    suspend fun timecardSetup(): ZillitResult<TimecardSetup>
+
+    /** Saves the control model and hybrid default; the whole record goes in a PUT. */
+    suspend fun saveTimecardSetup(setup: TimecardSetup): ZillitResult<TimecardSetup>
+
+    /** The Card or Petty Cash module's own settings document. */
+    suspend fun spendSetup(kind: SpendKind): ZillitResult<SpendSettings>
+
+    /**
+     * Saves what changed between [saved] and [edited] — the changed keys only,
+     * then reads the document back and fails if the server kept none of a key.
+     */
+    suspend fun saveSpendSetup(saved: SpendSettings, edited: SpendSettings): ZillitResult<SpendSettings>
+
     /**
      * Saves the approvers, and the pay period when the server still allows it.
      *

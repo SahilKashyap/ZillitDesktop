@@ -211,7 +211,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         shownFirst: Boolean,
         onSaved: AccountHubUiState.() -> AccountHubUiState,
     ) {
-        val banks = vm.setupState.setup.banks
+        val banks = vm.setupState.setup.knownBanks()
         vm.update {
             val edited = if (shownFirst) setup.companies.edit(next) else setup.companies
             copy(setup = setup.copy(companies = edited.copy(saving = true)))

@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.domain.HubDocumentOpener
 import com.zillit.desktop.feature.accounthub.domain.HubExporter
 import com.zillit.desktop.feature.accounthub.domain.HubFiles
+import com.zillit.desktop.feature.accounthub.domain.HubGuides
 import com.zillit.desktop.feature.accounthub.domain.HubNavigation
 import com.zillit.desktop.feature.accounthub.domain.HubTarget
 import com.zillit.desktop.feature.accounthub.domain.HubUser
@@ -108,6 +109,8 @@ class AccountHubViewModel(
     /** Whether the setup tour has been dismissed on this production before. */
     private val tourSeen: suspend (String) -> Boolean = { true },
     private val markTourSeen: suspend (String) -> Unit = {},
+    /** The open production's `project_type`, which the documentation site reads from a Guide link. */
+    private val projectType: () -> String? = { null },
     /**
      * Whether the host renders the other film tools inside this console.
      *
@@ -233,6 +236,24 @@ class AccountHubViewModel(
         }
     }
 
+    /**
+     * Prepares the Companies page that Admin Settings hosts on its own.
+     *
+     * Not [start]: that opens the console on its landing screen and hands a
+     * department user off to their first tool, and this page is neither. Only
+     * who is looking is resolved, and the setup slices are read — the area is
+     * left as it was, so the console opened later still lands where it would.
+     * Rights are not enforced here, as the web's gate is a no-op off the hub's
+     * routes; the server refuses a write the viewer may not make, and
+     * [requireEdit] names the reason first.
+     */
+    fun openCompanies() {
+        val identity = viewer()
+        setState { copy(viewer = identity, projectName = projectName()) }
+        loadRoster()
+        loadSetup()
+    }
+
     /** Re-reads rights when the open production changes. */
     fun onProjectChanged() {
         started = false
@@ -289,6 +310,8 @@ class AccountHubViewModel(
             is AccountHubEvent.OpenSpendSetup -> show(event.which.route, event.which.title)
             is AccountHubEvent.CreatePurchaseOrder -> show(PURCHASE_ORDER_NEW_PATH, str(S.ah_purchase_orders))
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
+            is AccountHubEvent.OpenGuide ->
+                HubGuides.url(event.itemId, projectType())?.let { sendEffect(AccountHubEffect.OpenUrl(it)) }
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
             else -> return false
         }
@@ -351,6 +374,8 @@ class AccountHubViewModel(
         // answers it may simply not have landed when the console started.
         if (!rosterLoaded || currentState.users.isEmpty()) loadRoster()
         when (area) {
+            // Static links; nothing to read.
+            HubArea.Guide -> Unit
             HubArea.ProductionSetup -> loadSetup()
             HubArea.ChartOfAccounts -> chartActions.load()
             HubArea.Vendors -> vendorActions.load()

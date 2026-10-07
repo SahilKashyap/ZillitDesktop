@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.DayType
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
@@ -47,7 +48,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
         when (section) {
             SetupSection.Companies -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = true))) },
-                call = { vm.repo.saveCompanies(Companies.forWire(setup.companies.edited, setup.banks)) },
+                call = { vm.repo.saveCompanies(Companies.forWire(setup.companies.edited, setup.knownBanks())) },
                 done = { rows -> copy(setup = this.setup.copy(companies = this.setup.companies.committed(rows))) },
                 failed = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = false))) },
                 notice = str(S.desktop_companies_saved),
@@ -234,3 +235,6 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
         copy(setup = next)
     }
 }
+
+/** The bank list once it has been read, else null — see [Companies.forWire]. */
+internal fun SetupState.knownBanks(): List<BankAccount>? = banks.takeIf { banksLoaded }

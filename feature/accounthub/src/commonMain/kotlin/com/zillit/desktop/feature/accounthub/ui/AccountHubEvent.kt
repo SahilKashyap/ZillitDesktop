@@ -39,6 +39,8 @@ import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
 import com.zillit.desktop.feature.accounthub.domain.PayrollSettings as DomainPayrollSettings
 import com.zillit.desktop.feature.accounthub.domain.PeriodMode
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
+import com.zillit.desktop.feature.accounthub.domain.SpendSettings
+import com.zillit.desktop.feature.accounthub.domain.TimecardSetup
 import com.zillit.desktop.feature.accounthub.domain.TaxType
 import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.TrackingSet
@@ -102,6 +104,9 @@ sealed interface AccountHubEvent {
 
     data object Refresh : AccountHubEvent
 
+    /** A Guide card: open that module's page on the documentation site. */
+    data class OpenGuide(val itemId: String) : AccountHubEvent
+
     data object ClearNotice : AccountHubEvent
 
     /** The setup tour: the intro's "Next →", a step's Next/Back, and any exit. */
@@ -146,6 +151,29 @@ sealed interface AccountHubEvent {
     data class EditPayrollSettings(val value: DomainPayrollSettings) : AccountHubEvent
 
     data class EditPoSetup(val value: PurchaseOrderSetup) : AccountHubEvent
+
+    /** The Time Card Entry Setup modal's control model or hybrid default changed. */
+    data class EditTimecardSetup(val value: TimecardSetup) : AccountHubEvent
+
+    /** The Card or Petty Cash setup modal's document changed. */
+    data class EditSpendSetup(val value: SpendSettings) : AccountHubEvent
+
+    /** The Card or Petty Cash modal's auto-assignment rules changed. */
+    data class EditSpendRules(val rules: List<AssignmentRule>) : AccountHubEvent
+
+    /** Opens the team-member dialog on a row, or empty for a new member. */
+    data class ComposeSpendMember(val index: Int?) : AccountHubEvent
+
+    /** Opens the deduction-rule dialog on a row, or empty for a new rule. */
+    data class ComposeSpendRule(val index: Int?) : AccountHubEvent
+
+    /** The open spend dialog's draft changed. */
+    data class EditSpendDraft(val draft: SpendDraft) : AccountHubEvent
+
+    /** Applies the open spend dialog's draft to the document. */
+    data object CommitSpendDraft : AccountHubEvent
+
+    data object DismissSpendDraft : AccountHubEvent
 
     data class EditInvoicesSetup(val value: DomainInvoicesSetup) : AccountHubEvent
 
@@ -782,6 +810,9 @@ sealed interface AccountHubEffect {
 
     /** Hand off to another film tool, by its workspace path. */
     data class OpenTool(val path: String, val title: String) : AccountHubEffect
+
+    /** Show a web address in the browser — a Guide card's documentation page. */
+    data class OpenUrl(val url: String) : AccountHubEffect
 
     /** The header card's back arrow: leave the console for the tools grid. */
     data object Back : AccountHubEffect

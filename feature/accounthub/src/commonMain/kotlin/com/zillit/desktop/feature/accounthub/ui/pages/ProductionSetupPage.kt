@@ -74,7 +74,6 @@ import com.zillit.desktop.feature.accounthub.ui.SetupRemoval
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
 import com.zillit.desktop.feature.accounthub.ui.bankLoad
 import com.zillit.desktop.feature.accounthub.ui.sectionLoad
-import com.zillit.desktop.feature.accounthub.ui.SpendSetup
 import com.zillit.desktop.feature.accounthub.ui.components.HubPageHeader
 import com.zillit.desktop.feature.accounthub.ui.components.Chip
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
@@ -191,8 +190,7 @@ private fun ColumnScope.AccountingSections(
         title = str(S.desktop_hub_time_card_entry_setup),
         description = str(S.desktop_hub_control_model_department_level_setup_approval_chain_cadence_allowance_rules),
         icon = ZillitIcons.Clock,
-        onConfigure = { onEvent(AccountHubEvent.OpenTimecardSetup) },
-        actionText = str(S.desktop_open_time_card_chevron),
+        onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.TimeCards)) },
     )
     HubModuleCard(
         title = str(S.desktop_hub_purchase_order_entry_setup),
@@ -206,17 +204,14 @@ private fun ColumnScope.AccountingSections(
         icon = ZillitIcons.File,
         onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.Invoices)) },
     )
-    // Card and Petty Cash edit each module's own `/settings` document. The
-    // desktop already renders that document in the tool, so a modal here
-    // would be a second editor over one record; the tile deep-links instead.
+    // Card and Petty Cash open the web's modal over each module's own `/settings` document.
     HubModuleCard(
         title = str(S.desktop_hub_production_expense_cards_entry_setup),
         description = str(
             S.desktop_hub_card_spend_configuration_custodian_posting_rights_approval_shortcuts_deduction_rules,
         ),
         icon = ZillitIcons.CreditCard,
-        onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.Cards)) },
-        actionText = str(S.desktop_open_card_settings_chevron),
+        onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.CardExpenses)) },
     )
     HubModuleCard(
         title = str(S.desktop_hub_petty_cash_entry_setup),
@@ -224,8 +219,7 @@ private fun ColumnScope.AccountingSections(
             S.desktop_hub_petty_cash_configuration_float_custodian_posting_rights_approval_shortcuts_deduction,
         ),
         icon = ZillitIcons.Wallet,
-        onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.PettyCash)) },
-        actionText = str(S.desktop_hub_open_petty_cash_settings_chevron),
+        onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.PettyCash)) },
     )
 }
 
@@ -239,7 +233,7 @@ private fun ColumnScope.AccountingSections(
  * happens and not otherwise.
  */
 @Composable
-private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+internal fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val setup = state.setup
     val companies = setup.companies.edited
     val editable = state.viewer.canEdit

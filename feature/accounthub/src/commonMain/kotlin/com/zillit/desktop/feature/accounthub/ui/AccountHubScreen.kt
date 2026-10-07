@@ -49,6 +49,7 @@ import com.zillit.desktop.feature.accounthub.ui.pages.BibleReportPage
 import com.zillit.desktop.feature.accounthub.ui.pages.BudgetPage
 import com.zillit.desktop.feature.accounthub.ui.pages.ChartOfAccountsPage
 import com.zillit.desktop.feature.accounthub.ui.pages.FormConfigPage
+import com.zillit.desktop.feature.accounthub.ui.pages.GuidePage
 import com.zillit.desktop.feature.accounthub.ui.pages.PeriodClosePage
 import com.zillit.desktop.feature.accounthub.ui.pages.ProductionSetupPage
 import com.zillit.desktop.feature.accounthub.ui.pages.TrialBalancePage
@@ -154,6 +155,7 @@ private fun AccountHubBody(
     canEmbed: Boolean,
 ) {
     when (state.area) {
+        HubArea.Guide -> GuidePage(state, onEvent)
         HubArea.ProductionSetup -> ProductionSetupPage(state, onEvent, canAttachAgreements, canOpenDocuments)
         HubArea.ChartOfAccounts -> ChartOfAccountsPage(state, onEvent, canImportBudget = canImportBudget)
         HubArea.Vendors -> VendorsPage(state, onEvent)
@@ -259,6 +261,7 @@ private fun navId(item: HubItem): String = when (item.target) {
  */
 @Suppress("CyclomaticComplexMethod") // One glyph per sidebar row.
 internal fun iconFor(item: HubItem): ImageVector = when (item.id) {
+    "guide" -> ZillitIcons.Help
     "production-setup" -> AhIcons.Settings
     "purchase-orders" -> AhIcons.PurchaseOrder
     "invoices" -> AhIcons.Invoice

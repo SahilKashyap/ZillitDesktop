@@ -332,7 +332,8 @@ class SetupParityRulesTest {
         assertEquals(SetupModal.Payroll, SetupModal.fromRoute("payroll_settings"))
         assertEquals(SetupModal.PurchaseOrders, SetupModal.fromRoute("po"))
         assertEquals(SetupModal.Invoices, SetupModal.fromRoute("INVOICES"))
-        assertNull(SetupModal.fromRoute("timecard"))
+        assertEquals(SetupModal.TimeCards, SetupModal.fromRoute("timecard"), "the web edits it in a modal too")
+        assertNull(SetupModal.fromRoute("deal_memo"))
         assertNull(SetupModal.fromRoute(null))
     }
 

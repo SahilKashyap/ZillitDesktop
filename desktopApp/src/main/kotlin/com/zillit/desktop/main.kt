@@ -233,6 +233,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistToolProvider
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.ui.AccountHubToolProvider
+import com.zillit.desktop.feature.accounthub.ui.ProductionCompaniesToolProvider
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
@@ -3385,6 +3386,7 @@ private fun rememberAppViewModels(
                     projectName = { graph.projectContext?.context?.value?.project?.name.orEmpty() },
                     tourSeen = { key -> graph.tourSeen(key) },
                     markTourSeen = { key -> graph.markTourSeen(key) },
+                    projectType = { graph.projectContext?.context?.value?.project?.type },
                     // The console renders the other film tools inside its
                     // shell, as the web does — see `AccountHubToolProvider.tools`.
                     embedsTools = true,
@@ -4046,8 +4048,13 @@ private fun buildRegistry(
             badges = ready?.hubBadges(scope),
             // Approvers, pickers and chips show crew photos, as the web's UserAvatar does.
             loadAvatar = { userId -> ready?.let { crewFaceLoader(it)(userId) } },
+            onOpenUrl = ::openInBrowser,
         )
     }
+    // Admin Settings' Production Setup tile: the console's Companies section
+    // alone, on a page of the Settings window, as the web hosts it. Shares the
+    // console's view model, so a company saved there is the one the hub shows.
+    val productionCompanies = viewModels.accountHub?.let { ProductionCompaniesToolProvider(it) }
     // Registered under the console's own path, which is the only place it is
     // reached from — see TaxFilingToolProvider.
     val taxFiling = viewModels.taxFiling?.let { taxFilingProvider(it) }
@@ -4111,7 +4118,7 @@ private fun buildRegistry(
         home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
         settings, notifications, sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
-        accountHub, taxFiling, bankRec, budgetBuilder, formSignature, esignature,
+        accountHub, productionCompanies, taxFiling, bankRec, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,

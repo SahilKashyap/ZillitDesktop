@@ -14,6 +14,7 @@ import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccounts
 import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import com.zillit.desktop.feature.accounthub.domain.SpendKind
 import kotlinx.coroutines.async
 
 /**
@@ -30,8 +31,13 @@ import kotlinx.coroutines.async
 @Suppress("TooManyFunctions") // One handler per modal action.
 internal class SetupModalActions(private val vm: AccountHubViewModel) {
 
+    private val timecards = TimecardSetupActions(vm)
+
+    private val spend = SpendSetupActions(vm, this::saveRules)
+
     @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per action; every one delegates.
     fun onEvent(event: AccountHubEvent): Boolean {
+        if (timecards.onEvent(event) || spend.onEvent(event)) return true
         when (event) {
             is AccountHubEvent.OpenSetupModal -> open(event.modal)
             AccountHubEvent.RetrySetupModal -> vm.setupState.setup.modal?.let { read(it.modal) }
@@ -97,6 +103,8 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         SetupModal.PurchaseOrders -> "format"
         SetupModal.Invoices -> "team"
         SetupModal.Payroll -> "approvers"
+        SetupModal.TimeCards -> "control"
+        SetupModal.CardExpenses, SetupModal.PettyCash -> "acct"
     }
 
     /**
@@ -130,6 +138,9 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                 }, { error -> settle(modal, SetupSection.PayrollSettings, error) { this } })
                 loadPayrollGroups()
             }
+            SetupModal.TimeCards -> timecards.read()
+            SetupModal.CardExpenses -> spend.read(SpendKind.Cards)
+            SetupModal.PettyCash -> spend.read(SpendKind.Cash)
         }
     }
 
@@ -205,6 +216,10 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                 poSetup = setup.poSetup.reverted(),
                 invoicesSetup = setup.invoicesSetup.reverted(),
                 payrollSettings = setup.payrollSettings.reverted(),
+                timecardSetup = setup.timecardSetup.reverted(),
+                spendSetup = setup.spendSetup.reverted(),
+                spendRules = setup.spendRules.reverted(),
+                spendDraft = null,
                 poRules = setup.poRules.reverted(),
                 invoiceRules = setup.invoiceRules.reverted(),
                 invoiceMemberDraft = null,
@@ -215,6 +230,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         )
     }
 
+    @Suppress("CyclomaticComplexMethod") // One branch per modal.
     private fun save() {
         val modal = vm.setupState.setup.modal ?: return
         // Nothing read, nothing to save over: the shell hides the body while
@@ -243,6 +259,9 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                 if (vm.setupState.setup.payrollSettings.dirty) {
                     vm.onEvent(AccountHubEvent.SaveSection(SetupSection.PayrollSettings))
                 }
+            SetupModal.TimeCards -> timecards.save()
+            SetupModal.CardExpenses -> spend.save(SpendKind.Cards)
+            SetupModal.PettyCash -> spend.save(SpendKind.Cash)
         }
     }
 

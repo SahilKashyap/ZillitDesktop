@@ -170,14 +170,18 @@ object Companies {
      * falls back to the trading one: this PATCH rewrites every row, so a
      * company nobody has opened since the field shipped would otherwise keep
      * a blank forever while being rewritten on every save.
+     *
+     * [banks] is null while the bank list has not been read, and then every
+     * link is kept: filtering against a list that never loaded would send every
+     * company with no banks, and this PATCH replaces the whole list.
      */
-    fun forWire(companies: List<Company>, banks: List<BankAccount>): List<Company> {
-        val known = banks.map { it.id }.toSet()
+    fun forWire(companies: List<Company>, banks: List<BankAccount>?): List<Company> {
+        val known = banks?.map { it.id }?.toSet()
         return companies.filter { it.name.isNotBlank() }.map { company ->
             company.copy(
                 name = company.name.trim(),
                 legalName = company.legalName.trim().ifBlank { company.name.trim() },
-                bankIds = company.bankIds.filter { it in known },
+                bankIds = if (known == null) company.bankIds else company.bankIds.filter { it in known },
                 taxCredits = company.taxCredits.map { it.trim() }.filter { it.isNotEmpty() },
             )
         }

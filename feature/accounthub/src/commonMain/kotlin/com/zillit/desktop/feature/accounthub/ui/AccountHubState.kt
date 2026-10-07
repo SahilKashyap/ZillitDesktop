@@ -53,6 +53,9 @@ import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.PayrollDefaults
 import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
 import com.zillit.desktop.feature.accounthub.domain.PayrollSettings
+import com.zillit.desktop.feature.accounthub.domain.SpendKind
+import com.zillit.desktop.feature.accounthub.domain.SpendSettings
+import com.zillit.desktop.feature.accounthub.domain.TimecardSetup
 import com.zillit.desktop.feature.accounthub.domain.PeriodLock
 import com.zillit.desktop.feature.accounthub.domain.PeriodMode
 import com.zillit.desktop.feature.accounthub.domain.PickedAgreementFile
@@ -255,7 +258,33 @@ enum class SetupModal(
         S.dm_step9_title,
         S.desktop_hub_approvers_and_the_projects_pay_cycle_window_drives_the_approval,
     ),
+    TimeCards(
+        "timecard_setup",
+        S.desktop_hub_time_card_entry_setup,
+        S.timecards,
+        S.desktop_hub_tc_description,
+    ),
+    CardExpenses(
+        "card_expenses_setup",
+        S.desktop_hub_production_expense_cards_entry_setup,
+        S.ah_cards,
+        S.desktop_hub_sp_desc_cards,
+    ),
+    PettyCash(
+        "cash_expenses_setup",
+        S.desktop_hub_petty_cash_entry_setup,
+        S.desktop_cr_cash,
+        S.desktop_hub_sp_desc_cash,
+    ),
     ;
+
+    /** Which spend module's settings this edits, for the two that share one modal. */
+    val spendKind: SpendKind?
+        get() = when (this) {
+            CardExpenses -> SpendKind.Cards
+            PettyCash -> SpendKind.Cash
+            else -> null
+        }
 
     val title: String get() = str(titleKey)
     val eyebrow: String get() = str(eyebrowKey)
@@ -271,6 +300,9 @@ enum class SetupModal(
             "payroll", Payroll.slug -> Payroll
             "po", "purchase_orders", PurchaseOrders.slug -> PurchaseOrders
             "invoices", Invoices.slug -> Invoices
+            "timecard", "timecards", TimeCards.slug -> TimeCards
+            "cards", "card_expenses", CardExpenses.slug -> CardExpenses
+            "cash", "petty_cash", PettyCash.slug -> PettyCash
             else -> null
         }
     }
@@ -447,6 +479,12 @@ data class SetupState(
     val payrollBureaus: SectionEdit<List<PayrollBureau>> = SectionEdit(emptyList()),
     val allowances: SectionEdit<AllowancesRentals> = SectionEdit(AllowancesRentals()),
     val payrollSettings: SectionEdit<PayrollSettings> = SectionEdit(PayrollSettings()),
+    val timecardSetup: SectionEdit<TimecardSetup> = SectionEdit(TimecardSetup()),
+    /** Whichever of the Card and Petty Cash documents the open modal edits — its [SpendSettings.kind] says which. */
+    val spendSetup: SectionEdit<SpendSettings> = SectionEdit(SpendSettings()),
+    val spendRules: SectionEdit<List<AssignmentRule>> = SectionEdit(emptyList()),
+    /** The team-member or deduction-rule dialog, while open over the spend modal. */
+    val spendDraft: SpendDraft? = null,
     val poSetup: SectionEdit<PurchaseOrderSetup> = SectionEdit(PurchaseOrderSetup()),
     val invoicesSetup: SectionEdit<InvoicesSetup> = SectionEdit(InvoicesSetup()),
     val nonUnionPay: SectionEdit<NonUnionPay> = SectionEdit(NonUnionPay()),
@@ -590,6 +628,8 @@ data class SetupState(
             SetupModal.PurchaseOrders -> poSetup.dirty || poRules.dirty
             SetupModal.Invoices -> invoicesSetup.dirty || invoiceRules.dirty
             SetupModal.Payroll -> payrollSettings.dirty
+            SetupModal.TimeCards -> timecardSetup.dirty
+            SetupModal.CardExpenses, SetupModal.PettyCash -> spendSetup.dirty || spendRules.dirty
             null -> false
         }
 
@@ -598,6 +638,8 @@ data class SetupState(
             SetupModal.PurchaseOrders -> poSetup.saving || poRules.saving
             SetupModal.Invoices -> invoicesSetup.saving || invoiceRules.saving
             SetupModal.Payroll -> payrollSettings.saving
+            SetupModal.TimeCards -> timecardSetup.saving
+            SetupModal.CardExpenses, SetupModal.PettyCash -> spendSetup.saving || spendRules.saving
             null -> false
         }
 
