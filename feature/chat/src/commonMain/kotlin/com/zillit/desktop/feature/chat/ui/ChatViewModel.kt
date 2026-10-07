@@ -737,25 +737,47 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * The state an open leaves behind: this thread's rows, and nothing of the
+     * last one's.
+     *
+     * Every field here is cleared rather than carried, and the dialogs are the
+     * part that was missing — reported live 2026-10-07 as "I switch chat and
+     * the old thing is still on top". A confirmation or a Read-by describes a
+     * message no longer on screen, and Edit is worse than untidy: its Save
+     * posts the draft from the conversation the user has just left.
+     *
+     * (The picture viewer is not here — it is the pane's own state, keyed on
+     * the thread in `ThreadPane`.)
+     */
+    private fun ChatUiState.openedOn(
+        contact: CrewContact,
+        isGroup: Boolean,
+        known: List<ChatMessage>?,
+    ) = copy(
+        peer = contact,
+        peerIsGroup = isGroup,
+        messages = known.orEmpty(),
+        isLoading = known == null,
+        peerTyping = false,
+        peerOnline = false,
+        replyTo = null,
+        pendingPreview = null,
+        droppedAlong = emptyList(),
+        hasOlder = false,
+        loadingOlder = false,
+        error = null,
+        confirmingDelete = null,
+        editing = null,
+        editDraft = "",
+        forwarding = null,
+        readBy = null,
+    )
+
     private fun openThread(contact: CrewContact, isGroup: Boolean = false) {
         // The session cache answers instantly; the fetch refreshes behind it.
         val known = repository.cached(contact.userId)
-        setState {
-            copy(
-                peer = contact,
-                peerIsGroup = isGroup,
-                messages = known.orEmpty(),
-                isLoading = known == null,
-                peerTyping = false,
-                peerOnline = false,
-                replyTo = null,
-                pendingPreview = null,
-                droppedAlong = emptyList(),
-                hasOlder = false,
-                loadingOlder = false,
-                error = null,
-            )
-        }
+        setState { openedOn(contact, isGroup, known) }
         // Media that never left this machine belongs in the thread even
         // before history answers — the cache knows nothing of it.
         mergeUnsentMedia(contact.userId)

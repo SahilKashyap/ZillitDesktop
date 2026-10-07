@@ -26,6 +26,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * The recents shelf when *we* are the one who spoke.
@@ -53,6 +54,39 @@ class ChatSendListingTest {
         nowMillis = { NOW },
         newUniqueId = { "unique-${repository.sent.size}" },
     )
+
+    /**
+     * Reported live 2026-10-07: an open picture stayed over the thread after
+     * picking another chat. The viewer is the pane's own state and is keyed
+     * on the thread there; the bubble dialogs are this model's, and were not
+     * cleared by an open at all — an Edit left standing would have saved its
+     * draft into a conversation the user had already left.
+     */
+    @Test
+    fun `opening another thread takes the last one's dialogs with it`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.DraftChanged("Rolling at 8?"))
+        model.onEvent(ChatEvent.Send)
+        advanceUntilIdle()
+
+        val sent = model.currentState.messages.last()
+        model.onEvent(ChatEvent.AskDelete(sent.id))
+        model.onEvent(ChatEvent.StartEdit(sent.id))
+        advanceUntilIdle()
+        assertEquals(sent.id, model.currentState.confirmingDelete?.id, "the confirmation opened")
+        assertEquals(sent.id, model.currentState.editing?.id, "the edit opened")
+
+        model.onEvent(ChatEvent.OpenThread(CrewContact(userId = "u-rohan", fullName = "Rohan Mehta")))
+        advanceUntilIdle()
+
+        assertNull(model.currentState.confirmingDelete, "a confirmation about another room's line")
+        assertNull(model.currentState.editing, "an edit aimed at another room's line")
+        assertEquals("", model.currentState.editDraft)
+    }
 
     @Test
     fun `the shelf follows the send, before the server answers`() = runTest(dispatcher) {

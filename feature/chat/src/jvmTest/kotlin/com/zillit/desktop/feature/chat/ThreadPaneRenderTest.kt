@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.chat
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -121,6 +122,42 @@ class ThreadPaneRenderTest {
     }
 
     @Test
+    fun `the chevron beside a received bubble opens the right-click menu`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                ThreadPane(state = ChatUiState(peer = aisha, messages = listOf(theirs())), onEvent = {})
+            }
+        }
+
+        // One bubble, so one chevron — and it is faded, not absent, until the
+        // row is hovered, which is what lets it take the click at all.
+        onNodeWithText("Reply").assertDoesNotExist()
+        onNodeWithContentDescription("Options").performClick()
+        waitForIdle()
+
+        // The same menu the right button opens, down to the same entries.
+        onNodeWithText("Reply").assertExists()
+        onNodeWithText("Copy").assertExists()
+    }
+
+    @Test
+    fun `the chevron beside a self bubble opens its own menu`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                ThreadPane(state = ChatUiState(peer = aisha, messages = listOf(mine())), onEvent = {})
+            }
+        }
+
+        onNodeWithContentDescription("Options").performClick()
+        waitForIdle()
+
+        // A self line's menu, not a received one's: the popup places itself
+        // leftward from a right-aligned bubble (QA #5) and still draws.
+        onNodeWithText("Delete for everyone").assertExists()
+        onNodeWithText("Reply").assertExists()
+    }
+
+    @Test
     fun `Show older sits atop a full window and asks for the page`() = runComposeUiTest {
         val events = mutableListOf<ChatEvent>()
         setContent {
@@ -201,6 +238,42 @@ class ThreadPaneRenderTest {
             waitForIdle()
             onNodeWithText(DOWNLOAD_REFUSED).assertExists()
         }
+
+    @Test
+    fun `switching the conversation takes the open picture with it`() = runComposeUiTest {
+        val picture = theirs("").copy(
+            attachment = ChatAttachment(media = "s3/key", name = "set.jpg", contentType = "image/jpeg"),
+        )
+        val rohan = CrewContact(userId = "u2", fullName = "Rohan Mehta")
+        val open = mutableStateOf(aisha)
+        setContent {
+            ZillitTheme {
+                val who = open.value
+                ThreadPane(
+                    // Aisha's thread has the picture; Rohan's is empty, so
+                    // nothing of hers can still be on screen afterwards.
+                    state = ChatUiState(
+                        peer = who,
+                        messages = if (who == aisha) listOf(picture) else emptyList(),
+                    ),
+                    onEvent = {},
+                    loadThumbnail = { ImageBitmap(4, 4) },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("set.jpg").performClick()
+        waitForIdle()
+        onNodeWithContentDescription("Close viewer").assertExists("the viewer opened")
+
+        // Picking another chat in the list is exactly this: the pane stays
+        // composed and the peer changes under it.
+        open.value = rohan
+        waitForIdle()
+
+        // Not left hanging over the thread the user actually asked for.
+        onNodeWithContentDescription("Close viewer").assertDoesNotExist()
+    }
 
     @Test
     fun `Ctrl+V with a picture on the clipboard attaches it through the seam`() = runComposeUiTest {

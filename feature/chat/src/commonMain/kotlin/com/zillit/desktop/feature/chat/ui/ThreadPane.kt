@@ -141,17 +141,28 @@ internal fun ThreadPane(
     val peer = state.peer ?: return
     val seams = LocalChatSeams.current
     // The lightbox an image bubble opens; null keeps the thread bare.
-    var viewing by androidx.compose.runtime.remember {
+    //
+    // Keyed on the thread, like the info panel below: the viewer belongs to
+    // the conversation that opened it. Unkeyed, picking another chat left
+    // one room's picture hanging over another room's messages, with the
+    // cross the only way back to the thread you had just asked for.
+    var viewing by androidx.compose.runtime.remember(peer.userId) {
         androidx.compose.runtime.mutableStateOf<ChatAttachment?>(null)
     }
     // Saving a file to disk is what the download right governs — a chip's
-    // open, the menu's Download. The refusal is Android's own sentence.
-    var refused by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // open, the menu's Download. The refusal is Android's own sentence, and
+    // it is this thread's: a refusal earned here does not follow you out.
+    var refused by androidx.compose.runtime.remember(peer.userId) {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
     val gatedOpen: (ChatAttachment) -> Unit = { file ->
         if (seams.canDownload()) onOpenAttachment(file) else refused = true
     }
-    // The picture being drawn on for an Image Reply; null keeps the editor shut.
-    var imageReply by androidx.compose.runtime.remember {
+    // The picture being drawn on for an Image Reply; null keeps the editor
+    // shut. Keyed too, and this one is not only tidiness: the drawing posts
+    // into whichever conversation is open when Send is pressed, so an editor
+    // carried across a switch would answer the wrong room.
+    var imageReply by androidx.compose.runtime.remember(peer.userId) {
         androidx.compose.runtime.mutableStateOf<ChatMessage?>(null)
     }
     // Posters this thread has already fetched, so a row scrolling back into
@@ -1267,6 +1278,29 @@ private fun DeleteAffordance(onDelete: () -> Unit) {
     )
 }
 
+/**
+ * The chevron that opens the bubble's menu — the web's own affordance
+ * (`DropDownComponent.jsx`: a chevron button pinned just outside the bubble,
+ * `-left-7` beside a self line, `-right-7` beside someone else's), pointed at
+ * the same menu the right button opens. Nobody discovers a right-click, and
+ * the phones' long-press is not a gesture a mouse has.
+ *
+ * Always composed and faded with the row's other affordances, never
+ * conditionally composed: a control that leaves the composition for the
+ * instant of the press never receives the click — the Home board's kebab, and
+ * the reaction on one's own line, both lost their click exactly that way.
+ */
+@Composable
+private fun MenuAffordance(onOpen: () -> Unit) {
+    ZillitIconButton(
+        icon = ZillitIcons.ChevronDown,
+        contentDescription = str(S.options),
+        onClick = onOpen,
+        tint = ZillitTheme.colors.textMuted,
+        size = REACT_BUTTON,
+    )
+}
+
 /** Everything a bubble can do with its attachment, gathered once. */
 internal class BubbleMedia(
     /** Saves to disk and hands to the OS — the gated, download-right path. */
@@ -1363,8 +1397,9 @@ private fun Bubble(
     var reactOpen by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
-    // The bubble's own menu — a right-click or a long-press, in a room or a
-    // DM alike: the phones' long-press sheet, the desktop's right button.
+    // The bubble's own menu — the chevron beside it, a right-click or a
+    // long-press, in a room or a DM alike: the phones' long-press sheet, the
+    // web's chevron, the desktop's right button.
     var menuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     // The words the pointer highlighted, taken as the menu opens — its popup
     // takes focus, and the highlight goes with it. Copy prefers them.
@@ -1437,6 +1472,9 @@ private fun Bubble(
                         onReact = onReact,
                         openLeft = true,
                     )
+                    // Last in the group, so it is the one touching the bubble —
+                    // where the web hangs it.
+                    MenuAffordance(openMenu)
                 }
             }
             BubbleBody(
@@ -1446,7 +1484,10 @@ private fun Bubble(
                 selection = selection,
             )
             if (!mine) {
-                Box(Modifier.alpha(if (revealed) 1f else 0f)) {
+                Row(Modifier.alpha(if (revealed) 1f else 0f)) {
+                    // First here, for the same reason it is last above: the
+                    // chevron sits against the bubble's edge on either side.
+                    MenuAffordance(openMenu)
                     ReactAffordance(
                         open = reactOpen,
                         onOpenChange = { reactOpen = it },
