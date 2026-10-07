@@ -46,6 +46,19 @@
     var nextAskId = 1;
 
     /**
+     * Consumers the SFU offered before this page had a receive transport.
+     *
+     * The SFU starts offering the instant `join` lands, and Kotlin dispatches
+     * `createTransports` across the bridge without waiting for it to run — so
+     * an offer CAN arrive first. Consumed into a null transport it threw, and
+     * that producer was then lost for the whole call: the SFU never re-offers
+     * one. Their camera showed nothing until they turned it off and on, which
+     * makes a new producer and therefore a new offer (reported 2026-10-07).
+     * Held here instead, and drained the moment the transport exists.
+     */
+    var queuedConsumes = [];
+
+    /**
      * Points the self tile at [stream], or back at the initials disc for null.
      *
      * One helper because the rule is one rule — the local preview shows
@@ -272,6 +285,10 @@
                     sendTransportId: sendTransport.id,
                     recvTransportId: recvTransport.id,
                 });
+
+                var waiting = queuedConsumes;
+                queuedConsumes = [];
+                waiting.forEach(function (params) { window.zillitMs.consume(params); });
             } catch (e) {
                 fail('create-transports', e);
             }
@@ -416,6 +433,17 @@
          * answer must not wait on this side's media work.
          */
         consume: async function (params) {
+            if (!recvTransport) {
+                // Not an error yet — see queuedConsumes. Said out loud because
+                // a track that waits here and never arrives is otherwise a
+                // silent black tile.
+                queuedConsumes.push(params);
+                emit('warning', {
+                    where: 'consume',
+                    message: 'offered ' + (params && params.kind) + ' before the receive transport; queued',
+                });
+                return;
+            }
             try {
                 var consumer = await recvTransport.consume({
                     id: params.id,
@@ -429,6 +457,9 @@
                 var stream = new MediaStream([consumer.track]);
                 var shared = !!(params.appData && (params.appData.share || params.appData.screenShare));
                 attach(consumer.id, params.peerId, consumer.kind, stream, shared);
+                // The track itself is the one witness that cannot miss a
+                // notification; see watchTrack.
+                watchTrack(consumer, params.peerId);
 
                 emit('ms-consumer', {
                     consumerId: consumer.id,
@@ -504,6 +535,7 @@
                 detach(id);
             });
             consumers = {};
+            queuedConsumes = [];
             [micProducer, camProducer, screenProducer].forEach(function (producer) {
                 if (producer) { try { producer.close(); } catch (e) { /* already gone */ } }
             });
@@ -530,6 +562,42 @@
             emit('connection', { state: 'DISCONNECTING' });
         },
     };
+
+    /**
+     * Says whether a remote camera is actually SENDING, from the track itself.
+     *
+     * The signalling answer to "is their camera on" is a chain of protoo
+     * notifications — `producerPaused` in the offer, then `consumerPaused`,
+     * `consumerResumed`, `consumerClosed` — and a link of it can be lost or
+     * arrive out of order without this side ever knowing. The receiving track
+     * knows first-hand: it is `muted` while no RTP arrives, and fires `unmute`
+     * on the first packet. So it is the corrector. Reported live 2026-10-07 —
+     * a remote whose camera was on showed nothing until they toggled it off
+     * and on again, which is what finally produced an event the chain agreed
+     * with.
+     *
+     * Only the CHANGES are reported, never the state at consume time: a
+     * freshly consumed track is always muted until its first packet, and
+     * announcing that would blank a tile that is about to light up.
+     */
+    function watchTrack(consumer, peerId) {
+        var track = consumer.track;
+        if (!track || consumer.kind !== 'video') { return; }
+        var say = function () {
+            emit('ms-track', {
+                consumerId: consumer.id,
+                peerId: peerId,
+                kind: consumer.kind,
+                muted: !!track.muted,
+            });
+        };
+        try {
+            track.addEventListener('mute', say);
+            track.addEventListener('unmute', say);
+        } catch (e) {
+            warn('watch-track', e);
+        }
+    }
 
     /*
      * Media element plumbing lives with the tiles the page already draws.

@@ -89,6 +89,20 @@ class MediasoupSession(
 
     private val consumersById = mutableMapOf<String, ConsumerInfo>()
 
+    /**
+     * Consumers the SFU paused — or offered already paused — before the page
+     * finished taking them on.
+     *
+     * `consumerPaused` names a consumer this side may not have registered yet:
+     * consuming is a round trip through the page, and the SFU does not wait
+     * for it. Dropped, as it was, the pause is simply lost and the tile shows
+     * a camera that is off. Kept here, [onPageConsumer] applies it the moment
+     * the consumer appears — the web's `_pendingPausedConsumers` (ZL-19613),
+     * which this side needs more, not less: its consume round trip is longer
+     * than the browser's by a whole bridge.
+     */
+    private val pausedBeforeRegistered = mutableSetOf<String>()
+
     /** Live peer ids behind each uid; a uid leaves only with its last peer. */
     private val peersByUid = mutableMapOf<Int, MutableSet<String>>()
 
@@ -139,6 +153,7 @@ class MediasoupSession(
         deviceCaps = null
         sctpCaps = null
         consumersById.clear()
+        pausedBeforeRegistered.clear()
         peersByUid.clear()
         page.leave()
     }
@@ -263,8 +278,16 @@ class MediasoupSession(
                 // Accepted FIRST, before any media work. The SFU's patience is
                 // shorter than the browser's consume().
                 peer.accept(request.id)
+                val consumerId = request.data.text("id")
+                // The offer's own snapshot of the producer: a peer whose camera
+                // was already off when we started consuming them. Ignoring it
+                // (as this did) draws them camera-ON over a track that carries
+                // nothing — the web reads the same field, `data.producerPaused`.
+                if (consumerId != null && request.data.flag("producerPaused")) {
+                    pausedBeforeRegistered += consumerId
+                }
                 page.consume(request.data)
-                resumeConsumer(request.data.text("id"))
+                resumeConsumer(consumerId)
             }
 
             MediasoupNotification.NEW_DATA_CONSUMER -> peer.accept(request.id)
@@ -404,23 +427,57 @@ class MediasoupSession(
         consumersById[consumerId] = ConsumerInfo(peerId, kind, share)
         rememberPeer(peerId)
         emitForPeer(peerId) { uid -> CallEngineEvent.PeerJoined(uid, peerId, withMedia = true) }
+        // Everything the SFU said about this consumer before the page had it:
+        // the offer's `producerPaused`, and any `consumerPaused` that beat the
+        // round trip. Both mean the same thing to a tile — nothing is coming.
+        val startedPaused = pausedBeforeRegistered.remove(consumerId)
         when {
             share -> emitForPeer(peerId) { uid -> CallEngineEvent.PeerScreenShare(uid, sharing = true) }
-            kind == "video" ->
-                emitForPeer(peerId) { uid -> CallEngineEvent.PeerVideoMuted(uid, muted = false) }
+            kind == "video" -> {
+                if (startedPaused) ZillitLog.i(TAG) { "$peerId's camera was already off when we consumed it" }
+                emitForPeer(peerId) { uid -> CallEngineEvent.PeerVideoMuted(uid, muted = startedPaused) }
+            }
         }
+    }
+
+    /**
+     * A remote track started or stopped carrying frames.
+     *
+     * The page's own reading, and the only one that cannot be lost in transit
+     * — so it OVERRIDES whatever the notifications left behind. A camera that
+     * is sending must never sit behind a tile that says it is off, which is
+     * the bug this answers: the state said off, the packets said otherwise,
+     * and only the remote toggling their camera ever settled it.
+     */
+    suspend fun onPageTrackState(consumerId: String, peerId: String, kind: String, muted: Boolean) {
+        val who = consumersById[consumerId]?.peerId ?: peerId
+        if (who.isBlank() || kind != "video") return
+        if (consumersById[consumerId]?.share == true) return
+        ZillitLog.i(TAG) { "$who's video track ${if (muted) "stopped" else "is"} carrying frames" }
+        emitForPeer(who) { uid -> CallEngineEvent.PeerVideoMuted(uid, muted) }
     }
 
     private suspend fun onConsumerClosed(consumerId: String) {
         page.closeConsumer(consumerId)
+        pausedBeforeRegistered -= consumerId
         val info = consumersById.remove(consumerId) ?: return
         when {
             info.share ->
                 emitForPeer(info.peerId) { uid -> CallEngineEvent.PeerScreenShare(uid, sharing = false) }
-            info.kind == "video" ->
+            // Only when nothing of theirs is left to watch. A camera-off
+            // because ONE consumer closed is wrong whenever a peer has a
+            // second: a producer replaced — which is how the web and the
+            // phones turn a camera back on, close then produce — closes the
+            // old consumer after the new one is already live, and that
+            // out-of-order close used to leave their live camera hidden.
+            info.kind == "video" && !hasVideoConsumer(info.peerId) ->
                 emitForPeer(info.peerId) { uid -> CallEngineEvent.PeerVideoMuted(uid, muted = true) }
         }
     }
+
+    /** Is any camera consumer of [peerId] still live? */
+    private fun hasVideoConsumer(peerId: String): Boolean =
+        consumersById.values.any { it.peerId == peerId && it.kind == "video" && !it.share }
 
     /**
      * The holder paused or resumed a track server-side — this is how a Line 1
@@ -429,7 +486,14 @@ class MediasoupSession(
      * pause/resume is the signal that works).
      */
     private suspend fun onConsumerPaused(consumerId: String, paused: Boolean) {
-        val info = consumersById[consumerId] ?: return
+        val info = consumersById[consumerId]
+        if (info == null) {
+            // It names a consumer the page has not finished taking on. Kept
+            // rather than dropped, and applied at registration; a resume
+            // cancels a pause still waiting there.
+            if (paused) pausedBeforeRegistered += consumerId else pausedBeforeRegistered -= consumerId
+            return
+        }
         when (info.kind) {
             "audio" -> emitForPeer(info.peerId) { uid -> CallEngineEvent.PeerAudioMuted(uid, paused) }
             "video" -> if (!info.share) {
@@ -526,6 +590,7 @@ class MediasoupSession(
     suspend fun leave(reason: String = "left") {
         joined = false
         consumersById.clear()
+        pausedBeforeRegistered.clear()
         peersByUid.clear()
         page.leave()
         peer.close(reason)

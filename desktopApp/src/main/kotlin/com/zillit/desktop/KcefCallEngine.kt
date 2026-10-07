@@ -571,6 +571,10 @@ class KcefCallEngine(
                 }
             }
 
+            is MediasoupPageEvent.TrackState -> mediasoupScope?.launch {
+                session.onPageTrackState(event.consumerId, event.peerId, event.kind, event.muted)
+            }
+
             is MediasoupPageEvent.Failed -> {
                 ZillitLog.w(TAG) { "line 1 page failed at ${event.where}: ${event.message}" }
                 _events.tryEmit(CallEngineEvent.Failed(event.message))

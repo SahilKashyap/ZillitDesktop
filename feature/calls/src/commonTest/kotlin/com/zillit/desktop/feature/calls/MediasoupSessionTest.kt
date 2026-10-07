@@ -268,6 +268,117 @@ class MediasoupSessionTest {
         assertTrue(events.isEmpty(), "got $events")
     }
 
+    /**
+     * Reported live 2026-10-07: "sometimes a remote's video is not visible
+     * even though their camera is on, and it only starts showing when they
+     * turn it off and on." Every rule below decides whether a tile hides a
+     * camera, and each one of them could answer "off" for a camera that was
+     * on — a toggle being the one event that reliably said otherwise.
+     */
+    @Test
+    fun `a camera that is sending is never left hidden`() = runTest(StandardTestDispatcher()) {
+        val events = mutableListOf<CallEngineEvent>()
+        val session = MediasoupSession(
+            backgroundScope, ProtooPeer(backgroundScope, { }), FakeSignalling(), FakePage(),
+            turn = { TurnCredentials(emptyList(), 600) }, emit = { events += it },
+        )
+
+        // 1. A pause that beat the consume round trip is kept, not dropped:
+        //    the page registers the consumer afterwards and the tile still
+        //    learns the camera is off.
+        session.onNotification(
+            ProtooMessage.Notification(
+                MediasoupNotification.CONSUMER_PAUSED,
+                buildJsonObject { put("consumerId", "cam-1") },
+            ),
+        )
+        session.onPageConsumer("cam-1", "them:phone", "video", share = false)
+        runCurrent()
+        assertEquals(
+            true,
+            events.filterIsInstance<CallEngineEvent.PeerVideoMuted>().last().muted,
+            "a consumerPaused that arrived first must survive the registration",
+        )
+
+        // 2. The track itself then reports frames arriving, and that beats
+        //    whatever the notifications left behind — this is the corrector.
+        events.clear()
+        session.onPageTrackState("cam-1", "them:phone", "video", muted = false)
+        runCurrent()
+        assertEquals(
+            false,
+            events.filterIsInstance<CallEngineEvent.PeerVideoMuted>().single().muted,
+            "packets are arriving; nothing may keep the tile dark",
+        )
+
+        // 3. A second camera consumer arrives (a producer replaced — how the
+        //    web and the phones turn a camera back on), and the OLD one's
+        //    close lands after it. That close must not report camera-off.
+        events.clear()
+        session.onPageConsumer("cam-2", "them:phone", "video", share = false)
+        session.onNotification(
+            ProtooMessage.Notification(
+                MediasoupNotification.CONSUMER_CLOSED,
+                buildJsonObject { put("consumerId", "cam-1") },
+            ),
+        )
+        runCurrent()
+        assertTrue(
+            events.filterIsInstance<CallEngineEvent.PeerVideoMuted>().none { it.muted },
+            "a stale close hid a camera that was still sending: $events",
+        )
+
+        // 4. The last one closing is a camera that really has gone.
+        events.clear()
+        session.onNotification(
+            ProtooMessage.Notification(
+                MediasoupNotification.CONSUMER_CLOSED,
+                buildJsonObject { put("consumerId", "cam-2") },
+            ),
+        )
+        runCurrent()
+        assertEquals(
+            true,
+            events.filterIsInstance<CallEngineEvent.PeerVideoMuted>().single().muted,
+            "nothing of theirs is left to watch",
+        )
+    }
+
+    /**
+     * The other direction, and the web's rule 1: the offer says the producer
+     * is paused, so the tile must not draw them camera-on over a track that
+     * carries nothing (`data.producerPaused`, mediasoupCallEngine.js).
+     */
+    @Test
+    fun `a camera already off when we consume it is reported off`() = runTest(StandardTestDispatcher()) {
+        val events = mutableListOf<CallEngineEvent>()
+        val page = FakePage()
+        val session = MediasoupSession(
+            backgroundScope, ProtooPeer(backgroundScope, { }), FakeSignalling(), page,
+            turn = { TurnCredentials(emptyList(), 600) }, emit = { events += it },
+        )
+
+        session.onServerRequest(
+            ProtooMessage.Request(
+                7,
+                MediasoupNotification.NEW_CONSUMER,
+                buildJsonObject {
+                    put("id", "cam-9")
+                    put("producerPaused", true)
+                },
+            ),
+        )
+        session.onPageConsumer("cam-9", "them:phone", "video", share = false)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals(
+            true,
+            events.filterIsInstance<CallEngineEvent.PeerVideoMuted>().last().muted,
+            "the offer said their camera was off: $events",
+        )
+    }
+
     /** The web's rule: one person on two devices is here until the last of them leaves. */
     @Test
     fun `a person leaves only with their last device`() = runTest(StandardTestDispatcher()) {

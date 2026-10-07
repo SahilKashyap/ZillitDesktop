@@ -39,6 +39,14 @@ class MediasoupBridgeTest {
             """{"type":"ms-consumer","consumerId":"c1","peerId":"u:d","kind":"video","share":true}""",
         ) as MediasoupPageEvent.Consumer
         assertTrue(consumer.share, "a shared screen must be distinguishable from a camera")
+
+        // What the track itself says, which is what corrects a camera state
+        // the notifications got wrong.
+        val track = parseMediasoupPageEvent(
+            """{"type":"ms-track","consumerId":"c1","peerId":"u:d","kind":"video","muted":false}""",
+        ) as MediasoupPageEvent.TrackState
+        assertEquals("u:d", track.peerId)
+        assertTrue(!track.muted, "frames are arriving")
     }
 
     /** The Agora parser reads the same channel; each must ignore the other's traffic. */

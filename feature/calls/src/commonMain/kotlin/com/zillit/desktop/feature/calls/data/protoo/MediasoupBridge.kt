@@ -37,6 +37,21 @@ sealed interface MediasoupPageEvent {
         val share: Boolean,
     ) : MediasoupPageEvent
 
+    /**
+     * A remote track started or stopped carrying media, as the track itself
+     * reports it (`mute`/`unmute`).
+     *
+     * The corrective answer to "is their camera on": signalling can lose or
+     * reorder its notifications, and this cannot — no packets arrive, or they
+     * do. See `watchTrack` in `mediasoup.js`.
+     */
+    data class TrackState(
+        val consumerId: String,
+        val peerId: String,
+        val kind: String,
+        val muted: Boolean,
+    ) : MediasoupPageEvent
+
     /** Something failed inside the page. [where] names the step. */
     data class Failed(val where: String, val message: String) : MediasoupPageEvent
 }
@@ -64,6 +79,13 @@ fun parseMediasoupPageEvent(message: String): MediasoupPageEvent? {
             peerId = obj.text("peerId").orEmpty(),
             kind = obj.text("kind").orEmpty(),
             share = (obj["share"] as? JsonPrimitive)?.content?.toBoolean() ?: false,
+        )
+
+        "ms-track" -> MediasoupPageEvent.TrackState(
+            consumerId = obj.text("consumerId").orEmpty(),
+            peerId = obj.text("peerId").orEmpty(),
+            kind = obj.text("kind").orEmpty(),
+            muted = (obj["muted"] as? JsonPrimitive)?.content?.toBoolean() ?: false,
         )
 
         "failed" -> MediasoupPageEvent.Failed(
