@@ -36,6 +36,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.graphics.compositeOver
+import com.zillit.desktop.core.designsystem.ZillitDimens
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitSegmented
+import com.zillit.desktop.core.designsystem.component.ZillitTab
+import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
@@ -43,9 +53,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
@@ -74,6 +84,7 @@ internal fun CalendarScreen(
     Box(modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         CalendarToolbar(state, onEvent)
+        ZillitDivider()
 
         when {
             state.error != null && state.events.isEmpty() -> ErrorState(state.error, onEvent)
@@ -92,13 +103,14 @@ internal fun CalendarScreen(
                 // them would say the same thing twice and take the width the
                 // grid needs.
                 if (state.mode == CalendarViewMode.Month) {
+                    ZillitVerticalDivider()
                     Box(
                         Modifier
                             .width(DETAIL_WIDTH)
                             .fillMaxHeight()
                             .background(ZillitTheme.colors.surface),
                     ) {
-                        DayColumn(state, state.focusedDay)
+                        DayColumn(state, state.focusedDay, onEvent)
                     }
                 }
             }
@@ -245,35 +257,21 @@ private fun ErrorState(message: String, onEvent: (CalendarEvent2Event) -> Unit) 
 
 @Composable
 private fun CalendarToolbar(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> Unit) {
-    // Title beside the navigation, actions pinned right — the centred-title
-    // layout let a grown action cluster push New event off the window edge.
+    // Navigation and title on the left, actions pinned right — the
+    // centred-title layout let a grown action cluster push New event off
+    // the window edge.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(ZillitTheme.colors.surface)
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
-        ZillitButton(
-            text = str(S.today),
-            onClick = { onEvent(CalendarEvent2Event.Today) },
-            variant = ButtonVariant.Secondary,
-            size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
-        )
-        ZillitIconButton(
-            icon = ZillitIcons.ChevronLeft,
-            contentDescription = str(S.docusign_tour_prev),
-            onClick = { onEvent(CalendarEvent2Event.Previous) },
-        )
-        ZillitIconButton(
-            icon = ZillitIcons.ChevronRight,
-            contentDescription = str(S.next),
-            onClick = { onEvent(CalendarEvent2Event.Next) },
-        )
+        NavigationCluster(onEvent)
         ZillitText(
             text = state.title,
-            style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
@@ -281,40 +279,104 @@ private fun CalendarToolbar(state: CalendarUiState, onEvent: (CalendarEvent2Even
     }
 }
 
-/** The toolbar's right side: invitations (badged), the view mode, New event. */
+/** ‹ Today › as one bordered control, so the three read as a single stepper. */
+@Composable
+private fun NavigationCluster(onEvent: (CalendarEvent2Event) -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .height(ZillitDimens.controlHeight)
+            .clip(ZillitTheme.shapes.medium)
+            .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronLeft,
+            contentDescription = str(S.docusign_tour_prev),
+            onClick = { onEvent(CalendarEvent2Event.Previous) },
+            size = ZillitDimens.controlHeight,
+        )
+        ClusterSeparator()
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .clickable { onEvent(CalendarEvent2Event.Today) }
+                .padding(horizontal = ZillitTheme.spacing.md),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitText(
+                text = str(S.today),
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.textPrimary,
+            )
+        }
+        ClusterSeparator()
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronRight,
+            contentDescription = str(S.next),
+            onClick = { onEvent(CalendarEvent2Event.Next) },
+            size = ZillitDimens.controlHeight,
+        )
+    }
+}
+
+@Composable
+private fun ClusterSeparator() {
+    Box(Modifier.width(HAIRLINE).fillMaxHeight().background(ZillitTheme.colors.border))
+}
+
+/** The toolbar's right side: invitations (counted), the view mode, New event. */
 @Composable
 private fun ToolbarActions(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        Box {
-            ZillitButton(
-                text = str(S.desktop_cal_invitations),
-                variant = ButtonVariant.Secondary,
-                size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
-                onClick = { onEvent(CalendarEvent2Event.ShowInvitations) },
-            )
-            ZillitBadge(
-                count = state.pendingInvitations,
-                modifier = Modifier.align(Alignment.TopEnd),
-            )
-        }
-        ZillitSelect(
-            value = state.mode,
-            options = CalendarViewMode.entries,
-            onSelect = { onEvent(CalendarEvent2Event.SetMode(it)) },
-            label = { str(it.label) },
-            // Fixed, not fluid: an unconstrained select fills the whole
-            // toolbar and shoves New event off the window edge.
-            modifier = Modifier.width(MODE_SELECT_WIDTH),
+        InvitationsButton(state.pendingInvitations) { onEvent(CalendarEvent2Event.ShowInvitations) }
+        // A segmented switch rather than a dropdown: three fixed choices are
+        // one click each, and the current one is visible at a glance.
+        ZillitSegmented(
+            options = CalendarViewMode.entries.map { ZillitTab(id = it.name, label = str(it.label)) },
+            activeId = state.mode.name,
+            onSelect = { id -> onEvent(CalendarEvent2Event.SetMode(CalendarViewMode.valueOf(id))) },
         )
         ZillitButton(
             text = str(S.new_event),
             leadingIcon = ZillitIcons.Add,
             onClick = { onEvent(CalendarEvent2Event.OpenForm(null)) },
-            size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
         )
+    }
+}
+
+/**
+ * Invitations, with the pending count inside the button — the corner badge
+ * it used to wear sat over the label's last letters.
+ */
+@Composable
+private fun InvitationsButton(pending: Int, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .height(ZillitDimens.controlHeight)
+            .clip(ZillitTheme.shapes.medium)
+            .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.Mail,
+            size = ZillitDimens.iconSmall,
+            tint = if (pending > 0) colors.accent else colors.textSecondary,
+        )
+        ZillitText(
+            text = str(S.desktop_cal_invitations),
+            style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textPrimary,
+            maxLines = 1,
+        )
+        ZillitBadge(count = pending)
     }
 }
 
@@ -329,12 +391,12 @@ private fun MonthView(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> 
     Column(Modifier.fillMaxSize()) {
         WeekdayHeader(state)
 
-        // The grid's lines are the border colour showing through 1dp gaps —
+        // The grid's lines are the divider colour showing through 1dp gaps —
         // one crisp hairline everywhere instead of doubled cell borders.
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(ZillitTheme.colors.border)
+                .background(ZillitTheme.colors.divider)
                 .onGloballyPositioned { gridSize = it.size },
             verticalArrangement = Arrangement.spacedBy(GRID_GAP),
         ) {
@@ -427,52 +489,61 @@ private fun DayView(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> Un
 private fun TimeGridHeader(days: List<LocalDate>, state: CalendarUiState) {
     val colors = ZillitTheme.colors
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.surface)
-            .padding(vertical = ZillitTheme.spacing.xs),
-    ) {
-        Spacer(Modifier.width(TIME_GUTTER_WIDTH))
+    Column(Modifier.fillMaxWidth().background(colors.surface)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm)) {
+            Spacer(Modifier.width(TIME_GUTTER_WIDTH))
 
-        days.forEach { date ->
-            val isToday = date == state.today
+            days.forEach { date ->
+                val isToday = date == state.today
 
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                ZillitText(
-                    text = date.dayOfWeek.name.take(WEEKDAY_LETTERS).lowercase()
-                        .replaceFirstChar { it.uppercase() },
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textMuted,
-                )
-                ZillitText(
-                    text = date.day.toString(),
-                    style = ZillitTheme.typography.titleSmall,
-                    color = if (isToday) colors.accentText else colors.textPrimary,
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                ) {
+                    ZillitText(
+                        text = date.dayOfWeek.name.take(WEEKDAY_LETTERS).uppercase(),
+                        style = ZillitTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = WEEKDAY_TRACKING,
+                        ),
+                        color = if (isToday) colors.accentText else colors.textMuted,
+                    )
+                    DateDisc(
+                        day = date.day,
+                        isToday = isToday,
+                        isSelected = false,
+                        size = HEADER_DISC,
+                        style = ZillitTheme.typography.titleMedium,
+                    )
+                }
             }
         }
+        Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.divider))
     }
 }
 
 @Composable
 private fun WeekdayHeader(state: CalendarUiState) {
-    Row(Modifier.fillMaxWidth().background(ZillitTheme.colors.surface)) {
-        state.week.forEach { date ->
-            ZillitText(
-                text = date.dayOfWeek.name.take(WEEKDAY_LETTERS).uppercase(),
-                style = ZillitTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = WEEKDAY_TRACKING,
-                ),
-                color = ZillitTheme.colors.textMuted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f).padding(vertical = ZillitTheme.spacing.sm),
-            )
+    val colors = ZillitTheme.colors
+    Column(Modifier.fillMaxWidth().background(colors.surface)) {
+        Row(Modifier.fillMaxWidth()) {
+            state.week.forEach { date ->
+                val weekend = date.dayOfWeek.isWeekend()
+                ZillitText(
+                    text = date.dayOfWeek.name.take(WEEKDAY_LETTERS).uppercase(),
+                    style = ZillitTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = WEEKDAY_TRACKING,
+                    ),
+                    color = if (weekend) colors.textDisabled else colors.textMuted,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = CELL_PADDING, vertical = ZillitTheme.spacing.sm),
+                )
+            }
         }
+        Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.divider))
     }
 }
 
@@ -490,26 +561,31 @@ private fun DayCell(
     val events = state.eventsOn(date)
     val isSelected = date == state.focusedDay
     val isToday = date == state.today
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+
+    val background = when {
+        isSelected -> colors.accent.copy(alpha = SELECTED_CELL_ALPHA).compositeOver(colors.surface)
+        hovered -> colors.surfaceHover
+        dimmed -> colors.surfaceSunken
+        date.dayOfWeek.isWeekend() -> colors.surface.copy(alpha = WEEKEND_ALPHA).compositeOver(colors.surfaceSunken)
+        else -> colors.surface
+    }
 
     Column(
         modifier = modifier
-            .background(if (dimmed) colors.canvas else colors.surface)
-            .then(
-                if (isSelected) {
-                    Modifier.border(SELECTED_RING, colors.accent)
-                } else {
-                    Modifier
-                },
-            )
-            .clickable { onEvent(CalendarEvent2Event.Select(date)) }
-            .padding(ZillitTheme.spacing.xxs),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+            .background(background)
+            .clickable(interactionSource = interaction, indication = null) {
+                onEvent(CalendarEvent2Event.Select(date))
+            }
+            .padding(CELL_PADDING),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        DayNumber(date, isToday, dimmed)
+        DayNumber(date, isToday = isToday, isSelected = isSelected, dimmed = dimmed)
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
+            verticalArrangement = Arrangement.spacedBy(CHIP_GAP),
         ) {
             events.take(MAX_CHIPS).forEach { event ->
                 EventChip(event, state, dragGrid, onEvent, onDragging)
@@ -517,42 +593,77 @@ private fun DayCell(
             if (events.size > MAX_CHIPS) {
                 ZillitText(
                     text = str(S.bs_cal_more_items, events.size - MAX_CHIPS),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textMuted,
-                    modifier = Modifier.padding(start = ZillitTheme.spacing.xxs)
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = colors.accentText,
+                    modifier = Modifier.padding(start = ZillitTheme.spacing.xs),
                 )
             }
         }
     }
 }
 
-/** The cell's date: today wears the accent circle, other months fade. */
+/**
+ * The cell's date: today wears the accent disc, the selected day a soft one,
+ * and the first of a month names the month so a five-week grid reads at once.
+ */
 @Composable
-private fun DayNumber(date: LocalDate, isToday: Boolean, dimmed: Boolean) {
-    val colors = ZillitTheme.colors
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        if (isToday) {
-            Box(
-                modifier = Modifier.size(TODAY_CIRCLE).clip(CircleShape).background(colors.accent),
-                contentAlignment = Alignment.Center,
-            ) {
-                ZillitText(
-                    text = date.day.toString(),
-                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = colors.textOnAccent,
-                )
-            }
-        } else {
+private fun DayNumber(date: LocalDate, isToday: Boolean, isSelected: Boolean, dimmed: Boolean) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        DateDisc(
+            day = date.day,
+            isToday = isToday,
+            isSelected = isSelected,
+            dimmed = dimmed,
+            size = TODAY_CIRCLE,
+            style = ZillitTheme.typography.label,
+        )
+        if (date.day == 1) {
             ZillitText(
-                text = date.day.toString(),
-                style = ZillitTheme.typography.labelSmall,
-                color = if (dimmed) colors.textDisabled else colors.textPrimary,
-                modifier = Modifier.padding(top = ZillitTheme.spacing.xxs),
+                text = date.month.name.take(WEEKDAY_LETTERS).lowercase().replaceFirstChar { it.uppercase() },
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+                color = if (dimmed) ZillitTheme.colors.textDisabled else ZillitTheme.colors.textSecondary,
             )
         }
     }
 }
 
+/** A date number in a disc: filled accent for today, soft accent when selected. */
+@Composable
+private fun DateDisc(
+    day: Int,
+    isToday: Boolean,
+    isSelected: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    style: androidx.compose.ui.text.TextStyle,
+    dimmed: Boolean = false,
+) {
+    val colors = ZillitTheme.colors
+    val (fill, ink) = when {
+        isToday -> colors.accent to colors.textOnAccent
+        isSelected -> colors.accentSoft to colors.accentText
+        dimmed -> androidx.compose.ui.graphics.Color.Transparent to colors.textDisabled
+        else -> androidx.compose.ui.graphics.Color.Transparent to colors.textPrimary
+    }
+    Box(
+        modifier = Modifier.size(size).clip(CircleShape).background(fill),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(
+            text = day.toString(),
+            style = style.copy(fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Medium),
+            color = ink,
+        )
+    }
+}
+
+/**
+ * One event in a month cell. An all-day event is a filled bar — it holds the
+ * whole day; a timed one is a dot, its start and its title, so a busy day
+ * reads as a list rather than a stack of coloured blocks.
+ */
 @Composable
 private fun EventChip(
     event: CalendarEvent,
@@ -561,7 +672,15 @@ private fun EventChip(
     onEvent: (CalendarEvent2Event) -> Unit,
     onDragging: (Boolean) -> Unit = {},
 ) {
+    val colors = ZillitTheme.colors
     val tint = event.tint()
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val fill = when {
+        event.isAllDay -> tint.copy(alpha = if (hovered) ALL_DAY_HOVER_ALPHA else CHIP_TINT_ALPHA)
+        hovered -> colors.surfaceHover
+        else -> androidx.compose.ui.graphics.Color.Transparent
+    }
 
     Row(
         modifier = Modifier
@@ -570,24 +689,28 @@ private fun EventChip(
                 onEvent(CalendarEvent2Event.MoveEvent(event, days, minuteDelta = 0))
             }
             .clip(ZillitTheme.shapes.small)
-            .background(tint.copy(alpha = CHIP_TINT_ALPHA))
-            .clickable(onClick = { onEvent(CalendarEvent2Event.OpenDetail(event)) })
-            .padding(horizontal = ZillitTheme.spacing.xxs, vertical = 1.dp),
+            .background(fill)
+            .clickable(interactionSource = interaction, indication = null) {
+                onEvent(CalendarEvent2Event.OpenDetail(event))
+            }
+            .padding(horizontal = ZillitTheme.spacing.xs, vertical = CHIP_VERTICAL_PADDING),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        Box(Modifier.size(CHIP_DOT).clip(CircleShape).background(tint))
-        if (!event.isAllDay) {
+        if (event.isAllDay) {
+            Box(Modifier.width(CHIP_STRIPE).height(CHIP_STRIPE_HEIGHT).clip(ZillitTheme.shapes.pill).background(tint))
+        } else {
+            Box(Modifier.size(CHIP_DOT).clip(CircleShape).background(tint))
             ZillitText(
                 text = event.startMillis.chipTime(state.zone),
                 style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
+                color = colors.textMuted,
             )
         }
         ZillitText(
             text = event.title,
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textPrimary,
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textPrimary,
             maxLines = 1,
             modifier = Modifier.weight(1f, fill = false),
         )
@@ -596,134 +719,216 @@ private fun EventChip(
 
 /** The selected day, in full. */
 @Composable
-private fun DayColumn(state: CalendarUiState, date: LocalDate) {
+private fun DayColumn(state: CalendarUiState, date: LocalDate, onEvent: (CalendarEvent2Event) -> Unit) {
+    val colors = ZillitTheme.colors
     val events = state.eventsOn(date)
+    val isToday = date == state.today
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.padding(PAGE_PADDING),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitText(
-                text = date.day.toString(),
-                style = ZillitTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
-                color = if (date == state.today) {
-                    ZillitTheme.colors.accent
-                } else {
-                    ZillitTheme.colors.textPrimary
-                },
-            )
-            Column {
-                ZillitText(
-                    text = date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = ZillitTheme.typography.titleSmall,
-                )
-                ZillitText(
-                    text = state.eventsOn(date).size.let { count ->
-                        if (count == 1) str(S.desktop_cal_one_event) else str(S.desktop_cal_event_count, count)
-                    },
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-        }
-        Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+        DayHeader(date, isToday, events.size)
+        Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.divider))
 
         if (events.isEmpty()) {
-            Centred(str(S.desktop_cal_nothing_scheduled))
+            EmptyDay(onEvent)
             return@Column
         }
 
         val agendaState = rememberLazyListState()
         ZillitLazyColumn(
             state = agendaState,
-            contentPadding = PaddingValues(horizontal = PAGE_PADDING),
+            contentPadding = PaddingValues(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             items(events, key = CalendarEvent::id) { event ->
-                EventRow(event, state)
+                EventRow(event, state) { onEvent(CalendarEvent2Event.OpenDetail(event)) }
             }
         }
     }
 }
 
+/** The panel's head: a calendar-leaf date tile, the weekday, the count. */
 @Composable
-private fun EventRow(event: CalendarEvent, state: CalendarUiState) {
+private fun DayHeader(date: LocalDate, isToday: Boolean, count: Int) {
     val colors = ZillitTheme.colors
+    val weekday = date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(PAGE_PADDING),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        // A tear-off calendar leaf: the date, big, in its own tile.
+        Column(
+            modifier = Modifier
+                .size(DATE_TILE)
+                .clip(ZillitTheme.shapes.large)
+                .background(if (isToday) colors.accent else colors.surfaceSunken),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            ZillitText(
+                text = date.month.name.take(WEEKDAY_LETTERS).uppercase(),
+                style = ZillitTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = WEEKDAY_TRACKING,
+                ),
+                color = if (isToday) colors.textOnAccent else colors.accentText,
+            )
+            ZillitText(
+                text = date.day.toString(),
+                style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = if (isToday) colors.textOnAccent else colors.textPrimary,
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            ZillitText(
+                text = if (isToday) "${str(S.today)} · $weekday" else weekday,
+                style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+            )
+            ZillitText(
+                text = count.let { n ->
+                    if (n == 1) str(S.desktop_cal_one_event) else str(S.desktop_cal_event_count, n)
+                },
+                style = ZillitTheme.typography.label,
+                color = colors.textMuted,
+            )
+        }
+    }
+}
+
+/** A free day, said kindly, with the one thing worth doing about it. */
+@Composable
+private fun EmptyDay(onEvent: (CalendarEvent2Event) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(PAGE_PADDING),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier.size(EMPTY_ICON_TILE).clip(CircleShape).background(ZillitTheme.colors.surfaceSunken),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(icon = ZillitIcons.Calendar, tint = ZillitTheme.colors.textMuted, size = ZillitDimens.iconLarge)
+        }
+        ZillitText(
+            text = str(S.desktop_cal_nothing_scheduled),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textMuted,
+            textAlign = TextAlign.Center,
+        )
+        ZillitButton(
+            text = str(S.new_event),
+            leadingIcon = ZillitIcons.Add,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            onClick = { onEvent(CalendarEvent2Event.OpenForm(null)) },
+        )
+    }
+}
+
+@Composable
+private fun EventRow(event: CalendarEvent, state: CalendarUiState, onOpen: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val tint = event.tint()
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(colors.surface)
-            .border(width = HAIRLINE, color = colors.border, shape = ZillitTheme.shapes.medium)
-            .padding(ZillitTheme.spacing.md),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically
+            .height(IntrinsicSize.Min)
+            .clip(ZillitTheme.shapes.large)
+            .background(if (hovered) colors.surfaceHover else colors.surface)
+            .border(
+                width = HAIRLINE,
+                color = if (hovered) tint.copy(alpha = HOVER_BORDER_ALPHA) else colors.divider,
+                shape = ZillitTheme.shapes.large,
+            )
+            .clickable(interactionSource = interaction, indication = null, onClick = onOpen),
     ) {
-        // Vertical stripe in the event's own colour.
-        Box(
-            modifier = Modifier
-                .width(4.dp)
-                .height(32.dp)
-                .clip(ZillitTheme.shapes.pill)
-                .background(event.tint())
-        )
+        // The event's own colour down the leading edge.
+        Box(Modifier.width(ROW_STRIPE).fillMaxHeight().background(tint))
 
         Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)
+            modifier = Modifier.weight(1f).padding(ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                ZillitIcon(icon = ZillitIcons.Clock, tint = tint, size = ROW_ICON)
+                ZillitText(
+                    text = event.timeLabel(state.zone),
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (event.hasCall) {
+                    ZillitIcon(icon = ZillitIcons.Monitor, tint = colors.textMuted, size = ROW_ICON)
+                }
+            }
             ZillitText(
                 text = event.title,
                 style = ZillitTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.textPrimary,
+                maxLines = 2,
             )
-            ZillitText(
-                text = event.timeLabel(state.zone),
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textMuted,
-            )
-            event.location?.let {
-                ZillitText(
-                    text = it,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                )
-            }
+            event.location?.takeIf { it.isNotBlank() }?.let { EventLocation(it) }
         }
     }
 }
 
 @Composable
-private fun Centred(text: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun EventLocation(location: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIcon(icon = ZillitToolIcons.Location, tint = ZillitTheme.colors.textMuted, size = ROW_ICON)
         ZillitText(
-            text = text,
-            style = ZillitTheme.typography.bodyMedium,
-            color = ZillitTheme.colors.textMuted,
-            modifier = Modifier.padding(PAGE_PADDING),
+            text = location,
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textSecondary,
+            maxLines = 1,
         )
     }
 }
 
+private fun kotlinx.datetime.DayOfWeek.isWeekend() =
+    this == kotlinx.datetime.DayOfWeek.SATURDAY || this == kotlinx.datetime.DayOfWeek.SUNDAY
+
 private val PAGE_PADDING = 16.dp
+private val CELL_PADDING = 6.dp
 private val GRID_GAP = 1.dp
 private val TODAY_CIRCLE = 24.dp
-private val MODE_SELECT_WIDTH = 120.dp
+private val HEADER_DISC = 32.dp
+private val DATE_TILE = 56.dp
+private val EMPTY_ICON_TILE = 48.dp
 private const val DAYS_IN_WEEK = 7
-private val SELECTED_RING = 2.dp
 private val WEEKDAY_TRACKING = androidx.compose.ui.unit.TextUnit(
     1.2f,
     androidx.compose.ui.unit.TextUnitType.Sp,
 )
-private val DETAIL_WIDTH = 300.dp
+private val DETAIL_WIDTH = 420.dp
 private val HAIRLINE = 1.dp
 private const val MAX_CHIPS = 3
 private const val WEEKDAY_LETTERS = 3
-private val CHIP_DOT = 6.dp
-private const val CHIP_TINT_ALPHA = 0.16f
+private val CHIP_DOT = 7.dp
+private val CHIP_GAP = 2.dp
+private val CHIP_VERTICAL_PADDING = 2.dp
+private val CHIP_STRIPE = 3.dp
+private val CHIP_STRIPE_HEIGHT = 10.dp
+private val ROW_STRIPE = 4.dp
+private val ROW_ICON = 13.dp
+private const val CHIP_TINT_ALPHA = 0.18f
+private const val ALL_DAY_HOVER_ALPHA = 0.28f
+private const val SELECTED_CELL_ALPHA = 0.06f
+private const val WEEKEND_ALPHA = 0.55f
+private const val HOVER_BORDER_ALPHA = 0.6f
 
 /** "9:00" — the compact start time on a month chip. */
 private fun Long.chipTime(zone: kotlinx.datetime.TimeZone): String {

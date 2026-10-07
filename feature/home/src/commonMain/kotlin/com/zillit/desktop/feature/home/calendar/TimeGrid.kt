@@ -19,6 +19,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.mutableStateOf
@@ -67,13 +74,33 @@ internal fun TimeGrid(
     // The day whose block is mid-drag rides above its neighbours; without
     // the lift a cross-column drag slides UNDER every later-drawn column.
     var draggingDate by remember { mutableStateOf<LocalDate?>(null) }
+    val scroll = rememberScrollState()
+    val density = LocalDensity.current
+
+    // Open on the working day, not on an empty midnight: the earlier of the
+    // first event's hour and 7 am, an hour's margin above it.
+    val firstHour = remember(days, state.events) {
+        val earliest = days.flatMap { state.eventsOn(it) }
+            .filterNot { it.isAllDay }
+            .minOfOrNull { kotlin.time.Instant.fromEpochMilliseconds(it.startMillis).toLocalDateTime(state.zone).hour }
+        minOf(earliest ?: DEFAULT_FIRST_HOUR, DEFAULT_FIRST_HOUR)
+    }
+    LaunchedEffect(days.firstOrNull()) {
+        // The scroll range is only known once the grid has been measured.
+        snapshotFlow { scroll.maxValue }.first { it > 0 }
+        // A little above the hour line, so its label is not cut in half.
+        val target = with(density) {
+            (HOUR_HEIGHT * (firstHour - 1).coerceAtLeast(0) - SCROLL_HEADROOM).roundToPx().coerceAtLeast(0)
+        }
+        scroll.scrollTo(target.coerceAtMost(scroll.maxValue))
+    }
 
     Column(modifier.fillMaxSize()) {
         // All-day events have no position on a time axis, so they sit above the
         // grid rather than being forced into midnight.
-        AllDayStrip(state, days)
+        AllDayStrip(state, days, onOpenEvent)
 
-        Row(Modifier.fillMaxSize().zillitVerticalScroll()) {
+        Row(Modifier.fillMaxSize().background(colors.surface).zillitVerticalScroll(scroll)) {
             HourGutter()
 
             days.forEach { date ->
@@ -82,7 +109,9 @@ internal fun TimeGrid(
                         .weight(1f)
                         .height(GRID_HEIGHT)
                         .zIndex(if (date == draggingDate) 1f else 0f)
-                        .background(colors.canvas)
+                        .background(
+                            if (date == state.today) colors.accent.copy(alpha = TODAY_COLUMN_ALPHA) else colors.surface,
+                        )
                         .clickable { onSelectDay(date) },
                 ) {
                     HourLines()
@@ -128,44 +157,40 @@ private fun CurrentTimeLine(zone: TimeZone) {
     }
     val minutesSinceMidnight = now.hour * 60 + now.minute
     val fractionOfDay = minutesSinceMidnight.toFloat() / (24 * 60)
+    val red = ZillitTheme.colors.danger
 
+    // Drawn, not boxed: the dot used to be a 10dp box inside the 2dp line,
+    // and was clipped to a dash.
     Box(
-        Modifier
-            .fillMaxSize()
-            .padding(start = HAIRLINE) // Don't draw over the gutter divider
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .offset(y = GRID_HEIGHT * fractionOfDay)
-                .height(2.dp)
-                .background(ZillitTheme.colors.danger)
-        ) {
-            // The dot at the start of the line
-            Box(
-                Modifier
-                    .size(8.dp)
-                    .offset(x = (-4).dp, y = (-3).dp)
-                    .clip(CircleShape)
-                    .background(ZillitTheme.colors.danger)
-            )
-        }
-    }
+        Modifier.fillMaxSize().drawBehind {
+            val y = size.height * fractionOfDay
+            drawLine(red, Offset(0f, y), Offset(size.width, y), NOW_LINE.toPx())
+            drawCircle(red, radius = NOW_DOT_RADIUS.toPx(), center = Offset(NOW_DOT_RADIUS.toPx(), y))
+        },
+    )
 }
 
-/** One hairline per hour, so events can be read against the clock. */
+/**
+ * One hairline per hour and a fainter one at the half, plus the column's
+ * leading edge. Drawn as lines, not bordered boxes: four-sided borders met
+ * their neighbours' and doubled every line in the grid.
+ */
 @Composable
 private fun HourLines() {
-    Column(Modifier.fillMaxSize()) {
-        repeat(HOURS_PER_DAY) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(HOUR_HEIGHT)
-                    .border(width = HAIRLINE, color = ZillitTheme.colors.divider.copy(alpha = 0.5f))
-            )
-        }
-    }
+    val line = ZillitTheme.colors.divider
+    val half = line.copy(alpha = HALF_HOUR_ALPHA)
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            val hour = HOUR_HEIGHT.toPx()
+            val stroke = HAIRLINE.toPx()
+            drawLine(line, Offset(0f, 0f), Offset(0f, size.height), stroke)
+            for (h in 0 until HOURS_PER_DAY) {
+                val y = h * hour
+                if (h > 0) drawLine(line, Offset(0f, y), Offset(size.width, y), stroke)
+                drawLine(half, Offset(0f, y + hour / 2), Offset(size.width, y + hour / 2), stroke)
+            }
+        },
+    )
 }
 
 /**
@@ -250,42 +275,29 @@ private fun TimeGridEvent(
     val colors = ZillitTheme.colors
     val tint = event.tint()
 
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+
     Box(Modifier.fillMaxSize()) {
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .clip(ZillitTheme.shapes.small)
-            .background(tint.copy(alpha = BLOCK_TINT_ALPHA))
-            .border(width = 1.dp, color = tint.copy(alpha = BLOCK_BORDER_ALPHA), shape = ZillitTheme.shapes.small)
-            .clickable(onClick = onOpen)
+            .clip(ZillitTheme.shapes.medium)
+            // Opaque under the tint, so the hour lines do not show through a block.
+            .background(colors.surface)
+            .background(tint.copy(alpha = if (hovered) BLOCK_HOVER_ALPHA else BLOCK_TINT_ALPHA))
+            .border(width = 1.dp, color = tint.copy(alpha = BLOCK_BORDER_ALPHA), shape = ZillitTheme.shapes.medium)
+            .clickable(interactionSource = interaction, indication = null, onClick = onOpen)
     ) {
         // The vertical stripe, in the event's own colour.
         Box(
             modifier = Modifier
-                .width(3.dp)
+                .width(4.dp)
                 .fillMaxHeight()
                 .background(tint)
         )
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = ZillitTheme.spacing.xs, vertical = EVENT_INSET),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            ZillitText(
-                text = event.title,
-                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = colors.textPrimary,
-                maxLines = 2,
-            )
-            ZillitText(
-                text = event.timeLabel(zone),
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textSecondary,
-                maxLines = 1,
-            )
-        }
+        BlockLabels(event, zone, Modifier.weight(1f))
     }
 
     // The resize grip: a short bar on the bottom edge. Its own pointer input,
@@ -309,6 +321,38 @@ private fun TimeGridEvent(
     }
 }
 
+/** A block's words: title, times, and the place when there is room. */
+@Composable
+private fun BlockLabels(event: CalendarEvent, zone: TimeZone, modifier: Modifier = Modifier) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = modifier
+            .padding(horizontal = ZillitTheme.spacing.xs, vertical = EVENT_INSET),
+        verticalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        ZillitText(
+            text = event.title,
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textPrimary,
+            maxLines = 2,
+        )
+        ZillitText(
+            text = event.timeLabel(zone),
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textSecondary,
+            maxLines = 1,
+        )
+        event.location?.takeIf { it.isNotBlank() }?.let {
+            ZillitText(
+                text = it,
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 /**
  * All-day events, above the grid.
  *
@@ -316,15 +360,15 @@ private fun TimeGridEvent(
  * vertical space the grid wants.
  */
 @Composable
-private fun AllDayStrip(state: CalendarUiState, days: List<LocalDate>) {
+private fun AllDayStrip(state: CalendarUiState, days: List<LocalDate>, onOpenEvent: (CalendarEvent) -> Unit) {
     val perDay = days.map { date -> date to state.eventsOn(date).filter { it.isAllDay } }
     if (perDay.all { it.second.isEmpty() }) return
 
+    Column(Modifier.fillMaxWidth().background(ZillitTheme.colors.surface)) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surface)
-            .padding(vertical = ZillitTheme.spacing.xxs),
+            .padding(vertical = ZillitTheme.spacing.xs),
     ) {
         Box(Modifier.width(TIME_GUTTER_WIDTH)) {
             ZillitText(
@@ -343,20 +387,30 @@ private fun AllDayStrip(state: CalendarUiState, days: List<LocalDate>) {
                 verticalArrangement = Arrangement.spacedBy(EVENT_INSET),
             ) {
                 events.forEach { event ->
-                    ZillitText(
-                        text = event.title,
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.accentText,
-                        maxLines = 1,
+                    val tint = event.tint()
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(ZillitTheme.shapes.small)
-                            .background(ZillitTheme.colors.accentSoft)
-                            .padding(horizontal = ZillitTheme.spacing.xs),
-                    )
+                            .background(tint.copy(alpha = BLOCK_TINT_ALPHA))
+                            .clickable { onOpenEvent(event) }
+                            .padding(horizontal = ZillitTheme.spacing.xs, vertical = EVENT_INSET),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    ) {
+                        Box(Modifier.width(3.dp).height(10.dp).clip(ZillitTheme.shapes.pill).background(tint))
+                        ZillitText(
+                            text = event.title,
+                            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = ZillitTheme.colors.textPrimary,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
+    }
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.divider))
     }
 }
 
@@ -382,7 +436,15 @@ private val HAIRLINE = 1.dp
 private val LABEL_LIFT = (-6).dp
 
 private const val BLOCK_TINT_ALPHA = 0.18f
-private const val BLOCK_BORDER_ALPHA = 0.45f
+private const val BLOCK_HOVER_ALPHA = 0.28f
+private const val BLOCK_BORDER_ALPHA = 0.35f
+private const val HALF_HOUR_ALPHA = 0.4f
+private const val TODAY_COLUMN_ALPHA = 0.04f
+/** Where a time grid opens when nothing earlier is booked. */
+private const val DEFAULT_FIRST_HOUR = 7
+private val SCROLL_HEADROOM = 12.dp
+private val NOW_LINE = 2.dp
+private val NOW_DOT_RADIUS = 5.dp
 
 private val RESIZE_HANDLE_HEIGHT = 10.dp
 private val RESIZE_GRIP_WIDTH = 24.dp
