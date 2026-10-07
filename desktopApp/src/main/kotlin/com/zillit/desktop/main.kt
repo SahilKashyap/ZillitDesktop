@@ -107,7 +107,6 @@ import com.zillit.desktop.feature.notifications.ui.NotificationsViewModel
 import com.zillit.desktop.feature.notifications.ui.NOTIFICATIONS_PATH
 import com.zillit.desktop.feature.notifications.ui.NotificationsToolProvider
 import com.zillit.desktop.feature.settings.ui.HelpToolProvider
-import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
 import com.zillit.desktop.feature.home.calendar.calendarRealtime
@@ -186,6 +185,9 @@ import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
 import com.zillit.desktop.feature.email.domain.decodeBase64Default
 import com.zillit.desktop.feature.email.ui.EmailContactsToolProvider
+import com.zillit.desktop.feature.email.ui.contacts.EmailContactsViewModel
+import com.zillit.desktop.feature.email.data.ContactRepositoryImpl
+import com.zillit.desktop.feature.home.ui.CalendarPane
 import com.zillit.desktop.feature.email.ui.EmailSettingsToolProvider
 import com.zillit.desktop.feature.email.ui.EmailToolProvider
 import com.zillit.desktop.feature.email.ui.EmailViewModel
@@ -2273,7 +2275,7 @@ private val appAttachmentScope =
 private fun mailProvider(
     viewModel: EmailViewModel,
     ready: AppGraph.Ready,
-    onOpenCalendar: () -> Unit,
+    calendar: (@Composable () -> Unit)?,
 ) = EmailToolProvider(
     viewModel = viewModel,
     composing = Composing(
@@ -2325,7 +2327,13 @@ private fun mailProvider(
         },
         onOpenLink = ::openInBrowser,
         onPrint = ::printMailPage,
-        onOpenCalendar = onOpenCalendar,
+        calendar = calendar,
+        contacts = {
+            EmailContactsViewModel(
+                ContactRepositoryImpl(ready.apiClient, ready.config, ready.activeMailbox),
+                events = ready.socketEvents,
+            )
+        },
         readBy = { messageId -> readByForSentMail(ready, messageId) },
         isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
         canAttach = true,
@@ -3799,16 +3807,23 @@ private fun buildRegistry(
     }
     val email = emailViewModel?.let { mailbox ->
         (graph as? AppGraph.Ready)?.let { ready ->
-            // The mail drawer's Calendar row: the production's own calendar,
-            // which is a unit on the Home board rather than a mail-only one.
-            mailProvider(mailbox, ready) {
-                // Selecting the unit is all the mail side does; the Home
-                // window itself is opened by the provider's navigator.
-                viewModels.homeFeed?.let { feed ->
-                    feed.currentState.units.firstOrNull { it.kind == HomeUnitKind.Calendar }
-                        ?.let { unit -> feed.onEvent(HomeFeedEvent.SelectUnit(unit.id)) }
-                }
-            }
+            // The mail nav strip's Calendar: the production's own calendar,
+            // drawn in the mailbox's pane as the web does, not a window.
+            mailProvider(
+                mailbox,
+                ready,
+                calendar = calendarViewModel?.let { vm ->
+                    {
+                        CalendarPane(
+                            viewModel = vm,
+                            loadAvatar = { userId -> fetchAvatar(ready, userId) },
+                            onJoinCall = viewModels.calls?.let { calls ->
+                                { event -> calls.onEvent(joinEventCall(event)) }
+                            },
+                        )
+                    }
+                },
+            )
         }
     }
     val chat = (graph as? AppGraph.Ready)?.let {

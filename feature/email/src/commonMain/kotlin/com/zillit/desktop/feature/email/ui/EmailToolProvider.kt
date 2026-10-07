@@ -31,8 +31,13 @@ import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.EmailMessage
+import com.zillit.desktop.feature.email.domain.SavedContact
 import com.zillit.desktop.feature.email.domain.SignatureRepository
 import com.zillit.desktop.feature.email.domain.printableHtml
+import com.zillit.desktop.feature.email.ui.contacts.EmailContactsDialog
+import com.zillit.desktop.feature.email.ui.contacts.EmailContactsEffect
+import com.zillit.desktop.feature.email.ui.contacts.EmailContactsEvent
+import com.zillit.desktop.feature.email.ui.contacts.EmailContactsViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,8 +57,17 @@ data class EmailHost(
     val onOpenLink: ((String) -> Unit)? = null,
     /** Puts a print-ready page in front of the printer (or the browser's print dialog). */
     val onPrint: (title: String, html: String) -> Unit = { _, _ -> },
-    /** Opens the production's calendar — the frame owns that route. */
-    val onOpenCalendar: () -> Unit = {},
+    /**
+     * The production's calendar, drawn in the mailbox's own pane when the nav
+     * strip's Calendar is picked (the web's `EmailCalendarView`). Null hides
+     * the button — a build with no calendar has nothing to show.
+     */
+    val calendar: (@Composable () -> Unit)? = null,
+    /**
+     * A fresh address-book view model for the Contacts modal. Null falls back
+     * to the address book's own window.
+     */
+    val contacts: (() -> EmailContactsViewModel)? = null,
     /** Read receipts for a sent message; null hides "Read By User". */
     val readBy: (suspend (messageId: String) -> MailReadBy?)? = null,
     /** Whether the signed-in user is an admin here — the Email Group entry is admin-only. */
@@ -104,6 +118,21 @@ class EmailToolProvider(
     /** The conversations popped out of the pane, each snapshotted as it was. */
     val poppedThreads: PoppedThreads = PoppedThreads()
 
+    /** The address book standing over the mailbox, if open — [address] pre-fills a new contact. */
+    private val contactsOpen = mutableStateOf<ContactsRequest?>(null)
+
+    private class ContactsRequest(val address: String?)
+
+    /** Opens the address book over the mailbox, or in a window of its own where there is no modal to show. */
+    private fun openContacts(navigator: WindowNavigator, address: String? = null) {
+        if (host.contacts != null) {
+            contactsOpen.value = ContactsRequest(address)
+        } else {
+            val suffix = address?.let { "/new/$it" }.orEmpty()
+            navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_CONTACTS_PATH$suffix"))
+        }
+    }
+
     /**
      * Starts a new message in a window of its own, with no mailbox behind it —
      * the web's compose modal, for screens outside mail (Help's "Write to us").
@@ -138,43 +167,66 @@ class EmailToolProvider(
         val inline = open.firstOrNull { it.window == ComposerWindow.Inline }
         val inlineViewModel = inline?.let { composers.viewModel(it.id) }
 
-        EmailScreen(
-            state = state,
-            onEvent = viewModel::onEvent,
-            hooks = ReadingPaneHooks(
-                downloads = downloads,
-                loadAvatar = host.loadAvatar,
-                loadThumbnail = host.loadThumbnail,
-                onOpenLink = host.onOpenLink,
-                onMailTo = { address -> composers.open(ComposeMode.New, replyTo = null, addressedTo = address) },
-                isKnownAddress = ::isKnown,
-                readBy = host.readBy,
-            ),
-            folderEdit = folderEdit,
-            navigation = MailNavigation(
-                // The production's one calendar, not a mail-only copy.
-                onOpenCalendar = {
-                    host.onOpenCalendar()
-                    navigator.openInNewWindow(WorkspaceRoute.Home)
+        Box(Modifier.fillMaxSize()) {
+            EmailScreen(
+                state = state,
+                onEvent = viewModel::onEvent,
+                hooks = ReadingPaneHooks(
+                    downloads = downloads,
+                    loadAvatar = host.loadAvatar,
+                    loadThumbnail = host.loadThumbnail,
+                    onOpenLink = host.onOpenLink,
+                    onMailTo = { address -> composers.open(ComposeMode.New, replyTo = null, addressedTo = address) },
+                    isKnownAddress = ::isKnown,
+                    readBy = host.readBy,
+                ),
+                folderEdit = folderEdit,
+                navigation = MailNavigation(
+                    // The production's one calendar, not a mail-only copy.
+                    calendar = host.calendar,
+                    onOpenContacts = { openContacts(navigator) },
+                    onSetting = { entry -> onSetting(entry, navigator) },
+                    settingsEntries = settingsEntries(state),
+                    showsOtherViews = !host.isPending(),
+                ),
+                inlineCompose = inlineViewModel?.let { composeViewModel ->
+                    {
+                        InlineComposer(
+                            composer = inline,
+                            viewModel = composeViewModel,
+                            navigator = navigator,
+                            onToast = { toast = it },
+                        )
+                    }
                 },
-                onOpenContacts = { navigator.openInNewWindow(WorkspaceRoute.Tool(EMAIL_CONTACTS_PATH)) },
-                onSetting = { entry -> onSetting(entry, navigator) },
-                settingsEntries = settingsEntries(state),
-                showsOtherViews = !host.isPending(),
-            ),
-            inlineCompose = inlineViewModel?.let { composeViewModel ->
-                {
-                    InlineComposer(
-                        composer = inline,
-                        viewModel = composeViewModel,
-                        navigator = navigator,
-                        onToast = { toast = it },
-                    )
-                }
-            },
-        )
+            )
 
-        ZillitToast(message = toast, onDismiss = { toast = null }, tone = ZillitToastTone.Success)
+            contactsOpen.value?.let { request ->
+                ContactsModal(request, onClose = { contactsOpen.value = null })
+            }
+            ZillitToast(message = toast, onDismiss = { toast = null }, tone = ZillitToastTone.Success)
+        }
+    }
+
+    /** The web's `ContactListModal`: the address book over the mailbox, writing to a contact from it. */
+    @Composable
+    private fun ContactsModal(request: ContactsRequest, onClose: () -> Unit) {
+        val viewModel = remember(request) { host.contacts?.invoke() } ?: return
+        val state by viewModel.state.collectAsState()
+        LaunchedEffect(viewModel) {
+            viewModel.onEvent(EmailContactsEvent.Load)
+            // "Add to contacts" from a message or a chip: the form opens filled in.
+            request.address?.let { viewModel.onEvent(EmailContactsEvent.Edit(SavedContact(address = it))) }
+            viewModel.effects.collect { effect ->
+                when (effect) {
+                    is EmailContactsEffect.WriteTo -> {
+                        composers.open(ComposeMode.New, replyTo = null, addressedTo = effect.address)
+                        onClose()
+                    }
+                }
+            }
+        }
+        EmailContactsDialog(state = state, onEvent = viewModel::onEvent, onDismiss = onClose)
     }
 
     /** Loading, the requests other screens make, and the mailbox's one-shot effects. */
@@ -219,8 +271,7 @@ class EmailToolProvider(
                         navigator.openInNewWindow(WorkspaceRoute.Tool(popped.routePath))
                     }
                     is EmailEffect.Print -> host.onPrint(effect.title, effect.html)
-                    is EmailEffect.AddToContacts ->
-                        navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_CONTACTS_PATH/new/${effect.address}"))
+                    is EmailEffect.AddToContacts -> openContacts(navigator, effect.address)
                 }
             }
         }
@@ -235,7 +286,7 @@ class EmailToolProvider(
         onToast: (String) -> Unit,
     ) {
         val composeState by viewModel.state.collectAsState()
-        ComposerEffects(composer, viewModel, navigator, onToast)
+        ComposerEffects(composer, viewModel, navigator, onToast, onAddToContacts = { openContacts(navigator, it) })
         ComposePane(
             state = composeState,
             onEvent = viewModel::onEvent,
@@ -261,6 +312,8 @@ class EmailToolProvider(
         navigator: WindowNavigator,
         onToast: (String) -> Unit,
         onClosed: () -> Unit = {},
+        /** Where "add to contacts" goes; null (a pop-out, no mailbox behind it) opens the address book's window. */
+        onAddToContacts: ((String) -> Unit)? = null,
     ) {
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
@@ -276,8 +329,10 @@ class EmailToolProvider(
                         composing.chooseFilesOf(effect.kind).forEach { viewModel.onEvent(ComposeEvent.AttachFile(it)) }
                     ComposeEffect.OpenSignatures ->
                         navigator.openInNewWindow(WorkspaceRoute.Tool(SIGNATURES_PATH))
-                    is ComposeEffect.AddToContacts ->
-                        navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_CONTACTS_PATH/new/${effect.address}"))
+                    is ComposeEffect.AddToContacts -> {
+                        val path = "$EMAIL_CONTACTS_PATH/new/${effect.address}"
+                        onAddToContacts?.invoke(effect.address) ?: navigator.openInNewWindow(WorkspaceRoute.Tool(path))
+                    }
                     is ComposeEffect.Notice -> onToast(effect.message)
                 }
             }
@@ -303,7 +358,7 @@ class EmailToolProvider(
         when (entry) {
             MailSettingsEntry.Signatures -> navigator.openInNewWindow(WorkspaceRoute.Tool(SIGNATURES_PATH))
             MailSettingsEntry.ConversationView -> viewModel.onEvent(EmailEvent.OpenConversationDialog)
-            MailSettingsEntry.ImportContacts -> navigator.openInNewWindow(WorkspaceRoute.Tool(EMAIL_CONTACTS_PATH))
+            MailSettingsEntry.ImportContacts -> openContacts(navigator)
             MailSettingsEntry.BccPresets -> navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_SETTINGS_PATH/bcc"))
             MailSettingsEntry.EmailGroup ->
                 navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_SETTINGS_PATH/groups"))

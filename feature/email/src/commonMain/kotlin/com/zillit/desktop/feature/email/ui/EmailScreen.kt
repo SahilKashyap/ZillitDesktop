@@ -51,11 +51,14 @@ import com.zillit.desktop.core.strings.str
 enum class MailView { Email, Calendar, Contacts }
 
 /**
- * Where the mailbox sends the user for the things that are not mail: the
- * calendar and the address book on the nav strip, the settings entries.
+ * What the nav strip and the settings popover reach for beyond mail. Calendar
+ * is drawn in the mailbox's own pane (the web's `EmailCalendarView`); Contacts
+ * is a modal over it (`ContactListModal`) — neither is a window of its own.
  */
 data class MailNavigation(
-    val onOpenCalendar: () -> Unit = {},
+    /** The production's calendar, shown in place of the mailbox; null hides the Calendar button. */
+    val calendar: (@Composable () -> Unit)? = null,
+    /** Opens the address book over the mailbox. */
     val onOpenContacts: () -> Unit = {},
     val onSetting: (MailSettingsEntry) -> Unit = {},
     /** The settings entries this user gets; the sidebar draws them in this order. */
@@ -81,6 +84,10 @@ fun EmailScreen(
     /** The composer standing in the reading pane, when one is open. */
     inlineCompose: (@Composable () -> Unit)? = null,
 ) {
+    // Held by name so it survives a tab switch like the pane widths do.
+    var viewName by rememberSaveable { mutableStateOf(MailView.Email.name) }
+    val view = MailView.valueOf(viewName).takeIf { it != MailView.Calendar || navigation.calendar != null }
+        ?: MailView.Email
     var sidebarWidth by rememberSaveable { mutableStateOf(SIDEBAR_MIN.value) }
     var listWidth by rememberSaveable { mutableStateOf(LIST_MIN.value) }
     val density = LocalDensity.current
@@ -92,9 +99,16 @@ fun EmailScreen(
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Column(Modifier.fillMaxSize()) {
-            SyncStrip(state)
+            if (view == MailView.Email) SyncStrip(state)
             Row(Modifier.fillMaxSize()) {
-                if (navigation.showsOtherViews) NavStrip(navigation)
+                if (navigation.showsOtherViews) {
+                    NavStrip(navigation, active = view) { viewName = it.name }
+                }
+
+                navigation.calendar?.takeIf { view == MailView.Calendar }?.let { calendar ->
+                    CalendarBody(calendar, Modifier.weight(1f))
+                    return@Row
+                }
 
                 MailSidebar(
                     state = state,
@@ -128,6 +142,17 @@ fun EmailScreen(
         Overlays(state, onEvent, folderEdit)
         DragChip(drag)
     }
+}
+
+/** The production's calendar where the sidebar, list and pane stood — the web's `EmailCalendarView`. */
+@Composable
+private fun CalendarBody(calendar: @Composable () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .fillMaxHeight()
+            .background(ZillitTheme.colors.surface)
+            .testTag(CALENDAR_VIEW_TAG),
+    ) { calendar() }
 }
 
 /**
@@ -248,10 +273,11 @@ private fun SyncStrip(state: EmailUiState) {
 
 /**
  * The web's vertical strip on the far left: Email, Calendar, Contacts.
- * Email is always the one lit — the other two open elsewhere.
+ * Email and Calendar swap the pane and light up; Contacts opens its modal and
+ * leaves the view as it was, as the web's `handleViewChange` does.
  */
 @Composable
-private fun NavStrip(navigation: MailNavigation) {
+private fun NavStrip(navigation: MailNavigation, active: MailView, onView: (MailView) -> Unit) {
     val colors = ZillitTheme.colors
     Column(
         modifier = Modifier
@@ -263,8 +289,12 @@ private fun NavStrip(navigation: MailNavigation) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        NavButton(ZillitIcons.Mail, str(S.email), active = true) {}
-        NavButton(ZillitIcons.Calendar, str(S.calendar), active = false, onClick = navigation.onOpenCalendar)
+        NavButton(ZillitIcons.Mail, str(S.email), active = active == MailView.Email) { onView(MailView.Email) }
+        if (navigation.calendar != null) {
+            NavButton(ZillitIcons.Calendar, str(S.calendar), active = active == MailView.Calendar) {
+                onView(MailView.Calendar)
+            }
+        }
         NavButton(ZillitIcons.Users, str(S.contacts), active = false, onClick = navigation.onOpenContacts)
     }
     Box(Modifier.width(1.dp).fillMaxHeight().background(colors.divider))
@@ -326,6 +356,7 @@ internal const val SPLITTER_TAG = "email-splitter"
 internal const val PANE_TAG = "email-pane"
 internal const val SYNC_STRIP_TAG = "email-sync-strip"
 internal const val NAV_STRIP_TAG = "email-nav-strip"
+internal const val CALENDAR_VIEW_TAG = "email-calendar-view"
 
 internal val SIDEBAR_MIN = 200.dp
 internal val SIDEBAR_MAX = 320.dp

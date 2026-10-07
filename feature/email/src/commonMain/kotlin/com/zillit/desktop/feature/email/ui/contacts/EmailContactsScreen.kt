@@ -7,17 +7,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
@@ -47,24 +50,43 @@ internal fun EmailContactsScreen(
     state: EmailContactsUiState,
     onEvent: (EmailContactsEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /** Inside [EmailContactsDialog], whose own header already names the page. */
+    embedded: Boolean = false,
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Column(
             modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitPageHeader(
-                title = str(S.contacts),
-                description = str(S.desktop_email_contacts_description),
-                actions = {
-                    ZillitButton(
-                        text = str(S.desktop_email_new_contact),
-                        leadingIcon = ZillitIcons.Add,
-                        size = ButtonSize.Small,
-                        onClick = { onEvent(EmailContactsEvent.Edit(null)) },
+            val newContact = @Composable {
+                ZillitButton(
+                    text = str(S.desktop_email_new_contact),
+                    leadingIcon = ZillitIcons.Add,
+                    size = ButtonSize.Small,
+                    onClick = { onEvent(EmailContactsEvent.Edit(null)) },
+                )
+            }
+            if (embedded) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ZillitText(
+                        text = str(S.desktop_email_contacts_description),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = ZillitTheme.colors.textSecondary,
+                        modifier = Modifier.weight(1f),
                     )
-                },
-            )
+                    newContact()
+                }
+            } else {
+                ZillitPageHeader(
+                    title = str(S.contacts),
+                    description = str(S.desktop_email_contacts_description),
+                    actions = { newContact() },
+                )
+            }
 
             state.error?.let { message ->
                 SettingsMessage(message, StatusTone.Rejected, onDismiss = { onEvent(EmailContactsEvent.DismissError) })
@@ -233,3 +255,34 @@ private fun DeletePrompt(contact: SavedContact, onEvent: (EmailContactsEvent) ->
         )
     }
 }
+
+/**
+ * The address book over the mailbox — the web's `ContactListModal`, which the
+ * nav strip's Contacts button and "Add to contacts" both open in place rather
+ * than in a window of their own.
+ */
+@Composable
+internal fun EmailContactsDialog(
+    state: EmailContactsUiState,
+    onEvent: (EmailContactsEvent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ZillitDialogShell(
+        title = str(S.contacts),
+        onDismiss = onDismiss,
+        visible = true,
+        icon = ZillitIcons.Users,
+        width = CONTACTS_DIALOG_WIDTH,
+        scrollable = false,
+    ) {
+        EmailContactsScreen(
+            state = state,
+            onEvent = onEvent,
+            embedded = true,
+            modifier = Modifier.height(CONTACTS_DIALOG_BODY_HEIGHT),
+        )
+    }
+}
+
+private val CONTACTS_DIALOG_WIDTH = 680.dp
+private val CONTACTS_DIALOG_BODY_HEIGHT = 520.dp

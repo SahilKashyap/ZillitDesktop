@@ -126,18 +126,7 @@ class HomeToolProvider(
             crewNames = board.crewNames,
             unitBadge = { unitId -> counts.unit(unitId) },
             calendar = calendarViewModel?.let { vm ->
-                {
-                    val calendarState by vm.state.collectAsState()
-                    // Loaded when the tab is first shown rather than at startup:
-                    // the events call carries project and user in its header.
-                    LaunchedEffect(vm) { vm.load() }
-                    CalendarScreen(
-                        state = calendarState,
-                        onEvent = vm::onEvent,
-                        loadAvatar = board.loadAvatar,
-                        onJoinCall = onJoinEventCall,
-                    )
-                }
+                { CalendarPane(vm, board.loadAvatar, onJoinEventCall) }
             },
         )
     }
@@ -188,4 +177,25 @@ class HomeToolProvider(
     private companion object {
         const val TOOLS_SEGMENT = "/tools"
     }
+}
+
+/**
+ * The production calendar, loaded when first shown rather than at startup (the
+ * events call carries project and user in its header). One body for the Home
+ * board's tab and for the mailbox's Calendar view, so they cannot drift.
+ */
+@Composable
+fun CalendarPane(
+    viewModel: CalendarViewModel,
+    loadAvatar: suspend (String) -> ByteArray? = { null },
+    onJoinCall: ((CalendarEvent) -> Unit)? = null,
+) {
+    val calendarState by viewModel.state.collectAsState()
+    LaunchedEffect(viewModel) { viewModel.load() }
+    CalendarScreen(
+        state = calendarState,
+        onEvent = viewModel::onEvent,
+        loadAvatar = loadAvatar,
+        onJoinCall = onJoinCall,
+    )
 }
