@@ -76,6 +76,9 @@ PROD_TAX_FILING_BASE_URL=
 # Tasks. Only `tasksapi-dev` and `tasksapi-qa` answer today; production
 # returns 503 (not deployed yet, probed 2026-10-01).
 PROD_TASKS_BASE_URL=
+# Select Stills (stillkillsapi). Only `stillkillsapi-dev` answers today; QA and
+# production return 503 (not deployed yet, probed 2026-10-07).
+PROD_STILL_KILLS_BASE_URL=
 # Costumes & Set Sync (synconsetapi). Answers in all three environments.
 PROD_SYNC_ONSET_BASE_URL=
 # Bank Reconciliation. Its own host; answers in all three environments.

@@ -1457,6 +1457,8 @@ private fun ProjectScopedLoads(
         // A reconciliation belongs to one production's bank accounts; carrying
         // the previous one's periods would show another shoot's statement.
         viewModels.bankRec?.onProjectChanged()
+        // Stills belong to one production: its photos, its cast, its queue.
+        viewModels.selectStills?.onProjectChanged()
     }
 
     // The calls above run while the tool grid is still out — `projectId` flips
@@ -1487,6 +1489,7 @@ private fun ProjectScopedLoads(
         viewModels.timecards?.onRightsChanged()
         viewModels.permissionGrid?.onRightsChanged(PermissionGridViewer.from(rights))
         viewModels.externalUsers?.onRightsChanged()
+        viewModels.selectStills?.onRightsChanged()
     }
 }
 
@@ -3092,6 +3095,8 @@ internal class AppViewModels(
     val weather: WeatherViewModel?,
     /** The board, My tasks and Self tasks. */
     val tasks: TasksViewModel?,
+    /** Select Stills: the photographer's upload, the cast, and each agent's queue. */
+    val selectStills: com.zillit.desktop.feature.selectstills.ui.StillsViewModel?,
     /** Costumes & Set Sync: breakdown, inventory, fittings, sink, continuity. */
     val costumeSetSync: SyncOnsetViewModel?,
     /** Characters and who is up for them — one board, both casting lists. */
@@ -3487,6 +3492,7 @@ private fun rememberAppViewModels(
             budget = ready?.buildBudget(permissions, scope),
             weather = ready?.buildWeather(permissions),
             tasks = ready?.buildTasks(permissions),
+            selectStills = ready?.buildSelectStills(permissions),
             costumeSetSync = ready?.buildCostumeSetSync(permissions),
             casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
             wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
@@ -3679,6 +3685,7 @@ private fun buildRegistry(
     val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
     val weather = viewModels.weather?.let { vm -> (graph as? AppGraph.Ready)?.weatherProvider(vm) }
     val tasks = viewModels.tasks?.let(::tasksProvider)
+    val selectStills = viewModels.selectStills?.let { vm -> (graph as? AppGraph.Ready)?.selectStillsProvider(vm) }
     val costumeSetSync = viewModels.costumeSetSync?.let { costumeSetSyncProvider(it, emailViewModel) }
     // Three casting tiles, one board: whichever tile is clicked, the lists
     // this viewer's rights allow are what open.
@@ -4064,6 +4071,8 @@ private fun buildRegistry(
                     homeViewModel?.state?.value?.permissions ?: ProjectPermissions.Empty,
                 )
             },
+            onSaveFile = { fileName, bytes -> scope.launch { savePermissionGridFile(fileName, bytes) } },
+            onOpenListingOrder = permissionGridListingOrder(viewModels),
         )
     }
     val productionReport = viewModels.productionReport?.let {
@@ -4082,7 +4091,7 @@ private fun buildRegistry(
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
         assetRegister, transport, location, continuity, costReport, costReportWorksheet, costReportAnalytics,
         invoices, draft,
-        mainBudget, departmentBudget, weather, tasks, costumeSetSync, adDashboard,
+        mainBudget, departmentBudget, weather, tasks, selectStills, costumeSetSync, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()

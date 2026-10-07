@@ -189,6 +189,11 @@ object ToolCatalogue {
             (ZillitToolIcons.Wardrobe to WorkspaceRoute.Tool("/film-tools/costume-set-sync")),
         "tasks_tool" to
             (ZillitToolIcons.Tasks to WorkspaceRoute.Tool("/film-tools/tasks")),
+        // Select Stills — stills approval. Its own icon is the designsystem's
+        // picture frame: there is no still-camera tool glyph, and the
+        // camcorder one means video everywhere else in the app.
+        "still_kills_tool" to
+            (ZillitIcons.Photo to WorkspaceRoute.Tool("/film-tools/still-kills")),
         "timecard_tool" to
             (ZillitToolIcons.Timecard to WorkspaceRoute.Tool("/film-tools/timecard")),
         "transportation_tool" to

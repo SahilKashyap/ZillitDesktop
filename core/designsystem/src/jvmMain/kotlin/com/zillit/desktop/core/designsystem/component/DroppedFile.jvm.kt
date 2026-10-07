@@ -74,3 +74,39 @@ private fun File.dropped(maxBytes: Long): DroppedFile {
 }
 
 private const val FALLBACK_TYPE = "application/octet-stream"
+
+/**
+ * The same AWT bridge as [externalFileDrop], handing over absolute paths and
+ * reading nothing. A folder arrives as its own path.
+ */
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
+@Composable
+actual fun Modifier.externalPathDrop(
+    enabled: Boolean,
+    onHover: (Boolean) -> Unit,
+    onPaths: (List<String>) -> Unit,
+): Modifier {
+    val accepting by rememberUpdatedState(enabled)
+    val hover by rememberUpdatedState(onHover)
+    val deliver by rememberUpdatedState(onPaths)
+    val target = remember {
+        object : DragAndDropTarget {
+            override fun onEntered(event: DragAndDropEvent) = hover(true)
+            override fun onExited(event: DragAndDropEvent) = hover(false)
+            override fun onEnded(event: DragAndDropEvent) = hover(false)
+
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                hover(false)
+                val paths = runCatching {
+                    (event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>)
+                        ?.filterIsInstance<File>()
+                        ?.map { it.absolutePath }
+                        .orEmpty()
+                }.getOrDefault(emptyList())
+                if (paths.isNotEmpty()) deliver(paths)
+                return paths.isNotEmpty()
+            }
+        }
+    }
+    return this.dragAndDropTarget(shouldStartDragAndDrop = { accepting }, target = target)
+}

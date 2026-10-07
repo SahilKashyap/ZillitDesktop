@@ -48,6 +48,26 @@ expect fun Modifier.externalFileDrop(
 ): Modifier
 
 /**
+ * Accepts files dragged in from the OS **by path**, folders included, without
+ * reading a byte.
+ *
+ * [externalFileDrop] reads every dropped file at drop time, which is right for
+ * a composer attaching a few documents and wrong for a card of stills: five
+ * hundred 40 MB frames would be pulled into the heap before the first one was
+ * sent. This hands over the paths instead — a dropped folder arrives as its
+ * own path, for the caller to walk — and the caller reads what it needs, when
+ * it needs it.
+ *
+ * [onHover] drives the "drop here" overlay, as the other seam's does.
+ */
+@Composable
+expect fun Modifier.externalPathDrop(
+    enabled: Boolean,
+    onHover: (Boolean) -> Unit,
+    onPaths: (List<String>) -> Unit,
+): Modifier
+
+/**
  * "Drop to attach" — the tinted veil and card a surface shows while an OS
  * drag is over it. Place it last in the surface's `Box` so it covers
  * everything; the caller decides the words.

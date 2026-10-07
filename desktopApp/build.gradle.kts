@@ -110,6 +110,7 @@ dependencies {
     implementation(project(":core:forms"))
     implementation(project(":feature:taxfiling"))
     implementation(project(":feature:tasks"))
+    implementation(project(":feature:selectstills"))
     implementation(project(":feature:costumesetsync"))
     implementation(project(":feature:bankrec"))
     implementation(project(":feature:invoices"))

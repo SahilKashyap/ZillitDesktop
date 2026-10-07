@@ -151,6 +151,23 @@ enum class ZillitService(val configKey: String) {
     Tasks("TASKS_BASE_URL"),
 
     /**
+     * Select Stills (`zillit_selectstills`) — stills approval: the
+     * photographer's upload, the enrolled cast, face matching and each
+     * agent's keep-or-discard queue.
+     *
+     * A brand-new service with no pre-merge host: `stillkillsapi-dev` answers
+     * today (`/api/v2/still-kills/me` → 401 `libs_moduledata_not_accepted`,
+     * so the route is there); `-qa` and the unsuffixed production host both
+     * answer 503, so it is not deployed there yet (probed 2026-10-07). The
+     * keys are configured all the same — an absent key throws on first use,
+     * where a host that is not there reports a readable failure.
+     *
+     * The web's `VITE_STILL_KILLS_BASE_URL` ends at `/api` and appends
+     * `/v2/still-kills`, the same split [AppConfig.apiV2] makes.
+     */
+    StillKills("STILL_KILLS_BASE_URL"),
+
+    /**
      * Costumes & Set Sync (`synconsetapi`), a brand-new service live in all
      * three environments (`synconsetapi-dev` / `-qa` / unsuffixed, probed
      * 2026-10-01: every `/api/v2/health` answers 200). The web's
