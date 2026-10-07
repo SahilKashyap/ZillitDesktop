@@ -30,7 +30,37 @@ interface ToolsRepository {
      * callers send the reconciled full list.
      */
     suspend fun saveGroupOrder(order: List<String>): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    // -- Manage Tool Groups (admin) — the calls the Admin Settings page makes ---
+
+    /**
+     * Files a tool under a group (`PUT project/tools/group`, `{identifier,
+     * group_identifier}`); an empty [groupIdentifier] takes it out of every
+     * group. Per production, not per user.
+     */
+    suspend fun moveTool(identifier: String, groupIdentifier: String): ZillitResult<Unit> =
+        ZillitResult.Success(Unit)
+
+    /** `POST project/tools/groups` `{group_name}`; answers the new group's identifier when the server echoes it. */
+    suspend fun createGroup(name: String): ZillitResult<String?> = ZillitResult.Success(null)
+
+    /** `PUT project/tools/groups/{tool_group_id}` `{group_name}`. */
+    suspend fun renameGroup(toolGroupId: String, name: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** `DELETE project/tools/groups/{tool_group_id}` — refused as `tool_group_in_use` while it holds tools. */
+    suspend fun deleteGroup(toolGroupId: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 }
 
-/** One section of the tools grid. */
-data class ToolGroup(val identifier: String, val name: String)
+/**
+ * One section of the tools grid.
+ *
+ * [id] is the row id the rename and delete calls address (`tool_group_id`);
+ * [systemDefined] marks the six defaults, which can be renamed but never
+ * deleted (the backend answers `system_defined_tool_group`).
+ */
+data class ToolGroup(
+    val identifier: String,
+    val name: String,
+    val id: String? = null,
+    val systemDefined: Boolean = false,
+)

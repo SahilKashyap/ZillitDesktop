@@ -8374,4 +8374,6 @@
     <string name="desktop_pg_range">%1$d-%2$d daripada %3$d</string>
     <string name="desktop_pg_nothing_to_download">Tiada data untuk dimuat turun</string>
     <string name="desktop_pg_click_here">Klik Di Sini</string>
+    <string name="desktop_ft_watch_video">tonton video</string>
+    <string name="desktop_ft_no_tools">Tiada Data Alat</string>
 </resources>

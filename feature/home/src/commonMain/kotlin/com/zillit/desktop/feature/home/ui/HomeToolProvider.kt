@@ -51,6 +51,7 @@ class HomeBoardContext(
     val crewNames: () -> List<String> = { emptyList() },
 )
 
+@Suppress("LongParameterList") // Each seam is a host fact the grid reads; grouping them would only rename the list.
 class HomeToolProvider(
     private val viewModel: HomeViewModel,
     private val feedViewModel: HomeFeedViewModel,
@@ -75,6 +76,17 @@ class HomeToolProvider(
     private val viewerDepartment: () -> String? = { null },
     /** Whether the open production is a non-film one (`project_type_id == "other"`). */
     private val isOtherProject: () -> Boolean = { false },
+    /** Whether the open production is a personal one — the grid shows no ⓘ there, as on the web. */
+    private val isPersonalProject: () -> Boolean = { false },
+    /** The open production's `project_type`, for the documentation links. */
+    private val projectType: () -> String? = { null },
+    /**
+     * The Viewing & Posting Rights Grid's route — the admin notice's second
+     * "Click here". Null leaves that line out.
+     */
+    private val permissionGridRoute: String? = null,
+    /** Opens a web address outside the app — the ⓘ's documentation page. */
+    private val onOpenUrl: (String) -> Unit = {},
 ) : ToolProvider {
 
     override val path: String = "/home"
@@ -139,6 +151,10 @@ class HomeToolProvider(
         // refresh, for the same reason: switches flipped in Admin Settings
         // while this tab was away must show without reopening the production.
         LaunchedEffect(Unit) { viewModel.onEvent(HomeEvent.Reload) }
+        // The page names its own tab on every arrival: the admin notice's
+        // "Click here" takes this window to the tool switches, which retitle
+        // it, and coming back must not leave their name behind.
+        LaunchedEffect(Unit) { navigator.setTitle(str(S.desktop_film_tools)) }
 
         HomeScreen(
             state = state,
@@ -147,8 +163,15 @@ class HomeToolProvider(
             toolBadges = counts.toolMap(),
             viewerDepartment = viewerDepartment(),
             isOtherProject = isOtherProject(),
+            isPersonalProject = isPersonalProject(),
+            projectType = projectType(),
+            onOpenUrl = onOpenUrl,
             onCustomiseTools = customiseToolsRoute?.let { route ->
                 { navigator.navigate(WorkspaceRoute.Tool(route)) }
+            },
+            // Another tool's window, as the web's `openWindow(path)` does.
+            onOpenPermissionGrid = permissionGridRoute?.let { route ->
+                { navigator.openInNewWindow(WorkspaceRoute.Tool(route)) }
             },
             onEvent = { event ->
                 // Through the navigator the host already hands us, rather than a

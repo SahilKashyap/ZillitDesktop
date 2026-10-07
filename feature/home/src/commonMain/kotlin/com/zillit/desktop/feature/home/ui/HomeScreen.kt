@@ -3,69 +3,73 @@ package com.zillit.desktop.feature.home.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.common.EpochDate
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import androidx.compose.ui.draw.rotate
-import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
+import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.avatarHue
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.home.domain.GuideViewer
 import com.zillit.desktop.feature.home.domain.ToolGroup
-import com.zillit.desktop.feature.home.domain.ToolPresentation
+import com.zillit.desktop.feature.home.domain.ToolGuide
 import com.zillit.desktop.feature.home.domain.ToolInfoViewer
+import com.zillit.desktop.feature.home.domain.ToolPresentation
 import com.zillit.desktop.feature.home.domain.toolDescription
+import com.zillit.desktop.feature.home.domain.toolGuide
 
 /**
  * The production dashboard — every tool this person may open.
@@ -88,90 +92,249 @@ fun HomeScreen(
      */
     toolBadges: Map<String, Int> = emptyMap(),
     /**
-     * Opens the production's tool switches — the phones' customise button on
-     * their Tools tab (`Tools.kt:199`, admin only). Null hides the control:
-     * the host decides where the page lives, this screen only offers the way.
+     * The admin notice's first "Click here": which tools the production has
+     * at all (the web's `ProjectPermissionModule`). Null leaves the line out.
      */
     onCustomiseTools: (() -> Unit)? = null,
+    /** The notice's second "Click here": the Viewing & Posting Rights Grid. */
+    onOpenPermissionGrid: (() -> Unit)? = null,
+    /** Opens a web address — the ⓘ's documentation page, or a video outside the app. */
+    onOpenUrl: (String) -> Unit = {},
     /** The viewer's department identifier — the Deal Memo's ⓘ speaks to the accounts team as dealers. */
     viewerDepartment: String? = null,
     /** A non-film production: the ⓘ texts say "staff" where a film's say "crew". */
     isOtherProject: Boolean = false,
+    /** A personal production: no ⓘ at all, as on the web. */
+    isPersonalProject: Boolean = false,
+    /** The production's `project_type`, sent to the documentation site. */
+    projectType: String? = null,
 ) {
-    // The find box is the screen's own: forty tiles is a wall, and the phones
-    // put a search over theirs. Local state — a query is not a fact about the
-    // production and has no business surviving a tool switch.
     var query by remember { mutableStateOf("") }
     val shown = remember(state.sections, query, toolBadges) {
         state.sections.matching(query).sortedForDisplay(toolBadges)
     }
-    // The tool whose ⓘ was clicked; null keeps its description shut.
     var aboutTool by remember { mutableStateOf<ToolPresentation?>(null) }
     val describe = toolDescriber(state, viewerDepartment, isOtherProject)
     val open: (ToolPresentation) -> Unit = { tool -> onEvent(HomeEvent.OpenTool(tool.route)) }
+    val drag = remember { DragState() }
+    var root by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
-    Column(
-        modifier = modifier
+    Box(
+        modifier
             .fillMaxSize()
-            .background(ZillitTheme.colors.canvas),
+            .background(ZillitTheme.colors.canvas)
+            .onGloballyPositioned { root = it },
     ) {
-        GridHeader(
-            toolCount = state.gridTools.size,
-            query = query,
-            onQueryChange = { query = it },
-            // Whether the production *has* groups, not whether this user can
-            // currently see more than one section of them. Both phones show
-            // the control unconditionally, seeded from the project's own group
-            // set; gating on rendered sections hid it from anyone whose rights
-            // left them one section, and quietly shortened the list they were
-            // reordering. The one case neither phone can reach — a production
-            // with no groups at all — would open an empty sheet, so it stays out.
-            canReorder = state.groups.isNotEmpty(),
-            onReorder = { onEvent(HomeEvent.StartReorder) },
-            // Admin only, as the phones gate their button (`Tools.kt:333`).
-            onCustomiseTools = onCustomiseTools.takeIf { state.isAdmin },
-        )
-
-        state.staleSince?.let { since ->
-            ZillitNotice(
-                text = str(S.desktop_tools_offline_notice, EpochDate.dateTime(since)),
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Info,
-                modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
-            )
-        }
-
-        when {
-            state.isBusy && state.gridTools.isEmpty() -> Centred(str(S.desktop_tools_loading))
-
-            state.error != null -> ErrorState(state.error, onEvent)
-
-            state.gridTools.isEmpty() -> Centred(str(S.desktop_tools_none_switched_on))
-
-            shown.isEmpty() -> Centred(str(S.desktop_tools_no_match, query.trim()))
-
-            else -> ToolSections(
-                sections = shown,
-                badges = toolBadges,
+        Column(Modifier.fillMaxSize()) {
+            GridHeader(
+                state = state,
                 query = query,
-                onOpen = open,
-                onInfo = { aboutTool = it },
+                onQueryChange = { query = it },
+                onEvent = onEvent,
+                onCustomiseTools = onCustomiseTools,
+                onOpenPermissionGrid = onOpenPermissionGrid,
+            )
+            state.staleSince?.let { OfflineNotice(it) }
+            GridBody(
+                state = state,
+                shown = shown,
+                query = query,
+                onClear = { query = "" },
+                badges = toolBadges,
+                actions = GridActions(open, { aboutTool = it }, describe.takeUnless { isPersonalProject }, onEvent),
+                root = root,
+                drag = drag,
+                onEvent = onEvent,
             )
         }
+        DragOverlay(drag)
+        ZillitToast(
+            message = state.toast?.text,
+            onDismiss = { onEvent(HomeEvent.DismissToast) },
+            tone = if (state.toast?.success == true) ZillitToastTone.Success else ZillitToastTone.Danger,
+        )
     }
 
-    ToolInfoDialog(tool = aboutTool, describe = describe, onOpen = open, onDismiss = { aboutTool = null })
+    GridDialogs(
+        state = state,
+        aboutTool = aboutTool,
+        describe = describe,
+        guide = toolGuider(state, viewerDepartment, isOtherProject, projectType),
+        onOpen = open,
+        onOpenUrl = onOpenUrl,
+        onCloseAbout = { aboutTool = null },
+        onEvent = onEvent,
+    )
+}
+
+/** The page's dialogs: the ⓘ's, the section order, and the custom group's delete. */
+@Suppress("LongParameterList")
+@Composable
+private fun GridDialogs(
+    state: HomeUiState,
+    aboutTool: ToolPresentation?,
+    describe: (ToolPresentation) -> String,
+    guide: (ToolPresentation) -> ToolGuide,
+    onOpen: (ToolPresentation) -> Unit,
+    onOpenUrl: (String) -> Unit,
+    onCloseAbout: () -> Unit,
+    onEvent: (HomeEvent) -> Unit,
+) {
+    ToolInfoDialog(
+        tool = aboutTool,
+        describe = describe,
+        guide = guide,
+        onOpen = onOpen,
+        onOpenUrl = onOpenUrl,
+        onDismiss = onCloseAbout,
+    )
 
     ReorderGroupsDialog(
         visible = state.isReordering,
         // The production's groups in this user's current order — every one of
-        // them, including groups holding nothing they can see. Listing only
-        // the rendered sections meant `saveGroupOrder` reconciled the rest
-        // onto the end, rewriting an order for groups the user was never shown.
+        // them, including groups holding nothing they can see.
         groups = state.groups.orderedBy(state.groupOrder),
         onSave = { onEvent(HomeEvent.SaveGroupOrder(it)) },
         onDismiss = { onEvent(HomeEvent.CancelReorder) },
     )
+
+    DeleteGroupDialog(
+        group = state.confirmingDelete,
+        onConfirm = { onEvent(HomeEvent.ConfirmDeleteGroup) },
+        onDismiss = { onEvent(HomeEvent.CancelDeleteGroup) },
+    )
+}
+
+/** The page below the header: loading, failure, nothing at all, no match — or the sections. */
+@Suppress("LongParameterList")
+@Composable
+private fun GridBody(
+    state: HomeUiState,
+    shown: List<ToolSection>,
+    query: String,
+    onClear: () -> Unit,
+    badges: Map<String, Int>,
+    actions: GridActions,
+    root: LayoutCoordinates?,
+    drag: DragState,
+    onEvent: (HomeEvent) -> Unit,
+) {
+    val needle = query.trim()
+    when {
+        state.isBusy && state.gridTools.isEmpty() -> Centred(str(S.desktop_tools_loading))
+
+        state.error != null && state.gridTools.isEmpty() -> ErrorState(state.error, onEvent)
+
+        state.gridTools.isEmpty() && state.localSections.isEmpty() -> Centred(str(S.desktop_ft_no_tools))
+
+        shown.isEmpty() && needle.isNotEmpty() -> NoMatch(needle, onClear = onClear)
+
+        else -> ZillitScrollColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = PAGE_PADDING,
+                end = PAGE_PADDING,
+                top = 20.dp,
+                bottom = 28.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            if (needle.isNotEmpty()) {
+                val count = shown.sumOf { it.tools.size }
+                ZillitText(
+                    text = if (count == 1) {
+                        str(S.desktop_ft_match_one, count, needle)
+                    } else {
+                        str(S.desktop_ft_match_many, count, needle)
+                    },
+                    style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+            if (state.organizing) {
+                OrganizeBar(
+                    busy = state.busyGroupKey == NEW_GROUP_KEY,
+                    createdGroupKey = state.createdGroupKey,
+                    onCreate = { onEvent(HomeEvent.CreateGroup(it)) },
+                )
+            }
+            ToolSections(
+                sections = shown,
+                state = state,
+                badges = badges,
+                query = query,
+                actions = actions,
+                root = root,
+                drag = drag,
+            )
+        }
+    }
+}
+
+/** Each tool's More and Watch video links for this viewer — see [toolGuide]. */
+private fun toolGuider(
+    state: HomeUiState,
+    department: String?,
+    isOtherProject: Boolean,
+    projectType: String?,
+): (ToolPresentation) -> ToolGuide {
+    val viewer = GuideViewer(
+        info = ToolInfoViewer(
+            isAdmin = state.isAdmin,
+            isOtherProject = isOtherProject,
+            departmentIdentifier = department,
+            canPost = { id -> state.permissions.tools.any { it.identifier == id && it.canPost } },
+        ),
+        projectType = projectType,
+    )
+    return { tool -> toolGuide(tool.identifier, viewer) }
+}
+
+/** "No tools match “q”", and the way back to everything. */
+@Composable
+private fun NoMatch(needle: String, onClear: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Search,
+                contentDescription = null,
+                tint = ZillitTheme.colors.textMuted,
+                size = 32.dp,
+            )
+            ZillitText(
+                text = str(S.desktop_ft_no_match, needle),
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textMuted,
+            )
+            ZillitButton(text = str(S.ah_cd_clear_search), onClick = onClear, variant = ButtonVariant.Secondary)
+        }
+    }
+}
+
+/** "Delete this group?" — the web's confirm, the group named before the warning. */
+@Composable
+private fun DeleteGroupDialog(group: ToolGroup?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ZillitDialogShell(
+        title = str(S.desktop_delete_this_group),
+        icon = ZillitIcons.Trash,
+        visible = group != null,
+        onDismiss = onDismiss,
+        width = REORDER_WIDTH,
+        actions = {
+            Spacer(Modifier.weight(1f))
+            ZillitButton(text = str(S.cancel), variant = ButtonVariant.Secondary, onClick = onDismiss)
+            ZillitButton(text = str(S.delete), variant = ButtonVariant.Danger, onClick = onConfirm)
+        },
+    ) {
+        ZillitText(
+            text = "“${group?.name.orEmpty()}” — ${str(S.desktop_ft_delete_group_body)}",
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
+    }
 }
 
 /** Each tool's ⓘ text for this viewer — see [toolDescription]. */
@@ -398,7 +561,7 @@ internal fun List<ToolSection>.sortedForDisplay(badges: Map<String, Int>): List<
  * the first, matching the board: a two-word tool name can carry the needle
  * twice, and lighting one of them reads as a miss.
  *
- * [HIGHLIGHT] carries an explicit black foreground, so it holds in both themes.
+ * The web's `filmtools-search-mark`: yellow with a dark brown foreground, so it holds in both themes.
  */
 internal fun highlightedLabel(label: String, query: String): AnnotatedString {
     val needle = query.trim()
@@ -409,75 +572,173 @@ internal fun highlightedLabel(label: String, query: String): AnnotatedString {
         while (from < label.length) {
             val hit = label.indexOf(needle, startIndex = from, ignoreCase = true)
             if (hit < 0) break
-            addStyle(SpanStyle(background = HIGHLIGHT, color = Color.Black), hit, hit + needle.length)
+            addStyle(
+                SpanStyle(background = MARK_BACKGROUND, color = MARK_TEXT, fontWeight = FontWeight.Bold),
+                hit,
+                hit + needle.length,
+            )
             from = hit + needle.length
         }
     }
 }
 
-/** The accent bar, the name, how much this person may open — and the find box. */
+/**
+ * The page head, as the web lays it out: the accent bar and "Film Tools",
+ * then the find box, Manage Tool Groups (admin, behind its switch) and
+ * Customize order; under them, for an admin, the notice that tools are
+ * chosen and then granted — each half with its own "Click here".
+ */
 @Composable
 private fun GridHeader(
-    toolCount: Int,
+    state: HomeUiState,
     query: String,
     onQueryChange: (String) -> Unit,
-    canReorder: Boolean,
-    onReorder: () -> Unit,
-    onCustomiseTools: (() -> Unit)? = null,
+    onEvent: (HomeEvent) -> Unit,
+    onCustomiseTools: (() -> Unit)?,
+    onOpenPermissionGrid: (() -> Unit)?,
 ) {
-    Row(
+    val colors = ZillitTheme.colors
+    val rule = colors.border
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surface)
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            .background(colors.surface)
+            .drawBehind {
+                drawLine(rule, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+            }
+            .padding(start = PAGE_PADDING, end = PAGE_PADDING, top = 14.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            PageTitle()
+            Spacer(Modifier.weight(1f))
+            SearchBox(query, onQueryChange)
+            if (state.canOrganize) OrganizeToggle(state.organizing) { onEvent(HomeEvent.ToggleOrganize) }
+            ZillitTooltip(str(S.desktop_ft_customize_order_tooltip)) {
+                ZillitButton(
+                    text = str(S.desktop_ft_customize_order),
+                    onClick = { onEvent(HomeEvent.StartReorder) },
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.Hierarchy,
+                )
+            }
+        }
+        if (state.isAdmin) AdminNotice(onCustomiseTools, onOpenPermissionGrid)
+    }
+}
+
+/** The grid as last fetched, shown because the network is gone — and saying so. */
+@Composable
+private fun OfflineNotice(since: Long) {
+    ZillitNotice(
+        text = str(S.desktop_tools_offline_notice, EpochDate.dateTime(since)),
+        tone = StatusTone.Pending,
+        icon = ZillitIcons.Info,
+        modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+    )
+}
+
+/** The accent bar and "Film Tools". */
+@Composable
+private fun PageTitle() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             Modifier
                 .width(TITLE_ACCENT_WIDTH)
                 .height(TITLE_ACCENT_HEIGHT)
-                .clip(ZillitTheme.shapes.pill)
+                .clip(ZillitTheme.shapes.small)
                 .background(ZillitTheme.colors.accent),
         )
-        Column {
-            ZillitText(text = str(S.desktop_film_tools), style = ZillitTheme.typography.displayLarge)
-            ZillitText(
-                text = when (toolCount) {
-                    0 -> str(S.desktop_tools_departments_grid)
-                    1 -> str(S.desktop_tools_one_switched_on)
-                    else -> str(S.desktop_tools_count_switched_on, toolCount)
-                },
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        ZillitTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            placeholder = str(S.desktop_search_tools_ellipsis),
-            leadingIcon = ZillitIcons.Search,
-            shape = ZillitTheme.shapes.pill,
-            modifier = Modifier.width(SEARCH_WIDTH),
+        ZillitText(
+            text = str(S.desktop_film_tools),
+            style = ZillitTheme.typography.titleLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold),
+            color = ZillitTheme.colors.textPrimary,
         )
-        // The phones' sort icon beside the search: your own section order.
-        if (canReorder) {
-            ZillitIconButton(
-                icon = ZillitIcons.Filter,
-                contentDescription = str(S.reorder_groups),
-                onClick = onReorder,
+    }
+}
+
+/** "Search tools…", with a clear button once there is something to clear (`allowClear`). */
+@Composable
+private fun SearchBox(query: String, onQueryChange: (String) -> Unit) {
+    ZillitTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = str(S.desktop_search_tools_ellipsis),
+        leadingIcon = ZillitIcons.Search,
+        trailingContent = if (query.isNotEmpty()) {
+            {
+                ZillitIconButton(
+                    icon = ZillitIcons.Close,
+                    contentDescription = str(S.ah_cd_clear_search),
+                    onClick = { onQueryChange("") },
+                    size = CLEAR_SIZE,
+                )
+            }
+        } else {
+            null
+        },
+        modifier = Modifier.width(SEARCH_WIDTH),
+    )
+}
+
+/** Off: an outlined button. On: filled amber with a tick — the page behaves differently while it is. */
+@Composable
+private fun OrganizeToggle(on: Boolean, onToggle: () -> Unit) {
+    ZillitButton(
+        text = if (on) str(S.done_text) else str(S.manage_tool_groups),
+        onClick = onToggle,
+        variant = if (on) ButtonVariant.Primary else ButtonVariant.Secondary,
+        leadingIcon = if (on) ZillitIcons.Check else ZillitIcons.Grid,
+    )
+}
+
+/**
+ * One strip for both admin jobs: a tool switched on here is still invisible
+ * until the people who need it are given the right to see it.
+ */
+@Composable
+private fun AdminNotice(onCustomiseTools: (() -> Unit)?, onOpenPermissionGrid: (() -> Unit)?) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(NOTICE_SHAPE)
+            .background(colors.infoSoft)
+            .border(1.dp, colors.info.copy(alpha = NOTICE_BORDER_ALPHA), NOTICE_SHAPE)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Info, contentDescription = null, tint = colors.info, size = 18.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            ZillitText(
+                text = str(S.tools_description_msg),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textSecondary,
             )
+            onCustomiseTools?.let { NoticeAction(str(S.desktop_ft_notice_select), it) }
+            onOpenPermissionGrid?.let { NoticeAction(str(S.desktop_ft_notice_permissions), it) }
         }
-        // Which tools the production has at all — the phones' customise
-        // button, opening the same switches Admin Settings holds.
-        onCustomiseTools?.let { open ->
-            ZillitIconButton(
-                icon = ZillitIcons.Settings,
-                contentDescription = str(S.desktop_tools_customise),
-                onClick = open,
-            )
-        }
+    }
+}
+
+/** "Click Here" — the only control on the line — and the rest of the sentence. */
+@Composable
+private fun NoticeAction(tail: String, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        ZillitText(
+            text = str(S.desktop_pg_click_here),
+            style = ZillitTheme.typography.bodySmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                textDecoration = TextDecoration.Underline,
+            ),
+            color = ZillitTheme.colors.info,
+            modifier = Modifier.clip(ZillitTheme.shapes.small).clickable(onClick = onClick),
+        )
+        ZillitText(text = tail, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textSecondary)
     }
 }
 
@@ -514,13 +775,18 @@ private fun Centred(text: String) {
     }
 }
 
-private val SEARCH_WIDTH = 260.dp
+private val SEARCH_WIDTH = 320.dp
+private val CLEAR_SIZE = 24.dp
+private val NOTICE_SHAPE = RoundedCornerShape(10.dp)
+private const val NOTICE_BORDER_ALPHA = 0.3f
+private val MARK_BACKGROUND = Color(0xFFFDE047)
+private val MARK_TEXT = Color(0xFF713F12)
 private val REORDER_WIDTH = 420.dp
 private val REORDER_ROW_HEIGHT = 40.dp
 private val GRIP_SIZE = 28.dp
 private const val HALF_TURN = 180f
 private val TITLE_ACCENT_WIDTH = 4.dp
-private val TITLE_ACCENT_HEIGHT = 40.dp
+private val TITLE_ACCENT_HEIGHT = 22.dp
 private val PAGE_PADDING = 24.dp
 private const val MESSAGE_WIDTH_FRACTION = 0.6f
 private val SECTION_DOT = 8.dp

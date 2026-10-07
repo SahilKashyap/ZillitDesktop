@@ -8374,4 +8374,6 @@
     <string name="desktop_pg_range">%1$d-%2$d sa %3$d</string>
     <string name="desktop_pg_nothing_to_download">Walang datos na mada-download</string>
     <string name="desktop_pg_click_here">Pindutin Dito</string>
+    <string name="desktop_ft_watch_video">panoorin ang video</string>
+    <string name="desktop_ft_no_tools">Walang Datos ng Tools</string>
 </resources>

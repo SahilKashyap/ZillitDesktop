@@ -8374,4 +8374,6 @@
     <string name="desktop_pg_range">%1$d-%2$d av %3$d</string>
     <string name="desktop_pg_nothing_to_download">Inga data att ladda ner</string>
     <string name="desktop_pg_click_here">Klicka här</string>
+    <string name="desktop_ft_watch_video">titta på video</string>
+    <string name="desktop_ft_no_tools">Inga verktygsdata</string>
 </resources>

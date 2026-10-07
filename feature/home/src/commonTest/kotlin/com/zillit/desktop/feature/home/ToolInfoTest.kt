@@ -1,15 +1,10 @@
 package com.zillit.desktop.feature.home
 
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.workspace.WorkspaceRoute
-import com.zillit.desktop.feature.home.domain.ToolPresentation
 import com.zillit.desktop.feature.home.domain.ToolInfoViewer
 import com.zillit.desktop.feature.home.domain.toolDescription
-import com.zillit.desktop.feature.home.ui.ToolSection
-import com.zillit.desktop.feature.home.ui.columnCount
-import com.zillit.desktop.feature.home.ui.intoColumns
+import com.zillit.desktop.feature.home.ui.tileColumns
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -86,25 +81,12 @@ class ToolInfoTest {
         assertEquals(S.main_budget_info_admin, key("main_budget_tool", admin))
     }
 
-    private fun section(title: String, tools: Int) = ToolSection(
-        title = title,
-        tools = List(tools) {
-            ToolPresentation("$title-$it", "$title $it", ZillitIcons.Tools, WorkspaceRoute.Tool("/x"))
-        },
-    )
-
+    /** The web's `repeat(auto-fill, minmax(260px, 1fr))` with a 14px gap. */
     @Test
-    fun `sections go to the shortest column, keeping their order within it`() {
-        val columns = listOf(section("A", 7), section("B", 2), section("C", 2), section("D", 1)).intoColumns(2)
-
-        assertEquals(listOf(listOf("A"), listOf("B", "C", "D")), columns.map { col -> col.map { it.title } })
-    }
-
-    @Test
-    fun `no empty columns, and as many as the width allows`() {
-        assertEquals(1, listOf(section("A", 3)).intoColumns(3).size)
-        assertEquals(1, columnCount(300.dp))
-        assertEquals(2, columnCount(700.dp))
-        assertEquals(4, columnCount(3000.dp))
+    fun `tiles fill as many 260dp columns as fit`() {
+        assertEquals(1, tileColumns(200.dp))
+        assertEquals(1, tileColumns(533.dp))
+        assertEquals(2, tileColumns(534.dp))
+        assertEquals(3, tileColumns(1000.dp))
     }
 }

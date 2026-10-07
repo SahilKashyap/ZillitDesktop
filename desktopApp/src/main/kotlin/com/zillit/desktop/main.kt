@@ -270,6 +270,7 @@ import com.zillit.desktop.feature.recce.ui.RecceViewModel
 import com.zillit.desktop.feature.maps.ui.MapViewModel
 import com.zillit.desktop.feature.permissiongrid.data.PermissionGridRepositoryImpl
 import com.zillit.desktop.feature.permissiongrid.domain.PermissionGridViewer
+import com.zillit.desktop.feature.permissiongrid.ui.PERMISSION_GRID_PATH
 import com.zillit.desktop.feature.permissiongrid.ui.PermissionGridToolProvider
 import com.zillit.desktop.feature.permissiongrid.ui.PermissionGridViewModel
 import com.zillit.desktop.feature.sides.data.SidesRepositoryImpl
@@ -3175,6 +3176,8 @@ private fun rememberAppViewModels(
                 // Gates the grid's customise entry, as the phones gate theirs.
                 isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
                 localSections = localToolSections(),
+                // Manage Tool Groups rides the web's Remote Config switch.
+                organizeSwitch = { it.appUpdateChecker.flag(MANAGE_TOOL_GROUPS_FLAG) },
             )
         }
         val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
@@ -3610,6 +3613,13 @@ private fun buildRegistry(
                     }
                 },
                 isOtherProject = { (graph as? AppGraph.Ready)?.isOtherProduction() == true },
+                isPersonalProject = {
+                    (graph as? AppGraph.Ready)?.projectContext?.context?.value?.project?.type
+                        .equals(PERSONAL_PRODUCTION, ignoreCase = true)
+                },
+                projectType = { (graph as? AppGraph.Ready)?.projectContext?.context?.value?.project?.type },
+                permissionGridRoute = PERMISSION_GRID_PATH,
+                onOpenUrl = ::openInBrowser,
             )
         }
     }
@@ -4467,6 +4477,9 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
             )
         } ?: flowOf(ProfileSeed()),
     )
+
+/** The web's Remote Config key for the Film Tools page's Manage Tool Groups mode. */
+private const val MANAGE_TOOL_GROUPS_FLAG = "show_manage_tool_groups"
 
 /** `project_type` for a personal production, whose only member administers it. */
 private const val PERSONAL_PRODUCTION = "personal"

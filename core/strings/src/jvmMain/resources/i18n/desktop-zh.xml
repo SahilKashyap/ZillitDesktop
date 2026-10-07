@@ -8374,4 +8374,6 @@
     <string name="desktop_pg_range">第 %1$d-%2$d 条，共 %3$d 条</string>
     <string name="desktop_pg_nothing_to_download">没有可下载的数据</string>
     <string name="desktop_pg_click_here">点击此处</string>
+    <string name="desktop_ft_watch_video">观看视频</string>
+    <string name="desktop_ft_no_tools">没有工具数据</string>
 </resources>

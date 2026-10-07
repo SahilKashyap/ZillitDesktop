@@ -8374,4 +8374,6 @@
     <string name="desktop_pg_range">%1$d-%2$d z %3$d</string>
     <string name="desktop_pg_nothing_to_download">Brak danych do pobrania</string>
     <string name="desktop_pg_click_here">Kliknij tutaj</string>
+    <string name="desktop_ft_watch_video">obejrzyj wideo</string>
+    <string name="desktop_ft_no_tools">Brak danych narzędzi</string>
 </resources>

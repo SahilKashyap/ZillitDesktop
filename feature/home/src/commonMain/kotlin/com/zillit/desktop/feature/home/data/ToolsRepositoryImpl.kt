@@ -1,10 +1,12 @@
 package com.zillit.desktop.feature.home.data
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.jsonBody
@@ -12,10 +14,14 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.feature.home.domain.ToolGroup
+import com.zillit.desktop.feature.home.domain.fallbackGroupFor
 import com.zillit.desktop.feature.home.domain.ToolsRepository
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * `GET project/tools` — the production's tool list and this user's rights to it.
@@ -39,6 +45,7 @@ class ToolsRepositoryImpl(
     private val toolsUrl = "${config.apiV2()}project/tools"
     private val groupsUrl = "${config.apiV2()}project/tools/groups"
     private val groupOrderUrl = "${config.apiV2()}project/tools/group/order"
+    private val toolGroupUrl = "${config.apiV2()}project/tools/group"
 
     override suspend fun loadPermissions(): ZillitResult<ProjectPermissions> =
         apiClient.request(
@@ -75,7 +82,12 @@ class ToolsRepositoryImpl(
                     // Names ship as translation keys, the same as unit and tool
                     // labels do — read as such rather than printed raw.
                     val label = dto.groupName?.takeIf(String::isNotBlank) ?: id
-                    ToolGroup(identifier = id, name = label.localised())
+                    ToolGroup(
+                        identifier = id,
+                        name = label.localised(),
+                        id = dto.toolGroupId?.takeIf(String::isNotBlank),
+                        systemDefined = dto.systemDefined == true,
+                    )
                 }
             }
         }
@@ -95,6 +107,49 @@ class ToolsRepositoryImpl(
                     .sortedBy { it.order ?: Int.MAX_VALUE }
                     .mapNotNull { it.groupIdentifier?.takeIf(String::isNotBlank) }
             }
+        }
+
+    override suspend fun moveTool(identifier: String, groupIdentifier: String): ZillitResult<Unit> =
+        checked(HttpVerb.Put, toolGroupUrl, jsonBody(MoveToolDto(identifier, groupIdentifier))).map { }
+
+    override suspend fun createGroup(name: String): ZillitResult<String?> =
+        checked(HttpVerb.Post, groupsUrl, jsonBody(GroupNameDto(name.trim()))).map { envelope ->
+            (envelope.data as? JsonObject)?.get("group_identifier")?.jsonPrimitive?.contentOrNull
+                ?.takeIf(String::isNotBlank)
+        }
+
+    override suspend fun renameGroup(toolGroupId: String, name: String): ZillitResult<Unit> =
+        checked(HttpVerb.Put, "$groupsUrl/$toolGroupId", jsonBody(GroupNameDto(name.trim()))).map { }
+
+    override suspend fun deleteGroup(toolGroupId: String): ZillitResult<Unit> =
+        checked(HttpVerb.Delete, "$groupsUrl/$toolGroupId", null).map { }
+
+    /**
+     * These routes refuse with HTTP 200 and `status: 0` (`tool_group_in_use`,
+     * `system_defined_tool_group`), so the envelope is read rather than the
+     * HTTP code, and the server's key travels back for the screen to translate.
+     */
+    private suspend fun checked(
+        verb: HttpVerb,
+        url: String,
+        body: kotlinx.serialization.json.JsonElement?,
+    ): ZillitResult<ApiEnvelope> =
+        when (
+            val outcome = apiClient.envelope(
+                verb = verb,
+                url = url,
+                module = RequestModule.ProjectUser,
+                body = body,
+            )
+        ) {
+            is ZillitResult.Failure -> outcome
+            is ZillitResult.Success ->
+                if (outcome.data.status == 0) {
+                    val said = outcome.data.message ?: "something_went_wrong"
+                    ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = said))
+                } else {
+                    outcome
+                }
         }
 
     /** The PUT answers with the same shape; nothing in it the caller does not already hold. */
@@ -150,7 +205,14 @@ internal data class ToolInfoDto(
         val id = identifier?.takeIf { it.isNotBlank() } ?: return null
         return ToolAccess(
             identifier = id,
-            groupIdentifier = groupIdentifier?.takeIf { it.isNotBlank() },
+            // The web's `resolveToolGroupKey`: an explicit "" is "removed from
+            // every group" (Ungrouped); a row with no key at all predates the
+            // grouping migration and is filed by the identifier map, else Admin.
+            groupIdentifier = when {
+                groupIdentifier == null -> fallbackGroupFor(id)
+                groupIdentifier.isBlank() -> null
+                else -> groupIdentifier
+            },
             unitId = unitId?.takeIf { it.isNotBlank() },
             unitName = unitName?.takeIf { it.isNotBlank() },
             // `enabled` absent means on: the field marks a tool switched *off*,
@@ -170,4 +232,17 @@ internal data class ToolInfoDto(
 internal data class ToolGroupDto(
     @SerialName("group_identifier") val groupIdentifier: String? = null,
     @SerialName("group_name") val groupName: String? = null,
+    @SerialName("tool_group_id") val toolGroupId: String? = null,
+    @SerialName("system_defined") val systemDefined: Boolean? = null,
 )
+
+@Serializable
+internal data class MoveToolDto(
+    @SerialName("identifier") val identifier: String,
+    @SerialName("group_identifier") val groupIdentifier: String,
+)
+
+@Serializable
+internal data class GroupNameDto(@SerialName("group_name") val groupName: String)
+
+private const val HTTP_OK = 200

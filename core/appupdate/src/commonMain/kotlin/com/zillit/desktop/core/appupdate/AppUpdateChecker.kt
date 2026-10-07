@@ -166,6 +166,21 @@ class AppUpdateChecker(
      * line for whoever is wondering why. A deployment that has not been given
      * an app id has not opted into update notices.
      */
+    /**
+     * A plain on/off switch from the same Remote Config template — the web's
+     * `isTrueFlag`: only an explicit `true` turns it on. Unset, malformed or
+     * unreachable all read as off, so a missing key never exposes a surface
+     * the backend has not rolled out. Needs no build version, unlike [check].
+     */
+    suspend fun flag(key: String): Boolean {
+        val config = firebase
+        val appId = config?.appId
+        if (config == null || appId.isNullOrBlank()) return false
+        val ready = Readiness(config.projectId, config.apiKey, appId, installedVersion = "")
+        val entries = fetchEntries(ready) ?: return false
+        return entries[key]?.trim()?.trim('"')?.lowercase() == "true"
+    }
+
     private fun readiness(): Readiness? {
         val config = firebase
         val appId = config?.appId
