@@ -57,6 +57,9 @@ fun AdminSettingsScreen(
     showHeader: Boolean = true,
 ) {
     val admin = state.admin
+    // Held here, not beside the rows: the dialog is no popup, so it has to be
+    // composed at the page root or it draws inline inside the scrolling column.
+    var info by remember { mutableStateOf<SettingsEntry?>(null) }
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         ZillitScrollColumn(
@@ -81,16 +84,7 @@ fun AdminSettingsScreen(
                 val groups = remember(admin.production, admin.pendingNewCrew, admin.pendingProfileChanges) {
                     adminSettingsEntries(admin.production, admin.pendingNewCrew, admin.pendingProfileChanges)
                 }
-                var info by remember { mutableStateOf<SettingsEntry?>(null) }
                 val visible = remember(groups, admin.query) { groups.matching(admin.query) }
-
-                EntryInfoDialog(
-                    entry = info,
-                    projectType = admin.production.projectType,
-                    forAdmin = true,
-                    onOpenUrl = { onEvent(SettingsEvent.OpenLink(it)) },
-                    onDismiss = { info = null },
-                )
 
                 ZillitSearchField(
                     value = admin.query,
@@ -119,6 +113,14 @@ fun AdminSettingsScreen(
                 }
             }
         }
+
+        EntryInfoDialog(
+            entry = info,
+            projectType = admin.production.projectType,
+            forAdmin = true,
+            onOpenUrl = { onEvent(SettingsEvent.OpenLink(it)) },
+            onDismiss = { info = null },
+        )
     }
 }
 

@@ -73,6 +73,10 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     showTitle: Boolean = true,
 ) {
+    // Held here, not beside the rows: the dialog is no popup, so it has to be
+    // composed at the page root or it draws inline inside the scrolling column.
+    var info by remember { mutableStateOf<SettingsEntry?>(null) }
+
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         ZillitScrollColumn(
             modifier = Modifier.fillMaxSize(),
@@ -105,7 +109,7 @@ fun SettingsScreen(
                 }
 
                 AccountCard(state, onEvent)
-                Destinations(state, onEvent)
+                Destinations(state, onEvent) { info = it }
                 AppearanceSection(state, onEvent)
                 ProductionSection(state, onEvent)
                 NotificationsSection(state, onEvent)
@@ -116,6 +120,14 @@ fun SettingsScreen(
 
         // Composed always so the exit can play; the flag drives visibility.
         SignOutDialog(visible = state.isConfirmingSignOut, unsent = state.unsentChanges, onEvent = onEvent)
+
+        EntryInfoDialog(
+            entry = info,
+            projectType = state.admin.production.projectType,
+            forAdmin = state.account.isAdmin,
+            onOpenUrl = { onEvent(SettingsEvent.OpenLink(it)) },
+            onDismiss = { info = null },
+        )
     }
 }
 
@@ -189,26 +201,22 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
  * reading, and it is the Admin Settings tab now.
  */
 @Composable
-private fun Destinations(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
+private fun Destinations(
+    state: SettingsUiState,
+    onEvent: (SettingsEvent) -> Unit,
+    onInfo: (SettingsEntry) -> Unit,
+) {
     val isAdmin = state.account.isAdmin
     val production = state.admin.production
     val groups = remember(isAdmin) { settingsEntries(isAdmin) }
-    var info by remember { mutableStateOf<SettingsEntry?>(null) }
     groups.forEach { group ->
         SettingsEntryGroup(
             group = group,
             onOpen = { onEvent(SettingsEvent.OpenEntry(it)) },
             // The web draws no ⓘ on a personal production.
-            onInfo = if (production.isPersonal) null else { entry -> info = entry },
+            onInfo = onInfo.takeUnless { production.isPersonal },
         )
     }
-    EntryInfoDialog(
-        entry = info,
-        projectType = production.projectType,
-        forAdmin = isAdmin,
-        onOpenUrl = { onEvent(SettingsEvent.OpenLink(it)) },
-        onDismiss = { info = null },
-    )
 }
 
 @Composable

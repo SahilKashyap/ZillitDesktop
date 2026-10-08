@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.settings
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.semantics.SemanticsActions
@@ -41,6 +42,8 @@ class EntryInfoRenderTest {
             .performScrollTo()
             .performClick()
         onNodeWithText(str(S.edit_project_name_info)).assertExists()
+        // An overlay over the window, not a block at the foot of a scrolled list.
+        onNodeWithText(str(S.ok)).assertIsDisplayed()
         mainClock.advanceTimeBy(DIALOG_SETTLE_MS)
         onNodeWithText(str(S.more)).performSemanticsAction(SemanticsActions.OnClick)
 
@@ -61,5 +64,6 @@ class EntryInfoRenderTest {
         onNodeWithContentDescription(str(S.desktop_sa_about_code, str(S.desktop_cal_invite_crew))).performClick()
 
         onNodeWithText(str(S.desktop_info_invite_user)).assertExists()
+        onNodeWithText(str(S.ok)).assertIsDisplayed()
     }
 }
