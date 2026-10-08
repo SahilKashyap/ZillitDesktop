@@ -151,6 +151,13 @@ sealed interface CalendarEvent2Event {
     data object Next : CalendarEvent2Event
     data object Today : CalendarEvent2Event
     data class Select(val date: LocalDate) : CalendarEvent2Event
+
+    /**
+     * A month cell clicked. Selects the day and, as the web does, goes
+     * straight to a new event when that day is free and not in the past —
+     * an empty day has nothing to show in the panel, only something to add.
+     */
+    data class ClickDate(val date: LocalDate) : CalendarEvent2Event
     data class SetMode(val mode: CalendarViewMode) : CalendarEvent2Event
     data object Reload : CalendarEvent2Event
 
@@ -242,6 +249,11 @@ class CalendarViewModel(
             CalendarEvent2Event.Next -> shift(1)
             CalendarEvent2Event.Today -> setState { copy(anchor = today(), selected = today()) }
             is CalendarEvent2Event.Select -> setState { copy(selected = event.date) }
+            is CalendarEvent2Event.ClickDate -> {
+                setState { copy(selected = event.date) }
+                val state = currentState
+                if (event.date >= state.today && state.eventsOn(event.date).isEmpty()) openForm(null)
+            }
             is CalendarEvent2Event.SetMode -> setState { copy(mode = event.mode) }
             CalendarEvent2Event.Reload -> load()
             is CalendarEvent2Event.Realtime -> onRealtime(event.kind)

@@ -576,7 +576,7 @@ private fun DayCell(
         modifier = modifier
             .background(background)
             .clickable(interactionSource = interaction, indication = null) {
-                onEvent(CalendarEvent2Event.Select(date))
+                onEvent(CalendarEvent2Event.ClickDate(date))
             }
             .padding(CELL_PADDING),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
