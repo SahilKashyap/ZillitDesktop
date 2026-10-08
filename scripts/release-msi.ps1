@@ -42,8 +42,8 @@ Set-StrictMode -Version Latest
 $SigningEndpoint = 'https://eus.codesigning.azure.net'
 $SigningAccount  = 'Zillit'
 $SigningProfile  = 'zillit-desktop'
-# zillit.onmicrosoft.com — the directory the signing account lives in.
-$SigningTenant   = '30aed3b9-096c-4758-9eeb-0115a32f7b83'
+# infozillit.onmicrosoft.com - the directory the signing account lives in.
+$SigningTenant   = '4f4106d3-5780-454a-bf5c-20b87f638ee6'
 
 $Root   = Resolve-Path (Join-Path $PSScriptRoot '..')
 $Config = Join-Path $HOME '.zillit\zillit.properties'
@@ -73,7 +73,7 @@ function Test-Machine {
     if ($dlib) { Ok "Artifact Signing client tools ($($dlib.FullName))" }
     else { Bad 'Artifact Signing client tools missing: winget install -e --id Microsoft.Azure.ArtifactSigningClientTools' }
 
-    # signtool from the Windows 11 SDK — the dll will not load into an older one.
+    # signtool from the Windows 11 SDK - the dll will not load into an older one.
     $kits = 'C:\Program Files (x86)\Windows Kits\10\bin'
     $signtool = Get-ChildItem $kits -Directory -Filter '10.*' -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending |
@@ -86,7 +86,7 @@ function Test-Machine {
         else { Bad "signtool is from SDK 10.0.$build; Artifact Signing needs 10.0.$MinSdkBuild or newer" }
     }
 
-    # WiX 3 — jpackage builds the .msi with it.
+    # WiX 3 - jpackage builds the .msi with it.
     if (Get-Command candle.exe -ErrorAction SilentlyContinue) { Ok 'WiX (candle.exe on PATH)' }
     else { Bad 'WiX 3.x not on PATH: jpackage needs it to build an .msi (see docs/WINDOWS_BUILD.md)' }
 
@@ -96,12 +96,12 @@ function Test-Machine {
     } elseif (Get-Command az -ErrorAction SilentlyContinue) {
         $who = az account show --query '[user.name, tenantId]' -o tsv 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $who) {
-            Bad 'not signed in to Azure: run `az login --tenant zillit.onmicrosoft.com`'
+            Bad 'not signed in to Azure: run `az login --tenant infozillit.onmicrosoft.com`'
         } else {
             # tsv puts both on one line, tab-separated; joined first in case a version prints two lines.
             $user, $tenant = ((@($who) -join "`t") -split "`t")
-            if ($tenant -eq $SigningTenant) { Ok "signing as $user in zillit.onmicrosoft.com" }
-            else { Bad ("signed in to tenant $tenant, not Zillit's: run " + "'az login --tenant zillit.onmicrosoft.com'") }
+            if ($tenant -eq $SigningTenant) { Ok "signing as $user in infozillit.onmicrosoft.com" }
+            else { Bad ("signed in to tenant $tenant, not Zillit's: run " + "'az login --tenant infozillit.onmicrosoft.com'") }
         }
     } else {
         Bad 'no Azure sign-in: install the Azure CLI and run `az login`, or set AZURE_CLIENT_ID/TENANT_ID/CLIENT_SECRET'
@@ -130,7 +130,7 @@ function Test-Installer($msi) {
     if (-not (Test-Path $msi)) { Bad "no installer at $msi"; return }
 
     $sig = Get-AuthenticodeSignature -FilePath $msi
-    if ($sig.Status -eq 'Valid') { Ok "signature Valid — $($sig.SignerCertificate.Subject)" }
+    if ($sig.Status -eq 'Valid') { Ok "signature Valid - $($sig.SignerCertificate.Subject)" }
     else { Bad "signature is $($sig.Status): $($sig.StatusMessage)" }
     if ($sig.TimeStamperCertificate) { Ok 'timestamped (still valid after the 3-day certificate expires)' }
     else { Bad 'not timestamped: Windows would stop trusting it once the short-lived certificate expires' }
@@ -214,7 +214,7 @@ $sha = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
 
 Write-Host "`nReady: $out" -ForegroundColor Green
 Write-Host ''
-Write-Host 'To offer it as the update — in Remote Config, once the upload has finished (plain values, no quotes):'
+Write-Host 'To offer it as the update - in Remote Config, once the upload has finished (plain values, no quotes):'
 Write-Host "  desktop_latest_version_windows    = $Version"
 Write-Host '  desktop_installer_url_windows     = <https link that serves exactly this .msi>'
 Write-Host "  desktop_installer_sha256_windows  = $sha"

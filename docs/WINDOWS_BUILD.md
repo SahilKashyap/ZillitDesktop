@@ -155,11 +155,11 @@ Then:
 | Endpoint (Account URI) | `https://eus.codesigning.azure.net` (East US) |
 | Artifact Signing account | `Zillit` |
 | Certificate profile | `zillit-desktop` (Public Trust) |
-| Directory (tenant) | `zillit.onmicrosoft.com` — `30aed3b9-096c-4758-9eeb-0115a32f7b83` |
+| Directory (tenant) | `infozillit.onmicrosoft.com` — `4f4106d3-5780-454a-bf5c-20b87f638ee6` |
 
 Sign in to *that* directory, not the default one: `az login --tenant
-zillit.onmicrosoft.com`, as an account holding the **Artifact Signing
-Certificate Profile Signer** role on `Zillit` (e.g. `admin@zillit.com`). A
+infozillit.onmicrosoft.com`, as an account holding the **Artifact Signing
+Certificate Profile Signer** role on `Zillit` (e.g. `sahil@zillit.com`). A
 personal Microsoft account lands in Microsoft's consumer tenant (`9188040d-…`)
 and is refused.
 
