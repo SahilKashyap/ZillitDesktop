@@ -145,8 +145,26 @@ Then:
 ```powershell
 .\gradlew.bat :desktopApp:packageSignedMsi -PzillitBundleConfig `
   -PzillitAzureSigningEndpoint=https://eus.codesigning.azure.net `
-  -PzillitAzureSigningAccount=<account> -PzillitAzureSigningProfile=<profile>
+  -PzillitAzureSigningAccount=Zillit -PzillitAzureSigningProfile=zillit-desktop
 ```
+
+**Zillit's account** (set up 2026-10-08; none of these is a secret):
+
+| | |
+|---|---|
+| Endpoint (Account URI) | `https://eus.codesigning.azure.net` (East US) |
+| Artifact Signing account | `Zillit` |
+| Certificate profile | `zillit-desktop` (Public Trust) |
+| Directory (tenant) | `zillit.onmicrosoft.com` — `30aed3b9-096c-4758-9eeb-0115a32f7b83` |
+
+Sign in to *that* directory, not the default one: `az login --tenant
+zillit.onmicrosoft.com`, as an account holding the **Artifact Signing
+Certificate Profile Signer** role on `Zillit` (e.g. `admin@zillit.com`). A
+personal Microsoft account lands in Microsoft's consumer tenant (`9188040d-…`)
+and is refused.
+
+For a release, prefer the script, which wraps this command — see *Releasing*
+below.
 
 The endpoint is **region-specific and must match the region the account and the
 certificate profile were created in** — a mismatch shows up as a 403 during
@@ -189,6 +207,23 @@ reputation immediately; OV builds it over a few hundred installs. A self-signed
 certificate does satisfy the updater — its check only asks that the status read
 `Valid` — but only on machines that trust it, so it is for exercising the
 update path, never for distribution.
+
+## Releasing — one command
+
+```powershell
+.\scripts\release-msi.ps1 1.1.2 -Check      # is this machine ready?
+.\scripts\release-msi.ps1 1.1.2             # build, verify, copy to Downloads
+.\scripts\release-msi.ps1 1.1.2 -Verify C:\path\Zillit-Desktop-1.1.2.msi
+```
+
+The Windows counterpart of `scripts/release-dmg.sh`. It checks the client tools,
+the SDK's `signtool`, WiX, the Azure sign-in and the production keys in
+`~/.zillit/zillit.properties`; builds `packageSignedMsi` for production with the
+`PROD_` lines of that file bundled (never `STG_`/`QA_`) and Zillit's signing
+account; then refuses to call the result good unless the installer's signature
+is `Valid` and timestamped, the `Zillit-Desktop.exe` inside is signed by the
+same subject, and the bundled config is there. It prints the three Remote
+Config values to publish once the `.msi` is uploaded.
 
 ## In-app updates
 
