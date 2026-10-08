@@ -42,6 +42,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
@@ -63,6 +64,8 @@ fun CallRingCard(
     incoming: Boolean,
     onEvent: (CallEvent) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
+    /** A chat room's picture by room id; null answers draw the initials. */
+    loadGroupPicture: suspend (String) -> ImageBitmap? = { null },
 ) {
     val session = state.session ?: return
     Box(
@@ -100,7 +103,7 @@ fun CallRingCard(
                     maxLines = 1,
                 )
             }
-            PulsingAvatar(session, loadAvatar)
+            PulsingAvatar(session, loadAvatar, loadGroupPicture)
             ZillitText(
                 text = session.ringTitle,
                 style = ZillitTheme.typography.titleLarge.copy(fontSize = NAME_FONT, fontWeight = FontWeight.SemiBold),
@@ -163,7 +166,11 @@ private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) 
  * signal, not the person.
  */
 @Composable
-private fun PulsingAvatar(session: CallSession, loadAvatar: suspend (String) -> ImageBitmap?) {
+private fun PulsingAvatar(
+    session: CallSession,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadGroupPicture: suspend (String) -> ImageBitmap?,
+) {
     val transition = rememberInfiniteTransition(label = "ring-pulse")
     val phase by transition.animateFloat(
         initialValue = 0f,
@@ -171,8 +178,16 @@ private fun PulsingAvatar(session: CallSession, loadAvatar: suspend (String) -> 
         animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Restart),
         label = "ring-pulse-phase",
     )
-    val face by produceState<ImageBitmap?>(null, session.displayUserId) {
-        value = session.displayUserId.takeIf(String::isNotBlank)?.let { loadAvatar(it) }
+    // Ringing a group, the face is the group's own picture — never the first
+    // member's, who is just whoever happens to head the roster. No picture
+    // set: the avatar falls back to the group's initials.
+    val ringsGroup = session.direction == CallDirection.Outgoing && session.mode == CallMode.Group
+    val face by produceState<ImageBitmap?>(null, session.displayUserId, session.chatRoomId, ringsGroup) {
+        value = if (ringsGroup) {
+            session.chatRoomId.takeIf(String::isNotBlank)?.let { loadGroupPicture(it) }
+        } else {
+            session.displayUserId.takeIf(String::isNotBlank)?.let { loadAvatar(it) }
+        }
     }
     Box(contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.size(RING_AVATAR + PULSE_ROOM)) {

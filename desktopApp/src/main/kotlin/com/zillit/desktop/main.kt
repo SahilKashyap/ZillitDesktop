@@ -2631,7 +2631,7 @@ private fun chatProvider(
  * `thumbnail` key must travel: without it the preview fetch asked S3 for a
  * blank object and showed nothing where the picture belonged.
  */
-private suspend fun fetchChatImage(
+internal suspend fun fetchChatImage(
     ready: AppGraph.Ready,
     file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
     preview: Boolean,

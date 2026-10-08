@@ -45,6 +45,7 @@ private fun PhaseSurface(
     state: CallUiState,
     onEvent: (CallEvent) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
+    loadGroupPicture: suspend (String) -> ImageBitmap?,
     hasVideo: Boolean,
     ownsCall: Boolean,
     showsIncomingRing: Boolean,
@@ -52,7 +53,7 @@ private fun PhaseSurface(
 ) {
     when (state.phase) {
         CallPhase.Incoming -> if (showsIncomingRing) CallRingCard(state, incoming = true, onEvent, loadAvatar)
-        CallPhase.Outgoing -> CallRingCard(state, incoming = false, onEvent, loadAvatar)
+        CallPhase.Outgoing -> CallRingCard(state, incoming = false, onEvent, loadAvatar, loadGroupPicture)
         CallPhase.InCall, CallPhase.Ending ->
             if (drawsStage(ownsCall, state.pipOpen, state.expanded)) {
                 CallStage(state, onEvent, loadAvatar, hasVideo, onSlot)
@@ -91,6 +92,8 @@ fun CallOverlay(
      * would ring twice. The in-call pill and stage show either way.
      */
     showsIncomingRing: Boolean = true,
+    /** A group's picture by chat room id — the outgoing group ring's face. */
+    loadGroupPicture: suspend (String) -> ImageBitmap? = { null },
 ) {
     var root by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var slot by remember { mutableStateOf(Rect.Zero) }
@@ -99,7 +102,10 @@ fun CallOverlay(
     }
 
     Box(modifier = Modifier.fillMaxSize().onGloballyPositioned { root = it }) {
-        PhaseSurface(state, onEvent, loadAvatar, videoSurface != null, ownsCall, showsIncomingRing, onSlot)
+        PhaseSurface(
+            state, onEvent, loadAvatar, loadGroupPicture,
+            videoSurface != null, ownsCall, showsIncomingRing, onSlot,
+        )
 
         // ONE mount for the whole call, deliberately outside the branch above.
         // Taking a native browser out of the tree hands it back to the engine's

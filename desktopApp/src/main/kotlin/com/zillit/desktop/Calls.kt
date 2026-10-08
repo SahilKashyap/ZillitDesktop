@@ -125,6 +125,7 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?, showsInco
         state = callState,
         onEvent = calls::onEvent,
         loadAvatar = crewFaceLoader(ready),
+        loadGroupPicture = groupPictureLoader(ready),
         videoSurface = callVideoSurface(ready),
         showsIncomingRing = showsIncomingRing,
     )
@@ -245,6 +246,18 @@ internal fun crewFaceLoader(
     // Shrunk at decode: the photo is the phone's original upload, and every
     // avatar list scaled the whole thing on every frame it was on screen.
     { userId -> fetchAvatar(ready, userId)?.let { bytes -> decodeAvatar(bytes) } }
+
+/**
+ * A group's own picture by chat room id — the outgoing group ring's face.
+ * Asks the room for its `group_picture`, then fetches it like any chat image;
+ * a room with none (or a failed ask) answers null and the card draws initials.
+ */
+internal fun groupPictureLoader(
+    ready: AppGraph.Ready,
+): suspend (String) -> ImageBitmap? = { roomId ->
+    (ready.chatRepository.roomDetail(roomId) as? ZillitResult.Success)?.data?.picture
+        ?.let { picture -> fetchChatImage(ready, picture, preview = true) }
+}
 
 /**
  * A profile photo at a size an avatar can use. The largest face the app

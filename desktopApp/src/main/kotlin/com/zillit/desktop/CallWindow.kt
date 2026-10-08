@@ -137,6 +137,7 @@ internal fun ApplicationScope.CallWindow(
                             state = state,
                             onEvent = calls::onEvent,
                             loadAvatar = crewFaceLoader(ready),
+                            loadGroupPicture = groupPictureLoader(ready),
                             videoSurface = callVideoSurface(ready),
                             // This window IS the call: it draws the stage and it
                             // holds the browser component while it is open.

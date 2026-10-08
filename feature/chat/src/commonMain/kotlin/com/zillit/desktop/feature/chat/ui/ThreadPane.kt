@@ -177,6 +177,8 @@ internal fun ThreadPane(
     // Contact info, WhatsApp's third column: opened from the header, shut
     // again whenever the thread changes hands.
     var infoPage by remember(peer.userId) { mutableStateOf<InfoPage?>(null) }
+    // A group's Edit / Leave / Delete confirmation, drawn over the whole thread.
+    var groupDialog by remember(peer.userId) { mutableStateOf<GroupDialog?>(null) }
     val shared = remember(state.messages) { sharedContent(state.messages) }
     val callable = state.isCallable(peer)
 
@@ -213,7 +215,12 @@ internal fun ThreadPane(
             state = state,
             peer = peer,
             shared = shared,
-            hooks = InfoHooks(loadAvatar, media, onCall.takeIf { callable }, lines, onEvent),
+            hooks = InfoHooks(
+                loadAvatar, media, onCall.takeIf { callable }, lines, onEvent,
+                resolveContact = resolveContact,
+                selfId = selfId,
+                onGroupDialog = { groupDialog = it },
+            ),
             onPage = { infoPage = it },
         ) {
             ChatWallpaper()
@@ -290,6 +297,14 @@ internal fun ThreadPane(
         DeleteMessageDialog(state, onEvent)
         ForwardDialog(state, forwardPeople, onEvent)
         ReadByDialog(state, selfId, resolveContact, onEvent)
+        if (state.peerIsGroup) {
+            GroupInfoDialogs(
+                info = state.groupInfo?.takeIf { it.roomId == peer.userId },
+                dialog = groupDialog,
+                onDismiss = { groupDialog = null },
+                onEvent = onEvent,
+            )
+        }
         ChatImageReplyDialog(
             target = imageReply,
             loadImage = { file -> seams.loadFullImage?.invoke(file) ?: loadThumbnail(file) },

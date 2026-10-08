@@ -266,6 +266,36 @@ interface ChatRepository {
         ZillitResult.Failure(ZillitError.Unknown("group deletion is not wired"))
 
     /**
+     * One group in full — `GET chat-room/{id}` — for the Group info panel:
+     * members and who administers them, the picture, whether it is a system
+     * room. Fresh every time; a roster is not something to show from disk.
+     */
+    suspend fun roomDetail(roomId: String): ZillitResult<com.zillit.desktop.feature.chat.domain.GroupDetail> =
+        ZillitResult.Failure(ZillitError.Unknown("group detail is not wired"))
+
+    /**
+     * Renames [room] — the web's `editRoomUsers`: `POST chat-room` carrying
+     * the room's own id and its whole roster beside the new name.
+     */
+    suspend fun renameRoom(
+        room: com.zillit.desktop.feature.chat.domain.GroupDetail,
+        name: String,
+    ): ZillitResult<Unit> = ZillitResult.Failure(ZillitError.Unknown("group rename is not wired"))
+
+    /** Takes the signed-in user out of a room — `PUT chat-room/leave-group/{room}/{me}`. */
+    suspend fun leaveRoom(roomId: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("leaving a group is not wired"))
+
+    /**
+     * Sets a room's picture to an already-uploaded file —
+     * `PUT chat-room/update-group-picture/{id}`; null clears it.
+     */
+    suspend fun setRoomPicture(
+        roomId: String,
+        picture: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+    ): ZillitResult<Unit> = ZillitResult.Failure(ZillitError.Unknown("group picture is not wired"))
+
+    /**
      * The Chats search's second reach (QA#12): every locally cached line —
      * the session map plus the disk copy — whose decrypted body contains
      * [query], case-blind, newest first. Purely local: nothing rides the
@@ -765,6 +795,54 @@ class ChatRepositoryImpl(
             verb = HttpVerb.Delete,
             url = "${config.apiV2(ZillitService.Chat)}chat-room/$roomId",
             module = RequestModule.ProjectUser,
+            options = scoped(),
+        ).refuseStatusZero().map { }
+
+    override suspend fun roomDetail(
+        roomId: String,
+    ): ZillitResult<com.zillit.desktop.feature.chat.domain.GroupDetail> =
+        apiClient.envelope(
+            verb = HttpVerb.Get,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room/$roomId",
+            module = RequestModule.ProjectUser,
+            options = scoped(CallOptions(readCache = false)),
+        ).refuseStatusZero().flatMap { envelope ->
+            roomDetailFrom(envelope.data)
+                ?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("no chat_room in the answer"))
+        }
+
+    override suspend fun renameRoom(
+        room: com.zillit.desktop.feature.chat.domain.GroupDetail,
+        name: String,
+    ): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room",
+            module = RequestModule.ProjectUser,
+            body = editRoomBody(room, name),
+            options = scoped(),
+        ).refuseStatusZero().map { }
+
+    override suspend fun leaveRoom(roomId: String): ZillitResult<Unit> {
+        val me = myUserId() ?: return ZillitResult.Failure(ZillitError.Unauthorized("no signed-in user"))
+        return apiClient.envelope(
+            verb = HttpVerb.Put,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room/leave-group/$roomId/$me",
+            module = RequestModule.ProjectUser,
+            options = scoped(),
+        ).refuseStatusZero().map { }
+    }
+
+    override suspend fun setRoomPicture(
+        roomId: String,
+        picture: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+    ): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Put,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room/update-group-picture/$roomId",
+            module = RequestModule.ProjectUser,
+            body = roomPictureBody(picture),
             options = scoped(),
         ).refuseStatusZero().map { }
 

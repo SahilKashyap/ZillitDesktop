@@ -34,6 +34,7 @@ import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatVoice
+import com.zillit.desktop.feature.chat.domain.GroupDetail
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatPick
@@ -145,6 +146,8 @@ data class ChatUiState(
      * the production's language differs from this computer's (ZL-16953).
      */
     val translateOffered: Boolean = false,
+    /** The open room's Group info — members, picture, and what the viewer may do to it. */
+    val groupInfo: GroupInfoState? = null,
 ) {
     /**
      * Unread across the conversations the user can still open — the Chats
@@ -159,6 +162,20 @@ data class ChatUiState(
 
     val canSend: Boolean get() = draft.isNotBlank() && peer != null
 }
+
+/**
+ * The Group info panel's data: the room in full once `GET chat-room/{id}`
+ * answers, one [busy] flag while a write (rename, picture, leave, delete) is
+ * in flight, and the last write's complaint. Kept apart from [ChatUiState.error]
+ * because the panel says it beside the control that failed.
+ */
+data class GroupInfoState(
+    val roomId: String,
+    val detail: GroupDetail? = null,
+    val loading: Boolean = true,
+    val busy: Boolean = false,
+    val error: String? = null,
+)
 
 /**
  * The readers panel's state: the message asked about, and the server's
@@ -308,6 +325,21 @@ sealed interface ChatEvent {
     ) : ChatEvent
 
     data object DismissInfo : ChatEvent
+
+    /** The Group info panel opened on this room: fetch its members and picture. */
+    data class LoadGroupInfo(val roomId: String) : ChatEvent
+
+    /** Admin: the Edit name dialog's Save. */
+    data class RenameGroup(val name: String) : ChatEvent
+
+    /** Anyone in the room: pick a picture and make it the group's. */
+    data object ChangeGroupPhoto : ChatEvent
+
+    /** Takes the signed-in user out of the open room; the thread closes behind them. */
+    data object LeaveGroup : ChatEvent
+
+    /** Admin: deletes the open room for everyone; the thread closes behind it. */
+    data object DeleteGroup : ChatEvent
 
     /** A host seam said no — the sentence goes where every other refusal goes. */
     data class Refused(val message: String) : ChatEvent
@@ -581,6 +613,11 @@ class ChatViewModel(
                     }
                 }
             ChatEvent.ProjectChanged -> startFreshProject()
+            is ChatEvent.LoadGroupInfo -> loadGroupInfo(event.roomId)
+            is ChatEvent.RenameGroup -> renameGroup(event.name)
+            ChatEvent.ChangeGroupPhoto -> changeGroupPhoto()
+            ChatEvent.LeaveGroup -> leaveGroup()
+            ChatEvent.DeleteGroup -> deleteGroup()
             ChatEvent.RefreshRecents -> {
                 refreshSectionBadges()
                 // Re-read on every refresh: the production's language lands
@@ -612,6 +649,114 @@ class ChatViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * Group info: the room's roster and picture. The previous answer for the
+     * same room stays on screen while the fresh one is fetched, so reopening
+     * the panel does not blank the member list.
+     */
+    private fun loadGroupInfo(roomId: String) {
+        val kept = currentState.groupInfo?.detail?.takeIf { it.id == roomId }
+        setState { copy(groupInfo = GroupInfoState(roomId, detail = kept, loading = true)) }
+        launchResult(
+            block = { repository.roomDetail(roomId) },
+            onSuccess = { detail -> updateGroupInfo(roomId) { copy(detail = detail, loading = false) } },
+            onError = { error -> updateGroupInfo(roomId) { copy(loading = false, error = error.localised()) } },
+        )
+    }
+
+    /** Applies [change] to the panel's state if it still belongs to [roomId]. */
+    private fun updateGroupInfo(roomId: String, change: GroupInfoState.() -> GroupInfoState) {
+        setState { groupInfo?.takeIf { it.roomId == roomId }?.let { copy(groupInfo = it.change()) } ?: this }
+    }
+
+    /** The writes' shared start: the open room's panel state, unless one is already writing. */
+    private fun idleGroupInfo(): GroupInfoState? = currentState.groupInfo?.takeIf { !it.busy }
+
+    private fun renameGroup(name: String) {
+        val info = idleGroupInfo() ?: return
+        val detail = info.detail ?: return
+        val trimmed = name.trim()
+        if (trimmed == detail.name) return
+        val complaint = groupComplaint(trimmed, detail.members.mapTo(mutableSetOf()) { it.userId })
+        if (complaint != null) {
+            updateGroupInfo(detail.id) { copy(error = complaint) }
+            return
+        }
+        updateGroupInfo(detail.id) { copy(busy = true, error = null) }
+        launchResult(
+            block = { repository.renameRoom(detail, trimmed) },
+            onSuccess = {
+                updateGroupInfo(detail.id) { copy(busy = false, detail = detail.copy(name = trimmed)) }
+                setState {
+                    copy(
+                        groups = groups.map { if (it.id == detail.id) it.copy(name = trimmed) else it },
+                        peer = peer?.takeIf { it.userId == detail.id }?.copy(fullName = trimmed) ?: peer,
+                    )
+                }
+                onEvent(ChatEvent.RefreshRecents)
+            },
+            onError = { error -> updateGroupInfo(detail.id) { copy(busy = false, error = error.localised()) } },
+        )
+    }
+
+    /**
+     * Picks a picture and makes it the group's: the picker, the upload through
+     * the same storage a chat picture rides, then `update-group-picture`.
+     * Nothing changes on screen until the server has taken it.
+     */
+    private fun changeGroupPhoto() {
+        val info = idleGroupInfo() ?: return
+        val roomId = info.roomId
+        launch {
+            val upload = when (val pick = pickAttachmentOf(PreviewKind.Image)) {
+                is ChatPick.Cancelled -> return@launch
+                is ChatPick.Refused -> {
+                    updateGroupInfo(roomId) { copy(error = pick.reason) }
+                    return@launch
+                }
+
+                is ChatPick.Ready -> pick.upload
+            }
+            updateGroupInfo(roomId) { copy(busy = true, error = null) }
+            val stored = upload.upload(upload.bytes) { }
+            if (stored == null) {
+                updateGroupInfo(roomId) { copy(busy = false, error = str(S.av_option_upload_failed)) }
+                return@launch
+            }
+            when (val result = repository.setRoomPicture(roomId, stored)) {
+                is ZillitResult.Success ->
+                    updateGroupInfo(roomId) { copy(busy = false, detail = detail?.copy(picture = stored)) }
+
+                is ZillitResult.Failure ->
+                    updateGroupInfo(roomId) { copy(busy = false, error = result.error.localised()) }
+            }
+        }
+    }
+
+    private fun leaveGroup() = leaveOrDelete { roomId -> repository.leaveRoom(roomId) }
+
+    private fun deleteGroup() = leaveOrDelete { roomId -> repository.deleteRoom(roomId) }
+
+    /**
+     * Both exits end the same way: the room is gone from this user's list, so
+     * the thread closes and the listing is asked again. A refusal leaves the
+     * panel up with its sentence.
+     */
+    private fun leaveOrDelete(write: suspend (String) -> ZillitResult<Unit>) {
+        val info = idleGroupInfo() ?: return
+        val roomId = info.roomId
+        updateGroupInfo(roomId) { copy(busy = true, error = null) }
+        launchResult(
+            block = { write(roomId) },
+            onSuccess = {
+                setState { copy(groups = groups.filterNot { it.id == roomId }, groupInfo = null) }
+                if (currentState.peer?.userId == roomId) onEvent(ChatEvent.CloseThread)
+                onEvent(ChatEvent.RefreshRecents)
+            },
+            onError = { error -> updateGroupInfo(roomId) { copy(busy = false, error = error.localised()) } },
+        )
     }
 
     /**

@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -84,6 +85,12 @@ internal class InfoHooks(
     val onCall: ((video: Boolean, line: CallLine) -> Unit)?,
     val lines: List<CallLine>,
     val onEvent: (ChatEvent) -> Unit,
+    /** The crew member behind an id — names and roles in a group's member list. */
+    val resolveContact: (String) -> CrewContact? = { null },
+    /** The signed-in user: marks "(You)" and decides what a group offers them. */
+    val selfId: String? = null,
+    /** Opens one of a group's confirmations at the thread's root. */
+    val onGroupDialog: (GroupDialog) -> Unit = {},
 )
 
 /**
@@ -104,6 +111,10 @@ internal fun ContactInfoPanel(
     onPage: (InfoPage?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A group's roster and picture come from its own room, not the listing.
+    if (state.peerIsGroup) {
+        LaunchedEffect(peer.userId) { hooks.onEvent(ChatEvent.LoadGroupInfo(peer.userId)) }
+    }
     Column(modifier.fillMaxSize().background(ZillitTheme.colors.chatPanel)) {
         when (page) {
             InfoPage.Contact -> {
@@ -164,8 +175,14 @@ private fun ContactPage(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(SECTION_GAP),
     ) {
-        Section { IdentityBlock(state, peer, hooks) }
+        // The group's own answer, once it is for this room and not the last.
+        val group = state.groupInfo?.takeIf { state.peerIsGroup && it.roomId == peer.userId }
+        Section { IdentityBlock(state, peer, hooks, group) }
         Section { SharedBlock(state, shared, hooks, onOpenShared) }
+        if (state.peerIsGroup) {
+            Section { GroupMembersSection(group, hooks) }
+            Section { GroupActionsSection(group, hooks) }
+        }
         if (!state.peerIsGroup) {
             val starred = peer.userId in state.favourites
             Section {
@@ -191,17 +208,24 @@ private fun Section(content: @Composable () -> Unit) {
 
 /** Face, name, the lines that place them, and the call buttons. */
 @Composable
-private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHooks) {
+private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHooks, group: GroupInfoState?) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
+        // A room has no face of its own among the people; its picture is the
+        // one `chat-room` carries, fetched like any chat image.
         ZillitAvatar(
             name = peer.fullName,
-            image = rememberChatFace(peer.userId, hooks.loadAvatar),
+            image = if (state.peerIsGroup) {
+                rememberGroupPicture(group?.detail?.picture, hooks.media)
+            } else {
+                rememberChatFace(peer.userId, hooks.loadAvatar)
+            },
             size = BIG_AVATAR,
         )
+        if (state.peerIsGroup) GroupPhotoButton(group, hooks.selfId, hooks.onEvent)
         Row(
             modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
