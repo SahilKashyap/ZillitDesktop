@@ -4,9 +4,11 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.HttpClientFactory
+import com.zillit.desktop.core.network.RequestHeaderProvider
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.core.network.headersFor
+import com.zillit.desktop.core.network.tokenauth.TokenSessionManager
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -146,8 +148,30 @@ internal suspend fun AppGraph.Ready.signedRawResponse(
     url: String,
     bodyJson: String?,
     perform: suspend (headers: Map<String, String>, bearer: String?) -> HttpResponse,
+): HttpResponse = signRawResponse(
+    tokenSession = tokenSession,
+    headerProvider = headerProvider,
+    projectForAuth = projectContext?.context?.value?.project?.projectId,
+    module = module,
+    url = url,
+    bodyJson = bodyJson,
+    perform = perform,
+)
+
+/**
+ * [signedRawResponse] without the graph, for a transfer built while the graph is
+ * still being assembled (Document Distribution's) — one decision, not two copies
+ * of it that could drift apart.
+ */
+internal suspend fun signRawResponse(
+    tokenSession: TokenSessionManager,
+    headerProvider: RequestHeaderProvider,
+    projectForAuth: String?,
+    module: RequestModule,
+    url: String,
+    bodyJson: String?,
+    perform: suspend (headers: Map<String, String>, bearer: String?) -> HttpResponse,
 ): HttpResponse {
-    val projectForAuth = projectContext?.context?.value?.project?.projectId
     val token = tokenSession.bearerFor(module, projectForAuth, url)
     val resolvedHeaders = if (token == null) {
         headerProvider.headersFor(module, bodyJson, null)

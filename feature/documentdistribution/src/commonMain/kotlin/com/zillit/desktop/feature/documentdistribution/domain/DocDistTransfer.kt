@@ -68,6 +68,12 @@ interface DocDistHost {
     /** Page 1 of a PDF as a JPEG for a card cover; null when it cannot be rendered. */
     suspend fun pdfThumbnail(pdf: ByteArray): ByteArray? = null
 
+    /** How many pages a PDF has; 0 when it cannot be read, which sends the preview down the all-at-once path. */
+    suspend fun pdfPageCount(pdf: ByteArray): Int = 0
+
+    /** One page (1-based) as PNG bytes, [widthPx] wide; null when it cannot be drawn. */
+    suspend fun renderPdfPage(pdf: ByteArray, page: Int, widthPx: Int): ByteArray? = null
+
     /** Each page as PNG bytes, [targetWidthPx] wide. */
     fun renderPdfPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<ByteArray>> =
         ZillitResult.Failure(ZillitError.Storage("no PDF renderer", str(S.desktop_docdist_pdf_preview_unavailable)))

@@ -9,9 +9,8 @@ import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.media.AwtAttachmentPicker
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.network.HttpClientFactory
-import com.zillit.desktop.core.network.RequestHeaderProvider
 import com.zillit.desktop.core.network.RequestModule
-import com.zillit.desktop.core.network.headersFor
+import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.core.session.ProjectContextLoader
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -71,6 +70,14 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.nio.file.Files
 
+/** [signRawResponse], with the session and project already bound. */
+internal typealias RawSigner = suspend (
+    module: RequestModule,
+    url: String,
+    bodyJson: String?,
+    perform: suspend (headers: Map<String, String>, bearer: String?) -> HttpResponse,
+) -> HttpResponse
+
 /**
  * Document Distribution's byte-level seams on the app's machinery: storage
  * PUTs signed with the workspace's AWS keys, the signed S3 fetch, and the
@@ -80,7 +87,13 @@ import java.nio.file.Files
  */
 internal class AppDocDistTransfer(
     private val storageClient: HttpClient,
-    private val headerProvider: RequestHeaderProvider,
+    /**
+     * Signs a raw call the way an envelope call is signed: a Bearer token when the
+     * session is in token mode, `moduledata` otherwise, one renewal on a 401. Sent
+     * with the legacy header alone, every route answered 401
+     * `libs_moduledata_not_accepted` once the server stopped accepting it.
+     */
+    private val sign: RawSigner,
     private val credentials: suspend () -> Pair<String, String>?,
     private val storage: StorageTargetSource,
     private val noticeMedia: NoticeMediaSource,
@@ -109,17 +122,19 @@ internal class AppDocDistTransfer(
         )
 
     override suspend fun getBytes(url: String): ZillitResult<ByteArray> = rawCall {
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null)
-        storageClient.get(url) { headers.forEach { (name, value) -> this.headers.append(name, value) } }
+        sign(RequestModule.ProjectUser, url, null) { headers, bearer ->
+            storageClient.get(url) { authorise(headers, bearer) }
+        }
     }
 
     override suspend fun postBytes(url: String, body: JsonObject): ZillitResult<ByteArray> = rawCall {
         val bodyJson = HttpClientFactory.json.encodeToString(JsonElement.serializer(), body)
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, bodyJson, null)
-        storageClient.post(url) {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-            contentType(ContentType.Application.Json)
-            setBody(bodyJson)
+        sign(RequestModule.ProjectUser, url, bodyJson) { headers, bearer ->
+            storageClient.post(url) {
+                authorise(headers, bearer)
+                contentType(ContentType.Application.Json)
+                setBody(bodyJson)
+            }
         }
     }
 
@@ -134,24 +149,25 @@ internal class AppDocDistTransfer(
         file: LocalFile,
     ): ZillitResult<JsonElement> {
         val bytes = rawCall {
-            val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null)
-            storageClient.post(url) {
-                headers.forEach { (name, value) -> this.headers.append(name, value) }
-                setBody(
-                    MultiPartFormDataContent(
-                        formData {
-                            fields.forEach { (name, value) -> append(name, value) }
-                            append(
-                                "file",
-                                file.bytes,
-                                Headers.build {
-                                    append(HttpHeaders.ContentType, file.contentType)
-                                    append(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
-                                },
-                            )
-                        },
-                    ),
-                )
+            sign(RequestModule.ProjectUser, url, null) { headers, bearer ->
+                storageClient.post(url) {
+                    authorise(headers, bearer)
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                fields.forEach { (name, value) -> append(name, value) }
+                                append(
+                                    "file",
+                                    file.bytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, file.contentType)
+                                        append(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }
             }
         }
         return when (bytes) {
@@ -209,6 +225,12 @@ internal class AppDocDistTransfer(
     private fun envelopeKey(bytes: ByteArray): String? = runCatching {
         HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject["message"]?.jsonPrimitive?.content
     }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    /** Plain headers, plus the Bearer token when the session is in token mode. */
+    private fun io.ktor.client.request.HttpRequestBuilder.authorise(headers: Map<String, String>, bearer: String?) {
+        headers.forEach { (name, value) -> this.headers.append(name, value) }
+        bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+    }
 
     private class Declined(message: String) : RuntimeException(message)
 
@@ -276,6 +298,15 @@ internal class AppDocDistHost(
                     ZillitResult.Failure(ZillitError.Validation(str(S.desktop_docdist_downloads_unavailable)))
                 },
             )
+        }
+
+    override suspend fun pdfPageCount(pdf: ByteArray): Int = withContext(Dispatchers.IO) {
+        (this@AppDocDistHost.pdf.pageCount(pdf) as? ZillitResult.Success)?.data ?: 0
+    }
+
+    override suspend fun renderPdfPage(pdf: ByteArray, page: Int, widthPx: Int): ByteArray? =
+        withContext(Dispatchers.IO) {
+            (this@AppDocDistHost.pdf.renderPage(pdf, page, widthPx) as? ZillitResult.Success)?.data?.imageBytes
         }
 
     override suspend fun pdfThumbnail(pdf: ByteArray): ByteArray? = withContext(Dispatchers.IO) {
@@ -360,13 +391,13 @@ internal class AppDocDistHost(
 /** The transfer over the app's storage pieces; a function so the graph's constructor stays one line. */
 internal fun docDistTransfer(
     storageClient: HttpClient,
-    headerProvider: RequestHeaderProvider,
+    sign: RawSigner,
     remoteConfig: RemoteConfigRepository,
     storage: StorageTargetSource,
     noticeMedia: NoticeMediaSource,
 ): DocDistTransfer = AppDocDistTransfer(
     storageClient = storageClient,
-    headerProvider = headerProvider,
+    sign = sign,
     credentials = { awsKeyPair(remoteConfig) },
     storage = storage,
     noticeMedia = noticeMedia,

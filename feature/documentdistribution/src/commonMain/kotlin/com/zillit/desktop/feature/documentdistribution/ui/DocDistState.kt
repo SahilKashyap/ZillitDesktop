@@ -186,8 +186,13 @@ data class PreviewState(
     val loading: Boolean = true,
     /** The raw bytes — an image draws these; a download saves them. */
     val bytes: ByteArray? = null,
-    /** Rasterised PDF pages as PNG bytes. */
+    /**
+     * Rasterised PDF pages as PNG bytes — the first [pages].size of [pageCount]
+     * while the rest are still being drawn, so page 1 shows at once.
+     */
     val pages: List<ByteArray> = emptyList(),
+    /** How many pages the PDF has, known before they are all drawn; 0 for anything but a PDF. */
+    val pageCount: Int = 0,
     /** A vCard's text. */
     val text: String? = null,
     val error: String? = null,
@@ -195,7 +200,8 @@ data class PreviewState(
 ) {
     override fun equals(other: Any?): Boolean = other is PreviewState && other.document.id == document.id &&
         other.loading == loading && other.error == error && other.downloading == downloading &&
-        other.pages.size == pages.size && (other.bytes?.size ?: 0) == (bytes?.size ?: 0) && other.text == text
+        other.pages.size == pages.size && other.pageCount == pageCount &&
+        (other.bytes?.size ?: 0) == (bytes?.size ?: 0) && other.text == text
 
     override fun hashCode(): Int = document.id.hashCode()
 }

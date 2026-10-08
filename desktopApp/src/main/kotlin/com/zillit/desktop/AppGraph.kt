@@ -1735,7 +1735,21 @@ sealed interface AppGraph {
                     // Uploads, the signed fetch behind the preview, and the
                     // stamping routes that answer a file — see DocDistWiring.
                     transfer = docDistTransfer(
-                        storageClient, headerProvider, remoteConfigRepository, storageTarget, noticeMedia,
+                        storageClient,
+                        { module, url, bodyJson, perform ->
+                            signRawResponse(
+                                tokenSession = tokenSession,
+                                headerProvider = headerProvider,
+                                projectForAuth = headerContext.value.projectId?.takeUnless { it.isBlank() },
+                                module = module,
+                                url = url,
+                                bodyJson = bodyJson,
+                                perform = perform,
+                            )
+                        },
+                        remoteConfigRepository,
+                        storageTarget,
+                        noticeMedia,
                     ),
                     isS3Storage = { projectContext.docDistUsesS3() },
                     newUniqueId = { java.util.UUID.randomUUID().toString() },

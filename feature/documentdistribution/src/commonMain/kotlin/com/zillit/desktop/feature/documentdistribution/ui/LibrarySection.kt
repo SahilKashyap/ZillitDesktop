@@ -344,7 +344,9 @@ internal class LibrarySection(private val vm: VmScope) {
                 }
             }
             val kind = fileKindOf(document.contentType, document.name)
-            val pages = if (kind == FileKind.Pdf) {
+            val count = if (kind == FileKind.Pdf) vm.host.pdfPageCount(bytes) else 0
+            // A host that cannot count draws every page at once, as before.
+            val eager = if (kind == FileKind.Pdf && count == 0) {
                 (vm.host.renderPdfPages(bytes, PREVIEW_PAGE_WIDTH) as? ZillitResult.Success)?.data.orEmpty()
             } else {
                 emptyList()
@@ -354,7 +356,35 @@ internal class LibrarySection(private val vm: VmScope) {
                 // The dialog may have been closed, or moved to another file,
                 // while the bytes were in flight.
                 if (preview?.document?.id != document.id) this
-                else copy(preview = preview.copy(loading = false, bytes = bytes, pages = pages, text = text))
+                else copy(
+                    preview = preview.copy(
+                        loading = false,
+                        bytes = bytes,
+                        pages = eager,
+                        pageCount = count,
+                        text = text,
+                    ),
+                )
+            }
+            if (count > 0) drawPages(document.id, bytes, count)
+        }
+    }
+
+    /**
+     * Draws the pages one at a time, in order, each landing in the state as it is
+     * done: the first is on screen in a moment and the rest follow while the
+     * reader is already reading it. Stops when the dialog closes or moves on.
+     */
+    private suspend fun drawPages(documentId: String, pdf: ByteArray, count: Int) {
+        for (page in 1..count) {
+            if (vm.state.preview?.document?.id != documentId) return
+            val png = vm.host.renderPdfPage(pdf, page, PREVIEW_PAGE_WIDTH) ?: return
+            vm.update {
+                if (preview?.document?.id != documentId) {
+                    this
+                } else {
+                    copy(preview = preview.copy(pages = preview.pages + png))
+                }
             }
         }
     }
@@ -569,6 +599,7 @@ internal class LibrarySection(private val vm: VmScope) {
 
     private companion object {
         /** Wide enough to read a call sheet, small enough to rasterise quickly. */
-        const val PREVIEW_PAGE_WIDTH = 1100
+        /** Wide enough to stay sharp on a high-density screen at full window width. */
+        const val PREVIEW_PAGE_WIDTH = 1800
     }
 }

@@ -49,6 +49,7 @@ import com.zillit.desktop.feature.documentdistribution.ui.DocThumbnails
 import com.zillit.desktop.feature.documentdistribution.ui.FolderUploadState
 import com.zillit.desktop.feature.documentdistribution.ui.LibraryView
 import com.zillit.desktop.feature.documentdistribution.ui.MergeAction
+import com.zillit.desktop.feature.documentdistribution.ui.PreviewState
 import com.zillit.desktop.feature.documentdistribution.ui.MergeState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -705,6 +706,69 @@ class DocDistScreenRenderTest {
             }
             waitForIdle()
             onNodeWithText("Call Sheet Day 12.pdf").assertIsDisplayed()
+        }
+    }
+
+    // -- the PDF viewer ------------------------------------------------------------------------------
+
+    private fun pagePng(): ByteArray {
+        val image = java.awt.image.BufferedImage(60, 85, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        val sink = java.io.ByteArrayOutputStream()
+        javax.imageio.ImageIO.write(image, "png", sink)
+        return sink.toByteArray()
+    }
+
+    private fun previewState(pages: Int, drawn: Int) = state(DocDistDestination.Library).copy(
+        preview = PreviewState(
+            document = pdf.copy(contentType = "application/pdf"),
+            loading = false,
+            pages = List(drawn) { pagePng() },
+            pageCount = pages,
+        ),
+    )
+
+    @Test
+    fun `the viewer says which page of how many, in light and dark`() {
+        listOf(false, true).forEach { dark ->
+            runComposeUiTest {
+                setContent { ZillitTheme(darkTheme = dark) { DocDistScreen(state = previewState(5, 5), onEvent = {}) } }
+                onNodeWithText("Page 1 of 5").assertIsDisplayed()
+                onNodeWithText("100%").assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    fun `pages still being drawn are counted from the start`() {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = false) { DocDistScreen(state = previewState(23, 1), onEvent = {}) } }
+            onNodeWithText("Page 1 of 23").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun `zoom steps by a quarter, and fit width fills the viewer`() {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = false) { DocDistScreen(state = previewState(3, 3), onEvent = {}) } }
+            onNodeWithText("+").performClick()
+            onNodeWithText("125%").assertIsDisplayed()
+            onNodeWithText("−").performClick()
+            onNodeWithText("−").performClick()
+            onNodeWithText("75%").assertIsDisplayed()
+            // Fit width fills the viewer; the same button then returns to reading size.
+            onNodeWithText("Fit width").performClick()
+            onNodeWithText("75%").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `zoom stops at half and at double`() {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = false) { DocDistScreen(state = previewState(3, 3), onEvent = {}) } }
+            repeat(6) { onNodeWithText("+").performClick() }
+            onNodeWithText("200%").assertIsDisplayed()
+            repeat(8) { onNodeWithText("−").performClick() }
+            onNodeWithText("50%").assertIsDisplayed()
         }
     }
 }

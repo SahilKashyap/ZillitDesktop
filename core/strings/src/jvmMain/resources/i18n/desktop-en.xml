@@ -12478,4 +12478,6 @@
     <string name="desktop_docdist_could_not_upload_n">%1$s could not be uploaded.</string>
     <string name="desktop_docdist_failed_create_folder">Failed to create %1$s</string>
     <string name="desktop_docdist_folder_upload_subtitle">Creates these folders in the library, then uploads each file into the one that holds it</string>
+    <string name="desktop_docdist_preview_fit_width">Fit width</string>
+    <string name="desktop_docdist_preview_reset_zoom">Reset zoom</string>
 </resources>
