@@ -1310,6 +1310,27 @@ if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent || azureSigning
 val bundleConfig = providers.gradleProperty("zillitBundleConfig")
 val appResourcesDir = layout.buildDirectory.dir("appResources")
 
+/*
+ * The one name the packaged app will read, and the reason the staging below
+ * renames rather than copying.
+ *
+ * The launcher carries a fixed `-Dzillit.config=$APPDIR/resources/zillit.properties`
+ * (see `jvmArgs` further down), so a bundled file under any other name is
+ * simply never opened — and `JvmConfigLoader` then falls through its remaining
+ * candidates to `~/.zillit/zillit.properties`, which exists on the machine that
+ * did the packaging. The DMG therefore works for whoever built it and fails on
+ * every clean machine with "No config file found".
+ *
+ * That is not hypothetical: packaging 1.1.2 with a `PROD_`-only copy named
+ * `zillit-prod.properties` shipped exactly that bundle, and the build was green.
+ * Taking the source's own name was the mistake; the source may be called
+ * anything, and passing a filtered copy is the normal case.
+ *
+ * Must equal `JvmConfigLoader.FILE_NAME` (core:config), which this script
+ * cannot reference.
+ */
+val bundledConfigName = "zillit.properties"
+
 if (bundleConfig.isPresent) {
     // A bare `-PzillitBundleConfig` arrives as an empty string; Gradle gives
     // "true" only for `-PzillitBundleConfig=true`. Either means "the usual one".
@@ -1330,6 +1351,15 @@ if (bundleConfig.isPresent) {
     val stageBundledConfig = tasks.register<Sync>("stageBundledConfig") {
         description = "Stages zillit.properties for packaging inside the app bundle."
         from(configFile)
+        // Whatever the source is called, it ships as the name the launcher
+        // looks for — see `bundledConfigName` above.
+        //
+        // Through a local, not the script property: a `rename` lambda that
+        // reads a script-level val captures this script, and the configuration
+        // cache refuses to serialise it ("cannot serialize Gradle script object
+        // references"). Same reason the Exec bodies below take plain values.
+        val stagedName = bundledConfigName
+        rename { stagedName }
         // `common` is the platform-agnostic slot; Compose flattens it into
         // $APPDIR/resources for every target.
         into(appResourcesDir.map { it.dir("common") })
@@ -1361,23 +1391,46 @@ if (bundleConfig.isPresent) {
         // back into the project, or the configuration cache rejects it.
         val source = configFile
         val imageDir = layout.buildDirectory.dir("compose/binaries/main/app")
+        val wantedName = bundledConfigName
         inputs.file(source).withPropertyName("stagedZillitConfig")
 
         doLast {
             val image = imageDir.get().asFile
-            val packaged = image.walkTopDown().filter { it.name == source.name }.toList()
+            // By the name the LAUNCHER will open, never the source's own: a
+            // file bundled under any other name passes a search for
+            // `source.name` while the app cannot see it. See
+            // `bundledConfigName`.
+            val packaged = image.walkTopDown().filter { it.name == wantedName }.toList()
 
             check(packaged.isNotEmpty()) {
-                "verifyBundledConfig: -PzillitBundleConfig was requested but no ${source.name} " +
-                    "is inside the app image at ${image.path}. The DMG would start with no " +
-                    "configuration at all."
+                buildString {
+                    appendLine(
+                        "verifyBundledConfig: -PzillitBundleConfig was requested but no " +
+                            "$wantedName is inside the app image at ${image.path}. The DMG " +
+                            "would start with no configuration at all on any machine that " +
+                            "has none of its own.",
+                    )
+                    // Names the near miss rather than leaving it to be found by
+                    // hand: a wrongly named copy is what this check exists for,
+                    // and it is invisible from the outside of the bundle.
+                    val nearby = image.walkTopDown()
+                        .filter { it.isFile && it.extension == "properties" && it.parentFile?.name == "resources" }
+                        .toList()
+                    if (nearby.isNotEmpty()) {
+                        appendLine()
+                        appendLine("The image does carry, beside it:")
+                        nearby.forEach { appendLine("  ${it.path}") }
+                        appendLine()
+                        append("The launcher opens $wantedName and nothing else.")
+                    }
+                }
             }
 
             val wanted = source.readBytes()
             val stale = packaged.filter { !it.readBytes().contentEquals(wanted) }
             check(stale.isEmpty()) {
                 buildString {
-                    appendLine("verifyBundledConfig: the app image carries a STALE ${source.name}.")
+                    appendLine("verifyBundledConfig: the app image carries a STALE $wantedName.")
                     appendLine("Packaging it would ship a build aimed at the wrong servers.")
                     appendLine()
                     appendLine("  wanted (${wanted.size} bytes): ${source.path}")
