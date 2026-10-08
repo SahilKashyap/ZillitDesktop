@@ -88,6 +88,12 @@ data class LibraryDocument(
      */
     val storage: DocumentStorage? = null,
     /**
+     * The card's cover picture, when one was made: our page-1 render for a PDF,
+     * the image itself for an image (`attachment.thumbnail`). Lives in the
+     * document's own bucket and region, which is what a signed fetch needs.
+     */
+    val thumbnail: DocumentStorage? = null,
+    /**
      * A one-shot composer upload rather than a catalogued document.
      *
      * Sent as `ephemeral_attachment_ids` instead of `attachment_ids`, and

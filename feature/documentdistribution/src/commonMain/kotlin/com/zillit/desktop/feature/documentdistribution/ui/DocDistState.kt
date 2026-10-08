@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.AddressSuggestion
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistCrewMember
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
+import com.zillit.desktop.feature.documentdistribution.domain.FolderEntry
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
@@ -21,11 +22,13 @@ import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
 import com.zillit.desktop.feature.documentdistribution.domain.ListUsed
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
 import com.zillit.desktop.feature.documentdistribution.domain.MAX_TOTAL_ATTACHMENT_BYTES
+import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
 import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
+import com.zillit.desktop.feature.documentdistribution.domain.UploadPlan
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.addressSuggestions
@@ -46,11 +49,12 @@ data class UploadProgress(
     val index: Int = 0,
     val total: Int = 0,
 ) {
-    enum class Stage { Preparing, Uploading }
+    enum class Stage { Preparing, Creating, Uploading }
 
     val title: String
         get() = when (stage) {
             Stage.Preparing -> str(S.desktop_docdist_preparing_files)
+            Stage.Creating -> str(S.desktop_docdist_creating_folder_of, index + 1, total)
             Stage.Uploading -> str(S.desktop_drive_uploading_of, index + 1, total)
         }
 }
@@ -237,6 +241,57 @@ data class WatermarkBatchState(
 }
 
 /**
+ * A folder upload waiting for the user's say-so. It creates server-side folders
+ * and then uploads one file at a time, so it is shown before it starts: what
+ * will be created, what will be uploaded, and what will be skipped.
+ */
+data class FolderUploadState(
+    val plan: UploadPlan,
+    val rejected: List<FolderEntry>,
+    /** Null at the library root, where a dropped folder brings its own name. */
+    val parentId: String?,
+    val parentLabel: String,
+    /**
+     * `YYYY-MM-DD`, mandatory: the library groups by it, so a folder made without
+     * one would not sort into the listing. One date for every folder the upload
+     * creates, defaulting to the parent's (and to today at the root).
+     */
+    val date: String,
+)
+
+/** Which button of the merge dialog was pressed, so the spinner sits on that one. */
+enum class MergeAction { Download, Print }
+
+/**
+ * The "Merge PDFs to download or print" dialog.
+ *
+ * Nobody is chosen to begin with, including the signed-in person: the dialog
+ * opens on a question, not on an answer it has already filled in — a pre-ticked
+ * row is a copy someone did not ask for.
+ */
+data class MergeState(
+    /** The whole selection, folders resolved. The plan sorts out which are PDFs. */
+    val documents: List<LibraryDocument>,
+    val folderName: String? = null,
+    val includeSelf: Boolean = false,
+    /**
+     * Whether the signed-in person's own copy is stamped. On by default: a
+     * client took the dialog at face value, left it alone and reported their
+     * copy as unwatermarked, so opting OUT is the deliberate act.
+     */
+    val watermarkSelf: Boolean = true,
+    /** Lower-cased addresses ticked in the list. */
+    val picked: Set<String> = emptySet(),
+    val search: String = "",
+    val source: MergeSource = MergeSource.All,
+    val busy: MergeAction? = null,
+    /** What the build is doing now; null while idle. */
+    val progress: String? = null,
+    /** Shown in place, so the selection survives a failed run. */
+    val error: String? = null,
+)
+
+/**
  * The toolbar's "Watermark settings": the one place the project's Size /
  * Colour / Opacity are saved (web `WatermarkSettingsModal`). Only the
  * appearance fields of [draft] are used.
@@ -411,6 +466,10 @@ data class DocDistUiState(
     val preview: PreviewState? = null,
     val watermarkDownload: WatermarkDownloadState? = null,
     val watermarkBatch: WatermarkBatchState? = null,
+    /** Non-null while a folder upload awaits confirmation. */
+    val folderUpload: FolderUploadState? = null,
+    /** Non-null while the "Merge PDFs to download or print" dialog is open. */
+    val merge: MergeState? = null,
     /**
      * The production's shared Size / Colour / Opacity, which every new stamp
      * — the composer's, a single download's, a zip's — starts from. Built-in

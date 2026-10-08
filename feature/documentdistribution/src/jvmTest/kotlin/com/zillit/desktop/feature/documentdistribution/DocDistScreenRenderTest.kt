@@ -1,12 +1,15 @@
 package com.zillit.desktop.feature.documentdistribution
 
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.ExperimentalTestApi
 import com.zillit.desktop.feature.documentdistribution.ui.pages.LIBRARY_LISTING_TAG
 import com.zillit.desktop.feature.documentdistribution.domain.ListUsed
 import com.zillit.desktop.feature.documentdistribution.domain.SentAttachment
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
@@ -23,6 +26,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistCrewMember
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
@@ -38,6 +42,14 @@ import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistScreen
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistUiState
+import com.zillit.desktop.feature.documentdistribution.domain.DocumentStorage
+import com.zillit.desktop.feature.documentdistribution.domain.FolderEntry
+import com.zillit.desktop.feature.documentdistribution.domain.buildUploadPlan
+import com.zillit.desktop.feature.documentdistribution.ui.DocThumbnails
+import com.zillit.desktop.feature.documentdistribution.ui.FolderUploadState
+import com.zillit.desktop.feature.documentdistribution.ui.LibraryView
+import com.zillit.desktop.feature.documentdistribution.ui.MergeAction
+import com.zillit.desktop.feature.documentdistribution.ui.MergeState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -464,5 +476,235 @@ class DocDistScreenRenderTest {
         }
 
         onAllNodesWithText("Request access").assertCountEquals(0)
+    }
+
+    // -- merge PDFs to download or print --------------------------------------------
+
+    private val mergeable = pdf.copy(contentType = "application/pdf")
+
+    private fun mergeState(merge: MergeState = MergeState(documents = listOf(mergeable, sheet))) =
+        state(DocDistDestination.Library).copy(
+            merge = merge,
+            crew = listOf(
+                DocDistCrewMember("u1", "Coordinator", mailboxAddress = "coordinator@example.com", job = "Producer"),
+                DocDistCrewMember(
+                    "u2", "Rory", mailboxAddress = "rory@example.com", job = "Gaffer", department = "Lighting",
+                ),
+                DocDistCrewMember(
+                    "u3", "Sam", mailboxAddress = "sam@example.com", job = "Focus Puller", department = "Camera",
+                ),
+            ),
+            contacts = listOf(Contact("vendor@hire.co", "Hire Co", "Equipment")),
+        )
+
+    /**
+     * The dialog is a lazy list in a scrolling shell, which is exactly the shape
+     * that throws when one of them is measured against infinite height — and it
+     * only does so on composition, so unit tests on the state cannot see it.
+     */
+    @Test
+    fun `the merge dialog composes, light and dark`() {
+        listOf(false, true).forEach { dark ->
+            runComposeUiTest {
+                setContent { ZillitTheme(darkTheme = dark) { DocDistScreen(state = mergeState(), onEvent = {}) } }
+                onNodeWithText("Merge PDFs to download or print").assertIsDisplayed()
+                // FieldLabel draws its heading in capitals.
+                onNodeWithText("YOUR COPY").assertIsDisplayed()
+                onNodeWithText("Rory").assertIsDisplayed()
+                // Crew under their department; an address-book-only person under Contacts.
+                onNodeWithText("Hire Co").assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    fun `the merge dialog names a file it will leave out`() {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = false) { DocDistScreen(state = mergeState(), onEvent = {}) } }
+            onNodeWithText("1 file will be left out").assertIsDisplayed()
+            onNodeWithText("Only PDFs can be combined.").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun `ticking a person and pressing Download asks for the merge`() {
+        val events = mutableListOf<DocDistEvent>()
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(
+                        state = mergeState(
+                            MergeState(documents = listOf(mergeable), picked = setOf("rory@example.com")),
+                        ),
+                        onEvent = { events += it },
+                    )
+                }
+            }
+            onNodeWithText("Sam").performClick()
+            onNodeWithText("Download").performClick()
+        }
+        assertTrue(events.any { it == DocDistEvent.MergeToggle("sam@example.com") }, events.toString())
+        assertTrue(events.any { it == DocDistEvent.RunMerge(MergeAction.Download) }, events.toString())
+    }
+
+    @Test
+    fun `nobody chosen leaves Print and Download dead`() {
+        val events = mutableListOf<DocDistEvent>()
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(
+                        state = mergeState(MergeState(documents = listOf(mergeable))),
+                        onEvent = { events += it },
+                    )
+                }
+            }
+            onNodeWithText("Download").performClick()
+            onNodeWithText("Print").performClick()
+        }
+        assertTrue(events.none { it is DocDistEvent.RunMerge }, events.toString())
+    }
+
+    @Test
+    fun `the selection bar offers Merge PDFs`() {
+        var asked = false
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(
+                        state = state(DocDistDestination.Library)
+                            .copy(selectedDocumentIds = setOf("doc-1", "doc-2"), infoBannerDismissed = true),
+                        onEvent = { if (it is DocDistEvent.OpenMerge) asked = true },
+                    )
+                }
+            }
+            onNodeWithText("Actions").performClick()
+            onNodeWithText("Merge PDFs to download or print").performClick()
+        }
+        assertTrue(asked)
+    }
+
+    // -- upload a folder ------------------------------------------------------------------------------
+
+    private fun entry(path: String, type: String = "application/pdf") = FolderEntry(path, type, 2_048) { null }
+
+    private fun folderUploadState(): DocDistUiState {
+        val plan = buildUploadPlan(listOf(entry("Docs/a.pdf"), entry("Docs/Sub/b.pdf")))
+        return state(DocDistDestination.Library).copy(
+            folderUpload = FolderUploadState(
+                plan = plan,
+                rejected = listOf(entry("Docs/run.exe", "application/octet-stream")),
+                parentId = null,
+                parentLabel = "the library root",
+                date = "2026-10-07",
+            ),
+        )
+    }
+
+    @Test
+    fun `the folder upload dialog shows what will be created and what will be skipped`() {
+        listOf(false, true).forEach { dark ->
+            runComposeUiTest {
+                setContent {
+                    ZillitTheme(darkTheme = dark) { DocDistScreen(state = folderUploadState(), onEvent = {}) }
+                }
+                onNodeWithText("Upload Folder").assertIsDisplayed()
+                onNodeWithText("2 folders", substring = true).assertIsDisplayed()
+                onNodeWithText("into the library root", substring = true).assertIsDisplayed()
+                onNodeWithText("Sub").assertIsDisplayed()
+                onNodeWithText("1 file will be skipped").assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    fun `confirming the folder upload asks for it`() {
+        val events = mutableListOf<DocDistEvent>()
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(state = folderUploadState(), onEvent = { events += it })
+                }
+            }
+            // The toolbar's Upload sits behind the dialog; the dialog's own button is the last one drawn.
+            onAllNodesWithText("Upload").onLast().performClick()
+        }
+        assertTrue(events.any { it == DocDistEvent.ConfirmFolderUpload }, events.toString())
+    }
+
+    @Test
+    fun `the Upload menu offers files and a folder`() {
+        val events = mutableListOf<DocDistEvent>()
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(state = state(DocDistDestination.Library), onEvent = { events += it })
+                }
+            }
+            onNodeWithText("Upload").performClick()
+            onNodeWithText("Upload Files").assertIsDisplayed()
+            onNodeWithText("Upload Folder").performClick()
+        }
+        assertTrue(events.any { it == DocDistEvent.PickAndUploadFolder }, events.toString())
+    }
+
+    @Test
+    fun `the Upload menu is there at the library root, where a folder may be dropped`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(state = state(DocDistDestination.Library).copy(currentFolderId = null), onEvent = {})
+                }
+            }
+            onNodeWithText("Upload").assertIsDisplayed()
+        }
+    }
+
+    // -- covers ------------------------------------------------------------------------------------------
+
+    private val covered = pdf.copy(thumbnail = DocumentStorage("t.jpg", "bkt", "eu"))
+
+    @Test
+    fun `a grid card with a cover shows the picture, one without keeps its icon`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(
+                        state = state(DocDistDestination.Library).copy(
+                            view = LibraryView.Grid,
+                            documents = listOf(covered, sheet),
+                            infoBannerDismissed = true,
+                        ),
+                        onEvent = {},
+                        thumbnails = DocThumbnails { ImageBitmap(32, 32) },
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithContentDescription("Call Sheet Day 12.pdf").assertIsDisplayed()
+            // The spreadsheet has no cover, so it keeps its file-type glyph and its name.
+            onNodeWithText("Budget.xlsx").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun `a cover that cannot be fetched leaves the icon, not a hole`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = true) {
+                    DocDistScreen(
+                        state = state(DocDistDestination.Library).copy(
+                            view = LibraryView.Grid,
+                            documents = listOf(covered),
+                            infoBannerDismissed = true,
+                        ),
+                        onEvent = {},
+                        thumbnails = DocThumbnails.None,
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText("Call Sheet Day 12.pdf").assertIsDisplayed()
+        }
     }
 }

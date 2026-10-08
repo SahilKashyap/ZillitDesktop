@@ -64,6 +64,9 @@ class DocDistViewModel(
     DocDistUiState(viewer = viewer()),
 ) {
 
+    /** Card covers, fetched as their cards come on screen and remembered. */
+    val thumbnails: DocThumbnails = CachedDocThumbnails(repository)
+
     private var loadJob: Job? = null
     private var searchJob: Job? = null
     private var started = false
@@ -77,6 +80,8 @@ class DocDistViewModel(
     private val contacts = ContactsSection(scope, library)
     private val templates = TemplatesSection(scope)
     private val watermark = WatermarkSection(scope, library, composer)
+    private val merge = MergeSection(scope, library)
+    private val folderUploads = FolderUploadSection(scope, library)
 
     /**
      * Resolves who this is, then opens their landing page. Idempotent because
@@ -238,7 +243,8 @@ class DocDistViewModel(
             DocDistEvent.PickAndUpload -> library.pickAndUpload()
             is DocDistEvent.DropFiles ->
                 if (currentState.composer.open) composer.attachDropped(event.files) else library.dropFiles(event.files)
-            is DocDistEvent.DragHover -> setState { copy(dragHover = event.hovering && currentFolder != null) }
+            // A folder may be dropped at the library root (it brings its own name), so the overlay shows there too.
+            is DocDistEvent.DragHover -> setState { copy(dragHover = event.hovering) }
             is DocDistEvent.OpenDocument -> {
                 // The preview is the file's read (`Library.jsx:282-290`).
                 if (currentState.unread.file(event.documentId) > 0) badges.readFile(event.documentId)
@@ -302,6 +308,21 @@ class DocDistViewModel(
             ) }
             is DocDistEvent.AddBatchList -> watermark.addBatchList(event.listId)
             DocDistEvent.ConfirmWatermarkBatch -> watermark.confirmBatch()
+            DocDistEvent.PickAndUploadFolder -> folderUploads.pickAndUpload()
+            is DocDistEvent.DropFolder -> folderUploads.drop(event.tree)
+            is DocDistEvent.EditFolderUploadDate ->
+                setState { copy(folderUpload = folderUpload?.copy(date = event.isoDate)) }
+            DocDistEvent.CancelFolderUpload -> folderUploads.cancel()
+            DocDistEvent.ConfirmFolderUpload -> folderUploads.confirm()
+            DocDistEvent.OpenMerge -> merge.open()
+            DocDistEvent.CloseMerge -> merge.close()
+            is DocDistEvent.MergeIncludeSelf -> merge.edit { copy(includeSelf = event.on) }
+            is DocDistEvent.MergeWatermarkSelf -> merge.edit { copy(watermarkSelf = event.on) }
+            is DocDistEvent.MergeToggle -> merge.toggle(event.email)
+            is DocDistEvent.MergeToggleShown -> merge.toggleShown(event.on)
+            is DocDistEvent.MergeSearch -> merge.edit { copy(search = event.text) }
+            is DocDistEvent.MergeSetSource -> merge.edit { copy(source = event.source) }
+            is DocDistEvent.RunMerge -> merge.run(event.action)
             DocDistEvent.OpenWatermarkSettings -> watermark.openSettings()
             DocDistEvent.CloseWatermarkSettings -> watermark.closeSettings()
             is DocDistEvent.EditWatermarkSettings -> watermark.editSettings(event.style)

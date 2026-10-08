@@ -120,43 +120,7 @@ class SettingsToolProvider(
         val state by viewModel.state.collectAsState()
 
         LaunchedEffect(viewModel, navigator) {
-            viewModel.effects.collect { effect ->
-                when (effect) {
-                    is SettingsEffect.OpenExternal -> onOpenExternal(effect.url)
-                    is SettingsEffect.GetUpdate -> (onGetUpdate ?: onOpenExternal)(effect.url)
-
-                    // Zillit Help is a page of this app's own, so it opens the
-                    // way the account pages do rather than in a browser.
-                    SettingsEffect.OpenHelp ->
-                        navigator.navigate(WorkspaceRoute.Tool(HELP_PATH))
-
-                    // A row on the listing, opened in this same window — these
-                    // are the reader's own pages, not somewhere else's.
-                    is SettingsEffect.OpenAccountPage ->
-                        navigator.navigate(WorkspaceRoute.Tool(effect.page.route))
-
-                    // A dialog over the listing rather than a page: there is
-                    // nothing to read and one decision to make.
-                    SettingsEffect.AskLeaveProduction ->
-                        account?.onEvent(AccountEvent.AskLeave)
-
-                    // Nothing to close: signing out takes the whole frame back
-                    // to the sign-in screen, and this window goes with it.
-                    SettingsEffect.SignedOut -> Unit
-
-                    is SettingsEffect.OpenApprovals ->
-                        navigator.navigate(WorkspaceRoute.Tool(effect.queue.path))
-
-                    is SettingsEffect.OpenAdminPage ->
-                        navigator.navigate(WorkspaceRoute.Tool(effect.page.path))
-
-                    // A different tool's window, not this one: taking Settings
-                    // over would mean the way back is to close the page you
-                    // just opened.
-                    is SettingsEffect.OpenTool ->
-                        navigator.openInNewWindow(WorkspaceRoute.Tool(effect.path))
-                }
-            }
+            viewModel.effects.collect { effect -> handle(effect, navigator) }
         }
 
         val path = route.path
@@ -333,6 +297,49 @@ class SettingsToolProvider(
                     -> Unit
                 }
             }
+        }
+    }
+
+    /** Carries out what the view model asked of the window. */
+    private fun handle(effect: SettingsEffect, navigator: WindowNavigator) {
+        when (effect) {
+            is SettingsEffect.OpenExternal -> onOpenExternal(effect.url)
+            is SettingsEffect.GetUpdate -> (onGetUpdate ?: onOpenExternal)(effect.url)
+
+            // Zillit Help is a page of this app's own, so it opens the
+            // way the account pages do rather than in a browser.
+            SettingsEffect.OpenHelp ->
+                navigator.navigate(WorkspaceRoute.Tool(HELP_PATH))
+
+            // A row on the listing, opened in this same window — these
+            // are the reader's own pages, not somewhere else's.
+            is SettingsEffect.OpenAccountPage ->
+                navigator.navigate(WorkspaceRoute.Tool(effect.page.route))
+
+            // A dialog over the listing rather than a page: there is
+            // nothing to read and one decision to make.
+            SettingsEffect.AskLeaveProduction ->
+                account?.onEvent(AccountEvent.AskLeave)
+
+            // Nothing to close: signing out takes the whole frame back
+            // to the sign-in screen, and this window goes with it.
+            SettingsEffect.SignedOut -> Unit
+
+            is SettingsEffect.OpenApprovals ->
+                navigator.navigate(WorkspaceRoute.Tool(effect.queue.path))
+
+            is SettingsEffect.OpenAdminPage ->
+                navigator.navigate(WorkspaceRoute.Tool(effect.page.path))
+
+            // A different tool's window, not this one: taking Settings
+            // over would mean the way back is to close the page you
+            // just opened.
+            is SettingsEffect.OpenTool ->
+                navigator.openInNewWindow(WorkspaceRoute.Tool(effect.path))
+
+            // This same window, onto a page another feature supplies.
+            is SettingsEffect.OpenPage ->
+                navigator.navigate(WorkspaceRoute.Tool(effect.path))
         }
     }
 }

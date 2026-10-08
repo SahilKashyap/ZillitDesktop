@@ -13,6 +13,8 @@ import com.zillit.desktop.core.network.RequestHeaderProvider
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.session.ProjectContextLoader
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
 import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.localization.localised
@@ -24,6 +26,10 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistTransfer
 import com.zillit.desktop.feature.documentdistribution.domain.DocumentStorage
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
+import com.zillit.desktop.feature.documentdistribution.domain.LocalFolderTree
+import com.zillit.desktop.feature.documentdistribution.domain.Thumbnails
+import com.zillit.desktop.feature.documentdistribution.domain.thumbnailScale
+import com.zillit.desktop.feature.documentdistribution.domain.walkLocalPaths
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
@@ -33,6 +39,7 @@ import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeMediaSource
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
@@ -52,6 +59,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -60,6 +68,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
+import java.nio.file.Files
 
 /**
  * Document Distribution's byte-level seams on the app's machinery: storage
@@ -163,32 +173,42 @@ internal class AppDocDistTransfer(
 
     /**
      * A signed call whose answer should be a file. A JSON body on the wire
-     * means the service declined — "nothing to stamp", a permission key —
-     * and its `message` is surfaced instead of bytes.
+     * means the service declined — "nothing to stamp", a permission key,
+     * `merged_pdf_too_large` — and its `message` key is carried as an HTTP
+     * error so it is shown in the person's language, as the web does with the
+     * key it reads off a failed blob call.
      */
-    private suspend fun rawCall(call: suspend () -> HttpResponse): ZillitResult<ByteArray> = runCatching {
+    private suspend fun rawCall(call: suspend () -> HttpResponse): ZillitResult<ByteArray> = try {
         val response = call()
         val bytes = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true
+        val key = if (bytes.size < MAX_ENVELOPE_BYTES || !response.status.isSuccess()) envelopeKey(bytes) else null
+        // A JSON body on a 200 is a refusal only when its own status says so: an upload
+        // answers a success envelope, which may carry a message of its own.
         when {
-            !response.status.isSuccess() -> throw Declined(
-                "The service answered ${response.status.value}" + (envelopeMessage(bytes)?.let { ": $it" } ?: ""),
+            !response.status.isSuccess() -> ZillitResult.Failure(
+                ZillitError.Http(status = response.status.value, serverMessage = key, technical = "raw call"),
             )
-            isJson && envelopeMessage(bytes) != null && bytes.size < MAX_ENVELOPE_BYTES ->
-                throw Declined(envelopeMessage(bytes) ?: "The service returned no file")
-            else -> bytes
+            isJson && key != null && !envelopeSucceeded(bytes) -> ZillitResult.Failure(
+                ZillitError.Http(status = response.status.value, serverMessage = key, technical = "refused"),
+            )
+            else -> ZillitResult.Success(bytes)
         }
-    }.fold(
-        onSuccess = { ZillitResult.Success(it) },
-        onFailure = { failure ->
-            ZillitLog.w(TAG) { "raw call failed: ${failure.message}" }
-            ZillitResult.Failure(ZillitError.Unknown(failure.message ?: "The request failed"))
-        },
-    )
+    } catch (timeout: HttpRequestTimeoutException) {
+        ZillitLog.w(TAG) { "raw call timed out: ${timeout.message}" }
+        ZillitResult.Failure(ZillitError.Timeout("raw call"))
+    } catch (@Suppress("TooGenericExceptionCaught") failure: Exception) {
+        ZillitLog.w(TAG) { "raw call failed: ${failure.message}" }
+        ZillitResult.Failure(ZillitError.Unknown(failure.message ?: "The request failed"))
+    }
 
-    private fun envelopeMessage(bytes: ByteArray): String? = runCatching {
+    private fun envelopeSucceeded(bytes: ByteArray): Boolean = runCatching {
+        HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject["status"]?.jsonPrimitive?.content
+    }.getOrNull() == "1"
+
+    private fun envelopeKey(bytes: ByteArray): String? = runCatching {
         HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject["message"]?.jsonPrimitive?.content
-    }.getOrNull()?.takeIf { it.isNotBlank() }?.replace('_', ' ')
+    }.getOrNull()?.takeIf { it.isNotBlank() }
 
     private class Declined(message: String) : RuntimeException(message)
 
@@ -238,6 +258,68 @@ internal class AppDocDistHost(
     override suspend fun saveToDownloads(fileName: String, bytes: ByteArray): ZillitResult<String> =
         DownloadsAttachmentStore().save(fileName, bytes)
 
+    override suspend fun joinPdfs(parts: List<ByteArray>): ZillitResult<ByteArray> =
+        withContext(Dispatchers.IO) { pdf.join(parts) }
+
+    override suspend fun openForPrinting(fileName: String, bytes: ByteArray): ZillitResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val file = File(Files.createTempDirectory("zillit-print").toFile(), fileName)
+                file.writeBytes(bytes)
+                // Cleared when the app exits; the viewer holds its own handle meanwhile.
+                file.deleteOnExit()
+                file.parentFile.deleteOnExit()
+                openSavedFile(file.absolutePath)
+            }.fold(
+                onSuccess = { ZillitResult.Success(Unit) },
+                onFailure = {
+                    ZillitResult.Failure(ZillitError.Validation(str(S.desktop_docdist_downloads_unavailable)))
+                },
+            )
+        }
+
+    override suspend fun pdfThumbnail(pdf: ByteArray): ByteArray? = withContext(Dispatchers.IO) {
+        (
+            this@AppDocDistHost.pdf.jpegThumbnail(pdf, Thumbnails.JPEG_QUALITY) { width, height ->
+                thumbnailScale(width, height)
+            } as? ZillitResult.Success
+            )?.data
+    }
+
+    /**
+     * macOS's Open panel in directory mode (`apple.awt.fileDialogForDirectories`),
+     * which is what AWT offers for a folder; elsewhere a Swing chooser restricted
+     * to directories. The tree is walked, never read — see [walkLocalPaths].
+     */
+    override suspend fun pickFolder(): LocalFolderTree? = withContext(Dispatchers.IO) {
+        val folder = runCatching { chooseFolder(str(S.drive_upload_folder)) }.getOrNull() ?: return@withContext null
+        walkLocalPaths(listOf(folder))
+    }
+
+    private fun chooseFolder(title: String): File? =
+        if (System.getProperty("os.name").orEmpty().lowercase().contains("mac")) {
+            System.setProperty(MAC_DIRECTORIES, "true")
+            try {
+                val dialog = java.awt.FileDialog(null as java.awt.Frame?, title, java.awt.FileDialog.LOAD)
+                dialog.isMultipleMode = false
+                dialog.isVisible = true
+                dialog.files.firstOrNull()?.takeIf(File::isDirectory)
+            } finally {
+                System.setProperty(MAC_DIRECTORIES, "false")
+            }
+        } else {
+            val chooser = javax.swing.JFileChooser().apply {
+                dialogTitle = title
+                fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                isMultiSelectionEnabled = false
+            }
+            if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                chooser.selectedFile?.takeIf(File::isDirectory)
+            } else {
+                null
+            }
+        }
+
     override fun openFile(path: String) = openSavedFile(path)
 
     override fun copyToClipboard(text: String) = copyTextToClipboard(text)
@@ -255,6 +337,7 @@ internal class AppDocDistHost(
             email = user.email,
             // Designations arrive as keys (`gaffer_label`, `{designation:…}`).
             job = user.designation?.localised().orEmpty(),
+            department = user.department?.localised()?.trim().orEmpty(),
             status = user.status,
         )
     }
@@ -269,6 +352,8 @@ internal class AppDocDistHost(
     private companion object {
         /** Well past the 25 MB send cap; a picker that admits a 2 GB file hangs before refusing it. */
         const val MAX_UPLOAD_BYTES = 200L * 1024 * 1024
+
+        const val MAC_DIRECTORIES = "apple.awt.fileDialogForDirectories"
     }
 }
 

@@ -10,9 +10,14 @@ import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
+import com.zillit.desktop.feature.documentdistribution.domain.Thumbnails
+import com.zillit.desktop.feature.documentdistribution.domain.UploadBatch
+import com.zillit.desktop.feature.documentdistribution.domain.needsGeneratedThumbnail
+import com.zillit.desktop.feature.documentdistribution.domain.thumbnailFileName
 import com.zillit.desktop.feature.documentdistribution.domain.SupportedUploads
 import com.zillit.desktop.feature.documentdistribution.domain.fileKindOf
 import com.zillit.desktop.feature.documentdistribution.domain.summariseFileNames
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The library's own actions: folders, uploads, the preview, the selection,
@@ -257,7 +262,7 @@ internal class LibrarySection(private val vm: VmScope) {
 
     fun dropFiles(files: List<LocalFile>) {
         vm.update { copy(dragHover = false) }
-        if (vm.state.currentFolder == null) return
+        if (vm.state.currentFolder == null) return vm.fail(str(S.desktop_docdist_drop_folder_hint))
         if (vm.refusesWrite()) return
         vm.run { uploadFiles(files) }
     }
@@ -271,16 +276,23 @@ internal class LibrarySection(private val vm: VmScope) {
         }
         if (accepted.isEmpty()) return
         vm.update { copy(upload = UploadProgress(UploadProgress.Stage.Preparing)) }
+        // One batch for the whole action, so the backend raises ONE notification
+        // instead of one per file.
+        val batch = UploadBatch.create(accepted.size)
         var uploaded = 0
         try {
             accepted.forEachIndexed { index, file ->
                 vm.update {
                     copy(upload = UploadProgress(UploadProgress.Stage.Uploading, file.name, index, accepted.size))
                 }
-                when (val result = vm.repository.uploadDocument(file, folderId, vm.today().toString())) {
+                when (val result = sendFile(file, folderId, vm.today().toString(), batch)) {
                     is ZillitResult.Success -> uploaded++
-                    is ZillitResult.Failure ->
+                    is ZillitResult.Failure -> {
+                        // Only SUCCESSFUL requests count towards the backend's tally, so a
+                        // failure comes off the promised total or the notice waits for its fallback.
+                        batch.drop()
                         vm.fail(str(S.desktop_docdist_failed_to_upload, file.name, result.error.userMessage))
+                    }
                 }
             }
         } finally {
@@ -292,6 +304,29 @@ internal class LibrarySection(private val vm: VmScope) {
             )
         }
         vm.loadLibrary()
+    }
+
+    /**
+     * Puts one file into the library, rendering a PDF's first page as its card
+     * cover on the way.
+     *
+     * Best-effort and under a deadline: a missing cover costs a card its
+     * picture, but a thrown error — or a damaged PDF that never settles — would
+     * cost the user their upload, so every failure here simply yields no cover.
+     */
+    suspend fun sendFile(
+        file: LocalFile,
+        folderId: String?,
+        documentDate: String?,
+        batch: UploadBatch?,
+    ): ZillitResult<LibraryDocument> {
+        val cover = if (needsGeneratedThumbnail(file.contentType, file.name)) {
+            withTimeoutOrNull(Thumbnails.DEADLINE_MILLIS) { vm.host.pdfThumbnail(file.bytes) }
+                ?.let { LocalFile(thumbnailFileName(file.name), "image/jpeg", it) }
+        } else {
+            null
+        }
+        return vm.repository.uploadDocument(file, folderId, documentDate, batch, cover)
     }
 
     // -- preview and download ----------------------------------------------------

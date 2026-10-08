@@ -520,13 +520,14 @@ private fun List<SettingsGroup>.availableOn(production: ProductionFacts): List<S
 const val SETUP_NOTES_URL = "https://documentation.zillit.com/#project-setup-notes"
 
 /**
- * The Account Hub's route, which Production Setup is a page of.
+ * Production Setup's page — the web's `/settings/production-setup`, which hosts
+ * the Account Hub's Companies section alone.
  *
  * Repeated rather than depended on: this module knows no other feature, and a
  * dependency on the accounts console to read one string would be the wrong way
- * round. `AdminSettingsRoutingTest` pins the two together.
+ * round. `AdminRouteContractTest` pins the two together.
  */
-const val ACCOUNT_HUB_ROUTE = "/film-tools/account-hub"
+const val PRODUCTION_SETUP_ROUTE = "/settings/production-setup"
 
 /** The Viewing & Posting Rights Grid window — `PERMISSION_GRID_PATH` in `feature:permissiongrid`. */
 const val PERMISSION_GRID_ROUTE = "/film-tools/permission-grid"

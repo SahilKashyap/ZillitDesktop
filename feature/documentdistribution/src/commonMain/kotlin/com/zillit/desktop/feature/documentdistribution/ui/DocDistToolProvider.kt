@@ -72,7 +72,7 @@ class DocDistToolProvider(
             navigator.setTitle(str(S.desktop_docdist_tab_title, state.destination.label))
         }
 
-        DocDistScreen(state = state, onEvent = viewModel::onEvent)
+        DocDistScreen(state = state, onEvent = viewModel::onEvent, thumbnails = viewModel.thumbnails)
 
         ZillitErrorToast(message = failure, onDismiss = { failure = null })
     }

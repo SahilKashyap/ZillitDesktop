@@ -2,8 +2,8 @@ package com.zillit.desktop.feature.settings
 
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
-import com.zillit.desktop.feature.settings.ui.ACCOUNT_HUB_ROUTE
 import com.zillit.desktop.feature.settings.ui.PERMISSION_GRID_ROUTE
+import com.zillit.desktop.feature.settings.ui.PRODUCTION_SETUP_ROUTE
 import com.zillit.desktop.feature.settings.ui.AccountSummary
 import com.zillit.desktop.feature.settings.ui.AdminSettingsUiState
 import com.zillit.desktop.feature.settings.ui.EntryStatus
@@ -302,7 +302,7 @@ class SettingsListingTest {
     /**
      * Production Setup is offered here, as it is on the phones.
      *
-     * The page belongs to the Account Hub, but a coordinator setting a
+     * The page is the Account Hub's Companies section, but a coordinator setting a
      * production up looks in Admin Settings — which is where Android puts the
      * row (`ProductionSetupActivity`, reached from `AdminSettingsActivity`).
      */
@@ -312,7 +312,7 @@ class SettingsListingTest {
     }
 
     @Test
-    fun `production setup opens the accounts console`() = runTest {
+    fun `production setup opens its own page in this window, not the accounts console`() = runTest {
         val settings = viewModel()
         val effects = mutableListOf<SettingsEffect>()
         val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
@@ -320,7 +320,8 @@ class SettingsListingTest {
         settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.ProductionSetup))
         advanceUntilIdle()
 
-        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenTool(ACCOUNT_HUB_ROUTE)), effects)
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenPage(PRODUCTION_SETUP_ROUTE)), effects)
+        assertEquals("/settings/production-setup", PRODUCTION_SETUP_ROUTE)
         job.cancel()
     }
 

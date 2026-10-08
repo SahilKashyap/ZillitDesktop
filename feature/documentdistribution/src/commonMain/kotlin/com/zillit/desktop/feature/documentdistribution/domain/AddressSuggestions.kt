@@ -14,6 +14,8 @@ data class DocDistCrewMember(
     val email: String? = null,
     /** Their designation, translated — the second line a suggestion wears. */
     val job: String = "",
+    /** Their department, translated — what the merge picker files them under. */
+    val department: String = "",
     /** "accepted", "approved", "pending", "left", "removed", "rejected", or null. */
     val status: String? = null,
 ) {
@@ -29,6 +31,10 @@ data class AddressSuggestion(
     val job: String = "",
     /** Tagged "Crew" so a member is never mistaken for someone already in the address book. */
     val isCrew: Boolean = false,
+    /** Their department, when the production's record names one; blank for an address-book-only person. */
+    val department: String = "",
+    /** Their project user id; blank for an address-book-only person, who has no account. */
+    val userId: String = "",
 ) {
     val displayName: String get() = name.ifBlank { email }
 }
@@ -46,7 +52,12 @@ fun List<DocDistCrewMember>.sendableCrew(): List<AddressSuggestion> {
         .filter { it.status !in HIDDEN_STATUSES }
         .map { it to it.address }
         .filter { (_, address) -> address.isNotEmpty() && isValidEmail(address) }
-        .map { (member, address) -> AddressSuggestion(address, member.name, member.job, isCrew = true) }
+        .map { (member, address) ->
+            AddressSuggestion(
+                address, member.name, member.job,
+                isCrew = true, department = member.department, userId = member.userId,
+            )
+        }
         .filter { seen.add(it.email.lowercase()) }
         .toList()
 }
@@ -71,6 +82,8 @@ fun addressSuggestions(contacts: List<Contact>, crew: List<AddressSuggestion>): 
             name = contact.name.ifBlank { asCrew?.name.orEmpty() },
             job = contact.jobTitle.ifBlank { asCrew?.job.orEmpty() },
             isCrew = asCrew != null,
+            department = asCrew?.department.orEmpty(),
+            userId = asCrew?.userId.orEmpty(),
         )
     }
     return byEmail.values.toList()

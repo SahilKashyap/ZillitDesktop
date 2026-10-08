@@ -15,6 +15,9 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 import org.apache.pdfbox.Loader
+import org.apache.pdfbox.io.IOUtils
+import org.apache.pdfbox.io.RandomAccessReadBuffer
+import org.apache.pdfbox.multipdf.PDFMergerUtility
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.apache.pdfbox.rendering.PDFRenderer
@@ -101,6 +104,65 @@ class PdfBoxWork : PdfWork {
             )
         },
     )
+
+    /**
+     * Page 1 as a JPEG, for a card cover. [scaleFor] turns the page's size in
+     * points into the render scale — the caller owns the rule (target width,
+     * height ceiling). Painted on white: PDFBox renders RGB, and a JPEG has no
+     * alpha, so a page with no background of its own must not come out black.
+     */
+    fun jpegThumbnail(
+        pdf: ByteArray,
+        quality: Float,
+        scaleFor: (pageWidth: Double, pageHeight: Double) -> Double,
+    ): ZillitResult<ByteArray> = runCatching {
+        Loader.loadPDF(pdf).use { document ->
+            val page = document.getPage(0)
+            val box = page.cropBox
+            val turned = page.rotation % HALF_TURN != 0
+            val width = (if (turned) box.height else box.width).toDouble()
+            val height = (if (turned) box.width else box.height).toDouble()
+            val image = PDFRenderer(document).renderImage(0, scaleFor(width, height).toFloat())
+            val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
+            val sink = ByteArrayOutputStream()
+            try {
+                writer.output = ImageIO.createImageOutputStream(sink)
+                val params = writer.defaultWriteParam.apply {
+                    compressionMode = javax.imageio.ImageWriteParam.MODE_EXPLICIT
+                    compressionQuality = quality
+                }
+                writer.write(null, javax.imageio.IIOImage(image, null, null), params)
+            } finally {
+                writer.dispose()
+            }
+            sink.toByteArray()
+        }
+    }.fold(
+        onSuccess = { ZillitResult.Success(it) },
+        onFailure = { thrown -> ZillitResult.Failure(pdfOpenFailure(thrown)) },
+    )
+
+    /**
+     * Joins finished PDFs end to end, in order — Document Distribution's merge
+     * when a clean copy and stamped copies are asked for together. Page content
+     * is copied, not re-rendered, and the cache is temp files so a run of
+     * thousands of pages does not sit in memory.
+     */
+    fun join(parts: List<ByteArray>): ZillitResult<ByteArray> = runCatching {
+        val sink = ByteArrayOutputStream()
+        PDFMergerUtility().apply {
+            destinationStream = sink
+            parts.forEach { addSource(RandomAccessReadBuffer(it)) }
+            mergeDocuments(IOUtils.createTempFileOnlyStreamCache())
+        }
+        sink.toByteArray()
+    }.fold(
+        onSuccess = { ZillitResult.Success(it) },
+        onFailure = { thrown -> ZillitResult.Failure(pdfOpenFailure(thrown)) },
+    )
+
+    private fun pdfOpenFailure(thrown: Throwable) =
+        ZillitError.Validation(str(S.desktop_fs_pdf_open_failed_reason, thrown::class.simpleName))
 
     override fun pageCount(pdf: ByteArray): ZillitResult<Int> = runCatching {
         Loader.loadPDF(pdf).use { it.numberOfPages }
@@ -216,3 +278,5 @@ class PdfBoxWork : PdfWork {
         const val INK_B = 96
     }
 }
+
+private const val HALF_TURN = 180

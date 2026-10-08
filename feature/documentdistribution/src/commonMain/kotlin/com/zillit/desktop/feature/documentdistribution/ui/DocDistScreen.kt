@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -60,7 +61,8 @@ fun DocDistScreen(
     state: DocDistUiState,
     onEvent: (DocDistEvent) -> Unit,
     modifier: Modifier = Modifier,
-) {
+    thumbnails: DocThumbnails = DocThumbnails.None,
+) = CompositionLocalProvider(LocalDocThumbnails provides thumbnails) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (state.viewer.isBlocked) {
             ZillitEmptyState(

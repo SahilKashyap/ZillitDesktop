@@ -42,7 +42,11 @@ import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistTransfer
 import com.zillit.desktop.feature.documentdistribution.domain.HistoryPage
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
+import com.zillit.desktop.feature.documentdistribution.domain.UploadBatch
 import com.zillit.desktop.feature.documentdistribution.domain.ZipRecipient
+import com.zillit.desktop.feature.documentdistribution.domain.isItsOwnThumbnail
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
@@ -70,7 +74,7 @@ import kotlinx.serialization.json.jsonArray
  * the production's, and what a person may send is theirs. The lighter `Device`
  * header omits both and the service answers 406 rather than falling back.
  */
-@Suppress("TooManyFunctions") // Mirrors the server's operation surface; see the interface.
+@Suppress("TooManyFunctions", "LargeClass") // Mirrors the server's operation surface; see the interface.
 class DocDistRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
@@ -230,34 +234,114 @@ class DocDistRepositoryImpl(
         file: LocalFile,
         folderId: String?,
         documentDate: String?,
+        batch: UploadBatch?,
+        thumbnail: LocalFile?,
     ): ZillitResult<LibraryDocument> {
         if (!isS3Storage()) {
             val fields = buildMap {
                 folderId?.let { put("folder_id", it) }
                 documentDate?.let { put("document_date", it) }
+                // Multipart carries the grouping fields as form fields, not JSON.
+                batch?.let {
+                    put(UploadBatch.UPLOAD_ID_FIELD, it.id)
+                    put(UploadBatch.UPLOAD_TOTAL_FIELD, it.total.toString())
+                }
             }
             return transfer.postMultipart("$base/documents", fields, file).flatMap { it.toDocument() }
         }
-        val stored = transfer.putObject(storageKey("document-distribution", file.name), file.contentType, file.bytes)
+        // The document and its cover go up side by side: the thumbnail is small, and
+        // waiting for it serially would add its whole round trip to every PDF of a folder.
+        val (stored, cover) = coroutineScope {
+            val document = async {
+                transfer.putObject(storageKey("document-distribution", file.name), file.contentType, file.bytes)
+            }
+            val picture = async { thumbnail?.let { putThumbnail(it) } }
+            document.await() to picture.await()
+        }
         val storage = when (stored) {
             is ZillitResult.Failure -> return stored
             is ZillitResult.Success -> stored.data
         }
-        return apiClient.request(
-            verb = HttpVerb.Post,
-            url = "$base/documents/from-s3",
-            serializer = DocumentDto.serializer(),
-            module = RequestModule.ProjectUser,
-            body = buildJsonObject {
-                // `folder_id` must not lead: a leading JSON null trips the
-                // platform's body-hash builder (Android's note on the same body).
-                documentDate?.let { put("document_date", JsonPrimitive(it)) }
-                put("folder_id", folderId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
-                putStored(file, storage)
-            },
-        ).flatMap { dto ->
-            dto.toDomain()?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Serialization("registered document had no id"))
+        // An image is its own cover, as on the web; a PDF's is the page we rendered.
+        val coverKey = cover?.key ?: storage.key.takeIf { isItsOwnThumbnail(file.contentType, file.name) }
+        val registered = registerDocument(file, storage, folderId, documentDate, batch, coverKey)
+        // A cover key the server did not like must not cost the user their upload.
+        if (registered is ZillitResult.Failure && cover != null) {
+            return registerDocument(file, storage, folderId, documentDate, batch, coverKey = null)
+        }
+        return registered
+    }
+
+    private suspend fun registerDocument(
+        file: LocalFile,
+        storage: DocumentStorage,
+        folderId: String?,
+        documentDate: String?,
+        batch: UploadBatch?,
+        coverKey: String?,
+    ): ZillitResult<LibraryDocument> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/documents/from-s3",
+        serializer = DocumentDto.serializer(),
+        module = RequestModule.ProjectUser,
+        body = buildJsonObject {
+            // `folder_id` must not lead: a leading JSON null trips the
+            // platform's body-hash builder (Android's note on the same body).
+            documentDate?.let { put("document_date", JsonPrimitive(it)) }
+            put("folder_id", folderId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+            putStored(file, storage, coverKey)
+            putBatch(batch)
+        },
+    ).flatMap { dto ->
+        dto.toDomain()?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("registered document had no id"))
+    }
+
+    /** Uploaded like the document, into its own bucket and region; null on any failure. */
+    private suspend fun putThumbnail(thumbnail: LocalFile): DocumentStorage? =
+        (
+            transfer.putObject(
+                storageKey("document-distribution/thumbnails", thumbnail.name),
+                thumbnail.contentType,
+                thumbnail.bytes,
+            ) as? ZillitResult.Success
+            )?.data
+
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putBatch(batch: UploadBatch?) {
+        batch ?: return
+        put(UploadBatch.UPLOAD_ID_FIELD, JsonPrimitive(batch.id))
+        put(UploadBatch.UPLOAD_TOTAL_FIELD, JsonPrimitive(batch.total))
+    }
+
+    override suspend fun thumbnailBytes(document: LibraryDocument): ZillitResult<ByteArray> {
+        val cover = document.thumbnail
+            ?: return ZillitResult.Failure(ZillitError.Validation("no thumbnail"))
+        return transfer.fetchObject(cover)
+    }
+
+    override suspend fun createFolderForUpload(
+        name: String,
+        parentId: String?,
+        folderDate: String,
+        batch: UploadBatch?,
+    ): ZillitResult<String> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/folders",
+        module = RequestModule.ProjectUser,
+        body = buildJsonObject {
+            put("name", JsonPrimitive(name.trim()))
+            put("description", JsonPrimitive(""))
+            put("parent_id", parentId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+            put("folder_date", JsonPrimitive(folderDate))
+            putBatch(batch)
+        },
+    ).flatMap { envelope ->
+        envelope.checked().flatMap {
+            val id = envelope.data?.let { data ->
+                runCatching { docDistJson.decodeFromJsonElement(FolderDto.serializer(), data) }.getOrNull()
+            }?.id?.takeIf { it.isNotBlank() }
+            id?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("created folder had no id"))
         }
     }
 
@@ -288,7 +372,11 @@ class DocDistRepositoryImpl(
         }
     }
 
-    private fun kotlinx.serialization.json.JsonObjectBuilder.putStored(file: LocalFile, storage: DocumentStorage) {
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putStored(
+        file: LocalFile,
+        storage: DocumentStorage,
+        coverKey: String? = null,
+    ) {
         put("original_name", JsonPrimitive(file.name))
         put("content_type", JsonPrimitive(file.contentType))
         put("file_size", JsonPrimitive(file.sizeBytes))
@@ -296,7 +384,7 @@ class DocDistRepositoryImpl(
         put("bucket", JsonPrimitive(storage.bucket))
         put("region", JsonPrimitive(storage.region))
         put("content_id", JsonPrimitive(storage.key))
-        put("thumbnail", JsonPrimitive(""))
+        put("thumbnail", JsonPrimitive(coverKey.orEmpty()))
         put("width", JsonPrimitive(0))
         put("height", JsonPrimitive(0))
         put("media_type", JsonPrimitive(mediaTypeOf(file.contentType)))
@@ -377,6 +465,59 @@ class DocDistRepositoryImpl(
             )
         },
     )
+
+    override suspend fun mergedPdf(
+        documentIds: List<String>,
+        recipients: List<ZipRecipient>?,
+        style: WatermarkStyle?,
+    ): ZillitResult<ByteArray> {
+        val body = buildJsonObject {
+            put("documentIds", documentIds.distinct().toJsonArray())
+            // Stated rather than assumed: the server has no reason to default to
+            // the order the dialog promised.
+            put("order", JsonPrimitive("recipient-major"))
+            if (recipients != null) {
+                put(
+                    "recipients",
+                    buildJsonArray {
+                        recipients.forEach { recipient ->
+                            add(
+                                buildJsonObject {
+                                    put("name", JsonPrimitive(recipient.name))
+                                    put("email", JsonPrimitive(recipient.email))
+                                    put("watermarkText", JsonPrimitive(recipient.watermarkText))
+                                },
+                            )
+                        }
+                    },
+                )
+                if (style != null) {
+                    put(
+                        "style",
+                        buildJsonObject {
+                            put("size", JsonPrimitive(style.size.wire))
+                            put("color", JsonPrimitive(style.color))
+                            put("opacity", JsonPrimitive(style.opacity))
+                        },
+                    )
+                }
+            }
+        }
+        return when (val built = transfer.postBytes("$base/documents/watermark-merged", body)) {
+            is ZillitResult.Success -> built.data.takeIf { it.looksLikePdf() }?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_docdist_merge_failed)))
+            // The gateway gives up at ~60 s with a 504, and the backend's guidance is to read
+            // that as "too large": fewer documents or names is the only thing the user can do.
+            is ZillitResult.Failure -> if (built.error is ZillitError.Timeout) {
+                ZillitResult.Failure(ZillitError.Validation(str(S.desktop_docdist_merge_too_large)))
+            } else {
+                built
+            }
+        }
+    }
+
+    private fun ByteArray.looksLikePdf(): Boolean =
+        size > PDF_MAGIC.length && decodeToString(0, PDF_MAGIC.length) == PDF_MAGIC
 
     override suspend fun deleteDocument(documentId: String): ZillitResult<Unit> =
         delete("$base/documents", buildJsonObject { put("documentId", JsonPrimitive(documentId)) })
@@ -758,6 +899,9 @@ class DocDistRepositoryImpl(
         const val BULK_LIMIT = 1000
 
         val UNSAFE_KEY_CHARS = Regex("[^A-Za-z0-9._-]")
+
+        /** Every PDF opens with this; a refusal sent as a 200 does not. */
+        const val PDF_MAGIC = "%PDF-"
     }
 }
 

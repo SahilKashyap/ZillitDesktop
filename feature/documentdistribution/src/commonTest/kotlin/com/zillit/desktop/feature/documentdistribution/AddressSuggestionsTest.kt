@@ -34,7 +34,11 @@ class AddressSuggestionsTest {
         ).sendableCrew()
 
         assertEquals(listOf("vivek@zillit.com", "asha@studio.com"), crew.map { it.email })
-        assertEquals(AddressSuggestion("vivek@zillit.com", "Vivek", "Gaffer", isCrew = true), crew.first())
+        // Their account id rides along, so the merge picker can show their photo and tell them from a contact.
+        assertEquals(
+            AddressSuggestion("vivek@zillit.com", "Vivek", "Gaffer", isCrew = true, userId = "u1"),
+            crew.first(),
+        )
     }
 
     @Test

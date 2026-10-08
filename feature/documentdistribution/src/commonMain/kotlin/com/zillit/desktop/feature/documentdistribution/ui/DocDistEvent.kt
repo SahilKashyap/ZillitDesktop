@@ -4,6 +4,8 @@ import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
+import com.zillit.desktop.feature.documentdistribution.domain.LocalFolderTree
+import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
@@ -61,6 +63,13 @@ sealed interface DocDistEvent {
     /** Files dropped on the window. */
     data class DropFiles(val files: List<LocalFile>) : DocDistEvent
     data class DragHover(val hovering: Boolean) : DocDistEvent
+    /** Opens the OS folder dialog; the choice is planned and confirmed before anything is sent. */
+    data object PickAndUploadFolder : DocDistEvent
+    /** A folder (or folders and loose files) dropped on the window. */
+    data class DropFolder(val tree: LocalFolderTree) : DocDistEvent
+    data class EditFolderUploadDate(val isoDate: String) : DocDistEvent
+    data object CancelFolderUpload : DocDistEvent
+    data object ConfirmFolderUpload : DocDistEvent
 
     data class OpenDocument(val documentId: String) : DocDistEvent
     data object ClosePreview : DocDistEvent
@@ -104,6 +113,18 @@ sealed interface DocDistEvent {
     data class BatchListMenu(val open: Boolean) : DocDistEvent
     data class AddBatchList(val listId: String) : DocDistEvent
     data object ConfirmWatermarkBatch : DocDistEvent
+
+    // merge PDFs to download or print
+    data object OpenMerge : DocDistEvent
+    data object CloseMerge : DocDistEvent
+    data class MergeIncludeSelf(val on: Boolean) : DocDistEvent
+    data class MergeWatermarkSelf(val on: Boolean) : DocDistEvent
+    data class MergeToggle(val email: String) : DocDistEvent
+    /** Ticks or clears everyone the filter and search leave on screen. */
+    data class MergeToggleShown(val on: Boolean) : DocDistEvent
+    data class MergeSearch(val text: String) : DocDistEvent
+    data class MergeSetSource(val source: MergeSource) : DocDistEvent
+    data class RunMerge(val action: MergeAction) : DocDistEvent
 
     // -- the project's watermark settings --------------------------------------
     data object OpenWatermarkSettings : DocDistEvent

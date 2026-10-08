@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
@@ -85,9 +86,12 @@ fun LibraryPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     Box(Modifier.fillMaxSize()) {
         FixedPage(
             modifier = Modifier.externalFileDrop(
-                enabled = state.currentFolder != null || state.composer.open,
+                // On at the root too: a dropped folder brings its own name, so there is
+                // something to create there. Loose files are refused with a hint.
+                enabled = true,
                 onHover = { onEvent(DocDistEvent.DragHover(it)) },
                 onFiles = { onEvent(DocDistEvent.DropFiles(it)) },
+                onFolders = { onEvent(DocDistEvent.DropFolder(it)) },
             ),
         ) {
             if (!state.infoBannerDismissed) InfoBanner(onEvent)
@@ -125,11 +129,13 @@ fun LibraryPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     }
 
     FolderEditorDialog(state, onEvent)
+    FolderUploadDialog(state, onEvent)
     MoveItemsDialog(state, onEvent)
     PublishDialog(state, onEvent)
     FilePreviewDialog(state, onEvent)
     WatermarkDownloadDialog(state, onEvent)
     WatermarkBatchDialog(state, onEvent)
+    MergeDialog(state, onEvent)
     DocumentPickerDialog(state, onEvent)
 }
 
@@ -232,15 +238,7 @@ private fun LibraryToolbar(state: DocDistUiState, onEvent: (DocDistEvent) -> Uni
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (state.currentFolder != null) {
-                ZillitButton(
-                    text = str(S.upload),
-                    onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PickAndUpload) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Upload,
-                    enabled = state.upload == null,
-                )
-            }
+            UploadMenu(state, onEvent)
             ZillitButton(
                 text = str(S.dd_empty_create_cta),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.OpenNewFolder) },
@@ -338,6 +336,44 @@ private fun FolderHeader(folder: LibraryFolder, state: DocDistUiState, onEvent: 
     }
 }
 
+/**
+ * "Upload ▾": files into the open folder, or a whole folder — which is allowed at
+ * the root, where it creates the folder tree. Both entries stay live without the
+ * right and ask for it instead, like every other action here.
+ */
+@Composable
+private fun UploadMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val post = { action: () -> Unit -> gatedClick(state.viewer.canPost, { onEvent(askPost) }, action) }
+    Box {
+        ZillitButton(
+            text = str(S.upload),
+            onClick = { open = true },
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Upload,
+            trailingIcon = ZillitIcons.ChevronDown,
+            enabled = state.upload == null,
+        )
+        MenuPopup(
+            expanded = open,
+            onDismiss = { open = false },
+            entries = listOf(
+                MenuEntry(
+                    str(S.drive_upload_files),
+                    post { onEvent(DocDistEvent.PickAndUpload) },
+                    ZillitIcons.File,
+                    enabled = state.currentFolder != null,
+                ),
+                MenuEntry(
+                    str(S.drive_upload_folder),
+                    post { onEvent(DocDistEvent.PickAndUploadFolder) },
+                    ZillitIcons.Folder,
+                ),
+            ),
+        )
+    }
+}
+
 /** "3 selected · Actions ▾ · Clear" — the web's selection bar. */
 @Suppress("LongMethod") // One screen section; splitting it separates each control from its state.
 @Composable
@@ -380,6 +416,11 @@ private fun SelectionBar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit)
                         str(S.dd_watermark_download),
                         download { onEvent(DocDistEvent.OpenWatermarkBatch) },
                         ZillitIcons.Download,
+                    ),
+                    MenuEntry(
+                        str(S.desktop_docdist_merge_title),
+                        download { onEvent(DocDistEvent.OpenMerge) },
+                        ZillitIcons.File,
                     ),
                     MenuEntry(str(S.publish), post { onEvent(DocDistEvent.OpenPublishSelection) }, ZillitIcons.Link),
                     MenuEntry(
@@ -446,7 +487,7 @@ private fun ListingCard(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, 
             else -> GridView(state, onEvent)
         }
 
-        if (state.dragHover && state.currentFolder != null) DropOverlay(state.currentFolder?.name.orEmpty())
+        if (state.dragHover) DropOverlay(state.currentFolder?.name ?: str(S.desktop_docdist_library_root))
     }
 }
 
@@ -824,7 +865,11 @@ private fun GridView(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                         selected = row.id in state.selectedFolderIds,
                         onOpen = { onEvent(DocDistEvent.OpenFolder(row.id)) },
                         onToggle = { onEvent(DocDistEvent.ToggleFolder(row.id)) },
-                        glyph = { FolderGlyph(size = 44.dp) },
+                        glyph = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                FolderGlyph(size = 44.dp)
+                            }
+                        },
                         actions = { visible -> FolderActions(row.folder, state, onEvent, visible) },
                     )
                     is LibraryRow.File -> GridCard(
@@ -835,7 +880,7 @@ private fun GridView(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                         selected = row.id in state.selectedDocumentIds,
                         onOpen = { onEvent(DocDistEvent.OpenDocument(row.id)) },
                         onToggle = { onEvent(DocDistEvent.ToggleDocument(row.id)) },
-                        glyph = { FileGlyph(row.document, size = 44.dp) },
+                        glyph = { DocCover(row.document) { FileGlyph(row.document, size = 44.dp) } },
                         actions = { visible -> FileActions(row.document, state, onEvent, visible) },
                     )
                 }
@@ -881,7 +926,9 @@ private fun GridCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
-            glyph()
+            // The same height for every card, so a row's titles line up whether the cover is a
+            // page, an icon or a folder.
+            Box(Modifier.fillMaxWidth().height(COVER_HEIGHT.dp)) { glyph() }
             ZillitText(text = title, style = ZillitTheme.typography.label, maxLines = 2, textAlign = TextAlign.Center)
             ZillitText(
                 text = sub.ifBlank { " " },
@@ -905,7 +952,9 @@ private const val SORT_WIDTH = 190
 private const val DATE_COLUMN = 120
 private const val SIZE_COLUMN = 84
 private const val ACTIONS_COLUMN = 168
-private const val CARD_WIDTH = 188
+/** Five to a row on a full-size window, as the web's cards now are. */
+private const val CARD_WIDTH = 240
+private const val COVER_HEIGHT = 132
 private const val LOAD_MORE_LEAD = 4
 
 /** What a press without the right turns into. */

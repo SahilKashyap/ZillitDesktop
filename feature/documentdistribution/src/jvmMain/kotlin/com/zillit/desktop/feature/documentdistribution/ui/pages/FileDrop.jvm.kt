@@ -12,6 +12,8 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
+import com.zillit.desktop.feature.documentdistribution.domain.LocalFolderTree
+import com.zillit.desktop.feature.documentdistribution.domain.walkLocalPaths
 import java.awt.datatransfer.DataFlavor
 import java.io.File
 import java.net.URLConnection
@@ -27,10 +29,12 @@ actual fun Modifier.externalFileDrop(
     enabled: Boolean,
     onHover: (Boolean) -> Unit,
     onFiles: (List<LocalFile>) -> Unit,
+    onFolders: (LocalFolderTree) -> Unit,
 ): Modifier {
     val accepting by rememberUpdatedState(enabled)
     val hover by rememberUpdatedState(onHover)
     val files by rememberUpdatedState(onFiles)
+    val folders by rememberUpdatedState(onFolders)
     val target = remember {
         object : DragAndDropTarget {
             override fun onEntered(event: DragAndDropEvent) = hover(true)
@@ -39,10 +43,17 @@ actual fun Modifier.externalFileDrop(
 
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 hover(false)
-                val dropped = runCatching {
+                val paths = runCatching {
                     (event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>)
                         ?.filterIsInstance<File>().orEmpty()
-                }.getOrDefault(emptyList()).mapNotNull { file ->
+                }.getOrDefault(emptyList())
+                if (paths.any { it.isDirectory }) {
+                    // Walked, not read: a dropped folder can hold hundreds of files.
+                    val tree = walkLocalPaths(paths)
+                    if (!tree.isEmpty) folders(tree)
+                    return !tree.isEmpty
+                }
+                val dropped = paths.mapNotNull { file ->
                     runCatching {
                         LocalFile(
                             name = file.name,

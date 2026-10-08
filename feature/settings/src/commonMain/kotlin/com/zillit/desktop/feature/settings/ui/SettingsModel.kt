@@ -300,6 +300,16 @@ sealed interface SettingsEffect {
     data class OpenTool(val path: String) : SettingsEffect
 
     /**
+     * Moves this window to a page another feature supplies — Production Setup,
+     * which the web hosts at `/settings/production-setup` rather than opening
+     * the Account Hub. Same window, so the page's back arrow returns here.
+     *
+     * A route, like [OpenTool], because the page belongs to the Account Hub
+     * module and this one depends on none.
+     */
+    data class OpenPage(val path: String) : SettingsEffect
+
+    /**
      * Hands a documentation link to the browser.
      *
      * Carried as an effect rather than opened here: this module is common code

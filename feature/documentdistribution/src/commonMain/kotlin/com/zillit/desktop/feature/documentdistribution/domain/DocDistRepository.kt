@@ -157,6 +157,17 @@ interface DocDistRepository {
         folderDate: String? = null,
     ): ZillitResult<Unit>
 
+    /**
+     * Creates a folder and answers its id — a folder upload needs the parent's
+     * id to create the child. [batch] groups the request with its upload.
+     */
+    suspend fun createFolderForUpload(
+        name: String,
+        parentId: String?,
+        folderDate: String,
+        batch: UploadBatch?,
+    ): ZillitResult<String>
+
     suspend fun updateFolder(folderId: String, name: String, description: String): ZillitResult<Unit>
 
     suspend fun deleteFolder(folderId: String): ZillitResult<Unit>
@@ -194,7 +205,18 @@ interface DocDistRepository {
         file: LocalFile,
         folderId: String?,
         documentDate: String?,
+        /** Groups this request with the rest of one upload action; see [UploadBatch]. */
+        batch: UploadBatch? = null,
+        /**
+         * The cover picture the caller rendered for a PDF. Best-effort on S3: a
+         * failed thumbnail upload costs the card its picture, never the document.
+         * Not attempted on LOCAL storage, whose multipart endpoint takes none.
+         */
+        thumbnail: LocalFile? = null,
     ): ZillitResult<LibraryDocument>
+
+    /** The cover picture's bytes, through the app's signed fetch. */
+    suspend fun thumbnailBytes(document: LibraryDocument): ZillitResult<ByteArray>
 
     /** A one-shot composer attachment — never catalogued, swept after the send. */
     suspend fun uploadEphemeral(file: LocalFile): ZillitResult<LibraryDocument>
@@ -216,6 +238,25 @@ interface DocDistRepository {
         documentIds: List<String>,
         recipients: List<ZipRecipient>,
         style: WatermarkStyle,
+    ): ZillitResult<ByteArray>
+
+    /**
+     * The selected PDFs as ONE finished PDF (`POST documents/watermark-merged`).
+     *
+     * [recipients] picks the mode: null for a plain concatenation, a list for
+     * one stamped copy per person, grouped so each person's copies sit together
+     * ("recipient-major"). The server fetches the documents itself, so the app
+     * never reads their bytes. [style] is sent only when the project's own
+     * settings have loaded — the server fills any appearance field it is NOT
+     * sent from the saved settings, whereas the built-in look would override
+     * them with a placeholder. Caps are the server's: 10,000 output pages and
+     * 100 MB of source PDFs, past either of which it answers
+     * `merged_pdf_too_large`.
+     */
+    suspend fun mergedPdf(
+        documentIds: List<String>,
+        recipients: List<ZipRecipient>?,
+        style: WatermarkStyle?,
     ): ZillitResult<ByteArray>
 
     suspend fun deleteDocument(documentId: String): ZillitResult<Unit>

@@ -298,9 +298,10 @@ class SettingsViewModel(
             SettingsDestination.Help -> sendEffect(SettingsEffect.OpenHelp)
             SettingsDestination.SetupNotes -> sendEffect(SettingsEffect.OpenExternal(SETUP_NOTES_URL))
 
-            // The page belongs to the Account Hub, which opens on it.
+            // A page of this window, as on the web — the Account Hub's
+            // Companies section alone, not the console.
             SettingsDestination.ProductionSetup ->
-                sendEffect(SettingsEffect.OpenTool(ACCOUNT_HUB_ROUTE))
+                sendEffect(SettingsEffect.OpenPage(PRODUCTION_SETUP_ROUTE))
 
             // The same grid Film Tools opens — the web's admin button goes to
             // `/film-tools/permission-grid?s=admin`, not a page of its own.

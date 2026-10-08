@@ -132,6 +132,7 @@ internal data class DocumentDto(
             createdAt = createdAt.toEpochMillisOrNull() ?: created?.content.toEpochMillisOrNull(),
             storage = attachment?.toDomain() ?: media?.takeIf { it.isNotBlank() }
                 ?.let { DocumentStorage(key = it, bucket = "", region = "") },
+            thumbnail = attachment?.thumbnailStorage(),
         )
     }
 }
@@ -142,7 +143,13 @@ internal data class AttachmentStorageDto(
     @SerialName("media") val media: String? = null,
     @SerialName("bucket") val bucket: String? = null,
     @SerialName("region") val region: String? = null,
+    /** The cover picture's key, in the same bucket and region. Blank for Word / Excel. */
+    @SerialName("thumbnail") val thumbnail: String? = null,
 ) {
+    fun thumbnailStorage(): DocumentStorage? = thumbnail?.takeIf { it.isNotBlank() }?.let { key ->
+        DocumentStorage(key = key, bucket = bucket.orEmpty(), region = region.orEmpty())
+    }
+
     fun toDomain(): DocumentStorage? = media?.takeIf { it.isNotBlank() }?.let { key ->
         DocumentStorage(key = key, bucket = bucket.orEmpty(), region = region.orEmpty())
     }

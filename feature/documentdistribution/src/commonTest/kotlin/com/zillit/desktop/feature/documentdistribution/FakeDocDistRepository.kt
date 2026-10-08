@@ -23,6 +23,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettingsPatch
+import com.zillit.desktop.feature.documentdistribution.domain.UploadBatch
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.ZipRecipient
 import kotlinx.coroutines.flow.Flow
@@ -74,8 +75,29 @@ internal open class FakeDocDistRepository(
         file: LocalFile,
         folderId: String?,
         documentDate: String?,
-    ): ZillitResult<LibraryDocument> =
+        batch: UploadBatch?,
+        thumbnail: LocalFile?,
+    ): ZillitResult<LibraryDocument> {
+        uploads += UploadCall(file.name, folderId, documentDate, batch?.total, batch?.id, thumbnail != null)
+        return uploadOutcome(file)
+    }
+    val uploads = mutableListOf<UploadCall>()
+    var uploadOutcome: (LocalFile) -> ZillitResult<LibraryDocument> = { file ->
+        ZillitResult.Success(LibraryDocument(id = "doc-${uploads.size}", name = file.name))
+    }
+    override suspend fun thumbnailBytes(document: LibraryDocument): ZillitResult<ByteArray> =
         ZillitResult.Failure(ZillitError.Unknown("unused"))
+    override suspend fun createFolderForUpload(
+        name: String,
+        parentId: String?,
+        folderDate: String,
+        batch: UploadBatch?,
+    ): ZillitResult<String> {
+        createdFolders += CreatedFolder(name, parentId, folderDate, batch?.total, batch?.id)
+        return folderOutcome(name)
+    }
+    val createdFolders = mutableListOf<CreatedFolder>()
+    var folderOutcome: (String) -> ZillitResult<String> = { name -> ZillitResult.Success("folder-$name") }
     override suspend fun uploadEphemeral(file: LocalFile): ZillitResult<LibraryDocument> =
         ZillitResult.Failure(ZillitError.Unknown("unused"))
     override suspend fun deleteEphemeral(attachmentId: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
@@ -93,6 +115,16 @@ internal open class FakeDocDistRepository(
         style: WatermarkStyle,
     ): ZillitResult<ByteArray> =
         ZillitResult.Failure(ZillitError.Unknown("unused"))
+    override suspend fun mergedPdf(
+        documentIds: List<String>,
+        recipients: List<ZipRecipient>?,
+        style: WatermarkStyle?,
+    ): ZillitResult<ByteArray> {
+        merges += MergeCall(documentIds, recipients, style)
+        return mergeResult
+    }
+    val merges = mutableListOf<MergeCall>()
+    var mergeResult: ZillitResult<ByteArray> = ZillitResult.Success("%PDF-1.7 fake".encodeToByteArray())
     override suspend fun watermarkSettings(): ZillitResult<WatermarkSettings> =
         ZillitResult.Success(WatermarkSettings.BuiltIn)
     override suspend fun updateWatermarkSettings(patch: WatermarkSettingsPatch): ZillitResult<WatermarkSettings> =
@@ -158,3 +190,25 @@ internal open class FakeDocDistRepository(
     )
     override suspend fun publish(category: String, draft: PublishDraft): ZillitResult<Unit> = ZillitResult.Success(Unit)
 }
+
+/** One `mergedPdf` request, as the fake saw it. */
+data class MergeCall(val documentIds: List<String>, val recipients: List<ZipRecipient>?, val style: WatermarkStyle?)
+
+/** One `uploadDocument` request, as the fake saw it. [batchTotal] is the total carried at that moment. */
+data class UploadCall(
+    val name: String,
+    val folderId: String?,
+    val date: String?,
+    val batchTotal: Int?,
+    val batchId: String?,
+    val hadThumbnail: Boolean,
+)
+
+/** One `createFolderForUpload` request. */
+data class CreatedFolder(
+    val name: String,
+    val parentId: String?,
+    val date: String,
+    val batchTotal: Int?,
+    val batchId: String?,
+)

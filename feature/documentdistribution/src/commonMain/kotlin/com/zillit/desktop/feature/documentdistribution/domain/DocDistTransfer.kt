@@ -59,6 +59,15 @@ interface DocDistHost {
     /** Empty when the user cancelled. */
     suspend fun pickFiles(): List<LocalFile> = emptyList()
 
+    /**
+     * A folder chosen in the OS dialog, walked but not read; null when the user
+     * cancelled. Each file's bytes are read when its upload comes round.
+     */
+    suspend fun pickFolder(): LocalFolderTree? = null
+
+    /** Page 1 of a PDF as a JPEG for a card cover; null when it cannot be rendered. */
+    suspend fun pdfThumbnail(pdf: ByteArray): ByteArray? = null
+
     /** Each page as PNG bytes, [targetWidthPx] wide. */
     fun renderPdfPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<ByteArray>> =
         ZillitResult.Failure(ZillitError.Storage("no PDF renderer", str(S.desktop_docdist_pdf_preview_unavailable)))
@@ -66,6 +75,21 @@ interface DocDistHost {
     /** Writes into the user's Downloads folder; answers the path written. */
     suspend fun saveToDownloads(fileName: String, bytes: ByteArray): ZillitResult<String> =
         ZillitResult.Failure(ZillitError.Storage("no download folder", str(S.desktop_docdist_downloads_unavailable)))
+
+    /**
+     * Joins finished PDFs end to end, in order. Only used when a merge asks
+     * for a clean copy of its own as well as stamped crew copies, which the
+     * server cannot build in one call.
+     */
+    suspend fun joinPdfs(parts: List<ByteArray>): ZillitResult<ByteArray> =
+        ZillitResult.Failure(ZillitError.Storage("no PDF joiner", str(S.desktop_docdist_merge_failed)))
+
+    /**
+     * Opens a PDF in the OS viewer from a throwaway location, for printing.
+     * Not the Downloads folder: a print run is not a file the user asked to keep.
+     */
+    suspend fun openForPrinting(fileName: String, bytes: ByteArray): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Storage("no viewer", str(S.desktop_docdist_downloads_unavailable)))
 
     /** Hands a saved file to the OS. */
     fun openFile(path: String) {}
