@@ -61,6 +61,7 @@ import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.SharedContent
 import com.zillit.desktop.feature.chat.domain.SharedFile
 import com.zillit.desktop.feature.chat.domain.SharedLink
+import com.zillit.desktop.feature.chat.domain.chatDayLabel
 import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 import com.zillit.desktop.feature.chat.domain.designationLabel
 
@@ -89,6 +90,8 @@ internal class InfoHooks(
     val resolveContact: (String) -> CrewContact? = { null },
     /** The signed-in user: marks "(You)" and decides what a group offers them. */
     val selfId: String? = null,
+    /** Everyone a group could add — the crew minus yourself and those who have left. */
+    val people: List<CrewContact> = emptyList(),
     /** Opens one of a group's confirmations at the thread's root. */
     val onGroupDialog: (GroupDialog) -> Unit = {},
 )
@@ -233,6 +236,16 @@ private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHook
         ) {
             ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleLarge, textAlign = TextAlign.Center)
             if (peer.isAdmin) ZillitTag(str(S.admin), tone = TagTone.Accent)
+        }
+        // "Created On : 08 October 2026 · 14 Members", under a group's name.
+        if (state.peerIsGroup) {
+            group?.detail?.let { room ->
+                val now = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
+                listOfNotNull(
+                    room.createdMillis?.takeIf { it > 0 }?.let { str(S.create_on_data, chatDayLabel(it, now)) },
+                    "${room.members.size} ${str(S.members)}",
+                ).joinToString(" · ").let { CentredLine(it) }
+            }
         }
         peer.email?.takeIf { it.isNotBlank() }?.let { CentredLine(it) }
         listOfNotNull(

@@ -282,6 +282,19 @@ interface ChatRepository {
         name: String,
     ): ZillitResult<Unit> = ZillitResult.Failure(ZillitError.Unknown("group rename is not wired"))
 
+    /**
+     * Replaces [room]'s roster with [memberIds] — the same `POST chat-room`
+     * the web's add-member and remove-member both send, name unchanged.
+     */
+    suspend fun setRoomMembers(
+        room: com.zillit.desktop.feature.chat.domain.GroupDetail,
+        memberIds: List<String>,
+    ): ZillitResult<Unit> = ZillitResult.Failure(ZillitError.Unknown("group members are not wired"))
+
+    /** Flips [userId]'s admin flag — `PUT chat-room/edit-admin/{room}/{user}`, a toggle, not a set. */
+    suspend fun toggleRoomAdmin(roomId: String, userId: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("group admins are not wired"))
+
     /** Takes the signed-in user out of a room — `PUT chat-room/leave-group/{room}/{me}`. */
     suspend fun leaveRoom(roomId: String): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("leaving a group is not wired"))
@@ -821,6 +834,26 @@ class ChatRepositoryImpl(
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             module = RequestModule.ProjectUser,
             body = editRoomBody(room, name),
+            options = scoped(),
+        ).refuseStatusZero().map { }
+
+    override suspend fun setRoomMembers(
+        room: com.zillit.desktop.feature.chat.domain.GroupDetail,
+        memberIds: List<String>,
+    ): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room",
+            module = RequestModule.ProjectUser,
+            body = editRoomBody(room, room.name, memberIds),
+            options = scoped(),
+        ).refuseStatusZero().map { }
+
+    override suspend fun toggleRoomAdmin(roomId: String, userId: String): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Put,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room/edit-admin/$roomId/$userId",
+            module = RequestModule.ProjectUser,
             options = scoped(),
         ).refuseStatusZero().map { }
 

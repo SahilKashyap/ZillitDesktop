@@ -335,6 +335,15 @@ sealed interface ChatEvent {
     /** Anyone in the room: pick a picture and make it the group's. */
     data object ChangeGroupPhoto : ChatEvent
 
+    /** Admin: puts these people in the open room. */
+    data class AddGroupMembers(val userIds: List<String>) : ChatEvent
+
+    /** Admin: takes one person out of the open room. */
+    data class RemoveGroupMember(val userId: String) : ChatEvent
+
+    /** Admin: makes this member an admin, or takes it back — the server flips it. */
+    data class ToggleGroupAdmin(val userId: String) : ChatEvent
+
     /** Takes the signed-in user out of the open room; the thread closes behind them. */
     data object LeaveGroup : ChatEvent
 
@@ -616,6 +625,11 @@ class ChatViewModel(
             is ChatEvent.LoadGroupInfo -> loadGroupInfo(event.roomId)
             is ChatEvent.RenameGroup -> renameGroup(event.name)
             ChatEvent.ChangeGroupPhoto -> changeGroupPhoto()
+            is ChatEvent.AddGroupMembers -> changeRoster { room -> room.members.map { it.userId } + event.userIds }
+            is ChatEvent.RemoveGroupMember -> changeRoster { room ->
+                room.members.map { it.userId }.filterNot { it == event.userId }
+            }
+            is ChatEvent.ToggleGroupAdmin -> toggleGroupAdmin(event.userId)
             ChatEvent.LeaveGroup -> leaveGroup()
             ChatEvent.DeleteGroup -> deleteGroup()
             ChatEvent.RefreshRecents -> {
@@ -733,6 +747,37 @@ class ChatViewModel(
                     updateGroupInfo(roomId) { copy(busy = false, error = result.error.localised()) }
             }
         }
+    }
+
+    /** Add and remove are one write: the whole new roster, then a fresh read of the room. */
+    private fun changeRoster(newRoster: (GroupDetail) -> List<String>) {
+        val info = idleGroupInfo() ?: return
+        val detail = info.detail ?: return
+        val roster = newRoster(detail).distinct()
+        updateGroupInfo(detail.id) { copy(busy = true, error = null) }
+        launchResult(
+            block = { repository.setRoomMembers(detail, roster) },
+            onSuccess = {
+                updateGroupInfo(detail.id) { copy(busy = false) }
+                loadGroupInfo(detail.id)
+                onEvent(ChatEvent.RefreshRecents)
+            },
+            onError = { error -> updateGroupInfo(detail.id) { copy(busy = false, error = error.localised()) } },
+        )
+    }
+
+    private fun toggleGroupAdmin(userId: String) {
+        val info = idleGroupInfo() ?: return
+        val roomId = info.roomId
+        updateGroupInfo(roomId) { copy(busy = true, error = null) }
+        launchResult(
+            block = { repository.toggleRoomAdmin(roomId, userId) },
+            onSuccess = {
+                updateGroupInfo(roomId) { copy(busy = false) }
+                loadGroupInfo(roomId)
+            },
+            onError = { error -> updateGroupInfo(roomId) { copy(busy = false, error = error.localised()) } },
+        )
     }
 
     private fun leaveGroup() = leaveOrDelete { roomId -> repository.leaveRoom(roomId) }
@@ -1915,6 +1960,7 @@ class ChatViewModel(
      */
     private fun previewLine(message: ChatMessage): ChatPreview = ChatPreview(
         text = when {
+            message.notice != null -> message.notice.text
             message.location != null ->
                 "📍 " + message.body.ifBlank { message.location.address }.ifBlank { str(S.location) }
             message.attachment != null -> "📎 ${message.attachment.name}"

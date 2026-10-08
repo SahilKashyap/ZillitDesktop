@@ -12480,4 +12480,11 @@
     <string name="desktop_docdist_folder_upload_subtitle">Creates these folders in the library, then uploads each file into the one that holds it</string>
     <string name="desktop_docdist_preview_fit_width">Fit width</string>
     <string name="desktop_docdist_preview_reset_zoom">Reset zoom</string>
+    <string name="desktop_make_admin">Make Admin</string>
+    <string name="desktop_remove_as_admin">Remove As Admin</string>
+    <string name="desktop_add_members">Add members</string>
+    <string name="desktop_make_admin_confirm">Are you sure you want to make this user an admin?</string>
+    <string name="desktop_remove_admin_confirm">Are you sure you want to remove admin rights from this user?</string>
+    <string name="desktop_remove_member_confirm">Are you sure you want to remove this member from the group?</string>
+    <string name="desktop_not_in_group">Not in Group</string>
 </resources>

@@ -251,9 +251,10 @@ fun readChatMessage(
     val outer = row as? JsonObject ?: return null
     val obj = (outer["detail"] as? JsonObject) ?: outer
     val id = obj.str("_id") ?: obj.str("unique_id") ?: return null
-    val sender = obj.str("sender") ?: return null
-    val receiver = obj.str("receiver").orEmpty()
     val raw = obj.str("message").orEmpty()
+    val notice = readNotice(obj, raw, decrypt)
+    val sender = senderOf(obj, isNotice = notice != null) ?: return null
+    val receiver = obj.str("receiver").orEmpty()
 
     return ChatMessage(
         id = id,
@@ -275,8 +276,41 @@ fun readChatMessage(
         // literal flag from any client that sends one.
         isEdited = (obj.long("edited") ?: 0L) > 0L ||
             (obj["edited"] as? JsonPrimitive)?.booleanOrNull == true,
+        notice = notice,
     )
 }
+
+/** The wire's `message_type` for the server's own room notices. */
+const val GROUP_NOTIFICATION_KIND = "group_notification"
+
+/** The notice a `group_notification` row carries; null for every other kind. */
+private fun readNotice(
+    obj: JsonObject,
+    raw: String,
+    decrypt: (String) -> String?,
+): com.zillit.desktop.feature.chat.domain.GroupNotice? =
+    if (obj.str("message_type") == GROUP_NOTIFICATION_KIND) {
+        com.zillit.desktop.feature.chat.domain.GroupNotice(decrypt(raw) ?: raw, readNoticeElements(obj))
+    } else {
+        null
+    }
+
+/**
+ * Who wrote the row. The server's own notices come from nobody — dropping a
+ * row for having no sender made a new group's "created" line vanish.
+ */
+private fun senderOf(obj: JsonObject, isNotice: Boolean): String? =
+    obj.str("sender") ?: "".takeIf { isNotice }
+
+/** A notice's `message_elements`: `{search, replacer}` pairs, the replacer a string or a number. */
+private fun readNoticeElements(obj: JsonObject): List<com.zillit.desktop.core.common.MessageElement> =
+    (obj["message_elements"] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { entry ->
+        val row = entry as? JsonObject ?: return@mapNotNull null
+        com.zillit.desktop.core.common.MessageElement(
+            search = row.str("search"),
+            replacer = (row["replacer"] as? JsonPrimitive)?.contentOrNull,
+        )
+    }
 
 /** The `reactions` rows: one person, one emoji. Blank rows are removals. */
 private fun readReactions(obj: JsonObject): List<com.zillit.desktop.feature.chat.domain.ChatReaction> =

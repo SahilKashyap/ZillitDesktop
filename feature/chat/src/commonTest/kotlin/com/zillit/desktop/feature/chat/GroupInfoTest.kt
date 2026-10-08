@@ -2,7 +2,10 @@ package com.zillit.desktop.feature.chat
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.MessageElement
 import com.zillit.desktop.feature.chat.data.ChatRepository
+import com.zillit.desktop.feature.chat.data.readChatMessage
+import com.zillit.desktop.feature.chat.domain.groupNotificationText
 import com.zillit.desktop.feature.chat.data.editRoomBody
 import com.zillit.desktop.feature.chat.data.roomDetailFrom
 import com.zillit.desktop.feature.chat.data.roomPictureBody
@@ -172,6 +175,19 @@ class GroupInfoTest {
             return answer(Unit)
         }
 
+        val rosters = mutableListOf<List<String>>()
+        val toggled = mutableListOf<String>()
+
+        override suspend fun setRoomMembers(room: GroupDetail, memberIds: List<String>): ZillitResult<Unit> {
+            rosters += memberIds
+            return answer(Unit)
+        }
+
+        override suspend fun toggleRoomAdmin(roomId: String, userId: String): ZillitResult<Unit> {
+            toggled += userId
+            return answer(Unit)
+        }
+
         override suspend fun leaveRoom(roomId: String): ZillitResult<Unit> {
             left += roomId
             return answer(Unit)
@@ -277,5 +293,82 @@ class GroupInfoTest {
         val info = assertNotNull(model.currentState.groupInfo)
         assertFalse(info.busy)
         assertNotNull(info.error)
+    }
+
+    // -- the server's "group created" notice --------------------------------------
+
+    @Test
+    fun `a notice with no sender is kept, not dropped`() {
+        val row = Json.parseToJsonElement(
+            """{"_id":"n1","message":"cnc_group_created","message_type":"group_notification",
+              |"message_elements":[{"search":"{{count}}","replacer":14}],"created":1000}""".trimMargin(),
+        )
+        val message = assertNotNull(readChatMessage(row, "me", { null }, isGroup = true))
+        assertEquals("cnc_group_created", message.notice?.key)
+        assertEquals("14", message.notice?.elements?.single()?.replacer)
+    }
+
+    @Test
+    fun `a row with no sender that is not a notice is still dropped`() {
+        val row = Json.parseToJsonElement("""{"_id":"x","message":"hi"}""")
+        assertNull(readChatMessage(row, "me", { null }))
+    }
+
+    @Test
+    fun `the notice reads as the web's sentence`() {
+        val dictionary = mapOf(
+            "cnc_group_created" to
+                "A new chat group has been Created. and {{count}} {{members}} have been added to the group.",
+            "members" to "MEMBERS",
+        )
+        val text = groupNotificationText(
+            "cnc_group_created",
+            listOf(MessageElement("{{count}}", "14")),
+        ) { dictionary[it] }
+        assertEquals("A new chat group has been Created. and 14 MEMBERS have been added to the group.", text)
+    }
+
+    @Test
+    fun `a key the dictionary lacks is shown as it came`() {
+        assertEquals("some_unknown_key", groupNotificationText("some_unknown_key", emptyList()) { null })
+    }
+
+    // -- roster and admins ---------------------------------------------------------
+
+    @Test
+    fun `adding sends the whole new roster, then reloads the room`() = runTest(dispatcher) {
+        val repository = GroupFake().apply { room = detail }
+        val model = opened(repository)
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.AddGroupMembers(listOf("bob", "ann")))
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("me", "ann", "bob")), repository.rosters, "no repeat of someone already in")
+        assertFalse(model.currentState.groupInfo?.busy == true)
+    }
+
+    @Test
+    fun `removing sends the roster without that person`() = runTest(dispatcher) {
+        val repository = GroupFake().apply { room = detail }
+        val model = opened(repository)
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.RemoveGroupMember("ann"))
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("me")), repository.rosters)
+    }
+
+    @Test
+    fun `toggling an admin asks the server to flip that person`() = runTest(dispatcher) {
+        val repository = GroupFake().apply { room = detail }
+        val model = opened(repository)
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.ToggleGroupAdmin("ann"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("ann"), repository.toggled)
     }
 }

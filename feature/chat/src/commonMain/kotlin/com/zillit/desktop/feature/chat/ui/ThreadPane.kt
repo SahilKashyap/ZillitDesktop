@@ -207,6 +207,13 @@ internal fun ThreadPane(
             onView = { viewing = it },
             posters = posters,
         )
+        val infoHooks = InfoHooks(
+            loadAvatar, media, onCall.takeIf { callable }, lines, onEvent,
+            resolveContact = resolveContact,
+            selfId = selfId,
+            people = forwardPeople,
+            onGroupDialog = { groupDialog = it },
+        )
         // Wide enough, the panel takes a column of its own beside the
         // thread; narrower, it covers the thread until it is closed.
         WithInfoPanel(
@@ -215,12 +222,7 @@ internal fun ThreadPane(
             state = state,
             peer = peer,
             shared = shared,
-            hooks = InfoHooks(
-                loadAvatar, media, onCall.takeIf { callable }, lines, onEvent,
-                resolveContact = resolveContact,
-                selfId = selfId,
-                onGroupDialog = { groupDialog = it },
-            ),
+            hooks = infoHooks,
             onPage = { infoPage = it },
         ) {
             ChatWallpaper()
@@ -300,6 +302,7 @@ internal fun ThreadPane(
         if (state.peerIsGroup) {
             GroupInfoDialogs(
                 info = state.groupInfo?.takeIf { it.roomId == peer.userId },
+                hooks = infoHooks,
                 dialog = groupDialog,
                 onDismiss = { groupDialog = null },
                 onEvent = onEvent,
@@ -792,7 +795,9 @@ private fun Messages(
             Box(Modifier.animateItem()) {
                 when (row) {
                     is ThreadRow.DayMark -> DayChip(row.label)
-                    is ThreadRow.Message -> MessageRow(
+                    // The server's own word about the room, centred like a day
+                    // chip — it has no author, menu or receipts.
+                    is ThreadRow.Message -> row.message.notice?.let { DayChip(it.text) } ?: MessageRow(
                         row, state, resolveName, mentions, media, loadAvatar,
                         actions = bubbleActions(row.message, state, seams, onEvent, onImageReply),
                         onJumpTo = jumpTo,
@@ -943,6 +948,8 @@ internal fun threadRows(
 /** [later] continues [earlier]'s run: same writer, same side, close in time. */
 private fun continuesRun(earlier: ChatMessage?, later: ChatMessage): Boolean =
     earlier != null &&
+        earlier.notice == null &&
+        later.notice == null &&
         earlier.senderId == later.senderId &&
         earlier.isMine == later.isMine &&
         later.timestampMillis > 0 &&

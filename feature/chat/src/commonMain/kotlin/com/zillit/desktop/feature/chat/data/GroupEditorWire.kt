@@ -66,12 +66,16 @@ fun createdRoomFrom(data: JsonElement?): GroupRoom? {
  * create body, plus the room's own `chat_room_id`, which turns the write into
  * an update. `members` is the whole roster, not a delta.
  */
-fun editRoomBody(room: GroupDetail, name: String): JsonObject =
+fun editRoomBody(
+    room: GroupDetail,
+    name: String,
+    memberIds: List<String> = room.members.map { it.userId },
+): JsonObject =
     buildJsonObject {
         put("room_name", name)
         put("is_random_call_group", false)
         room.ownedBy?.let { put("owned_by", it) }
-        put("members", buildJsonArray { room.members.forEach { add(JsonPrimitive(it.userId)) } })
+        put("members", buildJsonArray { memberIds.forEach { add(JsonPrimitive(it)) } })
         put("chat_room_id", room.id)
     }
 

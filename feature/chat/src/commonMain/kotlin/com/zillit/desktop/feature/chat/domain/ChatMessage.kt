@@ -35,6 +35,12 @@ data class ChatMessage(
      * be far newer than [timestampMillis]. 0 when the row carried none.
      */
     val updatedMillis: Long = 0,
+    /**
+     * Set when this row is the server's own notice about the room — "a new
+     * chat group has been created…" — rather than a person's words. Drawn as
+     * a centred system line with no sender, menu or receipts.
+     */
+    val notice: GroupNotice? = null,
 ) {
     /**
      * Where an older page starts from: `updated`, as Android pages
