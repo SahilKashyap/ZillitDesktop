@@ -6,10 +6,13 @@ import com.zillit.desktop.feature.email.domain.AttachmentStore
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.ui.AttachmentDownload
 import com.zillit.desktop.feature.email.ui.AttachmentDownloader
+import com.zillit.desktop.feature.email.ui.PreviewBody
+import com.zillit.desktop.feature.email.ui.renderAttachmentPreview
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
@@ -124,5 +127,74 @@ class AttachmentDownloadTest {
 
         assertEquals(0, server.attachmentCalls)
         assertNull(downloader.state.value["a1"])
+    }
+
+    // -- preview ---------------------------------------------------------------
+
+    private fun previewer(server: FakeMailServer, store: AttachmentStore?) =
+        AttachmentDownloader(server, store, render = { _, _, bytes -> PreviewBody.Text(bytes.decodeToString()) })
+
+    private suspend fun AttachmentDownloader.open() =
+        preview(attachment, messageId = "m1", folderName = "INBOX")
+
+    @Test
+    fun `a click previews the file in the app without saving it`() = runTest {
+        val store = RecordingStore()
+        val downloader = previewer(FakeMailServer(), store)
+
+        downloader.open()
+
+        val open = assertNotNull(downloader.preview.value)
+        assertEquals(PreviewBody.Text("Hello"), open.body)
+        assertNull(store.savedBytes, "previewing must not write to disk")
+        assertNull(downloader.state.value["a1"])
+    }
+
+    @Test
+    fun `the preview's download writes the bytes it already has`() = runTest {
+        val server = FakeMailServer()
+        val store = RecordingStore()
+        val downloader = previewer(server, store)
+
+        downloader.open()
+        downloader.downloadPreviewed()
+
+        assertEquals(1, server.attachmentCalls)
+        assertEquals("Hello", store.savedBytes?.decodeToString())
+        assertIs<AttachmentDownload.Saved>(downloader.state.value["a1"])
+    }
+
+    @Test
+    fun `a refused preview says why`() = runTest {
+        val server = FakeMailServer().apply { attachmentFails = true }
+        val downloader = previewer(server, RecordingStore())
+
+        downloader.open()
+
+        val open = assertNotNull(downloader.preview.value)
+        assertNotNull(open.failed)
+        assertNull(open.body)
+    }
+
+    @Test
+    fun `closing clears the preview`() = runTest {
+        val downloader = previewer(FakeMailServer(), RecordingStore())
+
+        downloader.open()
+        downloader.closePreview()
+
+        assertNull(downloader.preview.value)
+    }
+
+    @Test
+    fun `text attachments render as text and unknown ones as unsupported`() {
+        assertEquals(
+            PreviewBody.Text("a,b"),
+            renderAttachmentPreview("rows.csv", contentType = null, bytes = "a,b".encodeToByteArray()),
+        )
+        assertEquals(
+            PreviewBody.Unsupported,
+            renderAttachmentPreview("archive.zip", contentType = "application/zip", bytes = byteArrayOf(1, 2)),
+        )
     }
 }

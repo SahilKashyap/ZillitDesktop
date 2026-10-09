@@ -91,6 +91,7 @@ class EmailViewModel(
                 // message and every selection are the last one's.
                 autoOpenedFolder = null
                 syncJob?.cancel()
+                downloader.closePreview()
                 setState { EmailUiState() }
                 load()
             }
@@ -517,6 +518,11 @@ class EmailViewModel(
             is EmailEvent.DownloadAttachment -> launch {
                 downloader.download(event.attachment, event.messageId, event.folderName)
             }
+            is EmailEvent.PreviewAttachment -> launch {
+                downloader.preview(event.attachment, event.messageId, event.folderName)
+            }
+            EmailEvent.ClosePreview -> downloader.closePreview()
+            EmailEvent.DownloadPreviewed -> launch { downloader.downloadPreviewed() }
             is EmailEvent.Print -> printOpen(event.message)
             EmailEvent.PopOut -> {
                 val newest = currentState.newestOpen ?: return

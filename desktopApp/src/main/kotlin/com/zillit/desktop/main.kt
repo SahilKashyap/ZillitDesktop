@@ -183,6 +183,7 @@ import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
+import com.zillit.desktop.feature.email.domain.decodeAttachment
 import com.zillit.desktop.feature.email.domain.decodeBase64Default
 import com.zillit.desktop.feature.email.ui.EmailContactsToolProvider
 import com.zillit.desktop.feature.email.ui.contacts.EmailContactsViewModel
@@ -2323,7 +2324,7 @@ private fun mailProvider(
                 ready.emailRepository.attachment(attachment.id, messageId, folder)
                     as? com.zillit.desktop.core.common.ZillitResult.Success
                 )?.data
-                ?.let(::decodeBase64Default)
+                ?.let { decodeAttachment(it, ::decodeBase64Default) }
                 ?.let(::decodeImageBitmap)
         },
         onOpenLink = ::openInBrowser,

@@ -21,6 +21,11 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
         }
+        jvmMain.dependencies {
+            // The attachment preview renders PDF pages itself: there is no
+            // browser viewer to hand one to inside a Compose window.
+            implementation(libs.pdfbox)
+        }
         commonTest.dependencies {
             implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)

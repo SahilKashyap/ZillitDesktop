@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import com.zillit.desktop.feature.email.ui.contacts.EmailContactsViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * What the mailbox window cannot do for itself — every seam a host wires.
@@ -149,6 +151,9 @@ class EmailToolProvider(
 
     private fun draftById(id: String): EmailDraft? = viewModel.state.value.draft(id)
 
+    /** A downloader of its own for a popped-out thread, so its preview opens in that window only. */
+    internal fun newDownloader(): AttachmentDownloader = viewModel.downloader.fork()
+
     /** Whether [address] is someone the mailbox already knows, for the reading pane's "add to contacts". */
     private fun isKnown(address: String): Boolean =
         composers.state.value.mapNotNull { composers.viewModel(it.id) }
@@ -159,6 +164,7 @@ class EmailToolProvider(
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
         val downloads by viewModel.downloader.state.collectAsState()
+        val preview by viewModel.downloader.preview.collectAsState()
         val folderEdit by viewModel.folderEditor.state.collectAsState()
         val open by composers.state.collectAsState()
         var toast by remember { mutableStateOf<String?>(null) }
@@ -204,6 +210,13 @@ class EmailToolProvider(
             contactsOpen.value?.let { request ->
                 ContactsModal(request, onClose = { contactsOpen.value = null })
             }
+            AttachmentPreviewDialog(
+                preview = preview,
+                download = preview?.let { downloads[it.attachment.id] },
+                canDownload = viewModel.downloader.isAvailable,
+                onDownload = { viewModel.onEvent(EmailEvent.DownloadPreviewed) },
+                onClose = { viewModel.onEvent(EmailEvent.ClosePreview) },
+            )
             ZillitToast(message = toast, onDismiss = { toast = null }, tone = ZillitToastTone.Success)
         }
     }
@@ -471,6 +484,10 @@ class EmailThreadPopoutProvider(
             }
             return
         }
+        val downloader = remember(popped.id) { mailbox.newDownloader() }
+        val downloads by downloader.state.collectAsState()
+        val preview by downloader.preview.collectAsState()
+        val scope = rememberCoroutineScope()
         Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
             MessageTrail(
                 thread = popped.messages,
@@ -488,15 +505,29 @@ class EmailThreadPopoutProvider(
                             val messages = event.message?.let(::listOf) ?: popped.messages
                             host.onPrint(popped.subject, printableHtml(popped.subject, messages))
                         }
+                        is EmailEvent.PreviewAttachment -> scope.launch {
+                            downloader.preview(event.attachment, event.messageId, event.folderName)
+                        }
+                        is EmailEvent.DownloadAttachment -> scope.launch {
+                            downloader.download(event.attachment, event.messageId, event.folderName)
+                        }
                         else -> Unit
                     }
                 },
                 hooks = ReadingPaneHooks(
+                    downloads = downloads,
                     loadAvatar = host.loadAvatar,
                     loadThumbnail = host.loadThumbnail,
                     onOpenLink = host.onOpenLink,
                     readBy = host.readBy,
                 ),
+            )
+            AttachmentPreviewDialog(
+                preview = preview,
+                download = preview?.let { downloads[it.attachment.id] },
+                canDownload = downloader.isAvailable,
+                onDownload = { scope.launch { downloader.downloadPreviewed() } },
+                onClose = downloader::closePreview,
             )
         }
     }

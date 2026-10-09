@@ -657,7 +657,8 @@ private fun MessageBody(message: EmailMessage, hooks: ReadingPaneHooks) {
 
 /**
  * The web's attachment grid: pictures show themselves, every file is a
- * chip that downloads on click and then says where it went.
+ * chip. A click on either opens the file in the preview; the chip's own
+ * arrow downloads it straight away and then says where it went.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -674,7 +675,7 @@ private fun AttachmentGrid(
     ) {
         files.filter { it.fileName.looksLikeImage() }.forEach { attachment ->
             AttachmentThumb(attachment, message.id, folder, hooks.loadThumbnail) {
-                onEvent(EmailEvent.DownloadAttachment(attachment, message.id, folder))
+                onEvent(EmailEvent.PreviewAttachment(attachment, message.id, folder))
             }
         }
     }
@@ -683,9 +684,12 @@ private fun AttachmentGrid(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         files.forEach { attachment ->
-            AttachmentChip(attachment, hooks.downloads[attachment.id]) {
-                onEvent(EmailEvent.DownloadAttachment(attachment, message.id, folder))
-            }
+            AttachmentChip(
+                attachment = attachment,
+                state = hooks.downloads[attachment.id],
+                onOpen = { onEvent(EmailEvent.PreviewAttachment(attachment, message.id, folder)) },
+                onDownload = { onEvent(EmailEvent.DownloadAttachment(attachment, message.id, folder)) },
+            )
         }
     }
 }
@@ -719,21 +723,26 @@ private fun String.looksLikeImage(): Boolean =
     substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "bmp")
 
 @Composable
-private fun AttachmentChip(attachment: EmailAttachment, state: AttachmentDownload?, onClick: () -> Unit) {
+private fun AttachmentChip(
+    attachment: EmailAttachment,
+    state: AttachmentDownload?,
+    onOpen: () -> Unit,
+    onDownload: () -> Unit,
+) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    // Only idle chips are clickable. A saved file re-downloaded on a stray
-    // click becomes "report (2).pdf", which reads as a bug.
-    val clickable = state == null
+    // Only an idle chip offers the download. A saved file re-downloaded on a
+    // stray click becomes "report (2).pdf", which reads as a bug.
+    val downloadable = state == null
 
     Row(
         modifier = Modifier
             .clip(ZillitTheme.shapes.medium)
-            .background(if (hovered && clickable) colors.surfaceHover else colors.surfaceSunken)
+            .background(if (hovered) colors.surfaceHover else colors.surfaceSunken)
             .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
             .hoverable(interaction)
-            .then(if (clickable) Modifier.clickable(onClick = onClick) else Modifier)
+            .clickable(onClick = onOpen)
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -757,8 +766,19 @@ private fun AttachmentChip(attachment: EmailAttachment, state: AttachmentDownloa
             color = if (state is AttachmentDownload.Failed) colors.danger else colors.textMuted,
             maxLines = 1,
         )
-        if (clickable) {
-            ZillitIcon(ZillitIcons.Download, contentDescription = null, tint = colors.textMuted, size = CHIP_ICON)
+        if (downloadable) {
+            ZillitTooltip(text = str(S.dm_nda_download)) {
+                ZillitIcon(
+                    ZillitIcons.Download,
+                    contentDescription = str(S.dm_nda_download),
+                    tint = colors.textMuted,
+                    size = CHIP_ICON,
+                    modifier = Modifier
+                        .clip(ZillitTheme.shapes.small)
+                        .clickable(onClick = onDownload)
+                        .padding(DOWNLOAD_HIT_PAD),
+                )
+            }
         }
     }
 }
@@ -853,6 +873,9 @@ internal const val DETAIL_POPOUT_TAG = "email-detail-popout"
 private val PANE_PADDING = 20.dp
 private val EMPTY_ICON = 72.dp
 private val CHIP_ICON = 12.dp
+
+/** Widens the chip's download arrow into something a pointer can hit. */
+private val DOWNLOAD_HIT_PAD = 4.dp
 private val HAIRLINE = 1.dp
 private val HEADER_AVATAR = 40.dp
 private val HEADER_BUTTON = 28.dp

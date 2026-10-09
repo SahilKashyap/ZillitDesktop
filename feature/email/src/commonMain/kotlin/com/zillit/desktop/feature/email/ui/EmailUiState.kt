@@ -310,6 +310,18 @@ sealed interface EmailEvent {
         val folderName: String,
     ) : Message
 
+    /** Opens an attachment in the in-app preview — a click on its chip or picture. */
+    data class PreviewAttachment(
+        val attachment: EmailAttachment,
+        val messageId: String,
+        val folderName: String,
+    ) : Message
+
+    data object ClosePreview : Message
+
+    /** The preview's Download, writing the bytes it already holds. */
+    data object DownloadPreviewed : Message
+
     /** Prints the open conversation, or one message of it. */
     data class Print(val message: EmailMessage? = null) : Message
 
