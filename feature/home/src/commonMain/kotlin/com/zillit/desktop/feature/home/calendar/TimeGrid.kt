@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +43,8 @@ import kotlinx.datetime.toLocalDateTime
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.SCROLL_RAIL_WIDTH
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import kotlinx.datetime.LocalDate
@@ -100,29 +103,38 @@ internal fun TimeGrid(
         // grid rather than being forced into midnight.
         AllDayStrip(state, days, onOpenEvent)
 
-        Row(Modifier.fillMaxSize().background(colors.surface).zillitVerticalScroll(scroll)) {
-            HourGutter()
+        Row(Modifier.fillMaxSize().background(colors.surface)) {
+            Row(Modifier.weight(1f).fillMaxHeight().zillitVerticalScroll(scroll)) {
+                HourGutter()
 
-            days.forEach { date ->
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .height(GRID_HEIGHT)
-                        .zIndex(if (date == draggingDate) 1f else 0f)
-                        .background(
-                            if (date == state.today) colors.accent.copy(alpha = TODAY_COLUMN_ALPHA) else colors.surface,
+                days.forEach { date ->
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(GRID_HEIGHT)
+                            .zIndex(if (date == draggingDate) 1f else 0f)
+                            .background(
+                                if (date == state.today) colors.accent.copy(alpha = TODAY_COLUMN_ALPHA) else colors.surface,
+                            )
+                            .clickable { onSelectDay(date) },
+                    ) {
+                        HourLines()
+                        DayEvents(
+                            state, date, onOpenEvent, onMoveEvent, onResizeEvent,
+                            onDragging = { active -> draggingDate = if (active) date else null },
                         )
-                        .clickable { onSelectDay(date) },
-                ) {
-                    HourLines()
-                    DayEvents(
-                        state, date, onOpenEvent, onMoveEvent, onResizeEvent,
-                        onDragging = { active -> draggingDate = if (active) date else null },
-                    )
-                    if (date == state.today) {
-                        CurrentTimeLine(state.zone)
+                        if (date == state.today) {
+                            CurrentTimeLine(state.zone)
+                        }
                     }
                 }
+            }
+            // A lane of its own rather than overlaid: laid over the grid, the
+            // rail would sit on the last day's events and swallow their clicks.
+            // Fixed width even when the rail hides, so the columns never shift
+            // out from under the header.
+            Box(Modifier.width(TIME_GRID_TRAILING).fillMaxHeight()) {
+                ZillitScrollRail(scroll)
             }
         }
     }
@@ -409,6 +421,8 @@ private fun AllDayStrip(state: CalendarUiState, days: List<LocalDate>, onOpenEve
                 }
             }
         }
+
+        Spacer(Modifier.width(TIME_GRID_TRAILING))
     }
     Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.divider))
     }
@@ -429,6 +443,8 @@ private val HOUR_HEIGHT = 48.dp
 private val GRID_HEIGHT = HOUR_HEIGHT * HOURS_PER_DAY
 /** Shared with the header, so weekday labels sit over their own columns. */
 internal val TIME_GUTTER_WIDTH = 56.dp
+/** The scroll rail's lane on the right, reserved above the grid too so columns line up. */
+internal val TIME_GRID_TRAILING = SCROLL_RAIL_WIDTH
 private val EVENT_INSET = 2.dp
 private val HAIRLINE = 1.dp
 
