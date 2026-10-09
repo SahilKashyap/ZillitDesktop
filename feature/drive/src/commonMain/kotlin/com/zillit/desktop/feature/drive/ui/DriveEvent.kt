@@ -70,6 +70,8 @@ sealed interface DriveEvent {
     data object ClosePreview : DriveEvent
     /** A preview this dialog cannot draw — hand its address to the browser instead. */
     data object OpenPreviewInBrowser : DriveEvent
+    /** Steps the preview to the listing's previous / next image or video. */
+    data class StepPreview(val forward: Boolean) : DriveEvent
 
     // -- upload drawer ----------------------------------------------------
 
