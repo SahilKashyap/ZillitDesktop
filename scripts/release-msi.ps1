@@ -183,7 +183,7 @@ $log = Join-Path $stageDir 'build.log'
 $flags = @(
     ':desktopApp:packageSignedMsi',
     "-Pzillit.version=$Version",
-    '-PzillitEnv=production',
+    '-PzillitEnv=prod',
     '-PzillitVariant=',
     "-PzillitBundleConfig=$staged",
     "-PzillitAzureSigningEndpoint=$SigningEndpoint",

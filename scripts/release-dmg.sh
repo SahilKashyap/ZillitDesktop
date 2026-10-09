@@ -177,7 +177,7 @@ if (( CHECK_ONLY )); then echo; echo "This Mac is ready to build."; exit 0; fi
 echo; echo "Building $VERSION ($MODE)"
 mkdir -p "$LOGS"
 # zillitVariant= on the command line beats a stray one in ~/.gradle: production.
-flags=(-Pzillit.version="$VERSION" -PzillitEnv=production -PzillitVariant= --no-configuration-cache)
+flags=(-Pzillit.version="$VERSION" -PzillitEnv=prod -PzillitVariant= --no-configuration-cache)
 if [[ "$MODE" == "bundled" ]]; then
   stage_prod_config
   flags+=(-PzillitBundleConfig="$STAGED_CONFIG")
