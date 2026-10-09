@@ -135,6 +135,25 @@ class ReportWorkflowViewModelTest {
     }
 
     @Test
+    fun `without rights on the chat tool the window opens on Manage and offers no chat`() = runTest(dispatcher) {
+        repository.rows = drafts("r1")
+        val vm = harness.start(this, Samples.author.copy(canViewChat = false), hasChat = true)
+        assertFalse(vm.currentState.showsChat)
+        assertEquals(Workspace.Manage, vm.currentState.workspace)
+        assertEquals(listOf("r1"), vm.currentState.lists.drafts.rows.map { it.id }, "Manage loads at once")
+    }
+
+    @Test
+    fun `chat rights without report rights leave the chat and nothing to manage`() = runTest(dispatcher) {
+        repository.metadata = SheetMetadata(internalReceiverIds = listOf("me"))
+        val vm = harness.start(this, Samples.viewer.copy(canView = false), hasChat = true)
+        assertTrue(vm.currentState.viewer.isBlocked, "no report rights")
+        assertTrue(vm.currentState.showsChat, "the chat's own rights still open it")
+        assertTrue(vm.currentState.manageTabs.isEmpty(), "a receiver listing does not reopen the report")
+        assertEquals(Workspace.Chat, vm.currentState.workspace)
+    }
+
+    @Test
     fun `a viewer's tabs come from the two project lists, and a failed metadata read fails open`() =
         runTest(dispatcher) {
             val nobody = harness.start(this, Samples.viewer, hasChat = true)

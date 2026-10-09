@@ -11,6 +11,10 @@ package com.zillit.desktop.core.badges
 private val IRREGULAR_WIRE_TOOLS = mapOf(
     "accounts_label" to "accounting_tool",
     "call_sheet_label" to "callsheet_tool",
+    // Split from Production Report on the backend (Oct 2026): the chat's
+    // notifications carry the tool's label key, which keeps a `_tool` in the
+    // middle that no suffix rule turns into `production_report_chat_tool`.
+    "production_report_tool_chat_label" to PRODUCTION_REPORT_CHAT_TOOL,
 )
 
 /**
@@ -32,7 +36,7 @@ private val WIRE_TOOL_LABELS = listOf(
     "casting_main_tool_label", "casting_background_tool_label",
     "wardrobe_main_tool_label", "wardrobe_background_tool_label",
     "transportation_label", "schedule_oneline_label", "dod_label",
-    "production_report_label", "map_label", "call_sheet_label", "drive_label",
+    "production_report_label", "production_report_tool_chat_label", "map_label", "call_sheet_label", "drive_label",
     "account_hub_label", "cash_expenses_label", "card_expenses_label",
     "ad_dashboard_label", "supporting_artistes_extras_label",
     "e_signature_label", "sides_label", "recce_label", "cost_report_label",
@@ -71,3 +75,17 @@ fun identifierToWireTool(identifier: String): String =
         } else {
             identifier.removeSuffix("_tool") + "_label"
         }
+
+/** The Production Report's unit chat, a tool of its own since the backend split (Oct 2026). */
+const val PRODUCTION_REPORT_CHAT_TOOL = "production_report_chat_tool"
+
+/**
+ * Tools with no window of their own, counted on the tool whose window hosts
+ * them as well as on their own key. The Production Report's chat is the Chat
+ * workspace of the Production Report window, so its unread stays on that
+ * tile and tab, as it did while both filed under `production_report_label`.
+ */
+private val HOSTED_TOOLS = mapOf(PRODUCTION_REPORT_CHAT_TOOL to "production_report_tool")
+
+/** The grid identifier whose window hosts [identifier], or null for a tool with its own window. */
+fun hostToolOf(identifier: String): String? = HOSTED_TOOLS[identifier]

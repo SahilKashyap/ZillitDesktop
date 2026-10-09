@@ -54,7 +54,7 @@ fun ProductionReportScreen(
             Box(modifier.fillMaxSize().background(ReportTheme.colors.bgPrimary)) {
                 val editor = state.editor
                 when {
-                    state.viewer.isBlocked -> NoAccess()
+                    state.viewer.isBlocked && !state.showsChat -> NoAccess()
                     editor != null -> EditorView(state, editor, onEvent)
                     else -> ListView(state, onEvent, chat, nowMillis())
                 }
@@ -78,7 +78,7 @@ private fun ListView(
             .background(if (ReportTheme.colors.isDark) ReportTheme.colors.bgPrimary else ReportTheme.colors.editorBg),
     ) {
         ReportTopBar(state)
-        val showsChat = chat != null && state.hasChat
+        val showsChat = chat != null && state.showsChat
         if (state.canManage && showsChat) WorkspaceRail(state, onEvent)
         when {
             showsChat && (state.workspace == Workspace.Chat || !state.canManage) -> Box(

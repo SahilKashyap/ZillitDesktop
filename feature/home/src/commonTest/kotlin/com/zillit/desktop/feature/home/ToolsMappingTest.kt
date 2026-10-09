@@ -215,4 +215,22 @@ class ToolSectionsTest {
 
         assertEquals(listOf("Production"), sections.map { it.title })
     }
+
+    @Test
+    fun `the production report chat folds into the report's tile, and keeps its own only when alone`() {
+        val report = ToolAccess("production_report_tool", canView = true)
+        val chat = ToolAccess("production_report_chat_tool", canView = true)
+        val callSheet = ToolAccess("callsheet_tool", canView = true)
+
+        val both = HomeUiState(permissions = ProjectPermissions(listOf(report, chat, callSheet))).gridTools
+        assertEquals(listOf("production_report_tool", "callsheet_tool"), both.map { it.identifier })
+
+        val alone = HomeUiState(permissions = ProjectPermissions(listOf(chat, callSheet))).gridTools
+        assertEquals(listOf("production_report_chat_tool", "callsheet_tool"), alone.map { it.identifier })
+        assertEquals(
+            WorkspaceRoute.Tool("/film-tools/production-report"),
+            alone.first().route,
+            "the chat lives in the report window",
+        )
+    }
 }

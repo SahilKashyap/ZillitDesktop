@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.home.domain
 
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.zillit.desktop.core.badges.PRODUCTION_REPORT_CHAT_TOOL
+import com.zillit.desktop.core.badges.hostToolOf
 import com.zillit.desktop.core.localization.LabelKind
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
@@ -159,6 +161,10 @@ object ToolCatalogue {
             (ZillitToolIcons.PreProduction to WorkspaceRoute.Tool("/film-tools/pre-production")),
         "production_report_tool" to
             (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/production-report")),
+        // The report's unit chat, a tool of its own since the backend split
+        // (Oct 2026) but drawn in the report window's Chat workspace — see [grid].
+        PRODUCTION_REPORT_CHAT_TOOL to
+            (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/production-report")),
         // The end-of-day wrap report — same engine as the production report.
         "wrap_report_tool" to
             (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/wrap-report")),
@@ -205,6 +211,18 @@ object ToolCatalogue {
         "weather_tool" to
             (ZillitToolIcons.IcWeather to WorkspaceRoute.Tool("/film-tools/weather")),
     )
+
+    /**
+     * The tiles to draw from the tools a user may open: [tools] in order,
+     * less any tool hosted in another's window ([hostToolOf]) while that
+     * window has a tile of its own — two tiles would open the same window.
+     * Alone, the hosted tool keeps its tile, so a crew member with rights on
+     * the Production Report Chat but not the report can still reach the chat.
+     */
+    fun grid(tools: List<ToolAccess>): List<ToolAccess> {
+        val shown = tools.mapTo(mutableSetOf()) { it.identifier }
+        return tools.filterNot { tool -> hostToolOf(tool.identifier)?.let { it in shown } == true }
+    }
 
     fun present(access: ToolAccess): ToolPresentation {
         val match = known[access.identifier]

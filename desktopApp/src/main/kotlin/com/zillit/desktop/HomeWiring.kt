@@ -606,6 +606,8 @@ internal fun AppGraph.Ready.boardFeed(
     service: ZillitService = ZillitService.Units,
     /** The `notification:read` module; defaults to `<tool>_label`, which Accounts breaks. */
     readModule: String = "${toolIdentifier.removeSuffix("_tool")}_label",
+    /** Modules the board's older notifications were filed under, read alongside [readModule]. */
+    legacyReadModules: List<String> = emptyList(),
     chatSegment: String = "chat",
     /** The member an admin is answering, on rooms that route posts to one person. */
     receiver: () -> String? = { null },
@@ -636,7 +638,11 @@ internal fun AppGraph.Ready.boardFeed(
         media = homeMediaCapture(this),
         // The board's read receipt names its own module label — the web
         // sends `info_label` / `confidential_info_label` here, not `home_label`.
-        onBoardViewed = { unitId -> emitSegmentRead(this, segment = unitId, module = readModule) },
+        onBoardViewed = { unitId ->
+            (listOf(readModule) + legacyReadModules).forEach { module ->
+                emitSegmentRead(this, segment = unitId, module = module)
+            }
+        },
         loadRecentMentions = {
             preferences.get(ZillitPreferences.RecentMentions).split('\n').filter { it.isNotBlank() }
         },

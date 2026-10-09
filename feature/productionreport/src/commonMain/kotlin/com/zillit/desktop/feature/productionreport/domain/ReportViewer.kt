@@ -15,6 +15,13 @@ data class ReportViewer(
     val designation: String = "",
     val canView: Boolean = true,
     val canPost: Boolean = false,
+    /**
+     * Viewing rights on the unit chat, which the backend made a tool of its
+     * own (`production_report_chat_tool`, Oct 2026): its routes refuse a
+     * viewer without them, whatever their report rights say. True until the
+     * tools call answers, like [canView].
+     */
+    val canViewChat: Boolean = true,
     val isAdmin: Boolean = false,
     /** False until the tools call has answered. */
     val ready: Boolean = false,
@@ -27,6 +34,7 @@ data class ReportViewer(
 
     companion object {
         const val TOOL_IDENTIFIER = "production_report_tool"
+        const val CHAT_TOOL_IDENTIFIER = "production_report_chat_tool"
 
         /**
          * [ProjectPermissions.Empty] — before the tools call returns — answers
@@ -39,6 +47,8 @@ data class ReportViewer(
             displayName: String,
             designation: String,
             toolIdentifier: String = TOOL_IDENTIFIER,
+            /** The tool whose rights open the unit chat; null for a report with no chat. */
+            chatToolIdentifier: String? = null,
         ): ReportViewer {
             val access = permissions.access(toolIdentifier)
             if (!access.enabled && permissions.visibleTools.isEmpty()) {
@@ -55,6 +65,9 @@ data class ReportViewer(
                 designation = designation,
                 canView = permissions.canView(toolIdentifier),
                 canPost = permissions.canPost(toolIdentifier),
+                // Admins pass the rights but not the production's switch: a
+                // chat tool that is off, or not yet issued, is no chat.
+                canViewChat = chatToolIdentifier?.let(permissions::canView) == true,
                 isAdmin = permissions.isAdmin,
                 ready = true,
             )

@@ -31,6 +31,10 @@ enum class ReportKind(
 
     val title: String get() = str(titleKey)
 
+    /** The tool whose rights open this report's unit chat; only the production report has one. */
+    val chatToolIdentifier: String?
+        get() = if (this == Production) ReportViewer.CHAT_TOOL_IDENTIFIER else null
+
     /** Whether a stored report belongs to this tool. Legacy rows carry no type and are production reports. */
     fun owns(reportType: String): Boolean = reportType.trim().lowercase() == wire
 

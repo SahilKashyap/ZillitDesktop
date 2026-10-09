@@ -66,6 +66,23 @@ class BadgeTallyTest {
     }
 
     @Test
+    fun `production report chat counts on its own tool and on the report window that hosts it`() {
+        val counts = tallyBadges(
+            listOf(
+                // A chat message since the split, and one filed before it.
+                row("chat-new", BadgeSections.TOOLS, tool = "production_report_tool_chat_label", unit = "pr-unit"),
+                row("chat-old", BadgeSections.TOOLS, tool = "production_report_label", unit = "pr-unit"),
+                row("draft", BadgeSections.TOOLS, tool = "production_report_label", unit = "drafts"),
+            ),
+        )
+        // Once on the dock: the host fold is a finer grain, not another row.
+        assertEquals(3, counts.section(BadgeSections.TOOLS))
+        assertEquals(1, counts["production_report_chat_tool"])
+        assertEquals(3, counts["production_report_tool"])
+        assertEquals(2, counts.unit("pr-unit"))
+    }
+
+    @Test
     fun `a board tool's rows badge their units, so the tab strip inside the tool lights`() {
         val counts = tallyBadges(
             listOf(

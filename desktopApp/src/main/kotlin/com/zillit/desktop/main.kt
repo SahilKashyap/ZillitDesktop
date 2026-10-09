@@ -1181,6 +1181,8 @@ private fun ToolReadOnFocus(ready: AppGraph.Ready, viewModels: AppViewModels, wo
 private val SELF_READING_TOOLS: Set<String> = setOf(
     // Boards: the visible unit is read when it loads (HomeFeedViewModel.selectUnit).
     "info_tool", "confidential_info_tool", "catering_tool", "accounting_tool", "reports_tool", "script_notes_tool",
+    // The report window's chat board, on the tile it has when the report has none.
+    "production_report_chat_tool",
     // Tabbed tools reading per unit/level.
     "callsheet_tool", "production_report_tool", "continuity_tool", "deal_memo_tool", "account_hub_tool",
     "purchase_order_tool", "card_expenses_tool", "cash_expenses_tool", "timecard_tool",

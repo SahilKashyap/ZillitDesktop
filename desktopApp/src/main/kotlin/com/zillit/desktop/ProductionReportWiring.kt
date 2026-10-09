@@ -3,6 +3,7 @@ package com.zillit.desktop
 import androidx.compose.runtime.Composable
 import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.badges.identifierToWireTool
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
@@ -27,6 +28,7 @@ import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.email.domain.StoredFile
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
+import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.ui.BoardToolProvider
 import com.zillit.desktop.feature.home.ui.HomeBoardContext
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
@@ -112,15 +114,51 @@ internal fun AppGraph.Ready.buildReport(
  * which is the Home unit-chat on the report service: the tool's own unit,
  * routes straight off `production-report/` (no `chat/`), and
  * `production_report:message:*` live events.
+ *
+ * Since the backend split (Oct 2026) the chat is a tool of its own,
+ * `production_report_chat_tool`: its rights decide who sees and posts (the
+ * routes answer `libs_no_viewing_rights` / `libs_no_posting_rights` on the
+ * chat tool's, not the report's), its switch decides whether there is a chat
+ * at all, and a rights request names it. The unit stays the report tool's —
+ * the backend asked for the same `unit_id` as before. Its notifications file
+ * under `production_report_tool_chat_label`; the ones filed before the split
+ * keep `production_report_label`, so a read names both.
  */
-internal fun AppGraph.Ready.productionReportChatFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
-    boardFeed(
+internal fun AppGraph.Ready.productionReportChatFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel {
+    val units: suspend () -> ZillitResult<List<HomeUnit>> = {
+        val rights = permissions()
+        val report = rights.access(PRODUCTION_REPORT_TOOL)
+        val unitId = report.unitId.orEmpty()
+        val chat = rights.access(ReportViewer.CHAT_TOOL_IDENTIFIER)
+        ZillitResult.Success(
+            if (unitId.isBlank()) {
+                // The tools call has not answered yet, or never issued the report tool.
+                emptyList()
+            } else {
+                listOf(
+                    HomeUnit(
+                        id = unitId,
+                        identifier = ReportViewer.CHAT_TOOL_IDENTIFIER,
+                        // A rights request names the unit: ask for the chat's.
+                        unitName = chat.unitName?.takeIf { it.isNotBlank() } ?: report.unitName.orEmpty(),
+                        canView = chat.canView || rights.isAdmin,
+                        canPost = chat.canPost || rights.isAdmin,
+                        enabled = chat.enabled,
+                    ),
+                )
+            },
+        )
+    }
+    return boardFeed(
         board = PRODUCTION_REPORT_BOARD,
-        toolIdentifier = ReportKind.Production.toolIdentifier,
-        permissions = permissions,
+        toolIdentifier = ReportViewer.CHAT_TOOL_IDENTIFIER,
+        units = units,
         service = ZillitService.ProductionReport,
+        readModule = identifierToWireTool(ReportViewer.CHAT_TOOL_IDENTIFIER),
+        legacyReadModules = listOf(ReportBadges.TOOL),
         chatSegment = "",
     )
+}
 
 /** The board key the report chat's feed and its live events share. */
 internal const val PRODUCTION_REPORT_BOARD = "production-report"
@@ -165,6 +203,7 @@ private fun AppGraph.Ready.productionReportViewer(permissions: ProjectPermission
         displayName = context?.profile?.fullName.orEmpty(),
         designation = me?.designationText().orEmpty(),
         toolIdentifier = kind.toolIdentifier,
+        chatToolIdentifier = kind.chatToolIdentifier,
     )
 }
 

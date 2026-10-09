@@ -17,6 +17,7 @@ class ToolWireNamesTest {
     fun `the irregular pairs map by table, not by suffix`() {
         assertEquals("accounting_tool", wireToolToIdentifier("accounts_label"))
         assertEquals("callsheet_tool", wireToolToIdentifier("call_sheet_label"))
+        assertEquals("production_report_chat_tool", wireToolToIdentifier("production_report_tool_chat_label"))
     }
 
     @Test
@@ -27,6 +28,7 @@ class ToolWireNamesTest {
         // The irregulars, round-tripped.
         assertEquals("accounts_label", identifierToWireTool("accounting_tool"))
         assertEquals("call_sheet_label", identifierToWireTool("callsheet_tool"))
+        assertEquals("production_report_tool_chat_label", identifierToWireTool("production_report_chat_tool"))
         // An identifier the table has never heard of falls back to the
         // majority shape rather than the old append-a-suffix rule.
         assertEquals("weather_label", identifierToWireTool("weather_tool"))
@@ -39,10 +41,18 @@ class ToolWireNamesTest {
         listOf(
             "accounts_label", "call_sheet_label", "location_tool_label",
             "forms_and_signature_label", "box_schedule_label", "deal_memo_label",
-            "map_label", "production_report_label", "casting_background_tool_label",
+            "map_label", "production_report_label", "production_report_tool_chat_label",
+            "casting_background_tool_label",
             "recce_label", "cost_report_label", "pre_production_label",
         ).forEach { label ->
             assertEquals(label, identifierToWireTool(wireToolToIdentifier(label)), "round trip of $label")
         }
+    }
+
+    @Test
+    fun `only the production report chat is hosted in another tool's window`() {
+        assertEquals("production_report_tool", hostToolOf("production_report_chat_tool"))
+        assertEquals(null, hostToolOf("production_report_tool"))
+        assertEquals(null, hostToolOf("callsheet_tool"))
     }
 }
