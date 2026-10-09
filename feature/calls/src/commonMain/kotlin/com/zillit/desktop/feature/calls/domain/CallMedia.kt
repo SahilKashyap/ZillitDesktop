@@ -131,6 +131,26 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.SelfSpeaking -> this
 }
 
+/**
+ * Line 2: the web and the phones share a screen from a SECOND Agora client,
+ * joined at the sharer's camera uid plus this (web `agoraCallEngine.js`
+ * `SCREEN_UID_OFFSET`, Android `AgoraCallEngine.SCREEN_UID_OFFSET`, which keeps
+ * cameras below it). That stream is a screen, not a person.
+ */
+const val AGORA_SCREEN_UID_OFFSET = 100_000
+
+/**
+ * The camera uid whose dedicated screen-share stream [uid] is, or null when
+ * [uid] is a person. Only once that camera is known — the web's
+ * `_isScreenShareUid` rule — because a uid that merely sits above the offset
+ * can be an ordinary participant whose camera the server numbered high.
+ */
+fun agoraScreenOwner(uid: Int, cameras: Collection<Int>): Int? {
+    if (uid <= AGORA_SCREEN_UID_OFFSET) return null
+    val camera = uid - AGORA_SCREEN_UID_OFFSET
+    return camera.takeIf { it in cameras }
+}
+
 /** Upsert, never ignore: an event for an unseen uid creates that peer. */
 private fun CallMedia.withPeer(uid: Int, edit: (MediaPeer) -> MediaPeer): CallMedia {
     // uid 0 is both the engine's self marker and the roster's "never told us".

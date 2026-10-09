@@ -238,7 +238,12 @@
             const model = list.find((t) => t.peerId === identity || String(t.uid) === String(entry.peerId));
             if (model) { found = model.uid; }
         });
-        return found;
+        if (found !== null) { return found; }
+        // Line 2: a shared screen is an ordinary Agora video track, so only
+        // Kotlin knows which tile is one (`share`). Never our own: the web
+        // does not spotlight the screen we are sending back at us.
+        const flagged = list.find((t) => t.share && !t.self);
+        return flagged ? flagged.uid : null;
     }
 
     /*
@@ -362,7 +367,14 @@
         // designation next to the name is the first thing to be truncated, and
         // it is the half that identifies the person. A link guest has no job
         // title and is chipped as a guest instead.
-        if (!model.ringing && model.guest) {
+        if (!model.ringing && model.share && !model.self) {
+            // A Line 2 screen sits beside its owner's own tile under the same
+            // name; this line is what tells the two apart.
+            const sharing = document.createElement('div');
+            sharing.className = 'chipDesig';
+            sharing.textContent = word('sharing', 'Sharing');
+            chip.appendChild(sharing);
+        } else if (!model.ringing && model.guest) {
             const guest = document.createElement('div');
             guest.className = 'chipGuest';
             guest.textContent = word('guest', 'Guest');
@@ -527,7 +539,9 @@
             // Camera off: their picture, not the last frame the track holds.
             if (cell.model.camOff) { return; }
             if (playingIn.get(uid) === cell.mount) { return; }
-            track.play(cell.mount);
+            // A shared screen is shown whole, as Lines 1 and 3 show theirs:
+            // cropped to the tile like a face, its edges are cut away.
+            track.play(cell.mount, cell.model.share ? { fit: 'contain' } : undefined);
             playingIn.set(uid, cell.mount);
         });
         // Re-derived rather than re-mounted from the camera: after a

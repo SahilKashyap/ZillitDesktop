@@ -218,6 +218,30 @@ if (find(stage, (n) => /\bpin\b/.test(n.className || ''))) { throw new Error('th
 api.setCompact(false);
 api.setStage(model);
 
+// Line 2: a web presenter's screen arrives as its own tile (Kotlin flags it
+// `share`), and it takes the big slot with nothing pinned. Its pin asks for
+// the SCREEN's key — it used to share the presenter's, so the face got pinned.
+const screenModel = JSON.stringify({
+    cols: 2,
+    tiles: [
+        { uid: 0, name: 'Me', self: true, known: true, key: 'self', peerId: 'me' },
+        { uid: 7, name: 'Web User', self: false, known: true, key: 'web', peerId: 'web' },
+        { uid: 100007, name: 'Web User', self: false, known: true, key: 'screen:100007', peerId: 'web', share: true },
+    ],
+});
+api.setStage(screenModel);
+const focusRow = find(stage, (n) => n.className === 'focus');
+if (!focusRow) { throw new Error('a Line 2 screen did not take the stage'); }
+const focusedName = find(focusRow, (n) => n.className === 'chipDesig');
+if (!focusedName || focusedName.textContent !== 'Sharing') {
+    throw new Error('the big slot is not the screen: ' + (focusedName && focusedName.textContent));
+}
+find(focusRow, (n) => /\bpin\b/.test(n.className || '')).listeners.click({ stopPropagation() {} });
+if (context.sent[context.sent.length - 1] !== JSON.stringify({ type: 'pin', key: 'screen:100007' })) {
+    throw new Error('pinning the screen asked for the wrong tile: ' + context.sent.slice(-1));
+}
+api.setStage(model);
+
 // attachRemote and detachRemote swallow their own errors into a warning, so
 // a throw inside them would otherwise pass this run silently.
 const swallowed = context.sent.filter((m) => /"where":"(attachRemote|detachRemote)"/.test(m));

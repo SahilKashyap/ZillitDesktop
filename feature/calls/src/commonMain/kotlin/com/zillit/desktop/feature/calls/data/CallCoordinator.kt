@@ -34,6 +34,7 @@ import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.reduce
+import com.zillit.desktop.feature.calls.domain.agoraScreenOwner
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallPhase
@@ -1883,16 +1884,8 @@ class CallCoordinator(
         // already ahead of it and re-applying would fight the user.
         if (event.deviceId == selfDeviceId()) return
 
-        // The uid on the row is what ties a roster entry to a picture. Zero
-        // means they have not joined media yet — except on Line 1, where no
-        // server issues one and the desktop numbers peers by a stable hash of
-        // their user id; derive the same number so the flag finds its tile.
-        val uid = when {
-            event.agoraUid != 0 -> event.agoraUid
-            session.provider == CallProvider.Mediasoup && event.userId.isNotBlank() ->
-                mediasoupUidOf(event.userId)
-            else -> 0
-        }
+        val uid = planeUid(session, event)
+        if (onScreenShareRow(session, event, uid)) return
         // Lines 1 and 3 learn who is in the room from the SFU alone. A row's
         // flags folded through the reducer CREATE a peer for whoever the row
         // names — and every row has flags: the seed written for someone added
@@ -2083,6 +2076,41 @@ class CallCoordinator(
      * row claims.
      */
     private val planeNames = mutableMapOf<Int, Pair<String, String>>()
+
+    /**
+     * The uid on the row is what ties a roster entry to a picture. Zero
+     * means they have not joined media yet — except on Line 1, where no
+     * server issues one and the desktop numbers peers by a stable hash of
+     * their user id; derive the same number so the flag finds its tile.
+     */
+    private fun planeUid(session: CallSession, event: PlaneEvent.UserFlags): Int = when {
+        event.agoraUid != 0 -> event.agoraUid
+        session.provider == CallProvider.Mediasoup && event.userId.isNotBlank() -> mediasoupUidOf(event.userId)
+        else -> 0
+    }
+
+    /**
+     * A web or phone screen share's own row (`call_users/<screen uid>`, see
+     * AGORA_SCREEN_UID_OFFSET), taken whole. True when [event] was one.
+     *
+     * It carries the PRESENTER's device id, so read as theirs it healed their
+     * row with the screen's uid and, on every other poll, put their hand and
+     * recording flag back down. It says one thing: that stream is a screen.
+     */
+    private fun onScreenShareRow(session: CallSession, event: PlaneEvent.UserFlags, uid: Int): Boolean {
+        if (session.provider != CallProvider.Agora || !event.sharing || !isAgoraScreen(session, uid)) return false
+        rememberPlaneName(uid, event.userId, event.userName)
+        if (uid in _media.value.peers) {
+            _media.value = _media.value.reduce(CallEngineEvent.PeerScreenShare(uid, sharing = true))
+        }
+        return true
+    }
+
+    /** [uid] is a Line 2 dedicated screen stream of someone in this call. */
+    private fun isAgoraScreen(session: CallSession, uid: Int): Boolean {
+        val cameras = _media.value.peers.keys + session.participants.map { it.numericUid }.filter { it != 0 }
+        return agoraScreenOwner(uid, cameras) != null
+    }
 
     private fun rememberPlaneName(uid: Int, userId: String, name: String) {
         if (uid == 0 || (userId.isBlank() && name.isBlank())) return

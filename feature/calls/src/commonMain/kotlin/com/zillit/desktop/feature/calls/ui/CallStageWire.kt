@@ -35,6 +35,7 @@ fun stageJson(tiles: List<CallTile>, columns: Int, pins: List<String> = emptyLis
         put("ringing", str(S.txt_ringing))
         put("guest", str(S.txt_badge_guest))
         put("hold", str(S.desktop_call_on_hold))
+        put("sharing", str(S.sharing))
     }
     // Pinned tile keys, in pin order: the page lays them out big and asks
     // back through a `pin` event, never deciding for itself.
@@ -73,9 +74,11 @@ fun stageJson(tiles: List<CallTile>, columns: Int, pins: List<String> = emptyLis
                 // name, the hold badge and the Guest chip. Without these the
                 // video stage silently dropped all three — a heavyweight
                 // surface owns its pixels, so nothing here can be drawn over
-                // the top. Sharing is deliberately NOT among them: the page
-                // learns that first-hand from the track it mounts, a frame
-                // before Kotlin could tell it.
+                // the top. On Lines 1 and 3 the page learns of a share
+                // first-hand, from the track it mounts; on Line 2 a shared
+                // screen is an ordinary video track, so only this says so —
+                // and it is what puts the screen on the big stage.
+                put("share", tile.presenting)
                 put("desig", tile.designation)
                 put("hold", tile.onHold)
                 put("guest", tile.isGuest)

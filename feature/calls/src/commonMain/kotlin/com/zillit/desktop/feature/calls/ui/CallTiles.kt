@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.LinkQuality
+import com.zillit.desktop.feature.calls.domain.agoraScreenOwner
 
 /** What a tile knows about someone's media. */
 data class TileMedia(
@@ -47,6 +48,11 @@ data class CallTile(
     val isGuest: Boolean = false,
     /** Job title under the name, where the roster reports one. */
     val designation: String = "",
+    /**
+     * Line 2: this tile is showing a shared screen and takes the stage. Lines
+     * 1 and 3 leave it false — the page learns theirs from the track it mounts.
+     */
+    val presenting: Boolean = false,
 )
 
 private val ON_STAGE = setOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.InCall)
@@ -82,6 +88,30 @@ fun buildTiles(
     directory: (String) -> CallDirectoryEntry? = { null },
 ): List<CallTile> {
     session ?: return emptyList()
+    if (session.provider != CallProvider.Agora) {
+        return personTiles(session, media, selfName, micMuted, cameraOn, selfHand, directory)
+    }
+    // A Line 2 share stream is drawn as a screen beside its owner, never as a
+    // person. As a person it was an unclaimed stream named after its owner —
+    // keyed by their user id, the same key as their own tile — so pinning the
+    // screen pinned whichever tile carried that key first: their face. And it
+    // was an orphan stream, which can break the one-row-one-stream pairing.
+    val screens = agoraScreens(session, media)
+    val people = if (screens.isEmpty()) media else media.copy(peers = media.peers - screens.keys)
+    val tiles = personTiles(session, people, selfName, micMuted, cameraOn, selfHand, directory)
+    return withScreens(tiles, screens, media)
+}
+
+/** [buildTiles] for the people alone — every stream in [media] is someone. */
+private fun personTiles(
+    session: CallSession,
+    media: CallMedia,
+    selfName: String,
+    micMuted: Boolean,
+    cameraOn: Boolean,
+    selfHand: Boolean,
+    directory: (String) -> CallDirectoryEntry?,
+): List<CallTile> {
     val selfUid = media.selfUid.takeIf { it != 0 } ?: session.localUid
     val roster = session.participants
         .filter { it.userId != session.selfUserId && it.status in ON_STAGE }
@@ -133,6 +163,60 @@ fun buildTiles(
             }
         }
     }
+}
+
+/**
+ * Line 2's dedicated screen streams: share uid → the camera uid it belongs to.
+ *
+ * A camera is any stream in the channel or any uid a roster row names — the
+ * presenter's own stream may not have published yet when their screen does.
+ */
+private fun agoraScreens(session: CallSession, media: CallMedia): Map<Int, Int> {
+    val cameras = media.peers.keys + session.participants.mapNotNull { it.numericUid.takeIf { uid -> uid != 0 } }
+    return media.peers.keys.mapNotNull { uid -> agoraScreenOwner(uid, cameras)?.let { uid to it } }.toMap()
+}
+
+/**
+ * Each screen right after its owner's tile, and the stage's presenters marked.
+ *
+ * The desktop shares on its own camera uid instead, so a person tile whose
+ * stream says it is sharing presents too — unless their screen has a tile of
+ * its own, which the web spotlights instead (`callStore.js`: an explicit pin
+ * on the camera of a dedicated sharer would cover the screen with a face).
+ */
+private fun withScreens(tiles: List<CallTile>, screens: Map<Int, Int>, media: CallMedia): List<CallTile> {
+    val owners = screens.values.toSet()
+    val placed = mutableSetOf<Int>()
+    val out = buildList {
+        tiles.forEach { tile ->
+            val sharing = !tile.isSelf && tile.media?.sharing == true && tile.uid !in owners
+            add(if (sharing) tile.copy(presenting = true) else tile)
+            if (tile.uid !in owners) return@forEach
+            screens.filterValues { it == tile.uid }.keys.sorted().forEach { uid ->
+                add(screenTile(uid, tile, media))
+                placed += uid
+            }
+        }
+    }
+    // A screen whose owner is not on the stage still shows: it is the one
+    // thing on it everybody is meant to be looking at.
+    return out + (screens.keys - placed).sorted().map { screenTile(it, null, media) }
+}
+
+/** [uid]'s shared screen, named for [owner] so the "is presenting" pill can say whose. */
+private fun screenTile(uid: Int, owner: CallTile?, media: CallMedia): CallTile {
+    val peer = media.peers.getValue(uid)
+    return CallTile(
+        key = "$SCREEN_KEY_PREFIX$uid",
+        name = owner?.name ?: peer.displayName.ifBlank { UNNAMED },
+        userId = owner?.userId ?: peer.identity,
+        uid = uid,
+        presence = owner?.presence ?: CallStatus.InCall,
+        // A screen has no microphone and no camera to switch off: never a
+        // mute badge, never the frozen-frame guard that hides a camera.
+        media = TileMedia(videoOn = peer.videoOn, sharing = true, quality = peer.quality),
+        presenting = true,
+    )
 }
 
 /** The roster row, in any status, whose identity a leftover stream [uid] is. */
@@ -309,4 +393,5 @@ private const val ONE_UP = 1
 private const val TWO_UP = 4
 private const val THREE_UP = 9
 private const val SELF_KEY = "self"
+private const val SCREEN_KEY_PREFIX = "screen:"
 private val UNNAMED: String get() = str(S.txt_badge_guest)
