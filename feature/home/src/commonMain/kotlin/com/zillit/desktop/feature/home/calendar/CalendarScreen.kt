@@ -518,6 +518,8 @@ private fun TimeGridHeader(days: List<LocalDate>, state: CalendarUiState) {
                     )
                 }
             }
+
+            Spacer(Modifier.width(TIME_GRID_TRAILING))
         }
         Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.divider))
     }

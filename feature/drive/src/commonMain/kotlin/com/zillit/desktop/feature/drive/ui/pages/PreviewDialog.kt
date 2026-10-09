@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitVideoView
+import com.zillit.desktop.core.designsystem.component.ZillitViewerPager
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.feature.drive.domain.DriveAction
@@ -42,15 +44,23 @@ import com.zillit.desktop.core.strings.str
 
 /**
  * The in-app preview — the web's preview modal for images and its
- * `DocumentViewer` for PDFs, plus plain text. Video and audio never reach
- * here (they go to the host's player); office documents open in the editor.
+ * `DocumentViewer` for PDFs, plus plain text and video. Audio never reaches
+ * here (it goes to the host's player); office documents open in the editor.
  * Anything else gets a card that says so, with the way out to the browser.
+ *
+ * An image or a video carries arrows (and ← →) to the listing's previous and
+ * next image or video, so a folder's media can be looked through in one go.
  */
 @Composable
 internal fun PreviewDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val preview = state.preview
     val item = preview?.item
     val canDownload = item != null && state.viewer.may(DriveAction.Download, item)
+    // Null at either end of the run, which leaves that arrow out.
+    val onPrevious = state.previewNeighbour(forward = false)
+        ?.let { { onEvent(DriveEvent.StepPreview(forward = false)) } }
+    val onNext = state.previewNeighbour(forward = true)
+        ?.let { { onEvent(DriveEvent.StepPreview(forward = true)) } }
     ZillitDialogShell(
         title = item?.name.orEmpty(),
         subtitle = item?.let { formatBytes(it.sizeBytes).takeIf { s -> s != "—" } },
@@ -91,13 +101,17 @@ internal fun PreviewDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 .background(VIEWER_BACKDROP),
             contentAlignment = Alignment.Center,
         ) {
-            if (preview != null) PreviewBody(preview)
+            if (preview != null) {
+                ZillitViewerPager(onPrevious, onNext, Modifier.fillMaxSize()) {
+                    PreviewBody(preview) { onEvent(DriveEvent.OpenPreviewInBrowser) }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun PreviewBody(preview: PreviewState) {
+private fun PreviewBody(preview: PreviewState, onOpenOutside: () -> Unit) {
     when {
         preview.loading -> Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -125,6 +139,13 @@ private fun PreviewBody(preview: PreviewState) {
                 )
             }
         }
+
+        preview.kind == PreviewKind.Video -> ZillitVideoView(
+            url = preview.url,
+            failed = false,
+            onOpenOutside = onOpenOutside,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         preview.kind == PreviewKind.Pdf && preview.pages.isNotEmpty() -> Pages(preview.pages)
         preview.kind == PreviewKind.Text && preview.text != null -> TextBody(preview.text)

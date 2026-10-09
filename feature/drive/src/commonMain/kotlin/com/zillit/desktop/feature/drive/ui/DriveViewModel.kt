@@ -240,7 +240,8 @@ class DriveViewModel(
             is DriveEvent.OpenInEditor -> openEditor(event.item, event.editable)
             is DriveEvent.Preview -> drawers.preview(event.item)
             DriveEvent.ClosePreview -> setState { copy(preview = null) }
-            DriveEvent.OpenPreviewInBrowser -> currentState.preview?.url?.let { sendEffect(DriveEffect.OpenUrl(it)) }
+            DriveEvent.OpenPreviewInBrowser -> drawers.openPreviewOutside()
+            is DriveEvent.StepPreview -> currentState.previewNeighbour(event.forward)?.let(drawers::preview)
 
             // -- uploads ---------------------------------------------------
 

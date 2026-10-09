@@ -398,12 +398,12 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     /**
      * What opening a file does — `handleFilePreview`.
      *
-     * Office documents open in the editor read-only; video and audio go to
-     * the host's player at their streaming address; images, PDFs and plain
-     * text are fetched and shown in the dialog; anything else gets a card
-     * with a way out to the browser.
+     * Office documents open in the editor read-only; audio goes to the host's
+     * player at its streaming address; video plays in the dialog from that
+     * address, so the arrows can step through images and clips alike; images,
+     * PDFs and plain text are fetched and shown in the dialog; anything else
+     * gets a card with a way out to the browser.
      */
-    @Suppress("CyclomaticComplexMethod") // One branch per preview kind, as `handleFilePreview` is written.
     fun preview(item: DriveItem) {
         vm.update { copy(menu = null) }
         if (item.isFolder) return
@@ -415,16 +415,21 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             vm.reportFailure(str(S.desktop_drive_no_open_permission))
             return
         }
-        val kind = item.previewKind
-        if (kind == PreviewKind.Video || kind == PreviewKind.Audio) {
-            vm.run {
+        when (val kind = item.previewKind) {
+            PreviewKind.Video -> previewVideo(item)
+            PreviewKind.Audio -> vm.run {
                 when (val url = vm.repo.streamUrl(item.id)) {
                     is ZillitResult.Success -> vm.effect(DriveEffect.OpenMedia(url.data, item.name))
                     is ZillitResult.Failure -> vm.reportError(url.error)
                 }
             }
-            return
+
+            else -> previewFetched(item, kind)
         }
+    }
+
+    /** Images, PDFs and text: the bytes are fetched and drawn in the dialog. */
+    private fun previewFetched(item: DriveItem, kind: PreviewKind) {
         vm.update { copy(preview = PreviewState(item = item, kind = kind)) }
         vm.run {
             val url = when (val got = vm.repo.previewUrl(item.id)) {
@@ -451,6 +456,19 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         }
     }
 
+    /** A clip plays in the dialog from its streaming address — nothing is fetched up front. */
+    private fun previewVideo(item: DriveItem) {
+        vm.update { copy(preview = PreviewState(item = item, kind = PreviewKind.Video)) }
+        vm.run {
+            when (val url = vm.repo.streamUrl(item.id)) {
+                is ZillitResult.Success -> settlePreview(item) { copy(loading = false, url = url.data) }
+                is ZillitResult.Failure -> settlePreview(item) {
+                    copy(loading = false, error = url.error.userMessage)
+                }
+            }
+        }
+    }
+
     private suspend fun fetchInto(
         item: DriveItem,
         url: String,
@@ -471,6 +489,23 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             }
 
             is ZillitResult.Failure -> settlePreview(item) { copy(loading = false, error = bytes.error.userMessage) }
+        }
+    }
+
+    /**
+     * The preview's way out of the dialog. A clip the in-app player could not
+     * play goes to the host's player, as clips did before they played here;
+     * anything else goes to the browser. The dialog closes first, so a dead
+     * player is not left standing behind the window it handed off to.
+     */
+    fun openPreviewOutside() {
+        val preview = state.preview ?: return
+        val url = preview.url ?: return
+        if (preview.kind == PreviewKind.Video) {
+            vm.update { copy(preview = null) }
+            vm.effect(DriveEffect.OpenMedia(url, preview.item.name))
+        } else {
+            vm.effect(DriveEffect.OpenUrl(url))
         }
     }
 

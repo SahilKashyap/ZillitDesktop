@@ -276,6 +276,9 @@ data class PreviewState(
     override fun hashCode(): Int = item.id.hashCode()
 }
 
+/** What the preview's arrows step between. */
+private val STEPPABLE = setOf(PreviewKind.Image, PreviewKind.Video)
+
 /** The pointer-anchored row menu — the web's controlled context `Dropdown`. */
 data class ItemMenuState(val item: DriveItem, val x: Float, val y: Float)
 
@@ -408,6 +411,25 @@ data class DriveUiState(
 
     /** Uploads still running, for the operations panel's badge. */
     val activeUploads: List<QueuedUpload> get() = uploads.filterNot { it.isSettled }
+
+    /**
+     * The images and videos the preview steps through — the listing's own
+     * files in its own order, so the arrows follow what is on screen.
+     */
+    val mediaRows: List<DriveItem>
+        get() = rows.filter { !it.isFolder && it.previewKind in STEPPABLE && viewer.may(DriveAction.View, it) }
+
+    /**
+     * The image or video either side of the one being previewed; null at the
+     * end of the run, or when the preview is not one of them (a PDF, text).
+     */
+    fun previewNeighbour(forward: Boolean): DriveItem? {
+        val current = preview?.item ?: return null
+        val run = mediaRows
+        val at = run.indexOfFirst { it.id == current.id }
+        if (at < 0) return null
+        return run.getOrNull(if (forward) at + 1 else at - 1)
+    }
 
     fun isFavourite(item: DriveItem): Boolean = item.id in favouriteIds
 

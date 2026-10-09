@@ -94,6 +94,8 @@ internal class InfoHooks(
     val people: List<CrewContact> = emptyList(),
     /** Opens one of a group's confirmations at the thread's root. */
     val onGroupDialog: (GroupDialog) -> Unit = {},
+    /** Opens a person's profile photo large, over the thread. */
+    val onViewFace: (CrewContact) -> Unit = {},
 )
 
 /**
@@ -219,14 +221,29 @@ private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHook
     ) {
         // A room has no face of its own among the people; its picture is the
         // one `chat-room` carries, fetched like any chat image.
+        val picture = group?.detail?.picture
+        val image = if (state.peerIsGroup) {
+            rememberGroupPicture(picture, hooks.media)
+        } else {
+            rememberChatFace(peer.userId, hooks.loadAvatar)
+        }
+        // Clicking the circle opens the photo large, as WhatsApp does — only
+        // once there is a photo; initials have nothing more to show. A room's
+        // picture is a chat image, so it opens in the thread's own viewer.
+        val openPhoto: (() -> Unit)? = when {
+            image == null -> null
+            state.peerIsGroup -> picture?.let { file -> { hooks.media.onView(file) } }
+            else -> { { hooks.onViewFace(peer) } }
+        }
         ZillitAvatar(
             name = peer.fullName,
-            image = if (state.peerIsGroup) {
-                rememberGroupPicture(group?.detail?.picture, hooks.media)
-            } else {
-                rememberChatFace(peer.userId, hooks.loadAvatar)
-            },
+            image = image,
             size = BIG_AVATAR,
+            modifier = if (openPhoto != null) {
+                Modifier.clip(CircleShape).clickable(onClick = openPhoto)
+            } else {
+                Modifier
+            },
         )
         if (state.peerIsGroup) GroupPhotoButton(group, hooks.selfId, hooks.onEvent)
         Row(

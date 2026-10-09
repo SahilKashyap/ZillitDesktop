@@ -19,6 +19,8 @@ import com.zillit.desktop.feature.drive.domain.folderTree
 import com.zillit.desktop.feature.drive.domain.formatBytes
 import com.zillit.desktop.feature.drive.domain.innerTabTotals
 import com.zillit.desktop.feature.drive.domain.relativeTime
+import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.feature.drive.ui.PreviewState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -219,5 +221,33 @@ class DriveListingTest {
         assertEquals("5 minutes ago", relativeTime(now - 5 * 60_000, now))
         assertEquals("an hour ago", relativeTime(now - 3_600_000, now))
         assertEquals("2 days ago", relativeTime(now - 2 * 86_400_000, now))
+    }
+
+    // -- preview stepping ------------------------------------------------------
+
+    @Test
+    fun `the preview steps through the listing's images and videos, skipping everything else`() {
+        val media = DriveListing(
+            files = listOf(
+                file("1", "a.png"),
+                file("2", "notes.pdf"),
+                file("3", "b.mp4"),
+                file("4", "c.jpg"),
+            ),
+        )
+        fun at(id: String, kind: PreviewKind) = DriveUiState(
+            listing = media,
+            innerTab = DriveInnerTab.Files,
+            preview = PreviewState(item = media.files.first { it.id == id }, kind = kind),
+        )
+
+        assertEquals(listOf("1", "3", "4"), at("1", PreviewKind.Image).mediaRows.map { it.id })
+        assertEquals("3", at("1", PreviewKind.Image).previewNeighbour(forward = true)?.id)
+        assertEquals(null, at("1", PreviewKind.Image).previewNeighbour(forward = false))
+        assertEquals("1", at("3", PreviewKind.Video).previewNeighbour(forward = false)?.id)
+        assertEquals("4", at("3", PreviewKind.Video).previewNeighbour(forward = true)?.id)
+        assertEquals(null, at("4", PreviewKind.Image).previewNeighbour(forward = true))
+        // A PDF is not part of the run, so it gets no arrows.
+        assertEquals(null, at("2", PreviewKind.Pdf).previewNeighbour(forward = true))
     }
 }
