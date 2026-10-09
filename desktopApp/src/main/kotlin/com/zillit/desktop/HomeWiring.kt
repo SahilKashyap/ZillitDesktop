@@ -3,6 +3,8 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.media.AttachmentPicker.Companion.MAX_READABLE_BYTES
+import com.zillit.desktop.core.media.VideoCompressor
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
@@ -151,6 +153,10 @@ internal suspend fun fetchStaticMapBytes(ready: AppGraph.Ready, lat: Double, lng
 private const val STATIC_MAP_NAME = "location-map.png"
 private const val STATIC_MAP_TYPE = "image/png"
 
+/** How much of a compressed video's progress bar the compressing takes; uploading has the rest. */
+private const val COMPRESS_SHARE = 40
+private const val PERCENT = 100
+
 /**
  * What the composer can capture: picker, uploader, microphone, poster frames.
  *
@@ -166,14 +172,17 @@ internal fun homeMediaCapture(
 ) = MediaCapture(
     // The same OS dialog mail attachments use. Several files become several
     // posts — the wire takes one attachment per message, as the phones send.
-    pick = { FilePicker().pick().map { it.toNoticeMedia() } },
+    // No size cap beyond what the app can hold: a large video is compressed
+    // on its way out (below), not refused at the door.
+    pick = { FilePicker(maxBytes = MAX_READABLE_BYTES).pick().map { it.toNoticeMedia() } },
     // The attach sheet's kind filters the same dialog — Photo, Video,
     // Document, Audio — and is checked again after the choice.
-    pickOf = { kind -> attachmentPicker.pick(kind).map { it.toNoticeMedia() } },
+    pickOf = { kind -> attachmentPicker.pick(kind, maxBytes = MAX_READABLE_BYTES).map { it.toNoticeMedia() } },
     // The same routed uploader (S3 or Box by production) mail uses. A video's
     // poster frame travels first as its own object; a poster that fails to
     // upload costs the poster, never the video.
-    upload = { picked, onProgress ->
+    upload = { original, onProgress ->
+        val (picked, uploadProgress) = compressIfLarge(original, onProgress)
         // The poster read path signs S3 GETs; a poster keyed into Box could
         // never be fetched. The web skips it there for the same reason.
         val storageIsAws = storageKindOf(storageType()) == StorageKind.Aws
@@ -187,7 +196,7 @@ internal fun homeMediaCapture(
         // Only the main file reports progress: the poster above is a few
         // kilobytes, and a bar that restarts for it would read as a glitch.
         uploader
-            .upload(picked.name, picked.contentType, picked.bytes, onProgress)
+            .upload(picked.name, picked.contentType, picked.bytes, uploadProgress)
             .map { stored ->
                 UploadedNoticeMedia(
                     kind = picked.kind,
@@ -230,6 +239,28 @@ internal fun homeMediaCapture(
         }
     },
 )
+
+/**
+ * A video over 100 MB re-encoded before it uploads, with the progress the
+ * upload should report from then on; anything else, or a video that would
+ * not compress, comes back as it was.
+ *
+ * The bar covers both halves — compressing fills its first part, uploading
+ * the rest — so it climbs once rather than running to 100 and starting
+ * again. The poster was cut from the original, which the compressed copy
+ * matches frame for frame.
+ */
+private suspend fun compressIfLarge(
+    original: PickedMedia,
+    onProgress: (Int) -> Unit,
+): Pair<PickedMedia, (Int) -> Unit> {
+    if (!VideoCompressor.wants(original.contentType, original.bytes.size.toLong())) return original to onProgress
+    val compressed = VideoCompressor.compress(original.name, original.bytes) { percent ->
+        onProgress(percent * COMPRESS_SHARE / PERCENT)
+    } ?: return original to onProgress
+    val picked = original.copy(name = compressed.name, contentType = compressed.contentType, bytes = compressed.bytes)
+    return picked to { percent -> onProgress(COMPRESS_SHARE + percent * (PERCENT - COMPRESS_SHARE) / PERCENT) }
+}
 
 /** Email's picker type and home's, bridged where both are in scope. */
 internal fun com.zillit.desktop.feature.email.domain.PickedFile.toNoticeMedia() =

@@ -145,6 +145,14 @@ interface AttachmentPicker {
     companion object {
         /** 25 MB — where most mail servers stop accepting; callers raise it. */
         const val DEFAULT_MAX_BYTES: Long = 25L * 1024 * 1024
+
+        /**
+         * About 2 GB — the most one file can weigh and still be read whole.
+         * A picked file travels as a single array, and an array cannot be
+         * longer; past this, reading fails rather than refusing politely, so
+         * a caller with no size rule of its own refuses here instead.
+         */
+        const val MAX_READABLE_BYTES: Long = Int.MAX_VALUE - 8L
     }
 }
 

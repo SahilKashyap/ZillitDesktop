@@ -3,6 +3,7 @@ package com.zillit.desktop.core.network
 import com.zillit.desktop.core.common.ZillitLog
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
@@ -53,13 +54,20 @@ object HttpClientFactory {
         verboseLogging: Boolean = false,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         logBodies: Boolean = false,
+        /**
+         * The whole exchange, start to finish. [timeoutMillis] by default; a
+         * client that moves large files passes [NO_TIMEOUT], since a 500 MB
+         * upload is not stuck at minute two — a stall is still caught by the
+         * socket timeout, which is per read and write.
+         */
+        requestTimeoutMillis: Long = timeoutMillis,
     ): HttpClient = HttpClient(engineFactory.engine()) {
         expectSuccess = false
 
         install(ContentNegotiation) { json(this@HttpClientFactory.json) }
 
         install(HttpTimeout) {
-            requestTimeoutMillis = timeoutMillis
+            this.requestTimeoutMillis = requestTimeoutMillis
             connectTimeoutMillis = timeoutMillis
             socketTimeoutMillis = timeoutMillis
         }
@@ -81,5 +89,8 @@ object HttpClientFactory {
     }
 
     const val DEFAULT_TIMEOUT_MILLIS = 60_000L
+
+    /** For [create]'s `requestTimeoutMillis`: no limit on the whole exchange. */
+    const val NO_TIMEOUT = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
     private const val TAG = "Http"
 }

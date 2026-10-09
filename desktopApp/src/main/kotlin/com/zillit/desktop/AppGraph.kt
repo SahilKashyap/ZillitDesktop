@@ -833,10 +833,13 @@ sealed interface AppGraph {
             )
 
             // Its own client, so an S3 upload does not inherit the API's
-            // encrypted-header pipeline — S3 signs its own requests.
+            // encrypted-header pipeline — S3 signs its own requests. No cap on
+            // the whole request: chat and Home carry files of any size, and a
+            // large one takes minutes on an ordinary connection.
             val storageClient = HttpClientFactory.create(
                 engineFactory = OkHttpEngineProvider(),
                 verboseLogging = false,
+                requestTimeoutMillis = HttpClientFactory.NO_TIMEOUT,
             )
 
             // Replays nothing and drops rather than suspends: when a session

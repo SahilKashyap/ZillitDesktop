@@ -2162,8 +2162,9 @@ internal suspend fun pickChatAttachment(
     /** Where the bytes go — another production's storage for a widget on one. */
     capture: com.zillit.desktop.feature.home.ui.MediaCapture = homeMediaCapture(ready),
 ): com.zillit.desktop.feature.chat.domain.ChatPick {
-    // Chat's own ceiling, not mail's 25 MB: both other clients carry files up
-    // to 70 MB, and a desktop that stops at 25 refuses what a phone sends.
+    // Chat's own ceiling, not mail's 25 MB: no product cap, only the most a
+    // file can weigh and still be read (~2 GB). A large video is compressed
+    // on upload rather than refused here.
     var refusal: String? = null
     val picked: List<PickedBytes> = if (kind == null) {
         com.zillit.desktop.feature.email.data.FilePicker(
@@ -2173,7 +2174,7 @@ internal suspend fun pickChatAttachment(
             },
         ).pick().take(1).map { PickedBytes(it.name, it.contentType, it.bytes) }
     } else {
-        // The attach sheet's kind: the same 70 MB ceiling, plus a wrong-kind
+        // The attach sheet's kind: the same ceiling, plus a wrong-kind
         // refusal the phones word as "Please select a valid file type".
         // Several at once, WhatsApp's multi-select — each its own message.
         attachmentPicker.pick(

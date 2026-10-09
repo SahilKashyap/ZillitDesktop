@@ -30,13 +30,20 @@ class ChatComposerRulesTest {
     }
 
     /**
-     * 70 MB exactly is carried; a byte more is not. The web keeps a file at
-     * `size / 1024 / 1024 <= 70` (`ChatFooterCnc.jsx:509-511`), so the
-     * boundary belongs on the allowed side.
+     * No 70 MB cap any more: a 500 MB rushes file is carried (a video that
+     * size is compressed on upload, not refused). The only ceiling left is
+     * what one file can weigh and still be read whole.
      */
     @Test
-    fun `seventy megabytes is carried, and one byte more is not`() {
-        val ceiling = 70L * 1024 * 1024
+    fun `a file far past the old 70 MB cap is carried`() {
+        assertNull(ChatComposerRules.refuse("rushes.mp4", 70L * 1024 * 1024 + 1))
+        assertNull(ChatComposerRules.refuse("rushes.mp4", 500L * 1024 * 1024))
+    }
+
+    /** At the readable ceiling a file is carried; a byte more cannot be read, and is refused. */
+    @Test
+    fun `the readable ceiling is carried, and one byte more is not`() {
+        val ceiling = ChatComposerRules.MAX_ATTACHMENT_BYTES
         assertNull(ChatComposerRules.refuse("rushes.mp4", ceiling))
         assertEquals(
             ChatComposerRules.ATTACHMENT_TOO_LARGE,
@@ -65,7 +72,7 @@ class ChatComposerRulesTest {
     fun `an oversize executable is refused for its size`() {
         assertEquals(
             ChatComposerRules.ATTACHMENT_TOO_LARGE,
-            ChatComposerRules.refuse("setup.exe", 80L * 1024 * 1024),
+            ChatComposerRules.refuse("setup.exe", ChatComposerRules.MAX_ATTACHMENT_BYTES + 1),
         )
     }
 

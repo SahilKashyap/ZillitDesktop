@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat.domain
 
+import com.zillit.desktop.core.media.AttachmentPicker
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -24,15 +25,14 @@ object ChatComposerRules {
     const val MAX_BODY_CHARS = 2000
 
     /**
-     * 70 MB. Both other clients draw the line here and neither is quiet about
-     * it: the web filters an oversize video out of the selection with a
-     * notice (`ChatFooterCnc.jsx:509-527`), and Android splits or compresses
-     * a video down to fit (`mediaHandler/video_compressor.kt:34,74`).
+     * About 2 GB — no product cap, only the most a file can weigh and still
+     * be read whole (`AttachmentPicker.MAX_READABLE_BYTES`).
      *
-     * Until now the desktop stopped at mail's 25 MB — and stopped *silently*,
-     * because the shared picker drops an oversize file without a word.
+     * The web and Android stop at 70 MB, and the desktop used to follow
+     * them. It no longer does: a video over 100 MB is compressed before it
+     * uploads (`VideoCompressor`), and anything else goes as it is.
      */
-    const val MAX_ATTACHMENT_BYTES = 70L * 1024 * 1024
+    const val MAX_ATTACHMENT_BYTES = AttachmentPicker.MAX_READABLE_BYTES
 
     /**
      * The one extension the web names outright
@@ -44,12 +44,8 @@ object ChatComposerRules {
     /** The web's `exceeding_text_limit` (`utils/language/en.js:5649`). */
     val BODY_TOO_LONG: String get() = str(S.desktop_chat_text_limit_exceeded)
 
-    /**
-     * The web's `media_above_70mb` (`utils/language/en.js:6532`), shortened:
-     * its tail explains that the file was dropped from a multi-file
-     * selection, and this picker takes one file at a time.
-     */
-    val ATTACHMENT_TOO_LARGE: String get() = str(S.desktop_chat_media_above_70mb)
+    /** Said when a file is past [MAX_ATTACHMENT_BYTES]. */
+    val ATTACHMENT_TOO_LARGE: String get() = str(S.desktop_chat_media_above_2gb)
 
     /** The web's `invalid_file_type` (`utils/language/en.js:5651`). */
     val ATTACHMENT_REFUSED_TYPE: String get() = str(S.desktop_select_a_valid_file_type)
@@ -81,7 +77,7 @@ object ChatComposerRules {
     /**
      * Why this file cannot be sent, or null when it can.
      *
-     * Size first: a 200 MB `.exe` is refused for being an executable either
+     * Size first: a 3 GB `.exe` is refused for being an executable either
      * way, but the size is the thing the sender can do something about.
      */
     fun refuse(name: String, sizeBytes: Long): String? = when {

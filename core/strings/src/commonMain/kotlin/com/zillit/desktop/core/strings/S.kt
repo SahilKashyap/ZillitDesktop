@@ -5662,6 +5662,7 @@ object S {
     const val desktop_chat_image_reply_subtitle: String = "desktop_chat_image_reply_subtitle"
     const val desktop_chat_info_loaded_only: String = "desktop_chat_info_loaded_only"
     const val desktop_chat_loading_conversation: String = "desktop_chat_loading_conversation"
+    const val desktop_chat_media_above_2gb: String = "desktop_chat_media_above_2gb"
     const val desktop_chat_media_above_70mb: String = "desktop_chat_media_above_70mb"
     const val desktop_chat_message_placeholder: String = "desktop_chat_message_placeholder"
     const val desktop_chat_message_translated: String = "desktop_chat_message_translated"
