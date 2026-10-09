@@ -41,6 +41,8 @@ import kotlinx.serialization.json.put
  * currently looking at — so the project the headers name is taken from the
  * session rather than from app state, via [CallOptions.projectId].
  */
+// One function per endpoint the calling server offers; grouping them would only rename them.
+@Suppress("TooManyFunctions")
 class CallApi(
     private val apiClient: ApiClient,
     private val config: AppConfig,
@@ -303,6 +305,22 @@ class CallApi(
             )
         }
     }
+
+    /**
+     * Line 2/3 group calls still running in rooms this user belongs to —
+     * Android's `GET_ACTIVE_CALLS` and the web's `getActiveGroupList`
+     * (`mediasoup-call/active-group-calls`, unscoped). The raw `{calls}`
+     * envelope; [readActiveGroupCalls] makes sessions of it.
+     */
+    suspend fun activeGroupCalls(): ZillitResult<JsonElement?> =
+        apiClient.envelope(
+            verb = HttpVerb.Get,
+            url = "${base}mediasoup-call/active-group-calls",
+            module = RequestModule.ProjectUser,
+            // What is running NOW: a copy kept from an earlier read would put
+            // Join on calls that have ended while the network was away.
+            options = CallOptions(readCache = false),
+        ).map { it.data }
 
     /**
      * The relays Line 1's transports may use to cross a hostile network.

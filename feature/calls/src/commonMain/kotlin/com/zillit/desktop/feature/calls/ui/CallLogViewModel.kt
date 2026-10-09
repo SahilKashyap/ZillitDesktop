@@ -10,9 +10,13 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallProvider
+import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -33,8 +37,9 @@ enum class OngoingVerb(private val labelKey: String) {
 }
 
 /**
- * A live Line 3 call the Calls tab offers a way into (`ActiveCallInfo` on
- * the web's socket, drawn as the "Ongoing" rows and the per-row buttons).
+ * A live call the Calls tab and the group header offer a way into: a
+ * LiveKit call off the presence socket (`ActiveCallInfo`), or a Line 2/3
+ * group call off `mediasoup-call/active-group-calls`.
  */
 data class OngoingCall(
     val callId: String,
@@ -45,8 +50,18 @@ data class OngoingCall(
     /** Who is in the room, named — the join-confirm sheet lists them. */
     val inCall: List<Pair<String, String>>,
     val verb: OngoingVerb,
+    /** Which line carries it — what a Join goes through. */
+    val line: CallProvider = CallProvider.LiveKit,
+    /**
+     * The other names the history may file it under: a mediasoup row's
+     * `call_uuid` is its room id, Android's `room.roomId == item.call_uuid`.
+     */
+    val aliases: Set<String> = emptySet(),
 ) {
     val count: Int get() = inCall.size
+
+    /** True when [id] names this call by any of its ids. */
+    fun isCalled(id: String?): Boolean = !id.isNullOrBlank() && (id == callId || id in aliases)
 }
 
 /**
@@ -57,6 +72,10 @@ data class OngoingCall(
 class OngoingCallsSource(
     /** The calling socket's live list, never polled. */
     val activeCalls: Flow<List<LiveKitActiveCall>>,
+    /** Line 2/3 group calls running in the user's rooms; see `ActiveGroupCalls`. */
+    val groupCalls: Flow<List<CallSession>> = flowOf(emptyList()),
+    /** Asks for [groupCalls] again — a group thread opening wants it current. */
+    val refresh: () -> Unit = {},
     /** The call open on this device, so its row says Return. */
     val liveCallId: Flow<String?>,
     /** Joins or switches into an ongoing call; the host owns what that means. */
@@ -158,11 +177,12 @@ class CallLogViewModel(
     init {
         launch { load(reset = true) }
         ongoing?.let { source ->
+            // The tab opening is a moment to look again, as a group thread's is.
+            source.refresh()
             launch {
-                combine(source.activeCalls, source.liveCallId) { calls, live -> calls to live }
-                    .collect { (calls, live) ->
-                        setState { copy(ongoing = ongoingCalls(calls, live, selfUserId().orEmpty(), projectId)) }
-                    }
+                combine(source.activeCalls, source.groupCalls, source.liveCallId) { calls, groups, live ->
+                    ongoingCalls(calls, live, selfUserId().orEmpty(), projectId, groups)
+                }.collect { rows -> setState { copy(ongoing = rows) } }
             }
         }
     }
@@ -309,6 +329,7 @@ fun ongoingCalls(
     liveCallId: String?,
     selfUserId: String,
     projectId: String?,
+    groupCalls: List<CallSession> = emptyList(),
 ): List<OngoingCall> = calls
     .filter { projectId.isNullOrBlank() || it.projectId.isBlank() || it.projectId == projectId }
     .map { call ->
@@ -325,7 +346,60 @@ fun ongoingCalls(
                 else -> OngoingVerb.Join
             },
         )
+    } + groupCalls
+    .filter { projectId.isNullOrBlank() || it.projectId.isBlank() || it.projectId == projectId }
+    .map { session -> session.asOngoing(liveCallId, selfUserId) }
+
+/**
+ * A Line 2/3 group call as a row: in the room are those whose `call_users`
+ * status says answered or placed it — Android's `incall`/`caller` — and the
+ * verb is the same rule as Line 3's, by either of the call's ids.
+ */
+private fun CallSession.asOngoing(liveCallId: String?, selfUserId: String): OngoingCall {
+    val inRoom = participants.filter { it.status == CallStatus.InCall || it.status == CallStatus.Caller }
+    val call = OngoingCall(
+        callId = callUuid,
+        title = title.ifBlank { str(S.txt_group_call) },
+        type = type,
+        mode = mode,
+        chatRoomId = chatRoomId,
+        inCall = inRoom.distinctBy { it.userId }.map { it.userId to it.name },
+        verb = OngoingVerb.Join,
+        line = provider,
+        aliases = setOf(roomId, inviteCode).filter(String::isNotBlank).toSet(),
+    )
+    val verb = when {
+        call.isCalled(liveCallId) -> OngoingVerb.Return
+        selfUserId.isNotBlank() && inRoom.any { it.userId == selfUserId } -> OngoingVerb.Switch
+        else -> OngoingVerb.Join
     }
+    return call.copy(verb = verb)
+}
+
+/**
+ * Which history row carries which live call's button, keyed by the row's
+ * `callUuid` — Android's `CallLogsHolder.handleJoinBtn`, which puts Join /
+ * Switch here / Return on the recents row itself.
+ *
+ * The call's own row when the history has it (its `callUuid` is the live
+ * call's id); else, for a group call, the room's newest row — Android's
+ * chat-room match, held to one row so a room's past calls do not all offer
+ * the one live call. [entries] are newest first, as the tab holds them.
+ */
+fun ongoingByRow(entries: List<CallLogEntry>, ongoing: List<OngoingCall>): Map<String, OngoingCall> =
+    buildMap {
+        ongoing.forEach { call ->
+            val row = entries.firstOrNull { call.isCalled(it.callUuid) }
+                ?: call.chatRoomId.takeIf(String::isNotBlank)?.let { room ->
+                    entries.firstOrNull { it.mode == CallMode.Group && it.roomId == room }
+                }
+            if (row != null && row.callUuid !in this) put(row.callUuid, call)
+        }
+    }
+
+/** The live call running in a group's room, if any — what the group header's Join Call offers. */
+fun List<OngoingCall>.inRoom(chatRoomId: String): OngoingCall? =
+    chatRoomId.takeIf(String::isNotBlank)?.let { room -> firstOrNull { it.chatRoomId == room } }
 
 /**
  * The search box's rule — Android's `RecentMissedVM.searchList` (`:265-285`):

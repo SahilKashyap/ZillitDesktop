@@ -2530,7 +2530,9 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
 /** The C&C area's tool identifier — Android `Constants.CNC_CHAT_TYPE` (Constants.kt:1898). */
 private const val CNC_TOOL_IDENTIFIER = "cnc_section"
 
-@Suppress("LongParameterList") // One seam per host thing the chat needs; a bag would only rename them.
+// One seam per host thing the chat needs; a bag would only rename them. Long
+// for the same reason: it is one named argument per seam, nothing to split.
+@Suppress("LongParameterList", "LongMethod")
 private fun chatProvider(
     ready: AppGraph.Ready,
     viewModel: ChatViewModel?,
@@ -2612,6 +2614,8 @@ private fun chatProvider(
         }
     },
     callPanes = calls?.let { vm -> { rememberCallsPanes(ready, vm) } },
+    // A group whose room has a call up offers Join Call instead of a second call.
+    roomCall = calls?.let { vm -> { roomId, buttons -> RoomCallSlot(ready, vm, roomId, buttons) } },
     // The Chats tab's "New group" and its message search — both straight off
     // the repository; the provider hides the affordances when absent.
     createRoom = { name, members -> ready.chatRepository.createRoom(name, members) },

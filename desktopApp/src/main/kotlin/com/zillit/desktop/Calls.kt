@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.auth.ui.AuthStep
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
@@ -35,6 +36,7 @@ import com.zillit.desktop.feature.calls.ui.CallLogSide
 import com.zillit.desktop.feature.chat.ui.CallsPanes
 import com.zillit.desktop.feature.calls.ui.CallLogViewModel
 import com.zillit.desktop.feature.calls.ui.OngoingCallsSource
+import com.zillit.desktop.feature.calls.ui.RoomCallJoin
 import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.displayTitle
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
@@ -279,6 +281,48 @@ private const val AVATAR_MAX_SIDE = 384
  * open production, so switching set does not leave one production's history on
  * another's screen.
  */
+/**
+ * The live calls this user may walk into, and the two verbs — shared by the
+ * Calls tab's Ongoing and history rows and the group header's Join Call, so
+ * every way into a running call goes through the one coordinator.
+ */
+internal fun ongoingCallsSource(ready: AppGraph.Ready, calls: CallViewModel) = OngoingCallsSource(
+    activeCalls = ready.callCoordinator.activeCalls,
+    groupCalls = ready.callCoordinator.activeGroupCalls,
+    refresh = ready.callCoordinator::refreshGroupCalls,
+    liveCallId = ready.callCoordinator.session.map { it?.callUuid?.takeIf(String::isNotBlank) },
+    // LiveKit joins on its own socket; Lines 2 and 3 answer the ring they never got.
+    onJoin = { ongoing ->
+        if (ongoing.line == CallProvider.LiveKit) {
+            ready.callCoordinator.joinActiveCall(ongoing.callId)
+        } else {
+            ready.callCoordinator.joinGroupCall(ongoing.callId)
+        }
+    },
+    onReturn = { if (!calls.state.value.expanded) calls.onEvent(CallEvent.ToggleStage) },
+)
+
+/**
+ * A group header's call slot: Join Call while the room has a live call, the
+ * start-call buttons otherwise — see [RoomCallJoin].
+ */
+@Composable
+internal fun RoomCallSlot(
+    ready: AppGraph.Ready,
+    calls: CallViewModel,
+    chatRoomId: String,
+    callButtons: @Composable () -> Unit,
+) {
+    val source = remember(ready, calls) { ongoingCallsSource(ready, calls) }
+    RoomCallJoin(
+        chatRoomId = chatRoomId,
+        source = source,
+        selfUserId = ready.projectContext?.context?.collectAsState()?.value?.profile?.userId,
+        nameFor = { id -> crewNameOf(ready, id) },
+        callButtons = callButtons,
+    )
+}
+
 @Composable
 internal fun rememberCallsPanes(
     ready: AppGraph.Ready,
@@ -303,12 +347,7 @@ internal fun rememberCallsPanes(
             callerUserId = otherUserId,
             // The web's Ongoing rows: the calling socket's live list, and
             // which call is open here so its row says Return.
-            ongoing = OngoingCallsSource(
-                activeCalls = ready.callCoordinator.activeCalls,
-                liveCallId = ready.callCoordinator.session.map { it?.callUuid?.takeIf(String::isNotBlank) },
-                onJoin = { ongoing -> ready.callCoordinator.joinActiveCall(ongoing.callId) },
-                onReturn = { if (!calls.state.value.expanded) calls.onEvent(CallEvent.ToggleStage) },
-            ),
+            ongoing = ongoingCallsSource(ready, calls),
         )
     }
     // A call that just ended belongs in Recents now, not after the user

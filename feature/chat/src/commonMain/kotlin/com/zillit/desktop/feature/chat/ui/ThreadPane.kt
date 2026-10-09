@@ -552,20 +552,26 @@ private fun ThreadHeader(
         // would be refused at the other end. No buttons then: a call button
         // that fails on press is worse than none. Likewise when Remote Config
         // leaves this production no line at all.
-        if (onCall != null && lines.isNotEmpty()) {
-            CallLineButton(
-                icon = ZillitIcons.Camera,
-                label = str(S.desktop_start_video_call),
-                lines = lines,
-                onPick = { line -> onCall(true, line) },
-            )
-            CallLineButton(
-                icon = ZillitIcons.Phone,
-                label = str(S.desktop_start_call),
-                lines = lines,
-                onPick = { line -> onCall(false, line) },
-            )
+        val callButtons: @Composable () -> Unit = {
+            if (onCall != null && lines.isNotEmpty()) {
+                CallLineButton(
+                    icon = ZillitIcons.Camera,
+                    label = str(S.desktop_start_video_call),
+                    lines = lines,
+                    onPick = { line -> onCall(true, line) },
+                )
+                CallLineButton(
+                    icon = ZillitIcons.Phone,
+                    label = str(S.desktop_start_call),
+                    lines = lines,
+                    onPick = { line -> onCall(false, line) },
+                )
+            }
         }
+        // A group whose room already has a call up offers the way into it
+        // instead of a second call — the host decides, see ChatSeams.roomCall.
+        val roomCall = LocalChatSeams.current.roomCall
+        if (state.peerIsGroup && roomCall != null) roomCall(peer.userId, callButtons) else callButtons()
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = str(S.desktop_close_conversation),

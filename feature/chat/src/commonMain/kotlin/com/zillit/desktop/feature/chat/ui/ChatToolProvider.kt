@@ -43,6 +43,8 @@ class ChatToolProvider(
     suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray? = { null },
     /** The call history's list and side pane, built by the app; null hides the Calls tab. */
     private val callPanes: (@Composable () -> CallsPanes)? = null,
+    /** A group header's Join Call while its room has a live call — see [ChatSeams.roomCall]. */
+    private val roomCall: (@Composable (chatRoomId: String, callButtons: @Composable () -> Unit) -> Unit)? = null,
     /**
      * The viewer's download right on the C&C tool — `ProjectPermissions`'
      * `canDownload`, read per click so a rights change lands live. Gates
@@ -121,6 +123,7 @@ class ChatToolProvider(
                 videoUrl = videoUrl,
                 onOpenUrl = onOpenUrl,
                 shareAsEmail = shareAsEmail?.let { share -> { message -> share(message, navigator) } },
+                roomCall = roomCall,
             ),
         ) {
             // Read so this recomposes when the crew is re-fetched; see [crewChanges].

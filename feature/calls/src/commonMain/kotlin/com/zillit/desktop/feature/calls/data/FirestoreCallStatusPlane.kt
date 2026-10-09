@@ -97,6 +97,9 @@ class FirestoreCallStatusPlane(
     override fun watch(session: CallSession): Flow<PlaneEvent> = flow {
         var lastStatuses = emptyMap<String, String>()
         var lastFlags = emptyMap<String, String>()
+        // Each row's foreign-takeover state; null until the first read, so
+        // the first read sets the baseline and only later rises count.
+        var lastTakeover: Map<String, Boolean>? = null
         var endedSeen = false
         while (true) {
             if (disabled) return@flow
@@ -106,7 +109,12 @@ class FirestoreCallStatusPlane(
                 emit(PlaneEvent.Ended(session.callUuid))
             }
 
-            readCallUsers(session.callUuid).forEach { row ->
+            val rows = readCallUsers(session.callUuid)
+            val takeover = rows.takeoverStates()
+            risenTakeovers(rows, before = lastTakeover, now = takeover).forEach { emit(it) }
+            lastTakeover = takeover
+
+            rows.forEach { row ->
                 val deviceId = row.value(FIELD_DEVICE_ID) ?: return@forEach
                 val status = row.value(FIELD_STATUS) ?: return@forEach
                 if (lastStatuses[deviceId] != status) {
@@ -149,6 +157,62 @@ class FirestoreCallStatusPlane(
             delay(pollMillis)
         }
     }
+
+    override suspend fun readJoin(callUuid: String, selfUserId: String): PlaneJoin? {
+        if (disabled || callUuid.isBlank()) return null
+        val doc = readCallDocument(callUuid) ?: return null
+        val rows = readCallUsers(callUuid)
+        // Android's test, word for word: the document still says the call
+        // started and somebody's row says they are in it.
+        val callStatus = doc.value(FIELD_CURRENT_STATUS)
+        val ended = doc.value(FIELD_CALL_STATUS) == CallStatus.Ended.wire ||
+            (callStatus != null && callStatus != CALL_STARTED) ||
+            rows.none { CallStatus.ofWireOrNull(it.value(FIELD_STATUS)) == CallStatus.InCall }
+        val me = selfDeviceId().orEmpty()
+        val mine = rows.firstOrNull { me.isNotBlank() && it.value(FIELD_DEVICE_ID) == me }
+        return PlaneJoin(
+            ended = ended,
+            channelName = doc.value(FIELD_CHANNEL).orEmpty(),
+            token = doc.value(FIELD_TOKEN).orEmpty(),
+            selfAgoraUid = mine?.value(FIELD_AGORA_UID)?.toIntOrNull() ?: 0,
+        )
+    }
+
+    override suspend fun claimFromOtherDevices(callUuid: String, selfUserId: String) {
+        if (disabled || callUuid.isBlank() || selfUserId.isBlank()) return
+        val me = selfDeviceId().orEmpty()
+        readCallUserDocs(callUuid)
+            .filter { (_, row) ->
+                row.value(FIELD_USER_ID) == selfUserId &&
+                    row.value(FIELD_DEVICE_ID) != me &&
+                    CallStatus.ofWireOrNull(row.value(FIELD_STATUS)) == CallStatus.InCall
+            }
+            .forEach { (path, _) ->
+                patch(path, mapOf(FIELD_TAKEOVER to true, FIELD_UPDATED_FROM to PLATFORM))
+            }
+    }
+
+    /** Each row's foreign-takeover state, by device. */
+    private fun List<JsonObject>.takeoverStates(): Map<String, Boolean> =
+        mapNotNull { row -> row.value(FIELD_DEVICE_ID)?.let { it to row.isForeignTakeover() } }.toMap()
+
+    /** Rows whose takeover went up since [before]; none on the first read, which is the baseline. */
+    private fun risenTakeovers(
+        rows: List<JsonObject>,
+        before: Map<String, Boolean>?,
+        now: Map<String, Boolean>,
+    ): List<PlaneEvent.Takeover> {
+        if (before == null) return emptyList()
+        return rows.mapNotNull { row ->
+            val deviceId = row.value(FIELD_DEVICE_ID) ?: return@mapNotNull null
+            if (now[deviceId] != true || before[deviceId] == true) return@mapNotNull null
+            PlaneEvent.Takeover(deviceId, row.value(FIELD_USER_ID).orEmpty())
+        }
+    }
+
+    /** The web's `isForeignTakeover`: the flag is up and the last writer was not this desktop. */
+    private fun JsonObject.isForeignTakeover(): Boolean =
+        value(FIELD_TAKEOVER)?.toBoolean() == true && value(FIELD_UPDATED_FROM) != PLATFORM
 
     private suspend fun callHasEnded(callUuid: String): Boolean =
         readCallDocument(callUuid)?.value(FIELD_CALL_STATUS) == CallStatus.Ended.wire
@@ -194,6 +258,10 @@ class FirestoreCallStatusPlane(
         }
 
     private suspend fun readCallUsers(callUuid: String): List<JsonObject> =
+        readCallUserDocs(callUuid).map { it.second }
+
+    /** Each `call_users` row with its path under `documents/`, for writing back onto it. */
+    private suspend fun readCallUserDocs(callUuid: String): List<Pair<String, JsonObject>> =
         request("list call_users") {
             httpClient.get("$documentsBase/calls/$callUuid/call_users") {
                 parameter("key", apiKey)
@@ -202,7 +270,10 @@ class FirestoreCallStatusPlane(
         }?.let { body ->
             val root = json.parseToJsonElement(body) as? JsonObject
             (root?.get("documents") as? JsonArray).orEmpty().mapNotNull { entry ->
-                (entry as? JsonObject)?.get("fields") as? JsonObject
+                val doc = entry as? JsonObject ?: return@mapNotNull null
+                val fields = doc["fields"] as? JsonObject ?: return@mapNotNull null
+                val name = (doc["name"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                name.substringAfter("/documents/", "") to fields
             }
         }.orEmpty()
 
@@ -309,6 +380,15 @@ class FirestoreCallStatusPlane(
         const val FIELD_DEVICE_ID = "device_id"
         const val FIELD_USER_ID = "user_id"
         const val FIELD_UPDATED_FROM = "updated_from"
+
+        /** The web's takeover flag (`takeoverSignal.js`): another device of yours took the call. */
+        const val FIELD_TAKEOVER = "joined_from_other_device"
+
+        /** The call document's own state, and the one word that means it is running. */
+        const val FIELD_CURRENT_STATUS = "current_status"
+        const val CALL_STARTED = "call_started"
+        const val FIELD_CHANNEL = "agora_channel_name"
+        const val FIELD_TOKEN = "agora_token"
 
         const val POLL_MS = 2_000L
         const val CALL_USERS_PAGE = 50

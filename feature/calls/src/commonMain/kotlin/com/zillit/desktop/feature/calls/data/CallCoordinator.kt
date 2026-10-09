@@ -626,6 +626,60 @@ class CallCoordinator(
         }
     }
 
+    /**
+     * Line 2 and Line 3 group calls running in this user's rooms — the other
+     * half of the Calls tab's and the group header's Join, beside
+     * [activeCalls]. Kept by its own collaborator; see [ActiveGroupCalls].
+     */
+    private val groupCalls = ActiveGroupCalls(api, bus, scope, selfUserId, selfDeviceId)
+    val activeGroupCalls: StateFlow<List<CallSession>> = groupCalls.calls
+
+    /** Re-reads [activeGroupCalls] — a group thread opening wants it current. */
+    fun refreshGroupCalls() = groupCalls.refresh()
+
+    /**
+     * Joins a Line 2/3 group call already under way — the web's
+     * `directAcceptIncomingCall` from the group header and the recents row:
+     * the active-calls row made into the ring this device never got, then
+     * answered as one. Switch here is the same join; on Line 2 it also
+     * tells our other device to stand down (Line 1's SFU does that itself).
+     *
+     * Refused while any call is up, as [joinActiveCall] is.
+     */
+    fun joinGroupCall(callUuid: String) {
+        if (_phase.value != CallPhase.Idle) return
+        val row = groupCalls.calls.value.firstOrNull { callUuid.matches(it) } ?: run {
+            _toasts.tryEmit(str(S.desktop_call_that_call_has_ended))
+            return
+        }
+        val me = selfUserId().orEmpty()
+        scope.launch {
+            var session = row.copy(selfUserId = me, selfDeviceId = selfDeviceId().orEmpty())
+            if (session.provider == CallProvider.Agora) {
+                val found = plane.readJoin(session.callUuid, me)
+                if (found?.ended == true) {
+                    _toasts.tryEmit(str(S.desktop_call_that_call_has_ended))
+                    groupCalls.refresh(now = true)
+                    return@launch
+                }
+                if (found != null) {
+                    session = session.copy(
+                        channelName = found.channelName.ifBlank { session.channelName },
+                        token = found.token.ifBlank { session.token },
+                        localUid = found.selfAgoraUid.takeIf { it != 0 } ?: session.localUid,
+                    )
+                }
+                if (row.selfInCallElsewhere(me)) plane.claimFromOtherDevices(session.callUuid, me)
+            }
+            // The read above suspended; anything that started meanwhile wins.
+            if (_phase.value != CallPhase.Idle) return@launch
+            ZillitLog.i(TAG) { "joining running ${session.provider.wire} group call ${session.callUuid}" }
+            _session.value = session
+            watchPlane(session)
+            answer(session)
+        }
+    }
+
     private val _ended = MutableSharedFlow<CallEndEvent>(extraBufferCapacity = 4)
     val ended: SharedFlow<CallEndEvent> = _ended.asSharedFlow()
 
@@ -783,6 +837,7 @@ class CallCoordinator(
         scope.launch { watchInviteExpiry() }
         scope.launch { listenGuestRequests() }
         scope.launch { logRosterChanges() }
+        groupCalls.start()
     }
 
     // ── Outgoing ────────────────────────────────────────────────────────
@@ -1064,6 +1119,11 @@ class CallCoordinator(
         val current = _session.value ?: return
         if (_phase.value != CallPhase.Incoming) return
         cancelRingTimeout()
+        answer(current)
+    }
+
+    /** Going into [current]: a ring answered, or a running group call joined. */
+    private fun answer(current: CallSession) {
         // Accepting IS the transition, rather than waiting for the engine's
         // Joined. Two things go wrong when the phase lags behind the tap: a
         // join that degrades — no channel/token, Chromium not up — strands the
@@ -1125,6 +1185,9 @@ class CallCoordinator(
         val extra = buildMap<String, Any> {
             if (session.localUid != 0) put("agora_uid", session.localUid)
             put("has_video", session.hasVideo)
+            // Android's accept write: whatever takeover the row last carried
+            // is over now that this device is the one in the call.
+            if (session.provider == CallProvider.Agora) put(FirestoreCallStatusPlane.FIELD_TAKEOVER, false)
             selfName()?.takeIf(String::isNotBlank)?.let { put("user_name", it) }
         }
         plane.announceSelf(session, CallStatus.InCall, extra)
@@ -1867,7 +1930,29 @@ class CallCoordinator(
             }
             is PlaneEvent.UserStatus -> onPlaneStatus(current, event)
             is PlaneEvent.UserFlags -> onPlaneFlags(current, event)
+            is PlaneEvent.Takeover -> onTakeover(current, event)
         }
+    }
+
+    /**
+     * Switch here, from the other side: another of this user's devices took
+     * the Line 2 call this desktop is in. Android's `observeMyUserDocument`
+     * rule, read across every row of ours because the desktop keeps a row of
+     * its own — a phone raises the flag on ITS row, the web on whichever of
+     * ours it finds first. Line 1's SFU says the same with `handoff-evict`.
+     *
+     * Leaves the media and nothing else, as that path does: the call goes on
+     * on the other device, and writing `leave` onto our row could read to a
+     * 1:1 peer as the person hanging up.
+     */
+    private fun onTakeover(current: CallSession, event: PlaneEvent.Takeover) {
+        if (current.provider != CallProvider.Agora || _phase.value != CallPhase.InCall) return
+        val ours = event.deviceId == selfDeviceId() ||
+            (current.selfUserId.isNotBlank() && event.userId == current.selfUserId)
+        if (!ours) return
+        ZillitLog.i(TAG) { "${current.callUuid} taken by another device of ours; leaving here" }
+        scope.launch { engine.leave() }
+        finish(current, CallEndReason.PickedElsewhere)
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat.ui
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
@@ -69,6 +70,13 @@ class ChatSeams(
      * item off the menu.
      */
     val shareAsEmail: ((com.zillit.desktop.feature.chat.domain.ChatMessage) -> String?)? = null,
+    /**
+     * A group header's call slot: given the room and the start-call buttons,
+     * the host draws Join Call (or Switch here / Return) while the room has a
+     * live call, and the buttons otherwise — the web's `ChatScreenGroups`
+     * header. This module knows nothing about calls; null keeps the buttons.
+     */
+    val roomCall: (@Composable (chatRoomId: String, callButtons: @Composable () -> Unit) -> Unit)? = null,
 )
 
 internal val LocalChatSeams = staticCompositionLocalOf { ChatSeams() }

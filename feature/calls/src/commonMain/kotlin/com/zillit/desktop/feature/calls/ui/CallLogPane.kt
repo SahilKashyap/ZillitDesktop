@@ -160,7 +160,13 @@ private fun PaneOverlays(
     }
     state.joinConfirm?.let { call ->
         WindowOverlay(onDismiss = { onEvent(CallLogEvent.CancelJoinOngoing) }) {
-            JoinOngoingDialog(call, selfUserId, onEvent)
+            JoinOngoingDialog(
+                call = call,
+                selfUserId = selfUserId,
+                nameFor = nameFor,
+                onConfirm = { onEvent(CallLogEvent.ConfirmJoinOngoing) },
+                onDismiss = { onEvent(CallLogEvent.CancelJoinOngoing) },
+            )
         }
     }
     state.detail?.takeIf { showDetail }?.let { entry ->
@@ -285,15 +291,25 @@ private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -
                         maxLines = 1,
                     )
                 }
-                ZillitButton(
-                    text = call.verb.label,
-                    size = ButtonSize.Small,
-                    variant = if (call.verb == OngoingVerb.Return) ButtonVariant.Secondary else ButtonVariant.Primary,
-                    onClick = { onEvent(CallLogEvent.PressOngoing(call)) },
-                )
+                OngoingButton(call.verb) { onEvent(CallLogEvent.PressOngoing(call)) }
             }
         }
     }
+}
+
+/**
+ * Join / Switch here / Return — one look wherever a live call is offered:
+ * the Ongoing rows, a history row, the group header. Return is quieter: it
+ * goes back to a call already open here rather than into a new one.
+ */
+@Composable
+internal fun OngoingButton(verb: OngoingVerb, text: String = verb.label, onClick: () -> Unit) {
+    ZillitButton(
+        text = text,
+        size = ButtonSize.Small,
+        variant = if (verb == OngoingVerb.Return) ButtonVariant.Secondary else ButtonVariant.Primary,
+        onClick = onClick,
+    )
 }
 
 /**
@@ -301,23 +317,30 @@ private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -
  * who is already in, then the one button. A switch says why it is one.
  */
 @Composable
-private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (CallLogEvent) -> Unit) {
+internal fun JoinOngoingDialog(
+    call: OngoingCall,
+    selfUserId: String?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    /** The crew's name for an id the call row left unnamed. */
+    nameFor: (String) -> String? = { null },
+) {
     val switch = call.verb == OngoingVerb.Switch
     ZillitDialogShell(
         title = if (switch) str(S.desktop_call_switch_to_this_call) else str(S.desktop_call_join_this_call),
         icon = ZillitIcons.Phone,
-        onDismiss = { onEvent(CallLogEvent.CancelJoinOngoing) },
+        onDismiss = onDismiss,
         visible = true,
         width = CONFIRM_WIDTH,
         actions = {
             ZillitButton(
                 text = str(S.cancel),
-                onClick = { onEvent(CallLogEvent.CancelJoinOngoing) },
+                onClick = onDismiss,
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
                 text = if (switch) str(S.desktop_call_switch_here) else str(S.join_call),
-                onClick = { onEvent(CallLogEvent.ConfirmJoinOngoing) },
+                onClick = onConfirm,
             )
         },
     ) {
@@ -346,8 +369,9 @@ private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
-                    ZillitAvatar(name = name.ifBlank { "?" }, userId = id, size = ROW_AVATAR)
-                    val shown = name.ifBlank { str(S.history_someone) }
+                    val known = name.ifBlank { nameFor(id).orEmpty() }
+                    ZillitAvatar(name = known.ifBlank { "?" }, userId = id, size = ROW_AVATAR)
+                    val shown = known.ifBlank { str(S.history_someone) }
                     ZillitText(
                         text = if (id == selfUserId) str(S.desktop_name_you_suffix, shown) else shown,
                         style = ZillitTheme.typography.bodyMedium,
@@ -398,7 +422,7 @@ private fun DeleteAllDialog(onEvent: (CallLogEvent) -> Unit) {
  * reaches the popup's own dismiss — the shell's barrier answers it.
  */
 @Composable
-private fun WindowOverlay(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+internal fun WindowOverlay(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     Popup(
         alignment = Alignment.Center,
         onDismissRequest = onDismiss,
@@ -420,11 +444,17 @@ private fun CallLogList(
     lines: List<CallLine>,
     inlineDetail: Boolean,
 ) {
+    // Matched against the whole history, not the searched slice, so a search
+    // never moves a live call's button onto an older row of the same room.
+    val rowCalls = remember(state.entries, state.ongoing) { ongoingByRow(state.entries, state.ongoing) }
     ZillitLazyColumn {
         item(key = "recent-heading") { SectionHeading(str(S.recent)) }
         items(shown, key = CallLogEntry::callUuid) { entry ->
+            val live = rowCalls[entry.callUuid]
             CallLogRow(
                 entry = entry,
+                ongoing = live,
+                onOngoing = { live?.let { onEvent(CallLogEvent.PressOngoing(it)) } },
                 nameFor = nameFor,
                 designationFor = designationFor,
                 nowMillis = nowMillis,
@@ -481,6 +511,9 @@ private fun CallLogRow(
     onDetail: () -> Unit,
     inlineDetail: Boolean = false,
     selected: Boolean = false,
+    /** The live call this row stands for, when it is still running — see [ongoingByRow]. */
+    ongoing: OngoingCall? = null,
+    onOngoing: () -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
     val title = entry.displayTitle(nameFor)
@@ -564,6 +597,9 @@ private fun CallLogRow(
                         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                     ) {
                         HowItWent(entry, Modifier.weight(1f))
+                        // Android's recents Join: the row's own call is still
+                        // up, so the way back into it sits on the row.
+                        ongoing?.let { call -> OngoingButton(call.verb, onClick = onOngoing) }
                         RowTrailing(entry, hovered || pickingLine, inlineDetail, onDetail) { pickingLine = true }
                     }
                 }
