@@ -102,6 +102,7 @@ import com.zillit.desktop.feature.chat.domain.MentionSpan
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
 import com.zillit.desktop.feature.chat.domain.chatClockTime
 import com.zillit.desktop.feature.chat.domain.sharedContent
+import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.neighboursOf
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.mentionSpans
@@ -179,6 +180,8 @@ internal fun ThreadPane(
     var infoPage by remember(peer.userId) { mutableStateOf<InfoPage?>(null) }
     // A group's Edit / Leave / Delete confirmation, drawn over the whole thread.
     var groupDialog by remember(peer.userId) { mutableStateOf<GroupDialog?>(null) }
+    // The person whose profile photo is open large; null keeps it shut.
+    var viewingFace by remember(peer.userId) { mutableStateOf<CrewContact?>(null) }
     val shared = remember(state.messages) { sharedContent(state.messages) }
     val callable = state.isCallable(peer)
 
@@ -213,6 +216,7 @@ internal fun ThreadPane(
             selfId = selfId,
             people = forwardPeople,
             onGroupDialog = { groupDialog = it },
+            onViewFace = { viewingFace = it },
         )
         // Wide enough, the panel takes a column of its own beside the
         // thread; narrower, it covers the thread until it is closed.
@@ -289,6 +293,15 @@ internal fun ThreadPane(
                 // the same gated save-and-open the chip used to do.
                 onOpenOutside = onOpenAttachment,
                 onClose = { viewing = null },
+            )
+        }
+
+        viewingFace?.let { person ->
+            ProfilePhotoViewer(
+                name = person.fullName,
+                userId = person.userId,
+                loadAvatar = loadAvatar,
+                onClose = { viewingFace = null },
             )
         }
 

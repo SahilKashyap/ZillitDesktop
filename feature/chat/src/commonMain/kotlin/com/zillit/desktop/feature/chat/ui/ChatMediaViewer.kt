@@ -205,6 +205,64 @@ private fun ChatVideoViewer(
     }
 }
 
+/**
+ * A person's profile photo, large — what a tap on the contact panel's circle
+ * opens. The panel's face (shrunk for avatars) shows at once; the screen's own
+ * [loadAvatar] seam, which fetches the original upload, replaces it when it
+ * lands. No Download: this is a face, not something the conversation shared.
+ */
+@Composable
+internal fun ProfilePhotoViewer(
+    name: String,
+    userId: String,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    onClose: () -> Unit,
+) {
+    val preview = rememberChatFace(userId, loadAvatar)
+    val full by produceState<ImageBitmap?>(initialValue = null, userId) {
+        value = runCatching { loadAvatar(userId) }.getOrNull()
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = VIEWER_SCRIM))
+            .onBackdropTap(onClose),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().swallowPresses().padding(ZillitTheme.spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitText(
+                    text = name,
+                    style = ZillitTheme.typography.titleSmall,
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitViewerClose(onClose = onClose)
+            }
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                val shown = full ?: preview
+                if (shown == null) {
+                    ZillitText(
+                        text = str(S.ah_loading),
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = Color.White,
+                    )
+                } else {
+                    Image(
+                        bitmap = shown,
+                        contentDescription = name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().padding(VIEWER_PADDING),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** An arrow that opens [file], or no arrow when there is nothing that way. */
 internal fun stepTo(file: ChatAttachment?, open: (ChatAttachment) -> Unit): (() -> Unit)? =
     file?.let { next -> { open(next) } }
