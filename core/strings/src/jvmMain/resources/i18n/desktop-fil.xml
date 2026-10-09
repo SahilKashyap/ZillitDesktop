@@ -8387,4 +8387,5 @@
     <string name="desktop_um_change_designation">Palitan ang Designation</string>
     <string name="desktop_um_change_unit">Palitan ang Unit</string>
     <string name="desktop_um_edit_user_info">I-edit ang Impormasyon ng User</string>
+    <string name="desktop_call_line_unavailable">Hindi available dito ang %1$s</string>
 </resources>

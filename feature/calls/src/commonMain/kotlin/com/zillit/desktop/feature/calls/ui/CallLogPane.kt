@@ -88,7 +88,7 @@ fun CallLogPane(
     /**
      * The lines a call-back may go on — asked on the click, as the thread
      * header asks and Android's `launchWithLineSelection` asks. The host
-     * appends Line 3 where the production has it.
+     * passes what Remote Config allows here, in order; empty and a row rings nothing.
      */
     lines: List<CallLine> = CallLine.DEFAULT,
     /**
@@ -495,7 +495,7 @@ private fun CallLogRow(
         inlineDetail -> onDetail
         // Only rows that can actually ring something are pressable; a row
         // whose peer left the production has nothing to redial.
-        entry.isRedialable -> ({ pickingLine = true })
+        entry.isRedialable && lines.isNotEmpty() -> ({ pickingLine = true })
         else -> null
     }
 

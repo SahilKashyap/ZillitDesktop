@@ -259,7 +259,8 @@ private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHook
                 color = ZillitTheme.colors.danger,
             )
         }
-        hooks.onCall?.let { ring -> CallActions(ring, hooks.lines) }
+        // No line on this production (Remote Config): no Voice or Video tile.
+        hooks.onCall?.takeIf { hooks.lines.isNotEmpty() }?.let { ring -> CallActions(ring, hooks.lines) }
     }
 }
 

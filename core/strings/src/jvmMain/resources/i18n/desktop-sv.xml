@@ -8387,4 +8387,5 @@
     <string name="desktop_um_change_designation">Ändra befattning</string>
     <string name="desktop_um_change_unit">Ändra enhet</string>
     <string name="desktop_um_edit_user_info">Redigera användarinfo</string>
+    <string name="desktop_call_line_unavailable">%1$s är inte tillgänglig här</string>
 </resources>

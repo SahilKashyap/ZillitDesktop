@@ -2585,8 +2585,7 @@ private fun chatProvider(
     selfId = { ready.projectContext?.context?.value?.profile?.userId },
     loadAvatar = { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) },
     viewModel = viewModel,
-    // Which lines the call buttons offer: the two every production has, and
-    // Line 3 where remote config lists this one.
+    // Which lines the call buttons offer, in order; none hides the buttons.
     lines = { ready.callLines(ready.projectContext?.context?.value?.project?.projectId) },
     onCall = calls?.let { vm ->
         { peer, isGroup, video, line ->
@@ -4619,16 +4618,19 @@ private val ZillitWidget.widgetDetail: String
 /**
  * The chat module names a line by its wire word; the calls module by its
  * provider, and the two use the same words — so the wire word is the mapping,
- * not a `when` over the numbers. Said this way it survived both the 2026-09-26
- * swap of Line 1 and Line 3 and its undoing on 2026-10-01 without an edit,
- * which a branch per constant would not have.
+ * not a `when` over the numbers, which Remote Config now chooses.
  */
 internal fun CallLine.toProvider(): CallProvider = CallProvider.ofWire(wire)
 
 /**
- * The lines a production offers. The LiveKit line — labelled Line 3, as the
- * phones label it and as `line_three_enabled_in` already said — only where the
- * roll-out list names it; see LineThreeGate.
+ * The lines a production offers, "Line 1" first — Remote Config's
+ * `calling_lines`, or the older flags while it is unset; see CallingLinesGate.
+ * Empty means no line at all, and the call buttons are not drawn.
+ *
+ * Asked whenever a chat's call buttons are drawn, so it also asks Firebase
+ * again when the last answer has gone stale.
  */
-internal fun AppGraph.Ready.callLines(projectId: String?): List<CallLine> =
-    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT
+internal fun AppGraph.Ready.callLines(projectId: String?): List<CallLine> {
+    callingLines.refreshIfStale()
+    return callingLines.available(projectId).mapNotNull(CallLine::ofWire)
+}

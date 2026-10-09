@@ -318,11 +318,8 @@ internal fun rememberCallsPanes(
     LaunchedEffect(logs) {
         ready.callCoordinator.ended.collect { logs.onEvent(CallLogEvent.Refresh) }
     }
-    // The same lines the thread header offers (`callLines`): the gated
-    // LiveKit line, Line 3, where the roll-out list names this production.
-    // DEFAULT already ends in the other two, so appending the wrong constant
-    // here listed one line twice and left the gated one off the Calls tab.
-    val lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT
+    // The same lines, in the same order, as the thread header offers (`callLines`).
+    val lines = ready.callingLines.available(projectId).map(CallLine::ofWire)
     return remember(logs, lines) {
         object : CallsPanes {
             @Composable

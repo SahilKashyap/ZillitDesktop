@@ -8386,4 +8386,5 @@
     <string name="desktop_um_change_designation">Ubah Jabatan</string>
     <string name="desktop_um_change_unit">Ubah Unit</string>
     <string name="desktop_um_edit_user_info">Ubah Info Pengguna</string>
+    <string name="desktop_call_line_unavailable">%1$s tidak tersedia di sini</string>
 </resources>

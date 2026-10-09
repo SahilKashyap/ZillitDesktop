@@ -5,10 +5,12 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.onFailure
 import com.zillit.desktop.core.common.onSuccess
+import com.zillit.desktop.core.config.CallLineNumbering
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.callLineLabel
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.livekit.Line3CallState
 import com.zillit.desktop.feature.calls.data.livekit.Line3InCall
@@ -189,6 +191,13 @@ class CallCoordinator(
     private val line3: LiveKitLine? = null,
     /** The web deployment's origin, for Line 3's invite link. Null when unknown. */
     private val webOrigin: () -> String? = { null },
+    /**
+     * Whether a call may be started on a line in a production (null is the
+     * open one) — Remote Config's `calling_lines`, or the older flags while
+     * that is unset. Checked once more here so no entry point can start a
+     * call on a line the picker would not have offered.
+     */
+    private val lineAvailable: (provider: CallProvider, projectId: String?) -> Boolean = { _, _ -> true },
 ) {
 
     private val _phase = MutableStateFlow(CallPhase.Idle)
@@ -830,6 +839,10 @@ class CallCoordinator(
         callerUserId: String = "",
     ) {
         if (_phase.value != CallPhase.Idle) return
+        if (lineRefusal(provider, projectId) != null) {
+            ZillitLog.w(TAG) { "not placing a call on ${provider.wire}: the line is not available here" }
+            return
+        }
         if (provider == CallProvider.LiveKit) {
             placeLine3(chatRoomId, receiverUserId, mode, type, displayName, projectId, callerUserId)
             return
@@ -2512,6 +2525,12 @@ class CallCoordinator(
     private fun ackObject(element: JsonElement): JsonObject? =
         element as? JsonObject ?: (element as? JsonArray)?.firstOrNull() as? JsonObject
 
+    /** Why a call cannot be started on [provider] in [projectId] (null: the open one), or null when it can. */
+    fun lineRefusal(provider: CallProvider, projectId: String?): String? =
+        if (lineAvailable(provider, projectId)) null else str(S.desktop_call_line_unavailable, lineLabelOf(provider))
+
+    private fun lineLabelOf(provider: CallProvider): String = callLineLabel(CallLineNumbering.numberOf(provider.wire))
+
     private fun fail(message: String) {
         val current = _session.value
         ZillitLog.w(TAG) { "call failed: $message" }
@@ -2684,7 +2703,7 @@ class CallCoordinator(
         callerUserId: String,
     ) {
         val line = line3 ?: run {
-            fail(str(S.desktop_call_line3_not_configured))
+            fail(str(S.desktop_call_line_unavailable, lineLabelOf(CallProvider.LiveKit)))
             return
         }
         val me = callerUserId.ifBlank { selfUserId().orEmpty() }
@@ -2761,7 +2780,7 @@ class CallCoordinator(
     /** Answers a Line 3 ring: the accept on the line's wire, then the room it hands back. */
     private fun acceptLine3(current: CallSession) {
         val line = line3 ?: run {
-            fail(str(S.desktop_call_line3_not_configured))
+            fail(str(S.desktop_call_line_unavailable, lineLabelOf(CallProvider.LiveKit)))
             return
         }
         scope.launch {

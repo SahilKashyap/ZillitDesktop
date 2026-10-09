@@ -216,6 +216,13 @@ object ZillitPreferences {
      */
     val UpdateAutoRestartTried = PreferenceKey.StringKey("update.autoRestartTried", "", PreferenceScope.Device)
 
+    /**
+     * The last `calling_lines` Remote Config value that parsed — read only
+     * when no fetch has succeeded this run, so being offline at launch does
+     * not take the call lines away. Never overwritten with an empty value.
+     */
+    val CallingLinesLastGood = PreferenceKey.StringKey("calls.callingLinesLastGood", "", PreferenceScope.Device)
+
     // -- last-used context (user-scoped) -----------------------------------
 
     val LastProjectId = PreferenceKey.StringKey("session.lastProjectId", "", PreferenceScope.User)
@@ -283,7 +290,7 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch, WorkspaceViewMode, RailCollapsed,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
-        UpdateAutoRestartTried,
+        UpdateAutoRestartTried, CallingLinesLastGood,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,

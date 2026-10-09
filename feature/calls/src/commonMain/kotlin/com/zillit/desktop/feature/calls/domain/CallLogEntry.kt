@@ -1,59 +1,51 @@
 package com.zillit.desktop.feature.calls.domain
 
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.config.CallEngines
+import com.zillit.desktop.core.config.CallLineNumbering
+import com.zillit.desktop.core.strings.callLineLabel
 
 /** Which way a logged call went, from this device's point of view. */
 enum class CallLogDirection { Incoming, Outgoing }
 
 /**
- * Which line carried a logged call, as the detail sheet names it.
+ * Which line carried a logged call, named by its engine.
  *
- * The wire words are the server's and the numbers are the user's, and they
- * agree with the phones: "agora" is Line 2, **"livekit" is Line 3**, and
- * anything else — "mediasoup" or the field missing on an older row — is
- * **Line 1**. That is Android's mapping (`UIExtentions.kt`: `CALLING_LIVEKIT`
- * → `txt_line_three`, `CALLING_MEDIA_SOUP` → `txt_line_one`), and it is why
- * every internal name for LiveKit here says "line three".
- *
- * These were briefly crossed the other way (2026-09-26 – 2026-10-01), which
- * made a LiveKit call read "Line 1" on the desktop and "Line 3" on the phone
- * that placed it. Do not re-cross them without changing Android too.
+ * The wire words are the server's; the number a user sees comes from Remote
+ * Config's `calling_lines` (see [CallLineNumbering]), or the built-in
+ * numbering when it says nothing: LiveKit Line 1, Agora Line 2, mediasoup
+ * Line 3. A row with no `line` field is an old mediasoup call, so it reads
+ * as mediasoup's number. A line switched off keeps its number, so its past
+ * calls do too.
  *
  * Not [CallProvider], whose absent-means-Agora default is right for joining a
  * live call and wrong for labelling history.
  */
-enum class CallLine(private val labelKey: String) {
-    One(S.txt_line_one),
-    Two(S.txt_line_two),
-    Three(S.txt_line_three),
+enum class CallLine(val wire: String) {
+    Mediasoup(CallEngines.MEDIASOUP),
+    Agora(CallEngines.AGORA),
+    LiveKit(CallEngines.LIVEKIT),
     ;
 
-    /** The line's name as the phones show it. */
-    val label: String get() = str(labelKey)
+    /** "Line N", as every client numbers this engine right now. */
+    val label: String get() = callLineLabel(CallLineNumbering.numberOf(wire))
 
     /** The plumbing a redial on this line takes — the row's tag turned back into a choice. */
     val provider: CallProvider
         get() = when (this) {
-            One -> CallProvider.Mediasoup
-            Two -> CallProvider.Agora
-            Three -> CallProvider.LiveKit
+            Mediasoup -> CallProvider.Mediasoup
+            Agora -> CallProvider.Agora
+            LiveKit -> CallProvider.LiveKit
         }
 
     companion object {
         fun ofWire(raw: String?): CallLine = when (raw?.trim()?.lowercase()) {
-            "agora" -> Two
-            "livekit" -> Three
-            else -> One
+            CallEngines.AGORA -> Agora
+            CallEngines.LIVEKIT -> LiveKit
+            else -> Mediasoup
         }
 
-        /**
-         * What every production offers a redial, in the order the thread
-         * header lists them: Line 2 first (every deployment has it), then
-         * Line 1 (mediasoup). Line 3 — LiveKit — is appended by the host
-         * where remote config lists the production.
-         */
-        val DEFAULT: List<CallLine> = listOf(Two, One)
+        /** A stand-in for previews and tests; the host always passes the lines this production offers. */
+        val DEFAULT: List<CallLine> = listOf(Agora, Mediasoup)
     }
 }
 
@@ -129,8 +121,8 @@ data class CallLogEntry(
     val roomId: String = "",
     val title: String = "",
     val projectId: String = "",
-    /** Absent on the wire means mediasoup, which is Line 1 — see [CallLine.ofWire]. */
-    val line: CallLine = CallLine.One,
+    /** Absent on the wire means an old mediasoup call — see [CallLine.ofWire]. */
+    val line: CallLine = CallLine.Mediasoup,
     /** Who placed the call — `from_user_id`, or the older rows' `user_id`. */
     val callerUserId: String = "",
     /** Who a 1:1 call was placed to — `to_user_id`. */

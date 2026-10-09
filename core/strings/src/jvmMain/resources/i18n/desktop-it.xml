@@ -8387,4 +8387,5 @@
     <string name="desktop_um_change_designation">Cambia mansione</string>
     <string name="desktop_um_change_unit">Cambia unità</string>
     <string name="desktop_um_edit_user_info">Modifica le info dell\'utente</string>
+    <string name="desktop_call_line_unavailable">%1$s non è disponibile qui</string>
 </resources>

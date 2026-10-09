@@ -8387,4 +8387,5 @@
     <string name="desktop_um_change_designation">Změnit pozici</string>
     <string name="desktop_um_change_unit">Změnit jednotku</string>
     <string name="desktop_um_edit_user_info">Upravit informace o uživateli</string>
+    <string name="desktop_call_line_unavailable">%1$s zde není k dispozici</string>
 </resources>

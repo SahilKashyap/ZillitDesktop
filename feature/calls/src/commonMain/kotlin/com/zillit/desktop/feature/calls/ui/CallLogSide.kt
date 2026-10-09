@@ -196,7 +196,9 @@ private fun CallInfo(
                 color = ZillitTheme.colors.textSecondary,
                 textAlign = TextAlign.Center,
             )
-            if (entry.isRedialable) CallBack(entry, lines) { line -> onEvent(CallLogEvent.Redial(entry, line)) }
+            if (entry.isRedialable && lines.isNotEmpty()) {
+                CallBack(entry, lines) { line -> onEvent(CallLogEvent.Redial(entry, line)) }
+            }
             CallCard(entry, nameFor, nowMillis, selfUserId)
         }
     }

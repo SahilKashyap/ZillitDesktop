@@ -98,6 +98,7 @@ import com.zillit.desktop.feature.calls.data.CallCoordinator
 import com.zillit.desktop.feature.calls.data.CallStatusPlane
 import com.zillit.desktop.feature.calls.data.FirestoreCallStatusPlane
 import com.zillit.desktop.feature.calls.data.NoopCallStatusPlane
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
 import com.zillit.desktop.core.socket.SocketIoClient
 import com.zillit.desktop.core.socket.ZillitSocketEvents
@@ -721,8 +722,8 @@ sealed interface AppGraph {
         val callApi: CallApi,
         /** The media stack behind it — the host embeds its video surface. */
         val callEngine: com.zillit.desktop.feature.calls.domain.CallEngine,
-        /** Whether Line 3 is offered on a production — remote config's roll-out list. See LineThreeGate. */
-        val lineThreeEnabled: (projectId: String?) -> Boolean,
+        /** Which call lines a production offers, and in what order — Remote Config's `calling_lines`. */
+        val callingLines: CallingLinesGate,
         /**
          * The Maps tool's canvas — embedded Chromium drawing Google's map.
          * Idle until the tool first opens; its surface is embedded by
@@ -1126,7 +1127,7 @@ sealed interface AppGraph {
             // Line 3's pieces are built after the coordinator's; the lambdas
             // below run later than either, so they read these at call time.
             var liveKitLine: LiveKitLine? = null
-            var lineThreeGate: LineThreeGate? = null
+            var callingLines: CallingLinesGate? = null
             var primaryDeviceForHandshake: String? = null
             var handshakeRecord: com.zillit.desktop.feature.auth.domain.DeviceIdentity? = null
             // Folded: this companion sits at detekt's LargeClass line limit.
@@ -1149,7 +1150,6 @@ sealed interface AppGraph {
                     projectListCache?.clear()
                     // The presence socket is this device's standing as reachable; signed out, it is not.
                     liveKitLine?.disconnect("signed out")
-                    lineThreeGate?.clear()
                     primaryDeviceForHandshake = null
                     // …and every cached row of theirs — boards, threads, mail,
                     // the read cache, the outbox — so the next person to sign
@@ -1249,10 +1249,9 @@ sealed interface AppGraph {
                         },
                         onSocketReconnectSkippedForCall = { socketResyncNeededAfterCall.value = true },
                     )
-                    // Line 3, per production: which productions offer it, and
-                    // the region warm the phones fire on every switch.
+                    // The call lines, per production, and the LiveKit region warm the phones fire on every switch.
                     appScope.launch {
-                        lineThreeGate?.refresh()
+                        callingLines?.refresh(CallingLinesGate.ON_USE)
                         liveKitLine?.warmRegion()
                     }
                 },
@@ -1454,10 +1453,12 @@ sealed interface AppGraph {
              */
             val callSocketUrl = config.realtime[ZillitRealtimeEndpoint.CallSocket]?.takeIf { it.isNotBlank() }
             val callApiBase = config.services[ZillitService.CallApi]?.trimEnd('/')?.takeIf { it.isNotBlank() }
-            lineThreeGate = LineThreeGate(
-                flags = FirebaseRemoteFlags(storageClient, config.firebase, { updateInstanceId(preferences) }),
-                configured = callSocketUrl != null && callApiBase != null,
-            )
+            val remoteFlags = FirebaseRemoteFlags(storageClient, config.firebase, { updateInstanceId(preferences) })
+            val lineGate = CallingLinesGate(
+                remoteFlags::refresh, { !remoteFlags.isStale(it) }, callSocketUrl != null && callApiBase != null,
+                { preferences.get(ZillitPreferences.CallingLinesLastGood) },
+                { preferences.set(ZillitPreferences.CallingLinesLastGood, it) }, appScope,
+            ).also { callingLines = it; it.start() }
             liveKitLine = if (callSocketUrl != null && callApiBase != null) {
                 LiveKitLine(
                     scope = appScope,
@@ -1527,6 +1528,9 @@ sealed interface AppGraph {
             val callCoordinator = buildCallCoordinator(
                 callEngine, callApi, config, socketEvents, appScope,
                 line3 = liveKitLine,
+                lineAvailable = { provider, id ->
+                    lineGate.isAvailable(provider.wire, id ?: projectContext?.context?.value?.project?.projectId)
+                },
                 // Firestore rides the plain client: it is not the Zillit API,
                 // so the moduledata/bodyhash headers must never ride along.
                 planeClient = storageClient,
@@ -1779,7 +1783,7 @@ sealed interface AppGraph {
                 callCoordinator = callCoordinator,
                 callApi = callApi,
                 callEngine = callEngine,
-                lineThreeEnabled = { id -> lineThreeGate?.isEnabledFor(id) == true },
+                callingLines = lineGate,
                 mapCanvas = mapCanvas,
                 locationPicker = locationPicker,
                 remoteConfigRepository = remoteConfigRepository,
@@ -1961,8 +1965,10 @@ private fun buildCallCoordinator(
     preferences: PreferenceStore,
     share: com.zillit.desktop.feature.calls.domain.CallRecordingShare,
     line3: LiveKitLine?,
+    lineAvailable: (CallProvider, String?) -> Boolean,
 ): CallCoordinator = CallCoordinator(
     line3 = line3,
+    lineAvailable = lineAvailable,
     // The web deployment's origin, for Line 3's invite link: the same
     // deployment the Budget Builder page is loaded from, so one key names it.
     webOrigin = {

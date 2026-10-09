@@ -56,9 +56,9 @@ class CallLogPaneRenderTest {
                 CallLogPane(
                     state = CallLogUiState(
                         entries = listOf(
-                            entry("c1", CallLine.One, "u1"),
-                            entry("c2", CallLine.Two, "u2"),
-                            entry("c3", CallLine.Three, "u3"),
+                            entry("c1", CallLine.Mediasoup, "u1"),
+                            entry("c2", CallLine.Agora, "u2"),
+                            entry("c3", CallLine.LiveKit, "u3"),
                         ),
                     ),
                     onEvent = {},
@@ -83,11 +83,11 @@ class CallLogPaneRenderTest {
                 CallLogPane(
                     state = CallLogUiState(
                         entries = listOf(
-                            entry("c1", CallLine.One, "u1"),
+                            entry("c1", CallLine.Mediasoup, "u1"),
                             // Nobody's title: the book has no entry for u3.
-                            entry("c2", CallLine.One, "u3"),
+                            entry("c2", CallLine.Mediasoup, "u3"),
                             // A room, which is not a person and has no title.
-                            entry("c3", CallLine.One, "u2")
+                            entry("c3", CallLine.Mediasoup, "u2")
                                 .copy(mode = CallMode.Group, title = "Stunt unit"),
                         ),
                     ),
@@ -113,7 +113,7 @@ class CallLogPaneRenderTest {
         setContent {
             ZillitTheme {
                 CallLogPane(
-                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.One, "u1"))),
+                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.Mediasoup, "u1"))),
                     onEvent = {},
                     nameFor = { names[it] },
                     nowMillis = now,
@@ -126,7 +126,7 @@ class CallLogPaneRenderTest {
     }
 
     @Test
-    fun `an older row with no line on the wire still says Line 1`() = runComposeUiTest {
+    fun `an older row with no line on the wire is a mediasoup call, Line 3`() = runComposeUiTest {
         setContent {
             ZillitTheme {
                 CallLogPane(
@@ -142,15 +142,15 @@ class CallLogPaneRenderTest {
             }
         }
 
-        onAllNodesWithText("Line 1").assertCountEquals(1)
+        onAllNodesWithText("Line 3").assertCountEquals(1)
     }
 
     @Test
     fun `a click on a row asks which line, and the pick rings on it`() = runComposeUiTest {
         val events = mutableListOf<CallLogEvent>()
-        // A LiveKit row (Line 1) with no device id: exactly the row that used
+        // A mediasoup row (Line 3) with no device id: exactly the row that used
         // to be unclickable. It still redials, by person.
-        val row = entry("c1", CallLine.One, "u1").copy(peerDeviceId = "")
+        val row = entry("c1", CallLine.Mediasoup, "u1").copy(peerDeviceId = "")
         setContent {
             ZillitTheme {
                 CallLogPane(
@@ -158,21 +158,21 @@ class CallLogPaneRenderTest {
                     onEvent = { events += it },
                     nameFor = { names[it] },
                     nowMillis = now,
-                    lines = CallLine.DEFAULT + CallLine.Three,
+                    lines = CallLine.DEFAULT + CallLine.LiveKit,
                 )
             }
         }
 
         onNodeWithText("Aisha Khan").performClick()
         waitForIdle()
-        // The picker: the two every production has, plus the third this one does.
+        // The picker: all three lines this production offers.
+        onAllNodesWithText("Line 1").assertCountEquals(1)
         onAllNodesWithText("Line 2").assertCountEquals(1)
-        onAllNodesWithText("Line 3").assertCountEquals(1)
-        // "Line 1" is both the row's tag and the menu's entry.
-        onAllNodesWithText("Line 1").assertCountEquals(2)
-        onNodeWithText("Line 3").performClick()
+        // "Line 3" is both the row's tag and the menu's entry.
+        onAllNodesWithText("Line 3").assertCountEquals(2)
+        onNodeWithText("Line 1").performClick()
         waitForIdle()
-        assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.Three)), events)
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.LiveKit)), events)
     }
 
     /**
@@ -183,7 +183,7 @@ class CallLogPaneRenderTest {
     @Test
     fun `beside a side pane a row click picks the call instead of ringing`() = runComposeUiTest {
         val events = mutableListOf<CallLogEvent>()
-        val row = entry("c1", CallLine.Two, "u1")
+        val row = entry("c1", CallLine.Agora, "u1")
         setContent {
             ZillitTheme {
                 CallLogPane(
@@ -210,7 +210,7 @@ class CallLogPaneRenderTest {
         setContent {
             ZillitTheme {
                 CallLogSide(
-                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.Two, "u1"))),
+                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.Agora, "u1"))),
                     onEvent = {},
                     nameFor = { names[it] },
                     nowMillis = now,
@@ -229,7 +229,7 @@ class CallLogPaneRenderTest {
     @Test
     fun `a picked call shows its info and calls back on the chosen line`() = runComposeUiTest {
         val events = mutableListOf<CallLogEvent>()
-        val row = entry("c1", CallLine.Two, "u1")
+        val row = entry("c1", CallLine.Agora, "u1")
         setContent {
             ZillitTheme {
                 CallLogSide(
@@ -237,7 +237,7 @@ class CallLogPaneRenderTest {
                     onEvent = { events += it },
                     nameFor = { names[it] },
                     nowMillis = now,
-                    lines = CallLine.DEFAULT + CallLine.Three,
+                    lines = CallLine.DEFAULT + CallLine.LiveKit,
                 )
             }
         }
@@ -246,9 +246,52 @@ class CallLogPaneRenderTest {
         onNodeWithText("Aisha Khan").assertExists()
         onNodeWithText("Call again").performClick()
         waitForIdle()
-        onNodeWithText("Line 3").performClick()
+        onNodeWithText("Line 1").performClick()
         waitForIdle()
-        assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.Three)), events)
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.LiveKit)), events)
+    }
+
+    /** Remote Config leaves this production no line: nothing to ring, so nothing offers to. */
+    @Test
+    fun `with no line available a row click rings nothing`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        val row = entry("c1", CallLine.Agora, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(row)),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    lines = emptyList(),
+                )
+            }
+        }
+
+        onNodeWithText("Aisha Khan").performClick()
+        waitForIdle()
+        // No picker: "Line 2" is the row's own tag, once.
+        onAllNodesWithText("Line 2").assertCountEquals(1)
+        assertEquals(emptyList<CallLogEvent>(), events)
+    }
+
+    @Test
+    fun `with no line available the side pane offers no Call again`() = runComposeUiTest {
+        val row = entry("c1", CallLine.Agora, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogSide(
+                    state = CallLogUiState(entries = listOf(row), detail = row),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    lines = emptyList(),
+                )
+            }
+        }
+
+        onNodeWithText("Call info").assertExists()
+        onNodeWithText("Call again").assertDoesNotExist()
     }
 
     /** The list's stamp, WhatsApp's: clock, Yesterday, the weekday, then a date. */

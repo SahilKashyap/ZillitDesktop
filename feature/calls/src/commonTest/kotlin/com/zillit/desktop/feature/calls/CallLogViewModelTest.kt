@@ -115,11 +115,11 @@ class CallLogViewModelTest {
             rung += row.callUuid to line
             if (row.callUuid == "gone") "User is not active in this project." else null
         }
-        model.onEvent(CallLogEvent.Redial(entry("c1", peer = "u-aisha"), CallLine.Three))
-        assertEquals(listOf("c1" to CallLine.Three), rung)
+        model.onEvent(CallLogEvent.Redial(entry("c1", peer = "u-aisha"), CallLine.LiveKit))
+        assertEquals(listOf("c1" to CallLine.LiveKit), rung)
         assertEquals(null, model.currentState.error)
 
-        model.onEvent(CallLogEvent.Redial(entry("gone", peer = "u-left"), CallLine.One))
+        model.onEvent(CallLogEvent.Redial(entry("gone", peer = "u-left"), CallLine.Mediasoup))
         assertEquals("User is not active in this project.", model.currentState.error)
     }
 

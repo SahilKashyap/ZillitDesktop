@@ -102,7 +102,7 @@ sealed interface CallLogEvent {
     data object Refresh : CallLogEvent
     data object LoadMore : CallLogEvent
     /** A row's call-back, on the line the picker chose — Android's `launchWithLineSelection`. */
-    data class Redial(val entry: CallLogEntry, val line: CallLine = CallLine.Two) : CallLogEvent
+    data class Redial(val entry: CallLogEntry, val line: CallLine = CallLine.Agora) : CallLogEvent
 
     /** The search box moved. */
     data class Search(val query: String) : CallLogEvent

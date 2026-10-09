@@ -11,7 +11,12 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlin.concurrent.Volatile
+import kotlin.time.Duration
+import kotlin.time.TimeSource
 
 /**
  * The phones' Firebase Remote Config, read the only way a client without the
@@ -30,7 +35,11 @@ class FirebaseRemoteFlags(
     private val host: String = FIREBASE_REMOTE_CONFIG_HOST,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private var held: Map<String, String>? = null
+    private val fetching = Mutex()
+
+    @Volatile private var held: Map<String, String>? = null
+
+    @Volatile private var lastAttempt: TimeSource.Monotonic.ValueTimeMark? = null
 
     /** Every published entry, fetched once and then remembered; null when unreachable or unconfigured. */
     suspend fun entries(): Map<String, String>? {
@@ -39,6 +48,25 @@ class FirebaseRemoteFlags(
         val appId = config.appId?.takeIf { it.isNotBlank() } ?: return null
         return fetch(config, appId)?.also { held = it }
     }
+
+    /**
+     * Fetches again unless the last attempt is younger than [minInterval],
+     * and answers what the console last said — the previous answer when this
+     * fetch fails, so being offline never takes a flag away. Null only when
+     * no fetch has succeeded yet.
+     */
+    suspend fun refresh(minInterval: Duration = Duration.ZERO): Map<String, String>? = fetching.withLock {
+        val config = firebase ?: return@withLock null
+        val appId = config.appId?.takeIf { it.isNotBlank() } ?: return@withLock null
+        val since = lastAttempt?.elapsedNow()
+        // Throttled on the attempt, not the success: offline, every ask would otherwise be a request.
+        if (since != null && since < minInterval) return@withLock held
+        lastAttempt = TimeSource.Monotonic.markNow()
+        fetch(config, appId)?.also { held = it } ?: held
+    }
+
+    /** Whether [refresh] would fetch now rather than answer from memory. */
+    fun isStale(minInterval: Duration): Boolean = lastAttempt?.let { it.elapsedNow() >= minInterval } ?: true
 
     /** One key, by name; null when the console does not publish it. */
     suspend fun value(key: String): String? = entries()?.get(key)?.trim()?.takeIf { it.isNotEmpty() }

@@ -8387,4 +8387,5 @@
     <string name="desktop_um_change_designation">更改职务</string>
     <string name="desktop_um_change_unit">更改摄制组</string>
     <string name="desktop_um_edit_user_info">编辑用户信息</string>
+    <string name="desktop_call_line_unavailable">%1$s 在此不可用</string>
 </resources>

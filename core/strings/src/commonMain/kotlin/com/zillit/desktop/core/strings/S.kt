@@ -4181,6 +4181,7 @@ object S {
     const val desktop_call_joining: String = "desktop_call_joining"
     const val desktop_call_leave_call: String = "desktop_call_leave_call"
     const val desktop_call_line3_not_configured: String = "desktop_call_line3_not_configured"
+    const val desktop_call_line_unavailable: String = "desktop_call_line_unavailable"
     const val desktop_call_loading_calls: String = "desktop_call_loading_calls"
     const val desktop_call_lock_screen_sharing: String = "desktop_call_lock_screen_sharing"
     const val desktop_call_looking_for_screens: String = "desktop_call_looking_for_screens"

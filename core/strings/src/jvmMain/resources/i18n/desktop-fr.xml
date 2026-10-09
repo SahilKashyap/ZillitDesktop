@@ -8386,4 +8386,5 @@
     <string name="desktop_um_change_designation">Changer de fonction</string>
     <string name="desktop_um_change_unit">Changer d\'unité</string>
     <string name="desktop_um_edit_user_info">Modifier les infos de l\'utilisateur</string>
+    <string name="desktop_call_line_unavailable">%1$s n\'est pas disponible ici</string>
 </resources>

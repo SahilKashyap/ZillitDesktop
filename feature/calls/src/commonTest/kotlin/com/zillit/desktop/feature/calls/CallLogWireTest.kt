@@ -117,13 +117,13 @@ class CallLogWireTest {
         assertFalse(directNobody?.isRedialable == true)
     }
 
-    /** As the phones number them: mediasoup is Line 1 and LiveKit Line 3. */
+    /** Each tag names its engine; the number shown for it is CallLineNumbering's business. */
     @Test
     fun `a line tag turns back into the provider a redial takes`() {
-        assertEquals(CallProvider.Mediasoup, CallLine.One.provider)
-        assertEquals(CallProvider.Agora, CallLine.Two.provider)
-        assertEquals(CallProvider.LiveKit, CallLine.Three.provider)
-        assertEquals(listOf(CallLine.Two, CallLine.One), CallLine.DEFAULT)
+        assertEquals(CallProvider.Mediasoup, CallLine.Mediasoup.provider)
+        assertEquals(CallProvider.Agora, CallLine.Agora.provider)
+        assertEquals(CallProvider.LiveKit, CallLine.LiveKit.provider)
+        assertEquals(listOf(CallLine.Agora, CallLine.Mediasoup), CallLine.DEFAULT)
     }
 
     @Test
@@ -134,13 +134,13 @@ class CallLogWireTest {
         assertFalse(rendered.contains("vivek"))
     }
 
-    /** agora is Line 2, livekit Line 3, anything else — mediasoup, or nothing — Line 1. */
+    /** agora and livekit by name; anything else — mediasoup, or nothing (an old row) — is mediasoup. */
     @Test
     fun `the line reads as the sheet labels it`() {
-        assertEquals(CallLine.Two, read("""{"call_uuid":"u1","line":"agora"}""")?.line)
-        assertEquals(CallLine.Three, read("""{"call_uuid":"u1","line":"LiveKit"}""")?.line)
-        assertEquals(CallLine.One, read("""{"call_uuid":"u1","line":"mediasoup"}""")?.line)
-        assertEquals(CallLine.One, read("""{"call_uuid":"u1"}""")?.line)
+        assertEquals(CallLine.Agora, read("""{"call_uuid":"u1","line":"agora"}""")?.line)
+        assertEquals(CallLine.LiveKit, read("""{"call_uuid":"u1","line":"LiveKit"}""")?.line)
+        assertEquals(CallLine.Mediasoup, read("""{"call_uuid":"u1","line":"mediasoup"}""")?.line)
+        assertEquals(CallLine.Mediasoup, read("""{"call_uuid":"u1"}""")?.line)
     }
 
     /** `call_users` arrives as bare ids on older rows and objects on newer ones — mixed, even. */

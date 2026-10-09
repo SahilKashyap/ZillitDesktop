@@ -12487,4 +12487,5 @@
     <string name="desktop_remove_admin_confirm">Are you sure you want to remove admin rights from this user?</string>
     <string name="desktop_remove_member_confirm">Are you sure you want to remove this member from the group?</string>
     <string name="desktop_not_in_group">Not in Group</string>
+    <string name="desktop_call_line_unavailable">%1$s isn\'t available here</string>
 </resources>

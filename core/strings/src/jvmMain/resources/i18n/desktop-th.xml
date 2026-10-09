@@ -8386,4 +8386,5 @@
     <string name="desktop_um_change_designation">เปลี่ยนตำแหน่ง</string>
     <string name="desktop_um_change_unit">เปลี่ยนหน่วยถ่ายทำ</string>
     <string name="desktop_um_edit_user_info">แก้ไขข้อมูลผู้ใช้</string>
+    <string name="desktop_call_line_unavailable">%1$s ไม่พร้อมใช้งานที่นี่</string>
 </resources>

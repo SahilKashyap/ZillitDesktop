@@ -8386,4 +8386,5 @@
     <string name="desktop_um_change_designation">Cambiar cargo</string>
     <string name="desktop_um_change_unit">Cambiar unidad</string>
     <string name="desktop_um_edit_user_info">Editar información del usuario</string>
+    <string name="desktop_call_line_unavailable">%1$s no está disponible aquí</string>
 </resources>

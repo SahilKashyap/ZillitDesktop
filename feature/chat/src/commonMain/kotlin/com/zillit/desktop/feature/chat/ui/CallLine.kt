@@ -1,44 +1,35 @@
 package com.zillit.desktop.feature.chat.ui
 
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.config.CallEngines
+import com.zillit.desktop.core.config.CallLineNumbering
+import com.zillit.desktop.core.strings.callLineLabel
 
 /**
- * A line a call can be placed on, as the phones name them.
+ * A line a call can be placed on, named by its engine.
  *
  * Chat does not depend on the calls module, so the line is named here by its
  * wire word and the host maps it to a provider. Three because that is what
  * the server offers: separate plumbing each, not one line with three modes.
+ *
+ * The number a user sees is not fixed to the engine: Remote Config's
+ * `calling_lines` sets it (LiveKit Line 1, Agora Line 2, mediasoup Line 3
+ * when it says nothing), and the host decides which lines a production
+ * offers and in what order.
  */
-enum class CallLine(val wire: String, private val labelKey: String) {
-    /** Agora. Listed first: every deployment has it, and a plain Return picks it. */
-    Two("agora", S.txt_line_two),
-
-    /** The mediasoup SFU, shown as **Line 1**, as Android shows it. */
-    One("mediasoup", S.txt_line_one),
-
-    /**
-     * LiveKit, shown as **Line 3** — offered only where remote config lists
-     * the production.
-     *
-     * The number matches the phones (Android maps `CALLING_LIVEKIT` to
-     * `txt_line_three`) and the internal names here, which all say "line
-     * three" for LiveKit: `LineThreeGate`, `line_three_enabled_in`. These were
-     * briefly crossed (2026-09-26 – 2026-10-01) so that LiveKit read "Line 1";
-     * that made one call carry two different numbers on two clients.
-     */
-    Three("livekit", S.txt_line_three),
+enum class CallLine(val wire: String) {
+    Agora(CallEngines.AGORA),
+    Mediasoup(CallEngines.MEDIASOUP),
+    LiveKit(CallEngines.LIVEKIT),
     ;
 
-    /** The line's name as the phones show it. */
-    val label: String get() = str(labelKey)
+    /** "Line N", as every client numbers this engine right now. */
+    val label: String get() = callLineLabel(CallLineNumbering.numberOf(wire))
 
     companion object {
-        /**
-         * What every production has: Agora and mediasoup. LiveKit — labelled
-         * Line 3 — is added by the host where remote config lists the
-         * production, so it is absent here.
-         */
-        val DEFAULT: List<CallLine> = listOf(Two, One)
+        /** The line for an engine word, or null for one the desktop does not run. */
+        fun ofWire(raw: String?): CallLine? = entries.firstOrNull { it.wire == raw?.trim()?.lowercase() }
+
+        /** A stand-in for previews and tests; the host always passes the real list. */
+        val DEFAULT: List<CallLine> = listOf(Agora, Mediasoup)
     }
 }

@@ -8387,4 +8387,5 @@
     <string name="desktop_um_change_designation">שינוי תפקיד</string>
     <string name="desktop_um_change_unit">שינוי יחידה</string>
     <string name="desktop_um_edit_user_info">עריכת פרטי משתמש</string>
+    <string name="desktop_call_line_unavailable">%1$s אינו זמין כאן</string>
 </resources>

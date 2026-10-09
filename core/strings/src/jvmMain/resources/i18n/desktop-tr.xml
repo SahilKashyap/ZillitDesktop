@@ -8381,4 +8381,5 @@
     <string name="desktop_um_change_designation">Unvanı Değiştir</string>
     <string name="desktop_um_change_unit">Birimi Değiştir</string>
     <string name="desktop_um_edit_user_info">Kullanıcı Bilgilerini Düzenle</string>
+    <string name="desktop_call_line_unavailable">%1$s burada kullanılamıyor</string>
 </resources>

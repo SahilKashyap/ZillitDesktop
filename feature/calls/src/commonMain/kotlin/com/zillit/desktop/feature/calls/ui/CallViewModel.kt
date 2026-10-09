@@ -1,7 +1,9 @@
 package com.zillit.desktop.feature.calls.ui
 
+import com.zillit.desktop.core.config.CallLineNumbering
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.callLineLabel
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
 import com.zillit.desktop.feature.calls.data.CallCoordinator
@@ -267,14 +269,8 @@ data class CallUiState(
      * the first question about any call problem is which one it was on.
      */
     val lineLabel: String
-        get() = when (session?.provider) {
-            // As the phones number them, and as `CallLine` maps them: LiveKit
-            // is Line 3 and mediasoup Line 1.
-            CallProvider.LiveKit -> str(S.txt_line_three)
-            CallProvider.Agora -> str(S.txt_line_two)
-            CallProvider.Mediasoup -> str(S.txt_line_one)
-            else -> ""
-        }
+        // Numbered as `calling_lines` numbers the engine, like the picker and the call log.
+        get() = session?.provider?.let { callLineLabel(CallLineNumbering.numberOf(it.wire)) }.orEmpty()
 
     /**
      * Whether the engine's page should draw its shrunken layout.
@@ -909,7 +905,16 @@ class CallViewModel(
         setState { copy(endedNotice = str(S.desktop_call_invite_link_copied)) }
     }
 
-    private fun place(event: CallEvent.Place) = coordinator.placeCall(
+    private fun place(event: CallEvent.Place) {
+        // Idle has no stage to carry a notice, so a refused line says so the way an ended call does.
+        coordinator.lineRefusal(event.provider, event.projectId)?.let { refusal ->
+            if (coordinator.phase.value == CallPhase.Idle) setState { copy(endedNotice = refusal) }
+            return
+        }
+        placeCall(event)
+    }
+
+    private fun placeCall(event: CallEvent.Place) = coordinator.placeCall(
         chatRoomId = event.chatRoomId,
         receiverDeviceId = event.receiverDeviceId,
         mode = event.mode,

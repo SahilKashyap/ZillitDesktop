@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.calls
 
+import com.zillit.desktop.core.config.CallLineNumbering
+import com.zillit.desktop.core.config.CallingLinesConfig
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
@@ -26,7 +28,7 @@ class CallDetailPresentationTest {
     private fun row(
         mode: CallMode = CallMode.Private,
         type: CallType = CallType.Audio,
-        line: CallLine = CallLine.One,
+        line: CallLine = CallLine.Mediasoup,
         missed: Boolean = false,
         outgoing: Boolean = true,
         duration: Long = 0,
@@ -44,11 +46,29 @@ class CallDetailPresentationTest {
         calleeUserId = "u-aisha",
     )
 
+    /** The built-in numbering, while `calling_lines` says nothing: LiveKit 1, Agora 2, mediasoup 3. */
     @Test
     fun `the header names the kind and the line`() {
-        assertEquals("Audio call · Line 1", row().detailSubtitle())
-        assertEquals("Video call · Line 2", row(type = CallType.Video, line = CallLine.Two).detailSubtitle())
-        assertEquals("Audio call · Line 3", row(line = CallLine.Three).detailSubtitle())
+        assertEquals("Audio call · Line 3", row().detailSubtitle())
+        assertEquals("Video call · Line 2", row(type = CallType.Video, line = CallLine.Agora).detailSubtitle())
+        assertEquals("Audio call · Line 1", row(line = CallLine.LiveKit).detailSubtitle())
+    }
+
+    /** `calling_lines` renumbers past calls too — a switched-off line's included. */
+    @Test
+    fun `the line number follows calling_lines, even for a line that is off`() {
+        val swapped = CallingLinesConfig.parse(
+            """{"lines":[{"engine":"livekit","order":3},{"engine":"mediasoup","order":1,"enabled":false}]}""",
+        )
+        CallLineNumbering.update(swapped)
+        try {
+            assertEquals("Audio call · Line 1", row(line = CallLine.Mediasoup).detailSubtitle())
+            assertEquals("Audio call · Line 3", row(line = CallLine.LiveKit).detailSubtitle())
+            // Not listed: the built-in number.
+            assertEquals("Audio call · Line 2", row(line = CallLine.Agora).detailSubtitle())
+        } finally {
+            CallLineNumbering.update(null)
+        }
     }
 
     @Test
@@ -87,7 +107,7 @@ class CallDetailPresentationTest {
 
     @Test
     fun `the rich roster - names, guests, invites, attendance and the server's missed verdict`() {
-        val sheet = row(line = CallLine.Three).copy(
+        val sheet = row(line = CallLine.LiveKit).copy(
             participants = listOf(
                 CallLogParticipant("me", status = "caller", joinCount = 1, totalMillis = 65_000),
                 CallLogParticipant(
@@ -119,7 +139,7 @@ class CallDetailPresentationTest {
 
     @Test
     fun `a missed call's roster carries no attendance`() {
-        val sheet = row(line = CallLine.Three, missed = true)
+        val sheet = row(line = CallLine.LiveKit, missed = true)
             .copy(participants = listOf(CallLogParticipant("me", status = "caller", totalMillis = 500)))
             .detailParticipants("me", names::get)
         assertNull(sheet[0].meta)
@@ -130,7 +150,7 @@ class CallDetailPresentationTest {
         assertNull(row().detailDuration())
         assertEquals("1m 30s", row(duration = 90_000).detailDuration())
         // Line 3 (LiveKit): start 1000, duration 60000 → end 61000; first answer 11000 → 50s live.
-        val live = row(line = CallLine.Three, duration = 60_000).copy(
+        val live = row(line = CallLine.LiveKit, duration = 60_000).copy(
             startedAtMillis = 1_000,
             participants = listOf(
                 CallLogParticipant("me", status = "caller", answeredAtMillis = 11_000),
@@ -142,7 +162,7 @@ class CallDetailPresentationTest {
         val legacy = live.copy(durationMillis = -1_000)
         assertEquals("40s", legacy.detailDuration())
         // Nobody answered: nothing to say.
-        val unanswered = row(line = CallLine.Three)
+        val unanswered = row(line = CallLine.LiveKit)
             .copy(participants = listOf(CallLogParticipant("me", status = "caller")))
         assertNull(unanswered.detailDuration())
     }
