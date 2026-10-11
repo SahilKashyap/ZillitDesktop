@@ -49,6 +49,12 @@ data class VideoPlaybackState(
     val started: Boolean = false,
     /** Sound off — the player's own mute, not the machine's volume. */
     val isMuted: Boolean = false,
+    /**
+     * The video's format, by name ("AV1"), when the player cannot draw it.
+     * Such a clip still loads and plays its sound over a blank picture, so
+     * the player stops it and the viewer says why rather than showing black.
+     */
+    val unplayableFormat: String? = null,
 ) {
     /** 0..1, for the progress bar. */
     val progress: Float
@@ -169,7 +175,7 @@ private fun Playing(engine: VideoEngine, url: String, onOpenOutside: (() -> Unit
     val state by playback.state.collectAsState()
 
     if (state.failed) {
-        PlaybackRefused(onOpenOutside)
+        PlaybackRefused(onOpenOutside, state.unplayableFormat)
         return
     }
 
@@ -266,13 +272,14 @@ private fun VideoControls(state: VideoPlaybackState, playback: VideoPlayback) {
 
 /** The sentence, and the way out of it. */
 @Composable
-private fun PlaybackRefused(onOpenOutside: (() -> Unit)?) {
+private fun PlaybackRefused(onOpenOutside: (() -> Unit)?, unplayableFormat: String? = null) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = str(S.desktop_could_not_play_video),
+            text = unplayableFormat?.let { str(S.desktop_video_format_unplayable, it) }
+                ?: str(S.desktop_could_not_play_video),
             style = ZillitTheme.typography.bodyMedium,
             color = Color.White,
         )

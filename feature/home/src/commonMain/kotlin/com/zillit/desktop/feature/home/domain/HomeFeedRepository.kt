@@ -50,6 +50,23 @@ interface HomeFeedRepository {
     ): ZillitResult<Notice> = postNotice(unitId, text, localId, attachment, location)
 
     /**
+     * [postNotice], into the production [options] names rather than the one
+     * open now — a post whose upload outlived a project switch. Defaults to
+     * the plain post for repositories that only ever serve the open one.
+     */
+    @Suppress("LongParameterList") // The post's own fields, plus where it goes.
+    suspend fun postNoticeAs(
+        options: com.zillit.desktop.core.network.CallOptions,
+        unitId: String,
+        text: String,
+        localId: String,
+        attachment: UploadedNoticeMedia?,
+        location: GeoPoint?,
+        replacePrevious: Boolean?,
+        replaceChatId: String?,
+    ): ZillitResult<Notice> = postNotice(unitId, text, localId, attachment, location, replacePrevious, replaceChatId)
+
+    /**
      * The watermarked rendition of a call sheet's document — the server stamps
      * a copy per reader and hands back its keys (`GET home/chat/watermark/{id}`).
      * Both phones open and download call-sheet PDFs through this rather than

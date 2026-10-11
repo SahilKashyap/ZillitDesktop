@@ -30,6 +30,18 @@ class DownloadsAttachmentStore(
 ) : AttachmentStore {
 
     override suspend fun save(fileName: String, bytes: ByteArray): ZillitResult<String> =
+        write(fileName) { target -> target.writeBytes(bytes) }
+
+    /**
+     * [save], from a stream rather than bytes in hand — a file too big to
+     * hold in memory (a 2 GB video) goes from the network to the disk in
+     * chunks. [open] is called once the target is decided; the stream is
+     * closed here.
+     */
+    suspend fun saveStream(fileName: String, open: () -> java.io.InputStream): ZillitResult<String> =
+        write(fileName) { target -> open().use { input -> target.outputStream().use { input.copyTo(it) } } }
+
+    private suspend fun write(fileName: String, fill: (File) -> Unit): ZillitResult<String> =
         withContext(Dispatchers.IO) {
             try {
                 directory.mkdirs()
@@ -52,8 +64,8 @@ class DownloadsAttachmentStore(
                     )
                 }
 
-                target.writeBytes(bytes)
-                ZillitLog.i(TAG) { "saved attachment (${bytes.size} bytes)" }
+                fill(target)
+                ZillitLog.i(TAG) { "saved attachment (${target.length()} bytes)" }
                 ZillitResult.Success(target.absolutePath)
             } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
                 // Path is not logged: it contains the filename, and a filename

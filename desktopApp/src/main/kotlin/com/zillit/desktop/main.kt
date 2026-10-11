@@ -1751,6 +1751,12 @@ private fun SignedInShell(
     }
 
     Box {
+        // Every file leaving the app, from any production: the tray opens on
+        // its own when a new one starts, and the status bar's count reopens it.
+        val outgoing by mediaSendTracker.sends.collectAsState()
+        var uploadsOpen by remember { mutableStateOf(true) }
+        LaunchedEffect(outgoing.size) { if (outgoing.isNotEmpty()) uploadsOpen = true }
+        val uploading = outgoing.count { it.status == com.zillit.desktop.core.media.SendStatus.Running }
         AppShell(
         viewModel = workspaceViewModel,
         registry = registry,
@@ -1765,6 +1771,24 @@ private fun SignedInShell(
         // context is re-read on `project:(un)marked:for:deletion`.
         deletionDueAtMillis = projectDeletionDueAt,
         statusText = statusText(socketState, syncStatus),
+        uploadsAction = outgoing.takeIf { it.isNotEmpty() }?.let {
+            com.zillit.desktop.feature.shell.StatusAction(
+                text = if (uploading > 0) {
+                    str(S.desktop_uploads_status, uploading)
+                } else {
+                    str(S.drive_uploads_header_count, it.size)
+                },
+                attention = uploading > 0,
+                onClick = { uploadsOpen = !uploadsOpen },
+            )
+        },
+        cornerOverlay = {
+            com.zillit.desktop.core.media.UploadsTray(
+                tracker = mediaSendTracker,
+                open = uploadsOpen,
+                onHide = { uploadsOpen = false },
+            )
+        },
         updateNotice = updateNotice,
         // The guarded launcher — https only, as the auth links use.
         onDownloadUpdate = ::openInBrowser,
@@ -2226,6 +2250,8 @@ internal suspend fun uploadChatMedia(
     onProgress: (Int) -> Unit,
     /** Where the bytes go — another production's storage for a widget on one. */
     capture: com.zillit.desktop.feature.home.ui.MediaCapture = homeMediaCapture(ready),
+    /** How a large video goes, as chosen in the preview. */
+    videoSend: com.zillit.desktop.core.media.VideoSend? = null,
 ): ChatAttachment? {
     val media = capture
     val withPoster = media.videoThumbnail(
@@ -2233,6 +2259,7 @@ internal suspend fun uploadChatMedia(
             name = name,
             contentType = contentType,
             bytes = bytes,
+            videoSend = videoSend,
         ),
     )
     val stored = (media.upload?.invoke(withPoster, onProgress)
@@ -2249,8 +2276,21 @@ internal suspend fun uploadChatMedia(
             widthPx = (it.widthPx ?: 0).toLong(),
             heightPx = (it.heightPx ?: 0).toLong(),
             durationMillis = it.durationMillis ?: 0,
+            sizeBytes = it.sizeBytes,
         )
     }
+}
+
+/**
+ * FFmpeg's notice, bundled beside it (`stageFfmpeg`), in the system's own
+ * text viewer — Settings › About. A build without FFmpeg (Linux) has none.
+ */
+internal fun openLicenceNotice(scope: kotlinx.coroutines.CoroutineScope) {
+    val notice = System.getProperty("compose.application.resources.dir")
+        ?.let { java.io.File(it, "ffmpeg/NOTICE.txt") }
+        ?.takeIf { it.isFile }
+        ?: return
+    scope.launch(Dispatchers.IO) { runCatching { java.awt.Desktop.getDesktop().open(notice) } }
 }
 
 /** Fetches a message's file to Downloads and hands it to the OS. */
@@ -3216,6 +3256,12 @@ private fun rememberAppViewModels(
                     uploadMedia = { name, type, bytes, onProgress ->
                         uploadChatMedia(it, name, type, bytes, onProgress)
                     },
+                    // The sending bubble's picture, cut the way the upload cuts it.
+                    thumbnailOf = ::chatThumbnail,
+                    // A send stays with the production it was made in, and
+                    // the app-wide Uploads tray follows it from anywhere.
+                    pinMedia = { it.pinChatMedia() },
+                    sendTracker = mediaSendTracker,
                     // The picture of a shared place — the same Static Maps
                     // image the boards already post beside their locations.
                     staticMap = { lat, lng -> fetchStaticMapBytes(it, lat, lng) },
@@ -4381,6 +4427,7 @@ private fun buildSettings(
         // store and the label refresh both follow it.
         setLanguage = { code -> scope.launch { preferences.set(ZillitPreferences.Language, code) } },
         language = preferences.observe(ZillitPreferences.Language),
+        openLicences = { openLicenceNotice(scope) },
         notifications = notificationSettings(preferences, scope),
         // Clears the encrypted cache with the session — the dialog says so.
         signOut = { ready?.authRepository?.signOut() },

@@ -39,6 +39,8 @@ class SettingsViewModel(
     uiScalePercent: Flow<Int>? = null,
     /** Writes the language preference; the store that loads the words follows it. */
     private val setLanguage: (String) -> Unit = {},
+    /** Opens the notice for the open-source software bundled with the app (FFmpeg). */
+    private val openLicences: () -> Unit = {},
     /** The stored language preference, mirrored so the row ticks what is actually in force. */
     language: Flow<String> = flowOf(""),
     private val notifications: NotificationSettings = NotificationSettings(),
@@ -203,6 +205,7 @@ class SettingsViewModel(
             SettingsEvent.DismissSignOut -> setState { copy(isConfirmingSignOut = false) }
 
             SettingsEvent.CheckForUpdates -> checkForUpdates()
+            SettingsEvent.OpenLicences -> openLicences()
             // Not OpenExternal: that sent this button to a browser even when
             // the app could download the update itself.
             is SettingsEvent.DownloadUpdate -> sendEffect(SettingsEffect.GetUpdate(event.url))

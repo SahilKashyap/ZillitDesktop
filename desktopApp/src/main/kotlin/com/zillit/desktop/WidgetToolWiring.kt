@@ -171,6 +171,7 @@ private fun AppGraph.Ready.scopedChatViewModel(
     uploadMedia = { name, type, bytes, onProgress ->
         capture?.let { uploadChatMedia(this, name, type, bytes, onProgress, it) }
     },
+    thumbnailOf = ::chatThumbnail,
     staticMap = { lat, lng -> fetchStaticMapBytes(this, lat, lng) },
     voice = capture?.let { chatVoice(this, it) },
 )

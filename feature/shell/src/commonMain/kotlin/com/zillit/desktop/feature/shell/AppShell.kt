@@ -119,6 +119,17 @@ fun AppShell(
      */
     statusAction: StatusAction? = null,
     /**
+     * A second clickable status — the Uploads tray's "Uploads: 2 in progress",
+     * reopening the tray. Null when nothing is leaving.
+     */
+    uploadsAction: StatusAction? = null,
+    /**
+     * Floats over the frame's bottom-right corner, above the status bar — the
+     * app-wide Uploads tray. The shell knows nothing of uploads; the app
+     * supplies the card.
+     */
+    cornerOverlay: @Composable () -> Unit = {},
+    /**
      * Unread count for a window's tab.
      *
      * A lambda rather than a map so the shell never holds badge state — the
@@ -231,7 +242,23 @@ fun AppShell(
                 )
 
                 HorizontalDivider(color = ZillitTheme.colors.divider)
-                StatusBar(statusText = statusText, action = statusAction, unsaved = state.hasDirtyWindows)
+                StatusBar(
+                    statusText = statusText,
+                    action = statusAction,
+                    unsaved = state.hasDirtyWindows,
+                    uploads = uploadsAction,
+                )
+            }
+
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = ZillitTheme.spacing.lg,
+                        bottom = ZillitDimens.statusBarHeight + ZillitTheme.spacing.md,
+                    ),
+            ) {
+                cornerOverlay()
             }
 
             // Over everything, sign-out included: below the floor nothing in
@@ -658,7 +685,7 @@ private fun CheckForUpdatesButton(onCheck: suspend () -> UpdateCheckOutcome) {
  * shows it, and the same number in two places is noise the eye has to filter.
  */
 @Composable
-private fun StatusBar(statusText: String, action: StatusAction?, unsaved: Boolean) {
+private fun StatusBar(statusText: String, action: StatusAction?, unsaved: Boolean, uploads: StatusAction? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -677,16 +704,16 @@ private fun StatusBar(statusText: String, action: StatusAction?, unsaved: Boolea
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            if (action != null) {
+            listOfNotNull(uploads, action).forEach { shown ->
                 ZillitText(
-                    text = action.text,
+                    text = shown.text,
                     style = ZillitTheme.typography.labelSmall,
-                    color = if (action.attention) ZillitTheme.colors.accent else ZillitTheme.colors.textMuted,
+                    color = if (shown.attention) ZillitTheme.colors.accent else ZillitTheme.colors.textMuted,
                     modifier = Modifier
                         .clip(RoundedCornerShape(ZillitTheme.spacing.xs))
-                        .clickable(onClick = action.onClick)
+                        .clickable(onClick = shown.onClick)
                         .padding(horizontal = ZillitTheme.spacing.xs)
-                        .testTag("status-action"),
+                        .testTag(if (shown === uploads) "status-uploads" else "status-action"),
                 )
             }
             if (unsaved) {

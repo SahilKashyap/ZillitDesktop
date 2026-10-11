@@ -11,9 +11,10 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeMediaSource
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.readRawBytes
+import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
 import java.security.MessageDigest
 import java.time.ZoneOffset
@@ -70,7 +71,7 @@ class S3NoticeMediaSource(
             )
         }
 
-        return download(attachment, key).also { result ->
+        return download(attachment, key, if (preview) PREVIEW_MAX_BYTES else IN_MEMORY_MAX_BYTES).also { result ->
             if (result is ZillitResult.Success) remember(key, result.data)
         }
     }
@@ -78,6 +79,8 @@ class S3NoticeMediaSource(
     private suspend fun download(
         attachment: NoticeAttachment,
         key: String,
+        /** The most this fetch may hold in memory; a larger object is refused unread. */
+        maxBytes: Long,
     ): ZillitResult<ByteArray> = withContext(Dispatchers.IO) {
         val keys = credentials() ?: return@withContext ZillitResult.Failure(
             ZillitError.Storage(
@@ -108,20 +111,35 @@ class S3NoticeMediaSource(
                 sha256Hex = ::sha256Hex,
             )
 
-            val response = httpClient.get("https://$host$path") {
+            // Prepared and executed, not a plain `get`: that one buffers the
+            // whole body before anyone can look at it, and a 1.8 GB video
+            // fetched as a "preview" (no thumbnail, so the key fell back to
+            // the file itself) ran the app out of heap.
+            httpClient.prepareGet("https://$host$path") {
                 header("Authorization", authorization)
                 header("x-amz-date", timestamp)
                 header("x-amz-content-sha256", EMPTY_SHA256)
-            }
-
-            if (response.status.isSuccess()) {
-                ZillitResult.Success(response.readRawBytes())
-            } else {
-                // Never the key: file names and paths on a production are content.
-                ZillitLog.w(TAG) { "media fetch rejected: ${response.status.value}" }
-                ZillitResult.Failure(
-                    ZillitError.Http(response.status.value, str(S.desktop_could_not_load_file)),
-                )
+            }.execute { response ->
+                val length = response.contentLength()
+                when {
+                    !response.status.isSuccess() -> {
+                        // Never the key: file names and paths on a production are content.
+                        ZillitLog.w(TAG) { "media fetch rejected: ${response.status.value}" }
+                        ZillitResult.Failure(
+                            ZillitError.Http(response.status.value, str(S.desktop_could_not_load_file)),
+                        )
+                    }
+                    length != null && length > maxBytes -> {
+                        ZillitLog.w(TAG) { "media fetch refused: $length bytes is over $maxBytes in memory" }
+                        ZillitResult.Failure(
+                            ZillitError.Storage(
+                                technical = "object too large to hold in memory: $length",
+                                userMessage = str(S.desktop_could_not_load_file),
+                            ),
+                        )
+                    }
+                    else -> ZillitResult.Success(response.readRawBytes())
+                }
             }
         } catch (cancellation: kotlinx.coroutines.CancellationException) {
             throw cancellation
@@ -250,6 +268,12 @@ class S3NoticeMediaSource(
         const val OGG_CONTENT_TYPE = "video/ogg"
 
         const val DEFAULT_CACHE_BYTES = 64L * 1024 * 1024
+
+        /** A preview is a thumbnail or a picture; past this it is a whole video, never a preview. */
+        const val PREVIEW_MAX_BYTES = 32L * 1024 * 1024
+
+        /** What a full fetch may hold in memory; larger files are opened by streaming to disk. */
+        const val IN_MEMORY_MAX_BYTES = 256L * 1024 * 1024
         const val LOAD_FACTOR = 0.75f
 
         val AMZ_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")

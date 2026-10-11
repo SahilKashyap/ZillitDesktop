@@ -209,6 +209,7 @@ internal fun ThreadPane(
             // Pictures open in-app; downloading stays a separate, gated act.
             onView = { viewing = it },
             posters = posters,
+            uploadPreview = { uniqueId -> state.uploadPreviews[uniqueId] },
         )
         val infoHooks = InfoHooks(
             loadAvatar, media, onCall.takeIf { callable }, lines, onEvent,
@@ -1355,6 +1356,8 @@ internal class BubbleMedia(
     val onView: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = onOpen,
     /** What this thread's poster fetches already answered — see [PosterMemory]. */
     val posters: PosterMemory = PosterMemory(),
+    /** The local thumbnail of a file this machine is sending, by the bubble's unique id. */
+    val uploadPreview: (String) -> ByteArray? = { null },
 )
 
 /**
@@ -1600,7 +1603,9 @@ private fun BubbleBody(
         if (place != null) {
             LocationCard(place, message.body, message.attachment, media)
         } else {
-            message.attachment?.let { file -> AttachmentBody(file, media, uploadPercent) }
+            message.attachment?.let { file ->
+                AttachmentBody(file, media, uploadPercent, media.uploadPreview(message.uniqueId))
+            }
         }
         val words = place == null && message.body.isNotBlank()
         // The clock tucks in at the end of the last line of words when it
@@ -1663,15 +1668,20 @@ private fun BubbleWords(
  *
  * Anything with a picture shows the picture; a voice note shows its player;
  * the chip is the fallback for the rest — unless the file is still climbing to
- * storage, which is its own look: the name over a live bar.
+ * storage, which is its own look: the picture this machine cut from it
+ * ([preview]) under the upload's progress, or the name over a bar for a file
+ * with no picture.
  */
 @Composable
 private fun AttachmentBody(
     file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
     media: BubbleMedia,
     uploadPercent: Int?,
+    preview: ByteArray? = null,
 ) {
+    val local = rememberLocalPreview(file, media, preview, uploading = uploadPercent != null)
     when {
+        uploadPercent != null && local != null -> UploadingMedia(local, file, uploadPercent)
         uploadPercent != null -> UploadingFile(file.name, uploadPercent)
         file.kind == "audio" -> VoiceBubble(file, media)
         // A picture opens the in-app viewer; saving stays gated behind its
@@ -1702,14 +1712,71 @@ private fun AttachmentBody(
 }
 
 /**
- * The bubble while its file climbs to storage: the name over a live bar.
+ * The thumbnail this machine cut from a file it is sending, decoded off the
+ * UI thread.
  *
- * A negative percent means the file is still being prepared — poster frames
- * and PDF pages are extracted before any byte moves — which gets words
- * rather than a bar stuck at zero.
+ * Once the file is stored the bubble fetches the server's thumbnail — the
+ * same picture — so this one is handed to [PosterMemory] under the stored
+ * key and stands in from the first frame: the tile never blanks between
+ * "uploading" and "sent".
  */
 @Composable
-private fun UploadingFile(name: String, percent: Int) {
+private fun rememberLocalPreview(
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    media: BubbleMedia,
+    preview: ByteArray?,
+    uploading: Boolean,
+): androidx.compose.ui.graphics.ImageBitmap? {
+    val local by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, preview) {
+        value = preview?.let {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.zillit.desktop.core.media.decodeImageBitmap(it)
+            }
+        }
+    }
+    val settled = local
+    if (!uploading && settled != null && file.media.isNotBlank()) {
+        androidx.compose.runtime.remember(file.media) {
+            if (media.posters.known(file.media) == null) media.posters.keep(file.media, settled)
+        }
+    }
+    return settled
+}
+
+/**
+ * A picture or video on its way to storage: its own thumbnail, at the size
+ * the sent bubble will have, dimmed under the upload's ring and phase —
+ * "Processing…", "Compressing 40%", "Uploading 72%".
+ */
+@Composable
+private fun UploadingMedia(
+    image: androidx.compose.ui.graphics.ImageBitmap,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    progress: Int,
+) {
+    Box(
+        modifier = Modifier
+            .size(posterFrame(image.width.toLong(), image.height.toLong(), portraitDefault = false))
+            .clip(ZillitTheme.shapes.small)
+            .background(ZillitTheme.colors.surfaceSunken),
+    ) {
+        androidx.compose.foundation.Image(
+            bitmap = image,
+            contentDescription = file.name,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        com.zillit.desktop.core.media.UploadOverlay(progress)
+    }
+}
+
+/**
+ * The bubble while a file with no picture climbs to storage: the name over
+ * a live bar, and the phase in words. While it is prepared there is nothing
+ * to count, so the words stand alone rather than a bar stuck at zero.
+ */
+@Composable
+private fun UploadingFile(name: String, progress: Int) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         ZillitText(
             text = name,
@@ -1717,23 +1784,18 @@ private fun UploadingFile(name: String, percent: Int) {
             color = ZillitTheme.colors.textPrimary,
             maxLines = 1,
         )
-        if (percent < 0) {
-            ZillitText(
-                text = str(S.txt_processing),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        } else {
+        val phase = com.zillit.desktop.core.media.UploadProgress.phase(progress)
+        if (phase != com.zillit.desktop.core.media.UploadProgress.Phase.Preparing) {
             com.zillit.desktop.core.designsystem.component.ZillitProgressBar(
-                fraction = percent / PERCENT_FULL,
+                fraction = com.zillit.desktop.core.media.UploadProgress.percent(progress) / PERCENT_FULL,
                 modifier = Modifier.width(UPLOAD_BAR_WIDTH),
             )
-            ZillitText(
-                text = str(S.drive_uploads_status_uploading_format, percent),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
         }
+        ZillitText(
+            text = com.zillit.desktop.core.media.UploadProgress.label(progress),
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
     }
 }
 
@@ -2305,6 +2367,21 @@ private fun PosterTile(
                 modifier = Modifier.fillMaxSize(),
             )
         }
+        // A clip's weight in the corner, as WhatsApp marks one — what it costs
+        // to open before anyone presses play.
+        if (playBadge && image != null && file.sizeBytes > 0) {
+            ZillitText(
+                text = com.zillit.desktop.core.media.formatBytes(file.sizeBytes),
+                style = ZillitTheme.typography.labelSmall,
+                color = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(ZillitTheme.spacing.xs)
+                    .clip(ZillitTheme.shapes.pill)
+                    .background(ZillitTheme.colors.scrim)
+                    .padding(horizontal = ZillitTheme.spacing.xs, vertical = 1.dp),
+            )
+        }
         if (playBadge && image != null) {
             // The board's rule: the poster says what it is, the badge says
             // it moves.
@@ -2444,11 +2521,22 @@ private fun FileChip(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitFileBadge(fileName = file.name)
-        ZillitText(
-            text = file.name,
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textPrimary,
-        )
+        Column {
+            ZillitText(
+                text = file.name,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textPrimary,
+            )
+            // The size, when the sender's client sent one — every client but
+            // the phones' oldest builds does.
+            if (file.sizeBytes > 0) {
+                ZillitText(
+                    text = com.zillit.desktop.core.media.formatBytes(file.sizeBytes),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+        }
     }
 }
 

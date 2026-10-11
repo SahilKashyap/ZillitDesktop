@@ -555,6 +555,9 @@ fun sendEnvelope(
                 put("height", attachment.heightPx)
                 put("width", attachment.widthPx)
                 put("duration", attachment.durationMillis)
+                // The web sends the file's bytes here too (`cncUtil.js:192`);
+                // without it every client's bubble had no size to show.
+                put("file_size", attachment.sizeBytes)
                 put("unique_id", uniqueId)
                 put("caption", cipherBody)
             },

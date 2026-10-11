@@ -172,6 +172,39 @@ class ChatMediaPreviewTest {
         assertEquals(ChatSendState.Sent, model.currentState.messages.single().sendState)
     }
 
+    @Test
+    fun `a sent picture's bubble keeps its thumbnail and reports each upload phase`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val seen = mutableListOf<Int>()
+        lateinit var model: ChatViewModel
+        model = ChatViewModel(
+            repository = repository,
+            nowMillis = { NOW },
+            newUniqueId = { "unique-${repository.sent.size}" },
+            uploadMedia = { _, _, _, onProgress ->
+                onProgress(0)
+                seen += model.currentState.uploads.values
+                onProgress(55)
+                seen += model.currentState.uploads.values
+                stored
+            },
+            thumbnailOf = { _, type, _ -> if (type.startsWith("image/")) byteArrayOf(9, 9) else null },
+        )
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.ImagePasted("Pasted image.png", "image/png", byteArrayOf(7, 7)))
+        advanceUntilIdle()
+        model.onEvent(
+            ChatEvent.PreviewSend(PreviewResult("Pasted image.png", "image/png", byteArrayOf(7, 7)), caption = ""),
+        )
+        advanceUntilIdle()
+
+        val id = model.currentState.messages.single().uniqueId
+        assertContentEquals(byteArrayOf(9, 9), model.currentState.uploadPreviews[id], "the thumbnail outlives the send")
+        assertEquals(listOf(0, 55), seen, "each step of the upload reached the bubble")
+        assertTrue(model.currentState.uploads.isEmpty(), "the progress is gone once the message is sent")
+    }
+
     /** A model whose uploader notes which file each upload was named for. */
     private fun dropModel(repository: FakeChatRepository, uploaded: MutableList<String>): ChatViewModel {
         var next = 0

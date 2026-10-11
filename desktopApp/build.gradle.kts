@@ -674,6 +674,18 @@ if (jbrFrameworks.isDirectory) {
                         --timestamp --sign "${'$'}identity" "${'$'}path"
                 done
 
+                # FFmpeg (stageFfmpeg): a loose program and its libraries, which
+                # notarization rejects unsigned. Libraries first — the program
+                # loads them, and library validation wants the same team on both.
+                for lib in "${'$'}app"/Contents/app/resources/ffmpeg/*.dylib; do
+                    [ -f "${'$'}lib" ] || continue
+                    codesign --force --options runtime --timestamp --sign "${'$'}identity" "${'$'}lib"
+                done
+                if [ -f "${'$'}app/Contents/app/resources/ffmpeg/ffmpeg" ]; then
+                    codesign --force --options runtime --timestamp --sign "${'$'}identity" \
+                        "${'$'}app/Contents/app/resources/ffmpeg/ffmpeg"
+                fi
+
                 codesign --force --options runtime --timestamp \
                     --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}app/Contents/runtime"
 
@@ -1453,6 +1465,129 @@ if (bundleConfig.isPresent) {
         }
 
     logger.lifecycle("Bundling ${configFile.path} inside the app — it will carry its own header key")
+} else {
+    // The resources root is set on every build now (FFmpeg rides in it), so a
+    // config staged by an earlier flagged build would otherwise ship in this
+    // unflagged one — the accident the opt-in exists to prevent. Gone first.
+    val clearBundledConfig = tasks.register<Delete>("clearBundledConfig") {
+        description = "Removes a config an earlier -PzillitBundleConfig build staged."
+        delete(appResourcesDir.map { it.dir("common") })
+    }
+    tasks.matching { it.name == "prepareAppResources" }
+        .configureEach { dependsOn(clearBundledConfig) }
+}
+
+/*
+ * FFmpeg, bundled — what large videos are compressed with when the machine's
+ * own converter cannot read them.
+ *
+ * macOS's `avconvert` is tried first (hardware, and right about HDR), but it
+ * reads only what AVFoundation decodes: an AV1 file on a Mac without an AV1
+ * chip, VP9, most of what comes off the web. Windows and Linux have nothing
+ * at all. FFmpeg reads all of it.
+ *
+ * The program comes from bytedeco's build on Maven Central — the same build
+ * JavaCPP users load, pinned in the version catalog — not from a download
+ * site. Its LGPL flavour, deliberately, not `-gpl`: the H.264 encoding is
+ * the operating system's own (Apple's VideoToolbox, Windows' Media
+ * Foundation), which brings the encoder's patent licence with it, and the
+ * GPL-only x264 stays out. libaom still decodes AV1. It runs as a separate
+ * process and is never linked into the app. `src/main/ffmpeg-licence/`
+ * (the notice, the LGPL and the GPL it builds on) ships beside it; Settings ›
+ * About opens the notice.
+ *
+ * Not on Linux: there is no system H.264 encoder to use there, and an
+ * FFmpeg that cannot compress is 50 MB of nothing — Linux sends originals.
+ *
+ * Only the program and the libraries it loads are staged: the jar's `jni*`
+ * libraries are JavaCPP's bindings, which a command-line run never touches,
+ * and `ffprobe` is not used. The libraries sit beside the program, where its
+ * rpath (`@loader_path/` on macOS) and Windows' DLL search both look.
+ *
+ * In the OS slot of the resources root, so Compose places it at
+ * `$APPDIR/resources/ffmpeg/` in a package and points `:run` at the same
+ * staged copy through `compose.application.resources.dir`.
+ */
+val ffmpegClassifier: String? = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    val armHost = arch.contains("aarch64") || arch.contains("arm64")
+    when {
+        // A cross build for Intel Macs (`-PzillitMacArch=x64`) ships Intel FFmpeg.
+        os.contains("mac") -> {
+            val arm = providers.gradleProperty("zillitMacArch").orNull?.let { it != "x64" } ?: armHost
+            if (arm) "macosx-arm64" else "macosx-x86_64"
+        }
+        os.contains("win") -> "windows-x86_64"
+        else -> null
+    }
+}
+val ffmpegResourceSlot: String = if (ffmpegClassifier?.startsWith("windows") == true) "windows" else "macos"
+
+val ffmpegNative: Configuration = configurations.create("ffmpegNative") {
+    description = "The bytedeco FFmpeg jar for this build's platform, unpacked into the app's resources."
+    isTransitive = false
+    isCanBeConsumed = false
+}
+if (ffmpegClassifier != null) {
+    dependencies {
+        ffmpegNative("org.bytedeco:ffmpeg:${libs.versions.ffmpeg.native.get()}:$ffmpegClassifier")
+    }
+}
+
+val stageFfmpeg = tasks.register("stageFfmpeg") {
+    description = "Unpacks FFmpeg (${ffmpegClassifier ?: "none on this OS"}) into the app's resources."
+
+    // Plain values only: the configuration cache serialises this body.
+    val archive: FileCollection = ffmpegNative
+    val prefix = "org/bytedeco/ffmpeg/$ffmpegClassifier/"
+    val wanted = ffmpegClassifier != null
+    val licences = project.file("src/main/ffmpeg-licence")
+    val destination = appResourcesDir.map { it.dir("$ffmpegResourceSlot/ffmpeg") }
+    inputs.files(archive).withPropertyName("ffmpegJar")
+    inputs.dir(licences).withPropertyName("ffmpegLicences")
+    outputs.dir(destination)
+
+    doLast {
+        val dir = destination.get().asFile
+        dir.deleteRecursively()
+        if (!wanted) return@doLast
+        dir.mkdirs()
+        licences.listFiles().orEmpty().filter { it.isFile }.forEach { it.copyTo(File(dir, it.name)) }
+        var program = false
+        ZipFile(archive.singleFile).use { zip ->
+            zip.entries().asSequence()
+                .filter { !it.isDirectory && it.name.startsWith(prefix) && "/" !in it.name.removePrefix(prefix) }
+                .forEach { entry ->
+                    val name = entry.name.removePrefix(prefix)
+                    val isProgram = name == "ffmpeg" || name == "ffmpeg.exe"
+                    val isLibrary = name.endsWith(".dylib") || name.endsWith(".dll") || ".so" in name
+                    val isBinding = name.startsWith("libjni") || name.startsWith("jni")
+                    if (!isProgram && !(isLibrary && !isBinding)) return@forEach
+                    val file = File(dir, name)
+                    zip.getInputStream(entry).use { input -> file.outputStream().use { input.copyTo(it) } }
+                    // A zip entry carries no execute bit; the program needs one.
+                    if (isProgram) {
+                        file.setExecutable(true, false)
+                        program = true
+                    }
+                }
+        }
+        check(program) { "stageFfmpeg: no ffmpeg program under $prefix in ${archive.singleFile.name}" }
+    }
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(stageFfmpeg) }
+
+// The app image loses the program's execute bit on the way in (staged
+// `rwxr-xr-x`, packaged `rw-r--r--`), and a program that cannot be run is
+// no program. Put back on the image itself, before anything signs or wraps it.
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    val image = layout.buildDirectory.dir("compose/binaries/main/app")
+    doLast {
+        image.get().asFile.walkTopDown()
+            .filter { it.isFile && it.name == "ffmpeg" && it.parentFile?.name == "ffmpeg" }
+            .forEach { it.setExecutable(true, false) }
+    }
 }
 
 compose.desktop {
@@ -1519,14 +1654,14 @@ compose.desktop {
             // be non-zero.
             packageVersion = zillitVersion
 
-            // Set only when bundling was asked for. Pointing at the staging
-            // directory unconditionally means a build with no flag still ships
-            // whatever the last flagged build left there — which is exactly the
-            // accident the opt-in exists to prevent, and it is silent.
+            // Always set: FFmpeg ships in it (`stageFfmpeg`). The config is
+            // still opt-in — an unflagged build deletes whatever an earlier
+            // flagged one staged (`clearBundledConfig`) before Compose copies
+            // the root.
             //
-            // Generated, never a source directory: the staged file is a secret
+            // Generated, never a source directory: a staged config is a secret
             // and has no business inside the repo.
-            if (bundleConfig.isPresent) appResourcesRootDir.set(appResourcesDir)
+            appResourcesRootDir.set(appResourcesDir)
             // Shared with `packageSignedMsi`, which passes them to jpackage
             // itself — see the values beside `desktopPackageName`.
             description = desktopDescription

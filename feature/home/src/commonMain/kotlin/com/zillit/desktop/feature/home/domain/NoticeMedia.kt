@@ -20,6 +20,8 @@ data class PickedMedia(
     val thumbnailBytes: ByteArray? = null,
     val thumbnailWidth: Int = 0,
     val thumbnailHeight: Int = 0,
+    /** How a large video goes, as chosen in the send preview; null compresses (the old way). */
+    val videoSend: com.zillit.desktop.core.media.VideoSend? = null,
 ) {
     /** A PDF document — the one document kind that gets a poster frame. */
     val isPdf: Boolean

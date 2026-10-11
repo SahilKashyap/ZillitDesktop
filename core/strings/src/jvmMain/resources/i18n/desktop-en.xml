@@ -12489,4 +12489,14 @@
     <string name="desktop_not_in_group">Not in Group</string>
     <string name="desktop_call_line_unavailable">%1$s isn\'t available here</string>
     <string name="desktop_chat_media_above_2gb">Files larger than 2 GB can\'t be sent.</string>
+    <string name="desktop_compressing_percent">Compressing %1$d%%</string>
+    <string name="desktop_open_source_licences">Open-source licences</string>
+    <string name="desktop_open_source_licences_detail">FFmpeg, which compresses large videos, and its licence</string>
+    <string name="desktop_video_choice_prompt">This video is %1$s. Compress it to 1080p for a faster upload, or send the original?</string>
+    <string name="desktop_video_compress">Compress</string>
+    <string name="desktop_video_send_original">Send original</string>
+    <string name="desktop_video_choice_needed">Choose Compress or Send original for each large video.</string>
+    <string name="desktop_uploads_status">Uploads: %1$d in progress</string>
+    <string name="desktop_video_format_unplayable">This video is %1$s, which can\'t be played in the app.</string>
+    <string name="desktop_video_choice_unplayable">This video is %1$s, which many phones, browsers and this app can\'t play. Compress converts it to H.264, which plays everywhere.</string>
 </resources>

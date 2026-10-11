@@ -46,16 +46,36 @@ class VideoCompressorTest {
     }
 
     @Test
-    fun `ffmpeg encodes H264 at constant quality, capped and fast-started`() {
-        val command = ffmpegCommand("/opt/homebrew/bin/ffmpeg", "/tmp/in.mov", "/tmp/out.mp4")
-        assertEquals("/opt/homebrew/bin/ffmpeg", command.first())
-        assertEquals("/tmp/out.mp4", command.last())
-        assertEquals("libx264", command[command.indexOf("-c:v") + 1])
-        assertEquals("20", command[command.indexOf("-crf") + 1])
-        assertEquals("+faststart", command[command.indexOf("-movflags") + 1])
-        assertEquals(FFMPEG_SCALE, command[command.indexOf("-vf") + 1])
+    fun `ffmpeg hands H264 to the system encoder, never a bundled one`() {
+        val mac = ffmpegCommand("/app/ffmpeg", "/tmp/in.mov", "/tmp/out.mp4", FfmpegTarget.MacAppleSilicon)
+        assertEquals("/app/ffmpeg", mac.first())
+        assertEquals("/tmp/out.mp4", mac.last())
+        assertEquals("h264_videotoolbox", mac[mac.indexOf("-c:v") + 1])
+        assertEquals("65", mac[mac.indexOf("-q:v") + 1])
+        assertEquals("videotoolbox", mac[mac.indexOf("-hwaccel") + 1])
+        assertEquals("+faststart", mac[mac.indexOf("-movflags") + 1])
+        assertTrue(mac[mac.indexOf("-vf") + 1].startsWith(FFMPEG_SCALE))
         // An audio-less clip must not fail the map.
-        assertTrue("0:a:0?" in command)
+        assertTrue("0:a:0?" in mac)
+
+        val intel = ffmpegCommand("ffmpeg", "in", "out", FfmpegTarget.MacIntel)
+        assertEquals("10M", intel[intel.indexOf("-b:v") + 1])
+        assertFalse("-hwaccel" in intel)
+
+        val windows = ffmpegCommand("ffmpeg.exe", "in", "out", FfmpegTarget.Windows)
+        assertEquals("h264_mf", windows[windows.indexOf("-c:v") + 1])
+        assertEquals("aac", windows[windows.indexOf("-c:a") + 1])
+
+        listOf(mac, intel, windows).forEach { command ->
+            assertFalse(command.any { it == "libx264" || it == "libopenh264" }, "no bundled H.264 encoder")
+        }
+    }
+
+    @Test
+    fun `an ordinary H264 clip is not flagged as unplayable`() {
+        val clip = checkNotNull(javaClass.getResourceAsStream("/mp4/rot0.mp4")).use { it.readBytes() }
+        assertNull(VideoCompressor.unplayableFormat(clip))
+        assertEquals("AV1", VideoCompressor.UNPLAYABLE_FORMATS["av01"])
     }
 
     @Test

@@ -402,6 +402,18 @@ private fun AboutSection(about: AboutInfo, onEvent: (SettingsEvent) -> Unit) {
         if (check != UpdateCheck.Idle && check != UpdateCheck.Checking) {
             UpdateCheckResult(check, onEvent)
         }
+        // The notice FFmpeg's licence asks for, where a user would look for it.
+        SettingRow(
+            title = str(S.desktop_open_source_licences),
+            detail = str(S.desktop_open_source_licences_detail),
+        ) {
+            ZillitButton(
+                text = str(S.view),
+                onClick = { onEvent(SettingsEvent.OpenLicences) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+        }
     }
 }
 

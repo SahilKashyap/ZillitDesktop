@@ -121,7 +121,15 @@ fun MediaPreviewDialog(
     // phones and the web both send on Enter from the preview's caption
     // (web `CNC_FIXES_CHANGELOG.md` Fix 7 added it there), and a screen
     // where Enter does nothing reads as one that ignored you.
-    val send: () -> Unit = {
+    val send: () -> Unit = send@{
+        // A large video asks how it should go, every time; Send shows the
+        // first one still unanswered rather than guessing for the sender.
+        session.awaitingVideoChoice?.let { pending ->
+            session.select(session.items.indexOf(pending))
+            sendError = str(S.desktop_video_choice_needed)
+            return@send
+        }
+        sendError = null
         sending = true
         scope.launch {
             // Compositing and encoding a full photo is real work;
@@ -188,6 +196,11 @@ private fun EditorScreen(
                 .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
         )
         if (!editing) {
+            session.current?.takeIf(session::asksVideoChoice)?.let { video ->
+                VideoChoiceBar(video, session.videoChoice(video), session.unplayableFormat(video)) {
+                    session.chooseVideo(video, it)
+                }
+            }
             CaptionBar(session, captionLimit, sending, onSend)
             Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
             BottomBar(session, sending, error, captionLimit, onSend, onAddMore, addKinds)

@@ -215,6 +215,18 @@ class HomeFeedRepositoryImpl(
         location: GeoPoint?,
         replacePrevious: Boolean?,
         replaceChatId: String?,
+    ): ZillitResult<Notice> =
+        postNoticeAs(CallOptions(), unitId, text, localId, attachment, location, replacePrevious, replaceChatId)
+
+    override suspend fun postNoticeAs(
+        options: CallOptions,
+        unitId: String,
+        text: String,
+        localId: String,
+        attachment: UploadedNoticeMedia?,
+        location: GeoPoint?,
+        replacePrevious: Boolean?,
+        replaceChatId: String?,
     ): ZillitResult<Notice> {
         // Captions are encrypted exactly like message bodies — the web's
         // `generate-message-payload` runs both through `encryptMessage`.
@@ -256,6 +268,7 @@ class HomeFeedRepositoryImpl(
                     receiver = receiver(),
                 ),
             ),
+            options = options,
         ).flatMap { row ->
             readNotice(row, ::decryptBody)
                 ?.let { ZillitResult.Success(it.copy(localId = localId)) }

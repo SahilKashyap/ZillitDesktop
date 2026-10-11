@@ -71,6 +71,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.media.PreviewResult
+import com.zillit.desktop.core.media.UploadProgress
 import com.zillit.desktop.core.media.PreviewItem
 import com.zillit.desktop.core.media.MediaPreviewDialog
 import com.zillit.desktop.core.strings.S
@@ -2092,7 +2093,11 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
             modifier = Modifier.padding(start = indent),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-        NoticeAttachment(notice.id, notice.kind, notice.attachment, notice.location, ui)
+        NoticeAttachment(
+            notice.id, notice.kind, notice.attachment, notice.location, ui,
+            uploadProgress = notice.localId?.takeIf { notice.sendState == NoticeSendState.Sending }
+                ?.let(ui.uploadProgress),
+        )
 
         if (notice.showsBody) {
             ZillitSelectable(probe = selection) {
@@ -2210,8 +2215,11 @@ private fun NoticeAttachment(
     attachment: NoticeAttachment?,
     location: GeoPoint?,
     ui: BoardUi,
+    /** The file's upload, while it has one — drawn over its picture. */
+    uploadProgress: Int? = null,
 ) {
     AttachmentContent(
+        uploadProgress = uploadProgress,
         kind = kind,
         attachment = attachment,
         media = ui.media,
@@ -2759,16 +2767,18 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
         )
         if (notice.isPinned) PinnedChip()
         when (notice.sendState) {
-            // The tag narrates the send: percent while the file's bytes move,
-            // "Processing" while the server writes the post, plain "Sending"
-            // for a post with nothing to upload.
+            // The tag narrates the send: the phase while the file is worked
+            // on (preparing its thumbnail, compressing a large video, the
+            // bytes moving), "Processing" while the server writes the post,
+            // plain "Sending" for a post with nothing to upload.
             NoticeSendState.Sending -> {
-                val percent = notice.localId?.let(ui.uploadProgress)
+                val progress = notice.localId?.let(ui.uploadProgress)
                 ZillitTag(
                     when {
-                        percent == null -> str(S.dd_status_sending)
-                        percent >= UPLOAD_DONE_PERCENT -> str(S.desktop_processing_ellipsis)
-                        else -> str(S.drive_uploads_status_uploading_format, percent)
+                        progress == null -> str(S.dd_status_sending)
+                        UploadProgress.phase(progress) == UploadProgress.Phase.Uploading &&
+                            progress >= UPLOAD_DONE_PERCENT -> str(S.desktop_processing_ellipsis)
+                        else -> UploadProgress.label(progress)
                     },
                     tone = TagTone.Neutral,
                 )
@@ -3211,7 +3221,12 @@ private fun PickedMedia.asPreviewItem(): PreviewItem = PreviewItem(
  */
 private fun PickedMedia.withBytesOf(result: PreviewResult): PickedMedia =
     if (result.bytes.contentEquals(bytes)) {
-        this
+        copy(videoSend = result.videoSend)
     } else {
-        copy(bytes = result.bytes, contentType = result.contentType, thumbnailBytes = result.thumbnailBytes)
+        copy(
+            bytes = result.bytes,
+            contentType = result.contentType,
+            thumbnailBytes = result.thumbnailBytes,
+            videoSend = result.videoSend,
+        )
     }

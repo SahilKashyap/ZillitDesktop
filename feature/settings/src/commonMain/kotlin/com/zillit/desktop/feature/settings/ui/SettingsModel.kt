@@ -237,6 +237,9 @@ sealed interface SettingsEvent {
     /** The About row's button. */
     data object CheckForUpdates : SettingsEvent
 
+    /** About's licences row: the notice for the open-source software the app ships. */
+    data object OpenLicences : SettingsEvent
+
     /** The Download that follows a successful check. [url] is what the check returned. */
     data class DownloadUpdate(val url: String) : SettingsEvent
 }

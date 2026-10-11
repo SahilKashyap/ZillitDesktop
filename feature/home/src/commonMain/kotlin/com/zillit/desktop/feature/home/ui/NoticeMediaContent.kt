@@ -35,6 +35,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.media.UploadOverlay
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -74,7 +75,13 @@ internal fun AttachmentContent(
     player: AudioPlayer? = null,
     location: GeoPoint? = null,
     onOpenLocation: (GeoPoint) -> Unit = {},
+    /**
+     * This machine's upload of the file, while it runs (`UploadProgress`):
+     * the picture is dimmed under its ring and phase until the post is up.
+     */
+    uploadProgress: Int? = null,
 ) {
+    val uploading: (@Composable () -> Unit)? = uploadProgress?.let { progress -> { UploadOverlay(progress) } }
     // A location can arrive without its screenshot — every desktop post does,
     // and the phones' only survives if their static-map fetch worked. The
     // card carries the place either way; the map is decoration.
@@ -88,7 +95,7 @@ internal fun AttachmentContent(
         NoticeKind.Image -> MediaThumbnail(
             attachment = attachment,
             media = media,
-            overlay = null,
+            overlay = uploading,
             onClick = { onPreview(attachment) },
         )
 
@@ -100,7 +107,7 @@ internal fun AttachmentContent(
         NoticeKind.Video -> MediaThumbnail(
             attachment = attachment,
             media = media,
-            overlay = { PlayBadge() },
+            overlay = uploading ?: { PlayBadge() },
             onClick = { onPlayVideo(attachment) },
         )
 
@@ -109,7 +116,7 @@ internal fun AttachmentContent(
         // A document with a poster — a PDF's first page — shows it above the
         // chip, as the web's DocumentMessage does. Same click either way: save
         // and hand to the OS.
-        NoticeKind.Document -> DocumentContent(attachment, media, onOpen)
+        NoticeKind.Document -> DocumentContent(attachment, media, onOpen, uploading)
 
         // Only reachable for a location post whose point failed to read — a
         // row from a client that sent the map image and nothing else. The
@@ -131,6 +138,7 @@ private fun DocumentContent(
     attachment: NoticeAttachment,
     media: NoticeMediaSource?,
     onOpen: (NoticeAttachment) -> Unit,
+    uploading: (@Composable () -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         if (attachment.localBytes != null ||
@@ -139,7 +147,7 @@ private fun DocumentContent(
             MediaThumbnail(
                 attachment = attachment,
                 media = media,
-                overlay = null,
+                overlay = uploading,
                 onClick = { onOpen(attachment) },
                 // The chip is already below; a failed poster shows nothing.
                 fallback = {},

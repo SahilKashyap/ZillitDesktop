@@ -16,6 +16,8 @@ androidx-lifecycle = "2.11.0-beta01"
 # cannot: JetBrains builds JCEF without the proprietary codecs, so `<video>`
 # there answers `canPlayType('video/mp4; codecs="avc1.42E01E")` with "".
 javafx = "21.0.5"
+# bytedeco's FFmpeg build (LGPL flavour), bundled as a program for video compression.
+ffmpeg-native = "7.1.1-1.5.12"
 
 # --- core libs ---
 kotlinx-coroutines = "1.11.0"

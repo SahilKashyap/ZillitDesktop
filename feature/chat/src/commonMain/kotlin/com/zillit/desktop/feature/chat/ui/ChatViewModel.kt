@@ -24,7 +24,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import com.zillit.desktop.core.media.MediaSendTracker
 import com.zillit.desktop.core.media.PreviewResult
+import com.zillit.desktop.core.media.TrackedSend
+import com.zillit.desktop.core.media.VideoSend
+import com.zillit.desktop.feature.chat.domain.PinnedChatMedia
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.data.ReplyAwareChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatLocation
@@ -93,6 +97,14 @@ data class ChatUiState(
      * bytes move; absent once the message is on the wire.
      */
     val uploads: Map<String, Int> = emptyMap(),
+    /**
+     * A small JPEG of what each sent picture or video looks like, keyed by
+     * the bubble's unique id — cut on this machine as the send begins, so the
+     * bubble shows the file itself under its progress rather than a name, and
+     * keeps showing it while the stored copy is fetched. Kept for the session:
+     * a few tens of kilobytes each.
+     */
+    val uploadPreviews: Map<String, ByteArray> = emptyMap(),
     /**
      * The badge service's own split of this area — what the mobile clients
      * draw on the Chats and Calls tabs: `chat_label` (member + group chats)
@@ -392,6 +404,22 @@ class ChatViewModel(
         bytes: ByteArray,
         onProgress: (Int) -> Unit,
     ) -> ChatAttachment? = { _, _, _, _ -> null },
+    /**
+     * A small JPEG of a picture or a video's first frame, for the sending
+     * bubble ([ChatUiState.uploadPreviews]). Null when there is none to cut;
+     * the bubble then shows the file's name over its progress, as before.
+     */
+    private val thumbnailOf: suspend (name: String, contentType: String, bytes: ByteArray) -> ByteArray? =
+        { _, _, _ -> null },
+    /**
+     * Binds a media send to the production it is sent in, for its whole life
+     * ([PinnedChatMedia]). Asked once per file as Send is pressed; null keeps
+     * the send on this view model's own repository and the picker's uploader,
+     * which is right for a thread that cannot outlive its production.
+     */
+    private val pinMedia: () -> PinnedChatMedia? = { null },
+    /** The app-wide Uploads tray every outgoing file reports to; null reports nowhere. */
+    private val sendTracker: MediaSendTracker? = null,
     /**
      * A picture of a shared place — Google Static Maps, the same image the
      * boards already post. The phones snapshot their own map and upload it
@@ -1301,7 +1329,19 @@ class ChatViewModel(
         val bytes: ByteArray,
         val upload: suspend (ByteArray, (Int) -> Unit) -> ChatAttachment?,
         var stored: ChatAttachment? = null,
+        /** The production it was sent in, when the host pins sends ([pinMedia]). */
+        val pinned: PinnedChatMedia? = null,
+        /** How a large video goes, as chosen in the preview. */
+        val videoSend: VideoSend? = null,
+        /** The bubble's picture and its last progress, to restore when the thread reopens. */
+        var preview: ByteArray? = null,
+        var progress: Int? = null,
+        var job: kotlinx.coroutines.Job? = null,
     )
+
+    /** Whether [entry] belongs to the production open now — a pinned send may not. */
+    private fun isHere(entry: UnsentMedia): Boolean =
+        entry.pinned == null || entry.pinned.projectId == presenceProjectId()
 
     /**
      * The paperclip: the pick goes to the preview, not straight to the wire.
@@ -1415,14 +1455,54 @@ class ChatViewModel(
     ) {
         val placeholder = ChatAttachment(media = "", name = result.name, contentType = result.contentType)
         val optimistic = appendOptimistic(peer, body = body, attachment = placeholder)
-        unsentMedia[optimistic.uniqueId] = UnsentMedia(
+        val id = optimistic.uniqueId
+        val pinned = runCatching { pinMedia() }.getOrNull()
+        val entry = UnsentMedia(
             peerId = peer.userId,
             isGroup = currentState.peerIsGroup,
             message = optimistic,
             bytes = result.bytes,
             upload = upload,
+            pinned = pinned,
+            videoSend = result.videoSend,
         )
-        launch { runMediaSend(optimistic.uniqueId) }
+        unsentMedia[id] = entry
+        sendTracker?.begin(
+            TrackedSend(
+                id = id,
+                projectId = pinned?.projectId.orEmpty(),
+                projectName = pinned?.projectName.orEmpty(),
+                destination = peer.fullName,
+                fileName = result.name,
+            ),
+            cancel = { cancelMedia(id) },
+            retry = { entry.job = launch { runMediaSend(id) } },
+        )
+        if (placeholder.kind == "image" || placeholder.kind == "video") {
+            launch {
+                val preview = runCatching { thumbnailOf(result.name, result.contentType, result.bytes) }.getOrNull()
+                if (preview != null) {
+                    entry.preview = preview
+                    sendTracker?.preview(id, preview)
+                    if (isHere(entry)) setState { copy(uploadPreviews = uploadPreviews + (id to preview)) }
+                }
+            }
+        }
+        entry.job = launch { runMediaSend(id) }
+    }
+
+    /** The tray's Cancel: the work stopped, the bubble and its retry gone. */
+    private fun cancelMedia(uniqueId: String) {
+        val entry = unsentMedia.remove(uniqueId) ?: return
+        entry.job?.cancel()
+        if (!isHere(entry)) return
+        setState {
+            copy(
+                messages = messages.filterNot { it.uniqueId == uniqueId },
+                uploads = uploads - uniqueId,
+                uploadPreviews = uploadPreviews - uniqueId,
+            )
+        }
     }
 
     /** Upload (once) then send; on failure the entry stays for the next try. */
@@ -1432,42 +1512,58 @@ class ChatViewModel(
         val stored = entry.stored ?: uploadEntry(entry, uniqueId) ?: return
         entry.stored = stored
         entry.message = entry.message.copy(attachment = stored)
-        setState {
-            copy(
-                messages = messages.map {
-                    if (it.uniqueId == uniqueId) it.copy(attachment = stored) else it
-                },
-            )
+        if (isHere(entry)) {
+            setState {
+                copy(
+                    messages = messages.map {
+                        if (it.uniqueId == uniqueId) it.copy(attachment = stored) else it
+                    },
+                )
+            }
         }
-        when (
-            val sent = repository.send(
-                entry.peerId, entry.message.body, uniqueId, entry.message.timestampMillis,
-                isGroup = entry.isGroup,
-                attachment = stored,
-            )
-        ) {
+        // Into the production it was sent in — never whichever is open now.
+        val sent = entry.pinned?.send(
+            entry.peerId, entry.message.body, uniqueId, entry.message.timestampMillis, entry.isGroup, stored,
+        ) ?: repository.send(
+            entry.peerId, entry.message.body, uniqueId, entry.message.timestampMillis,
+            isGroup = entry.isGroup,
+            attachment = stored,
+        )
+        when (sent) {
             is ZillitResult.Success -> {
                 unsentMedia.remove(uniqueId)
-                setSendState(uniqueId, ChatSendState.Sent)
+                sendTracker?.finished(uniqueId)
+                if (isHere(entry)) setSendState(uniqueId, ChatSendState.Sent)
             }
             is ZillitResult.Failure -> {
                 markMediaUnsent(entry)
-                setState { copy(error = sent.error.localised()) }
+                sendTracker?.failed(uniqueId)
+                if (isHere(entry)) setState { copy(error = sent.error.localised()) }
             }
         }
     }
 
     /** The bytes to storage, narrated by [ChatUiState.uploads]; null keeps the entry. */
     private suspend fun uploadEntry(entry: UnsentMedia, uniqueId: String): ChatAttachment? {
-        setState { copy(uploads = uploads + (uniqueId to PREPARING)) }
-        val stored = entry.upload(entry.bytes) { percent ->
-            setState { copy(uploads = uploads + (uniqueId to percent)) }
+        val report: (Int) -> Unit = { progress ->
+            entry.progress = progress
+            sendTracker?.progress(uniqueId, progress)
+            if (isHere(entry)) setState { copy(uploads = uploads + (uniqueId to progress)) }
         }
-        setState { copy(uploads = uploads - uniqueId) }
+        report(PREPARING)
+        val file = entry.message.attachment
+        val stored = entry.pinned
+            ?.upload(file?.name.orEmpty(), file?.contentType.orEmpty(), entry.bytes, entry.videoSend, report)
+            ?: entry.takeIf { it.pinned == null }?.upload?.invoke(entry.bytes, report)
+        entry.progress = null
+        if (isHere(entry)) setState { copy(uploads = uploads - uniqueId) }
         ZillitLog.d(TAG) { "media upload finished stored=${stored != null}" }
         if (stored == null) {
             markMediaUnsent(entry)
-            setState { copy(error = str(S.desktop_could_not_upload_named, entry.message.attachment?.name)) }
+            sendTracker?.failed(uniqueId)
+            if (isHere(entry)) {
+                setState { copy(error = str(S.desktop_could_not_upload_named, entry.message.attachment?.name)) }
+            }
         }
         return stored
     }
@@ -1481,7 +1577,7 @@ class ChatViewModel(
     /** Keeps the store's copy and the on-screen bubble saying the same thing. */
     private fun followMediaState(entry: UnsentMedia, state: ChatSendState) {
         entry.message = entry.message.copy(sendState = state)
-        setSendState(entry.message.uniqueId, state)
+        if (isHere(entry)) setSendState(entry.message.uniqueId, state)
     }
 
     /** Every entry still waiting or failed, sent again — the online-edge collector's job. */
@@ -1489,7 +1585,7 @@ class ChatViewModel(
         val again = unsentMedia.filterValues {
             it.message.sendState == ChatSendState.Failed || it.message.sendState == ChatSendState.Queued
         }.keys.toList()
-        again.forEach { id -> launch { runMediaSend(id) } }
+        again.forEach { id -> unsentMedia[id]?.job = launch { runMediaSend(id) } }
     }
 
     /**
@@ -1498,14 +1594,20 @@ class ChatViewModel(
      * server, so without this a Failed upload vanished on reopen (QA #9).
      */
     private fun mergeUnsentMedia(peerId: String) {
-        if (unsentMedia.values.none { it.peerId == peerId }) return
+        val mine = unsentMedia.values.filter { it.peerId == peerId && isHere(it) }
+        if (mine.isEmpty()) return
         setState {
             if (peer?.userId != peerId) return@setState this
             val known = messages.map { it.uniqueId }.toSet()
-            val restored = unsentMedia.values
-                .filter { it.peerId == peerId && it.message.uniqueId !in known }
-                .map { it.message }
-            copy(messages = (messages + restored).sortedBy { it.timestampMillis })
+            val restored = mine.filter { it.message.uniqueId !in known }
+            // A send still running carries on where the bubble left it: its
+            // picture and its progress come back with it.
+            copy(
+                messages = (messages + restored.map { it.message }).sortedBy { it.timestampMillis },
+                uploads = uploads + restored.mapNotNull { e -> e.progress?.let { e.message.uniqueId to it } },
+                uploadPreviews = uploadPreviews +
+                    restored.mapNotNull { e -> e.preview?.let { e.message.uniqueId to it } },
+            )
         }
     }
 
@@ -1627,7 +1729,9 @@ class ChatViewModel(
         stopPresence()
         serverUnread.clear()
         serverActivity.clear()
-        unsentMedia.clear()
+        // A send pinned to the production being left keeps going (and comes
+        // back into its thread on return); one that is not cannot survive.
+        unsentMedia.values.removeAll { it.pinned == null }
         setState { ChatUiState() }
         launch {
             val stars = loadFavourites()

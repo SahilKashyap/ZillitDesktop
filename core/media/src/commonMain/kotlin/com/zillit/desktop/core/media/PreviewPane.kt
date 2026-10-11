@@ -381,7 +381,7 @@ internal fun MediaPreviewSession.posterBitmap(item: PreviewItem): ImageBitmap? {
 }
 
 /** "2.4 MB" — the same shape every Zillit client prints under a file. */
-internal fun formatBytes(bytes: Long): String = when {
+fun formatBytes(bytes: Long): String = when {
     bytes <= 0 -> "0 B"
     bytes < KILO -> "$bytes B"
     bytes < MEGA -> "${(bytes * TEN / KILO).toDouble() / TEN} KB"

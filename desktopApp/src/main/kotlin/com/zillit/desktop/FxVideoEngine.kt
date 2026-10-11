@@ -1,5 +1,6 @@
 package com.zillit.desktop
 
+import java.nio.ByteBuffer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -359,10 +360,17 @@ private class FxPlayback(private val url: String) : VideoPlayback {
      * by range rather than by downloading the clip.
      */
     private fun applyRotation() {
-        val degrees = runCatching { read() }
-            .onFailure { thrown -> ZillitLog.w(TAG) { "rotation unread: ${thrown::class.simpleName}" } }
-            .getOrNull() ?: 0
+        val header = runCatching { header() }
+            .onFailure { thrown -> ZillitLog.w(TAG) { "header unread: ${thrown::class.simpleName}" } }
+            .getOrNull()
         if (closed) return
+        val codec = header?.let(Mp4Rotation::videoCodec)
+        com.zillit.desktop.core.media.VideoCompressor.UNPLAYABLE_FORMATS[codec]?.let { format ->
+            refuse(format)
+            return
+        }
+        val degrees = header?.let(Mp4Rotation::find) ?: 0
+        ZillitLog.i(TAG) { "rotation $degrees, codec ${codec ?: "unknown"}" }
         rotation = degrees
         // The header read and the player's arrival race each other, so neither
         // one applies the turn on its own: both ask, and whichever is second
@@ -371,22 +379,44 @@ private class FxPlayback(private val url: String) : VideoPlayback {
     }
 
     /**
-     * The head first, then the tail — a clip never prepared for streaming keeps
-     * its `moov` at the end of the file, which is most of what a phone writes.
+     * A clip JavaFX cannot draw: it still loads, reports its full size and
+     * plays its sound over a blank picture — no error to catch. So the sound
+     * is stopped and the viewer told which format it was.
      */
-    private fun read(): Int {
+    private fun refuse(format: String) {
+        ZillitLog.w(TAG) { "video format $format cannot be drawn here; stopping" }
+        Platform.runLater { player?.stop() }
+        _state.update { it.copy(failed = true, isPlaying = false, unplayableFormat = format) }
+    }
+
+    /**
+     * The bytes holding the clip's `moov` — the head when it starts the file,
+     * otherwise the box itself, found by walking the top-level boxes one small
+     * range at a time. A clip never prepared for streaming keeps `moov` at the
+     * end, and a long one's is bigger than any fixed tail: an 8K clip's was
+     * 578 KB, past the 512 KB the tail read used to fetch, and nothing in it
+     * was ever read.
+     */
+    private fun header(): ByteArray {
         probe()
         val head = range(HEAD_BYTES)
-        val fromHead = Mp4Rotation.find(head)
-        if (fromHead != null) {
-            ZillitLog.i(TAG) { "rotation $fromHead from the first ${head.size} bytes" }
-            return fromHead
-        }
-        val tail = suffix(TAIL_BYTES)
-        val fromTail = Mp4Rotation.find(tail)
-        ZillitLog.i(TAG) { "rotation ${fromTail ?: "unknown"} from the last ${tail.size} bytes" }
-        return fromTail ?: 0
+        if (Mp4Rotation.videoCodec(head) != null) return head
+        val moov = findMoov()
+        return if (moov != null) rangeAt(moov.first, moov.second) else suffix(TAIL_BYTES)
     }
+
+    /** Where `moov` starts and how much of it to read; null when the walk loses its footing. */
+    private fun findMoov(): Pair<Long, Int>? {
+        var at = 0L
+        repeat(MAX_TOP_LEVEL_BOXES) {
+            val (type, size) = boxHeader(rangeAt(at, BOX_PEEK)) ?: return null
+            if (type == "moov") return at to minOf(size, MAX_MOOV_BYTES).toInt()
+            at += size
+        }
+        return null
+    }
+
+    private fun rangeAt(from: Long, bytes: Int): ByteArray = fetch("bytes=$from-${from + bytes - 1}")
 
     private fun range(bytes: Int): ByteArray = fetch("bytes=0-${bytes - 1}")
 
@@ -439,7 +469,9 @@ private class FxPlayback(private val url: String) : VideoPlayback {
     }
 
     private fun attach() {
-        if (closed) return
+        // The header can name an unplayable format before the player exists;
+        // both run on the FX thread, so whichever is second sees the first.
+        if (closed || _state.value.unplayableFormat != null) return
         runCatching {
             val media = Media(url)
             val made = MediaPlayer(media)
@@ -575,6 +607,10 @@ private class FxPlayback(private val url: String) : VideoPlayback {
          */
         const val HEAD_BYTES = 256 * 1024
 
+        const val BOX_PEEK = MP4_BOX_PEEK
+        const val MAX_TOP_LEVEL_BOXES = 16
+        const val MAX_MOOV_BYTES = 16L * 1024 * 1024
+
         /** And the end, for a clip written straight off a camera. */
         const val TAIL_BYTES = 512 * 1024
 
@@ -605,3 +641,22 @@ private fun Duration.usable(): Boolean = !isUnknown && !isIndefinite
 /** An unknown or indefinite JavaFX duration is no duration, not a NaN. */
 private fun Duration.millis(): Long =
     toMillis().takeIf { it.isFinite() && it >= 0 }?.toLong() ?: 0L
+
+/** An MP4 box's type and size, from its first sixteen bytes; null for nothing usable. */
+private fun boxHeader(box: ByteArray): Pair<String, Long>? {
+    if (box.size < MP4_BOX_HEADER) return null
+    val declared = ByteBuffer.wrap(box, 0, Int.SIZE_BYTES).int.toLong() and MP4_UNSIGNED
+    // One means a 64-bit size follows the type.
+    val size = if (declared == MP4_LARGE_SIZE && box.size >= MP4_BOX_PEEK) {
+        ByteBuffer.wrap(box, MP4_BOX_HEADER, Long.SIZE_BYTES).long
+    } else {
+        declared
+    }
+    val type = String(box, Int.SIZE_BYTES, Int.SIZE_BYTES, Charsets.US_ASCII)
+    return (type to size).takeIf { size >= MP4_BOX_HEADER }
+}
+
+private const val MP4_BOX_HEADER = 8
+private const val MP4_BOX_PEEK = 16
+private const val MP4_LARGE_SIZE = 1L
+private const val MP4_UNSIGNED = 0xFFFFFFFFL

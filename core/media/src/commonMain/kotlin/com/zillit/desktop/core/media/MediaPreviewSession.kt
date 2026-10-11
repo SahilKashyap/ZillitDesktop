@@ -46,6 +46,28 @@ class MediaPreviewSession(
     val longestCaption: Int
         get() = if (captionPerItem) itemCaptions.values.maxOfOrNull { it.length } ?: 0 else sharedCaption.length
 
+    /** How each large video goes, as the sender chose ([asksVideoChoice]). */
+    private val videoChoices = mutableStateMapOf<PreviewItem, VideoSend>()
+
+    fun videoChoice(item: PreviewItem): VideoSend? = videoChoices[item]
+
+    fun chooseVideo(item: PreviewItem, choice: VideoSend) {
+        videoChoices[item] = choice
+    }
+
+    /**
+     * Whether the sender must choose how this file goes: a video over 100 MB,
+     * or one of any size in a format most players cannot draw.
+     */
+    fun asksVideoChoice(item: PreviewItem): Boolean = item.asksVideoChoice || unplayableFormat(item) != null
+
+    /** "AV1", when the app's poster maker found the video in a format that will not play. */
+    fun unplayableFormat(item: PreviewItem): String? = posters[item]?.unplayableFormat
+
+    /** The first video still without an answer — what holds Send back. */
+    val awaitingVideoChoice: PreviewItem?
+        get() = items.firstOrNull { asksVideoChoice(it) && it !in videoChoices }
+
     /** Posters for the files that are not pictures, as the app's maker answers them. */
     val posters = mutableStateMapOf<PreviewItem, PreviewPoster?>()
 
@@ -93,6 +115,7 @@ class MediaPreviewSession(
         if (items.size <= 1) return
         edits.remove(item)
         itemCaptions.remove(item)
+        videoChoices.remove(item)
         posters.remove(item)
         removed += item
         items = items - item
@@ -120,7 +143,7 @@ class MediaPreviewSession(
      */
     fun results(measurer: TextMeasurer, jpegQuality: Int = JPEG_QUALITY): List<PreviewResult>? =
         items.map { item ->
-            val result = resultFor(item, measurer, jpegQuality) ?: return null
+            val result = (resultFor(item, measurer, jpegQuality) ?: return null).copy(videoSend = videoChoices[item])
             if (captionPerItem) result.copy(caption = itemCaptions[item].orEmpty().trim()) else result
         }
 

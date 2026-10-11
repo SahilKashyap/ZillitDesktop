@@ -1,0 +1,33 @@
+Zillit Desktop — FFmpeg notice
+==============================
+
+Zillit Desktop uses FFmpeg to compress large videos before they are sent.
+FFmpeg runs as a separate program; it is not part of Zillit's own code.
+
+  Program and libraries:  FFmpeg 7.1.1 (https://ffmpeg.org)
+  Built by:               the JavaCPP Presets project, release 1.5.12
+                          (https://github.com/bytedeco/javacpp-presets)
+  Licence:                GNU Lesser General Public License, version 3
+                          (COPYING.LGPLv3.txt, which builds on the GNU General
+                          Public License, version 3: COPYING.GPLv3.txt)
+
+This copy is the LGPL build (no GPL-only components). It was configured with
+--enable-version3 and includes these libraries, each under its own licence:
+libmp3lame (LGPL), libspeex (BSD), opencore-amr and vo-amrwbenc (Apache 2.0),
+OpenSSL (Apache 2.0), OpenH264 (BSD), libvpx (BSD), FreeType (FTL),
+libopus (BSD), libxml2 (MIT), libsrt (MPL 2.0), libwebp (BSD), libaom (BSD),
+SVT-AV1 (BSD), zimg (WTFPL).
+
+Source code
+-----------
+The complete source code for this FFmpeg build is available from:
+
+  FFmpeg 7.1.1:     https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
+  Build scripts:    https://github.com/bytedeco/javacpp-presets/tree/1.5.12/ffmpeg
+
+Replacing FFmpeg
+----------------
+You may replace the FFmpeg program and libraries in this folder with your own
+build of FFmpeg; Zillit Desktop will use whatever `ffmpeg` it finds here.
+
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.

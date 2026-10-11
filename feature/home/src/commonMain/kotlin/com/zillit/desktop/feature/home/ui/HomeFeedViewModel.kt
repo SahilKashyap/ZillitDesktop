@@ -7,6 +7,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.PreviewKind
+import com.zillit.desktop.core.media.TrackedSend
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -229,6 +231,7 @@ data class HomeFeedUiState(
  * picker, the uploader, the microphone, and the video poster extractor. All
  * default to "absent", which quietly removes the affordance they power.
  */
+@Suppress("LongParameterList") // One seam per platform capability; a holder would rename, not reduce.
 class MediaCapture(
     /** The OS file dialog; an empty result means the user cancelled. */
     val pick: suspend () -> List<PickedMedia> = { emptyList() },
@@ -258,6 +261,30 @@ class MediaCapture(
      * receivers' pin fallback carries it.
      */
     val staticMap: suspend (GeoPoint) -> PickedMedia? = { null },
+    /**
+     * Binds a post to the production it is sent in ([BoardPin]); asked once
+     * per post as Send is pressed. Null keeps the post on the open
+     * production's uploader and repository.
+     */
+    val pin: () -> BoardPin? = { null },
+    /** The production open now — what a pinned post is compared with before it touches the screen. */
+    val currentProjectId: () -> String? = { null },
+    /** The app-wide Uploads tray every post with a file reports to. */
+    val tracker: com.zillit.desktop.core.media.MediaSendTracker? = null,
+)
+
+/**
+ * A board post bound, the moment it is sent, to its production — the
+ * storage its file goes into and the production its post is written to —
+ * so a video still uploading when the user switches production does not
+ * land on the new one's board.
+ */
+class BoardPin(
+    val projectId: String,
+    val projectName: String,
+    /** Names the production on the post's own request. */
+    val options: com.zillit.desktop.core.network.CallOptions,
+    val upload: suspend (PickedMedia, (Int) -> Unit) -> ZillitResult<UploadedNoticeMedia>,
 )
 
 /**
@@ -571,6 +598,24 @@ class HomeFeedViewModel(
     private val replaceByLocalId = mutableMapOf<String, Boolean>()
     private val replaceTargetByLocalId = mutableMapOf<String, String>()
 
+    /**
+     * Every post with a file still on its way, by local id: where it is
+     * going and the work doing it — so the app-wide Uploads tray can cancel
+     * or retry it from any production, after this board has moved on.
+     */
+    private class PendingPost(
+        val unitId: String,
+        val optimistic: Notice,
+        val location: GeoPoint?,
+        val pin: BoardPin?,
+        var job: kotlinx.coroutines.Job? = null,
+    )
+
+    private val pendingPosts = mutableMapOf<String, PendingPost>()
+
+    /** Whether a post belongs to the production open now — a pinned one may not. */
+    private fun isHere(pin: BoardPin?): Boolean = pin == null || pin.projectId == media.currentProjectId()
+
     /** Test seam: the pre-fix state where a failed upload's file is gone. */
     internal fun forgetPickedFor(localId: String) {
         pickedByLocalId.remove(localId)
@@ -778,9 +823,13 @@ class HomeFeedViewModel(
             recordingTicker?.cancel()
             media.recorder?.cancel()
         }
-        uploadedByLocalId.clear()
-        pickedByLocalId.clear()
-        replaceByLocalId.clear()
+        // A post pinned to the production being left keeps uploading, and
+        // keeps what its retry needs; everything else belonged to the board.
+        val carried = pendingPosts.filterValues { it.pin != null }.keys
+        listOf(uploadedByLocalId, pickedByLocalId, replaceByLocalId, replaceTargetByLocalId).forEach { map ->
+            map.keys.retainAll(carried)
+        }
+        pendingPosts.keys.retainAll(carried)
         setState { HomeFeedUiState(nowMillis = nowMillis()) }
     }
 
@@ -1494,6 +1543,66 @@ class HomeFeedViewModel(
         )
     }
 
+    /** Lists a post's file in the app-wide Uploads tray, with what its Cancel and Retry do. */
+    private fun track(localId: String, unitId: String, picked: PickedMedia, pin: BoardPin?) {
+        media.tracker?.begin(
+            TrackedSend(
+                id = localId,
+                projectId = pin?.projectId.orEmpty(),
+                projectName = pin?.projectName.orEmpty(),
+                destination = currentState.tabs.firstOrNull { it.id == unitId }?.unitName.orEmpty(),
+                fileName = picked.name,
+                preview = picked.thumbnailBytes,
+            ),
+            cancel = { cancelPost(localId) },
+            retry = { redeliver(localId) },
+        )
+    }
+
+    /**
+     * A picture's thumbnail cut before its upload rather than inside it, so
+     * the tray can show the picture while the bytes move.
+     */
+    private suspend fun withTrayThumbnail(localId: String, picked: PickedMedia?): PickedMedia? =
+        picked?.takeIf { it.thumbnailBytes == null && it.kind == NoticeKind.Image }
+            ?.let { runCatching { media.videoThumbnail(it) }.getOrNull() }
+            ?.also { cut -> cut.thumbnailBytes?.let { media.tracker?.preview(localId, it) } }
+            ?: picked
+
+    /** The tray's Retry: the post again, from its own record — the card may not be on screen. */
+    private fun redeliver(localId: String) {
+        val pending = pendingPosts[localId] ?: return
+        if (isHere(pending.pin)) {
+            setState {
+                copy(
+                    notices = notices.map {
+                        if (it.localId == localId) it.copy(sendState = NoticeSendState.Sending) else it
+                    },
+                )
+            }
+        }
+        deliver(
+            pending.unitId,
+            pending.optimistic,
+            picked = pickedByLocalId[localId],
+            location = pending.location,
+            replacePrevious = replaceByLocalId[localId],
+            replaceChatId = replaceTargetByLocalId[localId],
+        )
+    }
+
+    /** The tray's Cancel: the work stopped, the card and everything its retry kept gone. */
+    private fun cancelPost(localId: String) {
+        val pending = pendingPosts.remove(localId) ?: return
+        pending.job?.cancel()
+        listOf(uploadedByLocalId, pickedByLocalId, replaceByLocalId, replaceTargetByLocalId)
+            .forEach { it.remove(localId) }
+        if (!isHere(pending.pin)) return
+        setState {
+            copy(notices = notices.filterNot { it.localId == localId }, uploadProgress = uploadProgress - localId)
+        }
+    }
+
     private fun retry(localId: String) {
         val unit = currentState.selectedUnit ?: return
         val failed = currentState.notices.firstOrNull { it.localId == localId } ?: return
@@ -1528,13 +1637,15 @@ class HomeFeedViewModel(
     private suspend fun uploadFor(
         localId: String,
         picked: PickedMedia?,
+        pin: BoardPin? = null,
     ): ZillitResult<UploadedNoticeMedia?> {
         uploadedByLocalId[localId]?.let { return ZillitResult.Success(it) }
         if (picked == null) return ZillitResult.Success(null)
-        val upload = media.upload
+        val upload = pin?.upload ?: media.upload
             ?: return ZillitResult.Failure(ZillitError.Storage("no uploader wired for notice media"))
-        return when (val stored = upload(picked) { percent ->
-            setState { copy(uploadProgress = uploadProgress + (localId to percent)) }
+        return when (val stored = upload(picked) { progress ->
+            media.tracker?.progress(localId, progress)
+            if (isHere(pin)) setState { copy(uploadProgress = uploadProgress + (localId to progress)) }
         }) {
             is ZillitResult.Failure -> stored
             is ZillitResult.Success -> ZillitResult.Success(stored.data.also { uploadedByLocalId[localId] = it })
@@ -1553,10 +1664,16 @@ class HomeFeedViewModel(
         picked?.let { pickedByLocalId[localId] = it }
         replacePrevious?.let { replaceByLocalId[localId] = it }
         replaceChatId?.let { replaceTargetByLocalId[localId] = it }
+        // Pinned once, on the first send: a retry goes where the post was sent.
+        val pending = pendingPosts.getOrPut(localId) {
+            PendingPost(unitId, optimistic, location, runCatching { media.pin() }.getOrNull())
+        }
+        val pin = pending.pin
+        picked?.let { track(localId, unitId, it, pin) }
 
-        launchResult(
+        pending.job = launchResult(
             block = {
-                val uploaded = when (val stored = uploadFor(localId, picked)) {
+                val uploaded = when (val stored = uploadFor(localId, withTrayThumbnail(localId, picked), pin)) {
                     is ZillitResult.Failure -> return@launchResult stored
                     is ZillitResult.Success -> stored.data
                 }
@@ -1581,55 +1698,67 @@ class HomeFeedViewModel(
                 }
                 // Bytes are in storage; what remains is the server writing the
                 // post. The card's tag reads 100 as "Processing…".
-                if (uploaded != null) {
+                if (uploaded != null && isHere(pin)) {
                     setState {
                         copy(uploadProgress = uploadProgress + (localId to UPLOAD_DONE))
                     }
                 }
-                repository.postNotice(
-                    unitId, optimistic.body, localId, uploaded, location, replacePrevious, replaceChatId,
+                // Into the production it was sent in — never whichever is open
+                // now. Unpinned, the options name nothing and the open one is used.
+                repository.postNoticeAs(
+                    pin?.options ?: CallOptions(), unitId, optimistic.body, localId, uploaded, location,
+                    replacePrevious, replaceChatId,
                 )
             },
-            onSuccess = { saved ->
-                // Replace rather than append: the optimistic card and the
-                // server's copy are the same post, and appending would show it
-                // twice.
-                uploadedByLocalId.remove(localId)
-                pickedByLocalId.remove(localId)
-                replaceByLocalId.remove(localId)
-                replaceTargetByLocalId.remove(localId)
-                // "Replace one document": the retired message leaves the board
-                // the moment the server names it, as the web's
-                // `removeMessagesFromList` on `replaced_chat_id`.
-                saved.replacedNoticeId?.let { gone -> setState { copy(notices = notices.filterNot { it.id == gone }) } }
-                setState {
-                    copy(
-                        notices = notices.replacing(localId, saved),
-                        uploadProgress = uploadProgress - localId,
-                    )
-                }
-                // A "New" call sheet moved every earlier post to History on
-                // the server; the board on screen still shows them until it
-                // is read again. Android learns this from a socket
-                // multi-delete and refetches — the refetch is the part that
-                // matters.
-                if (replacePrevious == true) {
-                    currentState.selectedUnit?.takeIf { it.id == unitId }?.let(::loadNotices)
-                }
-            },
-            onError = { error ->
-                setState {
-                    copy(
-                        notices = notices.replacing(
-                            localId,
-                            optimistic.copy(sendState = NoticeSendState.Failed),
-                        ),
-                        error = error.localised(),
-                        uploadProgress = uploadProgress - localId,
-                    )
-                }
-            },
+            onSuccess = { saved -> posted(localId, unitId, saved, pin, replacePrevious) },
+            onError = { error -> postFailed(localId, optimistic, error, pin) },
         )
+    }
+
+    /** The server has the post: the card becomes its copy, and the post's retry record goes. */
+    private fun posted(localId: String, unitId: String, saved: Notice, pin: BoardPin?, replacePrevious: Boolean?) {
+        pendingPosts.remove(localId)
+        media.tracker?.finished(localId)
+        listOf(uploadedByLocalId, pickedByLocalId, replaceByLocalId, replaceTargetByLocalId)
+            .forEach { it.remove(localId) }
+        // Posted into a production no longer open: its board is not this one.
+        if (!isHere(pin)) return
+        // "Replace one document": the retired message leaves the board
+        // the moment the server names it, as the web's
+        // `removeMessagesFromList` on `replaced_chat_id`.
+        saved.replacedNoticeId?.let { gone -> setState { copy(notices = notices.filterNot { it.id == gone }) } }
+        // Replace rather than append: the optimistic card and the server's
+        // copy are the same post, and appending would show it twice.
+        setState {
+            copy(
+                notices = notices.replacing(localId, saved),
+                uploadProgress = uploadProgress - localId,
+            )
+        }
+        // A "New" call sheet moved every earlier post to History on
+        // the server; the board on screen still shows them until it
+        // is read again. Android learns this from a socket
+        // multi-delete and refetches — the refetch is the part that
+        // matters.
+        if (replacePrevious == true) {
+            currentState.selectedUnit?.takeIf { it.id == unitId }?.let(::loadNotices)
+        }
+    }
+
+    /** The post did not land: its card turns red here, and its row in the tray says so. */
+    private fun postFailed(localId: String, optimistic: Notice, error: ZillitError, pin: BoardPin?) {
+        media.tracker?.failed(localId)
+        if (!isHere(pin)) return
+        setState {
+            copy(
+                notices = notices.replacing(
+                    localId,
+                    optimistic.copy(sendState = NoticeSendState.Failed),
+                ),
+                error = error.localised(),
+                uploadProgress = uploadProgress - localId,
+            )
+        }
     }
 
     private fun loadUnits() {

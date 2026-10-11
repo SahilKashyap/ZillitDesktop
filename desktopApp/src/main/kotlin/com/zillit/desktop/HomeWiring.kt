@@ -4,7 +4,18 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.media.AttachmentPicker.Companion.MAX_READABLE_BYTES
+import com.zillit.desktop.core.database.ProjectSnapshot
+import com.zillit.desktop.core.media.MediaSendTracker
+import com.zillit.desktop.core.media.UploadProgress
+import com.zillit.desktop.core.media.VideoSend
+import com.zillit.desktop.core.network.CallOptions
+import com.zillit.desktop.feature.chat.domain.ChatAttachment
+import com.zillit.desktop.feature.chat.domain.PinnedChatMedia
+import com.zillit.desktop.feature.home.ui.BoardPin
 import com.zillit.desktop.core.media.VideoCompressor
+import com.zillit.desktop.core.media.ffmpegPosterJpeg
+import com.zillit.desktop.core.media.imageThumbnailJpeg
+import com.zillit.desktop.feature.home.domain.NoticeKind
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
@@ -153,10 +164,6 @@ internal suspend fun fetchStaticMapBytes(ready: AppGraph.Ready, lat: Double, lng
 private const val STATIC_MAP_NAME = "location-map.png"
 private const val STATIC_MAP_TYPE = "image/png"
 
-/** How much of a compressed video's progress bar the compressing takes; uploading has the rest. */
-private const val COMPRESS_SHARE = 40
-private const val PERCENT = 100
-
 /**
  * What the composer can capture: picker, uploader, microphone, poster frames.
  *
@@ -169,6 +176,13 @@ internal fun homeMediaCapture(
     ready: AppGraph.Ready,
     uploader: AttachmentUploader = ready.attachmentUploader,
     storageType: () -> String? = { ready.projectContext?.context?.value?.project?.storageType },
+    /**
+     * Whether posts pin themselves to the production open when they are sent
+     * ([BoardPin]) and report to the app-wide Uploads tray. True for the open
+     * production's own boards; a widget posting into another production
+     * passes its own uploader and is already bound to that production.
+     */
+    pinToOpenProject: Boolean = uploader === ready.attachmentUploader,
 ) = MediaCapture(
     // The same OS dialog mail attachments use. Several files become several
     // posts — the wire takes one attachment per message, as the phones send.
@@ -178,11 +192,21 @@ internal fun homeMediaCapture(
     // The attach sheet's kind filters the same dialog — Photo, Video,
     // Document, Audio — and is checked again after the choice.
     pickOf = { kind -> attachmentPicker.pick(kind, maxBytes = MAX_READABLE_BYTES).map { it.toNoticeMedia() } },
-    // The same routed uploader (S3 or Box by production) mail uses. A video's
-    // poster frame travels first as its own object; a poster that fails to
-    // upload costs the poster, never the video.
+    // The same routed uploader (S3 or Box by production) mail uses. A
+    // picture's thumbnail or a video's poster frame travels first as its own
+    // object; a thumbnail that fails to upload costs the thumbnail, never the
+    // file. Progress says which phase it is in (UploadProgress): preparing
+    // the thumbnail, compressing a large video, then uploading.
     upload = { original, onProgress ->
-        val (picked, uploadProgress) = compressIfLarge(original, onProgress)
+        // A board picture reaches here without one (only video and PDF
+        // posters are cut before the card appears); chat's are cut already.
+        val withThumbnail = if (original.thumbnailBytes == null && original.kind == NoticeKind.Image) {
+            onProgress(UploadProgress.PREPARING)
+            withThumbnail(original)
+        } else {
+            original
+        }
+        val picked = compressIfLarge(withThumbnail, onProgress)
         // The poster read path signs S3 GETs; a poster keyed into Box could
         // never be fetched. The web skips it there for the same reason.
         val storageIsAws = storageKindOf(storageType()) == StorageKind.Aws
@@ -196,7 +220,7 @@ internal fun homeMediaCapture(
         // Only the main file reports progress: the poster above is a few
         // kilobytes, and a bar that restarts for it would read as a glitch.
         uploader
-            .upload(picked.name, picked.contentType, picked.bytes, uploadProgress)
+            .upload(picked.name, picked.contentType, picked.bytes, onProgress)
             .map { stored ->
                 UploadedNoticeMedia(
                     kind = picked.kind,
@@ -221,45 +245,120 @@ internal fun homeMediaCapture(
     // production's own key from remote config. No key, no image; the location
     // still sends and the receivers' pin fallback carries it.
     staticMap = { point -> fetchStaticMap(ready, point) },
-    // Frame extraction off the UI thread; jcodec is CPU work, not IO, but a
-    // dedicated dispatcher for one poster per pick is not worth owning.
-    videoThumbnail = { picked ->
-        withContext(Dispatchers.Default) {
-            val poster = when {
-                picked.isPdf -> pdfThumbnailJpeg(picked.bytes)
-                else -> videoThumbnailJpeg(picked.bytes)
-            }
-            poster?.let {
-                picked.copy(
-                    thumbnailBytes = it.jpegBytes,
-                    thumbnailWidth = it.widthPx,
-                    thumbnailHeight = it.heightPx,
-                )
-            } ?: picked
-        }
-    },
+    // Thumbnails off the UI thread — a picture's, a video's poster frame, a
+    // PDF's first page. Decoding is CPU work, not IO, but a dedicated
+    // dispatcher for one thumbnail per pick is not worth owning.
+    videoThumbnail = { picked -> withThumbnail(picked) },
+    pin = { if (pinToOpenProject) ready.boardPin() else null },
+    currentProjectId = { ready.projectContext?.context?.value?.project?.projectId },
+    tracker = mediaSendTracker.takeIf { pinToOpenProject },
 )
 
 /**
- * A video over 100 MB re-encoded before it uploads, with the progress the
- * upload should report from then on; anything else, or a video that would
- * not compress, comes back as it was.
- *
- * The bar covers both halves — compressing fills its first part, uploading
- * the rest — so it climbs once rather than running to 100 and starting
- * again. The poster was cut from the original, which the compressed copy
- * matches frame for frame.
+ * Every outgoing file in the app — chat attachments and board posts from any
+ * production — for the Uploads tray. One per process, like the picker.
  */
-private suspend fun compressIfLarge(
-    original: PickedMedia,
-    onProgress: (Int) -> Unit,
-): Pair<PickedMedia, (Int) -> Unit> {
-    if (!VideoCompressor.wants(original.contentType, original.bytes.size.toLong())) return original to onProgress
-    val compressed = VideoCompressor.compress(original.name, original.bytes) { percent ->
-        onProgress(percent * COMPRESS_SHARE / PERCENT)
-    } ?: return original to onProgress
-    val picked = original.copy(name = compressed.name, contentType = compressed.contentType, bytes = compressed.bytes)
-    return picked to { percent -> onProgress(COMPRESS_SHARE + percent * (PERCENT - COMPRESS_SHARE) / PERCENT) }
+internal val mediaSendTracker = MediaSendTracker()
+
+/** The open production as it is right now: its id, name, storage, and this user's id on it. */
+private class OpenProject(val project: ProjectSnapshot, val options: CallOptions)
+
+private fun AppGraph.Ready.openProject(): OpenProject? {
+    val context = projectContext?.context?.value ?: return null
+    val project = context.project ?: return null
+    val userId = context.profile?.userId ?: return null
+    return OpenProject(project, CallOptions(projectId = project.projectId, userId = userId))
+}
+
+/** A capture whose storage is the given production's, whatever opens later. */
+private fun AppGraph.Ready.pinnedCapture(open: OpenProject): MediaCapture =
+    homeMediaCapture(
+        this,
+        uploader = uploaderForProject(open.project, open.options),
+        storageType = { open.project.storageType },
+        pinToOpenProject = false,
+    )
+
+/** A board post bound to the production open now — see [BoardPin]. */
+internal fun AppGraph.Ready.boardPin(): BoardPin? {
+    val open = openProject() ?: return null
+    val upload = pinnedCapture(open).upload ?: return null
+    return BoardPin(open.project.projectId, open.project.name, open.options, upload)
+}
+
+/** A chat media send bound to the production open now — see [PinnedChatMedia]. */
+internal fun AppGraph.Ready.pinChatMedia(): PinnedChatMedia? {
+    val open = openProject() ?: return null
+    val capture = pinnedCapture(open)
+    val chats = chatRepositoryForProject(open.project.projectId, open.options.userId.orEmpty())
+    val ready = this
+    return object : PinnedChatMedia {
+        override val projectId = open.project.projectId
+        override val projectName = open.project.name
+
+        override suspend fun upload(
+            name: String,
+            contentType: String,
+            bytes: ByteArray,
+            videoSend: VideoSend?,
+            onProgress: (Int) -> Unit,
+        ) = uploadChatMedia(ready, name, contentType, bytes, onProgress, capture, videoSend)
+
+        override suspend fun send(
+            peerId: String,
+            body: String,
+            uniqueId: String,
+            timestampMillis: Long,
+            isGroup: Boolean,
+            attachment: ChatAttachment,
+        ) = chats.send(peerId, body, uniqueId, timestampMillis, isGroup = isGroup, attachment = attachment)
+    }
+}
+
+/** A sending chat bubble's picture: the thumbnail the upload will carry, cut ahead of it. */
+internal suspend fun chatThumbnail(name: String, contentType: String, bytes: ByteArray): ByteArray? =
+    withThumbnail(PickedMedia(name = name, contentType = contentType, bytes = bytes)).thumbnailBytes
+
+/** [picked] with its thumbnail cut, or as it was when there is none to cut. */
+private suspend fun withThumbnail(picked: PickedMedia): PickedMedia = withContext(Dispatchers.Default) {
+    val thumbnail = when {
+        picked.isPdf -> pdfThumbnailJpeg(picked.bytes)?.let { Triple(it.jpegBytes, it.widthPx, it.heightPx) }
+        picked.kind == NoticeKind.Image ->
+            imageThumbnailJpeg(picked.bytes)?.let { Triple(it.jpegBytes, it.widthPx, it.heightPx) }
+        // jcodec reads H.264 only; FFmpeg cuts the frame for AV1, HEVC, VP9.
+        picked.kind == NoticeKind.Video ->
+            videoThumbnailJpeg(picked.bytes)?.let { Triple(it.jpegBytes, it.widthPx, it.heightPx) }
+                ?: ffmpegPosterJpeg(picked.bytes, picked.name)?.let { Triple(it.jpegBytes, it.widthPx, it.heightPx) }
+        else -> null
+    }
+    thumbnail?.let { (jpeg, width, height) ->
+        picked.copy(thumbnailBytes = jpeg, thumbnailWidth = width, thumbnailHeight = height)
+    } ?: picked
+}
+
+/**
+ * A video over 100 MB re-encoded before it uploads; anything else, or a video
+ * that would not compress, comes back as it was.
+ *
+ * Compressing reports as its own phase ([UploadProgress.compressing]), so the
+ * bubble says "Compressing 40%" and then starts "Uploading" from zero rather
+ * than calling the re-encode an upload. The poster was cut from the
+ * original, which the compressed copy matches frame for frame.
+ */
+private suspend fun compressIfLarge(original: PickedMedia, onProgress: (Int) -> Unit): PickedMedia {
+    // The sender's own answer in the preview; no answer (a path with no
+    // preview) keeps the old behaviour and compresses.
+    if (original.videoSend == VideoSend.Original) return original
+    // Asked for, whatever the size — an AV1 clip under 100 MB still has to
+    // become H.264 for most people to see it.
+    val asked = original.videoSend == VideoSend.Compressed
+    if (!asked && !VideoCompressor.wants(original.contentType, original.bytes.size.toLong())) return original
+    onProgress(UploadProgress.compressing(0))
+    val unplayable = VideoCompressor.unplayableFormat(original.bytes) != null
+    val compressed = VideoCompressor.compress(original.name, original.bytes, requireSmaller = !unplayable) { percent ->
+        onProgress(UploadProgress.compressing(percent))
+    } ?: return original
+    return original.copy(name = compressed.name, contentType = compressed.contentType, bytes = compressed.bytes)
 }
 
 /** Email's picker type and home's, bridged where both are in scope. */
@@ -283,10 +382,18 @@ internal val attachmentPicker: com.zillit.desktop.core.media.AttachmentPicker =
 internal fun openNoticeAttachment(ready: AppGraph.Ready, scope: CoroutineScope) =
     { attachment: NoticeAttachment ->
         scope.launch {
-            val fetched = ready.noticeMedia.fetch(attachment, preview = false)
-            val bytes = (fetched as? ZillitResult.Success)?.data ?: return@launch
             val name = attachment.fileName.ifBlank { "attachment" }
-            val saved = DownloadsAttachmentStore().save(name, bytes)
+            val store = DownloadsAttachmentStore()
+            // Streamed from a signed link straight to disk where storage gives
+            // one: a 2 GB video read into memory first ran the app out of heap.
+            val link = ready.noticeMedia.streamUrl(attachment)
+            val saved = if (link != null) {
+                store.saveStream(name) { java.net.URI(link).toURL().openStream() }
+            } else {
+                val fetched = ready.noticeMedia.fetch(attachment, preview = false)
+                val bytes = (fetched as? ZillitResult.Success)?.data ?: return@launch
+                store.save(name, bytes)
+            }
             val path = (saved as? ZillitResult.Success)?.data ?: return@launch
             openSavedFile(path)
         }

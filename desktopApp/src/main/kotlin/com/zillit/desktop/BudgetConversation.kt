@@ -213,5 +213,6 @@ internal fun AppGraph.Ready.budgetChat(scope: ChatScope) = ChatViewModel(
     newUniqueId = { java.util.UUID.randomUUID().toString() },
     offline = offlineSupport,
     uploadMedia = { name, type, bytes, onProgress -> uploadChatMedia(this, name, type, bytes, onProgress) },
+    thumbnailOf = ::chatThumbnail,
     staticMap = { lat, lng -> fetchStaticMapBytes(this, lat, lng) },
 )

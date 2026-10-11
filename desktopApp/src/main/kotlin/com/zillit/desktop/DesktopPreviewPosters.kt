@@ -1,5 +1,6 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.media.ffmpegPosterJpeg
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import com.zillit.desktop.core.media.LocalPreviewPosterMaker
@@ -24,7 +25,14 @@ internal object DesktopPreviewPosters : PreviewPosterMaker {
             pdfThumbnailJpeg(item.bytes, dpi = STAGE_DPI, maxEdge = STAGE_EDGE)?.jpegBytes,
             pages = pdfPageCount(item.bytes),
         )
-        item.kind == PreviewKind.Video -> videoThumbnailJpeg(item.bytes)?.let { PreviewPoster(it.jpegBytes) }
+        // jcodec reads H.264 only; FFmpeg cuts the frame for AV1, HEVC, VP9.
+        item.kind == PreviewKind.Video -> PreviewPoster(
+            videoThumbnailJpeg(item.bytes)?.jpegBytes
+                ?: ffmpegPosterJpeg(item.bytes, item.name, maxEdge = STAGE_EDGE)?.jpegBytes,
+            // Read from the file's own sample description: the preview then
+            // asks how to send an AV1 clip whatever its size.
+            unplayableFormat = com.zillit.desktop.core.media.VideoCompressor.unplayableFormat(item.bytes),
+        )
         else -> null
     }
 

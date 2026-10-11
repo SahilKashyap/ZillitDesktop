@@ -10,6 +10,11 @@ class PreviewPoster(
     val jpegBytes: ByteArray?,
     /** A PDF's pages; null where the file has no pages to count. */
     val pages: Int? = null,
+    /**
+     * A video in a format most players cannot draw ("AV1", "VP9") — the app's
+     * own player, Safari, many phones. Null for everything that plays.
+     */
+    val unplayableFormat: String? = null,
 ) {
     override fun toString(): String = "PreviewPoster(pages=$pages, poster=${jpegBytes?.size ?: 0} B)"
 }

@@ -63,6 +63,8 @@ data class PreviewResult(
      * covers them all and arrives beside the results instead.
      */
     val caption: String = "",
+    /** How a large video goes ([asksVideoChoice]); null for every other file. */
+    val videoSend: VideoSend? = null,
 ) {
     override fun toString(): String = "PreviewResult(name=$name, type=$contentType, size=${bytes.size})"
     override fun equals(other: Any?): Boolean = this === other

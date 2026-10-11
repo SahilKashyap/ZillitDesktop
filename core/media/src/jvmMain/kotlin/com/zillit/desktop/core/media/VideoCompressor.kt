@@ -20,14 +20,20 @@ import kotlinx.coroutines.withContext
  * Android phones), capped at 1080p on its short edge, at a quality where the
  * encoder spends bits wherever the picture needs them.
  *
- * Two encoders, tried in order, neither of them shipped with the app:
+ * Two encoders, tried in order:
  *
  *  - macOS's own `avconvert` (AVFoundation, the hardware encoder). It applies
  *    a phone's rotation, maps an iPhone's HDR (HLG) to ordinary colour rather
  *    than washing it out, and keeps the audio. A 60 s 1080p iPhone clip at
  *    13 Mbit/s came out at 10.5 Mbit/s in 12 s; a 4K one shrinks far more.
- *  - `ffmpeg`, wherever the machine already has one (Windows, Linux, or a
- *    Mac whose `avconvert` refused the file): x264 at CRF 20.
+ *  - FFmpeg, bundled with the app (`$APPDIR/resources/ffmpeg`, staged by the
+ *    build's `stageFfmpeg`), or the machine's own when a build has none. It
+ *    decodes what AVFoundation cannot (AV1 without an AV1 chip, VP9) and
+ *    hands the frames to the operating system's own H.264 encoder — Apple's
+ *    VideoToolbox, Windows' Media Foundation — never to a bundled one: the
+ *    LGPL build ships none, and the OS encoder carries its patent licence.
+ *    The only route on Windows. Slower on a Mac for exotic sources: an 8K
+ *    AV1 file decodes in software at a tenth of real time.
  *
  * Anything that goes wrong — no encoder, an encoder that fails, an output no
  * smaller than the input — answers null, and the caller sends the original.
@@ -37,7 +43,13 @@ import kotlinx.coroutines.withContext
 object VideoCompressor {
 
     /** 100 MB: smaller videos go as they are. */
-    const val COMPRESS_ABOVE_BYTES: Long = 100L * 1024 * 1024
+    const val COMPRESS_ABOVE_BYTES: Long = LARGE_VIDEO_BYTES
+
+    /** "AV1" for a video in a format most players load but cannot draw; null otherwise. */
+    fun unplayableFormat(bytes: ByteArray): String? = UNPLAYABLE_FORMATS[Mp4Rotation.videoCodec(bytes)]
+
+    /** What the app's player (JavaFX), Safari and many phones load but cannot draw. */
+    val UNPLAYABLE_FORMATS: Map<String, String> = mapOf("av01" to "AV1", "vp09" to "VP9", "vp08" to "VP8")
 
     /** Whether a file of this type and size should be compressed before upload. */
     fun wants(contentType: String, sizeBytes: Long): Boolean =
@@ -51,9 +63,24 @@ object VideoCompressor {
     suspend fun compress(
         name: String,
         bytes: ByteArray,
+        /**
+         * Whether a result no smaller than the input is thrown away. Not for a
+         * clip in a format most players cannot draw (AV1): there the point is
+         * the H.264, whatever it weighs.
+         */
+        requireSmaller: Boolean = true,
         onProgress: (Int) -> Unit = {},
     ): CompressedVideo? = withContext(Dispatchers.IO) {
         val work = Files.createTempDirectory("zillit-video").toFile()
+        // The source is copied out, and the output written beside it: with
+        // the disk short of both, an encode dies (ENOSPC) minutes in — a 1.8 GB
+        // 8K clip got 19 minutes through before it did. Better not to start.
+        val needed = bytes.size.toLong() * 2 + DISK_MARGIN_BYTES
+        if (work.usableSpace < needed) {
+            ZillitLog.w(TAG) { "not compressing: ${work.usableSpace} bytes free, $needed needed" }
+            work.deleteRecursively()
+            return@withContext null
+        }
         try {
             val extension = name.substringAfterLast('.', "").lowercase().ifBlank { "mov" }
             val source = File(work, "source.$extension").apply { writeBytes(bytes) }
@@ -68,7 +95,7 @@ object VideoCompressor {
                 }
                 // Already efficient (an HEVC phone clip can be): the original
                 // is the better file to send.
-                if (size <= 0 || size >= bytes.size) return@withContext null
+                if (size <= 0 || (requireSmaller && size >= bytes.size)) return@withContext null
                 onProgress(PERCENT)
                 return@withContext CompressedVideo(
                     name = name.substringBeforeLast('.', name) + ".mp4",
@@ -90,7 +117,7 @@ object VideoCompressor {
     /** What this machine can encode with, best first. */
     private fun encoders(): List<Encoder> = buildList {
         if (currentPlatform().os == OperatingSystem.MacOs && File(AVCONVERT).canExecute()) add(Avconvert)
-        findFfmpeg()?.let { add(Ffmpeg(it)) }
+        findFfmpeg()?.let { add(Ffmpeg(it, FfmpegTarget.current())) }
     }.also { if (it.isEmpty()) ZillitLog.w(TAG) { "no video encoder on this machine" } }
 
     /**
@@ -104,6 +131,9 @@ object VideoCompressor {
                 return false
             }
         val tail = StringBuilder()
+        // The first thing an encoder says is usually why it refused; the tail
+        // alone, once a preset list has scrolled past, hid the reason.
+        val head = StringBuilder()
         try {
             process.outputStream.close()
             val reader = process.inputStream.bufferedReader()
@@ -113,13 +143,18 @@ object VideoCompressor {
                 val read = reader.read(buffer)
                 if (read < 0) break
                 tail.append(buffer, 0, read)
+                if (head.length < LOG_CHARS) head.append(buffer, 0, minOf(read, LOG_CHARS - head.length))
                 progress.read(tail)?.let { onProgress(it.coerceIn(0, PERCENT)) }
                 // Keep enough to finish a line split across reads, and for
                 // the log when the encoder fails.
                 if (tail.length > TAIL_CHARS) tail.delete(0, tail.length - TAIL_CHARS / 2)
             }
             val exit = process.waitFor()
-            if (exit != 0) ZillitLog.w(TAG) { "${command.first()} exited $exit: ${tail.takeLast(LOG_CHARS)}" }
+            if (exit != 0) {
+                ZillitLog.w(TAG) {
+                    "${command.first()} exited $exit: ${head.trim()} … ${tail.takeLast(LOG_CHARS).trim()}"
+                }
+            }
             return exit == 0
         } finally {
             // A cancelled send must not leave an encoder running on the machine.
@@ -127,8 +162,10 @@ object VideoCompressor {
         }
     }
 
-    private fun findFfmpeg(): String? {
+    /** The app's own FFmpeg first, then one the machine has. */
+    internal fun findFfmpeg(): String? {
         val name = if (currentPlatform().os == OperatingSystem.Windows) "ffmpeg.exe" else "ffmpeg"
+        bundledFfmpeg(name)?.let { return it }
         // An app launched from the Dock or Finder does not inherit the shell's
         // PATH, so the usual Homebrew homes are looked at by name too.
         val path = System.getenv("PATH").orEmpty().split(File.pathSeparator)
@@ -139,12 +176,41 @@ object VideoCompressor {
             ?.absolutePath
     }
 
+    /**
+     * Compose names the resources directory in a system property, for a
+     * package and for `:run` alike. A copy that lost its execute bit on the
+     * way gets it back where the directory allows; where it does not (an
+     * install owned by root), the program and its libraries are copied once
+     * to a temporary folder of this user's and run from there.
+     */
+    private fun bundledFfmpeg(name: String): String? {
+        val dir = System.getProperty(RESOURCES_DIR_PROPERTY)?.takeIf { it.isNotBlank() } ?: return null
+        val home = File(dir, "ffmpeg")
+        val program = File(home, name).takeIf { it.isFile } ?: return null
+        if (!program.canExecute()) program.setExecutable(true, false)
+        if (program.canExecute()) return program.absolutePath
+        return runCatching {
+            // Keyed by size, so a new app version's FFmpeg is a new copy.
+            val copy = File(System.getProperty("java.io.tmpdir"), "zillit-ffmpeg-${program.length()}")
+            home.listFiles().orEmpty().filter { it.isFile }.forEach { file ->
+                val target = File(copy, file.name)
+                if (target.length() != file.length()) file.copyTo(target, overwrite = true)
+            }
+            File(copy, name).takeIf { it.setExecutable(true, false) && it.canExecute() }?.absolutePath
+        }.getOrElse { error ->
+            ZillitLog.w(TAG) { "bundled ffmpeg is not runnable here: $error" }
+            null
+        }
+    }
+
     private const val TAG = "VideoCompress"
     private const val AVCONVERT = "/usr/bin/avconvert"
+    private const val RESOURCES_DIR_PROPERTY = "compose.application.resources.dir"
     private val FFMPEG_HOMES = listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
     private const val PERCENT = 100
     private const val BUFFER_CHARS = 1024
     private const val TAIL_CHARS = 16_384
+    private const val DISK_MARGIN_BYTES = 512L * 1024 * 1024
     private const val LOG_CHARS = 400
 }
 
@@ -182,32 +248,66 @@ internal data object Avconvert : Encoder {
     )
 }
 
+/** Which operating-system encoder FFmpeg hands its frames to. */
+internal enum class FfmpegTarget {
+    /** Apple silicon: VideoToolbox at constant quality, hardware decode where it can. */
+    MacAppleSilicon,
+
+    /** An Intel Mac: VideoToolbox there takes a bitrate, not a quality. */
+    MacIntel,
+
+    /** Media Foundation, whichever encoder the machine has (GPU or Microsoft's own). */
+    Windows,
+    ;
+
+    companion object {
+        fun current(): FfmpegTarget = when {
+            currentPlatform().os == OperatingSystem.Windows -> Windows
+            System.getProperty("os.arch").orEmpty().contains("aarch64") -> MacAppleSilicon
+            else -> MacIntel
+        }
+    }
+}
+
 /**
- * x264 at CRF 20 — constant quality, not a fixed bitrate, so a dark static
- * shot and a fast pan both look the way they did. The long edge is capped at
- * 1920 (never scaled up), dimensions kept even for 4:2:0, audio re-encoded to
- * AAC so any source container fits in an MP4, and the index moved to the
+ * FFmpeg reading anything, the system writing H.264. The long edge is capped
+ * at 1920 (never scaled up), dimensions kept even for 4:2:0, audio re-encoded
+ * to AAC so any source container fits in an MP4, and the index moved to the
  * front so playback can start before the download ends.
  */
-internal class Ffmpeg(private val executable: String) : Encoder {
+internal class Ffmpeg(private val executable: String, private val target: FfmpegTarget) : Encoder {
     override val label = "ffmpeg"
     override val progress = FfmpegProgress()
     override fun command(source: File, output: File) =
-        ffmpegCommand(executable, source.absolutePath, output.absolutePath)
+        ffmpegCommand(executable, source.absolutePath, output.absolutePath, target)
 }
 
-internal fun ffmpegCommand(executable: String, source: String, output: String): List<String> = listOf(
-    executable,
-    "-hide_banner", "-nostdin", "-y",
-    "-i", source,
-    "-map", "0:v:0", "-map", "0:a:0?",
-    "-vf", FFMPEG_SCALE,
-    "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "160k",
-    "-movflags", "+faststart",
-    "-progress", "pipe:1",
-    output,
-)
+internal fun ffmpegCommand(
+    executable: String,
+    source: String,
+    output: String,
+    target: FfmpegTarget,
+): List<String> = buildList {
+    add(executable)
+    addAll(listOf("-hide_banner", "-nostdin", "-y"))
+    // Decoding on the media engine where the chip has one for the source;
+    // FFmpeg falls back to software by itself where it does not (AV1 on M1/M2).
+    if (target == FfmpegTarget.MacAppleSilicon) addAll(listOf("-hwaccel", "videotoolbox"))
+    addAll(listOf("-i", source, "-map", "0:v:0", "-map", "0:a:0?", "-vf", "$FFMPEG_SCALE,format=yuv420p"))
+    when (target) {
+        // Quality 65 of 100: a 60 s 1080p iPhone clip at 13 Mbit/s came out
+        // at 7 Mbit/s with no visible blocking — Apple's own converter's
+        // 1080p preset spent 10.5 for the same picture.
+        FfmpegTarget.MacAppleSilicon -> addAll(listOf("-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac_at"))
+        FfmpegTarget.MacIntel -> addAll(listOf("-c:v", "h264_videotoolbox") + BITRATE + listOf("-c:a", "aac_at"))
+        FfmpegTarget.Windows ->
+            addAll(listOf("-c:v", "h264_mf", "-rate_control", "u_vbr") + BITRATE + listOf("-c:a", "aac"))
+    }
+    addAll(listOf("-b:a", "160k", "-movflags", "+faststart", "-progress", "pipe:1", output))
+}
+
+/** 10 Mbit/s, peaks to 14 — clear of blocking at 1080p60 where no quality mode exists. */
+private val BITRATE = listOf("-b:v", "10M", "-maxrate", "14M", "-bufsize", "20M")
 
 /** Long edge at most 1920, aspect kept, both sides even. Quoted so the commas stay inside. */
 internal const val FFMPEG_SCALE =
