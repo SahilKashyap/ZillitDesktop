@@ -1666,8 +1666,8 @@ private fun ZillitContent(
                 onThemeModeChange = onThemeModeChange,
                 language = language,
                 onLanguageChange = onLanguageChange,
-                createViewModel = createViewModel,
-                joinViewModel = joinViewModel,
+                createViewModel = createViewModel, joinViewModel = joinViewModel,
+                onSignOut = { updateScope.launch { ready.authRepository.signOut() } },
                 // On the sign-in page, where someone who cannot get in can
                 // still read it off to support.
                 appVersion = installedAppVersion(),

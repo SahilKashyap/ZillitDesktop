@@ -24,10 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import androidx.compose.foundation.layout.Spacer
+import com.zillit.desktop.core.designsystem.component.ZillitSignOutDialog
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -274,27 +271,8 @@ private fun RailFoot(
  * rail to make room for it.
  */
 @Composable
-fun SignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    ZillitDialogShell(
-        title = str(S.desktop_sign_out_title),
-        subtitle = str(S.desktop_sign_out_body),
-        icon = ZillitIcons.Logout,
-        visible = visible,
-        onDismiss = onDismiss,
-        width = SIGN_OUT_DIALOG_WIDTH,
-        actions = {
-            Spacer(Modifier.weight(1f))
-            ZillitButton(text = str(S.cancel), variant = ButtonVariant.Secondary, onClick = onDismiss)
-            ZillitButton(text = str(S.desktop_sign_out), onClick = onConfirm)
-        },
-    ) {
-        ZillitText(
-            text = str(S.desktop_sign_out_note),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-    }
-}
+fun SignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) =
+    ZillitSignOutDialog(visible, onDismiss, onConfirm)
 
 /** Marker scope so the rail footer cannot be mistaken for a rail item. */
 object ColumnFooterScope
@@ -403,7 +381,6 @@ private fun RailLabel(item: RailItem, visible: Boolean, contentColor: Color) {
 const val RAIL_COLLAPSE_TAG = "rail-collapse"
 
 private val RAIL_BUTTON = 40.dp
-private val SIGN_OUT_DIALOG_WIDTH = 380.dp
 
 /** Left/right breathing room, so the button does not touch the rail edge. */
 private val RAIL_GUTTER = 10.dp

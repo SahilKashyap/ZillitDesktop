@@ -48,7 +48,9 @@ import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.localization.LabelDictionary
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitSignOutDialog
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
@@ -96,7 +98,11 @@ internal fun ProjectListScreen(
     joinViewModel: JoinProductionViewModel? = null,
     language: String = "",
     onLanguageChange: (String) -> Unit = {},
+    onSignOut: (() -> Unit)? = null,
 ) {
+    // Asked here, at the screen's root: the dialog fills its parent, and the
+    // header row it is opened from would crush it.
+    var confirmingSignOut by remember { mutableStateOf(false) }
     // The picker often appears UNDER a mouse that just clicked — the
     // production switcher sits where a habitual double-click's second
     // release lands on whatever card composes beneath it, and that click
@@ -113,7 +119,19 @@ internal fun ProjectListScreen(
     Box(modifier) {
         ProjectListBody(state, { event ->
             if (event !is AuthEvent.SelectProject || openArmed) onEvent(event)
-        }, themeMode, onThemeModeChange, language, onLanguageChange)
+        }, themeMode, onThemeModeChange, language, onLanguageChange,
+            onSignOut = onSignOut?.let { { confirmingSignOut = true } })
+
+        onSignOut?.let { signOut ->
+            ZillitSignOutDialog(
+                visible = confirmingSignOut,
+                onDismiss = { confirmingSignOut = false },
+                onConfirm = {
+                    confirmingSignOut = false
+                    signOut()
+                },
+            )
+        }
 
         // Always composed, visibility-driven: an `if` on the flag would
         // unmount the dialog on dismiss and skip its exit animation. Null
@@ -151,6 +169,7 @@ private fun ProjectListBody(
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
     onLanguageChange: (String) -> Unit,
+    onSignOut: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -164,6 +183,7 @@ private fun ProjectListBody(
             onThemeModeChange = onThemeModeChange,
             language = language,
             onLanguageChange = onLanguageChange,
+            onSignOut = onSignOut,
         )
 
         if (state.isShowingSavedProjects) OfflineNotice()
@@ -244,6 +264,8 @@ private fun ProjectListHeader(
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
     onLanguageChange: (String) -> Unit,
+    /** Opens the Logout confirmation; null leaves the button off. */
+    onSignOut: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -287,6 +309,18 @@ private fun ProjectListHeader(
                 contentDescription = str(S.theme_mode),
                 onClick = { onThemeModeChange(themeMode.next()) },
             )
+            // Logout here too: someone signed in to the wrong account, or
+            // handing the machine over, should not have to open a production
+            // just to reach the rail's Logout.
+            onSignOut?.let { signOut ->
+                ZillitButton(
+                    text = str(S.desktop_sign_out),
+                    onClick = signOut,
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Logout,
+                )
+            }
         }
 
         FilterBar(state, onEvent)

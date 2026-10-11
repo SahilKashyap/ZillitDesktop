@@ -48,6 +48,8 @@ fun AuthScreen(
     /** The language preference (blank = follow the system) and where a choice goes; see the shell. */
     language: String = "",
     onLanguageChange: (String) -> kotlin.Unit = {},
+    /** Logout, offered on the production list (after a confirmation); null leaves it off. */
+    onSignOut: (() -> Unit)? = null,
     createViewModel: CreateProductionViewModel? = null,
     joinViewModel: JoinProductionViewModel? = null,
     /**
@@ -70,7 +72,7 @@ fun AuthScreen(
     if (state.step == AuthStep.ProjectSelection) {
         ProjectListScreen(
             state, viewModel::onEvent, themeMode, onThemeModeChange, modifier, createViewModel,
-            joinViewModel, language, onLanguageChange,
+            joinViewModel, language, onLanguageChange, onSignOut,
         )
         return
     }
