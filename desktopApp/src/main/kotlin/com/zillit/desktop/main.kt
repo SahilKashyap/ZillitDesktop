@@ -2797,6 +2797,10 @@ private fun AppGraph.Ready.cashAssignees(): List<AssigneeOption> {
             // The pickers list the accounts team only, as the web's
             // `ACCOUNTS_TEAM_USERS`; the module filters on this.
             department = user.department.orEmpty(),
+            departmentIdentifier = user.departmentIdentifier.orEmpty(),
+            // Only accepted crew are offered, as `USERS` is on the web; a row with
+            // no status yet is treated as present.
+            accepted = user.status == null || user.status.equals("accepted", ignoreCase = true),
         )
     }
 }
@@ -3091,10 +3095,12 @@ private fun AppGraph.Ready.cardViewer(): CardViewer {
 private fun AppGraph.Ready.cardExpensesModel(asTool: Boolean): CardExpensesViewModel {
     val graph = this
     var cardModel: CardExpensesViewModel? = null
+    val banksFailed = java.util.concurrent.atomic.AtomicBoolean(false)
     return CardExpensesViewModel(
         repository = graph.cardRepositoryWithExports(),
         files = cardFiles(),
-        banks = { graph.cardBanks() },
+        banks = { graph.cardBanks(banksFailed) },
+        bankReadFailed = { banksFailed.get() },
         // Currencies, rates, companies and banks — the hub's Production Setup
         // documents, for the card forms and the dashboard's converted totals.
         reference = { graph.cardReference() },

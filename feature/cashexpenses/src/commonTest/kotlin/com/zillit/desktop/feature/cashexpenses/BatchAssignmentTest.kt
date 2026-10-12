@@ -177,3 +177,30 @@ class BatchAssignmentTest {
         assertEquals("u3", after.single().assignedTo)
     }
 }
+
+/** The accounts team by department identifier and accepted status, as the web's `ACCOUNTS_TEAM_USERS`. */
+class AccountsTeamIdentifierTest {
+
+    private val crew = listOf(
+        AssigneeOption("a", "Ada", department = "Accounts", departmentIdentifier = "department_accounts"),
+        AssigneeOption("b", "Bo", department = "Accounts Assistants", departmentIdentifier = "department_other"),
+        AssigneeOption(
+            "c", "Cy", department = "Accounts", departmentIdentifier = "department_accounts", accepted = false,
+        ),
+        AssigneeOption("d", "Di", department = "Grip", departmentIdentifier = "department_grip"),
+    )
+
+    @Test
+    fun `the identifier and an accepted status decide, not the department name`() {
+        assertEquals(listOf("a"), BatchAssignment.accountsTeam(crew).map { it.userId })
+    }
+
+    @Test
+    fun `without identifiers the department name still stands in`() {
+        val named = listOf(
+            AssigneeOption("a", "Ada", department = "Accounts"),
+            AssigneeOption("d", "Di", department = "Grip"),
+        )
+        assertEquals(listOf("a"), BatchAssignment.accountsTeam(named).map { it.userId })
+    }
+}

@@ -229,6 +229,13 @@ interface CardHubSource {
 
     suspend fun departments(): List<CardDepartment> = emptyList()
 
+    /**
+     * The balance-sheet nominals a provider's custodian and float codes are picked from
+     * (`BsCodeInput pickableLevels="nominals"`). Empty when the chart cannot be read, and
+     * the editor then keeps plain text fields.
+     */
+    suspend fun nominalCodes(): List<CardCode> = emptyList()
+
     /** Creates [rule] under `card_expenses` when it is not persisted, updates it otherwise. */
     suspend fun saveAssignmentRule(rule: CardAssignmentRule): ZillitResult<CardAssignmentRule> = unavailable()
 
@@ -241,6 +248,12 @@ interface CardHubSource {
         fun <T> unavailable(): ZillitResult<T> =
             ZillitResult.Failure(ZillitError.Unknown("Assignment rules are not available in this build."))
     }
+}
+
+/** One pickable chart code. */
+data class CardCode(val code: String, val name: String) {
+    /** "1010 · Petty Cash", the way a picker row reads. */
+    val display: String get() = if (name.isBlank()) code else "$code · $name"
 }
 
 /**

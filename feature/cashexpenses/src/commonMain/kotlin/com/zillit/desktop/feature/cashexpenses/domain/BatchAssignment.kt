@@ -16,6 +16,13 @@ data class AssigneeOption(
      */
     val department: String = "",
     /**
+     * The department's stable identifier (`department_accounts`) and whether the
+     * person has accepted the production — what the web's `ACCOUNTS_TEAM_USERS`
+     * is filtered on. Blank when the host has none, and the name stands in.
+     */
+    val departmentIdentifier: String = "",
+    val accepted: Boolean = true,
+    /**
      * The department's id — what a float or batch's `department_id` holds.
      *
      * The crew list carries none; the view model joins it from the
@@ -53,16 +60,21 @@ object BatchAssignment {
     /**
      * The accounts team out of the crew — the web's `ACCOUNTS_TEAM_USERS`.
      *
-     * Matched as the viewer is: a department containing `accounts`. A host that
-     * sends no departments at all gets the whole crew rather than nobody, so
-     * the picker keeps working until the wiring passes them.
+     * By the department identifier and an accepted status, exactly as the web does.
+     * A host that sends no identifiers falls back to a department NAME containing
+     * `accounts`, and one that sends neither gets the whole crew rather than
+     * nobody, so the picker keeps working until the wiring passes them.
      */
     fun accountsTeam(people: List<AssigneeOption>): List<AssigneeOption> {
+        if (people.any { it.departmentIdentifier.isNotBlank() }) {
+            return people.filter { it.accepted && it.departmentIdentifier == ACCOUNTS_IDENTIFIER }
+        }
         if (people.none { it.department.isNotBlank() }) return people
         return people.filter { it.department.contains(ACCOUNTS, ignoreCase = true) }
     }
 
     private const val ACCOUNTS = "accounts"
+    private const val ACCOUNTS_IDENTIFIER = "department_accounts"
 
     fun canSubmit(batch: ClaimBatch?, selectedUserId: String, reason: String): Boolean {
         if (selectedUserId.isBlank()) return false

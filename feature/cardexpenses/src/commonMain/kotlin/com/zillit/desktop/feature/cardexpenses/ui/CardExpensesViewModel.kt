@@ -61,6 +61,11 @@ class CardExpensesViewModel(
     private val today: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     /** The production's bank accounts, for fund requests; they belong to the hub, not this service. */
     banks: suspend () -> List<CardBank> = { emptyList() },
+    /**
+     * Whether the last [banks] read failed rather than found none — the web's `banksFailed`.
+     * An empty list means both, so the host says which; without it the module infers the failure.
+     */
+    bankReadFailed: () -> Boolean = { false },
     /** The production's currencies, rates, companies and banks, for the card forms and the dashboard. */
     reference: suspend () -> CardReference = { CardReference() },
     /** The hub's companies, departments and assignment-rule routes; see [CardHubSource]. */
@@ -126,7 +131,7 @@ class CardExpensesViewModel(
     private val receipts = CardReceiptActions(this, uploader)
 
     /** Import Statement, the Receipt Inbox and All Transactions; see [CardInboxActions]. */
-    internal val inboxActions = CardInboxActions(this, inboxHost, banks)
+    internal val inboxActions = CardInboxActions(this, inboxHost, banks, bankReadFailed)
 
     /** Answered confirmations and the bulk bars; see [CardPromptActions]. */
     private val prompts = CardPromptActions(this, deleteCard = register::delete)

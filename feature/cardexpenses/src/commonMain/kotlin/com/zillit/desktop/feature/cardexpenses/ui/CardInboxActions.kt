@@ -31,6 +31,7 @@ internal class CardInboxActions(
     private val vm: CardExpensesViewModel,
     private val host: CardInboxHost?,
     private val loadBanks: suspend () -> List<CardBank>,
+    private val bankReadFailed: () -> Boolean = { false },
 ) {
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // A dispatch table; splitting it hides the mapping.
@@ -117,12 +118,13 @@ internal class CardInboxActions(
     suspend fun loadImport(): ZillitResult<Reducer> {
         val project = host?.currencies() ?: CardCurrencies()
         val bankAccounts = loadBanks()
+        val readFailed = bankReadFailed()
         return ZillitResult.Success {
             val known = bankAccounts.ifEmpty { banks }
             // The host's bank seam answers an empty list for a failed read too, so providers bound to
             // banks with none readable is the web's `banksFailed` (`BankAccountsContext.jsx`): the
             // project list is then not the right source and is never auto-selected.
-            val banksFailed = known.isEmpty() && providers.any { it.bankId.isNotBlank() }
+            val banksFailed = readFailed || (known.isEmpty() && providers.any { it.bankId.isNotBlank() })
             val options = StatementCurrencyOptions.of(providers, known, project.codes, banksFailed)
             copy(
                 banks = known,

@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.feature.cardexpenses.domain.AlertFilter
 import com.zillit.desktop.feature.cardexpenses.domain.CardAssignmentRule
+import com.zillit.desktop.feature.cardexpenses.domain.CardCode
 import com.zillit.desktop.feature.cardexpenses.domain.CardCompany
 import com.zillit.desktop.feature.cardexpenses.domain.CardDepartment
 import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
@@ -36,6 +37,8 @@ data class InsightsState(
     // -- settings and analytics: the hub's lists -------------------------------
     val companies: List<CardCompany> = emptyList(),
     val departments: List<CardDepartment> = emptyList(),
+    /** The balance-sheet nominals the provider code pickers offer; empty keeps text fields. */
+    val nominals: List<CardCode> = emptyList(),
     val memberEditor: TeamMemberEditor? = null,
     val teamSaving: Boolean = false,
     /** Per-row coordinator errors, keyed `"<index>_dept"` / `"<index>_users"` as the web's. */

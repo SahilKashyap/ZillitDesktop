@@ -102,6 +102,7 @@ internal class CardInsightActions(
         val accounts = banks()
         val companies = hub.companies()
         val departments = hub.departments()
+        val nominals = hub.nominalCodes()
         return ZillitResult.Success {
             copy(
                 settings = settings,
@@ -110,6 +111,7 @@ internal class CardInsightActions(
                 insights = insights.copy(
                     companies = companies,
                     departments = departments,
+                    nominals = nominals,
                     coordinatorErrors = emptyMap(),
                 ),
             )
