@@ -3,6 +3,7 @@ package com.zillit.desktop.core.designsystem.component
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -22,7 +23,7 @@ import com.zillit.desktop.core.strings.str
 @Composable
 fun ZillitSignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     ZillitDialogShell(
-        title = str(S.desktop_sign_out_title),
+        title = str(S.logout),
         subtitle = str(S.desktop_sign_out_body),
         icon = ZillitIcons.Logout,
         visible = visible,
@@ -31,7 +32,12 @@ fun ZillitSignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -
         actions = {
             Spacer(Modifier.weight(1f))
             ZillitButton(text = str(S.cancel), variant = ButtonVariant.Secondary, onClick = onDismiss)
-            ZillitButton(text = str(S.desktop_sign_out), onClick = onConfirm)
+            ZillitButton(
+                text = str(S.logout),
+                variant = ButtonVariant.Danger,
+                onClick = onConfirm,
+                modifier = Modifier.testTag(SIGN_OUT_CONFIRM_TAG),
+            )
         },
     ) {
         ZillitText(
@@ -41,5 +47,11 @@ fun ZillitSignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -
         )
     }
 }
+
+/**
+ * The confirm button. The rail item, the title and the button all read
+ * "Logout", so text alone cannot tell them apart.
+ */
+const val SIGN_OUT_CONFIRM_TAG = "sign-out-confirm"
 
 private val SIGN_OUT_DIALOG_WIDTH = 380.dp

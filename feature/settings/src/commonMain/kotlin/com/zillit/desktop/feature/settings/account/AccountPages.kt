@@ -154,7 +154,7 @@ private fun RecoveryKeyCard(state: RecoveryEmailState, onEvent: (AccountEvent) -
  * ## It is a security page, not an inventory
  *
  * The reason anyone opens it is a device they no longer have. So the row's
- * verb is "Sign out", the destructive tone is on the button rather than the
+ * verb is "Logout", the destructive tone is on the button rather than the
  * row, and the device you are reading this on is labelled as such — Android's
  * list gives no such warning, and signing yourself out by accident from a list
  * of near-identical device names is a real way to lose an evening.
@@ -247,7 +247,7 @@ private fun DeviceRow(device: LinkedDevice, isUnlinking: Boolean, onEvent: (Acco
 
         if (device.canUnlink) {
             ZillitButton(
-                text = str(S.desktop_sign_out),
+                text = str(S.logout),
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 loading = isUnlinking,
@@ -284,12 +284,10 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
     val here = device?.isThisDevice == true
 
     ZillitDialogShell(
-        title = if (here) {
-            str(S.desktop_sign_this_computer_out)
-        } else {
-            str(S.desktop_sign_out_device, device?.displayName.orEmpty())
-        },
-        subtitle = if (here) str(S.desktop_sign_in_again_here) else null,
+        title = str(S.logout),
+        // The device named under the verb, so the title is the same word as
+        // every other Logout while still saying which device it means.
+        subtitle = if (here) str(S.desktop_sign_in_again_here) else device?.displayName,
         icon = ZillitIcons.Monitor,
         visible = device != null,
         onDismiss = { onEvent(AccountEvent.DismissUnlink) },
@@ -314,7 +312,7 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
                 onClick = { onEvent(AccountEvent.DismissUnlink) },
             )
             ZillitButton(
-                text = if (here) str(S.desktop_sign_out_here) else str(S.desktop_sign_out),
+                text = str(S.logout),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(AccountEvent.ConfirmUnlink) },
             )

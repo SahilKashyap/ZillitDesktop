@@ -223,8 +223,8 @@ class AccountScreenRenderTest {
             }
         }
 
-        onNodeWithText("Sign this computer out?").assertExists()
-        onNodeWithText("Sign out here").assertExists()
+        onNodeWithText("You will have to sign in again here.").assertExists()
+        onAllNodesWithText("Logout").onFirst().assertExists()
     }
 
     @Test

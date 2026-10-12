@@ -255,6 +255,7 @@ private fun RailFoot(
             isActive = false,
             expanded = expanded,
             onClick = requestSignOut,
+            danger = true,
         )
     }
     ColumnFooterScope.footer()
@@ -284,6 +285,8 @@ private fun RailButton(
     expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Logout: red, like every other Logout in the app. */
+    danger: Boolean = false,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -298,6 +301,7 @@ private fun RailButton(
         label = "railBackground",
     )
     val contentColor = when {
+        danger -> colors.danger
         isActive -> colors.accent
         hovered -> colors.textPrimary
         else -> colors.textSecondary
