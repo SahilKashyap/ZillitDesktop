@@ -69,6 +69,7 @@ class BankRecViewModel(
     internal val importActions = ImportActions(this, statements)
     internal val workspaceActions = WorkspaceActions(this)
     internal val matchActions = MatchActions(this)
+    internal val unmatchActions = UnmatchActions(this)
     internal val quickEntryActions = QuickEntryActions(this)
     internal val exceptionActions = ExceptionActions(this)
     internal val fraudActions = FraudActions(this)
@@ -123,6 +124,7 @@ class BankRecViewModel(
             importActions.onEvent(event) ||
             workspaceActions.onEvent(event) ||
             matchActions.onEvent(event) ||
+            unmatchActions.onEvent(event) ||
             quickEntryActions.onEvent(event) ||
             exceptionActions.onEvent(event) ||
             fraudActions.onEvent(event) ||

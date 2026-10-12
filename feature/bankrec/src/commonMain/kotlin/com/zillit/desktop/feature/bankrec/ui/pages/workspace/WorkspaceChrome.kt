@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -160,6 +161,8 @@ private fun RowScope.FilterGroup(state: BankRecUiState, view: WorkspaceView, onE
     val colors = ZillitTheme.colors
     val ws = state.workspace
     val counts = view.counts
+    // Unreconcile mode shows matched rows only, whatever the pill says.
+    val pills = !view.unreconcileMode
     ZillitText(
         text = listOfNotNull(
             view.period?.let(BankRecFormat::periodLabel),
@@ -174,13 +177,14 @@ private fun RowScope.FilterGroup(state: BankRecUiState, view: WorkspaceView, onE
         modifier = Modifier.weight(1f, fill = false),
     )
     Spacer(Modifier.width(4.dp))
-    FilterPill(str(S.desktop_br_filter_all, counts.all), BrTone.Green, ws.filter == WorkspaceFilter.All) {
+    FilterPill(str(S.desktop_br_filter_all, counts.all), BrTone.Green, ws.filter == WorkspaceFilter.All, pills) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.All))
     }
     FilterPill(
         str(S.desktop_br_filter_unmatched, counts.unmatched),
         BrTone.Red,
         ws.filter == WorkspaceFilter.Unmatched,
+        pills,
     ) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Unmatched))
     }
@@ -188,6 +192,7 @@ private fun RowScope.FilterGroup(state: BankRecUiState, view: WorkspaceView, onE
         str(S.desktop_br_filter_suggested, counts.suggested),
         BrTone.Amber,
         ws.filter == WorkspaceFilter.Suggested,
+        pills,
     ) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Suggested))
     }
@@ -195,9 +200,10 @@ private fun RowScope.FilterGroup(state: BankRecUiState, view: WorkspaceView, onE
         "\u26a0 " + str(S.desktop_br_filter_fraud, counts.fraud),
         BrTone.Red,
         ws.filter == WorkspaceFilter.Fraud,
+        pills,
         pulse = counts.fraud > 0,
     ) { onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Fraud)) }
-    FilterPill(str(S.desktop_br_filter_fx, counts.fx), BrTone.Teal, ws.filter == WorkspaceFilter.Fx) {
+    FilterPill(str(S.desktop_br_filter_fx, counts.fx), BrTone.Teal, ws.filter == WorkspaceFilter.Fx, pills) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Fx))
     }
 }
@@ -240,7 +246,14 @@ private fun ActionGroup(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) 
 
 /** A rounded count pill: tinted at rest, solid when it is the filter in force. */
 @Composable
-private fun FilterPill(label: String, tone: BrTone, active: Boolean, pulse: Boolean = false, onClick: () -> Unit) {
+private fun FilterPill(
+    label: String,
+    tone: BrTone,
+    active: Boolean,
+    enabled: Boolean = true,
+    pulse: Boolean = false,
+    onClick: () -> Unit,
+) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -248,10 +261,10 @@ private fun FilterPill(label: String, tone: BrTone, active: Boolean, pulse: Bool
     val content by animateColorAsState(if (active) colors.textOnAccent else tone.fg())
     val pulseAlpha = if (pulse && !active) pulseAlpha() else 1f
     Box(
-        Modifier.alpha(pulseAlpha).clip(CircleShape).background(background)
-            .border(1.dp, if (hovered && !active) tone.fg() else tone.edge(), CircleShape)
+        Modifier.alpha(if (enabled) pulseAlpha else DISABLED_ALPHA).clip(CircleShape).background(background)
+            .border(1.dp, if (hovered && !active && enabled) tone.fg() else tone.edge(), CircleShape)
             .hoverable(interaction)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 3.dp),
     ) {
         ZillitText(
@@ -360,7 +373,14 @@ private fun Balance(label: String, value: String) {
  * the exact figure on hover, and converted when the panel spans currencies.
  */
 @Composable
-internal fun PanelHeader(icon: ImageVector, title: String, subtitle: String, total: PanelTotal, caption: String) {
+internal fun PanelHeader(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    total: PanelTotal,
+    caption: String,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
     val colors = ZillitTheme.colors
     Row(
         Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -386,10 +406,51 @@ internal fun PanelHeader(icon: ImageVector, title: String, subtitle: String, tot
         }
     }
     ZillitDivider()
-    Box(Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(horizontal = 16.dp, vertical = 5.dp)) {
-        ZillitText(caption.uppercase(), style = eyebrow(9.5.sp), color = colors.textMuted, maxLines = 1)
+    // One fixed height for both panels' strips, so the buttons one of them carries
+    // don't push its rows below the other's.
+    Row(
+        Modifier.fillMaxWidth().height(CAPTION_HEIGHT).background(colors.surfaceSunken).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ZillitText(
+            caption.uppercase(),
+            style = eyebrow(9.5.sp),
+            color = colors.textMuted,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        trailing?.invoke(this)
     }
     ZillitDivider()
+}
+
+/**
+ * The bank strip's Unreconcile controls: the bulk button once rows are ticked,
+ * and the toggle — hidden while no line is matched, **Done** while the mode is
+ * on, and disabled with its reason on a signed-off period.
+ */
+@Composable
+internal fun RowScope.UnreconcileControls(view: WorkspaceView, onEvent: (BankRecEvent) -> Unit) {
+    if (view.unreconcileMode && view.tickedRows.isNotEmpty()) {
+        ZillitButton(
+            text = str(S.desktop_br_unreconcile_count, view.tickedRows.size),
+            onClick = { onEvent(BankRecEvent.AskUnmatch(view.tickedRows.map { it.id })) },
+            variant = ButtonVariant.Danger,
+            size = ButtonSize.Small,
+        )
+    }
+    if (!view.canToggleUnreconcile) return
+    val blocked = !view.unreconcileMode && view.periodComplete
+    ZillitTooltip(if (blocked) str(S.desktop_br_signed_off_cant_unreconcile) else "") {
+        ZillitButton(
+            text = if (view.unreconcileMode) str(S.done_text) else str(S.desktop_br_unreconcile),
+            onClick = { onEvent(BankRecEvent.SetUnreconcile(!view.unreconcileMode)) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = !blocked,
+        )
+    }
 }
 
 /** The counts as a legend, and the difference that decides whether the period is done. */
@@ -433,5 +494,7 @@ private fun SummaryCount(color: Color, label: String, count: Int, pulse: Boolean
 }
 
 private const val PULSE_LOW = 0.45f
+private const val DISABLED_ALPHA = 0.5f
+private val CAPTION_HEIGHT = 34.dp
 private val TOOLBAR_ONE_LINE = 940.dp
 private const val PULSE_MILLIS = 900

@@ -21,12 +21,21 @@ enum class ExceptionType(val wire: String, private val labelKey: String, private
     Interest("interest", S.desktop_interest, S.desktop_br_exc_interest_guidance),
     PettyCash("petty_cash", S.desktop_petty_cash, S.desktop_br_exc_petty_cash_guidance),
     Insurance("insurance", S.av_insurance, S.desktop_br_exc_insurance_guidance),
+
+    /** Raised beside every fraud alert, so the line can be quick-added. */
+    Fraud("fraud", S.desktop_fraud, S.desktop_br_exc_fraud_guidance),
     Unknown("unknown", S.desktop_unknown, S.desktop_br_exc_unknown_guidance),
     ;
 
     val label: String get() = str(labelKey)
 
     val guidance: String get() = str(guidanceKey)
+
+    /**
+     * What a quick add seeds its description with: the hint, except for a fraud
+     * exception, whose hint is about the alert and so never seeds the entry.
+     */
+    val seedsDescription: Boolean get() = this != Fraud
 
     companion object {
         fun from(wire: String?): ExceptionType =

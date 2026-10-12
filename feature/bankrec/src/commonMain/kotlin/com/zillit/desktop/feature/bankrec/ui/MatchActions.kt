@@ -35,7 +35,9 @@ internal class MatchActions(private val vm: BankRecViewModel) {
             BankRecEvent.DismissMatch -> if (!workspace.accepting) edit { copy(proposal = null) }
             BankRecEvent.ConfirmMatch -> confirmProposal()
             is BankRecEvent.OpenManualMatch ->
-                edit { copy(manualMatchId = event.transactionId, manualMatchEntryId = null) }
+                edit { copy(manualMatchId = event.transactionId, manualMatchEntryId = null, manualMatchQuery = "") }
+
+            is BankRecEvent.SearchManualMatch -> edit { copy(manualMatchQuery = event.query) }
 
             is BankRecEvent.PickManualMatch -> edit { copy(manualMatchEntryId = event.ledgerRowId) }
             BankRecEvent.CloseManualMatch ->

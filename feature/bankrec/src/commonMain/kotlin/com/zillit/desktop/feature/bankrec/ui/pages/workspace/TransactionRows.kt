@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,10 +28,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -71,15 +76,41 @@ internal class BankRowActions(
 )
 
 /**
+ * Unreconcile mode for one bank row: whether it is ticked, how to tick it, and
+ * the undo on its banner. Passed only while the mode is on.
+ */
+internal class UnreconcileRow(
+    val ticked: Boolean,
+    val onToggle: () -> Unit,
+    val onUnreconcile: () -> Unit,
+)
+
+/**
  * A line off the statement, as the web draws it: a status-coloured edge, a
  * tick when matched, the date, the payee and its reference, the amount in the
  * colour of its state, and the bars under it that say what to do next.
+ *
+ * In [unreconcile] mode every other bar and the FX bubble are hidden: a matched
+ * line gets a real selection box for its tick and one blue undo bar instead.
  */
 @Composable
-internal fun BankRowItem(row: BankRow, light: RowLight, fallbackCurrency: String, actions: BankRowActions) {
+internal fun BankRowItem(
+    row: BankRow,
+    light: RowLight,
+    fallbackCurrency: String,
+    actions: BankRowActions,
+    unreconcile: UnreconcileRow? = null,
+) {
     val colors = ZillitTheme.colors
     val status = row.status
     val fraud = status == TxnStatus.FraudFlag
+    val leading: @Composable () -> Unit = {
+        if (unreconcile != null && status == TxnStatus.Matched) {
+            UnreconcileBox(row.title, unreconcile)
+        } else {
+            MatchTick(status == TxnStatus.Matched)
+        }
+    }
     Column(
         Modifier.fillMaxWidth()
             .background(if (fraud) colors.dangerSoft.copy(alpha = 0.45f) else Color.Transparent),
@@ -89,7 +120,6 @@ internal fun BankRowItem(row: BankRow, light: RowLight, fallbackCurrency: String
             Column(Modifier.weight(1f)) {
                 MainLine(
                     light = light,
-                    matched = status == TxnStatus.Matched,
                     date = BankRecFormat.statementDay(row.txn.transactionDateMillis),
                     title = row.title,
                     reference = row.reference,
@@ -98,8 +128,13 @@ internal fun BankRowItem(row: BankRow, light: RowLight, fallbackCurrency: String
                     amountColor = amountColorFor(row.amount, status, light),
                     status = status,
                     onClick = actions.onClick,
+                    leading = leading,
                 )
-                Bars(row, fallbackCurrency, actions)
+                if (unreconcile == null) {
+                    Bars(row, fallbackCurrency, actions)
+                } else if (status == TxnStatus.Matched) {
+                    UndoBar(row.reconciledText.orEmpty(), unreconcile.onUnreconcile)
+                }
             }
         }
         ZillitDivider()
@@ -114,7 +149,6 @@ internal fun LedgerRowItem(row: LedgerRow, light: RowLight, fallbackCurrency: St
             Box(Modifier.width(3.dp).fillMaxHeight().background(row.status.tone.fg()))
             MainLine(
                 light = light,
-                matched = row.entry.isMatched,
                 date = BankRecFormat.statementDay(row.entry.displayDateMillis),
                 title = row.title,
                 reference = row.reference.ifBlank { BankRecFormat.DASH },
@@ -125,6 +159,7 @@ internal fun LedgerRowItem(row: LedgerRow, light: RowLight, fallbackCurrency: St
                     ?: ZillitTheme.colors.textDisabled,
                 status = row.status,
                 onClick = onClick,
+                leading = { MatchTick(row.entry.isMatched) },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -136,7 +171,6 @@ internal fun LedgerRowItem(row: LedgerRow, light: RowLight, fallbackCurrency: St
 @Composable
 private fun MainLine(
     light: RowLight,
-    matched: Boolean,
     date: String,
     title: String,
     reference: String,
@@ -145,6 +179,7 @@ private fun MainLine(
     amountColor: Color,
     status: TxnStatus,
     onClick: () -> Unit,
+    leading: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = ZillitTheme.colors
@@ -170,7 +205,7 @@ private fun MainLine(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MatchTick(matched)
+        leading()
         ZillitText(
             date,
             style = mono(10.5.sp, if (light == RowLight.None) FontWeight.Normal else FontWeight.SemiBold),
@@ -228,6 +263,20 @@ private fun MatchTick(checked: Boolean) {
     ) {
         if (checked) ZillitIcon(ZillitIcons.Check, tint = colors.textOnAccent, size = 9.dp)
     }
+}
+
+/**
+ * A matched line's selection box in unreconcile mode. Its click only ticks: it
+ * does not reach the row, which still cross-highlights.
+ */
+@Composable
+private fun UnreconcileBox(title: String, unreconcile: UnreconcileRow) {
+    val label = str(S.desktop_br_select_to_unreconcile, title)
+    ZillitCheckbox(
+        checked = unreconcile.ticked,
+        onCheckedChange = { unreconcile.onToggle() },
+        modifier = Modifier.semantics { contentDescription = label },
+    )
 }
 
 /** The status as a filled disc with its glyph — a flag pulses red instead. */
@@ -292,21 +341,7 @@ private fun SuggestionStrip(bar: SuggestionBar, row: BankRow, actions: BankRowAc
         SuggestionKind.Accepted -> ZillitIcons.Check
     }
     val actionColor = if (bar.kind == SuggestionKind.Match) ZillitTheme.colors.success else tone.fg()
-    Row(
-        modifier = Modifier.fillMaxWidth().background(tone.bg())
-            .border(1.dp, tone.edge(), RoundedCornerShape(0.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        ZillitIcon(icon, tint = tone.fg(), size = 11.dp)
-        ZillitText(
-            bar.text,
-            style = ZillitTheme.typography.labelSmall,
-            color = tone.fg(),
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
+    BarFrame(tone, icon, bar.text) {
         val firstMatched = row.txn.matchedInvoiceIds.firstOrNull()
         if (bar.viewsInvoice && bar.invoiceId != null) {
             BrLinkButton(
@@ -325,7 +360,46 @@ private fun SuggestionStrip(bar: SuggestionBar, row: BankRow, actions: BankRowAc
                 }
             })
         }
+        if (bar.quickAdd) BrLinkButton("${str(S.desktop_quick_add)} ›", actionColor, actions.onQuickAdd)
         bar.secondAction?.let { label -> BrLinkButton("$label ›", actionColor, actions.onManualMatch) }
+    }
+}
+
+/** Unreconcile mode's one banner on a matched line: what it is reconciled with, and the undo. */
+@Composable
+private fun UndoBar(text: String, onUnreconcile: () -> Unit) {
+    val tone = BrTone.Blue
+    Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 6.dp)) {
+        BarFrame(tone, ZillitIcons.Info, text) {
+            BrLinkButton("${str(S.desktop_br_unreconcile)} ›", tone.fg(), onUnreconcile)
+        }
+    }
+}
+
+/** A bar under a line: its glyph and words, then whatever actions it offers. */
+@Composable
+private fun BarFrame(
+    tone: BrTone,
+    icon: ImageVector,
+    text: String,
+    actions: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().background(tone.bg())
+            .border(1.dp, tone.edge(), RoundedCornerShape(0.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ZillitIcon(icon, tint = tone.fg(), size = 11.dp)
+        ZillitText(
+            text,
+            style = ZillitTheme.typography.labelSmall,
+            color = tone.fg(),
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        actions()
     }
 }
 

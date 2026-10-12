@@ -72,7 +72,8 @@ internal class ExceptionActions(private val vm: BankRecViewModel) {
         return QuickAddForm(
             date = BankRecFormat.isoDate(txn?.transactionDateMillis),
             invoiceNumber = txn?.reference.orEmpty(),
-            description = exception.type.guidance.ifBlank { exception.description }
+            description = exception.type.guidance.takeIf { exception.type.seedsDescription }.orEmpty()
+                .ifBlank { exception.description }
                 .ifBlank { txn?.description.orEmpty() },
             amount = amountText(amount),
         )

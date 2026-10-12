@@ -48,6 +48,13 @@ internal open class FakeBankRecRepository : BankRecRepository {
     var failingFxPosts: Set<String> = emptySet()
 
     val matches = mutableListOf<Triple<String, String, LedgerEntryKind>>()
+
+    /** Single unmatches, then bulk ones — the two routes the service has for it. */
+    val unmatches = mutableListOf<String>()
+    val bulkUnmatches = mutableListOf<List<String>>()
+
+    /** The message the single route answers with; bulk names none. */
+    var unmatchMessage: String? = "br_transaction_unmatched"
     val signOffs = mutableListOf<Pair<String, String>>()
     val deletes = mutableListOf<List<String>>()
     val statusChanges = mutableListOf<Pair<String, ExceptionStatus>>()
@@ -96,6 +103,16 @@ internal open class FakeBankRecRepository : BankRecRepository {
     override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit> {
         matches += Triple(id, entityId, kind)
         return ZillitResult.Success(Unit)
+    }
+
+    override suspend fun unmatchTransaction(id: String): ZillitResult<String?> {
+        unmatches += id
+        return ZillitResult.Success(unmatchMessage)
+    }
+
+    override suspend fun bulkUnmatchTransactions(transactionIds: List<String>): ZillitResult<String?> {
+        bulkUnmatches += transactionIds
+        return ZillitResult.Success(null)
     }
 
     override suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit> {

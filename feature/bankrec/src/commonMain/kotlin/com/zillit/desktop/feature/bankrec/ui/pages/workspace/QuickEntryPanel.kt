@@ -174,7 +174,8 @@ private val QuickEntryType.icon: ImageVector
 /**
  * The general form — posts through the line's exception and matches it.
  *
- * "Add & Match" needs a line to add, and an amount; the web's own rule. The
+ * "Add & Match" needs a line to add, and an amount; the web's own rule — any
+ * line picked with Quick Add will do, with or without an exception. The
  * fraud details under a Fraud Flag tile are the web's too, and like the web's
  * they are not sent anywhere: the service has no field for them.
  */
@@ -266,7 +267,7 @@ private fun ColumnScope.GeneralForm(
         onClick = { onEvent(BankRecEvent.AddAndMatch) },
         size = ButtonSize.Small,
         loading = entry.adding,
-        enabled = !entry.adding && adding?.txn?.exceptionId?.isNotBlank() == true && form.amount.isNotBlank(),
+        enabled = !entry.adding && adding != null && form.amount.isNotBlank(),
         modifier = Modifier.fillMaxWidth(),
     )
     if (adding == null) {
@@ -274,12 +275,6 @@ private fun ColumnScope.GeneralForm(
             str(S.desktop_br_choose_quick_add_hint),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
-        )
-    } else if (adding.txn.exceptionId.isBlank()) {
-        ZillitText(
-            str(S.desktop_br_no_exception_use_manual),
-            style = ZillitTheme.typography.labelSmall,
-            color = colors.warning,
         )
     }
 }

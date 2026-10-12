@@ -45,6 +45,7 @@ fun BankRecDialogs(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
     ImportDialog(state, onEvent)
     ConfirmMatchDialog(state, onEvent)
     ManualMatchDialog(state, onEvent)
+    UnmatchDialog(state, onEvent)
     SignOffDialog(state, onEvent)
     ExceptionQuickAddDialog(state, onEvent)
     AuditLogDialog(state, onEvent)

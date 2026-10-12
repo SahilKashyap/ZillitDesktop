@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.bankrec.domain.PreviewFraudAlert
 import com.zillit.desktop.feature.bankrec.domain.PreviewFx
 import com.zillit.desktop.feature.bankrec.domain.ProjectRates
 import com.zillit.desktop.feature.bankrec.domain.RulesSettings
+import com.zillit.desktop.feature.bankrec.domain.ServerCounts
 import com.zillit.desktop.feature.bankrec.domain.TxnStatus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -313,7 +314,24 @@ internal data class WorkspaceDto(
     @SerialName("transactions") val transactions: List<TransactionDto>? = null,
     @SerialName("invoices") val invoices: List<LedgerEntryDto>? = null,
     @SerialName("closing_zillit") val closingZillit: JsonElement? = null,
+    @SerialName("counts") val counts: JsonElement? = null,
 )
+
+/**
+ * `counts` off `workspace-data`: `all`, `matched`, `suggested`, `unmatched`,
+ * `fraud`, `fx`. Null for a response without the object, so the screen tallies
+ * the rows instead; a key that is missing or not a number stays null likewise.
+ */
+internal fun JsonElement?.asServerCounts(): ServerCounts? = asObject()?.let { counts ->
+    ServerCounts(
+        all = counts["all"].asInt(),
+        matched = counts["matched"].asInt(),
+        unmatched = counts["unmatched"].asInt(),
+        suggested = counts["suggested"].asInt(),
+        fraud = counts["fraud"].asInt(),
+        fx = counts["fx"].asInt(),
+    )
+}
 
 @Serializable
 internal data class BankAccountDto(

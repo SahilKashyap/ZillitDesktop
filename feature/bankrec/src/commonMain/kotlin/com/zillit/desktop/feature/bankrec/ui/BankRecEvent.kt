@@ -72,6 +72,16 @@ sealed interface BankRecEvent {
     data class PickManualMatch(val ledgerRowId: String?) : BankRecEvent
     data object CloseManualMatch : BankRecEvent
     data object ConfirmManualMatch : BankRecEvent
+    data class SearchManualMatch(val query: String) : BankRecEvent
+
+    /** The bank strip's Unreconcile / Done toggle. */
+    data class SetUnreconcile(val on: Boolean) : BankRecEvent
+    data class ToggleUnmatchTick(val rowId: String) : BankRecEvent
+
+    /** Unreconcile on a row's undo bar (one id) or the ticked rows' button (several) — confirmed first. */
+    data class AskUnmatch(val rowIds: List<String>) : BankRecEvent
+    data object DismissUnmatch : BankRecEvent
+    data object ConfirmUnmatch : BankRecEvent
 
     data object OpenSignOff : BankRecEvent
     data class EditSignOffNote(val note: String) : BankRecEvent
