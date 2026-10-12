@@ -298,6 +298,37 @@ class LiveKitApi(
         http.call(HttpVerb.Get, "$baseUrl/v1/meet/${meetId.encoded()}", null, projectId, userId)
 
     /**
+     * `POST /v1/meet/{meetId}/join` — a meet's join when the presence socket
+     * cannot carry `startCall`, and the only REST route that creates the rtc
+     * session: it starts an empty meet or joins a running one, pins the media
+     * node, and answers `{callId, started, livekit}`. Everyone sends the same
+     * meetId, so two people joining at once land in one session.
+     *
+     * Not `/v1/livekit/token`, which hands back a room token with no session
+     * behind it — no roster, no `callEnded`, possibly the wrong node (web
+     * `api.ts meetJoinRest`). `device_id` is the REST device id the presence
+     * handshake carries: the session is minted for `userId#device_id`. A
+     * backend without the route answers 404 `not_enabled`.
+     */
+    suspend fun meetJoin(
+        meetId: String,
+        userId: String,
+        displayName: String,
+        deviceId: String,
+        projectId: String?,
+    ): ZillitResult<MeetJoined> = http.call(
+        HttpVerb.Post,
+        "$baseUrl/v1/meet/${meetId.encoded()}/join",
+        buildJsonObject {
+            put("userId", JsonPrimitive(userId))
+            put("displayName", JsonPrimitive(displayName))
+            deviceId.takeIf { it.isNotBlank() }?.let { put("device_id", JsonPrimitive(it)) }
+        },
+        projectId,
+        userId,
+    ).reading("a meet join") { readMeetJoined(it) }
+
+    /**
      * `GET /v1/calls/{id}/me?userId=` — this user against the room; `inCall`
      * is true when any of their devices is in it.
      */

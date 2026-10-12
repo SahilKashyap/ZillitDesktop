@@ -499,9 +499,6 @@ sealed interface MeetLobbyEvent : CallEvent {
     data object ToggleMic : MeetLobbyEvent
     data object ToggleCamera : MeetLobbyEvent
     data object ToggleEveryone : MeetLobbyEvent
-
-    /** Whether the window showing the lobby has focus — the roster is not polled behind the user's back. */
-    data class Focus(val focused: Boolean) : MeetLobbyEvent
 }
 
 class CallViewModel(
@@ -950,7 +947,6 @@ class CallViewModel(
             MeetLobbyEvent.ToggleMic -> lobby.toggleMicrophone()
             MeetLobbyEvent.ToggleCamera -> lobby.toggleCamera()
             MeetLobbyEvent.ToggleEveryone -> lobby.toggleEveryone()
-            is MeetLobbyEvent.Focus -> lobby.setFocused(event.focused)
         }
     }
 

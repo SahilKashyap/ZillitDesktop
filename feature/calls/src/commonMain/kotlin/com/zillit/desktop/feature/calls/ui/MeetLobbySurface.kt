@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -37,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -86,10 +84,6 @@ internal fun MeetLobbySurface(
     hasVideoSurface: Boolean,
     onSlot: (LayoutCoordinates) -> Unit,
 ) {
-    // Polling stops while the window is in the background.
-    val focused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(focused) { onEvent(MeetLobbyEvent.Focus(focused)) }
-
     val title = lobby.title.ifBlank { lobby.info?.title.orEmpty() }.ifBlank { str(S.desktop_cal_section_meeting) }
     Box(
         modifier = Modifier
@@ -422,9 +416,7 @@ private fun StatusArea(lobby: MeetLobbyState, onEvent: (CallEvent) -> Unit) {
                 }
             }
             else -> {
-                if (status is MeetLobbyStatus.Error) {
-                    ZillitText(text = status.message(), color = MeetLobbyPalette.error)
-                }
+                lobby.problemText()?.let { ZillitText(text = it, color = MeetLobbyPalette.error) }
                 val joining = status == MeetLobbyStatus.Joining || lobby.handedOff
                 val fatal = status is MeetLobbyStatus.Error && status.fatal
                 PillButton(
@@ -581,6 +573,13 @@ internal fun meetNamesLine(people: List<MeetAttendee>): String {
 internal fun meetCountLine(count: Int): String =
     if (count == 1) str(S.desktop_meet_count_one) else str(S.desktop_meet_count_many, count)
 
+/** The red line over the button: the last error, or a refused microphone as soon as it is known. */
+private fun MeetLobbyState.problemText(): String? = when {
+    status is MeetLobbyStatus.Error -> status.message()
+    micBlocked -> str(S.desktop_meet_mic_needed)
+    else -> null
+}
+
 /**
  * What an error says. The three knock refusals stay three messages; an
  * unrecognised refusal names the server's word.
@@ -599,6 +598,7 @@ private val PROBLEM_TEXT: Map<MeetProblem, String> = mapOf(
     MeetProblem.NotAllowed to S.desktop_meet_not_allowed,
     MeetProblem.AlreadyOnAnotherCall to S.desktop_meet_on_another_call,
     MeetProblem.NotStarted to S.desktop_meet_not_started,
+    MeetProblem.AskHost to S.desktop_meet_ask_host,
     MeetProblem.NoJoinDetails to S.desktop_meet_no_details,
     MeetProblem.Network to S.desktop_meet_network,
     MeetProblem.Other to S.desktop_meet_network,

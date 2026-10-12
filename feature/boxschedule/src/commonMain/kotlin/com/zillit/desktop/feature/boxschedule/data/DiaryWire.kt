@@ -69,6 +69,34 @@ internal fun parseBlock(obj: JsonObject?): ScheduleBlock? {
     )
 }
 
+/**
+ * The event list, each server-expanded occurrence's call filled in from its
+ * series' master where the occurrence does not carry it — the web's
+ * `callFieldsOf` (Box Schedule `joinable.js`). The call fields may be stamped
+ * on the master alone; read bare, every occurrence of a series would have no
+ * Join, and a Line 1 series would read as Line 2. A no-op when the master is
+ * not in the list.
+ */
+internal fun parseEvents(data: JsonElement?): List<DiaryEvent> {
+    val rows = (data as? JsonArray).items().mapNotNull { it as? JsonObject }
+    val masters = rows.filter { it.text("masterEventId").isBlank() }.associateBy { it.text("_id", "id") }
+    return rows.mapNotNull { row ->
+        val masterId = row.text("masterEventId")
+        val master = masters[masterId]?.takeIf { masterId.isNotBlank() && it !== row }
+        parseEvent(if (master == null) row else row.withCallFieldsOf(master))
+    }
+}
+
+/** Absent or null on the occurrence — the web's `??` — taken from the master. */
+private fun JsonObject.withCallFieldsOf(master: JsonObject): JsonObject {
+    val inherited = SERIES_CALL_FIELDS
+        .filter { (this[it] == null || this[it] is JsonNull) && master[it] != null && master[it] !is JsonNull }
+        .associateWith { master.getValue(it) }
+    return if (inherited.isEmpty()) this else JsonObject(this + inherited)
+}
+
+private val SERIES_CALL_FIELDS = listOf("callType", "cncCallGroupId", "line")
+
 internal fun parseEvent(obj: JsonObject?): DiaryEvent? {
     if (obj == null) return null
     val id = obj.text("_id", "id")

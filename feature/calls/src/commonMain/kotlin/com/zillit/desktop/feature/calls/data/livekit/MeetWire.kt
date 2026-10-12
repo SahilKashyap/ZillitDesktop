@@ -82,6 +82,8 @@ enum class MeetProblem {
     NotAllowed,
     AlreadyOnAnotherCall,
     NotStarted,
+    /** A non-owner on an owner-started meet, with no socket to knock on. */
+    AskHost,
     NoJoinDetails,
     Network,
     Other,
@@ -113,6 +115,9 @@ sealed interface KnockAnswer {
     data class Refused(val problem: MeetProblem) : KnockAnswer
 }
 
+/** `POST /v1/meet/:meetId/join`. [started] is copy only — who started the session — never a branch. */
+data class MeetJoined(val started: Boolean, val credentials: LiveKitCredentials?)
+
 /** The REST fallback's answer — PATH B. */
 sealed interface MeetRest {
     data class Creds(val url: String, val token: String) : MeetRest
@@ -141,6 +146,11 @@ fun readMeetInfo(meetId: String, body: JsonElement?): MeetInfo? {
         endsAt = (obj["endsAt"] as? JsonPrimitive)?.longOrNull,
         timezone = obj.text("timezone").orEmpty(),
     )
+}
+
+fun readMeetJoined(body: JsonElement?): MeetJoined? {
+    val obj = body as? JsonObject ?: return null
+    return MeetJoined(started = obj.bool("started") == true, credentials = obj.readLiveKitCredentials())
 }
 
 fun readMeetPresence(body: JsonElement?): MeetPresence? {
@@ -196,6 +206,8 @@ fun meetProblemOf(word: String?): MeetProblem? = when (word?.trim()) {
     "not_authorized", "not_project_member",
     -> MeetProblem.NotAllowed
     "caller_busy" -> MeetProblem.AlreadyOnAnotherCall
+    // The socket's answer is a knock, checked before this; only REST, which cannot knock, gets here.
+    "not_allowed_to_start" -> MeetProblem.AskHost
     else -> null
 }
 

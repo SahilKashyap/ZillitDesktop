@@ -12564,4 +12564,6 @@
     <string name="desktop_tasks_hint_overdue_one">Overdue by 1 day</string>
     <string name="desktop_tasks_history_show_less">Show fewer</string>
     <string name="desktop_tasks_filter_self">Self tasks</string>
+    <string name="desktop_meet_ask_host">Ask the host to let you in</string>
+    <string name="desktop_call_added_you">%1$s added you to a call</string>
 </resources>

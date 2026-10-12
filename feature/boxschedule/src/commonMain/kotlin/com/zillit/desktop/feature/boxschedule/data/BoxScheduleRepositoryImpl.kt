@@ -228,9 +228,7 @@ class BoxScheduleRepositoryImpl(
 
     override suspend fun events(scheduleDayId: String?): ZillitResult<List<DiaryEvent>> =
         get("$base/events", scheduleDayId?.let { mapOf("scheduleDayId" to it) }.orEmpty())
-            .mapData { data ->
-                (data as? JsonArray).items().mapNotNull { parseEvent(it as? JsonObject) }
-            }
+            .mapData(::parseEvents)
 
     /**
      * The note kinds, with the Personal Note's label forced — the web's

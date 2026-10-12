@@ -326,6 +326,8 @@ data class CallSession(
     /** How many others besides us and the caller — drives "and 3 others". */
     val othersCount: Int = 0,
     val startedAtMillis: Long = 0,
+    /** Who added us to a call already under way, for the ring card; blank on a fresh call. */
+    val addedByName: String = "",
 ) {
     /**
      * True once we have what Agora needs to join.

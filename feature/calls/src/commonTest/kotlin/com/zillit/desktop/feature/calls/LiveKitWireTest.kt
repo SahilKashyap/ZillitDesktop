@@ -80,6 +80,23 @@ class LiveKitWireTest {
     }
 
     @Test
+    fun `a ring for an add names who added us, and a fresh call names nobody`() {
+        fun session(extra: String) = assertIs<LiveKitEvent.IncomingCall>(
+            assertIs<LiveKitFrame.Event>(
+                parseLiveKitFrame(
+                    """{"type":"incomingCall","callId":"c1","callType":"audio","callMode":"group",
+                       "from":{"userId":"u-a","displayName":"Asha"}$extra}""",
+                ),
+            ).event,
+        ).invite.toSession(selfUserId = "me", selfDeviceId = "d")
+
+        assertEquals("Ben", session(""","initCallStartMode":"private","addedBy":{"displayName":"Ben"}""").addedByName)
+        assertEquals("Asha", session(""","initCallStartMode":"private"""").addedByName, "a grown 1:1 without addedBy")
+        assertEquals("", session(""","initCallStartMode":"group"""").addedByName)
+        assertEquals("", session("").addedByName)
+    }
+
+    @Test
     fun `ring states land on the statuses the coordinator already knows`() {
         fun status(type: String) =
             (parseLiveKitFrame("""{"type":"$type","callId":"c","userId":"u"}""") as LiveKitFrame.Event)

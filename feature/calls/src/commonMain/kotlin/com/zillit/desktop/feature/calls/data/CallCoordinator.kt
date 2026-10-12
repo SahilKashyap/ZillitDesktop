@@ -65,6 +65,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -1029,7 +1031,20 @@ class CallCoordinator(
         scope.launch { watchInviteExpiry() }
         scope.launch { listenGuestRequests() }
         scope.launch { logRosterChanges() }
+        scope.launch { refreshRosterAfterReconnect() }
         groupCalls.start()
+    }
+
+    /**
+     * The presence socket is back while a Line 1 call is up: whatever changed
+     * in the room while it was down — someone added, someone gone — is read
+     * again, re-seeded, rather than left as it stood when the socket dropped.
+     */
+    private suspend fun refreshRosterAfterReconnect() {
+        val line = line3 ?: return
+        line.online.drop(1).filter { it }.collect {
+            if (_phase.value == CallPhase.InCall) refreshRoster(force = true)
+        }
     }
 
     // ── Outgoing ────────────────────────────────────────────────────────

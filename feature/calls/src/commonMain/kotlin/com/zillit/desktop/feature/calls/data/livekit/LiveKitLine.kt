@@ -32,6 +32,8 @@ data class LiveKitIdentity(
     val displayName: String,
     val projectId: String,
     val projectName: String,
+    /** The REST device id the presence handshake carries; blank when unknown. */
+    val deviceId: String = "",
 )
 
 /** Why a ring this device was showing is over, without the call having been answered here. */

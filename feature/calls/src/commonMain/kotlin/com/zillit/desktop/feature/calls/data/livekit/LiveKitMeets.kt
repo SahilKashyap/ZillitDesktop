@@ -5,7 +5,9 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.calls.domain.CallType
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -15,7 +17,7 @@ import kotlinx.serialization.json.buildJsonObject
 /**
  * A Line 1 MEET's join on the wire — the steps the lobby takes, each one call:
  * resolve the link, ask about a second device, the socket's `startCall` with
- * `callMode: "meet"`, the knock, and the REST mint for when the socket cannot.
+ * `callMode: "meet"`, the knock, and the REST join for when the socket cannot.
  *
  * Owned by [LiveKitLine], whose presence connection it borrows ([peer]) and
  * which routes `guestAdmitted` / `guestDeclined` here. The ORDER of the steps
@@ -78,10 +80,12 @@ class LiveKitMeets internal constructor(
      * media node and hands back the room in its ack. Rings nobody.
      *
      * Only on the presence socket; anything this path cannot settle is
-     * [MeetStart.UseRest]. Never run beside the REST path.
+     * [MeetStart.UseRest]. Never run beside the REST path. A socket that is
+     * redialling gets [SOCKET_WAIT_MILLIS] to come back first — a press just
+     * after the network returns should still take the path that can knock.
      */
     suspend fun startMeet(meetId: String, video: Boolean): MeetStart {
-        val live = peer() ?: return MeetStart.UseRest("presence socket down")
+        val live = awaitPeer() ?: return MeetStart.UseRest("presence socket down")
         val me = identity() ?: return MeetStart.UseRest("signed out")
         return runCatching {
             withTimeout(START_TIMEOUT_MILLIS) { live.request("startCall", startFields(meetId, video, me)) }
@@ -104,6 +108,15 @@ class LiveKitMeets internal constructor(
         else -> meetProblemOf(REFUSALS.firstOrNull { message.contains(it) })
             ?.let { MeetStart.Refused(it, message) }
             ?: MeetStart.UseRest("startCall: $message")
+    }
+
+    private suspend fun awaitPeer(): LiveKitPeer? = peer() ?: withTimeoutOrNull(SOCKET_WAIT_MILLIS) {
+        var live = peer()
+        while (live == null) {
+            delay(SOCKET_POLL_MILLIS)
+            live = peer()
+        }
+        live
     }
 
     private fun startFields(meetId: String, video: Boolean, me: LiveKitIdentity) = buildJsonObject {
@@ -174,15 +187,44 @@ class LiveKitMeets internal constructor(
     }
 
     /**
-     * PATH B, only when the socket cannot carry the join: mint over REST, and
-     * only for a room that is RUNNING. An unstarted meet has no pinned node,
-     * so a mint would fall back to the default region and a socket joiner who
-     * later pins it elsewhere would sit in a same-named room on another
-     * LiveKit instance — the two never hear each other. Never after a knock.
+     * PATH B, only when the socket cannot carry the join: `POST …/join`,
+     * which starts the meet or joins it on its pinned node — so a REST joiner
+     * and a socket joiner always share one room. A non-owner on an
+     * owner-started meet is refused [MeetProblem.AskHost]: knocking needs the
+     * socket. Never after a knock.
+     *
+     * A backend without that route (404 `not_enabled`) gets the older path:
+     * a token minted for a room that is already RUNNING, and nothing for one
+     * that is not — an unstarted meet has no pinned node, and a mint would
+     * put this joiner in a same-named room nobody else is in.
      */
     suspend fun joinMeetOverRest(meetId: String): MeetRest {
         val me = identity() ?: return MeetRest.Refused(MeetProblem.Other, "signed out")
         val projectId = me.projectId.takeIf { it.isNotBlank() }
+        return when (val joined = api.meetJoin(meetId, me.userId, me.displayName, me.deviceId, projectId)) {
+            is ZillitResult.Success -> {
+                ZillitLog.i(TAG) { "meet $meetId joined over REST (started=${joined.data.started})" }
+                val creds = joined.data.credentials
+                if (creds != null && creds.isUsable) {
+                    MeetRest.Creds(creds.url, creds.token)
+                } else {
+                    MeetRest.Refused(MeetProblem.NoJoinDetails)
+                }
+            }
+            is ZillitResult.Failure -> {
+                val http = joined.error as? ZillitError.Http
+                if (http?.status == HTTP_NOT_FOUND && meetProblemOf(http.serverMessage) == null) {
+                    ZillitLog.i(TAG) { "meet $meetId: no REST join here (${http.serverMessage}); minting" }
+                    mintForRunningMeet(meetId, me, projectId)
+                } else {
+                    ZillitLog.w(TAG) { "meet $meetId REST join refused: ${joined.error.technical}" }
+                    refused(joined.error)
+                }
+            }
+        }
+    }
+
+    private suspend fun mintForRunningMeet(meetId: String, me: LiveKitIdentity, projectId: String?): MeetRest {
         when (val state = api.activeState(meetId, projectId, me.userId)) {
             is ZillitResult.Failure -> {
                 ZillitLog.w(TAG) { "meet $meetId active check failed: ${state.error.technical}" }
@@ -234,6 +276,10 @@ class LiveKitMeets internal constructor(
 
         /** The contract's ceiling on a meet's `startCall` ack before the REST path. */
         const val START_TIMEOUT_MILLIS = 5_000L
+
+        /** How long a Join waits for a redialling socket before taking REST — the web's `MEET_SOCKET_WAIT_MS`. */
+        const val SOCKET_WAIT_MILLIS = 2_000L
+        const val SOCKET_POLL_MILLIS = 100L
         const val HTTP_NOT_FOUND = 404
 
         /** The refusals a meet's `startCall` can end in, matched inside the error text. */
