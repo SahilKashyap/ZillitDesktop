@@ -12822,4 +12822,27 @@
     <string name="desktop_pc_collect_date_label">Collect Date</string>
     <string name="desktop_pc_ref">Ref.</string>
     <string name="desktop_pc_submitted_on_label">Submitted On</string>
+    <string name="desktop_hub_tc_dept_empty_note">No department has its own control model or completer yet. The desktop has no Department Setup page — set them up in the web app.</string>
+    <string name="desktop_hub_tc_appr_empty_note">No approval flow is set yet. The desktop has no Time Card Approvers page — set the default levels and department overrides in the web app.</string>
+    <string name="desktop_hub_po_tile_description">Defaults for the PO module — description formatting, rental-split handling, and auto-assignment rules.</string>
+    <string name="desktop_hub_sp_card_float_from_hint">Start of card float account range.</string>
+    <string name="desktop_hub_sp_card_float_to_hint">End of card float account range.</string>
+    <string name="desktop_inv_put_on_hold">Put on hold</string>
+    <string name="desktop_po_total_no_rate_note">Some amounts had no exchange rate (added at face value)</string>
+    <string name="desktop_hub_pa_remove_title_many">Remove payroll accounts</string>
+    <string name="desktop_hub_pa_remove_one">1 account will be deactivated in the Chart of Accounts. This fails if a code is in use or has active child accounts.</string>
+    <string name="desktop_hub_pa_remove_many">%1$d accounts will be deactivated in the Chart of Accounts. This fails if a code is in use or has active child accounts.</string>
+    <string name="desktop_hub_pa_and_one_other">1 other change will be saved in the same step.</string>
+    <string name="desktop_hub_pa_and_n_other">%1$d other changes will be saved in the same step.</string>
+    <string name="desktop_hub_pa_removal_hint">Removing a row, or unticking Active, deactivates the code in the chart. Nothing is saved until you press Save.</string>
+    <string name="desktop_po_assign_target">Assign %1$s</string>
+    <string name="desktop_po_currently_assigned_to">Currently assigned to:</string>
+    <string name="desktop_po_reason_for_reassignment">Reason for reassignment</string>
+    <string name="desktop_tax_code_not_in_chart_title">Code not in Chart of Accounts</string>
+    <string name="desktop_tax_code_not_in_chart_body">Code %1$s is not in this production\'s Chart of Accounts. Add it to Box %2$d anyway? It will be saved with the mapping as typed.</string>
+    <string name="desktop_payroll_approved_today">Approved Today</string>
+    <string name="desktop_payroll_timecards_word">timecards</string>
+    <string name="desktop_po_unsaved_leave_message">You have unsaved changes on this page. Leaving will discard them. Are you sure?</string>
+    <string name="desktop_po_resets_approvals">(resets approvals)</string>
+    <string name="desktop_po_set_approver">Set Approver →</string>
 </resources>
