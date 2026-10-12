@@ -819,6 +819,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                                 accounts = state.chart.accounts,
                                 placeholder = "e.g. 5001",
                                 onCreate = quickCreateHandler(state, onEvent),
+                                allowFreeText = true,
                             )
                         }
                     }

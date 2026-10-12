@@ -271,7 +271,10 @@ object HubNavigation {
     fun visibleTo(viewer: AccountHubViewer): List<HubSection> =
         sections.mapNotNull { section ->
             val items = section.items.filter { item ->
-                val allowedByRole = viewer.isAccountant || viewer.isAdmin || item.forDepartmentUsers
+                // The accounts department only, as the web's sidebar: a production
+                // admin outside accounts gets the department rows like anyone else.
+                // Their Companies page lives in Admin Settings, not here.
+                val allowedByRole = viewer.isAccountant || item.forDepartmentUsers
                 // An accountant's rows ride on the hub's own right, as on the
                 // web (`useAccountHubViewGate`: entered through the hub, every
                 // module is gated on `account_hub_tool` alone). Requiring each

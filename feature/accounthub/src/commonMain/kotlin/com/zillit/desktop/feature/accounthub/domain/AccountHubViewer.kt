@@ -86,14 +86,15 @@ data class AccountHubViewer(
     /**
      * Whether this particular vendor may be edited or deleted.
      *
-     * The web's own rule, per row: the accounts team may change any vendor, and
-     * the person who added one may change theirs. The blank-id check is
+     * The web's own rule, per row (`VendorsModule`): the accounts team may change
+     * any vendor, and the person who added one may change theirs — an admin
+     * outside accounts included, who has no more say than anyone else. The blank-id check is
      * load-bearing — a vendor with no recorded adder and a viewer with no id
      * would otherwise compare equal and hand every row to every viewer.
      */
     fun mayModifyVendor(vendor: Vendor): Boolean {
         if (!canPost) return false
-        if (isAccountant || isAdmin) return true
+        if (isAccountant) return true
         return userId.isNotBlank() && vendor.addedBy == userId
     }
 
