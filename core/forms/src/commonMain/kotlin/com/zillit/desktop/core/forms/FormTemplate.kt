@@ -328,9 +328,15 @@ data class FormTemplate(val sections: List<FormSection> = emptyList()) {
     }
 }
 
-/** `"Budget Code"` becomes `budget_code`. The form's key for the field. */
+/**
+ * `"Budget Code"` becomes `budget_code`. The form's key for the field.
+ *
+ * ASCII letters and digits only, as the web's `/[^a-z0-9]+/g` — so "Équipe"
+ * is `quipe` on both, and a custom field gets the same stored key whichever
+ * client made it.
+ */
 fun fieldLabelFor(name: String): String = name.trim().lowercase()
-    .map { if (it.isLetterOrDigit()) it else '_' }
+    .map { if (it in 'a'..'z' || it in '0'..'9') it else '_' }
     .joinToString("")
     .split('_')
     .filter { it.isNotEmpty() }

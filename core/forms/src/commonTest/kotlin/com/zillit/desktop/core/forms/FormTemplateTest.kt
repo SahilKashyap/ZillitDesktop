@@ -134,6 +134,7 @@ class FormTemplateTest {
         assertEquals("budget_code", fieldLabelFor("Budget Code"))
         assertEquals("cost_category", fieldLabelFor("  Cost Category!  "))
         assertEquals("custom_field", fieldLabelFor("!!!"))
+        assertEquals("quipe", fieldLabelFor("Équipe"))
     }
 
     /**

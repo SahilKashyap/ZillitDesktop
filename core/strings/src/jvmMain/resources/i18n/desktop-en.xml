@@ -12765,4 +12765,15 @@
     <string name="desktop_td_eg_g_mpvs">MPVs</string>
     <string name="desktop_td_eg_g_signature">Performer’s signature</string>
     <string name="desktop_td_eg_g_objection">Objection</string>
+    <string name="desktop_po_save_delivery_address_future">Save this delivery address for future use</string>
+    <string name="desktop_po_invalid_email_format">Invalid email format</string>
+    <string name="desktop_payroll_send_to_run">Send to Payroll Run</string>
+    <string name="desktop_payroll_send_to_run_count">Send %1$d to Payroll Run</string>
+    <string name="desktop_payroll_send_to_run_explainer">Moves the selected timecard weeks straight into the Payroll Run, skipping every approval tier. Pending approvers no longer need to act.</string>
+    <string name="desktop_payroll_send_to_run_confirm">Send to Run</string>
+    <string name="desktop_payroll_sent_to_run_one">1 timecard sent to the Payroll Run.</string>
+    <string name="desktop_payroll_sent_to_run_many">%1$d timecards sent to the Payroll Run.</string>
+    <string name="desktop_payroll_nothing_sent">Nothing was sent. %1$s</string>
+    <string name="desktop_payroll_sent_some_failed">%1$d sent, %2$d failed: %3$s</string>
+    <string name="desktop_payroll_pick_week_for_run">Tick the weeks you want to send to the Payroll Run</string>
 </resources>
