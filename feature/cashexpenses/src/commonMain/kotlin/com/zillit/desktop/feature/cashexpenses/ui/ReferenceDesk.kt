@@ -19,7 +19,7 @@ internal class ReferenceDesk(private val host: CashHost, private val sources: Ca
 
     private var chartJob: Job? = null
 
-    /** Currencies and departments, once per production — from `start`. */
+    /** Currencies, departments and tax types, once per production — from `start`. */
     fun load() {
         chartJob?.cancel()
         host.work {
@@ -29,6 +29,10 @@ internal class ReferenceDesk(private val host: CashHost, private val sources: Ca
         host.work {
             val loaded = sources.departments()
             host.update { copy(departments = loaded, assignees = CashDepartments.withIds(assignees, loaded)) }
+        }
+        host.work {
+            val loaded = sources.taxTypes()
+            host.update { copy(taxTypes = loaded) }
         }
     }
 

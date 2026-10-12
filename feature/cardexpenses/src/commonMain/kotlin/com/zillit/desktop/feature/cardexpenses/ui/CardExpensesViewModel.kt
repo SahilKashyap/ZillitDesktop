@@ -8,6 +8,7 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.data.cardRefreshes
+import com.zillit.desktop.feature.cardexpenses.data.cardRightsChanges
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
 import com.zillit.desktop.feature.cardexpenses.domain.CardCrewHost
@@ -210,6 +211,29 @@ class CardExpensesViewModel(
             launch {
                 cardRefreshes(bus).collect { currentState.destination.let(::load) }
             }
+            launch { cardRightsChanges(bus).collect { refreshRights() } }
+        }
+    }
+
+    /**
+     * Re-reads the module's metadata and settings after somebody changed who
+     * may do what — the web's `ah:card:settings`. Only the metadata and the
+     * settings document move: the viewer's identity and the door are kept, an
+     * edit in progress on the settings page is not overwritten, and a page the
+     * new rights no longer allow gives way to the landing page.
+     */
+    private suspend fun refreshRights() {
+        val metadata = repository.metadata().getOrNull()
+        val loaded = repository.settings().getOrNull()
+        setState {
+            val providers = loaded?.providers ?: viewer.metadata.cardProviders
+            val settled = viewer.copy(metadata = (metadata ?: viewer.metadata).copy(cardProviders = providers))
+            copy(
+                viewer = settled,
+                settings = loaded ?: settings,
+                settingsDraft = settingsDraft ?: loaded,
+                destination = destination.takeIf { it.visibleTo(settled) } ?: CardDestination.landing(settled),
+            )
         }
     }
 

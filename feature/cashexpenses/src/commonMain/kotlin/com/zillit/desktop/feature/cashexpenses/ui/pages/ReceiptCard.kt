@@ -103,9 +103,10 @@ internal fun ReceiptCard(
     accounts: List<CashAccount>?,
     mode: ReceiptCardMode,
     onEvent: (CashEvent) -> Unit,
+    recoverable: Set<String> = emptySet(),
 ) {
     val colors = ZillitTheme.colors
-    val coded = CashRules.isCoded(claim)
+    val coded = CashRules.isCoded(claim, recoverable)
     val done = claim.isVerified || coded
     fun edit(field: ClaimField, value: String) = onEvent(BatchEvent.EditClaim(claim.id, field, value))
 
@@ -256,7 +257,7 @@ internal fun ReceiptCard(
                     )
                 }
             }
-            if (claim.lineItems.isNotEmpty()) LinesSummary(claim, currency, formatMoney)
+            if (claim.lineItems.isNotEmpty()) LinesSummary(claim, currency, formatMoney, recoverable)
         }
 
         Column(
@@ -278,10 +279,15 @@ internal fun ReceiptCard(
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Each line with its kind, code and amount.
 @Composable
-private fun LinesSummary(claim: Claim, currency: String?, formatMoney: (Double, String?) -> String) {
+private fun LinesSummary(
+    claim: Claim,
+    currency: String?,
+    formatMoney: (Double, String?) -> String,
+    recoverable: Set<String>,
+) {
     val colors = ZillitTheme.colors
     val lines = LineItemEditor.fromWire(claim.lineItems)
-    val sum = LineItemEditor.total(lines)
+    val sum = LineItemEditor.total(lines, recoverable)
     val gross = claim.grossAmount
     val diff = gross - sum
     val ok = abs(diff) < SPLIT_PENNY

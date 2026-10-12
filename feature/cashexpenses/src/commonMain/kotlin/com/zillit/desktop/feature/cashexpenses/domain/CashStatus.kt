@@ -116,7 +116,9 @@ enum class FloatStatus(val wire: String) {
             AwaitingApproval -> str(S.dm_filter_status_pending)
             Approved, AcctOverride -> str(S.approved)
             ReadyToCollect -> str(S.desktop_ce_ready_to_collect)
-            Collected, Active -> str(S.desktop_ce_collected)
+            Collected -> str(S.desktop_ce_collected)
+            // The legacy alias reads as itself, as the web's FLOAT_STATUS_MAP has it.
+            Active -> str(S.active)
             Spending -> str(S.desktop_ce_spending)
             Spent -> str(S.ah_spent_label)
             PendingReturn -> str(S.desktop_ce_pending_return)

@@ -211,13 +211,16 @@ fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = build
  * The batch table's columns. Identical everywhere a batch is listed, except
  * the total column: [amount] defaults to the claim's own gross, but Payment
  * Routing reads `reimbursement_amount` instead — what is actually owed back,
- * which is not always the claim's full receipt total.
+ * which is not always the claim's full receipt total. [extra] columns sit
+ * just before Status.
  */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 fun batchColumns(
     accountant: Boolean,
     compact: Boolean = false,
     amount: (ClaimBatch) -> Double = { it.totalGross },
+    /** Columns a page adds ahead of Status — Payment Routing's payee. */
+    extra: List<TableColumn<ClaimBatch>> = emptyList(),
 ): List<TableColumn<ClaimBatch>> = buildList {
     add(
         textColumn(str(S.desktop_reference), ColumnWidth.Weight(1.2f)) {
@@ -240,6 +243,7 @@ fun batchColumns(
     if (!compact) {
         add(textColumn(str(S.txt_submitted), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
     }
+    addAll(extra)
     add(
         TableColumn(
             header = str(S.status),

@@ -62,6 +62,21 @@ val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
 ).map(::SocketEventName)
 
 /**
+ * What changes who may do what on this tool: the settings document (approval
+ * tiers, override rights, coding rule, request cap, providers) and a team
+ * member's posting rights. The web re-reads `/metadata` and `/settings` on
+ * both (`ah:card:settings`); `/metadata` was only ever read at open here, so a
+ * newly made coordinator or approver had no queue tab until a restart.
+ */
+val CARD_RIGHTS_EVENTS: List<SocketEventName> = listOf(
+    "card:settings:updated", "card:team:posting_rights_updated",
+).map(::SocketEventName)
+
+/** One pulse per burst of rights changes, or empty without a bus. */
+internal fun cardRightsChanges(bus: SocketEventBus?): Flow<Unit> =
+    bus?.onAny(CARD_RIGHTS_EVENTS)?.map { }?.conflate() ?: emptyFlow()
+
+/**
  * One pulse per burst of card traffic, or empty without a bus.
  *
  * Conflated because a statement import emits a frame per transaction and a

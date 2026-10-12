@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashAttachmentUploader
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrency
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
+import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
 import com.zillit.desktop.feature.cashexpenses.domain.CashReferenceSources
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.ui.CashBadges
@@ -66,8 +67,25 @@ internal fun AppGraph.Ready.cashReferenceSources() = CashReferenceSources(
     currencies = { cashCurrencies() },
     departments = { cashDepartments() },
     chartAccounts = { cashChartAccounts() },
+    taxTypes = { cashTaxTypes() },
     uploader = cashAttachmentUploader(),
 )
+
+/**
+ * Production Setup's Tax Types — the rates a receipt line can be coded to and
+ * which of them are reclaimable. A failed read answers none, and the coding
+ * editor falls back to its free-text VAT % field.
+ */
+internal suspend fun AppGraph.Ready.cashTaxTypes(): List<CashTaxType> =
+    accountHubRepository.taxTypes().getOrNull().orEmpty().map {
+        CashTaxType(
+            identifier = it.identifier.ifBlank { it.label },
+            label = it.label.ifBlank { it.identifier },
+            rate = it.value.removeSuffix("%").trim().toDoubleOrNull(),
+            recoverable = it.isRecoverable,
+            country = it.country,
+        )
+    }
 
 /**
  * Production Setup's Project Currencies and default — the same read the

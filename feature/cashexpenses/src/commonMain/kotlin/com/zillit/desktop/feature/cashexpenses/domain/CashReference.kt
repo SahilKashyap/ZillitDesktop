@@ -71,6 +71,30 @@ data class CashCurrencies(
     }
 }
 
+/**
+ * A Production Setup tax type — what a line's Tax select offers
+ * (`useProjectTaxTypes`).
+ *
+ * [rate] is the whole percent (20.0), null for a type that carries none;
+ * [recoverable] is the web's `is_recoverable`, the flag that sends a line's
+ * tax to the reclaimable-tax line.
+ */
+data class CashTaxType(
+    /** What a line's `tax_type` stores — the posting key. */
+    val identifier: String,
+    val label: String,
+    val rate: Double? = null,
+    val recoverable: Boolean = false,
+    val country: String = "",
+) {
+    /** "VAT · 20%", the web's option label. */
+    val optionLabel: String
+        get() = rate?.let { "$label · ${if (it == it.toLong().toDouble()) it.toLong() else it}%" } ?: label
+}
+
+/** The identifiers whose tax is recoverable — `makeRecoverablePredicate`. */
+fun List<CashTaxType>.recoverableIds(): Set<String> = filter { it.recoverable }.mapTo(mutableSetOf()) { it.identifier }
+
 /** A department of the production — the Account Hub's department list. */
 data class CashDepartment(val id: String, val name: String)
 
@@ -203,7 +227,7 @@ object CashFloatOrder {
 
 /**
  * The host seams for the production's reference data, bundled — one
- * constructor argument on the view model rather than four.
+ * constructor argument on the view model rather than five.
  *
  * Each answers the empty value on a failed read rather than throwing: money
  * then shows in [CashCurrencies.LEGACY_DEFAULT], pickers are empty, and
@@ -219,6 +243,8 @@ class CashReferenceSources(
     val departments: suspend () -> List<CashDepartment> = { emptyList() },
     /** The chart of accounts, read on first need. */
     val chartAccounts: suspend () -> List<CashAccount> = { emptyList() },
+    /** Production Setup's tax types, for the coding editor's Tax select. */
+    val taxTypes: suspend () -> List<CashTaxType> = { emptyList() },
     /** Picks and stores a receipt; null refuses the attach. */
     val uploader: CashAttachmentUploader? = null,
 )

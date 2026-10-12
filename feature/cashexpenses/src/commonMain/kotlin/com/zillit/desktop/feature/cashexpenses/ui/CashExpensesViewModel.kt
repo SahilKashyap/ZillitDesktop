@@ -193,6 +193,7 @@ class CashExpensesViewModel(
                 lockedThrough = null,
                 chartAccounts = null,
                 departments = emptyList(),
+                taxTypes = emptyList(),
                 currencies = CashCurrencies(),
                 floatDetail = null,
             )
@@ -348,9 +349,8 @@ class CashExpensesViewModel(
 
             is CashEvent.OpenCoding -> openCoding(event.batchId, event.claimId)
             CashEvent.CloseCoding -> setState { copy(coding = null) }
-            is CashEvent.EditCodingLine -> editCoding {
-                copy(lines = lines.mapIndexed { index, line -> if (index == event.index) event.line else line })
-            }
+            is CashEvent.EditCodingLine -> editCoding { editLine(event.index, event.line) }
+            CashEvent.ResetCodingTax -> editCoding { resetTax(newLineId) }
 
             CashEvent.AddCodingLine -> editCoding {
                 // The new line starts at whatever is still uncoded, which is
@@ -358,7 +358,12 @@ class CashExpensesViewModel(
                 copy(lines = lines + EditorLine(id = newLineId(), unitPrice = remaining.coerceAtLeast(0.0)))
             }
 
-            is CashEvent.RemoveCodingLine -> editCoding { copy(lines = LineItemEditor.remove(lines, event.id)) }
+            is CashEvent.RemoveCodingLine -> editCoding {
+                // Removing the tax line gives it back to the lines: it returns
+                // at the recoverable tax they carry, or not at all.
+                val tax = lines.firstOrNull { it.id == event.id }?.extras?.isTax == true
+                copy(lines = LineItemEditor.remove(lines, event.id), taxOverridden = taxOverridden && !tax)
+            }
             is CashEvent.SplitCodingLine -> editCoding {
                 copy(lines = LineItemEditor.split(lines, event.id, event.ways, newLineId))
             }
@@ -685,6 +690,7 @@ class CashExpensesViewModel(
         setState {
             copy(
                 coding = CodingDraft(
+                    taxTypes = taxTypes,
                     batchId = batchId,
                     claimId = claimId,
                     receiptGross = claim.grossAmount,
@@ -701,14 +707,15 @@ class CashExpensesViewModel(
                             ),
                         )
                     },
-                ),
+                ).opened(newLineId),
             )
         }
     }
 
+    /** A change to the open coding, with the tax line brought back in line with the lines it follows. */
     private fun editCoding(change: CodingDraft.() -> CodingDraft) = setState {
         val open = coding ?: return@setState this
-        copy(coding = open.change())
+        copy(coding = open.change().derived(newLineId))
     }
 
     /**
@@ -727,7 +734,7 @@ class CashExpensesViewModel(
             return
         }
 
-        val lines = LineItemEditor.toWire(draft.lines, newLineId)
+        val lines = LineItemEditor.toWire(draft.savedLines, newLineId)
         // The editor closes only on a saved coding; a failed save keeps the
         // hand-entered lines open for a retry instead of discarding them.
         act(str(S.desktop_card_coding_saved), onSuccess = { copy(coding = null) }) {

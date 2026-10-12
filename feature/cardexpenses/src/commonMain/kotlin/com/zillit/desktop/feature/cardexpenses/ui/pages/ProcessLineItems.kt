@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -46,6 +48,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ProcessLines
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessRefs
 import com.zillit.desktop.feature.cardexpenses.domain.TaxLineDraft
 import com.zillit.desktop.feature.cardexpenses.domain.TrackingSet
+import com.zillit.desktop.feature.cardexpenses.ui.components.CardCalc
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessDraft
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
@@ -437,6 +440,11 @@ private fun TagsField(
 /**
  * A money field that keeps what is typed ("12." stays "12.") and only takes
  * the model's figure when it really changed — a split re-cut, say.
+ *
+ * Also the web's `CalcInput` for a line: `100+20` is worked out when the field
+ * is left or Enter is pressed, and a leading minus is allowed — a credit or
+ * deduction line is negative (`allowNegative` defaults on in the line editor).
+ * A plain number still commits as it is typed.
  */
 @Composable
 private fun AmountField(
@@ -450,19 +458,31 @@ private fun AmountField(
     LaunchedEffect(value) {
         if (text.parseAmount() != value) text = value.plain()
     }
+    // The expression worked out; one that does not evaluate leaves the figure alone.
+    fun commit() {
+        val worked = CardCalc.evaluate(text) ?: return
+        text = worked
+        worked.parseAmount()?.let(onCommit)
+    }
     ZillitTextField(
         value = text,
         onValueChange = { typed ->
-            text = typed.filter { it.isDigit() || it == '.' || it == ',' }
-            text.parseAmount()?.let(onCommit)
+            if (typed.all { it in CALC_CHARS }) {
+                text = typed
+                if (CardCalc.isPlainNumber(typed)) typed.parseAmount()?.let(onCommit)
+            }
         },
         enabled = enabled,
         placeholder = "0.00",
         keyboardType = KeyboardType.Decimal,
+        imeAction = ImeAction.Done,
+        onImeAction = ::commit,
         trailingContent = suffix?.let { { ZillitText(text = it, color = ZillitTheme.colors.textMuted) } },
-        modifier = modifier,
+        modifier = modifier.onFocusChanged { if (!it.isFocused) commit() },
     )
 }
+
+private const val CALC_CHARS = "0123456789.,+-*/() "
 
 private fun String.parseAmount(): Double? =
     trim().replace(",", "").let { if (it.isEmpty()) 0.0 else it.toDoubleOrNull() }

@@ -169,7 +169,7 @@ internal class BatchDesk(private val host: CashHost) {
         val claims = readyClaims(batchId) ?: return
         if (state.selectedLocked) return host.refuse(lockedMessage())
         if (!CashRules.allVerified(claims)) return host.refuse(str(S.desktop_ce_verify_every_receipt))
-        if (!CashRules.allCoded(claims)) {
+        if (!CashRules.allCoded(claims, state.recoverableTax)) {
             val missing = CashRules.missingNominals(claims)
             return host.refuse(
                 if (missing > 0) {
@@ -188,7 +188,9 @@ internal class BatchDesk(private val host: CashHost) {
     fun forwardCoded(batchId: String) {
         if (!host.state.viewer.isCoordinator) return host.noRights()
         val claims = readyClaims(batchId) ?: return
-        if (!CashRules.allCoded(claims)) return host.refuse(str(S.desktop_ce_code_before_forward))
+        if (!CashRules.allCoded(claims, host.state.recoverableTax)) {
+            return host.refuse(str(S.desktop_ce_code_before_forward))
+        }
         host.act(str(S.desktop_ce_coding_submitted), onSuccess = { closed() }) {
             host.repository.saveAndSubmitCoded(batchId, BatchEdits.forWire(claims, host.state::wrapNominal))
         }
@@ -219,7 +221,7 @@ internal class BatchDesk(private val host: CashHost) {
             PostBatchRequest(effectiveDate = date, seniorNotes = panel?.seniorNotes)
         } else {
             val claims = readyClaims(batchId) ?: return
-            if (CashRules.amountMismatch(claims, batch.totalGross)) {
+            if (CashRules.amountMismatch(claims, batch.totalGross, state.recoverableTax)) {
                 return host.refuse(str(S.desktop_ce_coded_must_match_total))
             }
             val missing = CashRules.missingNominals(claims)

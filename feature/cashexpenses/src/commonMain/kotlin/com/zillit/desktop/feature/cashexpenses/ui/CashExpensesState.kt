@@ -27,6 +27,8 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartments
 import com.zillit.desktop.feature.cashexpenses.domain.CashNominals
+import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
+import com.zillit.desktop.feature.cashexpenses.domain.recoverableIds
 import com.zillit.desktop.feature.cashexpenses.domain.FloatDetails
 import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
 import com.zillit.desktop.feature.cashexpenses.domain.CashDates
@@ -134,6 +136,8 @@ data class CashUiState(
      * ([wrapNominal]).
      */
     val chartAccounts: List<CashAccount>? = null,
+    /** Production Setup's tax types, for the coding editor; empty until read, or when the production has none. */
+    val taxTypes: List<CashTaxType> = emptyList(),
     /** The float whose detail dialog is open, if any. */
     val floatDetail: FloatDetailState? = null,
     /** The Submit form's receipt row whose attachment is uploading. */
@@ -170,6 +174,9 @@ data class CashUiState(
 
     /** A total with no single record behind it, in the project default. */
     fun formatAggregate(amount: Double?): String = currencies.formatAggregate(amount)
+
+    /** The tax types whose tax the reclaimable-tax line stands in for — see [LineItemEditor.total]. */
+    val recoverableTax: Set<String> get() = taxTypes.recoverableIds()
 
     /** [code] as a payload sends it: `[[code]]` when the chart does not hold it. See [CashNominals.wrap]. */
     fun wrapNominal(code: String?): String = CashNominals.wrap(code, chartAccounts.orEmpty())
@@ -271,13 +278,76 @@ data class CodingDraft(
     val receiptGross: Double,
     val currency: String?,
     val lines: List<EditorLine>,
+    /** Production Setup's tax types: the Tax select's options, and which tax is reclaimable. */
+    val taxTypes: List<CashTaxType> = emptyList(),
+    /**
+     * The tax line holds an amount somebody typed (or the receipt stored), so
+     * it no longer follows the lines' recoverable tax — the web's sticky
+     * `__taxMeta.overridden`. A reset hands it back.
+     */
+    val taxOverridden: Boolean = false,
 ) {
-    val total: Double get() = LineItemEditor.total(lines)
+    private val recoverable: Set<String> get() = taxTypes.recoverableIds()
 
-    val balances: Boolean get() = LineItemEditor.balances(lines, receiptGross)
+    val total: Double get() = LineItemEditor.total(lines, recoverable)
+
+    val balances: Boolean get() = LineItemEditor.balances(lines, receiptGross, recoverable)
 
     /** What is still uncoded — negative when the coding overshoots. */
     val remaining: Double get() = receiptGross - total
+
+    /** What the tax line would post if it followed the lines. */
+    val derivedTax: Double get() = LineItemEditor.reclaimable(lines, recoverable)
+
+    /**
+     * The lines a save sends: a tax line that only follows the lines and has
+     * nothing to reclaim is not sent, as the web leaves it out.
+     */
+    val savedLines: List<EditorLine>
+        get() = lines.filterNot { it.extras.isTax && !taxOverridden && it.gross <= 0.0 }
+
+    /**
+     * The draft as the editor first shows it: a stored tax line is an override
+     * (the web hydrates it so), anything else follows the lines.
+     */
+    fun opened(newId: () -> String): CodingDraft = copy(taxOverridden = lines.any { it.extras.isTax }).derived(newId)
+
+    /** The tax line brought in line with the lines' recoverable tax, unless it was overridden. */
+    fun derived(newId: () -> String): CodingDraft =
+        copy(lines = LineItemEditor.withDerivedTax(lines, recoverable, taxOverridden, newId))
+
+    /** The tax line is the lines' again: a typed amount is dropped. */
+    fun resetTax(newId: () -> String): CodingDraft = copy(taxOverridden = false).derived(newId)
+
+    /**
+     * Row [index] replaced by [line].
+     *
+     * Typing an amount on the tax line overrides it. A split parent's tax
+     * type and rate reach the children that still held its old ones (or none):
+     * a child's tax is its parent's, so the reclaimable tax read off the
+     * parents agrees with the totals summed off the children.
+     */
+    fun editLine(index: Int, line: EditorLine): CodingDraft {
+        val before = lines.getOrNull(index) ?: return this
+        val typedTax = line.extras.isTax && line.unitPrice != before.unitPrice
+        val taxMoved = line.taxType != before.taxType || line.taxRatePercent != before.taxRatePercent
+        return copy(
+            lines = lines.mapIndexed { i, existing ->
+                when {
+                    i == index -> line
+                    taxMoved && existing.splitParentId == before.id -> existing.inheritingTaxOf(before, line)
+                    else -> existing
+                }
+            },
+            taxOverridden = taxOverridden || typedTax,
+        )
+    }
+
+    private fun EditorLine.inheritingTaxOf(old: EditorLine, new: EditorLine): EditorLine {
+        val follows = (taxType.isBlank() && taxRatePercent == 0.0) ||
+            (taxType == old.taxType && taxRatePercent == old.taxRatePercent)
+        return if (follows) copy(taxType = new.taxType, taxRatePercent = new.taxRatePercent) else this
+    }
 }
 
 /** The Submit Receipts form. */

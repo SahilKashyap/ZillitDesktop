@@ -143,8 +143,20 @@ data class ClaimBatch(
     val followUp: String? = null,
     /** The whole `settlement_details` object, for what the fields above do not name. */
     val settlementDetails: JsonObject? = null,
+    /** The BACS account the reimbursement is paid into — `bank_details`, else `settlement_details.bank_details`. */
+    val payee: BankPayee? = null,
 ) {
     val lifecycle: Lifecycle get() = Lifecycle.of(status)
+}
+
+/** A BACS payee's account as the crew member entered it; any of the three may be blank. */
+data class BankPayee(
+    val accountName: String = "",
+    val sortCode: String = "",
+    val accountNumber: String = "",
+) {
+    /** "12-34-56 · 12345678" — the web's `BankIdentity` second line. */
+    val sortAndAccount: String get() = listOf(sortCode, accountNumber).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
 /** One receipt inside a [ClaimBatch]. */

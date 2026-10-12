@@ -109,7 +109,7 @@ internal fun batchActions(state: CashUiState, batch: ClaimBatch): List<BatchActi
                     str(S.desktop_ce_submit_coding),
                     str(S.desktop_ce_submit_coding),
                     str(S.desktop_ce_submit_coding_note),
-                    enabled = loaded && CashRules.allCoded(claims),
+                    enabled = loaded && CashRules.allCoded(claims, state.recoverableTax),
                 ),
             )
         } else {

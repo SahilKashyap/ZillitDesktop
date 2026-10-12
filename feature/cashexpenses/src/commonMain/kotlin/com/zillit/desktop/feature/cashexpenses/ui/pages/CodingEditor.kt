@@ -28,7 +28,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
 import com.zillit.desktop.feature.cashexpenses.domain.EditorLine
+import com.zillit.desktop.feature.cashexpenses.domain.OTHER_TAX
+import com.zillit.desktop.feature.cashexpenses.domain.taxChoice
+import com.zillit.desktop.feature.cashexpenses.domain.withTaxChoice
 import com.zillit.desktop.feature.cashexpenses.ui.BatchEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
@@ -81,7 +85,13 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     .map { it.nominalCode.ifBlank { it.name } }
                     .filter { it.isNotBlank() },
                 accounts = state.chartAccounts,
-                removable = draft.lines.size > 1 || line.extras.isTax,
+                // A tax line that follows the lines goes by itself when there
+                // is nothing to reclaim; only one somebody typed can be removed.
+                removable = if (line.extras.isTax) draft.taxOverridden else draft.lines.size > 1,
+                taxTypes = draft.taxTypes,
+                taxCanReset = line.extras.isTax && draft.taxOverridden &&
+                    kotlin.math.abs(line.unitPrice - draft.derivedTax) >= TAX_RESET_EPSILON,
+                onResetTax = { onEvent(CashEvent.ResetCodingTax) },
                 onChange = { onEvent(CashEvent.EditCodingLine(index, it)) },
                 onRemove = { onEvent(CashEvent.RemoveCodingLine(line.id)) },
                 onSplit = { ways -> onEvent(CashEvent.SplitCodingLine(line.id, ways)) },
@@ -195,7 +205,7 @@ private fun BalanceBar(draft: CodingDraft) {
     }
 }
 
-@Suppress("LongMethod", "CyclomaticComplexMethod") // One coding row: every field it carries.
+@Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList") // One coding row: every field it carries.
 @Composable
 private fun CodingRow(
     index: Int,
@@ -204,6 +214,9 @@ private fun CodingRow(
     quickCodes: List<String>,
     accounts: List<com.zillit.desktop.feature.cashexpenses.domain.CashAccount>?,
     removable: Boolean,
+    taxTypes: List<CashTaxType>,
+    taxCanReset: Boolean,
+    onResetTax: () -> Unit,
     onChange: (EditorLine) -> Unit,
     onRemove: () -> Unit,
     onSplit: (Int) -> Unit,
@@ -291,17 +304,36 @@ private fun CodingRow(
                 enabled = !locked,
                 modifier = Modifier.weight(1f),
             )
-            ZillitTextField(
-                value = if (line.taxRatePercent == 0.0) "" else line.taxRatePercent.toString(),
-                onValueChange = {
-                    onChange(line.copy(taxRatePercent = it.trim().toDoubleOrNull() ?: 0.0))
-                },
-                label = if (index == 0) str(S.desktop_ce_vat_percent) else null,
-                placeholder = "20",
-                keyboardType = KeyboardType.Decimal,
-                enabled = !locked && !tax,
-                modifier = Modifier.width(SMALL_FIELD),
-            )
+            if (taxTypes.isEmpty()) {
+                // No tax types to pick from — the production has none, or they
+                // have not been read — so the rate is typed.
+                ZillitTextField(
+                    value = if (line.taxRatePercent == 0.0) "" else line.taxRatePercent.toString(),
+                    onValueChange = {
+                        onChange(line.copy(taxRatePercent = it.trim().toDoubleOrNull() ?: 0.0))
+                    },
+                    label = if (index == 0) str(S.desktop_ce_vat_percent) else null,
+                    placeholder = "20",
+                    keyboardType = KeyboardType.Decimal,
+                    enabled = !locked && !tax,
+                    modifier = Modifier.width(SMALL_FIELD),
+                )
+            } else {
+                Column(modifier = Modifier.width(TAX_FIELD)) {
+                    if (index == 0) {
+                        ZillitText(
+                            text = str(S.ah_lbl_vat),
+                            style = ZillitTheme.typography.label,
+                            color = colors.textSecondary,
+                        )
+                    }
+                    if (tax) {
+                        ZillitText(text = "—", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                    } else {
+                        CodingTaxPicker(line, taxTypes, enabled = !locked, onChange = onChange)
+                    }
+                }
+            }
         }
 
         Row(
@@ -330,6 +362,14 @@ private fun CodingRow(
                     size = ButtonSize.Small,
                 )
             }
+            if (taxCanReset) {
+                ZillitButton(
+                    text = str(S.desktop_inv_recalculate_from_lines),
+                    onClick = onResetTax,
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
+            }
             if (removable && !locked) {
                 ZillitButton(
                     text = str(S.remove),
@@ -343,6 +383,68 @@ private fun CodingRow(
     }
 }
 
+/**
+ * A line's tax: none, a Production Setup tax type (its rate comes with it), or
+ * Other with a rate typed in, capped to 0-100 as the web clamps it.
+ *
+ * A split child's tax is its parent's and is shown, not edited. A line whose
+ * stored type is not among the options reads as Other — only the display; what
+ * the line holds changes when somebody picks.
+ */
+@Composable
+private fun CodingTaxPicker(
+    line: EditorLine,
+    taxTypes: List<CashTaxType>,
+    enabled: Boolean,
+    onChange: (EditorLine) -> Unit,
+) {
+    if (line.isSplitChild) {
+        ZillitText(
+            text = taxTypes.firstOrNull { it.identifier == line.taxType }?.optionLabel
+                ?: if (line.taxRatePercent > 0) "${line.taxRatePercent}%" else "—",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+            maxLines = 1,
+        )
+        return
+    }
+    val sorted = taxTypes.sortedWith(compareBy({ it.country.isBlank() }, { it.country }))
+    val current = line.taxChoice(taxTypes)
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitSelect(
+            value = current,
+            options = listOf("") + sorted.map { it.identifier } + OTHER_TAX,
+            onSelect = { picked -> onChange(line.withTaxChoice(picked, taxTypes)) },
+            label = { id ->
+                when (id) {
+                    "" -> str(S.ah_select_vat_tax_dots)
+                    OTHER_TAX -> str(S.ah_tax_other_label)
+                    else -> taxTypes.firstOrNull { it.identifier == id }?.optionLabel ?: id
+                }
+            },
+            enabled = enabled,
+            section = { id -> taxTypes.firstOrNull { it.identifier == id }?.country?.takeIf { it.isNotBlank() } },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (current == OTHER_TAX) {
+            ZillitTextField(
+                value = if (line.taxRatePercent == 0.0) "" else line.taxRatePercent.toString(),
+                onValueChange = {
+                    val rate = (it.trim().toDoubleOrNull() ?: 0.0).coerceIn(0.0, MAX_TAX_RATE)
+                    onChange(line.copy(taxType = OTHER_TAX, taxRatePercent = rate))
+                },
+                placeholder = "0",
+                keyboardType = KeyboardType.Decimal,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+private const val MAX_TAX_RATE = 100.0
+private const val TAX_RESET_EPSILON = 0.005
 private const val DESCRIPTION_WEIGHT = 2f
+private val TAX_FIELD = 150.dp
 private val SMALL_FIELD = 80.dp
 private val EDITOR_WIDTH = 900.dp

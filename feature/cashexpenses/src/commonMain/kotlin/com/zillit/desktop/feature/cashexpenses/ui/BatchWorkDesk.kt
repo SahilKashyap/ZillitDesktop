@@ -63,7 +63,8 @@ internal class BatchWorkDesk(private val host: CashHost) {
                     receiptGross = claim.grossAmount,
                     currency = batch.currency,
                     lines = BatchEdits.seedLines(claim) { BatchEdits.newUuid() },
-                ),
+                    taxTypes = state.taxTypes,
+                ).opened { BatchEdits.newUuid() },
             )
         }
     }
@@ -81,7 +82,7 @@ internal class BatchWorkDesk(private val host: CashHost) {
                 panel = open.copy(
                     claims = open.claims?.map { claim ->
                         if (claim.id == draft.claimId) {
-                            BatchEdits.withLines(claim, draft.lines) { BatchEdits.newUuid() }
+                            BatchEdits.withLines(claim, draft.savedLines) { BatchEdits.newUuid() }
                         } else {
                             claim
                         }
@@ -93,16 +94,20 @@ internal class BatchWorkDesk(private val host: CashHost) {
     }
 
     /**
-     * The receipt's reclaimable-tax line: a pure-tax row with its own nominal.
-     *
-     * The web derives it from the project's recoverable tax types; this
-     * module has no tax-type list, so the line is added and typed by hand —
-     * and a stored one is always kept, as the web keeps a persisted override.
+     * The receipt's reclaimable-tax line, added by hand: a pure-tax row with
+     * its own nominal. One that follows the lines' recoverable tax appears on
+     * its own; this is for typing the amount in, so the line is an override
+     * from the start — as a stored one is kept, the web's persisted override.
      */
     private fun addTaxLine() = host.update {
         val draft = coding ?: return@update this
         if (draft.lines.any { it.extras.isTax }) return@update this
-        copy(coding = draft.copy(lines = draft.lines + EditorLine(id = BatchEdits.newUuid(), extras = TAX_LINE)))
+        copy(
+            coding = draft.copy(
+                lines = draft.lines + EditorLine(id = BatchEdits.newUuid(), extras = TAX_LINE),
+                taxOverridden = true,
+            ),
+        )
     }
 
     /**
@@ -119,7 +124,8 @@ internal class BatchWorkDesk(private val host: CashHost) {
         if (state.selectedLocked) return
         val panel = state.panel?.takeIf { it.batchId == batchId }
         val claims = panel?.claims ?: return host.refuse(str(S.desktop_ce_receipts_still_loading))
-        if (state.destination.isPostLedger && CashRules.amountMismatch(claims, batch.totalGross)) {
+        val mismatch = CashRules.amountMismatch(claims, batch.totalGross, state.recoverableTax)
+        if (state.destination.isPostLedger && mismatch) {
             return host.refuse(str(S.desktop_pc_must_match_save))
         }
         val date = if (state.destination == CashDestination.CodingQueue) {

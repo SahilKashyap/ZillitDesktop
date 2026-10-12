@@ -83,7 +83,7 @@ internal fun BatchWorkDetail(state: CashUiState, batch: ClaimBatch, onEvent: (Ca
             val claims = state.panelClaims
             GrossMatchBar(
                 backend = claims.sumOf { it.grossAmount }.takeIf { it > 0 } ?: batch.totalGross,
-                live = CashRules.codedTotal(claims),
+                live = CashRules.codedTotal(claims, state.recoverableTax),
                 format = { state.formatMoney(it, batch.currency) },
             )
             Receipts(state, batch, onEvent)
@@ -253,7 +253,7 @@ private fun OpenActions(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
             onClick = { onEvent(BatchEvent.ForwardCoded(batch.id)) },
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.Ledger,
-            enabled = idle && loaded && CashRules.allCoded(claims),
+            enabled = idle && loaded && CashRules.allCoded(claims, state.recoverableTax),
         )
     }
 }
@@ -357,7 +357,7 @@ private fun stage(state: CashUiState, batch: ClaimBatch): Int = when {
     state.destination == CashDestination.AuditQueue || state.destination == CashDestination.CodingQueue -> 1
     batch.status == BatchStatus.Posted -> STAGE_DONE
     batch.status == BatchStatus.UnderReview || batch.status == BatchStatus.Escalated -> 2
-    CashRules.allCoded(state.panelClaims) -> 2
+    CashRules.allCoded(state.panelClaims, state.recoverableTax) -> 2
     else -> 1
 }
 
@@ -425,6 +425,7 @@ private fun Receipts(state: CashUiState, batch: ClaimBatch, onEvent: (CashEvent)
                 verifying = panel?.verifying == claim.id,
             ),
             onEvent = onEvent,
+            recoverable = state.recoverableTax,
         )
     }
 }

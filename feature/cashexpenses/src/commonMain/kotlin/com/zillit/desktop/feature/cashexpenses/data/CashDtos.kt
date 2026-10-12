@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
+import com.zillit.desktop.feature.cashexpenses.domain.BankPayee
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashHistoryEntry
@@ -159,6 +160,8 @@ internal data class BatchDto(
     @SerialName("settlement_type") val settlementType: String? = null,
     /** JSON, sometimes as an object and sometimes as a string holding one. */
     @SerialName("settlement_details") val settlementDetails: JsonElement? = null,
+    /** Payment Routing's BACS rows carry the payee's account here, flattened off `settlement_details`. */
+    @SerialName("bank_details") val bankDetails: JsonElement? = null,
     @SerialName("notes") val notes: String? = null,
     @SerialName("assigned_to") val assignedTo: String? = null,
     @SerialName("assigned_by") val assignedBy: String? = null,
@@ -217,8 +220,21 @@ internal data class BatchDto(
             floatRequestId = floatRequestId?.takeIf { it.isNotBlank() },
             followUp = settlementDetails.readObject()?.get(FOLLOW_UP)?.jsonPrimitiveOrNull()?.contentOrNull(),
             settlementDetails = settlementDetails.readObject(),
+            payee = (bankDetails.readObject() ?: settlementDetails.readObject()?.get(BANK_DETAILS).readObject())
+                .toPayee(),
         )
     }
+}
+
+/** A BACS payee's account (`bank_details`); null when none of its three fields is filled in. */
+private fun JsonObject?.toPayee(): BankPayee? {
+    val bank = this ?: return null
+    fun text(key: String) = bank[key]?.jsonPrimitiveOrNull()?.contentOrNull().orEmpty().trim()
+    return BankPayee(
+        accountName = text("account_name"),
+        sortCode = text("sort_code"),
+        accountNumber = text("account_number"),
+    ).takeIf { it.accountName.isNotEmpty() || it.sortCode.isNotEmpty() || it.accountNumber.isNotEmpty() }
 }
 
 @Serializable
@@ -920,5 +936,6 @@ private fun JsonPrimitive.contentOrNull(): String? = content.takeIf { it.isNotBl
 
 private const val PAYMENT_METHOD = "payment_method"
 private const val FOLLOW_UP = "follow_up"
+private const val BANK_DETAILS = "bank_details"
 private const val AUTO = "auto"
 private const val DEDUCT_ACCOUNT = "DEDUCT"

@@ -110,6 +110,9 @@ sealed interface CashEvent {
 
     data object AddCodingLine : CashEvent
 
+    /** Hands the coding's tax line back to the lines' recoverable tax. */
+    data object ResetCodingTax : CashEvent
+
     data class RemoveCodingLine(val id: String) : CashEvent
 
     /** Splits a line into [ways] equal children. */
