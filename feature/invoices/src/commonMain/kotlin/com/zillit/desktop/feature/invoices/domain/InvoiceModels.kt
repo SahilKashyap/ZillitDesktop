@@ -448,6 +448,9 @@ data class Invoice(
 
     val hasPo: Boolean get() = linkedPos.isNotEmpty() || poId.isNotBlank() || poNumber.isNotBlank()
 
+    /** The Inbox's "OCR" pill: `entry.ocr_confidence ?` is JS truthiness, so a confidence of 0 reads as "New". */
+    val isOcrExtracted: Boolean get() = ocrConfidence?.let { it != 0.0 && !it.isNaN() } == true
+
     /**
      * Pre-approval's rule — `linked_pos` or `po_id`, never a bare typed
      * `po_number`: that one is unconfirmed, shown amber, and the row is still

@@ -634,8 +634,15 @@ class InvoicesViewModel(
         launch {
             // Notes go only with "Other"; a set reason explains itself (`HoldForQueryModal`).
             val notes = if (reason.needsNotes()) request.notes.trim() else ""
-            val failure = request.invoices.firstNotNullOfOrNull {
-                (repository.hold(it.id, reason, notes) as? ZillitResult.Failure)?.error
+            // The web toasts the last response's own word (`holdSelected`, `handleHold`).
+            var message: String? = null
+            var failure: ZillitError? = null
+            for (invoice in request.invoices) {
+                when (val result = repository.holdWithMessage(invoice.id, reason, notes)) {
+                    is ZillitResult.Success -> message = result.data ?: message
+                    is ZillitResult.Failure -> failure = result.error
+                }
+                if (failure != null) break
             }
             setState {
                 copy(
@@ -648,7 +655,10 @@ class InvoicesViewModel(
                     selected = if (failure == null) emptySet() else selected,
                 )
             }
-            if (failure == null) refresh()
+            if (failure == null) {
+                notice(message?.takeIf { it.isNotBlank() }?.localisedMessage() ?: str(S.desktop_inv_put_on_hold))
+                refresh()
+            }
         }
     }
 
@@ -1092,13 +1102,13 @@ class InvoicesViewModel(
                 is ZillitResult.Failure -> setState {
                     copy(detail = detail?.copy(historyLoading = false), error = r.error.localised())
                 }
-                is ZillitResult.Success -> setState {
-                    val current = detail?.takeIf { it.invoice.id == d.invoice.id } ?: return@setState this
-                    val actors = r.data.map { it.actionBy }.filter { it.isNotBlank() }.distinct()
-                        .mapNotNull { id -> resolveUser(id)?.let { id to it } }
-                    copy(
-                        detail = current.copy(history = r.data, historyLoading = false, names = current.names + actors),
-                    )
+                is ZillitResult.Success -> {
+                    // The sheet names each actor from the shared directory (`historyActor`).
+                    rememberNames(r.data.map { it.actionBy })
+                    setState {
+                        val current = detail?.takeIf { it.invoice.id == d.invoice.id } ?: return@setState this
+                        copy(detail = current.copy(history = r.data, historyLoading = false))
+                    }
                 }
             }
         }
@@ -1183,6 +1193,15 @@ class InvoicesViewModel(
     internal fun readAccountantRow(key: String, id: String, kind: String = ROW_READ_KIND) {
         if (!state.value.isAccountant || id.isBlank()) return
         badges.readEntity(key, id, kind)
+    }
+
+    /**
+     * An invoice's query thread read as its panel opens — `emitInvoiceLevelRead` with `level_3: "query_chat"`
+     * under [key], on either console (the register's, or the department's My Invoices).
+     */
+    internal fun readQueryThread(key: String, id: String) {
+        if (id.isBlank()) return
+        badges.readEntity(key, id, QUERY_READ_KIND)
     }
 
     /**
@@ -1337,6 +1356,9 @@ class InvoicesViewModel(
 
         /** The `level_2` every non-query invoice read is filed under (`invoice-badge-helpers.js:56`). */
         private const val ROW_READ_KIND = "invoice_label"
+
+        /** The `level_2` bucket a query thread's unread is filed under. */
+        private const val QUERY_READ_KIND = "query_chat"
 
         /** The department board's query-string key. */
         private const val TAB_PARAM = "tab="

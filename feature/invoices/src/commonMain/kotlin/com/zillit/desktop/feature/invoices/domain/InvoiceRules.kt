@@ -58,10 +58,12 @@ object InvoiceRules {
     /**
      * The "Approval" column of the department tables. The "No PO · " prefix
      * reads the board's own `hasPO` — `linked_pos` or `po_id`, never a bare
-     * typed `po_number` (`DepartmentInvoiceModule.jsx:924-925, 1206`).
+     * typed `po_number` (`DepartmentInvoiceModule.jsx:924-925, 1206`). Urgency
+     * is the stored `pay_method` read exactly (`=== "wire" || "cheque"`, `:926`), so
+     * a differently-cased spelling is no wire request here.
      */
     fun approvalBadge(invoice: Invoice, tiers: List<ResolvedTier>): InvoiceBadge = when {
-        invoice.payMethod.isUrgent -> urgentBadge(invoice, hasPo = invoice.hasMatchedPo)
+        invoice.isUrgentRaw -> urgentBadge(invoice, hasPo = invoice.hasMatchedPo)
         invoice.isApproved -> InvoiceBadge(str(S.approved), BadgeTone.Approved)
         invoice.isRejected -> InvoiceBadge(str(S.rejected), BadgeTone.Rejected)
         invoice.status == InvoiceStatus.Approval && tiers.isNotEmpty() ->
@@ -103,7 +105,7 @@ object InvoiceRules {
     }
 
     fun urgentBadge(invoice: Invoice, hasPo: Boolean = invoice.hasPo): InvoiceBadge {
-        val request = if (invoice.payMethod == PayMethod.Cheque) {
+        val request = if (invoice.payMethodRaw.ifBlank { invoice.payMethod.wire } == PayMethod.Cheque.wire) {
             str(S.desktop_cheque_request)
         } else {
             str(S.desktop_urgent_wire_request)

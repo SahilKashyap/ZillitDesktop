@@ -385,16 +385,21 @@ interface InvoicesRepository {
     /** A note stored on a matched order's link — the review's Match Notes. */
     suspend fun matchNote(id: String, poId: String, note: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
-    /** One file of a bulk upload, handed over under its batch id. */
+    /** The production the app is in now — what a bulk batch pins when it starts; null when unknown. */
+    fun activeProjectId(): String? = null
+
+    /** One file of a bulk upload, handed over under its batch id — and under [project] when it has one. */
     suspend fun bulkUpload(
         batchId: String,
         attachment: InvoiceAttachment,
         size: Long,
         paid: Boolean,
+        project: BatchProject? = null,
     ): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
-    /** Every bulk batch the server is still tracking — Ongoing Uploads' server half. */
-    suspend fun bulkBatches(): ZillitResult<List<ServerBatch>> = ZillitResult.Success(emptyList())
+    /** Every bulk batch the server is still tracking — Ongoing Uploads' server half, of [project] when given. */
+    suspend fun bulkBatches(project: BatchProject? = null): ZillitResult<List<ServerBatch>> =
+        ZillitResult.Success(emptyList())
 
     /**
      * Every `invoice:bulk_upload_progress` frame as a batch snapshot — the
@@ -558,6 +563,9 @@ interface InvoicesRepository {
     suspend fun sendToApprovalWithMessage(id: String): ZillitResult<String?> = sendToApproval(id).map { null }
 
     suspend fun releaseWithMessage(id: String): ZillitResult<String?> = release(id).map { null }
+
+    suspend fun holdWithMessage(id: String, reason: HoldReason, notes: String): ZillitResult<String?> =
+        hold(id, reason, notes).map { null }
 
     /** Account Hub host: `approval-tiers?module=invoices`. */
     suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>>

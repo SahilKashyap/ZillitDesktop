@@ -286,7 +286,8 @@ internal fun LedgerHistorySheet(state: InvoicesUiState, ledger: EntryLedger, onE
     )
 }
 
-private fun historyActor(state: InvoicesUiState, id: String): String {
+/** One history row's actor — "Name (Designation)", "System" for the system sentinel, the id when unresolved. */
+internal fun historyActor(state: InvoicesUiState, id: String): String {
     if (id.isBlank() || id == SYSTEM_ACTOR) return str(S.desktop_language_system_short)
     val name = state.userNames[id] ?: return id
     val role = state.assignees.firstOrNull { it.id == id }?.role?.takeIf { it.isNotBlank() }

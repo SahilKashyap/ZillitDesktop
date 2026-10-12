@@ -550,7 +550,7 @@ private fun HeaderCard(state: InvoicesUiState, ledger: EntryLedger, frozen: Bool
             )
             PayMethodPicker(header, !frozen, edit)
         }
-        EntitiesRow(state, header, frozen, edit)
+        EntitiesRow(state, header, frozen, canPost = state.viewer.canPostToLedger && !ledger.posted, edit = edit)
         if (ledger.currencyChanged(state.projectCurrency)) {
             CurrencyChangedNotice(state, ledger)
         } else {
@@ -606,11 +606,17 @@ private fun ledgerPayLabel(code: String): String = when (code) {
  *
  * Picking a company brings its country's currency (`:1430-1437`); the bank
  * is marked required, and outlined when missing, only for someone who may
- * post (`:1448`, `:1460`). An empty list says so instead of a dead select.
+ * post (`:1448`, `:1460`) — never from Posted, which passes `canPost={false}`.
+ * An empty list says so instead of a dead select.
  */
 @Composable
-private fun EntitiesRow(state: InvoicesUiState, header: EntryHeader, frozen: Boolean, edit: (EntryHeader) -> Unit) {
-    val canPost = state.viewer.canPostToLedger
+private fun EntitiesRow(
+    state: InvoicesUiState,
+    header: EntryHeader,
+    frozen: Boolean,
+    canPost: Boolean,
+    edit: (EntryHeader) -> Unit,
+) {
     FieldRow {
         LabelledPicker(
             label = str(S.company),

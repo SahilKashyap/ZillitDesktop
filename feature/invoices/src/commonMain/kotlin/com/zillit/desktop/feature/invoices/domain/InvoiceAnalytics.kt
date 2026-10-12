@@ -66,6 +66,10 @@ data class DepartmentSpend(
     val variance: String,
     /** The server's flag that this row is over its budget. */
     val isOver: Boolean,
+    /** The row is tinted red (`AnalyticsPage.jsx:225`). */
+    val highlight: Boolean = false,
+    /** The projected figure is bold (`AnalyticsPage.jsx:231`). */
+    val projectedBold: Boolean = false,
 )
 
 /** One vendor's share of the spend; [percent] is the bar's width. */

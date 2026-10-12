@@ -536,6 +536,11 @@ data class EnterInvoiceForm(
     val busy: Boolean get() = uploading || saving
 }
 
+/** The pages whose search reads the row's words as the web writes them, not the shared fields. */
+private val WORDED_SEARCH_PAGES = setOf(
+    AccountantPage.Register, AccountantPage.Matching, AccountantPage.Entry, AccountantPage.Posted,
+)
+
 data class InvoicesUiState(
     val viewer: InvoiceViewer = InvoiceViewer(),
     /** Unread notifications per `level_1` key — the sidebar's and tabs' red chips. */
@@ -729,13 +734,13 @@ data class InvoicesUiState(
 
     /**
      * The vendor as the web's accountant tables print it: the directory's name,
-     * then — on the Register only — the description up to its first "–", then
-     * "Unknown" (`RegisterPage.jsx:197-200`, `MatchingPage.jsx:212`,
-     * `ApprovalPage.jsx:450`).
+     * then — on the Register and Posted only — the description up to its first
+     * "–", then "Unknown" (`RegisterPage.jsx:197-200`, `PostedPage.jsx:149`,
+     * `MatchingPage.jsx:212`, `ApprovalPage.jsx:450`).
      */
     fun pageVendorName(invoice: Invoice): String =
         vendors[invoice.vendorId]?.name?.ifBlank { null }
-            ?: invoice.description.takeIf { page == AccountantPage.Register }
+            ?: invoice.description.takeIf { page == AccountantPage.Register || page == AccountantPage.Posted }
                 ?.substringBefore('–')?.trim()?.ifBlank { null }
             ?: str(S.desktop_unknown)
 
@@ -768,22 +773,27 @@ data class InvoicesUiState(
         }
 
     /**
-     * The search box, page by page: the Register and Pre-approval read the
-     * row's words as their web pages write them — the formatted gross, the
-     * PO cell (and, on Pre-approval, the typed PO number) — every other page
-     * the shared fields.
+     * The search box, page by page: the Register, Pre-approval, Entry and
+     * Posted read the row's words as their web pages write them — the
+     * formatted gross, and where the page has one the PO cell (on
+     * Pre-approval, the typed PO number too; Entry searches no PO at all) —
+     * every other page the shared fields.
      */
     private fun pageMatches(inv: Invoice, needle: String): Boolean {
-        if (!isAccountant || (page != AccountantPage.Register && page != AccountantPage.Matching)) {
-            return matches(inv, needle)
-        }
+        if (!isAccountant || page !in WORDED_SEARCH_PAGES) return matches(inv, needle)
         val gross = InvoiceFormat.money(inv.grossAmount, inv.currency.ifBlank { projectCurrency })
-        val fields = if (page == AccountantPage.Register) {
+        val fields = when (page) {
             // `po` is null for an urgent row (`RegisterPage.jsx:211-215`).
-            val po = if (inv.isUrgentRaw) null else inv.linkedPoLabel ?: str(S.desktop_no_po)
-            listOfNotNull(inv.displayNumber, pageVendorName(inv), inv.description, gross, po)
-        } else {
-            listOfNotNull(
+            AccountantPage.Register -> {
+                val po = if (inv.isUrgentRaw) null else inv.linkedPoLabel ?: str(S.desktop_no_po)
+                listOfNotNull(inv.displayNumber, pageVendorName(inv), inv.description, gross, po)
+            }
+            // `r.ref / supplier / desc / gross` (`EntryPage.jsx:347-356`).
+            AccountantPage.Entry -> listOf(inv.displayNumber, vendorName(inv), inv.description, gross)
+            // `[ref, supplier, desc, gross, poLabel]` (`PostedPage.jsx:297-300`).
+            AccountantPage.Posted ->
+                listOfNotNull(inv.displayNumber, pageVendorName(inv), inv.description, gross, inv.linkedPoLabel)
+            else -> listOfNotNull(
                 inv.displayNumber, pageVendorName(inv), inv.description, gross,
                 PoPills.matchingLabel(inv), inv.poNumber,
             )
@@ -833,7 +843,7 @@ data class InvoicesUiState(
         get() {
             val needle = search.trim().lowercase()
             val kept = invoices.filter { invoice ->
-                (needle.isEmpty() || matches(invoice, needle)) &&
+                (needle.isEmpty() || pageMatches(invoice, needle)) &&
                     entryFilter.keeps(invoice, viewer.userId) &&
                     (payFilter == null || invoice.payMethod == payFilter)
             }
@@ -924,6 +934,25 @@ data class InvoicesUiState(
 
     /** One row's unread under [key] — the web's `getInvoiceTotalUnread(badges, level_1, id)`. */
     fun rowUnread(key: String, id: String): Int = unreadRows[key]?.get(id) ?: 0
+
+    /**
+     * The `level_1` the open detail's query thread is badged and read under: the accountant's Register, the
+     * department's My Invoices, and nowhere else — other tabs' modals never touch the query badge
+     * (`InvoiceDetailModal.jsx:337-372`'s `isQueryScope`).
+     */
+    val detailQueryKey: String?
+        get() = if (isAccountant) {
+            AccountantPage.Register.badgeKey.takeIf { page == AccountantPage.Register }
+        } else {
+            DepartmentTab.MyInvoices.badgeKey.takeIf { departmentTab == DepartmentTab.MyInvoices }
+        }
+
+    /** The Pre-approval overlay's: always the register's, whichever page opened it (accountant-only). */
+    val overlayQueryKey: String?
+        get() = AccountantPage.Register.badgeKey.takeIf { isAccountant }
+
+    /** The Query button's chip on [key]'s scope — zero where the web shows none. */
+    fun queryUnread(key: String?, id: String): Int = key?.let { rowUnread(it, id) } ?: 0
 
     /**
      * The department's Payment Run Approval list: the runs whose next tier

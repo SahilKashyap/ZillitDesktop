@@ -33,6 +33,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
@@ -109,10 +110,11 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
             if (allowQuery) {
                 ZillitButton(
                     text = str(S.ah_query_label),
-                    onClick = { onEvent(QueryEvent.Open(invoice)) },
+                    onClick = { onEvent(QueryEvent.Open(invoice, readKey = state.detailQueryKey)) },
                     variant = ButtonVariant.Tertiary,
                     leadingIcon = ZillitIcons.Chat,
                 )
+                ZillitBadge(count = state.queryUnread(state.detailQueryKey, invoice.id))
             }
             // Kept to the left, away from Approve: destructive and irreversible.
             if (canDelete) {
@@ -176,7 +178,7 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
             DetailPane(state, detail, tiers, onEvent, Modifier.width(DETAIL_PANE_WIDTH))
         }
     }
-    if (detail.historyOpen) HistoryDialog(detail, onEvent)
+    if (detail.historyOpen) HistoryDialog(state, detail, onEvent)
     if (detail.rejecting) RejectDialog(detail, onEvent)
 }
 
@@ -550,12 +552,12 @@ private fun ApprovalChainPanel(detail: InvoiceDetail, tiers: List<ResolvedTier>)
 // Sub-dialogs ----------------------------------------------------------------
 
 @Composable
-private fun HistoryDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
+private fun HistoryDialog(state: InvoicesUiState, detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
     HistorySheet(
         invoiceNumber = detail.invoice.displayNumber,
         rows = detail.history,
         loading = detail.historyLoading,
-        nameOf = detail::nameOf,
+        nameOf = { id -> historyActor(state, id) },
         onClose = { onEvent(InvoicesEvent.HideHistory) },
     )
 }

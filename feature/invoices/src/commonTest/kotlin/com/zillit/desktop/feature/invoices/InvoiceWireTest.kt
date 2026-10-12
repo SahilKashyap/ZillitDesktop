@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.TierScope
 import com.zillit.desktop.feature.invoices.domain.Vendor
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -190,9 +191,21 @@ class InvoiceWireTest {
         assertEquals("-12.30", InvoiceFormat.amount(-12.3))
         assertEquals("30 days", Vendor("v", "A", terms = "net_30").slaLabel)
         assertNull(Vendor("v", "A", terms = "").slaLabel)
-        assertEquals("1 Aug 2026", InvoiceFormat.date(1_785_542_400_000L))
+        assertEquals("01 Aug 2026", InvoiceFormat.date(1_785_542_400_000L, TimeZone.UTC))
         assertEquals("2026-08-01", InvoiceFormat.toDateInput(1_785_542_400_000L))
         assertEquals(1_785_542_400_000L, InvoiceFormat.parseDateInput("2026-08-01"))
         assertNull(InvoiceFormat.parseDateInput("01/08/2026"))
+    }
+
+    @Test
+    fun `a date reads in the local zone and the symbol comes from the shared catalogue`() {
+        // Local midnight 12 Aug in Kolkata is 11 Aug 18:30 UTC — the day the reviewer typed, not the day before.
+        val localMidnight = InvoiceFormat.parseDateInputLocal("2026-08-12", TimeZone.of("Asia/Kolkata"))
+        assertEquals("12 Aug 2026", InvoiceFormat.date(localMidnight, TimeZone.of("Asia/Kolkata")))
+        assertEquals("11 Aug 2026", InvoiceFormat.date(localMidnight, TimeZone.UTC))
+        assertEquals("—", InvoiceFormat.date(null, TimeZone.UTC))
+        assertEquals("HK$12.00", InvoiceFormat.money(12.0, "HKD"))
+        assertEquals("S$1,200.00", InvoiceFormat.money(1200.0, "sgd"))
+        assertEquals("PKR 5.00", InvoiceFormat.money(5.0, "PKR"))
     }
 }

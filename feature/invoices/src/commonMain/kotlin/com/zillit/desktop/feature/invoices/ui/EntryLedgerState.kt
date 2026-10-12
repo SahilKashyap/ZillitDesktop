@@ -189,7 +189,8 @@ sealed interface EntryEvent : InvoicesEvent {
 
 /** A record's query thread: opened, typed in, sent, closed. */
 sealed interface QueryEvent : InvoicesEvent {
-    data class Open(val invoice: Invoice) : QueryEvent
+    /** [readKey]: the `level_1` the thread's unread is read under as it opens, null where the web reads none. */
+    data class Open(val invoice: Invoice, val readKey: String? = null) : QueryEvent
     data class Draft(val text: String) : QueryEvent
     data object Send : QueryEvent
     data object Close : QueryEvent

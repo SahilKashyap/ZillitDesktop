@@ -50,6 +50,13 @@ data class BulkFile(
     val retried: Boolean = false,
 )
 
+/**
+ * The production a batch was started in, and the caller's id on it — pinned at
+ * the start, so a switch of project while it runs neither moves its POSTs nor
+ * its polls (`bulkUploadStore.js` `start`'s `projectId`, commit 9cb4ac5cd).
+ */
+data class BatchProject(val projectId: String, val userId: String = "")
+
 /** The client's half of one batch. */
 data class BulkBatch(
     val id: String,
@@ -71,6 +78,8 @@ data class BulkBatch(
     val lastServerRow: ServerBatch? = null,
     /** Why nothing reached the server, when nothing did. */
     val error: String = "",
+    /** Where it was started; null when the host cannot say, and its calls go under the open production. */
+    val project: BatchProject? = null,
 ) {
     val sentCount: Int get() = files.count { it.status == BulkFileStatus.Sent }
     val sendable: Int get() = files.count { it.status != BulkFileStatus.Invalid }
