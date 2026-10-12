@@ -26,26 +26,21 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
+import com.zillit.desktop.core.designsystem.component.ZillitAppControls
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitLanguageMenu
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -59,7 +54,6 @@ import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import com.zillit.desktop.core.workspace.ui.Workspace
 import com.zillit.desktop.core.workspace.ui.WorkspaceTabStrip
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * The application frame (plan §3.3): top bar, left rail, workspace, status bar.
@@ -395,24 +389,13 @@ private fun TopBar(
         // in each tool that has something to search, and the account is in
         // Settings; two dead controls in the app's most-looked-at corner
         // taught people the bar is decorative.
-        //
-        // All wear their words: a globe and a monitor side by side were two
-        // grey glyphs nobody could tell apart without clicking one.
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            // First in the group: its label grows while it reports, and the
-            // bar's right edge is anchored, so the growth pushes leftward
-            // into empty bar rather than shoving language and theme about.
-            onCheckForUpdates?.let { CheckForUpdatesButton(onCheck = it) }
-            ZillitLanguageMenu(
-                selected = language,
-                onSelect = onLanguageChange,
-                label = str(S.desktop_switch_language),
-            )
-            ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
-        }
+        ZillitAppControls(
+            themeMode = themeMode,
+            onThemeModeChange = onThemeModeChange,
+            language = language,
+            onLanguageChange = onLanguageChange,
+            onCheckForUpdates = onCheckForUpdates,
+        )
     }
 }
 
@@ -464,12 +447,6 @@ private fun BrandMark(badge: Int, onOpenNotifications: (() -> Unit)?) {
     }
 }
 
-/**
- * Cycles Light → Dark → System.
- *
- * A three-state cycle rather than a two-state switch, because "follow the OS"
- * is a real preference and a binary toggle silently drops it.
- */
 /**
  * The open production, and the way out of it.
  *
@@ -599,85 +576,6 @@ internal fun countdownText(remainingMillis: Long): String {
 
 private fun nowMillis(): Long = kotlin.time.Clock.System.now().toEpochMilliseconds()
 
-@Composable
-private fun ThemeToggle(themeMode: ThemeMode, onChange: (ThemeMode) -> Unit) {
-    val (icon, mode, next) = when (themeMode) {
-        ThemeMode.Light -> Triple(ZillitIcons.Sun, str(S.desktop_theme_light), ThemeMode.Dark)
-        ThemeMode.Dark -> Triple(ZillitIcons.Moon, str(S.desktop_theme_dark), ThemeMode.System)
-        ThemeMode.System -> Triple(ZillitIcons.Monitor, str(S.desktop_theme_system), ThemeMode.Light)
-    }
-    // The label says what the button does; the icon says which theme is on.
-    // A reader who cannot see the icon would be left with a button that never
-    // changes, so the mode is the button's state: the tooltip names it in
-    // words on hover, and `stateDescription` announces it.
-    ZillitTooltip(text = str(S.theme_mode) + " · " + mode) {
-        ZillitButton(
-            text = str(S.desktop_switch_theme),
-            onClick = { onChange(next) },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-            leadingIcon = icon,
-            modifier = Modifier.semantics { stateDescription = mode },
-        )
-    }
-}
-
-/**
- * Asks for a newer build now, and says how it went on the button itself.
- *
- * Up to date replaces the label for a few seconds — the answer someone clicked
- * for, where they are looking. A newer build needs no word here: the strip
- * under the bar is the answer, with its download. A failed check keeps the
- * label and turns the icon to a warning, its reason in the tooltip: the reason
- * is a sentence, too long for a button in the bar.
- */
-@Composable
-private fun CheckForUpdatesButton(onCheck: suspend () -> UpdateCheckOutcome) {
-    val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(false) }
-    var outcome by remember { mutableStateOf<UpdateCheckOutcome?>(null) }
-    LaunchedEffect(outcome) {
-        if (outcome != null) {
-            delay(UPDATE_RESULT_SHOWN_MILLIS)
-            outcome = null
-        }
-    }
-
-    val label = str(S.desktop_check_for_updates)
-    val upToDate = str(S.desktop_update_up_to_date)
-    val failed = str(S.desktop_update_check_failed)
-    val (text, icon, tip) = when (outcome) {
-        UpdateCheckOutcome.UpToDate -> Triple(upToDate, ZillitIcons.Check, upToDate)
-        UpdateCheckOutcome.Failed -> Triple(label, ZillitIcons.Warning, failed)
-        UpdateCheckOutcome.Available, null -> Triple(label, ZillitIcons.Reload, label)
-    }
-    ZillitTooltip(text = tip) {
-        ZillitButton(
-            text = text,
-            onClick = {
-                // A second click while one is in flight is ignored: the
-                // answer it would get is the one already coming.
-                if (!checking) {
-                    checking = true
-                    outcome = null
-                    scope.launch {
-                        try {
-                            outcome = onCheck().takeIf { it != UpdateCheckOutcome.Available }
-                        } finally {
-                            checking = false
-                        }
-                    }
-                }
-            },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-            leadingIcon = icon,
-            loading = checking,
-            modifier = Modifier.semantics { if (outcome != null) stateDescription = tip },
-        )
-    }
-}
-
 /**
  * Connection and sync state.
  *
@@ -783,20 +681,6 @@ data class UpdateNotice(
     val blocking: Boolean = false,
 )
 
-/**
- * What the top bar's "Check for updates" heard back — the frame's own words
- * for `core:appupdate`'s `UpdateStatus`, for the same reason as [UpdateNotice].
- */
-enum class UpdateCheckOutcome {
-    UpToDate,
-
-    /** A newer build; the app puts the strip up, and the button says nothing more. */
-    Available,
-
-    /** Offline, or this build is not set up to check. */
-    Failed,
-}
-
 /** The strip the person closed: which version, and how many asks for it had been made by then. */
 internal data class UpdateDismissal(val version: String, val requests: Int)
 
@@ -861,9 +745,6 @@ private val SWITCHER_NAME_MAX = 260.dp
 
 /** The rule between the app's mark and the production's name. */
 private val BAR_DIVIDER_HEIGHT = 24.dp
-
-/** How long "You're on the latest version." stands in for the button's label. */
-private const val UPDATE_RESULT_SHOWN_MILLIS = 5_000L
 
 private const val COUNTDOWN_TICK_MILLIS = 1_000L
 private const val MILLIS_PER_SECOND = 1_000L

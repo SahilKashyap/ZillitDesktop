@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -48,6 +49,8 @@ fun AuthScreen(
     /** The language preference (blank = follow the system) and where a choice goes; see the shell. */
     language: String = "",
     onLanguageChange: (String) -> kotlin.Unit = {},
+    /** The shell's "Check for updates", for the production list; null leaves the button out. */
+    onCheckForUpdates: (suspend () -> UpdateCheckOutcome)? = null,
     /** Logout, offered on the production list (after a confirmation); null leaves it off. */
     onSignOut: (() -> Unit)? = null,
     createViewModel: CreateProductionViewModel? = null,
@@ -72,7 +75,7 @@ fun AuthScreen(
     if (state.step == AuthStep.ProjectSelection) {
         ProjectListScreen(
             state, viewModel::onEvent, themeMode, onThemeModeChange, modifier, createViewModel,
-            joinViewModel, language, onLanguageChange, onSignOut,
+            joinViewModel, language, onLanguageChange, onCheckForUpdates, onSignOut,
         )
         return
     }

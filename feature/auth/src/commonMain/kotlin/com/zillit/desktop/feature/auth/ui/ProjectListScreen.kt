@@ -56,7 +56,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitLanguageMenu
+import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
+import com.zillit.desktop.core.designsystem.component.ZillitAppControls
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
@@ -98,6 +99,7 @@ internal fun ProjectListScreen(
     joinViewModel: JoinProductionViewModel? = null,
     language: String = "",
     onLanguageChange: (String) -> Unit = {},
+    onCheckForUpdates: (suspend () -> UpdateCheckOutcome)? = null,
     onSignOut: (() -> Unit)? = null,
 ) {
     // Asked here, at the screen's root: the dialog fills its parent, and the
@@ -119,7 +121,7 @@ internal fun ProjectListScreen(
     Box(modifier) {
         ProjectListBody(state, { event ->
             if (event !is AuthEvent.SelectProject || openArmed) onEvent(event)
-        }, themeMode, onThemeModeChange, language, onLanguageChange,
+        }, themeMode, onThemeModeChange, language, onLanguageChange, onCheckForUpdates,
             onSignOut = onSignOut?.let { { confirmingSignOut = true } })
 
         onSignOut?.let { signOut ->
@@ -169,6 +171,7 @@ private fun ProjectListBody(
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
     onLanguageChange: (String) -> Unit,
+    onCheckForUpdates: (suspend () -> UpdateCheckOutcome)?,
     onSignOut: (() -> Unit)? = null,
 ) {
     Column(
@@ -183,6 +186,7 @@ private fun ProjectListBody(
             onThemeModeChange = onThemeModeChange,
             language = language,
             onLanguageChange = onLanguageChange,
+            onCheckForUpdates = onCheckForUpdates,
             onSignOut = onSignOut,
         )
 
@@ -264,6 +268,7 @@ private fun ProjectListHeader(
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
     onLanguageChange: (String) -> Unit,
+    onCheckForUpdates: (suspend () -> UpdateCheckOutcome)?,
     /** Opens the Logout confirmation; null leaves the button off. */
     onSignOut: (() -> Unit)? = null,
 ) {
@@ -300,14 +305,15 @@ private fun ProjectListHeader(
 
             Spacer(Modifier.weight(1f))
 
-            // The same pair the shell's bar carries, because this is the
-            // first screen after sign-in and the shell is not reachable yet.
-            ZillitLanguageMenu(selected = language, onSelect = onLanguageChange)
-            Spacer(Modifier.width(ZillitTheme.spacing.xs))
-            ZillitIconButton(
-                icon = themeMode.nextIcon(),
-                contentDescription = str(S.theme_mode),
-                onClick = { onThemeModeChange(themeMode.next()) },
+            // The same group the shell's bar carries, words and all, because
+            // this is the first screen after sign-in and the shell is not
+            // reachable yet.
+            ZillitAppControls(
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                language = language,
+                onLanguageChange = onLanguageChange,
+                onCheckForUpdates = onCheckForUpdates,
             )
             // Logout here too: someone signed in to the wrong account, or
             // handing the machine over, should not have to open a production
@@ -630,18 +636,6 @@ private fun countSentence(visible: Int, total: Int): String = when {
     visible != total -> str(S.desktop_showing_n_of_m_projects, visible, total)
     total == 1 -> str(S.desktop_you_have_access_to_one_project)
     else -> str(S.desktop_you_have_access_to_n_projects, total)
-}
-
-private fun ThemeMode.next(): ThemeMode = when (this) {
-    ThemeMode.System -> ThemeMode.Light
-    ThemeMode.Light -> ThemeMode.Dark
-    ThemeMode.Dark -> ThemeMode.System
-}
-
-private fun ThemeMode.nextIcon() = when (this) {
-    ThemeMode.System -> ZillitIcons.Monitor
-    ThemeMode.Light -> ZillitIcons.Sun
-    ThemeMode.Dark -> ZillitIcons.Moon
 }
 
 @Composable

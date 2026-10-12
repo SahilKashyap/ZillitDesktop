@@ -73,6 +73,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.feature.auth.ui.AuthEffect
@@ -93,7 +94,6 @@ import com.zillit.desktop.core.appupdate.InAppUpdater
 import com.zillit.desktop.core.appupdate.InstallState
 import com.zillit.desktop.core.appupdate.UpdateFailure
 import com.zillit.desktop.core.appupdate.installer
-import com.zillit.desktop.feature.shell.UpdateCheckOutcome
 import com.zillit.desktop.feature.shell.UpdateInstall
 import com.zillit.desktop.feature.shell.UpdateNotice
 import com.zillit.desktop.feature.shell.UpdateSurface
@@ -1659,13 +1659,13 @@ private fun ZillitContent(
             ) {
             AuthScreen(
                 viewModel = authViewModel,
-                // The production list carries the theme toggle, as on the web —
-                // it is the first screen a signed-in user sees, and the shell is
-                // not reachable until they pick a production.
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                language = language,
-                onLanguageChange = onLanguageChange,
+                // The production list carries the shell bar's controls — update,
+                // language, theme: it is the first screen a signed-in user sees,
+                // and the shell is not reachable until they pick a production.
+                // A newer build's answer is the update strip above both screens.
+                themeMode = themeMode, onThemeModeChange = onThemeModeChange,
+                language = language, onLanguageChange = onLanguageChange,
+                onCheckForUpdates = { ready.checkForUpdatesFromBar() },
                 createViewModel = createViewModel, joinViewModel = joinViewModel,
                 onSignOut = { updateScope.launch { ready.authRepository.signOut() } },
                 // On the sign-in page, where someone who cannot get in can
