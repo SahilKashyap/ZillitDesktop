@@ -149,10 +149,22 @@ internal class FileCabinetController(
                     if (reload) reload()
                 }
 
-                is ZillitResult.Failure -> update {
-                    copy(error = result.error.readable, fileCabinet = fileCabinet.copy(isWorking = false))
+                is ZillitResult.Failure -> {
+                    update { copy(error = result.error.readable, fileCabinet = fileCabinet.copy(isWorking = false)) }
+                    // One pending request per user: the duplicate's refusal means the request already
+                    // being prepared is the one to show — with its progress and Cancel, not the ticks.
+                    // Read on its own, so the refusal's sentence stays on the strip.
+                    if (reload && result.error.userMessage == REQUEST_EXISTS) {
+                        update { copy(fileCabinet = fileCabinet.copy(selected = emptySet())) }
+                        launch { load() }
+                    }
                 }
             }
         }
+    }
+
+    private companion object {
+        /** The server's refusal for a second download request (`download_request_already_exist`). */
+        const val REQUEST_EXISTS = "download_request_already_exist"
     }
 }
