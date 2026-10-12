@@ -44,6 +44,17 @@ class LabelStore(
     /** The language currently published, so a repeat [refresh] can be skipped. */
     private var loadedLanguage: String? = null
 
+    /** The chosen language's own tables, before [english] is laid under them. */
+    private var words = LabelDictionary.Empty
+
+    /**
+     * English, under whatever language is chosen — read from the cache only,
+     * never fetched, so the fallback costs a disk read and no round trip. A
+     * machine that has never run in English simply has no base, which is the
+     * behaviour this replaced.
+     */
+    private var english = LabelDictionary.Empty
+
     /**
      * Publishes the cached dictionaries for [language], then refreshes all three.
      *
@@ -60,7 +71,16 @@ class LabelStore(
         val code = language.takeIf { it.isNotBlank() } ?: DEFAULT_LANGUAGE
 
         if (loadedLanguage != code) {
-            state.value = cachedDictionary(code)
+            english = if (code == DEFAULT_LANGUAGE) LabelDictionary.Empty else cachedDictionary(DEFAULT_LANGUAGE)
+            // An uncached language has nothing to publish, and publishing its
+            // emptiness would turn every tool name, unit and department on
+            // screen into a humanised key for as long as the fetch takes —
+            // or for good, offline. The previous language's words are the
+            // better frame to hold until the new ones land, and each table
+            // is replaced below as its own answer arrives.
+            val cached = cachedDictionary(code)
+            if (!cached.isEmpty) words = cached
+            publish()
             loadedLanguage = code
         }
 
@@ -92,8 +112,22 @@ class LabelStore(
      */
     fun clear() {
         cache?.clear()
-        state.value = LabelDictionary.Empty
+        words = LabelDictionary.Empty
+        english = LabelDictionary.Empty
+        publish()
         loadedLanguage = null
+    }
+
+    /**
+     * Publishes [words] over [english], and tells the snapshot readers.
+     *
+     * The one writer, so that the bump cannot be forgotten: a dictionary that
+     * reaches [dictionary] without one leaves every `.localised()` already on
+     * screen showing the language before it. See [LabelRevision].
+     */
+    private fun publish() {
+        state.value = words.over(english)
+        LabelRevision.bump()
     }
 
     private fun cachedDictionary(language: String): LabelDictionary {
@@ -114,7 +148,8 @@ class LabelStore(
                     return
                 }
                 cache?.save(language, kind.path, result.data)
-                state.value = state.value.with(kind, result.data)
+                words = words.with(kind, result.data)
+                publish()
             }
             // Not fatal, and said out loud: a screen full of humanised
             // identifiers with nothing in the log is how "why is this in

@@ -510,7 +510,11 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     }
     // Window titles are stored at open time; a language change re-asks each
     // provider for its title so the tab strip follows the rest of the frame.
-    LaunchedEffect(workspaceViewModel, Strings.language) {
+    // Keyed on the label dictionary as well as the app's own words: a tool
+    // named by the server — every board, and the hub's pages — gets its new
+    // name a round trip after the preference is written, long after the
+    // catalogue swapped, so one key alone refreshed the titles too early.
+    LaunchedEffect(workspaceViewModel, Strings.language, Labels.current) {
         workspaceViewModel.onEvent(WorkspaceEvent.RefreshTitles)
     }
 

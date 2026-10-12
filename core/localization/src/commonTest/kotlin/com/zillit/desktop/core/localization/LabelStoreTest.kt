@@ -126,6 +126,23 @@ class LabelStoreTest {
     }
 
     @Test
+    fun `switching to a language with nothing cached keeps the words on screen`() = runTest {
+        val answers = mutableMapOf<Pair<LabelKind, String>, ZillitResult<Map<String, String>>>(
+            (LabelKind.Labels to "en") to ok("cs_tool" to "Call Sheet"),
+            (LabelKind.Labels to "fr") to offline,
+        )
+        val store = LabelStore(FakeSource(answers), cache = null)
+        store.refresh("en")
+
+        // Nothing cached for French and no route to the server: publishing the
+        // empty cache would turn every tool name into a humanised key, which
+        // is worse than last language's wording.
+        store.refresh("fr")
+
+        assertEquals("Call Sheet", store.translate("cs_tool"))
+    }
+
+    @Test
     fun `unresolved keys are humanised before the first fetch returns`() = runTest {
         val store = LabelStore(FakeSource(mutableMapOf()), cache = null)
 

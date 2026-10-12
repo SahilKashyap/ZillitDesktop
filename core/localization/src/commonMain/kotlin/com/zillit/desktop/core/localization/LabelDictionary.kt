@@ -42,6 +42,22 @@ data class LabelDictionary(
         copy(entries = entries + (kind to values))
 
     /**
+     * This dictionary laid over [base], key by key.
+     *
+     * What the backend has not translated yet falls through to [base] — the
+     * English tables — rather than to the identifier. The server's German
+     * `messages` ships some 390 keys short of its English one, and before
+     * this that difference was 390 humanised keys on screen: `Access Denied`
+     * where the English build says what was actually denied. `core:strings`
+     * lays its translations over English for the same reason.
+     */
+    fun over(base: LabelDictionary): LabelDictionary = LabelDictionary(
+        entries = LabelKind.entries.associateWith { kind ->
+            base.entries[kind].orEmpty() + entries[kind].orEmpty()
+        }.filterValues { it.isNotEmpty() },
+    )
+
+    /**
      * The translation, or null when no dictionary has this key.
      *
      * Null rather than the key itself, so callers can tell a real translation

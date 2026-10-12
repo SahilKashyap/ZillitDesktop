@@ -179,6 +179,21 @@ class LabelDictionaryTest {
     }
 
     @Test
+    fun `a translation laid over English keeps what the language is missing`() {
+        // The server's German tables trail its English ones by a few hundred
+        // keys; English underneath is what stops that showing as identifiers.
+        val german = LabelDictionary.Empty
+            .with(LabelKind.Labels, mapOf("call_sheet_label" to "Tagesdisposition"))
+            .over(dictionary)
+
+        assertEquals("Tagesdisposition", german.translate("call_sheet_label"))
+        assertEquals("You do not have permission to do that.", german.translate("access_denied", LabelKind.Messages))
+        assertEquals("Transport", german.translate("transportation_tool"))
+        // Nothing underneath for a key neither table has, so it still humanises.
+        assertEquals("Weather Tool", german.translate("weather_tool"))
+    }
+
+    @Test
     fun `an empty dictionary humanises everything`() {
         assertTrue(LabelDictionary.Empty.isEmpty)
         assertEquals("Call Sheet", LabelDictionary.Empty.translate("call_sheet_label"))

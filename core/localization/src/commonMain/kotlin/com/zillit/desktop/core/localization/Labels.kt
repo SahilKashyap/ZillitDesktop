@@ -1,5 +1,8 @@
 package com.zillit.desktop.core.localization
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -29,8 +32,20 @@ import kotlinx.coroutines.flow.StateFlow
  *    humanising the key, so a unit test that never wired it still gets
  *    `Call Sheet` out of `call_sheet_label`.
  *
- * Anything that must *redraw* when a language arrives should collect
- * [LabelStore.dictionary] instead. This answers "what does this key say now".
+ * ## Reading in composition redraws on a language change
+ *
+ * [current] touches [LabelRevision] — snapshot state the store bumps on every
+ * publish — so a `.localised()` called while composing subscribes its caller
+ * to the next dictionary that lands, exactly as `str(S.key)` does for the
+ * app's own words. Without that, a language change repainted every `str()`
+ * on screen and left every server-named thing beside it — tool names, unit
+ * names, departments, dropdown options — in the language before it, until the
+ * screen was closed and reopened. Read from a mapper or a ViewModel it is
+ * still a plain sample; a string already copied into a state refreshes on
+ * that state's next emission.
+ *
+ * Collecting [dictionary] remains the way to react *outside* composition, and
+ * the way to key a `remember`/`LaunchedEffect` on the arrival itself.
  */
 object Labels {
 
@@ -64,12 +79,23 @@ object Labels {
      */
     val dictionary: StateFlow<LabelDictionary> get() = installed.value
 
-    /** Whatever is loaded right now; [LabelDictionary.Empty] before install. */
-    val current: LabelDictionary get() = dictionary.value
+    /**
+     * Whatever is loaded right now; [LabelDictionary.Empty] before install.
+     *
+     * The revision is read before the value, and discarded: in composition
+     * that read is the subscription that makes the caller repaint when the
+     * next dictionary arrives. Everywhere else it costs one snapshot read.
+     */
+    val current: LabelDictionary
+        get() {
+            LabelRevision.observe()
+            return dictionary.value
+        }
 
     /** Called once, from the graph, with [LabelStore.dictionary]. */
     fun install(dictionary: StateFlow<LabelDictionary>) {
         installed.value = dictionary
+        LabelRevision.bump()
     }
 
     /**
@@ -81,10 +107,38 @@ object Labels {
      */
     fun reset() {
         installed.value = nothingLoaded
+        LabelRevision.bump()
     }
 
     fun translate(key: String, preferring: LabelKind = LabelKind.Labels): String =
         current.translate(key, preferring)
+}
+
+/**
+ * How many dictionaries have been published, as snapshot state.
+ *
+ * A counter rather than the dictionary itself, deliberately: [Labels.current]
+ * keeps answering from the installed flow, so a mapper, a test that installs
+ * nothing, and a store read before any publish all behave exactly as they did.
+ * The counter adds only the one thing a flow cannot give a composable without
+ * a `collectAsState` at 700 call sites — an invalidation.
+ *
+ * Bumped by [LabelStore] on each publish, which happens on whichever thread
+ * the fetch returned on. That is safe: snapshot state is written from
+ * background threads throughout Compose, and the recomposer's global write
+ * observer is what turns the write into a frame.
+ */
+internal object LabelRevision {
+
+    private var count by mutableStateOf(0)
+
+    /** Reads the revision. In composition, that subscribes the caller. */
+    fun observe(): Int = count
+
+    /** Called after a dictionary is published. */
+    fun bump() {
+        count++
+    }
 }
 
 /**

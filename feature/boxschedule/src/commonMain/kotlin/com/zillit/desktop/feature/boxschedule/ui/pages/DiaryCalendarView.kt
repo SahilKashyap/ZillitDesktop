@@ -216,11 +216,21 @@ private fun MonthGrid(state: BoxScheduleUiState, data: CalendarData, onEvent: (B
     }
 }
 
+/**
+ * Mon…Sun in the language on screen.
+ *
+ * A function, not a top-level `val`: a `val` is built once when the file's
+ * class loads and keeps those seven words for the life of the process, so the
+ * header was the one row on the calendar a language change never reached.
+ */
+private fun weekdays(): List<String> =
+    listOf(str(S.mon), str(S.tue), str(S.wed), str(S.thu), str(S.fri), str(S.sat), str(S.sun))
+
 @Composable
 private fun WeekdayHeader() {
     val colors = ZillitTheme.colors
     Row(Modifier.fillMaxWidth().background(colors.surfaceSunken)) {
-        WEEKDAYS.forEach { day ->
+        weekdays().forEach { day ->
             ZillitText(
                 text = day.uppercase(),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp),
@@ -701,7 +711,6 @@ internal fun NoteCard(note: DiaryEvent, onClick: () -> Unit) {
     }
 }
 
-private val WEEKDAYS = listOf(str(S.mon), str(S.tue), str(S.wed), str(S.thu), str(S.fri), str(S.sat), str(S.sun))
 private val TITLE_WIDTH = 300.dp
 private val MONTH_CELL_MIN = 112.dp
 private val WEEK_CELL_MIN = 200.dp
