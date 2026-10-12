@@ -320,6 +320,21 @@ class AccountHubWebParityTest {
         assertEquals(AssetFilters(), nulled.assetFilters)
     }
 
+    /** An already-mapped rule (`expType`) reads as the wire one does — the web's mapper accepts both. */
+    @Test
+    fun `asset filters read expType or exp_type`() {
+        fun types(body: String) = json.decodeFromString(PurchaseOrderSetupDto.serializer(), body).toDomain()
+            .assetFilters.expTypes
+        assertEquals(listOf("Purchase"), types("""{"asset_filters":{"expType":["Purchase"]}}"""))
+        assertEquals(listOf("Rental"), types("""{"asset_filters":{"exp_type":["Rental"]}}"""))
+        assertEquals(
+            listOf("Purchase"),
+            types("""{"asset_filters":{"expType":["Purchase"],"exp_type":["Rental"]}}"""),
+            "expType wins when it is a list",
+        )
+        assertEquals(emptyList(), types("""{"asset_filters":{"expType":["*"]}}"""))
+    }
+
     /** Written the way `mapAssetFiltersToDb` writes it: all-empty is null, and each empty sub-rule is null. */
     @Test
     fun `asset filters encode to the wire shape`() {

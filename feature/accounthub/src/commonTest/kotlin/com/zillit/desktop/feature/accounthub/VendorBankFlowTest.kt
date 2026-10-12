@@ -63,7 +63,7 @@ private const val VENDORS = """
  {"id":"v-mine","name":"Pinewood Props","email":"hire@pinewood.co.uk","contact_person":"Ada",
   "status":"PENDING","added_by":"dept-user","bank_id":"b-1",
   "address":{"line1":"1 Studio Way","city":"Iver","postal_code":"SL0 0NH","country":"United Kingdom"},
-  "bank_name":null,"account_number":null,"iban_code":null},
+  "bank_name":null,"account_number":null,"iban_code":null,"compliance":{"level":"A","docs":["vat"]}},
  {"id":"v-theirs","name":"Grip House","email":"desk@griphouse.co.uk","contact_person":"Grace",
   "status":"VERIFIED","added_by":"someone-else",
   "address":{"line1":"2 Dolly Lane","city":"Leavesden","postal_code":"WD25 7LR","country":"United Kingdom"}}
@@ -213,6 +213,21 @@ class VendorBankFlowTest {
         assertEquals("Barclays Bank", sent["bank_name"]?.jsonPrimitive?.content)
         assertEquals("GB29NWBK60161331926819", sent["iban_code"]?.jsonPrimitive?.content)
         assertTrue(sent["account_number"] != JsonNull, "the account number must not be sent back as null")
+    }
+
+    /** The web passes `compliance` straight back; an object the desktop cannot show must not become null. */
+    @Test
+    fun `an edit sends a structured compliance value back as it arrived`() = runTest(dispatcher) {
+        val model = openVendors(viewer(userId = "acc", accountant = true))
+        val vendor = model.state.value.vendors.rows.first { it.id == "v-mine" }
+
+        model.onEvent(AccountHubEvent.ComposeVendor(vendor))
+        settle { model.state.value.vendors.page?.bankLoading == false }
+        model.onEvent(AccountHubEvent.SaveVendor)
+        settle { vendorWrites.value.isNotEmpty() }
+
+        val sent = vendorWrites.value.single()["compliance"]
+        assertEquals(Json.parseToJsonElement("""{"level":"A","docs":["vat"]}"""), sent)
     }
 
     /** The detail reads the record too, so a vendor with details on file shows them. */

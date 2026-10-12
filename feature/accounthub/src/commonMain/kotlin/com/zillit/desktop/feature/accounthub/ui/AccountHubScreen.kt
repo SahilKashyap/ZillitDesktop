@@ -169,15 +169,25 @@ private fun AccountHubBody(
         // spend tools and nothing the hub itself renders. Their first one has
         // already been opened in its own window (`HubNavigation.landingTool`),
         // so this says where that went rather than reading as a dead end.
-        null -> ZillitEmptyState(
-            title = if (canEmbed) str(S.desktop_pick_a_tool) else str(S.desktop_hub_your_tools_are_open),
-            message = if (canEmbed) {
-                str(S.desktop_hub_own_screens_are_the_accounts_departments_rows_on_left)
-            } else {
-                str(S.desktop_hub_own_screens_are_the_accounts_departments_own_windows)
-            },
-            icon = ZillitIcons.Ledger,
-        )
+        // With no spend-tool row either there is nothing to point at, so it is the
+        // no-access wording, not "your rows are on the left" beside an empty rail.
+        null -> if (state.viewer.ready && state.sections.isEmpty()) {
+            ZillitEmptyState(
+                title = str(S.desktop_hub_no_access_to_the_account_hub),
+                message = str(S.desktop_hub_an_administrator_has_not_granted_you_view_rights_for_the),
+                icon = ZillitIcons.Shield,
+            )
+        } else {
+            ZillitEmptyState(
+                title = if (canEmbed) str(S.desktop_pick_a_tool) else str(S.desktop_hub_your_tools_are_open),
+                message = if (canEmbed) {
+                    str(S.desktop_hub_own_screens_are_the_accounts_departments_rows_on_left)
+                } else {
+                    str(S.desktop_hub_own_screens_are_the_accounts_departments_own_windows)
+                },
+                icon = ZillitIcons.Ledger,
+            )
+        }
     }
 }
 

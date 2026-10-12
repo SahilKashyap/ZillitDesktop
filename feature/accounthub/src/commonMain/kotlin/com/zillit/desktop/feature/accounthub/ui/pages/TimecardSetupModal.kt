@@ -202,7 +202,7 @@ private fun ModelCard(
 @Composable
 private fun ColumnScope.DepartmentSummaryPane(summary: TimecardDepartmentSummary, users: List<HubUser>) {
     if (!summary.isConfigured) {
-        EmptySummary(str(S.desktop_hub_tc_dept_empty_title), str(S.desktop_hub_tc_dept_empty_body))
+        EmptySummary(str(S.desktop_hub_tc_dept_empty_title), str(S.desktop_hub_tc_dept_empty_note))
         return
     }
     val colors = ZillitTheme.colors
@@ -261,7 +261,7 @@ private fun ColumnScope.ApprovalSummaryPane(
     users: List<HubUser>,
 ) {
     if (!summary.isConfigured) {
-        EmptySummary(str(S.desktop_hub_tc_appr_empty_title), str(S.desktop_hub_tc_appr_empty_body))
+        EmptySummary(str(S.desktop_hub_tc_appr_empty_title), str(S.desktop_hub_tc_appr_empty_note))
         return
     }
     val colors = ZillitTheme.colors

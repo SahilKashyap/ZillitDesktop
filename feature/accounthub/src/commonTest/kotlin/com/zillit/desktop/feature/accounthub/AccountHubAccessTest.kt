@@ -315,6 +315,9 @@ class AccountHubAccessTest {
         assertTrue(HubNavigation.isFullBleed(HubArea.PeriodClose, null, accountant))
         assertFalse(HubNavigation.isFullBleed(HubArea.ProductionSetup, null, accountant))
         assertTrue(HubNavigation.isFullBleed(null, "/film-tools/account-hub/cost-report", accountant))
+        assertTrue(HubNavigation.isFullBleed(null, "/film-tools/payroll/processing", accountant))
+        assertFalse(HubNavigation.isFullBleed(null, "/film-tools/payroll", accountant), "the landing keeps the shell")
+        assertFalse(HubNavigation.isFullBleed(null, "/film-tools/payroll?entry=tool", accountant))
         assertTrue(HubNavigation.isFullBleed(HubArea.Vendors, "/film-tools/invoices/register", accountant))
         assertFalse(HubNavigation.isFullBleed(HubArea.Vendors, "/film-tools/purchase-order", accountant))
         // A cardholder's Card Expenses has no sidebar to go back with.

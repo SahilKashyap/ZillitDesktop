@@ -120,7 +120,8 @@ data class ApprovalConfig(
     val departmentName: String = "",
     val tiers: List<ApprovalTier> = emptyList(),
 ) {
-    val isConfigured: Boolean get() = tiers.any { it.isAssigned }
+    /** The web's `hasConfig`: a saved chain with any level, whether or not anyone is assigned yet. */
+    val isConfigured: Boolean get() = tiers.isNotEmpty()
 
     val levelCount: Int get() = tiers.count { it.isAssigned }
 

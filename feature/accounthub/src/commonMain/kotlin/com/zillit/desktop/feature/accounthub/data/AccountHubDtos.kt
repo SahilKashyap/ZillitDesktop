@@ -632,6 +632,7 @@ data class VendorDto(
             terms = terms.orEmpty(),
             defaultCode = defaultCode.orEmpty(),
             compliance = (compliance as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            complianceRaw = compliance,
         )
     }
 }
@@ -695,7 +696,8 @@ data class ApprovalConfigDto(
     @SerialName("scope") val scope: String? = null,
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("department_name") val departmentName: String? = null,
-    @SerialName("tiers") val tiers: List<ApprovalTierDto>? = null,
+    /** An array, or the same array as a JSON string, which the web's `parseTiers` accepts. */
+    @SerialName("tiers") val tiers: JsonElement? = null,
 ) {
     fun toDomain(): ApprovalConfig = ApprovalConfig(
         id = (id ?: altId).orEmpty(),
@@ -706,8 +708,20 @@ data class ApprovalConfigDto(
         // Ordered by the server's `order`, not by array position: a config
         // saved after a level was removed can arrive with the two disagreeing,
         // and the chain then runs in the wrong order.
-        tiers = tiers.orEmpty().map { it.toDomain() }.sortedBy { it.order },
+        tiers = tiers.toTierDtos().map { it.toDomain() }.sortedBy { it.order },
     )
+}
+
+private fun JsonElement?.toTierDtos(): List<ApprovalTierDto> {
+    val array = when {
+        this is JsonArray -> this
+        this is JsonPrimitive && isString ->
+            runCatching { accountHubJson.parseToJsonElement(content) }.getOrNull() as? JsonArray
+        else -> null
+    } ?: return emptyList()
+    return array.mapNotNull { row ->
+        runCatching { accountHubJson.decodeFromJsonElement(ApprovalTierDto.serializer(), row) }.getOrNull()
+    }
 }
 
 @Serializable
@@ -1264,6 +1278,7 @@ data class PurchaseOrderSetupDto(
     @SerialName("default_split_type") val splitType: String? = null,
     @SerialName("po_number_prefix") val numberPrefix: String? = null,
     @SerialName("terms_attachment") val terms: AgreementDocumentDto? = null,
+    @SerialName("allow_amend_after_approval") val allowAmendAfterApproval: Boolean? = null,
     /** Each sub-rule independently nullable; the server normalises on read. Read leniently. */
     @SerialName("asset_filters") val assetFilters: JsonElement? = null,
 ) {
@@ -1279,6 +1294,7 @@ data class PurchaseOrderSetupDto(
         // where the web sends null, and a card for a file that is not there
         // reads as one that failed to upload.
         termsDocument = terms?.toDomain()?.takeIf { it.media.isNotBlank() },
+        allowAmendAfterApproval = allowAmendAfterApproval == true,
         assetFilters = assetFilters.toAssetFilters(),
     )
 }
@@ -1292,7 +1308,8 @@ data class PurchaseOrderSetupDto(
 internal fun JsonElement?.toAssetFilters(): AssetFilters {
     val obj = this as? JsonObject ?: return AssetFilters()
     val price = obj["price"] as? JsonObject
-    val types = obj["exp_type"].asStringList()
+    // `expType` wins when it is a list, as the web's `mapAssetFiltersFromDb` reads an already-mapped rule.
+    val types = (obj["expType"] as? JsonArray ?: obj["exp_type"]).asStringList()
     return AssetFilters(
         priceLow = price?.get("low").asAmountText(),
         priceHigh = price?.get("high").asAmountText(),

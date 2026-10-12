@@ -251,6 +251,7 @@ class BudgetFlowTest {
         assertEquals("Sound budget", import.meta.label)
         assertEquals("Imported from Sound_budget.xlsx", import.meta.description)
         assertTrue(posted.single().second.contains("budgets/sound.xlsx"), "the dry run names the stored file")
+        assertTrue(posted.single().second.contains("\"caption\":\"\""), "the pointer carries the web's empty caption")
 
         model.onEvent(AccountHubEvent.BackToBudgetUpload)
         assertEquals(ImportStep.Upload, model.budget.import.step)

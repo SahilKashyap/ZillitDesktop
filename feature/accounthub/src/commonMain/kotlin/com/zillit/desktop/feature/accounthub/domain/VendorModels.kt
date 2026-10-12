@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.accounthub.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlinx.serialization.json.JsonElement
 
 /**
  * A vendor's postal address.
@@ -97,6 +98,8 @@ data class Vendor(
     /** The chart code new lines default to. */
     val defaultCode: String = "",
     val compliance: String = "",
+    /** `compliance` exactly as the server sent it, so an edit never reshapes an object or array into text. */
+    val complianceRaw: JsonElement? = null,
 ) {
     /** What to show when the register is scanned — the name, or the email if unnamed. */
     val display: String get() = name.ifBlank { email }.ifBlank { str(S.desktop_unnamed_vendor) }
@@ -268,6 +271,7 @@ data class NewVendor(
     /** Carried through unchanged; the form never edits either. */
     val vendorType: String = "",
     val compliance: String = "",
+    val complianceRaw: JsonElement? = null,
 ) {
     /** Null when no number was entered — see [VendorPhone]. */
     fun phone(): VendorPhone? =
@@ -303,6 +307,7 @@ data class NewVendor(
             defaultCode = vendor.defaultCode,
             vendorType = vendor.vendorType,
             compliance = vendor.compliance,
+            complianceRaw = vendor.complianceRaw,
         )
     }
 }

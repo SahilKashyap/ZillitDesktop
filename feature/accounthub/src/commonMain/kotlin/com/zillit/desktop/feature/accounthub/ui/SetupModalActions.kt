@@ -78,6 +78,9 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
             }
             AccountHubEvent.SavePayrollAccounts -> savePayrollAccounts()
             AccountHubEvent.DismissPayrollAccounts -> vm.update { copy(setup = setup.copy(payrollAccounts = null)) }
+            AccountHubEvent.DismissPayrollAccountsConfirm -> vm.update {
+                copy(setup = setup.copy(payrollAccounts = setup.payrollAccounts?.copy(confirming = false)))
+            }
             else -> return false
         }
         return true
@@ -494,7 +497,14 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         val codes = state.setup.payrollSettings.edited.payrollAccounts
         val seeded = codes.mapNotNull { code ->
             val account = byCode[code.lowercase()] ?: return@mapNotNull null
-            PayrollAccountRow(id = account.id, code = code, name = account.name, lineType = account.lineType)
+            PayrollAccountRow(
+                id = account.id,
+                code = code,
+                name = account.name,
+                lineType = account.lineType,
+                costType = account.costType,
+                posting = account.isPosting,
+            )
         }
         vm.update {
             copy(
@@ -511,7 +521,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
     }
 
     /**
-     * Sends the new and changed rows only, then re-reads the codes. The
+     * Sends the deactivations and the new and changed rows only, then re-reads the codes. The
      * settings the modal holds are left alone: taking the batch's echo as the
      * whole document threw away approvers and a pay period nobody had saved.
      */
@@ -523,7 +533,12 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
             vm.update { copy(setup = setup.copy(payrollAccounts = null)) }
             return
         }
-        vm.update { copy(setup = setup.copy(payrollAccounts = draft.copy(saving = true))) }
+        // A deactivation touches a real chart row, so the web confirms the batch before it goes.
+        if (rows.any { it.delete } && !draft.confirming) {
+            vm.update { copy(setup = setup.copy(payrollAccounts = draft.copy(confirming = true))) }
+            return
+        }
+        vm.update { copy(setup = setup.copy(payrollAccounts = draft.copy(saving = true, confirming = false))) }
         vm.runResult({ vm.repo.updatePayrollAccounts(rows) }, {
             vm.update {
                 copy(setup = setup.copy(payrollAccounts = null), notice = str(S.desktop_payroll_accounts_saved))

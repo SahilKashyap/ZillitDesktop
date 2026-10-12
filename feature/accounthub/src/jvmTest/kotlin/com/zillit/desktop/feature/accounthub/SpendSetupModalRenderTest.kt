@@ -137,8 +137,9 @@ class SpendSetupModalRenderTest {
         show(state(SetupModal.PettyCash, "acct", cashDoc()))
         onAllNodesWithText("Petty Cash Entry Setup").onLast().assertIsDisplayed()
         onNodeWithText("Float custodian account").assertIsDisplayed()
-        onNodeWithText("BS Code From").assertIsDisplayed()
-        onNodeWithText("BS Code To").assertIsDisplayed()
+        // The web's AccountsSection is shared with Cards, so Petty Cash carries the same "Card" wording.
+        onNodeWithText("Card Float Account from").assertIsDisplayed()
+        onNodeWithText("Card Float Account to").assertIsDisplayed()
         onAllNodesWithText("Card Providers").assertCountEquals(0)
     }
 

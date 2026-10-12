@@ -71,7 +71,7 @@ internal class ChartLayerActions(private val vm: AccountHubViewModel) {
     private fun saveSet() {
         val draft = vm.setupState.chart.layerSetDraft ?: return
         if (draft.saving) return
-        val problem = TrackingSets.setProblem(draft.set.name, draft.set.prefix)
+        val problem = TrackingSets.setProblem(draft.set.name)
         if (problem != null) return vm.sendSideEffect(AccountHubEffect.Failed(problem))
         vm.update { copy(chart = chart.copy(layerSetDraft = draft.copy(saving = true))) }
         vm.runResult(

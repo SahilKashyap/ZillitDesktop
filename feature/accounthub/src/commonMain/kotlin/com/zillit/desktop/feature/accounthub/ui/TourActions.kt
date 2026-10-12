@@ -11,7 +11,8 @@ import kotlinx.coroutines.delay
  * resolves the gaps, and opens 800 ms later unless this production has seen
  * it. It is suppressed while Production Setup itself is on screen — the
  * person is already where the tour would send them — and any exit marks it
- * seen, so a dismissed tour does not come back on the next click.
+ * seen, so a dismissed tour does not come back on the next click. Only the
+ * accounts team is offered it.
  */
 internal class TourActions(
     private val vm: AccountHubViewModel,
@@ -44,7 +45,9 @@ internal class TourActions(
      * that nothing is set up — and from marking that wrong tour as seen.
      */
     fun onSetupLoaded() {
-        if (offered) return
+        // The web shows it to the accounts team only (`isAccountant && showHubSidebar`); Admin Settings'
+        // Companies page loads the same slices for any admin and must not arm it.
+        if (offered || !vm.setupState.viewer.isAccountant) return
         offered = true
         vm.launchWork {
             if (!awaitTourSlices()) {

@@ -282,6 +282,8 @@ private fun AgreementDocument.toImportJson(): JsonElement = buildJsonObject {
     put("name", JsonPrimitive(name))
     put("content_type", JsonPrimitive(contentType))
     put("content_subtype", JsonPrimitive(contentSubtype))
+    // The web's AttachmentModel always carries one, empty here.
+    put("caption", JsonPrimitive(""))
 }
 
 /**

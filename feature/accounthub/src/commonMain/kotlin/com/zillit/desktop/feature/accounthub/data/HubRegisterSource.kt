@@ -285,7 +285,12 @@ internal class HubRegisterSource(
             put("company_type", vendor.companyType.trim().orNull())
             put("terms", vendor.terms.trim().orNull())
             put("default_code", vendor.defaultCode.trim().orNull())
-            put("compliance", vendor.compliance.trim().orNull())
+            // The web passes the value straight back, whatever shape it has.
+            put(
+                "compliance",
+                vendor.complianceRaw?.takeUnless { it is JsonNull || (it is JsonPrimitive && it.isString) }
+                    ?: vendor.compliance.trim().orNull(),
+            )
         },
     ).map { it.toDomain() ?: Vendor(id = "", name = vendor.name) }
 }

@@ -218,6 +218,14 @@ class SetupRulesTest {
     }
 
     @Test
+    fun `a bank value of four characters or fewer is dotted whole, longer keeps its last four`() {
+        assertEquals("••••", BankAccounts.masked("1234"))
+        assertEquals("••", BankAccounts.masked("12"))
+        assertEquals("", BankAccounts.masked("  "))
+        assertEquals("•••• 5678", BankAccounts.masked("12345678"))
+    }
+
+    @Test
     fun `removing a non-default currency leaves the default alone`() {
         val settings = CurrencySettings(
             currencies = listOf(ProjectCurrency("GBP"), ProjectCurrency("USD")),

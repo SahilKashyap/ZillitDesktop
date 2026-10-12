@@ -316,6 +316,9 @@ class AccountHubViewModel(
         // Read outside the state lambda: inside it, `viewer` is the
         // state's own viewer property rather than the supplier.
         val resolved = viewer()
+        // Someone who was inside and has lost the hub's view right is sent back to the
+        // tools grid, as the web's gate does; one who never got in keeps the empty state.
+        val wasInside = currentState.viewer.let { it.ready && !it.isBlocked }
         setState {
             copy(
                 viewer = resolved,
@@ -323,6 +326,7 @@ class AccountHubViewModel(
                 vendors = vendors.copy(viewerId = resolved.userId),
             )
         }
+        if (wasInside && resolved.isBlocked) sendEffect(AccountHubEffect.Back)
     }
 
     /** The host's badge ledger, mapped to the sidebar's units. */

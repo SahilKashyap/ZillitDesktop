@@ -756,8 +756,10 @@ private fun NoDepartmentsLine(text: String) {
 private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val approvals = state.approvals
-    val own = approvals.configFor(dept.id)?.takeIf { it.isConfigured }
-    val inherited = approvals.defaultConfig?.takeIf { it.isConfigured }
+    // Any saved row is the department's own ("custom" on the web), as the Custom
+    // filter counts it; an empty chain still reads Custom rather than Not configured.
+    val own = approvals.configFor(dept.id)
+    val inherited = approvals.defaultConfig
     val effective = own ?: inherited
     val expanded = dept.id in approvals.expanded
     val (status, tone) = when {

@@ -433,6 +433,31 @@ class ChartOfAccountsFlowTest {
         assertEquals(posts, chartCalls(HttpMethod.Post).size, "a code the chart holds is never created")
     }
 
+    /**
+     * A row held back as a duplicate is retried once the clash clears — the web
+     * re-runs its schedule on every change to the duplicate set, not only for the
+     * row being edited.
+     */
+    @Test
+    fun `a row held back as a duplicate saves itself once the other row moves off its code`() =
+        runTest(dispatcher) {
+            val model = opened()
+            model.onEvent(AccountHubEvent.OpenBulkAdd(null))
+            model.onEvent(AccountHubEvent.AddBulkRows(1))
+            val (first, second) = model.chartState.bulk!!.rows
+            model.onEvent(AccountHubEvent.EditBulkRow(first.copy(code = "7000")))
+            model.onEvent(AccountHubEvent.EditBulkRow(second.copy(code = "7000")))
+            settle { false }
+            assertTrue(chartCalls(HttpMethod.Post).isEmpty(), "two rows on one code are both held")
+
+            val moved = model.chartState.bulk!!.rows.first { it.localId == first.localId }
+            model.onEvent(AccountHubEvent.EditBulkRow(moved.copy(code = "7001")))
+            settle { chartCalls(HttpMethod.Post).size == 2 }
+
+            val codes = chartCalls(HttpMethod.Post).mapNotNull { it.body?.string("code") }.toSet()
+            assertEquals(setOf("7000", "7001"), codes)
+        }
+
     /** Done sends what is still waiting at once, then closes the grid and reads the chart again. */
     @Test
     fun `done flushes a waiting row and reads the chart again`() = runTest(dispatcher) {

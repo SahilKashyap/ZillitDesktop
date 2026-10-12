@@ -308,8 +308,18 @@ enum class SetupModal(
     }
 }
 
-/** One section in a modal's left nav — `name`, and the mono count chip, or a dash. */
-data class SetupModalSection(val id: String, val name: String, val count: Int? = null)
+/**
+ * One section in a modal's left nav — `name`, and the mono chip, or a dash. The chip is [count], or [letter]
+ * where the web shows text (the Time Card control model).
+ */
+data class SetupModalSection(
+    val id: String,
+    val name: String,
+    val count: Int? = null,
+    val letter: String? = null,
+) {
+    val chip: String get() = letter ?: count?.toString() ?: "—"
+}
 
 /** A drill-down modal, and which of its sections is open. */
 data class SetupModalState(
@@ -352,6 +362,8 @@ data class PayrollAccountsDraft(
      * chart id the row would go as a create for an account that exists.
      */
     val unmatched: List<String> = emptyList(),
+    /** Save was pressed with deactivations in the batch: the confirm is up, and a second Save sends it. */
+    val confirming: Boolean = false,
 )
 
 /** A pay rule being added or edited — the web's `RateRowModal`. */

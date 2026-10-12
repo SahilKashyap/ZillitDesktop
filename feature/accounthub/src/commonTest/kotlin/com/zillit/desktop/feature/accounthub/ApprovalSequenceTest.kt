@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.accounthub
 
+import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
 import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
@@ -113,5 +114,12 @@ class ApprovalSequenceTest {
         val tier = ApprovalTier(1, listOf(ApprovalRule("department_head", emptyList())))
 
         assertFalse(tier.isAssigned)
+    }
+
+    /** The web's `hasConfig` is "has levels"; a saved chain nobody is assigned to yet still counts. */
+    @Test
+    fun `a saved chain with levels is configured even before anyone is assigned`() {
+        assertTrue(ApprovalConfig(tiers = listOf(empty(1))).isConfigured)
+        assertFalse(ApprovalConfig(tiers = emptyList()).isConfigured)
     }
 }

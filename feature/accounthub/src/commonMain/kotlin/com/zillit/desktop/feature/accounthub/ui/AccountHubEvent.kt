@@ -359,6 +359,7 @@ sealed interface AccountHubEvent {
     data class EditPayrollAccounts(val rows: List<PayrollAccountRow>) : AccountHubEvent
     data object SavePayrollAccounts : AccountHubEvent
     data object DismissPayrollAccounts : AccountHubEvent
+    data object DismissPayrollAccountsConfirm : AccountHubEvent
 
     // -- removals, confirmed -------------------------------------------------------
 

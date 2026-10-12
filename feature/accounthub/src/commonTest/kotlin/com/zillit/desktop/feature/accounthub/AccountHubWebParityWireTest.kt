@@ -249,6 +249,12 @@ class AccountHubWebParityWireTest {
     // -- the shell ----------------------------------------------------------------
 
     @Test
+    fun `the cash tile total skips the notification-only areas`() {
+        val split = mapOf("petty_cash" to 3, "oop_payment_routing" to 5, "cash_history" to 2, "cash_settings" to 1)
+        assertEquals(3, HubBadges.cashUnitTotal(split))
+    }
+
+    @Test
     fun `sidebar badges follow the web's getBadgeCount`() {
         val counts = HubBadgeCounts(
             hubUnits = mapOf(HubBadges.PO_UNIT to 3, HubBadges.INVOICES_UNIT to 2, HubBadges.BANK_RECON_UNIT to 1),
