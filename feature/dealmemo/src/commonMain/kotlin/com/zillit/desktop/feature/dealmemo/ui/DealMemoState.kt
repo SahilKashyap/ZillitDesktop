@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.dealmemo.ui
 
+import com.zillit.desktop.feature.dealmemo.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewUser
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
@@ -164,6 +165,10 @@ data class DealsState(
     val createMenuOpen: Boolean = false,
     /** "Set up Deal Memo first" — opened from the button (null group) or a menu item. */
     val setupGate: SetupGateState? = null,
+    /** The deal_memo approval tiers as last read for the banner; null until the first answer. */
+    val tierConfigs: List<ApprovalTierConfig>? = null,
+    /** The last tiers read failed, so the banner speaks from the metadata instead. */
+    val tiersFailed: Boolean = false,
 )
 
 data class SetupGateState(val group: SetupGroup?)

@@ -285,6 +285,13 @@ private fun AppGraph.Ready.dealMemoViewer(permissions: ProjectPermissions): Deal
     )
 }
 
+/**
+ * Whether the viewer may post in Deal Memo, for the Approvers page that tool opens
+ * from Account Hub; null until the tool grid has answered, so nobody is bounced early.
+ */
+internal fun AppGraph.Ready.dealMemoPostingRight(permissions: ProjectPermissions): Boolean? =
+    dealMemoViewer(permissions).takeIf { it.rightsLoaded }?.rights?.canPost
+
 /** Everyone the production lists, for names, departments and the Notices group of crew who have left. */
 private fun AppGraph.Ready.dealMemoPeople(): Map<String, DealPerson> =
     projectContext?.context?.value?.users.orEmpty().associate { user ->

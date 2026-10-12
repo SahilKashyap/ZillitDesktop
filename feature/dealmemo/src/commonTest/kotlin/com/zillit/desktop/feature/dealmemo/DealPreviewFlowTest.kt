@@ -388,6 +388,21 @@ class DealPreviewFlowTest {
     }
 
     @Test
+    fun `saving Update Nominals with nothing edited just closes it`() = runTest(dispatcher) {
+        val model = viewModel(accountant)
+        model.start()
+        model.onEvent(DealMemoEvent.Navigate(DealMemoRoute.Deal("d1")))
+        settle { model.state.value.preview?.deal != null }
+
+        model.onEvent(PreviewEvent.Edit(EditAction.Nominals))
+        assertNotNull(model.state.value.preview?.nominals)
+        model.onEvent(NominalsEvent.Save)
+
+        assertNull(model.state.value.preview?.nominals)
+        assertTrue(calls.none { it.second.endsWith("/nominal-codes") }, "an empty body is not worth a round trip")
+    }
+
+    @Test
     fun `the rules grid saves the deal's rules, and crew can't open it at all`() = runTest(dispatcher) {
         val model = viewModel(accountant)
         model.start()

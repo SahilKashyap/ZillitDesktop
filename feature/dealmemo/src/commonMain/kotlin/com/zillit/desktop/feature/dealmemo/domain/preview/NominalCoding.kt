@@ -4,6 +4,7 @@ import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -179,6 +180,12 @@ object NominalCoding {
     fun missingRows(deal: DealDoc, form: NominalForm): List<NominalRow> =
         rowsFromDeal(deal, form).filter { form.valueFor(it).isBlank() }
 
+    private fun savedCode(row: JsonObject): String = DocRead.text(row, "nominal_code").orEmpty().trim()
+
+    /** A rule row's code as the table now holds it: its edit, else what the deal has saved. */
+    private fun codeOf(form: NominalForm, prefix: String, key: String, row: JsonObject): String =
+        (form.overrides["$prefix:$key"] ?: savedCode(row)).trim()
+
     /** The nominal table's `isHolidayPayRow`, on a rule's source: its id, or a label that says holiday pay. */
     private fun isHolidayPaySource(source: JsonObject): Boolean {
         val id = DocRead.text(source, "id")
@@ -188,8 +195,14 @@ object NominalCoding {
 
     /**
      * `buildNominalCodesPayload`: rates and holiday pay only when their key
-     * exists; every rule surface the deal has, whole and in order; allowances
-     * and rentals by id. Codes are trimmed and never wrapped here.
+     * exists. Each rule row echoes `row_id` AND `source.raw_label` exactly as
+     * the deal returned them — the server matches on whichever is unique
+     * (ZL-21198): template overtime rows all share `row_id: "overtime"` and
+     * differ only by raw label, custom rows carry a unique id and an empty
+     * label. Only rows whose code CHANGED go; a surface with none is left out,
+     * since a full table 400s on any deal holding two rows the server cannot
+     * tell apart with different codes. Allowances and rentals go whole, by id.
+     * Codes are trimmed and never wrapped here.
      */
     fun payload(form: NominalForm, deal: DealDoc): JsonObject = buildJsonObject {
         form.overrides["basic_labour"]?.let { put("rates", buildJsonObject { put("nominal_code", it.trim()) }) }
@@ -198,21 +211,17 @@ object NominalCoding {
             val rows = DocRead.objects(deal.json[surface])
             if (rows.isEmpty()) return@forEach
             val keys = occurrenceKeys(rows.map(::ruleRowId))
-            put(
-                surface,
-                buildJsonArray {
-                    rows.forEachIndexed { index, row ->
-                        val code =
-                            form.overrides["$prefix:${keys[index]}"] ?: DocRead.text(row, "nominal_code").orEmpty()
-                        add(
-                            buildJsonObject {
-                                put("row_id", ruleRowId(row))
-                                put("nominal_code", code.trim())
-                            },
-                        )
-                    }
-                },
-            )
+            val changed = rows.mapIndexedNotNull { index, row ->
+                val code = codeOf(form, prefix, keys[index], row)
+                if (code == savedCode(row)) return@mapIndexedNotNull null
+                buildJsonObject {
+                    put("row_id", ruleRowId(row))
+                    // Empty on a custom row, sent anyway: the server then falls back to row_id.
+                    put("raw_label", DocRead.text(DocRead.obj(row, "source"), "raw_label").orEmpty())
+                    put("nominal_code", code)
+                }
+            }
+            if (changed.isNotEmpty()) put(surface, JsonArray(changed))
         }
         listOf("allowances" to form.allowances, "rentals" to form.rentals).forEach { (surface, edits) ->
             val rows = DocRead.objects(deal.json[surface])

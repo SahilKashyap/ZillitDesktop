@@ -111,15 +111,6 @@ object CrewFormRules {
         return errors + listOfNotNull(FormatError(CrewField.PayeRef, PAYE_ERROR).takeIf { payeError })
     }
 
-    /**
-     * The footer's amber note: a field the sender marked, that the crew can
-     * fill and keep, is still empty. Nested sections and the passport never count.
-     */
-    fun markedGateableMissing(deal: DealDoc, draft: CrewDraft): Boolean =
-        CrewRequirements.markedPaths(deal)
-            .filter { '.' !in it && it != "passport_attachment" }
-            .any { CrewRequirements.isMissing(it, CrewRequirements.valueAt(draft, it)) }
-
     /** Paths a red asterisk marks on the form: marks, the floor, and unsatisfied pairs. */
     fun requiredPaths(deal: DealDoc, draft: CrewDraft): Set<String> =
         CrewRequirements.requiredPaths(CrewRequirements.markedPaths(deal), draft).toSet()

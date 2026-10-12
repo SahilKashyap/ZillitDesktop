@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewField
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormRules
+import com.zillit.desktop.feature.dealmemo.domain.preview.CrewMissing
 import com.zillit.desktop.feature.dealmemo.domain.preview.isDirtyAgainst
 import com.zillit.desktop.feature.dealmemo.domain.preview.passportList
 import com.zillit.desktop.feature.dealmemo.domain.preview.payload
@@ -33,7 +34,7 @@ internal class CrewFormActions(private val vm: DealMemoViewModel, private val pa
     fun open() {
         val rules = DealPreviewActions.rulesFor(vm.ui) ?: return
         if (!rules.crewCanEdit) return
-        page.updatePreview { copy(crewDraft = crewDraft ?: deal?.let(CrewDraft::seed), crewForm = CrewFormUi()) }
+        page.updatePreview { withFreshForm() }
         if (vm.ui.route != DealMemoRoute.CompleteDetails) vm.navigate(DealMemoRoute.CompleteDetails)
     }
 
@@ -46,8 +47,19 @@ internal class CrewFormActions(private val vm: DealMemoViewModel, private val pa
             return
         }
         if (preview.crewForm == null) {
-            page.updatePreview { copy(crewDraft = crewDraft ?: deal?.let(CrewDraft::seed), crewForm = CrewFormUi()) }
+            page.updatePreview { withFreshForm() }
         }
+    }
+
+    /**
+     * A new form over the draft (seeded when there is none), opened on the first step with something red — read off
+     * the data, not off which button opened it, so the pop-up's "Complete your details", the button above the memo
+     * and a refresh of the form's URL all land in the same place.
+     */
+    private fun DealPreviewState.withFreshForm(): DealPreviewState {
+        val seeded = crewDraft ?: deal?.let(CrewDraft::seed)
+        val step = if (deal != null && seeded != null) CrewMissing.openingStep(deal, seeded) else 0
+        return copy(crewDraft = seeded, crewForm = CrewFormUi(step = step))
     }
 
     @Suppress("CyclomaticComplexMethod")

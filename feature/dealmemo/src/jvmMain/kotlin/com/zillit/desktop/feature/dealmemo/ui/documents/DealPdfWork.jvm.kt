@@ -20,6 +20,7 @@ import java.awt.geom.AffineTransform
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
 import javax.imageio.ImageIO
 
 actual fun platformPdfWork(): DealPdfWork = PdfBoxDealWork
@@ -47,13 +48,18 @@ private object PdfBoxDealWork : DealPdfWork {
         }
     }
 
-    override fun stamp(pdf: ByteArray, png: ByteArray, placements: List<DealPlacement>): ZillitResult<ByteArray> =
+    override fun stamp(pdf: ByteArray, marks: List<SignedPlacement>): ZillitResult<ByteArray> =
         attempt("The signature could not be applied to this document.") {
-            val signature = ImageIO.read(ByteArrayInputStream(png)) ?: error("signature image unreadable")
-            val aspect = signature.height.toDouble() / signature.width
             Loader.loadPDF(pdf).use { document ->
-                val image = PDImageXObject.createFromByteArray(document, png, "signature")
-                placements.forEach { placement ->
+                // One embedded image per distinct signature, however many places it is stamped.
+                val images = HashMap<ByteBuffer, Pair<PDImageXObject, Double>>()
+                marks.forEach { mark ->
+                    val placement = mark.placement
+                    val (image, aspect) = images.getOrPut(ByteBuffer.wrap(mark.png)) {
+                        val read = ImageIO.read(ByteArrayInputStream(mark.png)) ?: error("signature image unreadable")
+                        PDImageXObject.createFromByteArray(document, mark.png, "signature") to
+                            read.height.toDouble() / read.width
+                    }
                     require(placement.pageIndex in 0 until document.numberOfPages) { "no page ${placement.pageIndex}" }
                     val page = document.getPage(placement.pageIndex)
                     val box = page.cropBox

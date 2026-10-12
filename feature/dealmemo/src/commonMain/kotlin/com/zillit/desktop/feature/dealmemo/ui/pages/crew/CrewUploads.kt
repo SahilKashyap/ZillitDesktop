@@ -62,6 +62,7 @@ internal fun PassportUploader(
     onAdd: () -> Unit,
     onView: (DealAttachment) -> Unit,
     onRemove: (Int) -> Unit,
+    missing: String? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         files.forEachIndexed { index, file ->
@@ -76,9 +77,11 @@ internal fun PassportUploader(
                 },
                 uploading = uploading,
                 roomy = files.isEmpty(),
+                missing = missing != null,
                 onClick = onAdd,
             )
         }
+        missing?.let { InlineError(it) }
     }
 }
 
@@ -162,7 +165,7 @@ private fun RemoveButton(onClick: () -> Unit) {
 }
 
 @Composable
-private fun AddFileButton(label: String, uploading: Boolean, roomy: Boolean, onClick: () -> Unit) {
+private fun AddFileButton(label: String, uploading: Boolean, roomy: Boolean, missing: Boolean, onClick: () -> Unit) {
     val p = cp
     val (source, hovered) = rememberHover()
     val shape = RoundedCornerShape(6.dp)
@@ -172,7 +175,14 @@ private fun AddFileButton(label: String, uploading: Boolean, roomy: Boolean, onC
             .alpha(if (uploading) DISABLED else 1f)
             .clip(shape)
             .background(p.fileRow)
-            .dashedBorder(if (hovered && !uploading) p.brand else p.fileBorder, 6.dp)
+            .dashedBorder(
+                when {
+                    missing -> p.missing
+                    hovered && !uploading -> p.brand
+                    else -> p.fileBorder
+                },
+                6.dp,
+            )
             .hoverable(source)
             .then(
                 if (uploading) {

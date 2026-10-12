@@ -3,7 +3,6 @@ package com.zillit.desktop.feature.dealmemo.ui.preview
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.feature.dealmemo.domain.preview.SignSurface
 import com.zillit.desktop.feature.dealmemo.ui.documents.DealPdfPage
-import com.zillit.desktop.feature.dealmemo.ui.documents.DealPlacement
 import com.zillit.desktop.feature.dealmemo.ui.documents.SignatureFont
 import kotlinx.serialization.json.JsonObject
 
@@ -59,8 +58,8 @@ data class SignerState(
     val failed: Boolean = false,
     val source: SignSource? = null,
     val pages: List<DealPdfPage> = emptyList(),
-    /** Signatures already placed; the live overlay is not among them. */
-    val stamps: List<DealPlacement> = emptyList(),
+    /** Signatures already placed, each with its own image; the live overlay is not among them. */
+    val stamps: List<PlacedStamp> = emptyList(),
     val zoom: Float = 1f,
     val busy: Boolean = false,
     /** Bumped whenever the overlay must jump back to the document's end. */

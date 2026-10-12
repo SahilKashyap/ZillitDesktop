@@ -238,6 +238,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistToolProvider
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.ui.AccountHubToolProvider
+import com.zillit.desktop.feature.accounthub.ui.DealMemoApproversToolProvider
 import com.zillit.desktop.feature.accounthub.ui.ProductionCompaniesToolProvider
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
@@ -2988,6 +2989,39 @@ private fun AppGraph.Ready.accountHubViewer(permissions: ProjectPermissions): Ac
     )
 }
 
+/**
+ * The finance console's view model. Built twice — the console's own, and the one behind Deal
+ * Memo's Approvers page — which differ only in who is looking.
+ */
+private fun AppGraph.Ready.buildAccountHub(viewer: () -> AccountHubViewer): AccountHubViewModel {
+    val graph = this
+    return AccountHubViewModel(
+        repository = graph.accountHubRepository,
+        events = graph.socketEvents,
+        viewer = viewer,
+        agreementFiles = graph.agreementFiles(),
+        defaultReportPeriod = ::defaultReportPeriod,
+        clock = System::currentTimeMillis,
+        // The pay breakdown's scope names departments; the hub's
+        // own service does not list them, so the host does.
+        departments = { graph.departmentNames() },
+        users = { graph.hubUsers() },
+        departmentList = { graph.hubDepartments() },
+        exporter = graph.hubExporter(),
+        files = hubFiles(),
+        documentOpener = graph.hubDocumentOpener(),
+        projectId = { graph.projectContext?.context?.value?.project?.projectId.orEmpty() },
+        projectName = { graph.projectContext?.context?.value?.project?.name.orEmpty() },
+        tourSeen = { key -> graph.tourSeen(key) },
+        markTourSeen = { key -> graph.markTourSeen(key) },
+        projectType = { graph.projectContext?.context?.value?.project?.type },
+        // The console renders the other film tools inside its
+        // shell, as the web does — see `AccountHubToolProvider.tools`.
+        embedsTools = true,
+        readToolRow = { itemId, isAccountant -> graph.readHubToolRow(itemId, isAccountant) },
+    )
+}
+
 /** The crew as the share pickers list them — id, name, designation. */
 private fun AppGraph.Ready.driveCrew(): List<com.zillit.desktop.feature.drive.domain.DrivePerson> =
     projectContext?.context?.value?.users.orEmpty().map { it.toDrivePerson() }
@@ -3100,6 +3134,8 @@ internal class AppViewModels(
     val dealMemos: DealMemoViewModel?,
     /** The finance console that hosts the rest of the accounting tools. */
     val accountHub: AccountHubViewModel?,
+    /** Deal Memo's own Approvers page — the console's screen locked to the Deal Memo chain. */
+    val dealMemoApprovers: AccountHubViewModel?,
     /** HMRC Making Tax Digital — reached from the console's own sidebar. */
     val taxFiling: TaxFilingViewModel?,
     /** Bank Reconciliation — also reached from the console's sidebar. */
@@ -3438,32 +3474,15 @@ private fun rememberAppViewModels(
             },
             payroll = ready?.buildPayroll(permissions),
             dealMemos = ready?.buildDealMemos(permissions),
-            accountHub = ready?.let { graph ->
-                AccountHubViewModel(
-                    repository = graph.accountHubRepository,
-                    events = graph.socketEvents,
-                    viewer = { graph.accountHubViewer(permissions()) },
-                    agreementFiles = graph.agreementFiles(),
-                    defaultReportPeriod = ::defaultReportPeriod,
-                    clock = System::currentTimeMillis,
-                    // The pay breakdown's scope names departments; the hub's
-                    // own service does not list them, so the host does.
-                    departments = { graph.departmentNames() },
-                    users = { graph.hubUsers() },
-                    departmentList = { graph.hubDepartments() },
-                    exporter = graph.hubExporter(),
-                    files = hubFiles(),
-                    documentOpener = graph.hubDocumentOpener(),
-                    projectId = { graph.projectContext?.context?.value?.project?.projectId.orEmpty() },
-                    projectName = { graph.projectContext?.context?.value?.project?.name.orEmpty() },
-                    tourSeen = { key -> graph.tourSeen(key) },
-                    markTourSeen = { key -> graph.markTourSeen(key) },
-                    projectType = { graph.projectContext?.context?.value?.project?.type },
-                    // The console renders the other film tools inside its
-                    // shell, as the web does — see `AccountHubToolProvider.tools`.
-                    embedsTools = true,
-                    readToolRow = { itemId, isAccountant -> graph.readHubToolRow(itemId, isAccountant) },
-                )
+            accountHub = ready?.let { graph -> graph.buildAccountHub { graph.accountHubViewer(permissions()) } },
+            // Deal Memo's Approvers page, on a view model of its own so it does not
+            // trample the console's module. Its posting users may edit the Deal Memo
+            // chain (the web's `canEdit={canPost}`); nobody else gets that.
+            dealMemoApprovers = ready?.let { graph ->
+                graph.buildAccountHub {
+                    graph.accountHubViewer(permissions())
+                        .copy(approvalsHostEdit = graph.dealMemoPostingRight(permissions()) == true)
+                }
             },
             taxFiling = ready?.buildTaxFiling(),
             bankRec = ready?.buildBankRec(),
@@ -4116,6 +4135,19 @@ private fun buildRegistry(
     // alone, on a page of the Settings window, as the web hosts it. Shares the
     // console's view model, so a company saved there is the one the hub shows.
     val productionCompanies = viewModels.accountHub?.let { ProductionCompaniesToolProvider(it) }
+    // Deal Memo's "Set Approval Level" and banner land here: the console's Approvers screen
+    // locked to the Deal Memo chain, for Deal Memo's posting users — not the console's own.
+    val dealMemoApprovers = viewModels.dealMemoApprovers?.let { viewModel ->
+        val ready = graph as? AppGraph.Ready
+        DealMemoApproversToolProvider(
+            viewModel,
+            postingRight = {
+                val permissions = viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty
+                ready?.dealMemoPostingRight(permissions)
+            },
+            loadAvatar = { userId -> ready?.let { crewFaceLoader(it)(userId) } },
+        )
+    }
     // Registered under the console's own path, which is the only place it is
     // reached from — see TaxFilingToolProvider.
     val taxFiling = viewModels.taxFiling?.let { taxFilingProvider(it) }
@@ -4179,7 +4211,8 @@ private fun buildRegistry(
         home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
         settings, notifications, sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
-        accountHub, productionCompanies, taxFiling, bankRec, budgetBuilder, formSignature, esignature,
+        accountHub, productionCompanies, dealMemoApprovers, taxFiling, bankRec, budgetBuilder, formSignature,
+        esignature,
         callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,

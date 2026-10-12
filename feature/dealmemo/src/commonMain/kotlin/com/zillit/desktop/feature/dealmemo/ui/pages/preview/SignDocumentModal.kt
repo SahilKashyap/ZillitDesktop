@@ -64,6 +64,7 @@ import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 import com.zillit.desktop.feature.dealmemo.ui.documents.DealPlacement
 import com.zillit.desktop.feature.dealmemo.ui.preview.CapturedSignature
+import com.zillit.desktop.feature.dealmemo.ui.preview.PlacedStamp
 import com.zillit.desktop.feature.dealmemo.ui.preview.SignerStage
 import com.zillit.desktop.feature.dealmemo.ui.preview.SignerState
 import kotlin.math.max
@@ -350,16 +351,16 @@ private fun PageStack(
                             .background(Color.White),
                     )
                 }
+                // A placed stamp is drawn from its own image, not the live signature (ZL-21732).
+                signer.stamps.forEachIndexed { index, stamp ->
+                    StampView(
+                        stamp,
+                        layout,
+                        enabled = !signer.busy,
+                        onRemove = { onEvent(SignerEvent.RemoveStamp(index)) },
+                    )
+                }
                 if (signature != null) {
-                    signer.stamps.forEachIndexed { index, stamp ->
-                        StampView(
-                            stamp,
-                            layout,
-                            signature,
-                            enabled = !signer.busy,
-                            onRemove = { onEvent(SignerEvent.RemoveStamp(index)) },
-                        )
-                    }
                     overlay?.let { box ->
                         LiveSignature(box, layout, signature, enabled = !signer.busy, onChange = onOverlay)
                     }
@@ -371,26 +372,21 @@ private fun PageStack(
 }
 
 @Composable
-private fun StampView(
-    stamp: DealPlacement,
-    layout: StackLayout,
-    signature: CapturedSignature,
-    enabled: Boolean,
-    onRemove: () -> Unit,
-) {
-    val top = layout.tops.getOrNull(stamp.pageIndex) ?: return
-    val pageHeight = layout.heights[stamp.pageIndex]
-    val width = (stamp.fw * layout.pageWidth).toFloat()
-    val height = width * signature.aspect
+private fun StampView(stamp: PlacedStamp, layout: StackLayout, enabled: Boolean, onRemove: () -> Unit) {
+    val placed = stamp.placement
+    val top = layout.tops.getOrNull(placed.pageIndex) ?: return
+    val pageHeight = layout.heights[placed.pageIndex]
+    val width = (placed.fw * layout.pageWidth).toFloat()
+    val height = width * stamp.signature.aspect
     val (source, hovered) = rememberHover()
     Box(
         modifier = Modifier
-            .offset(x = (stamp.fx * layout.pageWidth).toFloat().dp, y = (top + stamp.fy * pageHeight).toFloat().dp)
+            .offset(x = (placed.fx * layout.pageWidth).toFloat().dp, y = (top + placed.fy * pageHeight).toFloat().dp)
             .size(width.dp, height.dp)
             .hoverable(source),
     ) {
         Image(
-            bitmap = signature.image,
+            bitmap = stamp.signature.image,
             contentDescription = str(S.desktop_dm_placed_signature),
             contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),

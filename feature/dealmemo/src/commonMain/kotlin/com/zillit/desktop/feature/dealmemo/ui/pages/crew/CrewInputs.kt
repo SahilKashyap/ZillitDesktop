@@ -82,6 +82,7 @@ internal fun DateInput(
     textSize: Float = 13.5f,
     enabled: Boolean = true,
     error: Boolean = false,
+    missing: Boolean = false,
 ) {
     val p = cp
     val date = CrewFormValues.dateOf(millis, zone)
@@ -111,6 +112,7 @@ internal fun DateInput(
             placeholder = "DD/MM/YYYY",
             enabled = enabled,
             error = error,
+            missing = missing,
             height = height,
             textSize = textSize,
             visualTransformation = DateSlashes,
@@ -396,7 +398,12 @@ private val MONTH_NAMES = Month.entries.map { month -> month.name.lowercase().re
  */
 @Suppress("CyclomaticComplexMethod")
 @Composable
-internal fun MoneyInput(value: Double?, onCommit: (Double?) -> Unit, modifier: Modifier = Modifier) {
+internal fun MoneyInput(
+    value: Double?,
+    onCommit: (Double?) -> Unit,
+    modifier: Modifier = Modifier,
+    missing: Boolean = false,
+) {
     val p = cp
     val focusManager = LocalFocusManager.current
     var draft by remember { mutableStateOf<String?>(null) }
@@ -422,6 +429,7 @@ internal fun MoneyInput(value: Double?, onCommit: (Double?) -> Unit, modifier: M
                 if (!DealCalc.isExpression(next)) onCommit(DealCalc.plainValue(next))
             },
             placeholder = "0.00",
+            missing = missing,
             visualTransformation = if (editing != null && expression == null) {
                 GroupedDigits
             } else {

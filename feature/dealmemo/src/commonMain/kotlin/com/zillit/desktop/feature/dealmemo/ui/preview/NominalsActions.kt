@@ -39,11 +39,17 @@ internal class NominalsActions(private val vm: DealMemoViewModel, private val pa
         }
     }
 
+    @Suppress("ReturnCount") // Each guard is one of the web's bail-outs.
     private fun save() {
         val preview = vm.ui.preview ?: return
         val deal = preview.deal ?: return
         val editor = preview.nominals ?: return
         if (editor.saving || !page.allows { EditAction.Nominals in editControl.actions }) return
+        // The body carries only changed rule rows, so an untouched table has nothing to send.
+        if (!editor.dirty) {
+            close()
+            return
+        }
         update { copy(saving = true) }
         vm.work {
             when (val result = vm.repository.updateNominalCodes(deal.id, NominalCoding.payload(editor.form, deal))) {

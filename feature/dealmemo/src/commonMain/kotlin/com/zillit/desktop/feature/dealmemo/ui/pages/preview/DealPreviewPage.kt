@@ -101,6 +101,10 @@ internal fun DealPreviewBody(
     val card = remember(rules.shown, context) { MemoCard.build(rules.shown, context) }
     Column(modifier = Modifier.widthIn(max = PREVIEW_MAX_WIDTH).fillMaxWidth()) {
         if (preview.embedded && rules.crewCanEdit) CompleteDetailsStrip(onEvent)
+        if (rules.showSetApprovalLevel) {
+            SetApprovalLevelStrip(onEvent)
+            Spacer(Modifier.height(18.dp))
+        }
         if (rules.showApprovalChain || rules.showApproverActions) {
             ApprovalBar(state, preview, rules, onEvent)
             Spacer(Modifier.height(18.dp))
@@ -114,6 +118,40 @@ internal fun DealPreviewBody(
         Spacer(Modifier.height(16.dp))
         CrewDealBar(preview, rules, onEvent)
         Spacer(Modifier.height(12.dp))
+    }
+}
+
+/**
+ * No approver is set up for the deal's department — PO's "No approver
+ * configured" with the card prompt's wording. In the approval bar's slot (that
+ * card is absent when there is no level to show), styled as the page's other
+ * amber banners; Set Approval Level opens Deal Memo's own Approvers page.
+ */
+@Composable
+private fun SetApprovalLevelStrip(onEvent: (DealMemoEvent) -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(pv.amberBg)
+            .border(1.dp, pv.amberBorder, shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitIcon(ZillitIcons.Info, size = 16.dp, tint = pv.amberIcon)
+        ZillitText(
+            text = str(S.desktop_po_no_approver_for_department),
+            style = DmType.sans(13.5.sp, FontWeight.Bold),
+            color = pv.amberInk,
+            modifier = Modifier.weight(1f),
+        )
+        SolidButton(
+            text = str(S.desktop_pc_set_approval_level) + " →",
+            onClick = { onEvent(DealMemoEvent.OpenApprovers) },
+            horizontal = 16.dp,
+        )
     }
 }
 

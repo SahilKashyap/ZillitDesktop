@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.accounthub.data.hubRefreshes
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
 import com.zillit.desktop.feature.accounthub.domain.HubBadges
@@ -214,6 +215,10 @@ class AccountHubViewModel(
             (landingRow ?: HubNavigation.landingTool(identity))?.let { row -> onEvent(AccountHubEvent.OpenTool(row)) }
         }
 
+        listenForRefreshes()
+    }
+
+    private fun listenForRefreshes() {
         // A vendor verified, an account code changed. Only the area on screen
         // reloads; every area reloads on open anyway. `listening` outlives
         // `started`, which onProjectChanged resets, so a production switch
@@ -252,6 +257,31 @@ class AccountHubViewModel(
         setState { copy(viewer = identity, projectName = projectName()) }
         loadRoster()
         loadSetup()
+    }
+
+    /**
+     * Prepares the Approvers page a host shows on its own, locked to [module]
+     * — Deal Memo's, where the web mounts `ApproversModule` with `fixedModule`.
+     *
+     * Not [start], for the reason [openCompanies] gives, and meant for a view
+     * model of its own: the console's Approvers page keeps its module and open
+     * builder in this state, and a second window would trample them. Chains
+     * other clients save arrive as the area's refresh, so a page left open
+     * shows them without being asked.
+     */
+    fun openApprovers(module: ApprovalModule) {
+        val identity = viewer()
+        setState {
+            copy(
+                viewer = identity,
+                area = HubArea.Approvers,
+                projectName = projectName(),
+                approvals = approvals.copy(module = module),
+            )
+        }
+        loadRoster()
+        listenForRefreshes()
+        approvalActions.load()
     }
 
     /** Re-reads rights when the open production changes. */
@@ -669,6 +699,13 @@ class AccountHubViewModel(
     internal fun mayEdit(): Boolean = requireEdit()
 
     internal fun mayActAsAccountant(): Boolean = requireAccountant()
+
+    /** [mayActAsAccountant], widened to the people a host vouches for on its own Approvers page. */
+    internal fun mayEditApprovals(): Boolean {
+        if (currentState.viewer.canEditApprovals) return true
+        sendEffect(AccountHubEffect.Failed(str(S.desktop_hub_only_the_accounts_department_can_do_that)))
+        return false
+    }
 
     /** The host's clock, for the one screen that needs "now" on screen. */
     internal fun nowMillis(): Long = clock()

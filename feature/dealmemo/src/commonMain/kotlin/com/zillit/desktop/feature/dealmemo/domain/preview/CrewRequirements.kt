@@ -91,6 +91,9 @@ object CrewRequirements {
         get() = KEY_MAP.entries.associate { (key, path) -> path to (FIELD_LABEL_KEYS[key]?.let(::str) ?: key) } +
             ("full_legal_name" to str(S.dm_req_full_legal_name))
 
+    /** `LABEL_BY_PATH`: a required path's name, as the blocker list and the "or enter" hint print it. */
+    fun labelOf(path: String): String = LABEL_BY_PATH[path] ?: path
+
     val ALWAYS_REQUIRED = listOf("full_legal_name", "bank.name", "bank.account_holder_name", "emergency_contact_name")
 
     val EITHER_OR = listOf(

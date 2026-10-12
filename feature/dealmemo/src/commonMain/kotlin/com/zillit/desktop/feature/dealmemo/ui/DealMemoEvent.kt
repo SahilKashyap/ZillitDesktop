@@ -24,6 +24,12 @@ sealed interface DealMemoEvent {
     data class OpenHistory(val deal: DealDoc) : DealMemoEvent
 
     data object CloseHistory : DealMemoEvent
+
+    /**
+     * "Set Approval Level" / the banner's Set: Deal Memo's own Approvers page,
+     * for posting users — it is Account Hub's page locked to this tool's chain.
+     */
+    data object OpenApprovers : DealMemoEvent
 }
 
 sealed interface DealsEvent : DealMemoEvent {
@@ -105,4 +111,7 @@ sealed interface RatesEvent : DealMemoEvent {
 sealed interface DealMemoEffect {
     /** Leave the tool for the Film Tools grid. */
     data object LeaveTool : DealMemoEffect
+
+    /** Show Deal Memo's own Approvers page (`/film-tools/deal-memo/approvers`). */
+    data object OpenApprovers : DealMemoEffect
 }

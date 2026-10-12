@@ -40,10 +40,12 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.dealmemo.domain.ApproversBanner
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealDates
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealExport
+import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealListRules
 import com.zillit.desktop.feature.dealmemo.domain.DealQuickFilter
 import com.zillit.desktop.feature.dealmemo.domain.DealSort
@@ -91,6 +93,7 @@ fun AllDealsPage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
         DealListRules.visible(deals.rows, deals.filter, deals.departmentId, deals.search, deals.sort, labels)
     }
     Column(modifier = Modifier.fillMaxSize()) {
+        ApproversNotice(state, onEvent)
         ActionsRow(state, onEvent)
         Spacer(Modifier.height(16.dp))
         QuickFilters(state, labels, onEvent)
@@ -260,6 +263,62 @@ private fun QuickFilters(state: DealMemoUiState, labels: DealCrewLabels, onEvent
 }
 
 /** Accountants only: deals whose nominal coding is still pending keep payroll out of the cost report. */
+/**
+ * "Approvers not configured" — the nominals banner's amber chrome, not
+ * dismissible: it leaves once approvers are saved. Set opens Deal Memo's own
+ * Approvers page, never the hub's, which needs the hub's tool right.
+ */
+@Composable
+private fun ApproversNotice(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
+    val deals = state.deals
+    val names = remember(state.catalogue) {
+        state.catalogue.departments.mapNotNull { department ->
+            department.id?.let { it to DealLabels.formatLabel(department.nameKey) }
+        }.toMap()
+    }
+    val noDepartment = str(S.dm_title)
+    val canPost = state.rights.canPost
+    val message = remember(canPost, deals.tierConfigs, deals.tiersFailed, deals.rows, names, state.metadata) {
+        ApproversBanner.messageFor(
+            canPost = canPost,
+            tierConfigs = deals.tierConfigs,
+            tiersFailed = deals.tiersFailed,
+            deals = deals.rows,
+            departmentNames = names,
+            approversConfigured = state.metadata.approversConfigured,
+            noDepartmentName = noDepartment,
+        )
+    } ?: return
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(dm.amberSoft.copy(alpha = 0.7f))
+            .border(1.dp, dm.amberRing, shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ZillitIcon(ZillitIcons.Info, size = 14.dp, tint = dm.accent)
+        Column(modifier = Modifier.weight(1f)) {
+            val ink = if (ZillitTheme.colors.isDark) Color(0xFFFCD34D) else Color(0xFF7A5B1E)
+            ZillitText(
+                text = str(S.desktop_dm_approvers_not_configured),
+                style = DmType.sans(12.5.sp, FontWeight.Bold),
+                color = ink,
+            )
+            ZillitText(text = message, style = DmType.sans(12.5.sp), color = ink)
+        }
+        DmButton(
+            text = str(S.set),
+            onClick = { onEvent(DealMemoEvent.OpenApprovers) },
+            style = DmButtonStyle.GhostSmall,
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+}
+
 @Composable
 private fun NominalBanner(count: Int) {
     val shape = RoundedCornerShape(12.dp)

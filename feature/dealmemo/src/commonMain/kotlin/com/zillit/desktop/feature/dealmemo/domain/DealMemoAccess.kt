@@ -60,6 +60,8 @@ data class DealMemoMetadata(
     val approvalTierConfigs: List<ApprovalTierConfig> = emptyList(),
     /** Whether a successful answer has arrived — the retry stops here. */
     val loaded: Boolean = false,
+    /** The server's own word on whether any approver exists; null when the answer does not say. */
+    val approversConfigured: Boolean? = null,
 ) {
     /**
      * The chain a deal goes through: the config scoped to the deal's top-level

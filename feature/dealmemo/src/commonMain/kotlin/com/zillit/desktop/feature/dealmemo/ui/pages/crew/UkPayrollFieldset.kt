@@ -23,9 +23,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
@@ -37,8 +42,10 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormValues
+import com.zillit.desktop.feature.dealmemo.domain.preview.CrewMissing
 import com.zillit.desktop.feature.dealmemo.domain.preview.UkOption
 import com.zillit.desktop.feature.dealmemo.domain.preview.UkPayroll
+import com.zillit.desktop.feature.dealmemo.domain.preview.isValueBlank
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 import kotlinx.datetime.TimeZone
@@ -52,10 +59,20 @@ import kotlinx.serialization.json.JsonPrimitive
  * fork, the two loans, the NI category and the pension wish. HMRC's own copy,
  * unparaphrased. Every change is one patch, so a route switch clears the
  * other side in the same write.
+ *
+ * [missing] is the crew form's red "still to fill" state — true exactly when
+ * the Send for Approval / Sign pop-up lists this block. It is keyed on the
+ * route on screen, not the stored one: "No P45" still derives to no route until
+ * a statement is ticked, but the statement options are what the crew member
+ * is looking at, so they are what goes red.
  */
-@Suppress("LongMethod")
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 @Composable
-internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Unit) {
+internal fun UkPayrollFieldset(
+    block: JsonObject,
+    onPatch: (Map<String, JsonElement>) -> Unit,
+    missing: Boolean = false,
+) {
     // The route is local, seeded once from what is filled; the stash lets a
     // mis-click on the toggle be undone until the step is left.
     var route by remember { mutableStateOf(UkPayroll.route(block)) }
@@ -79,6 +96,8 @@ internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElem
         route = next
     }
 
+    val routeMissing = missing && route.isEmpty()
+
     Column {
         Question(
             title = str(S.desktop_dm_tax_code_information),
@@ -86,25 +105,43 @@ internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElem
             lead = true,
             first = true,
         ) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = if (routeMissing) 0.dp else 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 RouteButton(
                     str(S.desktop_dm_no_p45_starter_statement),
                     route == UkPayroll.ROUTE_STATEMENT,
                     Modifier.weight(1f),
+                    routeMissing,
                 ) {
                     pickRoute(UkPayroll.ROUTE_STATEMENT)
                 }
-                RouteButton(str(S.desktop_dm_i_have_a_p45), route == UkPayroll.ROUTE_P45, Modifier.weight(1f)) {
+                RouteButton(
+                    str(S.desktop_dm_i_have_a_p45),
+                    route == UkPayroll.ROUTE_P45,
+                    Modifier.weight(1f),
+                    routeMissing,
+                ) {
                     pickRoute(UkPayroll.ROUTE_P45)
                 }
             }
+            if (routeMissing) {
+                Column(Modifier.padding(bottom = 12.dp)) { InlineError(str(S.desktop_dm_required_pick_one)) }
+            }
             when (route) {
-                UkPayroll.ROUTE_STATEMENT -> DeclarationRadio(
-                    options = UkPayroll.STARTER_STATEMENTS,
-                    value = DocRead.text(block, "starter_statement"),
-                    onPick = { onPatch(mapOf("starter_statement" to JsonPrimitive(it))) },
-                )
-                UkPayroll.ROUTE_P45 -> P45Grid(block, onPatch)
+                // On this route `missing` can only mean no statement ticked: picking it clears the P45 keys.
+                UkPayroll.ROUTE_STATEMENT -> {
+                    Box(if (missing) Modifier.missingFrame() else Modifier) {
+                        DeclarationRadio(
+                            options = UkPayroll.STARTER_STATEMENTS,
+                            value = DocRead.text(block, "starter_statement"),
+                            onPick = { onPatch(mapOf("starter_statement" to JsonPrimitive(it))) },
+                        )
+                    }
+                    if (missing) InlineError(CrewMissing.REQUIRED)
+                }
+                UkPayroll.ROUTE_P45 -> P45Grid(block, onPatch, missing)
             }
         }
         Question(
@@ -166,8 +203,10 @@ private class RouteStash {
 }
 
 @Composable
-private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Unit) {
+private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Unit, missing: Boolean) {
     val paye = DocRead.text(block, "p45_previous_paye_ref").orEmpty()
+    // A figure is empty on null or blank, never on falsy: 0 is a real one. The same test as `missingLabels`.
+    fun empty(key: String) = missing && isValueBlank(block[key])
     FormGrid {
         listOf(
             "p45_previous_pay" to str(S.desktop_dm_previous_pay),
@@ -179,7 +218,9 @@ private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Un
                     MoneyInput(
                         value = DocRead.number(block, key),
                         onCommit = { onPatch(mapOf(key to CrewFormValues.amount(it))) },
+                        missing = empty(key),
                     )
+                    if (empty(key)) InlineError(CrewMissing.REQUIRED)
                 }
             }
         }
@@ -191,7 +232,9 @@ private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Un
                     millis = DocRead.epoch(block, "p45_leaving_date"),
                     onChange = { onPatch(mapOf("p45_leaving_date" to JsonPrimitive(it))) },
                     zone = TimeZone.UTC,
+                    missing = empty("p45_leaving_date"),
                 )
+                if (empty("p45_leaving_date")) InlineError(CrewMissing.REQUIRED)
             }
         }
         half {
@@ -203,8 +246,11 @@ private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Un
                     onValueChange = { onPatch(mapOf("p45_previous_paye_ref" to JsonPrimitive(it))) },
                     placeholder = "123/AB456",
                     error = invalid,
+                    missing = empty("p45_previous_paye_ref"),
                 )
+                // A format error outranks "Required"; the two cannot coincide, as formats only fire on a value.
                 if (invalid) InlineError(CrewFormRules.PAYE_ERROR)
+                if (empty("p45_previous_paye_ref")) InlineError(CrewMissing.REQUIRED)
             }
         }
     }
@@ -242,7 +288,7 @@ private fun Question(
 }
 
 @Composable
-private fun RouteButton(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun RouteButton(label: String, active: Boolean, modifier: Modifier, missing: Boolean, onClick: () -> Unit) {
     val p = cp
     val (source, hovered) = rememberHover()
     val shape = RoundedCornerShape(11.dp)
@@ -261,6 +307,7 @@ private fun RouteButton(label: String, active: Boolean, modifier: Modifier, onCl
                 if (active) 1.5.dp else 1.dp,
                 when {
                     active -> Color(0xFFE8861A)
+                    missing -> p.missing
                     hovered -> p.pickerBorder
                     else -> p.inputBorder
                 },
@@ -359,4 +406,25 @@ private fun RadioDot(selected: Boolean, modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * `-mx-[7px] -mt-[7px] rounded-[12px] border p-1.5 ah-missing`: a red frame drawn 7 outside the box (its own 1 and the
+ * web's 6 of padding), so the options sit where they do unframed and ticking one clears the frame without a reflow.
+ */
+@Composable
+private fun Modifier.missingFrame(): Modifier {
+    val red = cp.missing
+    return drawBehind {
+        val outset = FRAME_OUTSET.toPx()
+        drawRoundRect(
+            color = red,
+            topLeft = Offset(-outset, -outset),
+            size = Size(size.width + 2 * outset, size.height + 2 * outset),
+            cornerRadius = CornerRadius(FRAME_RADIUS.toPx()),
+            style = Stroke(1.dp.toPx()),
+        )
+    }
+}
+
+private val FRAME_OUTSET = 7.dp
+private val FRAME_RADIUS = 12.dp
 private val GLOW = Color(0x24E8861A)

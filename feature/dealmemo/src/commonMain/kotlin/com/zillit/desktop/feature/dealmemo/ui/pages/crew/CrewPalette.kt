@@ -50,6 +50,7 @@ internal data class CrewPalette(
     val tealTop: Color,
     val routeActiveTop: Color,
     val cardSelected: Color,
+    val missing: Color,
 ) {
     companion object {
         val Light = CrewPalette(
@@ -94,6 +95,7 @@ internal data class CrewPalette(
             tealTop = Color(0xFFEFFAF7),
             routeActiveTop = Color(0xFFFFFAF1),
             cardSelected = Color(0xFFFFFAF1),
+            missing = Color(0xFFE23B3B),
         )
 
         val Dark = CrewPalette(
@@ -139,6 +141,7 @@ internal data class CrewPalette(
             tealTop = Color(0xFF13201F),
             routeActiveTop = Color(0xFF1F1A13),
             cardSelected = Color(0xFFE8861A).copy(alpha = 0.10f),
+            missing = Color(0xFFF87171),
         )
     }
 }

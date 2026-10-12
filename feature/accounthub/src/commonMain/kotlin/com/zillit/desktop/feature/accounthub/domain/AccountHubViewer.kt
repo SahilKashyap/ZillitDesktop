@@ -50,6 +50,14 @@ data class AccountHubViewer(
      * permission grid the same question once per frame.
      */
     val viewableTools: Set<String> = emptySet(),
+    /**
+     * Whether the host vouches for this person editing approval chains although
+     * they are not in accounts — Deal Memo's own Approvers page passes its
+     * posting users (`ApproversModule`'s `canEdit`). Set only on the viewer of
+     * that page, whose locked module is the one chain it can reach; the
+     * console's viewer never carries it.
+     */
+    val approvalsHostEdit: Boolean = false,
 ) {
 
     /** Whether the console should refuse to render. Only once rights are known. */
@@ -107,6 +115,13 @@ data class AccountHubViewer(
      * calls verification "a Vendors-module accountant action".
      */
     val canActAsAccountant: Boolean get() = canPost && isAccountant
+
+    /**
+     * Whether approval levels may be changed: accountants everywhere, plus
+     * whoever the host vouches for ([approvalsHostEdit]). The service decides
+     * whether a non-accountant's save is allowed — see [canActAsAccountant].
+     */
+    val canEditApprovals: Boolean get() = canActAsAccountant || approvalsHostEdit
 
     /**
      * Whether someone already inside [tool] may stay there.
