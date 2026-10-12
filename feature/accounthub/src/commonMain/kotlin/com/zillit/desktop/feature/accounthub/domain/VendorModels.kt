@@ -385,7 +385,9 @@ fun sanitisePhone(raw: String): String = raw.filter { it.isDigit() }
  * The email rule is stricter than "contains an @" because the server's is — it
  * refused `hire@ziltest.example` outright.
  */
-fun NewVendor.validationError(): String? = fieldErrors().values.firstOrNull()
+// A malformed typed detail is a red line on its row and nothing more: the web never
+// lets `isValid` block a save, so it is left out of what refuses one here.
+fun NewVendor.validationError(): String? = fieldErrors().filterKeys { it != "additionalInfo" }.values.firstOrNull()
 
 /**
  * Local-part, `@`, domain, dot, and a two-letter-or-longer suffix.

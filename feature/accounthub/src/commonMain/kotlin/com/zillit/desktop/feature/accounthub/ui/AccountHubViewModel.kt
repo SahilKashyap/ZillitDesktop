@@ -229,10 +229,18 @@ class AccountHubViewModel(
             launch {
                 hubRefreshes(bus).collect { area ->
                     when {
-                        currentState.area != area -> Unit
+                        // The chart feeds the code pickers on other pages (a bank's
+                        // nominal, a vendor's default code), which the web refreshes
+                        // from the same event wherever they are. Re-read it quietly
+                        // if it was ever loaded, so they do not keep a stale one.
+                        currentState.area != area ->
+                            if (area == HubArea.ChartOfAccounts && currentState.chart.loaded) chartActions.load()
                         // The slices only: a whole setup load would restart
                         // the page's spinner and tour for somebody's save.
-                        area == HubArea.ProductionSetup -> setupLoader.loadAll()
+                        area == HubArea.ProductionSetup -> {
+                            setupLoader.loadAll()
+                            loadBanks()
+                        }
                         else -> load(area)
                     }
                 }
@@ -287,6 +295,8 @@ class AccountHubViewModel(
     /** Re-reads rights when the open production changes. */
     fun onProjectChanged() {
         started = false
+        rosterLoaded = false
+        tourActions.reset()
         setState { AccountHubUiState() }
         start()
     }

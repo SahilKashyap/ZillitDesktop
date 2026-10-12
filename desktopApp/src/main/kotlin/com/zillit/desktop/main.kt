@@ -1488,6 +1488,10 @@ private fun ProjectScopedLoads(
         viewModels.bankRec?.onProjectChanged()
         // Stills belong to one production: its photos, its cast, its queue.
         viewModels.selectStills?.onProjectChanged()
+        // The hub keeps its sections, vendors, chart and roster per view model;
+        // without this a reopened console shows the previous production's.
+        viewModels.accountHub?.onProjectChanged()
+        viewModels.dealMemoApprovers?.onProjectChanged()
     }
 
     // The calls above run while the tool grid is still out — `projectId` flips

@@ -403,7 +403,7 @@ object BibleFormat {
      * brackets, as an accountant writes a credit and as the web prints it.
      */
     fun money(amount: Double, symbol: String): String {
-        val cents = kotlin.math.floor(kotlin.math.abs(amount) * CENTS + HALF).toLong()
+        val cents = com.zillit.desktop.core.common.Money.scaledHalfAway(kotlin.math.abs(amount), 2)
         val whole = (cents / CENTS.toLong()).toString().reversed().chunked(THOUSANDS).joinToString(",").reversed()
         val figure = "$symbol$whole.${(cents % CENTS.toLong()).toString().padStart(2, '0')}"
         return if (amount < 0) "($figure)" else figure
@@ -424,7 +424,6 @@ object BibleFormat {
     }
 
     private const val CENTS = 100.0
-    private const val HALF = 0.5
     private const val THOUSANDS = 3
     private const val CENTURY = 100
 }

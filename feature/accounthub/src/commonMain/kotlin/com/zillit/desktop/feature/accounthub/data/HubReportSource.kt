@@ -206,7 +206,7 @@ internal class HubReportSource(
         body = buildJsonObject { put("attachment", document.toImportJson()) },
     ).map { payload ->
         val answer = payload.importAnswer(BudgetDryRunDto.serializer())
-        val parsed = answer?.parsed?.toDomain() ?: ParsedBudget()
+        val parsed = answer?.parsed?.toDomain()?.copy(raw = payload.rawParsed()) ?: ParsedBudget()
         val upload = BudgetUpload(
             uploadId = answer?.upload?.id ?: answer?.uploadId.orEmpty(),
             fileName = answer?.upload?.fileName?.takeIf { it.isNotBlank() }
@@ -267,6 +267,13 @@ private fun <T> JsonElement.importAnswer(serializer: KSerializer<T>): T? {
     return runCatching { accountHubJson.decodeFromJsonElement(serializer, inner) }.getOrNull()
 }
 
+/** The dry run's `parsed` object as received, bare or under `value`. */
+private fun JsonElement.rawParsed(): JsonObject? {
+    val body = this as? JsonObject ?: return null
+    val inner = body["value"] as? JsonObject ?: body
+    return inner["parsed"] as? JsonObject
+}
+
 /** The stored file, as the import routes name it. */
 private fun AgreementDocument.toImportJson(): JsonElement = buildJsonObject {
     put("media", JsonPrimitive(media))
@@ -284,7 +291,7 @@ private fun AgreementDocument.toImportJson(): JsonElement = buildJsonObject {
  * handed over, edits included, and a partial body would leave it merging two
  * ideas of the same import.
  */
-private fun ParsedBudget.toJson(): JsonElement = buildJsonObject {
+private fun ParsedBudget.toJson(): JsonElement = raw ?: buildJsonObject {
     put("currency", JsonPrimitive(currency))
     put("sections", buildJsonArray { sections.forEach { add(it.toJson()) } })
     put("headers", buildJsonArray { headers.forEach { add(it.toJson(header = true)) } })

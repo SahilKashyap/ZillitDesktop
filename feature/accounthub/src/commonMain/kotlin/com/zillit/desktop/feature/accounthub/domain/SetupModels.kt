@@ -411,6 +411,9 @@ object SortCode {
 
     /** Formats partial input too, so it can mask a field as it is typed. */
     fun formatted(value: String): String {
+        // A routing number longer than a UK sort code is shown whole, as the web
+        // does, rather than cut to six digits in the form.
+        if (value.count { it.isDigit() } > LENGTH) return value
         val digits = digits(value)
         return when {
             digits.length <= FIRST -> digits
@@ -1174,7 +1177,7 @@ data class PurchaseOrderSetup(
          * client's to guess at — it simply never sends one.
          */
         fun normalisePrefix(raw: String): String =
-            raw.uppercase().filter { it.isLetterOrDigit() }.take(PREFIX_MAX)
+            raw.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(PREFIX_MAX)
     }
 }
 

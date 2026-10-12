@@ -34,14 +34,26 @@ internal class TourActions(
         return true
     }
 
-    /** The settings have landed: decide whether there is anything to show. */
+    /**
+     * The settings have been asked for: once the slices the tour judges have
+     * answered, decide whether there is anything to show.
+     *
+     * The web's `ready` is "not loading, no error, settings present", so a read
+     * that is slow or failed means *unknown* and flags nothing. Waiting on the
+     * slice record, not a timer, keeps a configured production from being told
+     * that nothing is set up — and from marking that wrong tour as seen.
+     */
     fun onSetupLoaded() {
         if (offered) return
-        val state = vm.setupState
-        val gaps = SetupTour.gaps(state.setup.snapshot(coaReady = state.chart.loaded, coaEmpty = state.chart.isEmpty))
-        if (gaps.isEmpty()) return
         offered = true
         vm.launchWork {
+            if (!awaitTourSlices()) {
+                offered = false
+                return@launchWork
+            }
+            val state = vm.setupState
+            val gaps = SetupTour.gaps(state.setup.snapshot(coaReady = state.chart.loaded, coaEmpty = state.chart.isEmpty))
+            if (gaps.isEmpty()) return@launchWork
             val key = SetupTour.seenKey(projectId())
             if (tourSeen(key)) return@launchWork
             delay(SetupTour.OPEN_DELAY_MS)
@@ -53,6 +65,24 @@ internal class TourActions(
             }
             vm.update { copy(tour = TourState(open = true, intro = true, steps = gaps)) }
         }
+    }
+
+    /** True when every slice the tour reads has loaded; false when one failed or never answered. */
+    private suspend fun awaitTourSlices(): Boolean {
+        val deadline = SLICE_WAIT_MS / SLICE_POLL_MS
+        repeat(deadline.toInt()) {
+            val slices = vm.setupState.setup.slices
+            if (TOUR_SLICES.all(slices::isLoaded)) return true
+            if (TOUR_SLICES.any { slices.failure(it) != null }) return false
+            delay(SLICE_POLL_MS)
+        }
+        return false
+    }
+
+    /** Forgets this production's offer, for the next one the console opens on. */
+    fun reset() {
+        offered = false
+        pending = null
     }
 
     /** A tour held back on Production Setup opens when the person leaves it. */
@@ -85,5 +115,17 @@ internal class TourActions(
     private fun close() {
         vm.update { copy(tour = TourState()) }
         vm.launchWork { markTourSeen(SetupTour.seenKey(projectId())) }
+    }
+
+    private companion object {
+        /** The sections the production gaps are judged from (banks and the chart are tracked on their own). */
+        val TOUR_SLICES = listOf(
+            SetupSection.Companies,
+            SetupSection.Currencies,
+            SetupSection.TaxTypes,
+            SetupSection.AssetTags,
+        )
+        const val SLICE_WAIT_MS = 15_000L
+        const val SLICE_POLL_MS = 200L
     }
 }

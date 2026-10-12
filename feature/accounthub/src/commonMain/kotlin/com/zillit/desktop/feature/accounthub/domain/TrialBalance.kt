@@ -168,31 +168,7 @@ object LedgerMoney {
      * £0.13. A total that differs from the web's by a penny is a total nobody
      * can reconcile.
      */
-    fun pence(value: Double): Long {
-        if (!value.isFinite()) return 0
-        val plain = plainDecimal(kotlin.math.abs(value))
-        val point = plain.indexOf('.')
-        val whole = if (point < 0) plain else plain.substring(0, point)
-        val decimals = (if (point < 0) "" else plain.substring(point + 1)).padEnd(ROUNDING_DIGIT + 1, '0')
-        val truncated = whole.toLong() * PENCE_PER_UNIT + decimals.take(ROUNDING_DIGIT).toLong()
-        return if (decimals[ROUNDING_DIGIT] >= '5') truncated + 1 else truncated
-    }
-
-    /** `1.2345678905E7` → `12345678.905`: the JVM's shortest form, without the exponent it uses past 10⁷. */
-    private fun plainDecimal(value: Double): String {
-        val text = value.toString()
-        val exponentAt = text.indexOfFirst { it == 'E' || it == 'e' }
-        if (exponentAt < 0) return text
-        val mantissa = text.substring(0, exponentAt)
-        val digits = mantissa.replace(".", "")
-        val point = (mantissa.indexOf('.').takeIf { it >= 0 } ?: mantissa.length) +
-            text.substring(exponentAt + 1).toInt()
-        return when {
-            point <= 0 -> "0." + "0".repeat(-point) + digits
-            point >= digits.length -> digits + "0".repeat(point - digits.length)
-            else -> digits.substring(0, point) + "." + digits.substring(point)
-        }
-    }
+    fun pence(value: Double): Long = com.zillit.desktop.core.common.Money.scaledHalfAway(kotlin.math.abs(value), ROUNDING_DIGIT)
 
     private const val PENCE_PER_UNIT = 100L
     private const val THOUSANDS = 3

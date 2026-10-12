@@ -251,7 +251,8 @@ data class CurrencyDto(
             code = it,
             name = name.orEmpty(),
             symbol = symbol.orEmpty(),
-            rate = rate,
+            // A stored row with no usable rate reads as 1, as the web's `exrByCode` does.
+            rate = rate?.takeIf { it > 0 } ?: 1.0,
             country = country.orEmpty(),
         )
     }

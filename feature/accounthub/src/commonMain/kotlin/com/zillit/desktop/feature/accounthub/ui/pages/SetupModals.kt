@@ -1175,6 +1175,9 @@ private fun GroupRouting(group: com.zillit.desktop.feature.accounthub.domain.Pay
 private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val draft = state.setup.payrollGroupDraft
     val team = HubUsers.available(state.users)
+    // The web's `AVAILABLE_USERS`: a group's accountant is on the accounts team;
+    // only "Specific crew" draws on everyone.
+    val accountants = HubUsers.accountsTeam(state.users)
     val departments = state.departmentList
     val designations = departments.flatMap { d -> d.designations.map { it to d } }
     ZillitDialogShell(
@@ -1201,8 +1204,8 @@ private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEve
         fun update(next: com.zillit.desktop.feature.accounthub.domain.PayrollGroup) =
             onEvent(AccountHubEvent.EditPayrollGroup(next))
         HubSelect(
-            value = team.firstOrNull { it.id == draft.assigneeId },
-            options = team,
+            value = accountants.firstOrNull { it.id == draft.assigneeId },
+            options = accountants,
             label = { it.name },
             onSelect = { update(draft.copy(assigneeId = it?.id.orEmpty())) },
             placeholder = str(S.desktop_select_accountant),

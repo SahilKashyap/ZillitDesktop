@@ -456,8 +456,26 @@ data class SliceLoads(
         if (section in loaded) this else copy(pending = pending - section, failed = failed + (section to message))
 
     companion object {
-        /** Every section the page reads on open. The project budget has no surface here. */
-        val TRACKED: Set<SetupSection> = SetupSection.entries.toSet() - SetupSection.Budget
+        private val DEAL_MEMO_ONLY = setOf(
+            SetupSection.Schedule,
+            SetupSection.PayrollDefaults,
+            SetupSection.DealConditions,
+            SetupSection.PayrollBureaus,
+            SetupSection.Allowances,
+            SetupSection.DayTypes,
+        )
+
+        /**
+         * The sections the page reads on open: the ones it draws. The project
+         * budget has no surface here, and the deal-memo sections (schedule, pay
+         * defaults, conditions, bureaus, allowances, day types) left this page
+         * for the Deal Memo builder — the web's page no longer mounts them, and
+         * reading documents nobody sees only invites a failed-slice state over a
+         * section with no screen. Non-union pay stays: the rule-import flow
+         * saves the whole breakdown, which must never be written over unread.
+         */
+        val TRACKED: Set<SetupSection> = SetupSection.entries.toSet() - SetupSection.Budget - DEAL_MEMO_ONLY
+
     }
 }
 

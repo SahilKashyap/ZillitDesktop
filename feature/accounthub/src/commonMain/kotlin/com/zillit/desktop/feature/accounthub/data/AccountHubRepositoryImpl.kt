@@ -970,7 +970,8 @@ private fun TaxType.toJson(): JsonElement = buildJsonObject {
     put("type", JsonPrimitive(type))
     put("identifier", JsonPrimitive(identifier))
     put("label", JsonPrimitive(label))
-    put("value", rate?.let(::JsonPrimitive) ?: JsonPrimitive(value))
+    // Blank is null on the web (`toTaxFloat`), not an empty string.
+    put("value", rate?.let(::JsonPrimitive) ?: value.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull)
     put("country", if (isCustom) JsonNull else JsonPrimitive(country))
     put("country_code", if (isCustom) JsonNull else JsonPrimitive(countryCode.orEmpty()))
     put("is_recoverable", JsonPrimitive(isRecoverable))
