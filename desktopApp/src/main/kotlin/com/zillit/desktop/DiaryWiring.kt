@@ -51,6 +51,9 @@ internal fun AppGraph.Ready.diaryCalendarLookup(): MainCalendarLookup = MainCale
                     // diary keeps its Join button here too.
                     callType = event.callType?.wireValue.orEmpty(),
                     cncCallGroupId = event.cncGroupId,
+                    // Copied across, or a Line 1 event mirrored here would
+                    // lose its line and join the CnC room instead.
+                    line = event.line,
                 )
             }
     }

@@ -109,6 +109,13 @@ interface LiveKitLineListener {
     fun onEnded(reason: String)
 
     /**
+     * `callHandledElsewhere {reason: "switched"}`: a meet moved to another of
+     * this user's devices. Every other listener hears it as before — a
+     * handled-elsewhere dismissal.
+     */
+    fun onMovedElsewhere(callId: String) = onDismissed(callId, LiveKitDismissal.HandledElsewhere)
+
+    /**
      * The server's roster for a call, when it was asked for — whole, so the
      * `available` rows come with it and the users panel never has to fall back
      * on the open production's crew.
@@ -277,7 +284,8 @@ class LiveKitLine(
         })
         val opened = sockets.connect(
             url = withModuleData(url, blob),
-            headers = mapOf(HEADER_MODULE_DATA to blob),
+            // The ops dashboard reports a session's platform from the handshake.
+            headers = mapOf(HEADER_MODULE_DATA to blob, HEADER_PLATFORM to PLATFORM),
             onFrame = { frame -> scope.launch { fresh.onFrame(frame) } },
             onClosed = { reason -> closed.complete(reason) },
         )
@@ -297,6 +305,8 @@ class LiveKitLine(
 
         val reason = closed.await()
         ZillitLog.w(TAG) { "presence offline: $reason" }
+        // A knock lives on this connection; the server forgets it with the socket.
+        meets.failKnock()
         events.cancel()
         heartbeat?.cancel()
         heartbeat = null
@@ -354,7 +364,12 @@ class LiveKitLine(
                 )
             }
             is LiveKitEvent.Cancelled -> dismissed(event.callId, LiveKitDismissal.Cancelled, sink)
-            is LiveKitEvent.HandledElsewhere -> dismissed(event.callId, LiveKitDismissal.HandledElsewhere, sink)
+            is LiveKitEvent.HandledElsewhere -> if (event.reason == REASON_SWITCHED) {
+                markResolved(event.callId)
+                sink.onMovedElsewhere(event.callId)
+            } else {
+                dismissed(event.callId, LiveKitDismissal.HandledElsewhere, sink)
+            }
             is LiveKitEvent.Removed -> dismissed(event.callId, LiveKitDismissal.Removed, sink, event.byName)
             is LiveKitEvent.Ended -> sink.onEnded(event.reason)
             is LiveKitEvent.ActiveCalls -> sink.onActiveCalls(event.calls)
@@ -370,6 +385,10 @@ class LiveKitLine(
             is LiveKitEvent.HostAction -> sink.onHostAction(event.callId, event.action)
             is LiveKitEvent.GuestKnocking -> sink.onGuestKnocking(event.callId, event.guestId, event.name)
             is LiveKitEvent.GuestList -> sink.onGuestList(event.callId, event.guests)
+            is LiveKitEvent.GuestAdmitted ->
+                meets.onKnockAnswer(event.callId, KnockAnswer.Admitted(event.url, event.token))
+            is LiveKitEvent.GuestDeclined ->
+                meets.onKnockAnswer(event.callId, KnockAnswer.Refused(knockProblemOf(event.reason)))
             is LiveKitEvent.ParticipantJoined,
             is LiveKitEvent.ParticipantLeft,
             -> Unit
@@ -614,8 +633,14 @@ class LiveKitLine(
 
     /** Leaves a call this device is in. The server ends it when the last one leaves. */
     suspend fun leave(session: CallSession) {
+        val projectId = session.projectId.takeIf { it.isNotBlank() }
         overSocketOrRest(session.callUuid, "leaveCall") {
-            api.hangup(session.callUuid, session.projectId.takeIf { it.isNotBlank() }, session.selfUserId)
+            // A meet has its own leave route; a hang-up is for rings.
+            if (session.isMeet) {
+                api.leaveCall(session.callUuid, session.selfUserId, projectId)
+            } else {
+                api.hangup(session.callUuid, projectId, session.selfUserId)
+            }
         }
     }
 
@@ -821,6 +846,15 @@ class LiveKitLine(
             .isSuccess
     }
 
+    // ── Meets (Line 1 Calendar / Box Schedule events) ───────────────────────
+
+    /**
+     * A Line 1 meet's join, on this line's presence socket and REST client —
+     * see [LiveKitMeets]. Its own class because it shares nothing with the
+     * ring machinery here but the socket.
+     */
+    val meets: LiveKitMeets = LiveKitMeets(api, peer = { peer }, identity = identity)
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /**
@@ -921,6 +955,15 @@ class LiveKitLine(
 
     companion object {
         const val HEADER_MODULE_DATA = "moduledata"
+
+        /** What the ops dashboard reports a session as — on the handshake and every request. */
+        const val HEADER_PLATFORM = "x-platform"
+        const val PLATFORM = "desktop"
+
+        /** `callHandledElsewhere.reason` when a meet moved to another of this user's devices. */
+        const val REASON_SWITCHED = "switched"
+
+
         private const val HEARTBEAT_MILLIS = 15_000L
 
         /** The web's cap on a `startCall` ack before the ring falls back to REST. */

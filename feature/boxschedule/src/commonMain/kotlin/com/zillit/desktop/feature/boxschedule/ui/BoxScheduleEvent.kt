@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
@@ -131,6 +132,7 @@ sealed interface EntryEvent : BoxScheduleEvent {
     data class SetTimezone(val zoneId: String) : EntryEvent
     data class SetReminder(val value: String) : EntryEvent
     data class SetCallType(val value: String) : EntryEvent
+    data class SetLine(val line: EventCallLine) : EntryEvent
     data class SetTextColor(val color: String) : EntryEvent
     data class SetLocation(val text: String, val lat: Double? = null, val lng: Double? = null) : EntryEvent
     data class SetColor(val color: String) : EntryEvent
@@ -263,7 +265,13 @@ sealed interface BoxScheduleEffect {
      * The same room a calendar event's Join opens — this module keeps no
      * dependency on calling, only on the id.
      */
-    data class JoinCall(val roomId: String, val title: String, val video: Boolean) : BoxScheduleEffect
+    data class JoinCall(
+        val roomId: String,
+        val title: String,
+        val video: Boolean,
+        /** Line 1 opens the meet lobby on [roomId] (the meetId); Line 2 is the CnC room, as before. */
+        val line: EventCallLine = EventCallLine.Line2,
+    ) : BoxScheduleEffect
 
     /** Puts text on the clipboard — a share link, or the schedule as text. */
     data class CopyText(val text: String) : BoxScheduleEffect

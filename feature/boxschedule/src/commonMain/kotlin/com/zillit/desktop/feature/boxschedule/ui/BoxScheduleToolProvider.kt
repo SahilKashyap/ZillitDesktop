@@ -33,10 +33,11 @@ class BoxScheduleToolProvider(
     private val viewModel: BoxScheduleViewModel,
     override val path: String = BOX_SCHEDULE_PATH,
     /**
-     * Joins an event's call. Null on a host with no calling, where the Join
-     * button is not drawn.
+     * Joins an event's call — the room, its title, video or not, and its
+     * line, which the host branches on. Null on a host with no calling, where
+     * the Join button is not drawn.
      */
-    private val onJoinCall: ((roomId: String, title: String, video: Boolean) -> Unit)? = null,
+    private val onJoinCall: ((BoxScheduleEffect.JoinCall) -> Unit)? = null,
     /** The crew's faces for the audience pickers and chips; null draws initials. */
     private val loadAvatar: (suspend (String) -> ImageBitmap?)? = null,
 ) : ToolProvider {
@@ -57,7 +58,7 @@ class BoxScheduleToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is BoxScheduleEffect.Notice -> notice = effect.message to effect.success
-                    is BoxScheduleEffect.JoinCall -> onJoinCall?.invoke(effect.roomId, effect.title, effect.video)
+                    is BoxScheduleEffect.JoinCall -> onJoinCall?.invoke(effect)
                     is BoxScheduleEffect.CopyText -> copyTextToClipboard(effect.text)
                 }
             }

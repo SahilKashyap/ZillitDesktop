@@ -75,7 +75,7 @@ function fakeRoom() {
 const tracks = [];
 
 function fakeTrack(kind) {
-    const track = { kind: kind, stopped: false, stop() { this.stopped = true; } };
+    const track = { kind: kind, stopped: false, mediaStreamTrack: { kind: kind }, stop() { this.stopped = true; } };
     tracks.push(track);
     return track;
 }
@@ -93,7 +93,24 @@ const LivekitClient = {
         if (opts.video) { made.push(fakeTrack('video')); }
         return made;
     },
+    createLocalVideoTrack: async () => fakeTrack('video'),
 };
+
+/** The page's own elements — only the lobby's preview is ever appended. */
+const appended = [];
+const documentStub = {
+    createElement: () => ({
+        style: {},
+        setAttribute() {},
+        play: () => Promise.resolve(),
+        parentNode: null,
+    }),
+    body: {
+        appendChild(el) { el.parentNode = this; appended.push(el); },
+        removeChild(el) { el.parentNode = null; appended.splice(appended.indexOf(el), 1); },
+    },
+};
+const previewShown = () => appended.length > 0;
 
 const context = {
     console,
@@ -104,6 +121,8 @@ const context = {
     navigator: { mediaDevices: { enumerateDevices: async () => [], getUserMedia: async () => ({ getVideoTracks: () => [] }) } },
     TextDecoder,
     TextEncoder,
+    document: documentStub,
+    MediaStream: function (list) { this.tracks = list; },
     Date,
     Promise,
     /** What the page reported to Kotlin. */
@@ -201,6 +220,42 @@ async function main() {
 
     }
     await lk.leave();
+
+    // ── A meet's LOBBY: devices open before the room, the camera previews, the join publishes them ──
+    tracks.length = 0;
+    await lk.openLobby(true);
+    if (tracks.length !== 2) { fail('the lobby did not open the microphone and the camera'); }
+    if (!previewShown()) { fail('the lobby camera was not previewed'); }
+    await lk.setLobbyCamera(false);
+    if (!tracks.find((t) => t.kind === 'video').stopped) { fail('turning the lobby camera off left it running'); }
+    if (previewShown()) { fail('the preview outlived the camera'); }
+    await lk.setLobbyCamera(true);
+    if (tracks.filter((t) => t.kind === 'video').length !== 2 || !previewShown()) {
+        fail('turning the lobby camera back on did not open and preview a camera');
+    }
+    lk.endLobbyPreview();
+    if (previewShown()) { fail('the hand-off left the lobby preview over the call'); }
+    // Joined with the lobby's microphone OFF: it must never reach the wire.
+    await lk.join('wss://room', 'meet-token', 'u1#dev_1', 'Vivek', true, '', 'm1', true);
+    const meet = rooms[rooms.length - 1];
+    const sentKinds = meet.localParticipant.published.map((t) => t.kind);
+    if (sentKinds.join() !== 'video') { fail('the meet join published ' + sentKinds.join() + ', not the camera alone'); }
+    if (!tracks.find((t) => t.kind === 'audio').stopped) { fail('a muted lobby microphone was left running'); }
+    if (meet.localParticipant.isMicrophoneEnabled) { fail('a muted lobby microphone was switched on at join'); }
+    await lk.leave();
+
+    // ── Closing the lobby lets every device go, even an open still in flight ──
+    tracks.length = 0;
+    const opening = lk.openLobby(true);
+    lk.closeLobby();
+    await opening;
+    await settled();
+    if (tracks.some((t) => !t.stopped)) { fail('a device opened by a closed lobby was left running'); }
+    if (previewShown()) { fail('a closed lobby left its preview up'); }
+    tracks.length = 0;
+    await lk.openLobby(false);
+    await lk.closeLobby();
+    if (tracks.length !== 1 || !tracks[0].stopped) { fail('closing the lobby left its microphone open'); }
 
     console.log('livekit.js drove ' + context.sent.length + ' messages without throwing');
 }

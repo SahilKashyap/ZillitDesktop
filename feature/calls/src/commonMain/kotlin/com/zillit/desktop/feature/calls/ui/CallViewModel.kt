@@ -14,6 +14,10 @@ import com.zillit.desktop.feature.calls.data.IN_CALL_KIND_REACTION
 import com.zillit.desktop.feature.calls.data.InCallData
 import com.zillit.desktop.feature.calls.data.livekit.Line3CallState
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
+import com.zillit.desktop.feature.calls.data.livekit.MeetLobbyRequest
+import com.zillit.desktop.feature.calls.data.livekit.MeetRejoinState
+import com.zillit.desktop.feature.calls.data.livekit.MeetLobbyState
+import com.zillit.desktop.feature.calls.data.livekit.meetLobbyOwnsSurface
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallPhase
@@ -231,7 +235,19 @@ data class CallUiState(
      * else is told — and gone with the call.
      */
     val pins: List<String> = emptyList(),
+    /**
+     * The Line 1 meet lobby, while one is open. It outlives the phase on
+     * purpose — it is up while there is no call at all — so [atRest] never
+     * touches it; the lobby retires itself. Whether it is DRAWN is
+     * [lobbyShown].
+     */
+    val lobby: MeetLobbyState? = null,
+    /** A meet's media recovery: Reconnecting while it tries, a Rejoin button once it has given up. */
+    val meetRejoin: MeetRejoinState = MeetRejoinState.Idle,
 ) {
+    /** The lobby, not the phase's own surface, owns the call surface — see [meetLobbyOwnsSurface]. */
+    val lobbyShown: Boolean get() = meetLobbyOwnsSurface(lobby, phase, session)
+
     /** Line 3 only: which controls the host's policy has taken from this user. */
     val handsLocked: Boolean get() = !isHost && line3.policy.handsOff
     val shareLocked: Boolean get() = !isHost && line3.policy.shareLocked
@@ -467,6 +483,25 @@ sealed interface CallEvent {
     /** The second-call banner's two answers. */
     data object DeclineSecondCall : CallEvent
     data object EndAndAcceptSecondCall : CallEvent
+
+    /** A meet's Rejoin, after its automatic attempts are spent. */
+    data object RejoinMeet : CallEvent
+}
+
+/** The Line 1 meet lobby's controls. */
+sealed interface MeetLobbyEvent : CallEvent {
+    /** A Calendar / Box Schedule Join on a "line_1" event: opens the lobby, never joins. */
+    data class Open(val request: MeetLobbyRequest) : MeetLobbyEvent
+    data object Join : MeetLobbyEvent
+    data object SwitchHere : MeetLobbyEvent
+    data object Cancel : MeetLobbyEvent
+    data object Close : MeetLobbyEvent
+    data object ToggleMic : MeetLobbyEvent
+    data object ToggleCamera : MeetLobbyEvent
+    data object ToggleEveryone : MeetLobbyEvent
+
+    /** Whether the window showing the lobby has focus — the roster is not polled behind the user's back. */
+    data class Focus(val focused: Boolean) : MeetLobbyEvent
 }
 
 class CallViewModel(
@@ -550,6 +585,10 @@ class CallViewModel(
             coordinator.line3State.collect { extras -> setState { copy(line3 = extras, isHost = coordinator.isHost) } }
         }
         launch { coordinator.onHold.collect { held -> setState { copy(onHold = held) } } }
+        coordinator.meetLobby?.let { lobby ->
+            launch { lobby.state.collect { open -> setState { copy(lobby = open) } } }
+        }
+        launch { coordinator.meetRejoinState.collect { rejoin -> setState { copy(meetRejoin = rejoin) } } }
         launch { coordinator.secondCall.collect { waiting -> setState { copy(secondCall = waiting) } } }
         launch {
             coordinator.line1Guests.collect { requests ->
@@ -858,6 +897,7 @@ class CallViewModel(
                 copy(reactions = reactions.filterNot { it.key == event.key })
             }
             is CallEvent.TogglePin -> setState { togglePin(event.key) }
+            is MeetLobbyEvent -> onLobbyEvent(event)
             else -> onLine3Event(event)
         }
     }
@@ -886,7 +926,31 @@ class CallViewModel(
             CallEvent.CopyInviteLink -> copyInviteLink()
             CallEvent.DeclineSecondCall -> coordinator.declineSecondCall()
             CallEvent.EndAndAcceptSecondCall -> coordinator.endAndAcceptSecondCall()
+            CallEvent.RejoinMeet -> coordinator.rejoinMeet()
             else -> Unit
+        }
+    }
+
+    /** The meet lobby's controls, handed to its controller; a host without LiveKit has none. */
+    private fun onLobbyEvent(event: MeetLobbyEvent) {
+        val lobby = coordinator.meetLobby
+        if (lobby == null) {
+            if (event is MeetLobbyEvent.Open) {
+                val line = callLineLabel(CallLineNumbering.numberOf(CallProvider.LiveKit.wire))
+                setState { copy(endedNotice = str(S.desktop_call_line_unavailable, line)) }
+            }
+            return
+        }
+        when (event) {
+            is MeetLobbyEvent.Open -> lobby.open(event.request)
+            MeetLobbyEvent.Join -> lobby.join()
+            MeetLobbyEvent.SwitchHere -> lobby.switchHere()
+            MeetLobbyEvent.Cancel -> lobby.cancel()
+            MeetLobbyEvent.Close -> lobby.close()
+            MeetLobbyEvent.ToggleMic -> lobby.toggleMicrophone()
+            MeetLobbyEvent.ToggleCamera -> lobby.toggleCamera()
+            MeetLobbyEvent.ToggleEveryone -> lobby.toggleEveryone()
+            is MeetLobbyEvent.Focus -> lobby.setFocused(event.focused)
         }
     }
 
@@ -1018,6 +1082,7 @@ class CallViewModel(
             CallEndReason.Timeout -> str(S.desktop_no_answer)
             CallEndReason.PickedElsewhere -> str(S.desktop_call_answered_on_another_device)
             CallEndReason.Error -> str(S.desktop_call_failed)
+            CallEndReason.MovedElsewhere -> str(S.desktop_meet_moved)
         }
 
     /**

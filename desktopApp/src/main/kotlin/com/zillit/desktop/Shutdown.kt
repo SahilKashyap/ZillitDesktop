@@ -5,6 +5,7 @@ import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.WindowGeometry
 import com.zillit.desktop.core.datastore.saveWindowGeometry
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -94,6 +95,19 @@ internal object Shutdown {
         this.budgetBuilder = host
     }
 
+    /** Work that must reach the network before the process goes — see [beforeQuit]. */
+    @Volatile
+    private var quitting: (suspend () -> Unit)? = null
+
+    /**
+     * Something to finish while the app is still alive on a quit — leaving a
+     * Line 1 meet. Bounded by [QUIT_WORK_MILLIS]: a quit never waits on a
+     * network that is not answering.
+     */
+    fun beforeQuit(work: suspend () -> Unit) {
+        quitting = work
+    }
+
     /** Records where the window is now, for whenever the process ends. */
     fun remember(geometry: WindowGeometry) {
         this.geometry = geometry
@@ -144,6 +158,7 @@ internal object Shutdown {
     fun run() {
         if (!done.compareAndSet(false, true)) return
         ZillitLog.i(TAG) { "shutting down" }
+        finishQuitWork()
         engine?.releaseHolder()
         mapEngine?.releaseHolder()
         locationPicker?.releaseHolder()
@@ -164,5 +179,21 @@ internal object Shutdown {
         SingleInstance.release()
     }
 
+    /**
+     * Runs [beforeQuit]'s work, bounded. From the window's close and the tray's
+     * Quit this thread is alive and it lands; from the ⌘Q hook the class loader
+     * may already refuse, which is caught like every other failure here.
+     */
+    private fun finishQuitWork() {
+        val work = quitting ?: return
+        runCatching {
+            @Suppress("ForbiddenMethodCall")
+            runBlocking { withTimeoutOrNull(QUIT_WORK_MILLIS) { work() } }
+        }.onFailure {
+            ZillitLog.w(TAG) { "quit work did not finish: ${it::class.simpleName}" }
+        }
+    }
+
+    private const val QUIT_WORK_MILLIS = 1_500L
     private const val TAG = "Shutdown"
 }

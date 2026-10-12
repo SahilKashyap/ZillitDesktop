@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
@@ -52,6 +53,12 @@ data class EntryForm(
     val timezone: String = "",
     val reminder: String = "none",
     val callType: String = "",
+    /**
+     * The "Call Line" picker. Line 2 unless said otherwise, so an edit of an
+     * event saved before the field never moves it to Line 1 by omission; a
+     * new event's form opens on [EventCallLine.CREATE_DEFAULT].
+     */
+    val line: EventCallLine = EventCallLine.Line2,
     val textColor: String = "",
     val color: String = DiaryDraft.DEFAULT_EVENT_COLOR,
     val guests: List<String> = emptyList(),

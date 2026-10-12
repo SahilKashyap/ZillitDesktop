@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.home.calendar
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -39,10 +40,7 @@ internal fun eventBody(draft: EventDraft, times: EventTimes, zone: TimeZone): Js
         put("type", draft.audience.wireValue)
         // A personal event has nobody to call, and the web sends
         // the string "none" rather than omitting the field.
-        put(
-            "call_type",
-            if (draft.isForMembers) draft.callType?.wireValue ?: NO_CALL else NO_CALL,
-        )
+        putMeeting(draft)
         // The web's `createUser_exclude`: a meeting arranged by
         // someone who is not themselves attending it.
         put("createUser_exclude", draft.excludeOrganiser)
@@ -110,6 +108,15 @@ internal fun eventBody(draft: EventDraft, times: EventTimes, zone: TimeZone): Js
             },
         )
     }
+
+/**
+ * `call_type` — the string "none" on a personal event — and `line` where the
+ * event can have a meeting ([EventDraft.carriesLine]), nowhere else.
+ */
+private fun JsonObjectBuilder.putMeeting(draft: EventDraft) {
+    put("call_type", if (draft.isForMembers) draft.callType?.wireValue ?: NO_CALL else NO_CALL)
+    if (draft.carriesLine) put("line", draft.line.wire)
+}
 
 /**
  * Members or personal.

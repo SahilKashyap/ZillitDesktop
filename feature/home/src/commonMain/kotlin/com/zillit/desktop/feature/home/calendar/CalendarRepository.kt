@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -343,6 +344,8 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
         audience = row.readAudience(),
         callType = CallType.of(row.str("call_type")),
         cncGroupId = row.str("cnc_group_id").orEmpty(),
+        // Optional on every read: rows saved before the field read as Line 2.
+        line = EventCallLine.of(row.str("line")),
         inviteeIds = row.inviteeIds(),
         externalEmails = row.externalEmails(),
     )

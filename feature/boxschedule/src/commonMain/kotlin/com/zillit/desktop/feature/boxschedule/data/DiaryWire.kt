@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.boxschedule.data
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.DateConflict
 import com.zillit.desktop.feature.boxschedule.domain.DiaryAudience
@@ -95,6 +96,8 @@ internal fun parseEvent(obj: JsonObject?): DiaryEvent? {
         calendarEventId = obj.text("calendarEventId"),
         callType = obj.text("callType"),
         cncCallGroupId = obj.text("cncCallGroupId"),
+        // Optional: events saved before the field read as Line 2.
+        line = EventCallLine.of(obj.text("line")),
         reminder = obj.text("reminder"),
         timezone = obj.text("timezone"),
         textColor = obj.text("textColor"),
@@ -251,6 +254,8 @@ internal fun eventWire(draft: DiaryDraft, create: Boolean): JsonObject = buildJs
         // What the event already had, not a blank: the write sends the whole
         // event, so hardcoding "" here erased a call set on another client.
         put("callType", draft.callType)
+        // Only for a type that can have a meeting; every other type omits the key.
+        if (draft.carriesLine) put("line", draft.line.wire)
         put("textColor", draft.textColor)
         put(
             "externalEmails",

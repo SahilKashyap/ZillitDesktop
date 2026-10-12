@@ -7,6 +7,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.EngineBridge
 import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallJoin
+import com.zillit.desktop.feature.calls.domain.LobbyMediaAccess
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitScripts
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.data.protoo.PROTOO_SESSION_REPLACED
@@ -740,6 +741,45 @@ class KcefCallEngine(
 
     override fun prewarmMedia(video: Boolean, audio: Boolean) {
         browser?.let { run(it, LiveKitScripts.prewarmMedia(video, audio)) }
+    }
+
+    /**
+     * A meet lobby's grants, as macOS files them for this app. Only an
+     * explicit refusal counts — "unavailable" (no helper, another OS) lets
+     * the page ask Chromium, which is what every join did before.
+     */
+    override suspend fun lobbyMediaAccess(video: Boolean): LobbyMediaAccess {
+        val microphone = MediaAccess.ensureMicrophone()
+        val camera = if (video) MediaAccess.ensureCamera() else ""
+        return LobbyMediaAccess(microphone = !microphone.isRefusal(), camera = !camera.isRefusal())
+    }
+
+    private fun String.isRefusal(): Boolean = this == "denied" || this == "restricted"
+
+    // The lobby runs before there is any room, so these are gated on the page
+    // alone; the page ignores each when there is no lobby to act on.
+    override fun openLobbyMedia(video: Boolean) {
+        browser?.let { run(it, LiveKitScripts.openLobby(video)) }
+    }
+
+    override fun setLobbyCamera(on: Boolean) {
+        if (!on) {
+            browser?.let { run(it, LiveKitScripts.setLobbyCamera(false)) }
+            return
+        }
+        // Turning the camera on waits for the macOS grant first, as in a call.
+        scope.launch {
+            MediaAccess.ensureCamera()
+            withContext(Dispatchers.Swing) { browser?.let { run(it, LiveKitScripts.setLobbyCamera(true)) } }
+        }
+    }
+
+    override fun endLobbyPreview() {
+        browser?.let { run(it, LiveKitScripts.END_LOBBY_PREVIEW) }
+    }
+
+    override fun closeLobbyMedia() {
+        browser?.let { run(it, LiveKitScripts.CLOSE_LOBBY) }
     }
 
     // Line 3 only: the other lines have no hold, no per-peer subscription

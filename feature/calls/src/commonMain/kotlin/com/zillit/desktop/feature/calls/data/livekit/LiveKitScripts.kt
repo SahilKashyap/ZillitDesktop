@@ -17,7 +17,17 @@ object LiveKitScripts {
 
     fun join(params: CallJoin, microphoneId: String): String =
         "zillitLk.join(${params.livekitUrl.js()}, ${params.livekitToken.js()}, ${params.identity.js()}, " +
-            "${params.displayName.js()}, ${params.hasVideo}, ${microphoneId.js()}, ${params.callId.js()})"
+            "${params.displayName.js()}, ${params.hasVideo}, ${microphoneId.js()}, ${params.callId.js()}, " +
+            "${params.micMuted})"
+
+    /** A meet lobby: the devices open and the camera previews. See `CallEngine.openLobbyMedia`. */
+    fun openLobby(video: Boolean): String = "zillitLk.openLobby($video)"
+
+    fun setLobbyCamera(on: Boolean): String = "zillitLk.setLobbyCamera($on)"
+
+    const val END_LOBBY_PREVIEW = "zillitLk.endLobbyPreview()"
+
+    const val CLOSE_LOBBY = "zillitLk.closeLobby()"
 
     const val LEAVE = "zillitLk.leave()"
 

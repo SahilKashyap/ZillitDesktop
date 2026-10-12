@@ -2014,7 +2014,12 @@ private fun buildCallCoordinator(
         preferences.set(ZillitPreferences.CallMicrophoneId, microphoneId)
         preferences.set(ZillitPreferences.CallSpeakerId, speakerId)
     },
-).also { it.start() }
+).also { coordinator ->
+    coordinator.start()
+    // A Line 1 meet this device is in is LEFT on quit, not abandoned for the
+    // server to infer from LiveKit's disconnect — that is how ghosts are made.
+    Shutdown.beforeQuit { coordinator.leaveMeetBeforeQuit() }
+}
 
 /**
  * The media stack: embedded Chromium running the Agora Web SDK when the file

@@ -37,6 +37,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.data.livekit.MeetRejoinState
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 
 /**
@@ -264,6 +265,7 @@ private fun CallTopBar(state: CallUiState, onEvent: (CallEvent) -> Unit, videoAv
         CallTimer(state)
         TitlePill(state)
         ConnectionPill(state, videoAvailable)
+        RejoinPill(state, onEvent)
         HoldPill(state, onEvent)
         RecordingPill(state)
         PresenterPill(state)
@@ -489,8 +491,10 @@ private fun HandPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 /** One pill about the call's health, or nothing (`CallRoom.tsx:1390-1413`). */
 @Composable
 private fun ConnectionPill(state: CallUiState, videoAvailable: Boolean) {
+    // A meet out of automatic attempts says so with its Rejoin pill instead.
+    if (state.meetRejoin == MeetRejoinState.Offered) return
     val (background, foreground, text) = when {
-        state.media.connection == EngineConnection.Reconnecting ->
+        state.media.connection == EngineConnection.Reconnecting || state.meetRejoin is MeetRejoinState.Recovering ->
             Triple(CallPalette.control, CallPalette.text, str(S.txt_reconnecting))
         state.media.connection == EngineConnection.Disconnected ||
             state.media.connection == EngineConnection.Failed ->
@@ -502,6 +506,35 @@ private fun ConnectionPill(state: CallUiState, videoAvailable: Boolean) {
         else -> return
     }
     StatusPill(text = text, background = background, foreground = foreground)
+}
+
+/**
+ * A meet whose media did not come back after its three automatic attempts:
+ * said plainly, with one press to try again — never a loop that keeps a ghost
+ * of this device in everybody else's call.
+ */
+@Composable
+private fun RejoinPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    if (state.meetRejoin != MeetRejoinState.Offered) return
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        StatusPill(text = str(S.desktop_meet_media_lost), background = CallPalette.danger, foreground = Color.White)
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(PILL_CORNER))
+                .background(CallPalette.text)
+                .clickable { onEvent(CallEvent.RejoinMeet) }
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        ) {
+            ZillitText(
+                text = str(S.desktop_meet_rejoin),
+                style = ZillitTheme.typography.label,
+                color = CallPalette.surface,
+            )
+        }
+    }
 }
 
 /** The dock, with the emoji bar stacked above it when it is open. */

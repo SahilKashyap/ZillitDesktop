@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
@@ -54,6 +55,8 @@ fun newEventDraft(date: LocalDate, now: Instant, zone: TimeZone): EventDraft {
         dateText = date.isoText(),
         startText = start.hhmmText(),
         endText = start.plusHour().hhmmText(),
+        // A product default for new events, not a reading of a missing key.
+        line = EventCallLine.CREATE_DEFAULT,
     )
 }
 

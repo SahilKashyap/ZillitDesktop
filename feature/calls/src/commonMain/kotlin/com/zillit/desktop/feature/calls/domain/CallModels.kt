@@ -311,6 +311,13 @@ data class CallSession(
     val isRandomCall: Boolean = false,
     val isCalendarCall: Boolean = false,
     /**
+     * A Line 1 MEET — a Calendar or Box Schedule event's LiveKit room, walked
+     * into through the lobby. Also a calendar call (nobody rung, nobody ends
+     * it for the rest); what this adds is the meet's own leave route and the
+     * "moved to another device" ending.
+     */
+    val isMeet: Boolean = false,
+    /**
      * Line 1's create-call said `mutual_call`: the person we dialled is already
      * ringing us. This session is THEIR call, to be answered, not ours to ring.
      */

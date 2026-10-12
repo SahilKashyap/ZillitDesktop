@@ -281,7 +281,16 @@ data class CallJoin(
     val livekitToken: String = "",
     /** This participant's identity in the room — the user's id on the call's production. */
     val identity: String = "",
+    /**
+     * Join with the microphone off — a meet lobby's choice, applied before
+     * anything is published so a muted microphone never reaches the wire.
+     * False for every other join, which is how they joined before.
+     */
+    val micMuted: Boolean = false,
 )
+
+/** What the OS allows a meet's lobby: no microphone blocks the join, no camera joins audio-only. */
+data class LobbyMediaAccess(val microphone: Boolean, val camera: Boolean)
 
 /*
  * TooManyFunctions: one method per capability the media stack exposes, and the
@@ -485,6 +494,30 @@ interface CallEngine {
      * places.
      */
     fun prewarmMedia(video: Boolean, audio: Boolean) {}
+
+    /**
+     * A meet lobby's OS grants, asking where the answer is still open. Only
+     * the camera is asked about when [video] is false. The default allows
+     * both: a host with no permission model has nothing to refuse.
+     */
+    suspend fun lobbyMediaAccess(video: Boolean): LobbyMediaAccess = LobbyMediaAccess(microphone = true, camera = true)
+
+    /**
+     * A meet lobby opened: the microphone (and the camera when [video]) are
+     * opened NOW and the camera previewed full-surface, so the join publishes
+     * these very tracks rather than acquiring them after it connects — the
+     * single biggest source of "the call is laggy".
+     */
+    fun openLobbyMedia(video: Boolean) {}
+
+    /** The lobby's camera toggle: opens or stops the camera track and its preview. */
+    fun setLobbyCamera(on: Boolean) {}
+
+    /** The lobby handed off or retired: the preview goes, the tracks stay for the join. */
+    fun endLobbyPreview() {}
+
+    /** The lobby closed without joining: every track it opened is stopped, so the camera light goes out. */
+    fun closeLobbyMedia() {}
 
     /** Releases the stack. The engine is unusable afterwards. */
     suspend fun destroy()

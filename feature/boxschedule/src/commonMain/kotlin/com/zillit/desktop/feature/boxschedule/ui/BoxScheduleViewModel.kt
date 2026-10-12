@@ -342,6 +342,7 @@ class BoxScheduleViewModel(
                 roomId = event.cncCallGroupId,
                 title = event.title,
                 video = event.prefersVideoCall,
+                line = event.line,
             ),
         )
     }

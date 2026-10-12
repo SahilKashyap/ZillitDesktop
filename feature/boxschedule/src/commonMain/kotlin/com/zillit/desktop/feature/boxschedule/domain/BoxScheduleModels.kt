@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -118,6 +119,12 @@ data class DiaryEvent(
      * event it was created with. It IS the call: everyone dials this same room.
      */
     val cncCallGroupId: String = "",
+    /**
+     * Which line the call runs on — the server's `line`. Line 1 is a LiveKit
+     * MEET whose meetId is [cncCallGroupId]; anything else, a missing key
+     * included, is the CnC/Agora room older events have.
+     */
+    val line: EventCallLine = EventCallLine.Line2,
     /** `none`, `at_time`, `5min`, `15min`, `30min`, `1hr`, `1day`. */
     val reminder: String = "",
     val timezone: String = "",
@@ -243,7 +250,15 @@ data class DiaryDraft(
      * erases a call somebody set on another client.
      */
     val callType: String = "",
+    /**
+     * The "Call Line" choice. Sent only when [callType] can have a meeting
+     * (see [carriesLine]); a note never carries it.
+     */
+    val line: EventCallLine = EventCallLine.Line2,
 ) {
+    /** Whether the body carries `line` — the same condition the form's picker shows on. */
+    val carriesLine: Boolean get() = kind == DiaryKind.Event && EventCallLine.applies(callType)
+
     companion object {
         const val DEFAULT_EVENT_COLOR = "#3498DB"
         val EVENT_COLORS = listOf("#3498DB", "#E74C3C", "#27AE60", "#F39C12", "#8E44AD", "#95A5A6")

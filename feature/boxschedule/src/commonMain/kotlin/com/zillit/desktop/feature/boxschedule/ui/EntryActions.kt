@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -71,6 +72,7 @@ internal class EntryActions(private val vm: BoxScheduleViewModel) {
             is EntryEvent.SetCallType -> form {
                 copy(callType = event.value, errors = errors - EntryField.CallType - EntryField.Location)
             }
+            is EntryEvent.SetLine -> form { copy(line = event.line) }
             is EntryEvent.SetTextColor -> form { copy(textColor = event.color) }
             is EntryEvent.SetLocation -> form {
                 // Typing clears the coordinates it no longer describes; a map pick sets both.
@@ -129,6 +131,8 @@ internal class EntryActions(private val vm: BoxScheduleViewModel) {
             endTime = EntryRules.hourAfter(start),
             timezone = zone.id,
             noteDate = day ?: state.today,
+            // A product default for new events, not a reading of a missing key.
+            line = EventCallLine.CREATE_DEFAULT,
         )
         vm.updateOverlays { copy(entryForm = form, day = null, quickAction = null, viewing = null) }
     }
@@ -193,6 +197,8 @@ internal class EntryActions(private val vm: BoxScheduleViewModel) {
             timezone = entry.timezone.ifBlank { zone.id },
             reminder = entry.reminder.ifBlank { "none" },
             callType = entry.callType,
+            // The event's own; one saved before the field reads Line 2.
+            line = entry.line,
             textColor = entry.textColor,
             color = entry.color.ifBlank { DiaryDraft.DEFAULT_EVENT_COLOR },
             guests = entry.externalEmails.map { it.mail },

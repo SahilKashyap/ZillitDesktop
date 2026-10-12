@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DayOfWeek
@@ -58,6 +59,12 @@ data class CalendarEvent(
      * ringing each other, so without it there is nothing to join.
      */
     val cncGroupId: String = "",
+    /**
+     * Which line the call runs on — the server's `line`. Line 1 is a LiveKit
+     * MEET whose meetId is [cncGroupId]; everything else, a missing key
+     * included, is the CnC/Agora room every older event has.
+     */
+    val line: EventCallLine = EventCallLine.Line2,
     /** Crew on the event, so reopening it does not uninvite them. */
     val inviteeIds: Set<String> = emptySet(),
     /** Guests invited by address rather than by crew record. */

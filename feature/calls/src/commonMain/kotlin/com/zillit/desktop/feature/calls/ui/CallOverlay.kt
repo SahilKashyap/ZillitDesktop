@@ -51,6 +51,14 @@ private fun PhaseSurface(
     showsIncomingRing: Boolean,
     onSlot: (LayoutCoordinates) -> Unit,
 ) {
+    // A Line 1 meet's lobby owns the surface from before there is any call
+    // until its own call connects — never the call window's, which only
+    // exists once a call does.
+    val lobby = state.lobby
+    if (!ownsCall && lobby != null && state.lobbyShown) {
+        MeetLobbySurface(lobby, onEvent, loadAvatar, hasVideo, onSlot)
+        return
+    }
     when (state.phase) {
         CallPhase.Incoming -> if (showsIncomingRing) CallRingCard(state, incoming = true, onEvent, loadAvatar)
         CallPhase.Outgoing -> CallRingCard(state, incoming = false, onEvent, loadAvatar, loadGroupPicture)
@@ -118,7 +126,10 @@ fun CallOverlay(
         // out of the first mid-call. The call window claims it whenever it is
         // open; the main window has it the rest of the time.
         val mounts = mountsVideo(ownsCall, state.pipOpen)
-        if (videoSurface != null && state.videoMounted && mounts) {
+        // The lobby's camera preview is the same page, in the lobby's picture.
+        val lobbyPreview = !ownsCall && state.lobbyShown && state.lobby?.previewing == true
+        val wantsVideo = state.videoMounted || lobbyPreview
+        if (videoSurface != null && wantsVideo && mounts) {
             CallVideoLayer(slot, videoSurface)
         }
 

@@ -56,6 +56,7 @@ data class LiveKitCallCredentials(
  * phones use when the socket is down, plus the two things only REST does —
  * creating a call and minting a room token.
  */
+@Suppress("TooManyFunctions") // One function per route the calling backend serves.
 class LiveKitApi(
     private val http: SignedJsonHttp,
     /** `https://<env>-calls.zillit.com/api`, no trailing slash. */
@@ -295,6 +296,47 @@ class LiveKitApi(
                 val obj = body as? JsonObject
                 obj?.bool("active") == true || obj?.bool("ongoing") == true
             }
+
+    // ── Meets (Line 1 Calendar / Box Schedule events) ─────────────────────
+
+    /** `GET /v1/meet/{meetId}` — resolve the link: owner, start policy, cancelled or not. */
+    suspend fun meet(meetId: String, projectId: String?, userId: String?): ZillitResult<JsonElement?> =
+        http.call(HttpVerb.Get, "$baseUrl/v1/meet/${meetId.encoded()}", null, projectId, userId)
+
+    /**
+     * `GET /v1/calls/{id}/me?userId=` — this user against the room; `inCall`
+     * is true when any of their devices is in it.
+     */
+    suspend fun callPresence(callId: String, userId: String, projectId: String?): ZillitResult<JsonElement?> =
+        http.call(
+            HttpVerb.Get,
+            "$baseUrl/v1/calls/${callId.encoded()}/me?userId=${userId.encoded()}",
+            null,
+            projectId,
+            userId,
+        )
+
+    /**
+     * `GET /v1/calls/{id}/active`, both halves — [isCallActive] folds them into
+     * one answer, and the meet's REST path must tell `active` (a running room,
+     * the only state a mint may follow) from `ongoing`.
+     */
+    suspend fun activeState(callId: String, projectId: String?, userId: String?): ZillitResult<MeetActive> =
+        http.call(HttpVerb.Get, "$baseUrl/v1/calls/${callId.encoded()}/active", null, projectId, userId)
+            .map { body ->
+                val obj = body as? JsonObject
+                MeetActive(active = obj?.bool("active") == true, ongoing = obj?.bool("ongoing") == true)
+            }
+
+    /** `POST /v1/calls/{id}/leave` — leave a meet when the socket cannot say so; never ends it for anyone else. */
+    suspend fun leaveCall(callId: String, userId: String, projectId: String?): ZillitResult<Unit> =
+        http.call(
+            HttpVerb.Post,
+            "$baseUrl/v1/calls/${callId.encoded()}/leave",
+            buildJsonObject { put("userId", JsonPrimitive(userId)) },
+            projectId,
+            userId,
+        ).map { }
 
     private suspend fun bare(url: String, projectId: String?, userId: String?): ZillitResult<Unit> =
         http.call(HttpVerb.Post, url, JsonObject(emptyMap()), projectId, userId).map { }

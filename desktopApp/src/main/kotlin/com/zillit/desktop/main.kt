@@ -180,6 +180,10 @@ import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.ui.CallEvent
+import com.zillit.desktop.feature.calls.ui.MeetLobbyEvent
+import com.zillit.desktop.feature.calls.data.livekit.MeetLobbyRequest
+import com.zillit.desktop.core.config.EventCallLine
+import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleEffect
 import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
@@ -531,6 +535,13 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     // process that leaves a note and exits.
     LaunchedEffect(Unit) { DockReopen.watch(showMain) }
     LaunchedEffect(Unit) { MainWindowRequest.watch(onShow = showMain) }
+    // A meet's lobby is drawn in the main window: a Join pressed in a torn-off
+    // tool window must bring it forward, or the lobby opens out of sight.
+    LaunchedEffect(viewModels.calls) {
+        viewModels.calls?.state?.map { it.lobby?.meetId }?.distinctUntilChanged()?.collect { meetId ->
+            if (meetId != null) showMain()
+        }
+    }
     LaunchedEffect(preferences) { LoginItem.reconcile(preferences) }
 
     val trayState = rememberTrayState()
@@ -623,6 +634,9 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         mainVisible = mainVisible,
         onCloseMain = {
             if (closeToTray && isTraySupported) {
+                // A meet lobby is drawn in this window: hidden, it would keep
+                // the camera lit with nobody looking at it.
+                viewModels.calls?.onEvent(MeetLobbyEvent.Close)
                 mainVisible = false
                 TrayNotifier(trayState).post(
                     DesktopNotification(
@@ -3703,19 +3717,8 @@ private fun buildRegistry(
     // the legacy pre-production tile shares.
     // The same room a calendar Join opens — the two surfaces show the same
     // events, so the lambda is the same one in both places.
-    val joinDiaryCall: ((String, String, Boolean) -> Unit)? = viewModels.calls?.let { vm ->
-        { roomId, title, video ->
-            vm.onEvent(
-                CallEvent.Place(
-                    chatRoomId = roomId,
-                    receiverDeviceId = "",
-                    mode = CallMode.Group,
-                    type = if (video) CallType.Video else CallType.Audio,
-                    displayName = title,
-                    isCalendarCall = true,
-                ),
-            )
-        }
+    val joinDiaryCall: ((BoxScheduleEffect.JoinCall) -> Unit)? = viewModels.calls?.let { vm ->
+        { join -> vm.onEvent(eventRoomJoin(join.roomId, join.title, join.video, join.line)) }
     }
     val diaryFaces = (graph as? AppGraph.Ready)?.let(::crewFaceLoader)
     val boxSchedule = viewModels.boxSchedule?.let {
@@ -4267,14 +4270,32 @@ private fun ProjectContext?.sosViewer(): SosViewer = SosViewer(
  * `isCalendarCall` flag is what keeps hanging up from closing the room on
  * everyone still in it.
  */
-private fun joinEventCall(event: CalendarEvent): CallEvent.Place = CallEvent.Place(
-    chatRoomId = event.cncGroupId,
-    receiverDeviceId = "",
-    mode = CallMode.Group,
-    type = if (event.callType?.prefersVideo == true) CallType.Video else CallType.Audio,
-    displayName = event.title,
-    isCalendarCall = true,
-)
+private fun joinEventCall(event: CalendarEvent): CallEvent =
+    eventRoomJoin(event.cncGroupId, event.title, event.callType?.prefersVideo == true, event.line)
+
+/**
+ * THE branch on an event's line, for both tools — Calendar and Box Schedule
+ * (and pre-production, its second mount) raise their Join through here and
+ * nowhere else.
+ *
+ * Line 1 — the event's `line` is exactly "line_1" — is a LiveKit meet whose
+ * meetId is the room id, entered through its lobby and never joined straight
+ * away. Everything else, an event saved before the field included, joins the
+ * CnC room exactly as it always has.
+ */
+private fun eventRoomJoin(roomId: String, title: String, video: Boolean, line: EventCallLine): CallEvent {
+    if (line == EventCallLine.Line1) {
+        return MeetLobbyEvent.Open(MeetLobbyRequest(meetId = roomId, title = title, video = video))
+    }
+    return CallEvent.Place(
+        chatRoomId = roomId,
+        receiverDeviceId = "",
+        mode = CallMode.Group,
+        type = if (video) CallType.Video else CallType.Audio,
+        displayName = title,
+        isCalendarCall = true,
+    )
+}
 
 private fun callSupport(
     ready: AppGraph.Ready?,

@@ -81,8 +81,12 @@ sealed interface LiveKitEvent {
     /** The caller hung up before anyone answered — dismiss the ring. */
     data class Cancelled(val callId: String) : LiveKitEvent
 
-    /** Another of this user's devices answered or declined. */
-    data class HandledElsewhere(val callId: String) : LiveKitEvent
+    /**
+     * Another of this user's devices answered or declined. [reason] is
+     * `switched` when a meet moved to another of this user's devices — the
+     * server keeps the newest and removes this one's media.
+     */
+    data class HandledElsewhere(val callId: String, val reason: String = "") : LiveKitEvent
 
     /** The call is over for everyone. */
     data class Ended(val reason: String) : LiveKitEvent
@@ -127,6 +131,12 @@ sealed interface LiveKitEvent {
 
     /** Everyone waiting at the door right now (`guestListChanged`). */
     data class GuestList(val callId: String, val guests: List<LiveKitGuest>) : LiveKitEvent
+
+    /** OUR knock was let in (`guestAdmitted`): the room to join, verbatim. */
+    data class GuestAdmitted(val callId: String, val url: String, val token: String) : LiveKitEvent
+
+    /** OUR knock was refused (`guestDeclined`): `declined`, `ended` or `linkDisabled`. */
+    data class GuestDeclined(val callId: String, val reason: String) : LiveKitEvent
 
     data class ParticipantJoined(val userId: String, val displayName: String) : LiveKitEvent
 
@@ -347,7 +357,9 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
     "callUnreachable" -> ringState(obj, CallStatus.NotAnswered, unreachable = true)
     "callMissed" -> ringState(obj, CallStatus.NotAnswered)
     "callCancelled" -> obj.text("callId")?.let(LiveKitEvent::Cancelled)
-    "callHandledElsewhere" -> obj.text("callId")?.let(LiveKitEvent::HandledElsewhere)
+    "callHandledElsewhere" -> obj.text("callId")?.let {
+        LiveKitEvent.HandledElsewhere(it, obj.text("reason").orEmpty())
+    }
     "callEnded" -> LiveKitEvent.Ended(obj.text("reason").orEmpty())
     "removedFromCall" -> obj.text("callId")?.let {
         LiveKitEvent.Removed(it, (obj["by"] as? JsonObject)?.text("displayName").orEmpty())
@@ -399,6 +411,12 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
             LiveKitGuest(guest.text("guestId") ?: return@mapNotNull null, guest.text("name").orEmpty())
         },
     )
+    "guestAdmitted" -> LiveKitEvent.GuestAdmitted(
+        callId = obj.text("callId").orEmpty(),
+        url = obj.readLiveKitCredentials()?.url.orEmpty(),
+        token = obj.readLiveKitCredentials()?.token.orEmpty(),
+    )
+    "guestDeclined" -> LiveKitEvent.GuestDeclined(obj.text("callId").orEmpty(), obj.text("reason").orEmpty())
     "participantJoined" -> (obj["participant"] as? JsonObject)?.let { p ->
         LiveKitEvent.ParticipantJoined(p.text("userId") ?: return null, p.text("displayName").orEmpty())
     }

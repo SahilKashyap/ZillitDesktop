@@ -170,6 +170,7 @@ object EntryRules {
             organizerExcluded = form.organizerExcluded,
             createInCalendar = createInCalendar.takeIf { !form.isEdit },
             callType = form.callType,
+            line = form.line,
         )
     }
 

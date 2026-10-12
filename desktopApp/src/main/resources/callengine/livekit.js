@@ -86,6 +86,65 @@
      */
     var prewarmed = null;
 
+    /*
+     * A Line 1 MEET's lobby: the devices opened before there is any room,
+     * the camera shown full-surface while the user decides, and these SAME
+     * tracks published by join() through `prewarmed` — acquiring the
+     * microphone after joining is what made meets slow to be heard.
+     * `lobbyGen` retires an open that lands after the lobby closed.
+     */
+    var lobbyGen = 0;
+    var lobbyVideo = null;
+
+    function lobbyCameraTrack() {
+        if (!prewarmed) { return null; }
+        for (var i = 0; i < prewarmed.length; i++) {
+            if (prewarmed[i].kind === (LK.Track && LK.Track.Kind ? LK.Track.Kind.Video : 'video')) { return prewarmed[i]; }
+        }
+        return null;
+    }
+
+    function showLobbyPreview() {
+        var t = lobbyCameraTrack();
+        if (!t) { hideLobbyPreview(); return; }
+        if (!lobbyVideo) {
+            lobbyVideo = document.createElement('video');
+            lobbyVideo.autoplay = true;
+            lobbyVideo.muted = true;
+            lobbyVideo.setAttribute('playsinline', '');
+            lobbyVideo.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;object-fit:cover;' +
+                'transform:scaleX(-1);background:#3C4043;z-index:2147483000;';
+            document.body.appendChild(lobbyVideo);
+        }
+        lobbyVideo.srcObject = new MediaStream([t.mediaStreamTrack]);
+        lobbyVideo.play().catch(function () { /* autoplay of a muted element */ });
+    }
+
+    function hideLobbyPreview() {
+        if (!lobbyVideo) { return; }
+        try {
+            lobbyVideo.srcObject = null;
+            if (lobbyVideo.parentNode) { lobbyVideo.parentNode.removeChild(lobbyVideo); }
+        } catch (e) { warn('hideLobbyPreview', e); }
+        lobbyVideo = null;
+    }
+
+    function stopAll(tracks) {
+        (tracks || []).forEach(function (t) { try { t.stop(); } catch (e) { /* already gone */ } });
+    }
+
+    /*
+     * The lobby's device operations, one at a time and in order: an open
+     * still waiting on getUserMedia must not race a camera toggle into a
+     * second camera, or outlive the close that followed it.
+     */
+    var lobbyChain = Promise.resolve();
+
+    function lobbyOp(work) {
+        lobbyChain = lobbyChain.then(work).catch(function (e) { warn('lobby', e); });
+        return lobbyChain;
+    }
+
     /**
      * The Room, with the options every connection shares — the web's
      * `buildRoom` (`LivekitEngine.ts:463-469`). adaptiveStream asks the SFU for
@@ -753,6 +812,59 @@
         return true;
     }
 
+    /** The lobby's open, run in turn: the microphone, and the camera when [video], then the preview. */
+    async function openLobbyNow(video, gen) {
+        if (gen !== lobbyGen) { return; }
+        if (room) { trace('openLobby while a room is up; ignored'); return; }
+        hideLobbyPreview();
+        dropPrewarmedTracks();
+        var tracks = null;
+        try {
+            tracks = await LK.createLocalTracks({
+                audio: true,
+                video: video ? { resolution: LK.VideoPresets.h720.resolution } : false,
+            });
+        } catch (e) {
+            warn('openLobby', e);
+            // The camera is the usual refusal: keep the microphone warm regardless.
+            if (!video) { return; }
+            try { tracks = await LK.createLocalTracks({ audio: true, video: false }); } catch (e2) {
+                warn('openLobby:audio', e2);
+                return;
+            }
+        }
+        if (gen !== lobbyGen || room) {
+            stopAll(tracks);
+            trace('lobby media landed after the lobby; released');
+            return;
+        }
+        prewarmed = tracks;
+        trace('lobby opened ' + tracks.length + ' track(s)');
+        showLobbyPreview();
+    }
+
+    /** The lobby's camera toggle, run in turn: a camera track opened and previewed, or stopped. */
+    async function setLobbyCameraNow(on) {
+        if (room) { return; }
+        var current = lobbyCameraTrack();
+        if (!on) {
+            if (current) {
+                stopAll([current]);
+                prewarmed = prewarmed.filter(function (t) { return t !== current; });
+            }
+            hideLobbyPreview();
+            return;
+        }
+        if (current) { showLobbyPreview(); return; }
+        var gen = lobbyGen;
+        try {
+            var cam = await LK.createLocalVideoTrack({ resolution: LK.VideoPresets.h720.resolution });
+            if (gen !== lobbyGen || room) { stopAll([cam]); return; }
+            prewarmed = (prewarmed || []).concat([cam]);
+            showLobbyPreview();
+        } catch (e) { warn('setLobbyCamera', e); }
+    }
+
     window.zillitLk = {
         get active() { return room !== null; },
 
@@ -848,12 +960,43 @@
             }
         },
 
-        async join(url, token, selfIdentity, displayName, withVideo, microphoneId, callId) {
+        /** A meet's lobby opened: the microphone, and the camera when [video], previewed full-surface. */
+        openLobby(video) {
+            if (!LK) { return Promise.resolve(); }
+            var gen = ++lobbyGen;
+            return lobbyOp(function () { return openLobbyNow(video, gen); });
+        },
+
+        /** The lobby's camera toggle: open a camera track and preview it, or stop it so the light goes out. */
+        setLobbyCamera(on) {
+            if (!LK) { return Promise.resolve(); }
+            return lobbyOp(function () { return setLobbyCameraNow(on); });
+        },
+
+        /** Handed off or retired: the picture goes; the tracks stay for join() to publish. */
+        endLobbyPreview() {
+            hideLobbyPreview();
+        },
+
+        /** Closed without joining: every track the lobby opened is stopped. */
+        closeLobby() {
+            // At once, so an open still in flight discards what it gets.
+            lobbyGen++;
+            hideLobbyPreview();
+            return lobbyOp(function () {
+                hideLobbyPreview();
+                if (!room) { dropPrewarmedTracks(); }
+            });
+        },
+
+        async join(url, token, selfIdentity, displayName, withVideo, microphoneId, callId, micMuted) {
             if (!LK) { send({ type: 'error', message: 'LiveKit SDK is not loaded' }); return; }
             if (room) { await this.leave(); }
             var gen = ++joinGeneration;
             identity = selfIdentity || '';
-            desiredMic = true;
+            // A meet lobby's muted microphone is applied before anything is
+            // published; every other join passes nothing and joins unmuted.
+            desiredMic = !micMuted;
             desiredCam = !!withVideo;
             chosenMic = microphoneId || '';
             var r = null;
@@ -902,12 +1045,14 @@
                 // the point of having opened them early. Nothing warm → open the
                 // devices here as before.
                 if (!(await publishPrewarmed(r))) {
-                    try {
-                        await r.localParticipant.setMicrophoneEnabled(
-                            true,
-                            chosenMic ? { deviceId: chosenMic } : undefined,
-                        );
-                    } catch (e) { warn('microphone', e); }
+                    if (desiredMic) {
+                        try {
+                            await r.localParticipant.setMicrophoneEnabled(
+                                true,
+                                chosenMic ? { deviceId: chosenMic } : undefined,
+                            );
+                        } catch (e) { warn('microphone', e); }
+                    }
                     if (desiredCam) {
                         try { await r.localParticipant.setCameraEnabled(true); } catch (e) { warn('camera', e); }
                         traceCamera('join');
@@ -933,6 +1078,7 @@
             stopReconnectPoll();
             stopSampler();
             dropPrewarmedTracks();
+            hideLobbyPreview();
             screenPub = null;
             onHold = false;
             deafened = {};

@@ -18,6 +18,12 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDial
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitMeetBackend
+import com.zillit.desktop.feature.calls.data.livekit.MeetHandOff
+import com.zillit.desktop.feature.calls.data.livekit.MeetLobby
+import com.zillit.desktop.feature.calls.data.livekit.MeetLobbyMedia
+import com.zillit.desktop.feature.calls.data.livekit.MeetRejoinState
+import com.zillit.desktop.feature.calls.data.livekit.MeetRejoin
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLineListener
@@ -46,8 +52,10 @@ import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
 import com.zillit.desktop.feature.calls.domain.CallType
+import com.zillit.desktop.feature.calls.domain.LobbyMediaAccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -73,7 +81,12 @@ import kotlinx.serialization.json.contentOrNull
 /**
  * Why a call stopped, for the UI's parting message.
  */
-enum class CallEndReason { Hungup, RemoteEnded, Declined, Busy, Timeout, PickedElsewhere, Error }
+enum class CallEndReason {
+    Hungup, RemoteEnded, Declined, Busy, Timeout, PickedElsewhere, Error,
+
+    /** A meet this device was in moved to another of this user's devices — "Moved to another device", not "ended". */
+    MovedElsewhere,
+}
 
 /**
  * Whether everybody who was ever really on this call has since left it.
@@ -803,6 +816,185 @@ class CallCoordinator(
 
     /** Tells two echoed reactions in one millisecond apart; see the listener. */
     private var reactionSequence = 0L
+
+    /**
+     * The Line 1 MEET lobby — a Calendar or Box Schedule event whose `line`
+     * is "line_1". Null on an install without LiveKit. A collaborator, like
+     * [line3InCall]: it owns the lobby and its join decision tree, and touches
+     * the phase only through [joinMeet], the same seeding the Calls tab's Join
+     * uses — which is why nothing about it can reach a 1:1 or group call.
+     */
+    val meetLobby: MeetLobby? = line3?.let { line ->
+        MeetLobby(
+            scope = scope,
+            backend = LiveKitMeetBackend(line, selfName),
+            media = EngineLobbyMedia(),
+            callPhase = phase,
+            callSession = session,
+            refusal = { projectId -> lineRefusal(CallProvider.LiveKit, projectId) },
+            toast = { _toasts.tryEmit(it) },
+            handOff = ::joinMeet,
+        )
+    }
+
+    /**
+     * The lobby's devices, through the engine: in the order they were asked
+     * for, each once the page is up — an open still waiting on the page must
+     * never land after the close that followed it and light the camera again.
+     */
+    private inner class EngineLobbyMedia : MeetLobbyMedia {
+        private val ops = Channel<() -> Unit>(Channel.UNLIMITED)
+        private var worker: Job? = null
+        private var wanted = false
+
+        override suspend fun access(video: Boolean): LobbyMediaAccess = engine.lobbyMediaAccess(video)
+
+        override fun open(video: Boolean) {
+            wanted = true
+            enqueue { if (wanted) engine.openLobbyMedia(video) }
+        }
+
+        override fun setCamera(on: Boolean) = enqueue { if (wanted) engine.setLobbyCamera(on) }
+
+        override fun endPreview() {
+            wanted = false
+            enqueue { engine.endLobbyPreview() }
+        }
+
+        override fun close() {
+            wanted = false
+            enqueue { engine.closeLobbyMedia() }
+        }
+
+        private fun enqueue(op: () -> Unit) {
+            if (worker?.isActive != true) {
+                worker = scope.launch {
+                    for (next in ops) if (engine.initialize()) next()
+                }
+            }
+            ops.trySend(op)
+        }
+    }
+
+    /**
+     * A meet's media recovery — `/me` first, a token only when we are out of
+     * a running room, three attempts and then a Rejoin button. Meets only:
+     * every other call keeps the [reconnect] watchdog it always had.
+     */
+    private val meetRejoin: MeetRejoin? = line3?.let { line ->
+        MeetRejoin(
+            scope = scope,
+            attempt = { meetId -> line.meets.recover(meetId) },
+            reconnect = ::reconnectMeet,
+            ended = ::meetEnded,
+        )
+    }
+
+    /** Where a meet's media recovery stands — the stage's Rejoin button reads it. */
+    val meetRejoinState: StateFlow<MeetRejoinState> =
+        meetRejoin?.state ?: MutableStateFlow(MeetRejoinState.Idle).asStateFlow()
+
+    /** The stage's Rejoin, once the automatic attempts are spent: one more attempt. */
+    fun rejoinMeet() {
+        meetRejoin?.rejoinNow()
+    }
+
+    /** Fresh credentials for the meet we are in, through the same connect the join used. */
+    private fun reconnectMeet(url: String, token: String) {
+        val current = _session.value ?: return
+        if (!current.isMeet || _phase.value != CallPhase.InCall) return
+        val session = current.copy(livekitUrl = url, livekitToken = token, hasVideo = _cameraOn.value)
+        _session.value = session
+        // A `switched` heard straight after this is the server seeing our own
+        // new connection, not another device; see the listener's onMovedElsewhere.
+        joinStartedAtMillis = now()
+        val join = session.toJoin(selfDeviceId().orEmpty(), selfName().orEmpty()).copy(micMuted = _micMuted.value)
+        scope.launch { engine.join(join) }
+    }
+
+    /**
+     * The engine gave up on the room. While a meet is recovering that is one
+     * attempt's connect failing — the network is likely still down — and the
+     * next attempt, or Rejoin, follows; anywhere else the call has failed.
+     */
+    private fun onEngineFailed(message: String) {
+        if (meetRecovering()) {
+            ZillitLog.w(TAG) { "meet reconnect attempt failed: $message" }
+        } else {
+            fail(message)
+        }
+    }
+
+    /** A meet is riding out a media drop: an engine failure now is an attempt that failed, not the end. */
+    private fun meetRecovering(): Boolean =
+        _session.value?.isMeet == true && meetRejoinState.value != MeetRejoinState.Idle
+
+    /** `/me` says the room is gone: the meeting ended while our media was down. */
+    private fun meetEnded() {
+        val current = _session.value ?: return
+        if (!current.isMeet) return
+        scope.launch { engine.leave() }
+        finish(current, CallEndReason.RemoteEnded)
+    }
+
+    /**
+     * The app is quitting. A Line 1 meet this device is in is LEFT — over the
+     * socket, or `POST …/leave` — and its room disconnected, rather than
+     * vanishing for the server to infer from LiveKit's disconnect reason,
+     * which is where ghost participants come from. Only meets: every other
+     * call quits exactly as it did before.
+     */
+    suspend fun leaveMeetBeforeQuit() {
+        meetLobby?.close()
+        val current = _session.value ?: return
+        if (!current.isMeet || _phase.value == CallPhase.Idle) return
+        ZillitLog.i(TAG) { "quitting: leaving meet ${current.callUuid}" }
+        engine.leave()
+        line3?.leave(current)
+    }
+
+    /**
+     * The lobby's credentials, joined through the existing connect — seeded
+     * exactly like the Calls tab's join of a call already under way: the meet
+     * id as the call id, group mode, the event's title, and the lobby's
+     * microphone and camera choice applied before anything is published.
+     *
+     * A calendar call too, so nobody's ring timeout is armed and the room is
+     * never ended for the rest when this device leaves; and Incoming, so that
+     * hanging up LEAVES rather than cancelling a ring that never existed.
+     * False when another call got here first.
+     */
+    private fun joinMeet(handOff: MeetHandOff): Boolean {
+        if (_phase.value != CallPhase.Idle) return false
+        val me = line3?.identityNow() ?: return false
+        val session = CallSession(
+            callUuid = handOff.meetId,
+            roomId = handOff.meetId,
+            projectId = handOff.projectId?.takeIf { it.isNotBlank() } ?: me.projectId,
+            direction = CallDirection.Incoming,
+            provider = CallProvider.LiveKit,
+            mode = CallMode.Group,
+            type = if (handOff.video) CallType.Video else CallType.Audio,
+            hasVideo = handOff.video,
+            callerUserId = handOff.ownerId,
+            callerName = handOff.ownerName,
+            selfUserId = me.userId,
+            selfDeviceId = selfDeviceId().orEmpty(),
+            title = handOff.title,
+            isCalendarCall = true,
+            isMeet = true,
+            livekitUrl = handOff.url,
+            livekitToken = handOff.token,
+        )
+        _phase.value = CallPhase.Outgoing
+        _session.value = session
+        _cameraOn.value = handOff.video
+        _micMuted.value = handOff.micMuted
+        ZillitLog.i(TAG) { "joining meet ${session.callUuid} video=${handOff.video} micMuted=${handOff.micMuted}" }
+        diagnostics.startCall(session.callUuid)
+        scope.launch { joinMedia(session, micMuted = handOff.micMuted) }
+        return true
+    }
 
     /** Runs only while the media link is down; cancelled the moment it returns. */
     /** Ends a call the media stack never brought back. */
@@ -2060,10 +2252,18 @@ class CallCoordinator(
                 mapOf("ok" to true, "ms" to now() - joinStartedAtMillis),
             )
         }
+        // A meet we are IN recovers its own way (see [meetRejoin]) — never by
+        // the watchdog, which would end it under the Rejoin button.
+        val current = _session.value
+        val rejoin = meetRejoin
+        if (rejoin != null && current?.isMeet == true && _phase.value == CallPhase.InCall) {
+            rejoin.onConnection(current.callUuid, state)
+            return
+        }
         // Not between calls: a failed call's page reports its socket closing
         // AFTER the teardown, and a clock armed by that ran on into the next
         // call and ended it 45 s later.
-        if (_session.value != null) reconnect.onConnectionChanged(state)
+        if (current != null) reconnect.onConnectionChanged(state)
     }
 
     private suspend fun listenEngine() {
@@ -2096,7 +2296,7 @@ class CallCoordinator(
                 }
                 is CallEngineEvent.Devices -> audio.onEngineDevices(event)
                 is CallEngineEvent.DeviceMissing -> audio.forget(event.kind)
-                is CallEngineEvent.Failed -> fail(event.message)
+                is CallEngineEvent.Failed -> onEngineFailed(event.message)
                 CallEngineEvent.SessionReplaced -> onSessionReplaced()
                 is CallEngineEvent.Degraded -> onDegraded(event)
                 else -> onPeerEvent(event)
@@ -2401,7 +2601,7 @@ class CallCoordinator(
 
     // ── Internals ───────────────────────────────────────────────────────
 
-    private suspend fun joinMedia(given: CallSession) {
+    private suspend fun joinMedia(given: CallSession, micMuted: Boolean = false) {
         if (joining) return
         joining = true
         val session = withKnownSfuHost(given)
@@ -2431,7 +2631,7 @@ class CallCoordinator(
         joinStartedAtMillis = now()
         // A fresh join starts with no outage, whatever the last call left.
         reconnect.cancel()
-        engine.join(session.toJoin(selfDeviceId().orEmpty(), selfName().orEmpty()))
+        engine.join(session.toJoin(selfDeviceId().orEmpty(), selfName().orEmpty()).copy(micMuted = micMuted))
         // Publishes the lists so a picker opened mid-call has something to
         // draw without waiting for a hot-plug event.
         audio.refresh()
@@ -2707,6 +2907,7 @@ class CallCoordinator(
         // The watchdog's only question is "is a call in progress?", so a clock
         // left running would end whichever call came next.
         reconnect.cancel()
+        meetRejoin?.reset()
         everConnected.clear()
         sawRemoteMedia = false
         line3Ring.reset()
@@ -3013,6 +3214,33 @@ class CallCoordinator(
             finish(current, reason)
         }
 
+        /**
+         * The meet moved to another of this user's devices: the server kept
+         * the newest and removed this one's media. Said as "Moved to another
+         * device", not "Call ended" — and nothing is sent, since we are
+         * already out and a leave could only reach the device that took over.
+         *
+         * Only once this device is properly IN the meet: the device that is
+         * doing the taking is still connecting when the server switches, and
+         * it must never read the switch as being about itself.
+         */
+        override fun onMovedElsewhere(callId: String) {
+            val current = _session.value
+            // Anything but a meet hears it exactly as it always did.
+            if (current == null || !callId.matches(current) || !current.isMeet) {
+                onDismissed(callId, LiveKitDismissal.HandledElsewhere, "")
+                return
+            }
+            val settled = _phase.value == CallPhase.InCall && now() - joinStartedAtMillis >= SWITCH_SETTLE_MILLIS
+            if (!settled) {
+                ZillitLog.i(TAG) { "meet ${current.callUuid} switched while we were still joining; ignored" }
+                return
+            }
+            ZillitLog.i(TAG) { "meet ${current.callUuid} moved to another of our devices" }
+            scope.launch { engine.leave() }
+            finish(current, CallEndReason.MovedElsewhere)
+        }
+
         override fun onUserState(callId: String, participant: CallParticipant) {
             val current = _session.value ?: return
             if (!callId.matches(current)) return
@@ -3245,6 +3473,9 @@ class CallCoordinator(
          * this window keeps the call; one that takes longer ends it.
          */
         const val MEDIA_GONE_GRACE_MILLIS = 5_000L
+
+        /** How long into a meet join a `switched` is taken to be about the joiner, not this device. */
+        const val SWITCH_SETTLE_MILLIS = 5_000L
 
 
     }

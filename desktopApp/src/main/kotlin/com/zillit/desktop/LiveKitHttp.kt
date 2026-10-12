@@ -6,6 +6,7 @@ import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestHeaderProvider
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.SignedJsonHttp
 import com.zillit.desktop.feature.calls.data.livekit.liveKitHttpError
 import io.ktor.client.HttpClient
@@ -53,6 +54,8 @@ internal class LiveKitHttp(
                     HttpVerb.Delete -> HttpMethod.Delete
                 }
                 headers.forEach { (name, value) -> this.headers.append(name, value) }
+                // What the calling backend's ops dashboard reports this client as.
+                this.headers.append(LiveKitLine.HEADER_PLATFORM, LiveKitLine.PLATFORM)
                 if (bodyJson != null) {
                     contentType(ContentType.Application.Json)
                     setBody(bodyJson)

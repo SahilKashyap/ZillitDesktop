@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
@@ -131,6 +132,13 @@ data class EventDraft(
     val callType: CallType? = null,
     /** The web's `createUser_exclude` — a meeting the organiser is not at. */
     val excludeOrganiser: Boolean = false,
+    /**
+     * The "Call Line" picker. Line 2 by default so a draft built without
+     * saying (an edit of an event saved before the field) can never promote
+     * the event to Line 1 by omission; a NEW event's form sets
+     * [EventCallLine.CREATE_DEFAULT] itself — see [newEventDraft].
+     */
+    val line: EventCallLine = EventCallLine.Line2,
 ) {
     val isEdit: Boolean get() = id != null
 
@@ -138,6 +146,13 @@ data class EventDraft(
 
     /** A members event is circulated; a personal one is nobody else's business. */
     val isForMembers: Boolean get() = audience == EventAudience.Members
+
+    /**
+     * Whether the "Call Line" picker shows AND the body carries `line` — one
+     * condition for both, so a type the picker hides never sends the key.
+     */
+    val carriesLine: Boolean
+        get() = EventCallLine.applies(callType?.wireValue, personal = !isForMembers)
 
     /** Somebody, anybody — crew or an outside address. */
     val hasGuests: Boolean get() = inviteeIds.isNotEmpty() || externalEmails.isNotEmpty()
@@ -314,6 +329,9 @@ fun CalendarEvent.toDraft(zone: TimeZone): EventDraft {
         timezoneId = timezone.orEmpty(),
         audience = audience,
         callType = callType,
+        // The event's own line; one saved before the field reads Line 2, so an
+        // untouched save keeps it on CnC.
+        line = line,
     )
 }
 

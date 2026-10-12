@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.config.CallLineNumbering
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -39,6 +41,7 @@ import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.callLineLabel
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
@@ -148,6 +151,7 @@ private fun EventFields(state: BoxScheduleUiState, form: EntryForm, onEvent: (Bo
     if (!form.isSingleScope) RepeatRow(state, form, onEvent)
     TimezoneField(form, onEvent)
     ReminderAndCallRow(form, onEvent)
+    CallLineField(form, onEvent)
     TextColorField(form, onEvent)
     LocationBlock(form, onEvent)
     AudienceField(state, form, onEvent)
@@ -230,6 +234,26 @@ private fun ReminderAndCallRow(form: EntryForm, onEvent: (BoxScheduleEvent) -> U
                 menuWidth = 240.dp,
             )
         }
+    }
+}
+
+/**
+ * Which line the event's call runs on — Line 1 a LiveKit meet with a lobby,
+ * Line 2 the CnC room. Shown under exactly the condition the body sends
+ * `line` under ([EventCallLine.applies]); every other type, and notes, have
+ * neither. Numbered as `calling_lines` numbers those engines.
+ */
+@Composable
+private fun CallLineField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
+    if (!EventCallLine.applies(form.callType)) return
+    Labelled(str(S.desktop_call_line_picker)) {
+        DiaryDropdown(
+            selected = form.line,
+            options = EventCallLine.entries,
+            onSelect = { onEvent(EntryEvent.SetLine(it)) },
+            label = { callLineLabel(CallLineNumbering.numberOf(it.engine)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

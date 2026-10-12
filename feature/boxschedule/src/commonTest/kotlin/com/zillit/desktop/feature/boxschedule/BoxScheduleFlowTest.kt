@@ -284,6 +284,8 @@ class BoxScheduleFlowTest {
         assertEquals("", put.query, "a whole-series rewrite carries no parameters")
         assertTrue(put.body.contains("\"distributeTo\":\"self\""))
         assertFalse(put.body.contains("createEventInCalendar"))
+        // Saved before the field existed: preselected Line 2, and an untouched save keeps it there.
+        assertTrue(put.body.contains("\"line\":\"line_2\""), put.body)
     }
 
     @Test
@@ -305,6 +307,8 @@ class BoxScheduleFlowTest {
         settle { sent.any { it.method == HttpMethod.Post && it.path.endsWith("/events") } }
         val post = sent.first { it.method == HttpMethod.Post && it.path.endsWith("/events") }
         assertTrue(post.body.contains("\"createEventInCalendar\":true"))
+        // A new event's form opens on Line 1.
+        assertTrue(post.body.contains("\"line\":\"line_1\""), post.body)
         assertTrue(post.body.contains("\"distributeUserIds\":[\"u1\"]"))
         assertTrue(post.body.contains("\"date\":${day(20)}"))
         settle { model.ui.overlays.entryForm == null }

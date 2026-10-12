@@ -39,7 +39,10 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
 import com.zillit.desktop.core.locationpicker.ZillitLocationField
+import com.zillit.desktop.core.config.CallLineNumbering
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.callLineLabel
 import com.zillit.desktop.core.strings.str
 
 /**
@@ -313,6 +316,8 @@ private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
             }
             form.errors.messageFor(EventFieldError.CallTypeMissing)?.let { ErrorLine(it) }
         }
+        // The same condition the body sends `line` under — never one without the other.
+        if (draft.carriesLine) CallLinePicker(draft, change)
     }
 
     // Picked on a map, as the web picks it, and the point travels with the
@@ -328,6 +333,28 @@ private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
         errorText = form.errors.messageFor(EventFieldError.LocationMissing),
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * Which line the event's call runs on: Line 1 is a LiveKit meet with a lobby,
+ * Line 2 the CnC room. Numbered as `calling_lines` numbers those engines, like
+ * every other call menu.
+ */
+@Composable
+private fun CallLinePicker(draft: EventDraft, change: (EventDraft) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        FieldLabel(str(S.desktop_call_line_picker))
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            EventCallLine.entries.forEach { line ->
+                ZillitButton(
+                    text = callLineLabel(CallLineNumbering.numberOf(line.engine)),
+                    variant = chosen(line == draft.line),
+                    size = ButtonSize.Small,
+                    onClick = { change(draft.copy(line = line)) },
+                )
+            }
+        }
+    }
 }
 
 /**
