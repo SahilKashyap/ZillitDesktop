@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
@@ -37,6 +38,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
@@ -46,7 +48,9 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoSortColumn
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortKey
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
+import com.zillit.desktop.feature.purchaseorder.domain.PoTotalText
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.describe
 import com.zillit.desktop.feature.purchaseorder.ui.PoDestination
 import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
@@ -140,20 +144,20 @@ internal fun PoStatRow(state: PoUiState, rows: List<PurchaseOrder>) {
             icon = ZillitIcons.Ledger,
             modifier = tile,
         )
-        ZillitStatTile(
+        PoTotalTile(
             label = str(S.ah_total_value),
-            value = rows.totalValue(state),
+            total = rows.totalText(state),
+            modifier = tile,
             sub = rows.currencyNote(),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Bank,
-            modifier = tile,
         )
     }
 }
 
 /**
  * A set of orders' total, as every card and period header shows it — the web's
- * `describeConvertedTotal`.
+ * `describeConvertedTotal`, compact (`£1.2M`) with the exact figure as [PoTotalText.title].
  *
  * One currency sums in that currency. Several are each converted into the
  * project's default through the project currencies' rates (`exr`, foreign per
@@ -161,12 +165,33 @@ internal fun PoStatRow(state: PoUiState, rows: List<PurchaseOrder>) {
  * which is also what the web does. It used to read "Mixed", which answered
  * nothing an accountant asks a total for.
  */
-internal fun List<PurchaseOrder>.totalValue(state: PoUiState): String {
-    val default = (state.rates.defaultCode ?: state.defaultCurrency()).uppercase()
-    val codes = map { it.currency?.uppercase()?.takeIf { code -> code.isNotBlank() } ?: default }.distinct()
-    if (codes.size <= 1) return Money.format(sumOf { it.gross }, codes.firstOrNull() ?: default)
-    val total = sumOf { order -> state.rates.toDefault(order.gross, order.currency, default) ?: order.gross }
-    return Money.format(total, default)
+internal fun List<PurchaseOrder>.totalText(state: PoUiState): PoTotalText =
+    state.rates.describe(this, state.defaultCurrency())
+
+internal fun List<PurchaseOrder>.totalValue(state: PoUiState): String = totalText(state).value
+
+/** A stat tile whose figure is compact and whose pointer-rest line is the exact amount. */
+@Composable
+internal fun PoTotalTile(
+    label: String,
+    total: PoTotalText,
+    modifier: Modifier,
+    sub: String?,
+    tone: StatusTone,
+    icon: ImageVector,
+) {
+    Box(modifier = modifier) {
+        ZillitTooltip(total.title) {
+            ZillitStatTile(
+                label = label,
+                value = total.value,
+                sub = sub,
+                tone = tone,
+                icon = icon,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
 }
 
 internal fun List<PurchaseOrder>.currencyNote(): String? {
@@ -264,7 +289,7 @@ internal fun PoOrderTable(
  * A clickable column heading — the web's sortable `<th>`. The same column again
  * flips the direction; the arrow says which way the rows run now.
  */
-private fun sortHeading(
+internal fun sortHeading(
     state: PoUiState,
     column: PoSortColumn,
     label: String,
@@ -343,6 +368,7 @@ internal fun poColumns(
                         )
                         // The row's unread on this tab — the web's per-PO badge.
                         ZillitBadge(count = state.unread.order(state.destination.badgeScope, order.id))
+                        PoAttachmentBadge(order.attachedFiles)
                     }
                     if (order.isLocalOnly) {
                         ZillitText(
@@ -491,11 +517,14 @@ internal fun PoBulkBar(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
                     ),
                     style = ZillitTheme.typography.titleSmall,
                 )
-                ZillitText(
-                    text = str(S.desktop_po_total_value, selected.totalValue(state)),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textSecondary,
-                )
+                val total = selected.totalText(state)
+                ZillitTooltip(total.title) {
+                    ZillitText(
+                        text = str(S.desktop_po_total_value, total.value),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = ZillitTheme.colors.textSecondary,
+                    )
+                }
             }
             ZillitButton(
                 text = str(S.desktop_po_reassign),

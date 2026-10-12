@@ -3,10 +3,26 @@
 // `updateLine` does (POEntry.jsx:894-915).
 package com.zillit.desktop.feature.purchaseorder.ui
 
+import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.feature.purchaseorder.domain.OTHER_TAX_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoTaxType
 import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
+
+/**
+ * The line with a typed quantity or unit price, its amount re-struck to the
+ * penny — the web's `u.amount = +(qty * rate).toFixed(2)` (`POEntry.jsx:881`).
+ * Left unrounded, `3 × 33.333` saved as `99.999` and the coded lines stopped
+ * agreeing with a total the server holds to two places.
+ */
+internal fun PoLine.repriced(quantity: Double = this.quantity, unitPrice: Double = this.unitPrice): PoLine =
+    copy(
+        quantity = quantity,
+        unitPrice = unitPrice,
+        amount = Money.scaledHalfAway(quantity * unitPrice, 2) / PENNIES,
+    )
+
+private const val PENNIES = 100.0
 
 /**
  * Sets the line's Exp. Type; its split children follow, and a type other than

@@ -32,6 +32,8 @@ internal class PoEntryActions(
             is PoEvent.OpenOrder -> openDetail(event.id)
             PoEvent.CloseOrder -> vm.update { copy(detail = null, history = emptyList()) }
             is PoEvent.OpenAttachment -> vm.emit(PoEffect.OpenAttachment(event.attachment))
+            is PoEvent.OpenHistory -> openHistory(event.orderId)
+            PoEvent.CloseHistory -> vm.update { copy(historyPanel = null) }
             is PoEvent.ViewPdf -> viewPdf(event.id)
             is PoEvent.SendVendorEmail -> sendVendorEmail(event.id, event.allowResend)
 
@@ -104,6 +106,18 @@ internal class PoEntryActions(
             repository.history(id).getOrNull()?.let { entries ->
                 if (vm.ui.detail?.id == id) vm.update { copy(history = entries) }
             }
+        }
+    }
+
+    /** Opens the audit trail on its own, over whatever page is showing. */
+    private fun openHistory(id: String) {
+        val order = vm.ui.orderById(id) ?: return
+        val title = order.number.ifBlank { id.take(HISTORY_ID_CHARS) }
+        vm.update { copy(historyPanel = PoHistoryPanel(orderId = id, title = title)) }
+        vm.launchWork {
+            val entries = repository.history(id).getOrNull().orEmpty()
+            if (vm.ui.historyPanel?.orderId != id) return@launchWork
+            vm.update { copy(historyPanel = historyPanel?.copy(entries = entries)) }
         }
     }
 
@@ -246,6 +260,7 @@ internal class PoEntryActions(
                 reassign = PoReassignState(
                     orderId = eligible.first().id,
                     ids = eligible.map { it.id },
+                    assignedTo = eligible.first().assignedTo,
                     label = if (eligible.size == 1) {
                         eligible.first().number.ifBlank { str(S.desktop_po_this_order) }
                     } else {
@@ -263,8 +278,9 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_po_choose_who_it_goes_to))
             return
         }
-        val reason = dialog.resolvedReason
-        if (reason.isBlank()) {
+        // A first assignment carries no reason (the web sends null); a hand-off must.
+        val reason = if (dialog.isUnassigned) null else dialog.resolvedReason
+        if (reason != null && reason.isBlank()) {
             vm.fail(str(S.desktop_a_reason_is_required))
             return
         }
@@ -483,3 +499,4 @@ internal fun PurchaseOrder.withVendorName(state: PoUiState): PurchaseOrder =
 internal fun PurchaseOrder.ledgerLines(): List<PoLine> = lines.filterNot { it.isTax }
 
 private const val MILLIS_PER_DAY = 86_400_000L
+private const val HISTORY_ID_CHARS = 8

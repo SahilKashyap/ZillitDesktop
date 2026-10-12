@@ -70,7 +70,7 @@ internal class PoFormActions(
                 form.copy(attachments = form.attachments.filterNot { it.media == event.attachment.media })
             }
 
-            PoEvent.CloseForm -> vm.update { copy(form = null) }
+            PoEvent.CloseForm -> closeForm()
             PoEvent.SubmitForm -> submit()
             PoEvent.SaveDraft -> saveDraft()
             is PoEvent.SaveAsTemplate -> saveTemplate(event.name)
@@ -179,9 +179,31 @@ internal class PoFormActions(
 
     // -- editing ---------------------------------------------------------------
 
+    /**
+     * Leaves the form — after asking, when the person has typed into it. The
+     * web's `guardedAction` on the back chip and the breadcrumb.
+     */
+    private fun closeForm() {
+        if (vm.ui.form?.dirty != true) {
+            vm.update { copy(form = null) }
+            return
+        }
+        vm.ask(
+            PoPrompt.Confirm(
+                action = PoConfirmAction.DiscardForm,
+                targetId = "",
+                title = str(S.desktop_unsaved_changes),
+                message = str(S.desktop_po_unsaved_leave_message),
+                destructive = true,
+                confirmLabel = str(S.leave),
+            ),
+        )
+    }
+
     private fun edit(form: PoFormState) {
-        vm.update { copy(form = form) }
-        keepDraft(form)
+        val edited = form.followingHeaderNominal(vm.ui.form).copy(dirty = true)
+        vm.update { copy(form = edited) }
+        keepDraft(edited)
     }
 
     private inline fun withForm(crossinline reducer: (PoFormState) -> PoFormState) {
@@ -236,7 +258,13 @@ internal class PoFormActions(
             vm.update { copy(form = form?.copy(uploading = true)) }
             when (val stored = files.upload(picked)) {
                 is ZillitResult.Success -> vm.update {
-                    copy(form = form?.copy(uploading = false, attachments = form.attachments + stored.data))
+                    copy(
+                        form = form?.copy(
+                            uploading = false,
+                            attachments = form.attachments + stored.data.copy(size = picked.bytes),
+                            dirty = true,
+                        ),
+                    )
                 }
 
                 is ZillitResult.Failure -> {
@@ -270,20 +298,27 @@ internal class PoFormActions(
         }
         val layout = vm.ui.formLayout
         // Accounts raise straight into the ledger's queue; everyone else into
-        // the approval chain — the same two statuses the phones send. An edit
-        // sends no status at all, which leaves the order where it is.
+        // the approval chain — the same two statuses the phones send. The
+        // console's "Update & Submit" sends ACCT_ENTERED again on an edit
+        // (`handleCreateAndPost` serves both); the department view's edit sends
+        // no status at all, which leaves the order where it is.
         val status = when {
-            form.mode == PoFormMode.EditOrder -> null
             vm.ui.viewer.isAccountant -> PurchaseOrderViewModel.STATUS_ACCOUNTS_ENTERED
+            form.mode == PoFormMode.EditOrder -> null
             else -> PurchaseOrderViewModel.STATUS_PENDING
         }
         // The web's department view re-applies the creator's own signatures on
         // every submit and edit: a tier-1 approver who raises a PO has approved
         // tier 1 already. Accounts' own raise (ACCT_ENTERED) goes straight to the
         // ledger queue and carries none.
-        val signs = !vm.ui.viewer.isAccountant && (status == PurchaseOrderViewModel.STATUS_PENDING || form.mode == PoFormMode.EditOrder)
+        val signs = !vm.ui.viewer.isAccountant &&
+            (status == PurchaseOrderViewModel.STATUS_PENDING || form.mode == PoFormMode.EditOrder)
         val request = form.toRequest(status, layout, vm.ui.chartCodes).let {
-            if (!signs) it else it.copy(approvals = vm.ui.tiers.autoApprovals(it.departmentId, vm.ui.viewer.userId, vm.nowMillis()))
+            if (!signs) {
+                it
+            } else {
+                it.copy(approvals = vm.ui.tiers.autoApprovals(it.departmentId, vm.ui.viewer.userId, vm.nowMillis()))
+            }
         }
         val problems = validate(request, form, layout)
         if (problems.isNotEmpty()) {
@@ -457,7 +492,8 @@ internal class PoFormActions(
         need(PoFormFields.CURRENCY, str(S.ah_lbl_currency), form.currency.isNullOrBlank())
         need(PoFormFields.DELIVERY_DATE, str(S.delivery_date), form.deliveryDate == null)
         // Accounts set the effective date; for everyone else it is theirs to leave.
-        need(PoFormFields.EFFECTIVE_DATE, str(S.ah_lbl_eff_date), vm.ui.viewer.isAccountant && form.effectiveDate == null)
+        val needsEffectiveDate = vm.ui.viewer.isAccountant && form.effectiveDate == null
+        need(PoFormFields.EFFECTIVE_DATE, str(S.ah_lbl_eff_date), needsEffectiveDate)
     }
 
     /**
@@ -543,6 +579,22 @@ internal class PoFormActions(
 
     private fun draftId(userId: String, projectId: String) = "po.draft:$userId:$projectId"
 
+}
+
+/**
+ * A changed header nominal reaches the lines that were following it — empty
+ * ones, and ones still holding the code it replaced; a line coded by hand
+ * differs from both and stays (`POForm.jsx`'s `prevNominalRef` effect).
+ */
+internal fun PoFormState.followingHeaderNominal(previous: PoFormState?): PoFormState {
+    val before = previous?.nominalCode.orEmpty()
+    if (nominalCode.isBlank() || nominalCode == before) return this
+    return copy(
+        lines = lines.map { line ->
+            val following = line.nominalCode.isNullOrBlank() || line.nominalCode == before
+            if (following) line.copy(nominalCode = nominalCode) else line
+        },
+    )
 }
 
 /**

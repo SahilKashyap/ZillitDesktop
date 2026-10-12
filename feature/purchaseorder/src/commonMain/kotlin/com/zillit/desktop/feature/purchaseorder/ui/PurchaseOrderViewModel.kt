@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.purchaseorder.ui
 
+import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -21,6 +22,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoSettingsPeople
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PoTermsFiles
+import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeBucket
+import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeScope
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadges
 import com.zillit.desktop.feature.purchaseorder.domain.PoUnread
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
@@ -414,6 +417,10 @@ class PurchaseOrderViewModel(
 
             PoEvent.OpenVendors -> sendEffect(PoEffect.OpenVendors)
             PoEvent.OpenInvoices -> sendEffect(PoEffect.OpenInvoices)
+            PoEvent.OpenApprovers -> {
+                setState { copy(detail = null, history = emptyList()) }
+                sendEffect(PoEffect.OpenApprovers)
+            }
             PoEvent.OpenFormConfiguration -> sendEffect(PoEffect.OpenFormConfig)
 
             is PoEvent.EditSettings, is PoEvent.SaveSettings, PoEvent.PickTermsDocument,
@@ -429,6 +436,7 @@ class PurchaseOrderViewModel(
             -> queryActions.onEvent(event)
 
             is PoEvent.OpenOrder, PoEvent.CloseOrder, is PoEvent.OpenAttachment, is PoEvent.ViewPdf,
+            is PoEvent.OpenHistory, PoEvent.CloseHistory,
             is PoEvent.SendVendorEmail, is PoEvent.AskReassign, is PoEvent.AskBulkReassign,
             is PoEvent.EditReassign, PoEvent.ConfirmReassign, PoEvent.DismissReassign,
             is PoEvent.AskClose, is PoEvent.EditClose, PoEvent.ConfirmClose, PoEvent.DismissClose,
@@ -650,7 +658,7 @@ class PurchaseOrderViewModel(
      */
     private suspend fun loadPoSettings() {
         repository.settings().getOrNull()?.let { bundle ->
-            setState { copy(projectSettings = bundle.settings) }
+            setState { copy(projectSettings = bundle.settings, assignmentRules = bundle.rules) }
         }
     }
 
@@ -854,6 +862,7 @@ class PurchaseOrderViewModel(
                 PoConfirmAction.AmendOrder -> formActions.openOrder(prompt.targetId, PoFormMode.EditOrder)
                 // The warning was the question; the send itself does not save again.
                 PoConfirmAction.SendToVendor -> entryActions.sendConfirmed(prompt.targetId)
+                PoConfirmAction.DiscardForm -> setState { copy(form = null) }
             }
 
             is PoPrompt.WithReason -> resolveAnswer(prompt)
@@ -940,7 +949,28 @@ class PurchaseOrderViewModel(
      */
     internal fun readOrderBadge(orderId: String) {
         val scope = currentState.destination.badgeScope ?: return
-        if (currentState.unread.order(scope, orderId) > 0) badges.readOrder(scope.tool, scope.level1, orderId)
+        // The order's own rows only: its query thread is read when that panel
+        // opens, not when the order does (`PODetailModal`'s two reads).
+        if (currentState.unread.order(scope, orderId, PoBadgeBucket.Order) > 0) {
+            badges.readOrder(scope.tool, scope.level1, orderId, PoBadgeBucket.Order)
+        }
+    }
+
+    /**
+     * The query thread's rows are read as the Query panel opens, from the same
+     * place whichever tab it was opened from: the accounts console's
+     * `po_queue_assigned` or the department view's `my_po`.
+     */
+    internal fun readQueryBadge(orderId: String) {
+        val viewer = currentState.viewer
+        val scope = if (viewer.isAccountant) {
+            PoBadgeScope(PoBadges.TOOL_HUB, PoBadges.LEVEL_QUEUE)
+        } else {
+            PoBadgeScope(PoBadges.TOOL_PO, PoBadges.LEVEL_MY_POS)
+        }
+        if (currentState.unread.order(scope, orderId, PoBadgeBucket.Query) > 0) {
+            badges.readOrder(scope.tool, scope.level1, orderId, PoBadgeBucket.Query)
+        }
     }
 
     /** Keyed by what is fetched, not which tab asked — several tabs share one list. */
@@ -977,17 +1007,26 @@ class PurchaseOrderViewModel(
 /**
  * Whether an order answers a search.
  *
- * The same six fields the web searches, and for the same reason it includes the
- * amount: people look an order up by what it cost as often as by its number.
+ * The fields the console's search box reads (`applyQuickFilter`): number,
+ * vendor, description, department, nominal, effective date, status, a line's
+ * description and — because people look an order up by what it cost as often as
+ * by its number — the amount. [departmentName] is passed in: an order carries
+ * only the id. The date matches as shown and as stored, and the status as the
+ * pill says it and as the wire does (`acct_entered`).
  */
-internal fun PurchaseOrder.matches(query: String): Boolean {
+internal fun PurchaseOrder.matches(query: String, departmentName: String = ""): Boolean {
     if (query.isBlank()) return true
     val needle = query.trim().lowercase()
     return number.lowercase().contains(needle) ||
         vendorName.lowercase().contains(needle) ||
         description.lowercase().contains(needle) ||
+        departmentName.lowercase().contains(needle) ||
         nominalCode.orEmpty().lowercase().contains(needle) ||
         episode.orEmpty().lowercase().contains(needle) ||
+        EpochDate.date(effectiveDate).lowercase().contains(needle) ||
+        EpochDate.isoDate(effectiveDate).contains(needle) ||
+        status.label.lowercase().contains(needle) ||
+        status.wire.contains(needle) ||
         lines.any { it.description.lowercase().contains(needle) } ||
         formatAmount(gross).contains(needle)
 }

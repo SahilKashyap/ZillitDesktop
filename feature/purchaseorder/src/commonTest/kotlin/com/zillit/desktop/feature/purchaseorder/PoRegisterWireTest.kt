@@ -48,7 +48,9 @@ class PoRegisterWireTest {
         assertEquals("att-1", file["_id"]?.jsonPrimitive?.content)
         assertEquals("purchase-order/abc/quote.pdf", file["media"]?.jsonPrimitive?.content)
         assertEquals("Quote.pdf", file["name"]?.jsonPrimitive?.content)
-        assertEquals("application/pdf", file["content_type"]?.jsonPrimitive?.content)
+        // The web's `content_type` is the MIME's major type, its `content_subtype` the extension.
+        assertEquals("application", file["content_type"]?.jsonPrimitive?.content)
+        assertEquals("pdf", file["content_subtype"]?.jsonPrimitive?.content)
         assertEquals("zillit-media", file["bucket"]?.jsonPrimitive?.content)
         assertEquals("eu-west-2", file["region"]?.jsonPrimitive?.content)
     }

@@ -66,6 +66,7 @@ import com.zillit.desktop.feature.purchaseorder.ui.mayQuery
 import com.zillit.desktop.feature.purchaseorder.ui.clampTaxRate
 import com.zillit.desktop.feature.purchaseorder.ui.redistributeSplitAmount
 import com.zillit.desktop.feature.purchaseorder.ui.rescaleSplitChildren
+import com.zillit.desktop.feature.purchaseorder.ui.repriced
 import com.zillit.desktop.feature.purchaseorder.ui.withExpenditureType
 import com.zillit.desktop.feature.purchaseorder.ui.withRental
 import com.zillit.desktop.feature.purchaseorder.ui.withTaxRate
@@ -589,7 +590,7 @@ private fun EntryLineRow(
                 ZillitTextField(
                     value = line.quantity.trimmed(),
                     onValueChange = {
-                        setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null))
+                        setAndRescale(line.repriced(quantity = it.toDoubleOrNull() ?: 0.0))
                     },
                     placeholder = str(S.ah_lbl_qty),
                     keyboardType = KeyboardType.Decimal,
@@ -600,7 +601,7 @@ private fun EntryLineRow(
                 ZillitTextField(
                     value = line.unitPrice.trimmed(),
                     onValueChange = {
-                        setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
+                        setAndRescale(line.repriced(unitPrice = it.toDoubleOrNull() ?: 0.0))
                     },
                     placeholder = str(S.dm_step2_unit),
                     keyboardType = KeyboardType.Decimal,

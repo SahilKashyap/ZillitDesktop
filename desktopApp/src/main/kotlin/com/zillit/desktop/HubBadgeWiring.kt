@@ -3,6 +3,7 @@ package com.zillit.desktop
 import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.wireToolToIdentifier
 import com.zillit.desktop.feature.accounthub.domain.HubBadges
+import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeBucket
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeLeaf
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadges
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +79,21 @@ internal fun AppGraph.Ready.purchaseOrderBadges(): PoBadges = object : PoBadges 
 
     override fun readOrder(tool: String, level1: String, orderId: String) {
         scope.launch { emitLevelRead(tool = tool, unit = PoBadges.UNIT_PO, level1 = level1, level3 = orderId) }
+    }
+
+    // Opening the order reads its purchase_order_label rows; opening the Query
+    // panel reads its query_chat rows — the web keeps the two apart, so an unseen
+    // query is not cleared by merely opening the order.
+    override fun readOrder(tool: String, level1: String, orderId: String, bucket: PoBadgeBucket) {
+        scope.launch {
+            emitLevelRead(
+                tool = tool,
+                unit = PoBadges.UNIT_PO,
+                level1 = level1,
+                level2 = bucket.level2,
+                level3 = orderId,
+            )
+        }
     }
 
     override fun readInvoices() {

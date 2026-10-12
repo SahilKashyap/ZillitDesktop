@@ -1209,6 +1209,8 @@ private val SELF_READING_TOOLS: Set<String> = setOf(
     "purchase_order_tool", "card_expenses_tool", "cash_expenses_tool", "timecard_tool",
     "supporting_artistes_extras_tool", "sa_portal_tool", "ad_dashboard_tool", "invoices_tool", "e_signature_tool",
     "document_distribution_tool",
+    // Posted CRs counts per snapshot, read when the snapshot opens (CostReportViewModel.openSnapshot).
+    "cost_report_tool",
     "main_budget_tool", "department_budget_tool", "transportation_tool", "map_tool",
     "dod_tool", "schedule_distribution_tool", "script_distribution_tool",
     // The diary reads its rows when History is opened (Pre-Production shares
@@ -2836,6 +2838,8 @@ private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions, asTool: Boo
         // strings; see PoViewer. It is on the *profile*: the crew list carries
         // a department name and no id at all.
         departmentId = context?.profile?.departmentId,
+        // Episode is a television production's (`useIsTelevisionProject`).
+        isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
     )
 }
 

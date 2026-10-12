@@ -8,6 +8,8 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
+import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
+import com.zillit.desktop.feature.purchaseorder.domain.PoQueueDepartments
 import com.zillit.desktop.feature.purchaseorder.domain.PoApprovalStep
 import com.zillit.desktop.feature.purchaseorder.domain.PoApprovalTiers
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
@@ -102,6 +104,8 @@ data class PoUiState(
     /** The tool's unread rows — the tabs' and rows' badges. */
     val unread: PoUnread = PoUnread.None,
     val history: List<PoHistoryEntry> = emptyList(),
+    /** The audit-trail panel opened off a list row — the Posted tab's History button. */
+    val historyPanel: PoHistoryPanel? = null,
     val selection: Set<String> = emptySet(),
 
     // -- the surfaces that take over the page ---------------------------------
@@ -141,6 +145,8 @@ data class PoUiState(
     val rates: PoCurrencyRates = PoCurrencyRates(),
     /** The open query thread, when one is. */
     val query: PoQueryState? = null,
+    /** The module's assignment rules as the settings read answered them; null until that read lands. */
+    val assignmentRules: List<PoAssignmentRule>? = null,
 ) {
     /**
      * The next approval decision on [order] and whether this viewer may take it
@@ -239,7 +245,8 @@ data class PoUiState(
         get() {
             val local = if (destination.showsLocalOrders) localOrders else emptyList()
             val filtered = (local + orders).filter { order ->
-                scoped(order) && quickFilter.matches(order) && matchesDepartment(order) && order.matches(search)
+                scoped(order) && quickFilter.matches(order) && matchesDepartment(order) &&
+                    order.matches(search, departmentName(order.departmentId))
             }
             return sortColumn?.let { column -> filtered.sortedBy(column, sortDirection, this) }
                 ?: sortKey.sort(filtered)
@@ -267,6 +274,19 @@ data class PoUiState(
 
     private fun matchesDepartment(order: PurchaseOrder): Boolean =
         departmentFilter == null || order.departmentId == departmentFilter
+
+    /**
+     * The short names of the departments the assignment rules route to this
+     * viewer — the Queue's "Assigned Depts" card. Null until the rules are
+     * read, so the card can say it is waiting rather than claim none.
+     */
+    val assignedDepartments: List<String>?
+        get() = assignmentRules?.let { rules ->
+            PoQueueDepartments.departmentIds(rules, viewer.userId.orEmpty()).map { id ->
+                val named = departmentName(id).takeIf { departments.any { it.id == id } }
+                PoQueueDepartments.abbreviate(named ?: PoQueueDepartments.slugLabel(id))
+            }
+        }
 
     /** The selected order, whether it came from the server or the outbox. */
     val selected: PurchaseOrder? get() = detail
@@ -320,6 +340,17 @@ data class PoUiState(
     }
 
     /**
+     * A person and the role they hold — `Name · Role`, the web's "Last Updated
+     * By" lines — or just the name where the lists carry no role, or blank
+     * where nothing names them.
+     */
+    fun personLabel(id: String?): String {
+        val named = id?.takeUnless { it.isBlank() || it == viewer.userId }
+        val member = named?.let { key -> (people + team).firstOrNull { it.id == key } }
+        return member?.let(::memberLabel) ?: personName(id)
+    }
+
+    /**
      * A team member as a picker row: their name, and the role they hold.
      *
      * The role is a translation key on the wire
@@ -361,6 +392,9 @@ private fun List<PurchaseOrder>.sortedBy(
         PoSortColumn.EffectiveDate -> compareBy { it.effectiveDate ?: Long.MAX_VALUE }
         PoSortColumn.Status -> compareBy { it.status.label }
         PoSortColumn.Assigned -> compareBy { state.assigneeName(it) }
+        PoSortColumn.Relieved -> compareBy { it.paidAmount }
+        PoSortColumn.Remaining -> compareBy { it.remaining }
+        PoSortColumn.Relief -> compareBy { it.relief.label }
     }
     return sortedWith(if (direction == PoSortDirection.Ascending) comparator else comparator.reversed())
 }
@@ -403,6 +437,12 @@ data class PoFormState(
     val uploading: Boolean = false,
     /** Every reason the form is refusing to save, shown together. */
     val problems: List<String> = emptyList(),
+    /**
+     * Whether the person has changed anything since it opened — the web's
+     * `markDirty`, set by their edits and never by the form filling itself in,
+     * so leaving a form they have not touched asks nothing.
+     */
+    val dirty: Boolean = false,
 ) {
     val totals: PoTotals get() = PoTotals.of(lines)
 
@@ -506,7 +546,10 @@ data class PoEntryState(
     val ledgerTotal: Double get() = totals.gross
 }
 
-/** The Reassign dialog — one order or a whole selection. */
+/** An order's audit trail, open on its own: who did what, newest first. Null entries while it loads. */
+data class PoHistoryPanel(val orderId: String, val title: String, val entries: List<PoHistoryEntry>? = null)
+
+/** The Reassign dialog — one order or a whole selection; the web's `ReassignModal`. */
 data class PoReassignState(
     /** Empty for a bulk reassign; the ids are in [ids]. */
     val orderId: String,
@@ -516,7 +559,16 @@ data class PoReassignState(
     val reason: String = "",
     val customReason: String = "",
     val saving: Boolean = false,
+    /**
+     * Who holds the first order now. The web decides on that one order, for a
+     * selection too: unassigned is an "Assign" that needs no reason, and the
+     * current holder is left out of the picker.
+     */
+    val assignedTo: String? = null,
 ) {
+    /** Nobody holds it yet — a first assignment, not a hand-off, so no reason is asked. */
+    val isUnassigned: Boolean get() = assignedTo.isNullOrBlank()
+
     /**
      * The reasons the web offers, plus its own escape hatch.
      *
@@ -525,14 +577,27 @@ data class PoReassignState(
      */
     val resolvedReason: String get() = if (reason == OTHER) customReason.trim() else reason
 
+    /** Who and, for a hand-off, why. */
+    val canSubmit: Boolean get() = !userId.isNullOrBlank() && (isUnassigned || resolvedReason.isNotBlank())
+
     companion object {
+        /** The longest free-text reason the web's box takes. */
+        const val CUSTOM_REASON_MAX = 500
+
         val OTHER: String get() = str(S.desktop_other_custom_reason)
+
+        /**
+         * The web's own five, in English: the reason is written to the order's
+         * audit trail verbatim, so a translated one would put another language
+         * into a record every client reads.
+         */
         val REASONS: List<String>
             get() = listOf(
-                str(S.desktop_inv_reason_workload),
-                str(S.desktop_po_reason_department_specialisation),
-                str(S.desktop_po_reason_absence_cover),
-                str(S.desktop_po_reason_escalation),
+                "Complex PO - Needs Senior Review",
+                "Workload Balancing",
+                "Department Enterprise",
+                "Holiday/Absence Cover",
+                "Accountant Escalation",
                 OTHER,
             )
     }

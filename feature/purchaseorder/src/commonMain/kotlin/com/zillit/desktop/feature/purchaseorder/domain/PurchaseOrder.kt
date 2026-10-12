@@ -130,6 +130,9 @@ data class PurchaseOrder(
             else -> PoRelief.PartiallyRelieved
         }
 
+    /** How many files ride the order — the count a list row's paperclip shows. */
+    val attachedFiles: Int get() = maxOf(attachmentCount, attachments.size)
+
     /** Whether the vendor has been sent this order. */
     val emailed: Boolean get() = emailAt != null
 
@@ -416,6 +419,12 @@ data class PoViewer(
      * `department_id` for every PO it writes.
      */
     val departmentId: String? = null,
+    /**
+     * Whether the production is a television one — the Episode field is
+     * theirs alone (`useIsTelevisionProject`, `project_sub_type` carrying
+     * `television_label`). False until the host says otherwise, as on the web.
+     */
+    val isTelevision: Boolean = false,
 ) {
     /**
      * Whether this person processes other people's orders.
@@ -666,8 +675,42 @@ data class PoAttachment(
     val contentType: String = "",
     val bucket: String = "",
     val region: String = "",
+    /** The file's extension as the web stores it (`pdf`, `png`); blank reads it off the name. */
+    val contentSubtype: String = "",
+    val caption: String = "",
+    /** Bytes, where the picker knew them — the web sends `file_size`. */
+    val size: Long? = null,
 ) {
     val displayName: String get() = name.ifBlank { media.substringAfterLast('/') }
+
+    /**
+     * The web's `content_type`: the major type of the file's MIME
+     * (`application`, `image`) — not the whole MIME. A store that could only say
+     * `application/octet-stream` for a PNG would make the web list an image as
+     * a download, so that case is read off the extension instead.
+     */
+    val wireContentType: String
+        get() {
+            val major = contentType.substringBefore('/').trim().lowercase()
+            if (major.isNotBlank() && contentType != OCTET_STREAM) return major
+            return when (wireSubtype) {
+                in IMAGE_EXTENSIONS -> "image"
+                in VIDEO_EXTENSIONS -> "video"
+                in AUDIO_EXTENSIONS -> "audio"
+                else -> "application"
+            }
+        }
+
+    /** The web's `content_subtype`: the extension, which is what its inline preview matches on. */
+    val wireSubtype: String
+        get() = contentSubtype.ifBlank { displayName.substringAfterLast('.', "") }.trim().lowercase()
+
+    private companion object {
+        const val OCTET_STREAM = "application/octet-stream"
+        val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "svg", "tif", "tiff")
+        val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "avi", "mkv", "webm")
+        val AUDIO_EXTENSIONS = setOf("mp3", "wav", "m4a", "aac", "ogg", "flac")
+    }
 }
 
 /** Everything the purchase order tool asks the server for. */
@@ -772,7 +815,7 @@ interface PurchaseOrderRepository {
      * `{ po_ids, data: { assigned_to, reassignment_reason } }`, the web's bulk
      * Reassign. The server's 100-id cap is checked before the call.
      */
-    suspend fun bulkReassign(ids: List<String>, userId: String, reason: String): ZillitResult<Unit> =
+    suspend fun bulkReassign(ids: List<String>, userId: String, reason: String?): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("bulk reassigning is not wired"))
 
     // -- the account hub's workflow reads: PoWorkflowSource's --------------------
@@ -817,9 +860,10 @@ interface PurchaseOrderRepository {
      * Hands the order to another accountant, with the reason on the record.
      *
      * A PATCH of two fields rather than its own verb, which is what the web
-     * sends: `assigned_to` plus `reassignment_reason`.
+     * sends: `assigned_to` plus `reassignment_reason`. A first assignment has
+     * no reason to give, and the web sends it `null`.
      */
-    suspend fun reassign(id: String, userId: String, reason: String): ZillitResult<Unit> =
+    suspend fun reassign(id: String, userId: String, reason: String?): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("reassigning an order is not wired"))
 
     suspend fun vendors(): ZillitResult<List<Vendor>>

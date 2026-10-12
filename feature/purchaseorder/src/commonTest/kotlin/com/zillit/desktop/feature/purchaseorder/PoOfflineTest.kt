@@ -172,7 +172,7 @@ class PoOfflineTest {
         runCurrent()
 
         assertEquals(0, outbox.all().size, "a refusal is not something to send again later")
-        assertEquals(filled, vm.state.value.form?.copy(saving = false, problems = emptyList()))
+        assertEquals(filled, vm.state.value.form?.copy(saving = false, problems = emptyList(), dirty = false))
     }
 
     @Test
@@ -187,7 +187,7 @@ class PoOfflineTest {
         assertEquals(0, outbox.all().size)
         assertEquals(
             filled,
-            vm.state.value.form?.copy(saving = false, problems = emptyList()),
+            vm.state.value.form?.copy(saving = false, problems = emptyList(), dirty = false),
             "the form is kept, as before",
         )
     }

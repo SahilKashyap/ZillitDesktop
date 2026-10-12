@@ -174,13 +174,13 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 icon = ZillitIcons.File,
                 modifier = tile,
             )
-            ZillitStatTile(
+            PoTotalTile(
                 label = str(S.desktop_po_draft_value),
-                value = rows.totalValue(state),
+                total = rows.totalText(state),
+                modifier = tile,
                 sub = rows.currencyNote(),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Wallet,
-                modifier = tile,
             )
         }
         ZillitSectionCard(

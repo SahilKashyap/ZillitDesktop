@@ -41,6 +41,9 @@ enum class PoConfirmAction {
 
     /** Emailing the vendor after a warning: lines not coded, or a second copy of the PO. */
     SendToVendor,
+
+    /** Leaving the order form with changes the person has not saved. */
+    DiscardForm,
 }
 
 enum class PoReasonAction {
@@ -98,6 +101,10 @@ sealed interface PoEvent {
 
     /** Opens one of the order's files through the host's store. */
     data class OpenAttachment(val attachment: PoAttachment) : PoEvent
+
+    /** The Posted tab's per-row History — the order's audit trail, without opening the order. */
+    data class OpenHistory(val orderId: String) : PoEvent
+    data object CloseHistory : PoEvent
 
     /** Renders the order's PDF and hands it to the OS. */
     data class ViewPdf(val id: String) : PoEvent
@@ -227,6 +234,9 @@ sealed interface PoEvent {
     data object OpenVendors : PoEvent
     data object OpenInvoices : PoEvent
 
+    /** The detail's "Set Approver" — the hub's Approvers screen, which closes the dialog behind it. */
+    data object OpenApprovers : PoEvent
+
     // -- the Settings tab -----------------------------------------------------
 
     /** The edited copy of the document; nothing reaches the server until a card's Save. */
@@ -264,4 +274,7 @@ sealed interface PoEffect {
 
     /** The Invoices tool — the department view's Invoices tab. */
     data object OpenInvoices : PoEffect
+
+    /** The account hub's Approvers area — where a department's tier 1 is set. */
+    data object OpenApprovers : PoEffect
 }

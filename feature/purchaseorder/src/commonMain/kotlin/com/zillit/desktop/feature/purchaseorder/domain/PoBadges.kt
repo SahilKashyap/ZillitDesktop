@@ -37,6 +37,16 @@ interface PoBadges {
     fun readOrder(tool: String, level1: String, orderId: String) {}
 
     /**
+     * One bucket of an order's rows read — the web keeps two apart: opening the
+     * order reads its `purchase_order_label` rows (`PODetailModal`'s on-open
+     * read) and opening the Query panel reads its `query_chat` rows. A host
+     * that does not tell the buckets apart reads the whole order, which is what
+     * [readOrder] did before this existed, so the default delegates to it.
+     */
+    fun readOrder(tool: String, level1: String, orderId: String, bucket: PoBadgeBucket) =
+        readOrder(tool, level1, orderId)
+
+    /**
      * The department view's Invoices tab taken — the hand-off to the invoices
      * tool reads the invoice rows filed under this tool, whole: the desktop's
      * invoices tool has no per-invoice read yet to clear them one by one.
@@ -54,7 +64,18 @@ interface PoBadges {
         const val LEVEL_QUEUE = "po_queue_assigned"
         const val LEVEL_APPROVAL_QUEUE = "po_approval_queue"
         const val LEVEL_MY_POS = "my_po"
+        const val ACTION_ORDER = "purchase_order_label"
+        const val ACTION_QUERY = "query_chat"
     }
+}
+
+/** The two kinds of unread row an order carries, by the wire's `level_2`. */
+enum class PoBadgeBucket(val level2: String) {
+    /** Everything but the query thread — read when the order is opened. */
+    Order(PoBadges.ACTION_ORDER),
+
+    /** The query thread's rows — read only when the Query panel opens. */
+    Query(PoBadges.ACTION_QUERY),
 }
 
 /** Where one tab's rows live — its tool and `level_1` — for the tabs that carry a badge slice. */
@@ -71,6 +92,15 @@ data class PoUnread(val leaves: List<PoBadgeLeaf> = emptyList()) {
 
     fun order(scope: PoBadgeScope?, orderId: String): Int =
         scope?.let { s -> leaves.filter { it.isIn(s) && it.orderId == orderId }.sumOf { it.unread } } ?: 0
+
+    /** One bucket of an order's rows on a tab — what is left to clear once the other has been read. */
+    fun order(scope: PoBadgeScope?, orderId: String, bucket: PoBadgeBucket): Int =
+        scope?.let { s ->
+            leaves.filter { it.isIn(s) && it.orderId == orderId && it.inBucket(bucket) }.sumOf { it.unread }
+        } ?: 0
+
+    private fun PoBadgeLeaf.inBucket(bucket: PoBadgeBucket): Boolean =
+        (level2 == PoBadges.ACTION_QUERY) == (bucket == PoBadgeBucket.Query)
 
     private fun PoBadgeLeaf.isIn(scope: PoBadgeScope): Boolean =
         tool == scope.tool && unit == PoBadges.UNIT_PO && level1 == scope.level1

@@ -295,7 +295,14 @@ private fun PoDetailsSection(state: PoUiState, form: PoFormState, onEvent: (PoEv
 }
 
 /** Whether a field is on this production's form, and what it calls it. */
-private fun PoUiState.showsField(field: String) = formLayout.shows(PoFormFields.DETAILS, field)
+private fun PoUiState.showsField(field: String) = formLayout.shows(PoFormFields.DETAILS, field) &&
+    when (field) {
+        // Accounts set the effective date (`POForm.jsx`'s `if (!isAccountant) return null`);
+        // for everyone else it is not on the form. Episode is a television production's.
+        PoFormFields.EFFECTIVE_DATE -> viewer.isAccountant
+        PoFormFields.EPISODE -> viewer.isTelevision
+        else -> true
+    }
 
 private fun PoUiState.fieldLabel(field: String, fallback: String): String =
     formLayout.label(PoFormFields.DETAILS, field, fallback) +
@@ -317,14 +324,9 @@ private fun ColumnScope.VendorAndDescription(state: PoUiState, form: PoFormState
                             PoEvent.EditForm(
                                 form.copy(
                                     vendorId = id,
+                                    // Only the vendor: the web's `selectVendor` leaves the
+                                    // currency and coding as the person set them.
                                     vendorName = vendor?.name.orEmpty(),
-                                    // The vendor's own currency and coding
-                                    // lead, as they do on both phones: most
-                                    // orders with a vendor are in that
-                                    // vendor's currency, and a wrong default
-                                    // here is a mispriced order.
-                                    currency = vendor?.currency ?: form.currency,
-                                    nominalCode = vendor?.defaultNominalCode ?: form.nominalCode,
                                 ),
                             ),
                         )

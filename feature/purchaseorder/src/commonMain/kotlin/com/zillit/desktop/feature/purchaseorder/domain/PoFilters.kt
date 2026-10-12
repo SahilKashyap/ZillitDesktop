@@ -101,7 +101,20 @@ enum class PoSortKey(private val labelKey: String) {
  * Separate from [PoSortKey], which is the dropdown above the table: the web has
  * both, and the header click overrides the dropdown while it is set.
  */
-enum class PoSortColumn { Number, Vendor, Department, Amount, EffectiveDate, Status, Assigned }
+enum class PoSortColumn {
+    Number,
+    Vendor,
+    Department,
+    Amount,
+    EffectiveDate,
+    Status,
+    Assigned,
+
+    // The Posted tab's own: what has been invoiced, what is left, and the relief label.
+    Relieved,
+    Remaining,
+    Relief,
+}
 
 /** Ascending or descending, for a clicked column. */
 enum class PoSortDirection { Ascending, Descending }
