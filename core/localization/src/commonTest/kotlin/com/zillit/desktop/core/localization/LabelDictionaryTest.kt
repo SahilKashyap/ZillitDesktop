@@ -190,7 +190,7 @@ class LabelDictionaryTest {
         assertEquals("You do not have permission to do that.", german.translate("access_denied", LabelKind.Messages))
         assertEquals("Transport", german.translate("transportation_tool"))
         // Nothing underneath for a key neither table has, so it still humanises.
-        assertEquals("Weather Tool", german.translate("weather_tool"))
+        assertEquals("Focus Puller", german.translate("focus_puller"))
     }
 
     @Test
