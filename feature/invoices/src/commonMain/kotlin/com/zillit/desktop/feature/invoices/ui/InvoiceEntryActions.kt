@@ -32,7 +32,7 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out.
     fun onEvent(event: InvoicesEvent): Boolean {
         when (event) {
-            is EntryEvent.Open -> open(event.invoice, event.readOnly)
+            is EntryEvent.Open -> open(event.invoice, event.readOnly, event.posted)
             EntryEvent.Close -> vm.update { copy(ledger = null) }
             is EntryEvent.EditHeader -> editHeader(event.header)
             EntryEvent.AutoFill -> editable {
@@ -102,11 +102,12 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
      * linked to, whose lines it starts from. A row the reader may not open is
      * refused. Opened from the Entry queue it reads the invoice's unread, when
      * it has any ([InvoicesViewModel.readOpenEntry]); read-only, it reads nothing.
+     * A posted invoice (opened from Posted) is anyone's to open, as the list is.
      */
-    private fun open(row: Invoice, readOnly: Boolean) {
+    private fun open(row: Invoice, readOnly: Boolean, posted: Boolean) {
         val state = vm.state.value
-        if (!readOnly && !state.canAccessEntry(row)) return
-        vm.update { copy(ledger = EntryLedger(invoice = row, readOnly = readOnly)) }
+        if (!readOnly && !posted && !state.canAccessEntry(row)) return
+        vm.update { copy(ledger = EntryLedger(invoice = row, readOnly = readOnly, posted = posted)) }
         vm.readOpenEntry()
         loadChart()
         vm.loadEntryRefs()
@@ -229,6 +230,12 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
 
     private fun frozen(ledger: EntryLedger): Boolean = ledger.readOnly || vm.state.value.isLocked(ledger.invoice)
 
+    /**
+     * A posted invoice is past the workflow: it can be corrected (Save) while its
+     * period is open, but not re-reviewed, reassigned, returned or posted again.
+     */
+    private fun workflowClosed(ledger: EntryLedger): Boolean = frozen(ledger) || ledger.posted
+
     private fun write(ledger: EntryLedger, status: String? = null): EntryWrite {
         val state = vm.state.value
         val sendsTax = EntryCoding.sendsTaxLine(ledger.tax, ledger.lines, state.taxTypes)
@@ -274,7 +281,7 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
     private fun post() {
         val state = vm.state.value
         val ledger = state.ledger ?: return
-        if (ledger.readOnly || ledger.busy || ledger.ordersLoading || !state.viewer.canPostToLedger) return
+        if (ledger.blocksPost(state.viewer.canPostToLedger)) return
         val block = EntryCoding.postBlock(
             header = ledger.header,
             lines = ledger.lines,
@@ -300,7 +307,7 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
     private fun submitForReview() {
         val state = vm.state.value
         val ledger = state.ledger ?: return
-        if (frozen(ledger) || ledger.busy || ledger.ordersLoading || state.viewer.isSenior) return
+        if (workflowClosed(ledger) || ledger.busy || ledger.ordersLoading || state.viewer.isSenior) return
         act(EntryAction.Reviewing) {
             val result = vm.repo.saveEntryWithMessage(ledger.invoice.id, write(ledger, status = UNDER_REVIEW))
             finish(result, closes = true, done = str(S.ah_submitted_for_review_toast))
@@ -310,7 +317,7 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
     /** `POST /:id/return-to-approval` — the server resets the chain itself. */
     private fun returnToApproval() {
         val ledger = vm.state.value.ledger ?: return
-        if (frozen(ledger) || ledger.busy) return
+        if (workflowClosed(ledger) || ledger.busy) return
         act(EntryAction.Returning) {
             val result = vm.repo.returnToApprovalWithMessage(ledger.invoice.id)
             finish(result, closes = true, done = str(S.desktop_inv_sent_back_for_approval))
@@ -320,7 +327,7 @@ internal class InvoiceEntryActions(private val vm: InvoicesViewModel) {
     /** The assign sheet, over this one invoice. */
     private fun assign() {
         val ledger = vm.state.value.ledger ?: return
-        if (frozen(ledger)) return
+        if (workflowClosed(ledger)) return
         vm.update { copy(assignFor = AssignRequest(invoiceIds = listOf(ledger.invoice.id)), assignees = vm.team()) }
     }
 
@@ -435,3 +442,7 @@ private fun EntryBlock.alert(): String? = when (this) {
 private fun EntryLedger.mismatch(state: InvoicesUiState): Boolean =
     !currencyChanged(state.projectCurrency) &&
         EntryCoding.amountMismatch(totals(state.taxTypes, state.taxTypesKnown).gross, invoice.grossAmount)
+
+/** No post from a read-only or already-posted screen, one still working, or by a reader with no right to. */
+private fun EntryLedger.blocksPost(canPost: Boolean): Boolean =
+    readOnly || posted || busy || ordersLoading || !canPost

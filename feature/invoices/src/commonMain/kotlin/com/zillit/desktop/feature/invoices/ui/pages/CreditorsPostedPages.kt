@@ -354,7 +354,8 @@ private fun AmountCell(text: String, color: Color = ZillitTheme.colors.textPrima
  * Invoices that have reached the ledger — the web's `PostedPage`, in its
  * order: the four split tiles, the search, the status chips beside the
  * department select, then the "Posted Ledger" panel, newest posting first.
- * A row opens the coding screen frozen, as `/posted/:id` does on the web.
+ * A row opens the coding screen in `posted` mode — correctable (Save only) until the
+ * cost-report lock reaches the invoice, as `/posted/:id` does on the web.
  */
 @Composable
 internal fun ColumnScope.PostedPage(
@@ -406,7 +407,7 @@ internal fun ColumnScope.PostedPage(
             rows = rows,
             columns = postedColumns(state),
             key = { it.id },
-            onRowClick = { onEvent(EntryEvent.Open(it, readOnly = true)) },
+            onRowClick = { onEvent(EntryEvent.Open(it, posted = true)) },
             emptyTitle = str(S.desktop_inv_no_posted_yet),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),

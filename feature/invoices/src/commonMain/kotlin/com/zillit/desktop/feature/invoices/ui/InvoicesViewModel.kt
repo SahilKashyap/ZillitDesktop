@@ -438,15 +438,16 @@ class InvoicesViewModel(
     }
 
     /**
-     * `/invoices/posted/<id>` opens that invoice's coding screen, frozen — the
-     * web's detail is URL-driven (`PostedPage.jsx:190-191, 286-289`), and a
-     * bare id is enough: the screen reads the record itself.
+     * `/invoices/posted/<id>` opens that invoice's coding screen in `posted` mode
+     * (Save only, frozen once its period locks) — the web's detail is URL-driven
+     * (`PostedPage.jsx:190-191, 286-289`), and a bare id is enough: the screen
+     * reads the record itself.
      */
     private fun openPostedDeepLink(path: String) {
         val id = AccountantPage.postedDetailId(path) ?: return
         val s = currentState
         if (!s.isAccountant || s.page != AccountantPage.Posted || s.ledger?.invoice?.id == id) return
-        onEvent(EntryEvent.Open(Invoice(id = id), readOnly = true))
+        onEvent(EntryEvent.Open(Invoice(id = id), posted = true))
     }
 
     /**
