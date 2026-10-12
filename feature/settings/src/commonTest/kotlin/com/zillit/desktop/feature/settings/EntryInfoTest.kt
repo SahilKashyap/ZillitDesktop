@@ -100,7 +100,9 @@ class EntryInfoTest {
 
     @Test
     fun `a row with no clip of its own plays the web's generic one`() {
-        assertEquals(InfoGuide.STATIC_VIDEO, InfoGuide.ProductionSetup.videoUrl)
+        assertEquals(InfoGuide.STATIC_VIDEO, InfoGuide("https://documentation.zillit.com/#x").videoUrl)
+        // Production Setup gained its own clip (web 9a06fb00c, `productionSetupGuide`).
+        assertTrue(InfoGuide.ProductionSetup.videoUrl.endsWith("Production%20Setup%28Admin%20Settings%29%20Web.mp4"))
         assertTrue(InfoGuide.LeaveProject.videoUrl.endsWith("How%20to%20leave%20project%20Web.mp4"))
     }
 }

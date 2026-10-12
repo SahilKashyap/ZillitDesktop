@@ -11,9 +11,11 @@ package com.zillit.desktop.feature.home.domain
  *
  * Matched exactly as the ⓘ text is: the FIRST entry whose name the tool's
  * identifier contains. Every tool has a video — the web plays its generic
- * clip when the entry names none — but only some have a documentation page.
+ * clip when the entry names none — but only some have a documentation page,
+ * and a tile that sets `tooltip.hideVideo` has no Watch video button at all
+ * ([videoUrl] null).
  */
-data class ToolGuide(val tutorialUrl: String?, val videoUrl: String)
+data class ToolGuide(val tutorialUrl: String?, val videoUrl: String?)
 
 /** What the web's tutorial and video picks branch on, beyond [ToolInfoViewer]. */
 data class GuideViewer(
@@ -30,7 +32,7 @@ fun toolGuide(identifier: String, viewer: GuideViewer): ToolGuide {
         tutorialUrl = tutorialKey?.let { key ->
             TUTORIALS[key]?.let { base -> tutorialUrl(base, key, entry.name, viewer) }
         },
-        videoUrl = videoKey?.let(VIDEOS::get) ?: VIDEOS.getValue(STATIC_VIDEO),
+        videoUrl = if (entry?.hideVideo == true) null else videoKey?.let(VIDEOS::get) ?: VIDEOS.getValue(STATIC_VIDEO),
     )
 }
 
@@ -67,6 +69,8 @@ private class GuideEntry(
     val name: String,
     val tutorial: ((ToolInfoViewer) -> String?)? = null,
     val video: ((ToolInfoViewer) -> String?)? = null,
+    /** The web's `tooltip.hideVideo`: the tile's ⓘ offers no Watch video. */
+    val hideVideo: Boolean = false,
 )
 
 private fun fixed(key: String): (ToolInfoViewer) -> String = { key }
@@ -77,9 +81,13 @@ private fun signer(viewer: ToolInfoViewer) = viewer.canPost("forms_and_signature
 
 private fun caterer(viewer: ToolInfoViewer) = viewer.departmentIdentifier?.contains("department_catering") == true
 
+/** `canAuthorTool` on the call sheet: the posting right authors, everyone else views and comments. */
+private fun callSheetAuthor(viewer: ToolInfoViewer) = viewer.canPost("callsheet_tool")
+
 /** `sectionList`, in its order — the same order [toolDescription] matches in. */
 private val GUIDES: List<GuideEntry> = listOf(
-    GuideEntry("account_hub"),
+    // The whole-tool clip and docs page; the per-module ones are on Account Hub's Setup → Guide.
+    GuideEntry("account_hub", fixed("accountHub"), fixed("accountHub")),
     GuideEntry(
         "account",
         tutorial = fixed("accounts"),
@@ -104,12 +112,12 @@ private val GUIDES: List<GuideEntry> = listOf(
     GuideEntry("pre_production_tool", fixed("preProductionCalendar")),
     GuideEntry("production_tool", fixed("productionCalendar")),
     GuideEntry("purchase_order", fixed("purchaseOrder"), fixed("purchaseOrder")),
-    GuideEntry("card_expenses", fixed("productionExpenseCards")),
-    GuideEntry("cash_expenses", fixed("pettyCashExpenses")),
-    GuideEntry("deal_memo", fixed("dealMemo")),
-    GuideEntry("timecard", fixed("timeCard")),
-    GuideEntry("payroll", fixed("payroll")),
-    GuideEntry("cost_report", fixed("costReport")),
+    GuideEntry("card_expenses", fixed("productionExpenseCards"), fixed("productionExpenseCards")),
+    GuideEntry("cash_expenses", fixed("pettyCashExpenses"), fixed("pettyCashExpenses")),
+    GuideEntry("deal_memo", fixed("dealMemo"), fixed("dealMemo")),
+    GuideEntry("timecard", fixed("timeCard"), fixed("timeCard")),
+    GuideEntry("payroll", fixed("payroll"), fixed("payroll")),
+    GuideEntry("cost_report", fixed("costReport"), fixed("costReport")),
     GuideEntry("location", fixed("location"), fixed("location")),
     GuideEntry("recce", fixed("recce"), fixed("recce")),
     GuideEntry("weather", fixed("weather"), fixed("weather")),
@@ -123,7 +131,7 @@ private val GUIDES: List<GuideEntry> = listOf(
     GuideEntry("wardrobe_background_tool", fixed("wardrobeBackground"), fixed("wardrobeBackground")),
     GuideEntry("main_budget_tool", fixed("budgetFull"), fixed("budgetFull")),
     GuideEntry("department_budget_tool", fixed("budgetDepartment"), fixed("budgetDepartment")),
-    GuideEntry("budget_builder_tool", fixed("budgetBuilder")),
+    GuideEntry("budget_builder_tool", fixed("budgetBuilder"), fixed("budgetBuilder")),
     // The web also tells a driver apart by designation; without the hub's
     // driver list the desktop splits coordinator (posting right) from everyone else.
     GuideEntry(
@@ -141,6 +149,27 @@ private val GUIDES: List<GuideEntry> = listOf(
     GuideEntry("box_schedule_tool", fixed("boxSchedule"), fixed("boxSchedule")),
     GuideEntry("document_distribution_tool", fixed("documentDistribution"), fixed("documentDistribution")),
     GuideEntry("sides_tool", fixed("sides"), fixed("sides")),
+    GuideEntry("ad_dashboard_tool", fixed("adDashboard"), fixed("adDashboard")),
+    GuideEntry("supporting_artistes_extras_tool", fixed("supportingArtistes"), fixed("supportingArtistes")),
+    // No documentation page on the web (`tutorialLink: ''`), only a clip.
+    GuideEntry("distribution_tool", video = fixed("distributionList")),
+    GuideEntry("map_tool", fixed("map"), fixed("map")),
+    GuideEntry("drive_tool", fixed("drive"), fixed("drive")),
+    // Same rule as the tile name: Call Sheet Creation plays the admin clip, Drafts Call Sheet the user one.
+    GuideEntry(
+        "callsheet_tool",
+        tutorial = fixed("callSheetCreation"),
+        video = { if (callSheetAuthor(it)) "callSheetCreation" else "draftsCallSheet" },
+    ),
+    // The web has a clip per side and no documentation page (`tutorialURLLink.eSignature` is undefined).
+    GuideEntry(
+        "e_signature",
+        video = { if (it.isAdmin || it.canPost("e_signature_tool")) "eSignatureAdmin" else "eSignatureUser" },
+    ),
+    // Its own tool, with no clip yet (`tooltip.hideVideo`).
+    GuideEntry("production_report_chat_tool", hideVideo = true),
+    // The web gives Talent Deals a tooltip and no clip (`tooltip.hideVideo`).
+    GuideEntry("talent_deals_tool", hideVideo = true),
 )
 
 private fun secondAd(viewer: ToolInfoViewer): String =
@@ -154,7 +183,7 @@ private val VIDEOS: Map<String, String> = mapOf(
     "accountsForUser" to
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/accounts%20user.mp4",
     "assetReport" to
-        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20GenerateView%20Asset%20Report%20%20%281%29.mp4",
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Asset%20Register%20Web.mp4",
     "cateringForCaterer" to
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20upload%20images%20and%20documents%20in%20catering.mp4",
     "cateringForUser" to
@@ -174,7 +203,7 @@ private val VIDEOS: Map<String, String> = mapOf(
     "viewingAndPostingRights" to
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/viewing%20postimg.mp4",
     "purchaseOrder" to
-        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/purchase%20order%20tool.mp4",
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Purchase%20Order%20Web.mp4",
     "location" to
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/location%20tools%20web.mp4",
     "recce" to
@@ -219,6 +248,40 @@ private val VIDEOS: Map<String, String> = mapOf(
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20the%20Document%20Distribution%20Tool%20Web.mp4",
     "sides" to
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20the%20Sides%20Tool%20Web.mp4",
+    "accountHub" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Account%20Hub%20Web.mp4",
+    "productionExpenseCards" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Production%20Expense%20Cards%20Web.mp4",
+    "pettyCashExpenses" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Petty%20Cash%20Expenses%20Web.mp4",
+    "dealMemo" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Deal%20Memo%20Web.mp4",
+    "timeCard" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Time%20Card%20Web.mp4",
+    "payroll" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Payroll%20Web.mp4",
+    "costReport" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Cost%20Report%20Web.mp4",
+    "budgetBuilder" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20Budget%20Builder%20Web.mp4",
+    "adDashboard" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20AD%20Dashboard%20Web.mp4",
+    "supportingArtistes" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20use%20Supporting%20ArtistesExtras%20web.mp4",
+    "distributionList" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Distribution%20List%20Web.mp4",
+    "map" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20the%20Map%20Tool%20Web.mp4",
+    "drive" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20the%20Drive%20Tool%20Web.mp4",
+    "callSheetCreation" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20Create%20%26%20Upload%20Call%20Sheet%20for%20Admin%20web.mp4",
+    "draftsCallSheet" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/How%20to%20Create%20%26%20Upload%20Call%20Sheet%20for%20User%20web.mp4",
+    "eSignatureAdmin" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20the%20E-Signature%20Tool%28Admin%20side%29%20Web.mp4",
+    "eSignatureUser" to
+        "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/How%20to%20use%20the%20E-Signature%20Tool%28User%20side%29%20Web.mp4",
     "staticVideo" to
         "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/static%20video.mp4",
 )
@@ -304,4 +367,16 @@ private val TUTORIALS: Map<String, String> = mapOf(
         "https://documentation.zillit.com/#document-distribution",
     "sides" to
         "https://documentation.zillit.com/#sides",
+    "accountHub" to
+        "https://documentation.zillit.com/#account-hub",
+    "adDashboard" to
+        "https://documentation.zillit.com/#ad-dashboard",
+    "supportingArtistes" to
+        "https://documentation.zillit.com/#supporting-artistes",
+    "map" to
+        "https://documentation.zillit.com/#map",
+    "drive" to
+        "https://documentation.zillit.com/#drive",
+    "callSheetCreation" to
+        "https://documentation.zillit.com/#call-sheet-creation",
 )

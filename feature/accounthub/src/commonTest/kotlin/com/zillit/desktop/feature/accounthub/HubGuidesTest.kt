@@ -35,6 +35,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -100,16 +101,36 @@ class HubGuidesTest {
     }
 
     @Test
-    fun `the page lists the web's ten modules, grouped as the sidebar groups them, and not itself`() {
+    fun `the page lists the web's sixteen modules, grouped as the sidebar groups them, and not itself`() {
         val ids = HubGuides.sections.flatMap { it.items }.map { it.id }
         assertEquals(
-            listOf(
+            setOf(
                 "production-setup", "purchase-orders", "invoices", "card-expenses", "cash-expenses", "payroll",
-                "cost-report", "trial-balance", "bible-report", "bank-reconciliation",
+                "cost-report", "period-close", "vendors", "trial-balance", "bible-report", "bank-reconciliation",
+                "approvers", "budget", "chart-of-accounts", "form-config",
             ),
-            ids,
+            ids.toSet(),
         )
-        assertEquals(5, HubGuides.sections.size, "Setup, Transactions, Payroll, Reports, Management")
+        assertEquals(16, ids.size)
+        assertTrue("guide" !in ids && "tax-filing" !in ids)
+    }
+
+    @Test
+    fun `every card offers a clip and a docs page, and Production Expense Cards has its own section`() {
+        HubGuides.sections.flatMap { it.items }.forEach { item ->
+            val guide = assertNotNull(HubGuides.guide(item.id), item.id)
+            assertTrue(guide.video?.startsWith("https://zillit-tutorial-videos.s3") == true, "${item.id} video")
+            assertTrue(guide.docs?.startsWith("https://documentation.zillit.com/#") == true, "${item.id} docs")
+        }
+        assertEquals(
+            "https://documentation.zillit.com/#account-hub-production-expense-cards",
+            HubGuides.guide("card-expenses")?.docs,
+        )
+        assertEquals(
+            "https://zillit-tutorial-videos.s3.dualstack.us-east-1.amazonaws.com/web/Account%20Hub/" +
+                "How%20to%20use%20Payroll%28Account%20Hub%29%20Web.mp4",
+            HubGuides.guide("payroll")?.video,
+        )
     }
 
     @Test
@@ -128,7 +149,11 @@ class HubGuidesTest {
             "https://documentation.zillit.com/?project_type=tv%20%26%20web#trial-balance",
             HubGuides.url("trial-balance", "tv & web"),
         )
-        assertNull(HubGuides.url("vendors", "film"))
+        assertEquals(
+            "https://documentation.zillit.com/?project_type=film#account-hub-vendors",
+            HubGuides.url("vendors", "film"),
+        )
+        assertNull(HubGuides.url("tax-filing", "film"))
         assertNull(HubGuides.url("guide", "film"))
     }
 
@@ -144,6 +169,15 @@ class HubGuidesTest {
             model.effects.first(),
         )
         assertTrue(model.state.value.area == HubArea.Guide, "the console stays where it was")
+    }
+
+    @Test
+    fun `a clip the player cannot show is handed to the browser as it is`() = runTest(dispatcher) {
+        val model = viewModel("film")
+        model.start()
+        val clip = HubGuides.guide("payroll")?.video.orEmpty()
+        model.onEvent(AccountHubEvent.OpenLink(clip))
+        assertEquals(AccountHubEffect.OpenUrl(clip), model.effects.first())
     }
 }
 

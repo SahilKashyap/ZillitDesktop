@@ -11,7 +11,7 @@ package com.zillit.desktop.feature.settings.ui
  * @property docs the documentation page, `#anchor` included, without the query
  *   the web adds — see [docsUrl].
  * @property video the clip; the web plays its generic one for a row whose
- *   `infoVideoURL` names none, so a row with no clip of its own passes null.
+ *   `infoVideoURL` names none, so a row with no clip of its own passes null (none does today).
  */
 data class InfoGuide(val docs: String, val video: String? = null) {
 
@@ -83,8 +83,7 @@ data class InfoGuide(val docs: String, val video: String? = null) {
         val FileCabinet = InfoGuide("${DOCS}file-cabinet-documents", "${VIDEOS}File%20cabinet%20web.mp4")
         val CompanyDetails = InfoGuide("${DOCS}company-details", "${VIDEOS}How%20to%20make%20Company%20Details%20Web.mp4")
 
-        /** The web names a guide page for this tile and no clip, so Watch video plays the generic one. */
-        val ProductionSetup = InfoGuide("${DOCS}production-setup-guide")
+        val ProductionSetup = InfoGuide("${DOCS}production-setup-guide", "${VIDEOS}How%20to%20set%20Production%20Setup%28Admin%20Settings%29%20Web.mp4")
         val SetupNotes = InfoGuide("${DOCS}project-setup-notes", "${VIDEOS}Project%20Set%20Up%20Notes%20Web.mp4")
         val DeleteProduction = InfoGuide("${DOCS}delete-project", "${VIDEOS}How%20to%20Delete%20project%20%20Web.mp4")
     }

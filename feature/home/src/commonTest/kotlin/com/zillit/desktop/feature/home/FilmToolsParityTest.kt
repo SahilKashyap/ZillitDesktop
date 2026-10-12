@@ -196,7 +196,7 @@ class FilmToolsParityTest {
         val guide = toolGuide("purchase_order_tool", admin)
 
         assertEquals("https://documentation.zillit.com/?for=admin&project_type=film#purchase-order", guide.tutorialUrl)
-        assertTrue(guide.videoUrl.endsWith(".mp4"))
+        assertTrue(guide.videoUrl?.endsWith(".mp4") == true)
 
         val crew = toolGuide("purchase_order_tool", GuideViewer(ToolInfoViewer()))
         assertEquals("https://documentation.zillit.com/?project_type=default#purchase-order", crew.tutorialUrl)
@@ -204,8 +204,49 @@ class FilmToolsParityTest {
 
     @Test
     fun `a tool the web gives no clip plays its generic one, and no page means no More`() {
-        val guide = toolGuide("account_hub_tool", GuideViewer(ToolInfoViewer()))
+        val guide = toolGuide("tasks_tool", GuideViewer(ToolInfoViewer()))
         assertNull(guide.tutorialUrl)
-        assertTrue(guide.videoUrl.contains("static%20video"))
+        assertTrue(guide.videoUrl?.contains("static%20video") == true)
     }
+
+    @Test
+    fun `the video team's clips are on the tiles that gained them, and the swapped two point at the new files`() {
+        val account = "web/Account%20Hub/How%20to%20use"
+        assertTrue(clip("card_expenses_tool").contains("$account%20Production%20Expense%20Cards%20Web"))
+        assertTrue(clip("cash_expenses_tool").contains("$account%20Petty%20Cash%20Expenses%20Web"))
+        assertTrue(clip("timecard_tool").contains("$account%20Time%20Card%20Web"))
+        assertTrue(clip("payroll_tool").contains("$account%20Payroll%20Web"))
+        assertTrue(clip("cost_report_tool").contains("$account%20Cost%20Report%20Web"))
+        assertTrue(clip("ad_dashboard_tool").contains("$account%20AD%20Dashboard%20Web"))
+        assertTrue(clip("purchase_order_tool").endsWith("$account%20Purchase%20Order%20Web.mp4"))
+        assertTrue(clip("asset_report_tool").endsWith("$account%20Asset%20Register%20Web.mp4"))
+        assertEquals(
+            "https://documentation.zillit.com/?project_type=default#ad-dashboard",
+            toolGuide("ad_dashboard_tool", GuideViewer(ToolInfoViewer())).tutorialUrl,
+        )
+    }
+
+    @Test
+    fun `the Account Hub tile has its whole-tool clip and page now`() {
+        val guide = toolGuide("account_hub_tool", GuideViewer(ToolInfoViewer()))
+        assertEquals("https://documentation.zillit.com/?project_type=default#account-hub", guide.tutorialUrl)
+        assertTrue(guide.videoUrl?.endsWith("How%20to%20use%20Account%20Hub%20Web.mp4") == true)
+    }
+
+    @Test
+    fun `the call sheet tile plays the admin clip for an author and the user clip for everyone else`() {
+        val author = ToolInfoViewer(canPost = { it == "callsheet_tool" })
+        assertTrue(clip("callsheet_tool", author).contains("for%20Admin%20web"))
+        assertTrue(clip("callsheet_tool").contains("for%20User%20web"))
+    }
+
+    @Test
+    fun `a tile that hides its video has no Watch video, and a tool with no page keeps its clip`() {
+        assertNull(toolGuide("production_report_chat_tool", GuideViewer(ToolInfoViewer())).videoUrl)
+        assertNull(toolGuide("distribution_tool", GuideViewer(ToolInfoViewer())).tutorialUrl)
+        assertTrue(clip("distribution_tool").endsWith("Distribution%20List%20Web.mp4"))
+    }
+
+    private fun clip(identifier: String, viewer: ToolInfoViewer = ToolInfoViewer()): String =
+        toolGuide(identifier, GuideViewer(viewer)).videoUrl.orEmpty()
 }

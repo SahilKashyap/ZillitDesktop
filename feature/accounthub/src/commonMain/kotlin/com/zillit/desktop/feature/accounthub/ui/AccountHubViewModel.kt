@@ -342,6 +342,7 @@ class AccountHubViewModel(
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
             is AccountHubEvent.OpenGuide ->
                 HubGuides.url(event.itemId, projectType())?.let { sendEffect(AccountHubEffect.OpenUrl(it)) }
+            is AccountHubEvent.OpenLink -> sendEffect(AccountHubEffect.OpenUrl(event.url))
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
             else -> return false
         }

@@ -104,8 +104,11 @@ sealed interface AccountHubEvent {
 
     data object Refresh : AccountHubEvent
 
-    /** A Guide card: open that module's page on the documentation site. */
+    /** A Guide card's Read More: open that module's page on the documentation site. */
     data class OpenGuide(val itemId: String) : AccountHubEvent
+
+    /** A Guide clip the in-app player cannot show: hand its address to the browser. */
+    data class OpenLink(val url: String) : AccountHubEvent
 
     data object ClearNotice : AccountHubEvent
 
