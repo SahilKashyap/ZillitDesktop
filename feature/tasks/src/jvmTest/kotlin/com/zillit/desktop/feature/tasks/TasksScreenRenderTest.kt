@@ -3,7 +3,10 @@
 package com.zillit.desktop.feature.tasks
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.test.assertCountEquals
@@ -106,12 +109,38 @@ class TasksScreenRenderTest {
         }
     }
 
+    /** The confirmation opens at the ⋯ button, inside the card — never as a page dialog drawn inline in the column. */
+    @Test
+    fun `cancelling from a card's menu asks first, naming its open subtasks`() {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = false) { TasksScreen(state(), onEvent = {}, mentionable = { crew }) } }
+            onAllNodesWithContentDescription("Task options")[0].performClick()
+            onNodeWithText("Open task").assertExists()
+            onNodeWithText("Cancel task").performClick()
+            onNodeWithText("Cancel this task?").assertExists()
+            onNodeWithText("Its 1 open subtask will be cancelled too.").assertExists()
+            onNodeWithText("Keep it").assertExists()
+        }
+    }
+
+    @Test
+    fun `an assignee who has left reads as a former crew member, not as nobody`() {
+        runComposeUiTest {
+            val open = tasks[0].copy(assigneeId = "gone", comments = emptyList(), history = emptyList())
+            val withPanel = state().copy(
+                panel = TaskPanel(key = 1, creating = false, taskId = "a", task = open, orig = open.toDraft(), draft = open.toDraft()),
+            )
+            setContent { ZillitTheme(darkTheme = false) { TasksScreen(withPanel, onEvent = {}, mentionable = { crew }) } }
+            onAllNodesWithText("Former crew member").onFirst().assertExists()
+        }
+    }
+
     @Test
     fun `a viewer without view rights is told so`() {
         runComposeUiTest {
             val denied = state().copy(viewer = TasksViewer(resolved = true, enabled = true, canView = false))
             setContent { ZillitTheme(darkTheme = false) { TasksScreen(denied, onEvent = {}, mentionable = { crew }) } }
-            onNodeWithText("You can't view Tasks").assertExists()
+            onNodeWithText("You don't have access to Tasks").assertExists()
         }
     }
 
@@ -120,7 +149,7 @@ class TasksScreenRenderTest {
         runComposeUiTest {
             val off = state().copy(viewer = TasksViewer(resolved = true, enabled = false))
             setContent { ZillitTheme(darkTheme = false) { TasksScreen(off, onEvent = {}, mentionable = { crew }) } }
-            onNodeWithText("Tasks isn't turned on").assertExists()
+            onNodeWithText("Tasks is not switched on for this project").assertExists()
         }
     }
 }

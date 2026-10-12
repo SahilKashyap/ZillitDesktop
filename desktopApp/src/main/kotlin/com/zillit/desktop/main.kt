@@ -1511,6 +1511,7 @@ private fun ProjectScopedLoads(
         viewModels.permissionGrid?.onRightsChanged(PermissionGridViewer.from(rights))
         viewModels.externalUsers?.onRightsChanged()
         viewModels.selectStills?.onRightsChanged()
+        viewModels.tasks?.onRightsChanged()
     }
 }
 

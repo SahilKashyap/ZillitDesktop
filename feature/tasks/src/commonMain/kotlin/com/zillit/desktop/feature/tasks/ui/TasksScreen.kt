@@ -13,25 +13,29 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import kotlin.time.Clock
+import kotlinx.coroutines.delay
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 
@@ -53,7 +57,7 @@ fun TasksScreen(
 ) {
     TasksThemeProvider(dark = null) {
         val k = TasksTheme.c
-        val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
+        val today by rememberToday()
         val counts = state.counts
 
         Box(modifier.fillMaxSize().background(k.bg)) {
@@ -61,9 +65,9 @@ fun TasksScreen(
                 Sidebar(state, counts.mine, counts.self, onEvent)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when {
-                        !state.viewer.resolved -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
-                        !state.viewer.enabled -> Gate(str(S.desktop_tasks_gate_disabled_title), str(S.desktop_tasks_gate_disabled_hint), null, onEvent)
-                        !state.viewer.canView -> Gate(str(S.desktop_tasks_gate_noview_title), str(S.desktop_tasks_gate_noview_hint), str(S.desktop_request_access), onEvent)
+                        !state.viewer.resolved -> GatePage { GateLoading() }
+                        !state.viewer.enabled -> GatePage { Gate(str(S.desktop_tasks_gate_disabled_title), str(S.desktop_tasks_gate_disabled_hint), null, onEvent) }
+                        !state.viewer.canView -> GatePage { Gate(str(S.desktop_tasks_gate_noview_title), str(S.desktop_tasks_gate_noview_hint), str(S.desktop_request_access), onEvent) }
                         else -> when (state.view) {
                             TasksView.Board -> BoardView(state, today, onEvent)
                             TasksView.Mine -> MineView(state, today, onEvent)
@@ -73,13 +77,53 @@ fun TasksScreen(
                 }
             }
             if (state.viewer.canCall) TaskPanelOverlay(state, today, onEvent, mentionable)
-            // A refusal from the service, or a rule the client checked first ("2 subtasks are still open").
-            ZillitErrorToast(
-                message = state.error ?: state.notice,
+            // A refusal from the service, or a rule the client checked first ("2 subtasks are still open");
+            // otherwise what the server announced for a write it saved.
+            val problem = state.error ?: state.notice
+            ZillitToast(
+                message = problem ?: state.success,
                 onDismiss = { onEvent(TasksEvent.DismissMessage) },
+                tone = if (problem != null) ZillitToastTone.Danger else ZillitToastTone.Success,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
             )
         }
+    }
+}
+
+/**
+ * Today, for the due dates: read again every minute, so a window left open
+ * past midnight moves its Overdue / Today groups, tones and labels on, as the
+ * web reads the clock on every render.
+ */
+@Composable
+private fun rememberToday() = produceState(Clock.System.todayIn(TimeZone.currentSystemDefault())) {
+    while (true) {
+        delay(TODAY_TICK_MS)
+        value = Clock.System.todayIn(TimeZone.currentSystemDefault())
+    }
+}
+
+private const val TODAY_TICK_MS = 60_000L
+
+/** A gate in place of a view: the tool's name as the heading, the state under it (the web's `.zt-top` + `StatePanel`). */
+@Composable
+private fun GatePage(content: @Composable () -> Unit) {
+    val k = TasksTheme.c
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().background(k.surface)) {
+            TText(str(S.desktop_tasks_tool_label), 24, androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp), maxLines = 1)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+        }
+        content()
+    }
+}
+
+/** "Loading tasks…" while the rights list has not answered: nothing may call the service before it does. */
+@Composable
+private fun GateLoading() {
+    Row(Modifier.padding(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ZillitSpinner(size = 16.dp)
+        TText(str(S.desktop_tasks_loading), 14, color = TasksTheme.c.muted)
     }
 }
 

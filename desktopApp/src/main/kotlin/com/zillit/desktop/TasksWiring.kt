@@ -38,6 +38,7 @@ private fun AppGraph.Ready.tasksPeople(): Flow<TaskPeople> {
     return loader.context.map { context ->
         TaskPeople(
             me = context.profile?.userId,
+            projectId = context.project?.projectId,
             crew = context.users
                 .filter { it.status?.lowercase() !in INACTIVE }
                 .map { user ->

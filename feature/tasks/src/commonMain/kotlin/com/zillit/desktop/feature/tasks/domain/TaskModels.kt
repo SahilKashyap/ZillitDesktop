@@ -164,7 +164,8 @@ data class TasksViewer(
 
 /** The service's own answer to one write: the task, or why not. */
 sealed interface TaskWrite {
-    data class Saved(val task: Task) : TaskWrite
+    /** [message] is the server's own announcement (a message key), shown as the web toasts it; null when it sent none. */
+    data class Saved(val task: Task, val message: String? = null) : TaskWrite
 
     /** 409: someone else saved first. [latest] is their version. */
     data class Conflict(val latest: Task) : TaskWrite

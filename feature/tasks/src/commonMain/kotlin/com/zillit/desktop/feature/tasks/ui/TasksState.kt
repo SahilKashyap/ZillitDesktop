@@ -14,8 +14,12 @@ import com.zillit.desktop.feature.tasks.domain.subtasksOf as subtasksIn
 /** The three views of the sidebar. */
 enum class TasksView { Board, Mine, Self }
 
-/** Who is looking, and the crew around them. Fed by the host from the project context. */
-data class TaskPeople(val me: String? = null, val crew: List<TaskPerson> = emptyList())
+/**
+ * Who is looking, and the crew around them. Fed by the host from the project
+ * context, with the open production's id, so a socket frame for another
+ * production is ignored.
+ */
+data class TaskPeople(val me: String? = null, val crew: List<TaskPerson> = emptyList(), val projectId: String? = null)
 
 /**
  * The task panel — a main task, a subtask, or the form for a new one.
@@ -70,10 +74,21 @@ data class TasksUiState(
     val panel: TaskPanel? = null,
     /** Tasks with a one-click write in flight. */
     val busy: Set<String> = emptySet(),
+    /**
+     * Board cards dropped on another column, with the status they were dropped
+     * on: the card waits there while the write is in flight, and the entry
+     * goes when the server answers (saved or refused).
+     */
+    val moving: Map<String, TaskStatus> = emptyMap(),
     /** A new self task is being added from the quick-add row. */
     val quickAdding: Boolean = false,
+    /** Goes up each time a quick add is saved, so the row clears what was typed only then. */
+    val quickAdded: Int = 0,
     val error: String? = null,
+    /** A rule the client checked before sending anything ("2 subtasks are still open"). */
     val notice: String? = null,
+    /** What the server announced for a write it saved, as the web toasts it. */
+    val success: String? = null,
 ) {
     val canPost: Boolean get() = viewer.canPost
     // Looked up once per state, not once per row.
@@ -116,9 +131,13 @@ sealed interface TasksEvent {
     data class SetStatus(val task: Task, val status: TaskStatus) : TasksEvent
     data class Delete(val task: Task) : TasksEvent
 
+    /** A Board card dropped on another column: it waits there until the server answers. */
+    data class Move(val task: Task, val status: TaskStatus) : TasksEvent
+
     /** Share a self task (or take it back, with a null person) straight from its row. */
     data class Share(val taskId: String, val assigneeId: String?) : TasksEvent
     data class QuickAdd(val title: String, val dueDate: String?, val assigneeId: String?) : TasksEvent
+    /** Ask an admin for posting rights; the panel closes first, as the web's does. */
     data object AskForRights : TasksEvent
 
     // -- the panel --

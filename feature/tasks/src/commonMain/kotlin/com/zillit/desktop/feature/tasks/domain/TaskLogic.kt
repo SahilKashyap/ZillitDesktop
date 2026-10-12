@@ -58,14 +58,19 @@ private fun TaskDraft.fields(): Map<String, String?> = mapOf(
     "assignee_id" to assigneeId,
 )
 
-private fun String?.norm(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+/** The web's `norm`: an empty value is no value; text is compared trimmed (so "   " still differs from ""). */
+private fun String?.norm(): String? = if (isNullOrEmpty()) null else trim()
 
-/** Only the fields that changed, keyed by wire name, ready to PUT. */
+/**
+ * Only the fields that changed, keyed by wire name, ready to PUT. A cleared
+ * description or scenes goes as `""`, as the web sends it; a cleared date,
+ * person or department as null (the draft never holds `""` for those).
+ */
 fun diffDraft(orig: TaskDraft, draft: TaskDraft): Map<String, String?> {
     val before = orig.fields()
     return draft.fields()
         .filter { (key, value) -> before[key].norm() != value.norm() }
-        .mapValues { (key, value) -> if (key == "title") value?.trim().orEmpty() else value?.takeIf { it.isNotEmpty() } }
+        .mapValues { (key, value) -> if (key == "title") value?.trim().orEmpty() else value }
 }
 
 fun isDirty(orig: TaskDraft?, draft: TaskDraft?): Boolean =

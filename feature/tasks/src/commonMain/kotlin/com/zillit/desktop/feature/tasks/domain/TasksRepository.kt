@@ -29,8 +29,10 @@ interface TasksRepository {
     /**
      * Creates a task, or a subtask when [draft] carries a `parentId`. [uniqueId]
      * is required by the service: a retried create returns the task already made.
+     * [quick] is the Self Tasks quick-add row: only title, due date and assignee
+     * go, as the web sends them, and the server fills in the rest.
      */
-    suspend fun create(draft: TaskDraft, uniqueId: String): TaskWrite
+    suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean = false): TaskWrite
 
     /**
      * A partial update. With [expectedUpdated] the service answers 409 when
@@ -39,8 +41,11 @@ interface TasksRepository {
      */
     suspend fun update(taskId: String, changes: Map<String, String?>, expectedUpdated: Long? = null): TaskWrite
 
-    /** Soft delete; a main task's subtasks (and all their comments) go with it. */
-    suspend fun delete(taskId: String): ZillitResult<Unit>
+    /**
+     * Soft delete; a main task's subtasks (and all their comments) go with it.
+     * Answers the server's own message (a message key), or null when it sent none.
+     */
+    suspend fun delete(taskId: String): ZillitResult<String?>
 
     /** Adds a comment; answers the task with every comment on it. */
     suspend fun comment(taskId: String, text: String, mentions: List<String>): ZillitResult<Task>

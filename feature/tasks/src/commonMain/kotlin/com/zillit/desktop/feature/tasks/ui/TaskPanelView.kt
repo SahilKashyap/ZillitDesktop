@@ -7,7 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,12 +43,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -56,6 +64,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -103,31 +112,37 @@ internal fun TaskPanelOverlay(
 ) {
     val panel = state.panel ?: return
     val k = TasksTheme.c
-    val close = { onEvent(if (panel.creating) TasksEvent.CancelCreate else TasksEvent.ClosePanel) }
+    // The ✕ and the scrim close (a new task's form just goes, as the web's
+    // does); Escape cancels a new task — a new subtask back to its main task.
+    val close = { onEvent(TasksEvent.ClosePanel) }
+    val escape = { onEvent(if (panel.creating) TasksEvent.CancelCreate else TasksEvent.ClosePanel) }
     val focus = remember { FocusRequester() }
-    LaunchedEffect(panel.key) { runCatching { focus.requestFocus() } }
+    // A new task starts in its title (see PanelContent); anything else in the panel.
+    LaunchedEffect(panel.key) { if (!panel.creating) runCatching { focus.requestFocus() } }
 
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(k.scrim).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = close))
         Column(
             Modifier.align(Alignment.CenterEnd).widthIn(max = PANEL_WIDTH).fillMaxWidth(0.9f).fillMaxHeight()
                 .background(k.surface).border(BorderStroke(1.dp, k.line))
-                .focusRequester(focus).focusable()
-                // Ctrl/Cmd+S saves (or creates); Escape closes, or nags about unsaved changes.
+                // The key handlers come before the panel's own focus target, so they
+                // also hear keys while the panel itself (not a field in it) has the focus.
+                // Ctrl/Cmd+S saves (or creates), wherever the focus is in the panel.
                 .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when {
-                        (event.isCtrlPressed || event.isMetaPressed) && event.key == Key.S -> {
-                            onEvent(if (panel.creating) TasksEvent.Create else TasksEvent.Save())
-                            true
-                        }
-                        event.key == Key.Escape -> {
-                            close()
-                            true
-                        }
-                        else -> false
+                    if (event.type != KeyEventType.KeyDown || !(event.isCtrlPressed || event.isMetaPressed) || event.key != Key.S) {
+                        return@onPreviewKeyEvent false
                     }
-                },
+                    onEvent(if (panel.creating) TasksEvent.Create else TasksEvent.Save())
+                    true
+                }
+                // Escape closes, or nags about unsaved changes — only once nothing
+                // inside used it: the @mention list takes it first to close itself.
+                .onKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown || event.key != Key.Escape) return@onKeyEvent false
+                    escape()
+                    true
+                }
+                .focusRequester(focus).focusable(),
         ) {
             if (!panel.ready) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -167,6 +182,9 @@ private fun ColumnScope.PanelContent(
     val limits = dueLimits(draft.parentId, if (creating) null else task?.id, state.byId, state.tasks)
     val cancelled = draft.status == TaskStatus.Cancelled
     val set = { next: TaskDraft -> onEvent(TasksEvent.DraftChanged(next)) }
+    val titleFocus = remember(panel.key) { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(panel.key) { if (creating) runCatching { titleFocus.requestFocus() } }
 
     // Header ---------------------------------------------------------------------------
     Row(
@@ -183,28 +201,36 @@ private fun ColumnScope.PanelContent(
                 else -> k.fg to k.surface
             }
             val shape = RoundedCornerShape(8.dp)
-            Row(
-                Modifier.height(32.dp).clip(shape).background(bg)
-                    .then(if (draft.status.isOpen) Modifier.border(BorderStroke(1.dp, k.line2), shape) else Modifier)
-                    .then(
-                        if (blocked) Modifier else Modifier.clickable {
+            val tip = when {
+                blocked -> blockerNote(blocker)
+                draft.status.isClosed -> str(S.desktop_tasks_menu_reopen)
+                else -> null
+            }
+            val button = @Composable {
+                Row(
+                    Modifier.height(32.dp).clip(shape).background(bg)
+                        .then(if (draft.status.isOpen) Modifier.border(BorderStroke(1.dp, k.line2), shape) else Modifier)
+                        // Blocked, the click still answers: it says why (as the web's does), and changes nothing.
+                        .clickable {
                             val back = panel.orig?.status?.takeIf { it.isOpen } ?: TaskStatus.Todo
                             onEvent(TasksEvent.PickStatus(if (draft.status.isOpen) TaskStatus.Done else back))
-                        },
-                    ).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ZillitIcon(if (cancelled) ZillitIcons.Close else ZillitIcons.Check, tint = fg, size = 14.dp)
-                TText(
-                    str(when { cancelled -> S.cancelled; draft.status == TaskStatus.Done -> S.completed; else -> S.desktop_tasks_menu_mark_complete }),
-                    13, Medium, fg, maxLines = 1,
-                )
+                        }.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ZillitIcon(if (cancelled) ZillitIcons.Close else ZillitIcons.Check, tint = fg, size = 14.dp)
+                    TText(
+                        str(when { cancelled -> S.cancelled; draft.status == TaskStatus.Done -> S.completed; else -> S.desktop_tasks_menu_mark_complete }),
+                        13, Medium, fg, maxLines = 1,
+                    )
+                }
             }
+            if (tip != null) ZillitTooltip(tip) { button() } else button()
         }
         if (!creating && task != null) {
             TaskMenu(
                 task = task.copy(status = draft.status), canPost = state.canPost, blocker = blocker,
                 onStatus = { onEvent(TasksEvent.ChooseStatus(it)) }, onDelete = { onEvent(TasksEvent.DeleteOpenTask) }, blockerNote = ::blockerNote,
+                subtaskCount = if (draft.parentId == null) state.subtasksOf(task.id).size else 0,
             )
         }
         TIconBtn(ZillitIcons.Close, str(S.close), close)
@@ -227,11 +253,21 @@ private fun ColumnScope.PanelContent(
             }
         }
         // The task name: no box, and a thin blue line under it while it has the focus.
+        // Enter creates a new task, or leaves the field on an existing one; it never breaks the line.
         TInput(
             value = draft.title, onChange = { set(draft.copy(title = it.replace('\n', ' '))) },
             placeholder = str(if (isSub) S.desktop_tasks_field_subtask_title else S.desktop_tasks_field_title),
-            style = txt(22, SemiBold, 29.sp), singleLine = false, enabled = !readOnly, maxLength = TITLE_MAX,
-            modifier = Modifier.fillMaxWidth(),
+            style = txt(22, SemiBold, 29.sp).copy(
+                textDecoration = if (cancelled) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+            ),
+            singleLine = false, enabled = !readOnly, maxLength = TITLE_MAX,
+            modifier = Modifier.fillMaxWidth().focusRequester(titleFocus).onPreviewKeyEvent { event ->
+                if (event.key != Key.Enter && event.key != Key.NumPadEnter) return@onPreviewKeyEvent false
+                if (event.type == KeyEventType.KeyDown) {
+                    if (creating) onEvent(TasksEvent.Create) else focusManager.clearFocus()
+                }
+                true
+            },
             decoration = { inner, focused ->
                 Column(Modifier.fillMaxWidth()) {
                     Box(Modifier.padding(bottom = 6.dp)) { inner() }
@@ -248,12 +284,15 @@ private fun ColumnScope.PanelContent(
 
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Prop(ZillitIcons.User, str(S.desktop_tasks_field_assignee)) {
-                TPicker(
-                    value = draft.assigneeId, picks = crewPicks(state.assignableCrew, state.hodIds),
-                    emptyLabel = str(if (draft.isSelf) S.desktop_tasks_self_only_me_private else S.unassigned),
-                    onChange = { set(draft.copy(assigneeId = it)) }, enabled = !readOnly && canReassign, avatars = true,
-                )
-                if (!canReassign) TText(str(S.desktop_tasks_reassign_creator_only), 12, color = k.faint)
+                // Only the creator can reassign a self task: the picker is greyed out, and says why on hover.
+                ZillitTooltip(if (canReassign) "" else str(S.desktop_tasks_reassign_creator_only)) {
+                    TPicker(
+                        value = draft.assigneeId, picks = crewPicks(state.assignableCrew, state.hodIds, me = state.me),
+                        emptyLabel = str(if (draft.isSelf) S.desktop_tasks_self_only_me_private else S.unassigned),
+                        onChange = { set(draft.copy(assigneeId = it)) }, enabled = !readOnly && canReassign, avatars = true,
+                        searchHint = str(S.desktop_tasks_search_people), former = str(S.desktop_tasks_former_member),
+                    )
+                }
             }
             val assigner = if (!creating && task != null && task.assigneeId != null && draft.assigneeId == task.assigneeId) assignerOf(task) else null
             if (assigner != null && task != null) Prop(ZillitIcons.Tick, str(S.desktop_tasks_assigned_by)) { AssignedBy(task, assigner, state, today) }
@@ -264,23 +303,24 @@ private fun ColumnScope.PanelContent(
                     label = due?.let { fullDayText(it) } ?: str(S.desktop_tasks_add_due_date),
                     onChange = { set(draft.copy(dueDate = it)) }, today = today, enabled = !readOnly, min = limits.min, max = limits.max,
                     hint = when {
-                        limits.max != null -> str(S.desktop_tasks_due_limit_main, dayText(LocalDate.parse(limits.max), today))
-                        limits.min != null -> str(S.desktop_tasks_due_limit_subtasks, dayText(LocalDate.parse(limits.min), today))
+                        limits.max != null -> str(S.desktop_tasks_due_limit_main, yearDayText(limits.max))
+                        limits.min != null -> str(S.desktop_tasks_due_limit_subtasks, yearDayText(limits.min))
                         else -> null
                     },
                 )
                 if (due != null) DueHint(draft, today)
             }
             Prop(ZillitIcons.Clock, str(S.status)) {
-              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Segs {
                     TaskStatus.board.forEach { status ->
                         val look = statusLook(status)
-                        Seg(statusText(status), draft.status == status, look.dot, look.fg, look.bg, look.dot, enabled = !readOnly) { onEvent(TasksEvent.PickStatus(status)) }
+                        // Done while subtasks are open: still pressable (it says why), with the reason on hover.
+                        val stopped = status == TaskStatus.Done && blocker > 0
+                        ZillitTooltip(if (stopped) blockerNote(blocker) else "") {
+                            Seg(statusText(status), draft.status == status, look.dot, look.fg, look.bg, look.dot, enabled = !readOnly) { onEvent(TasksEvent.PickStatus(status)) }
+                        }
                     }
                 }
-                if (blocker > 0) TText(blockerNote(blocker), 12, color = k.faint)
-              }
             }
             Prop(ZillitIcons.Pin, str(S.priority)) {
                 Segs {
@@ -297,8 +337,9 @@ private fun ColumnScope.PanelContent(
             if (!draft.isSelf) {
                 Prop(ZillitIcons.Tag, str(S.department)) {
                     TPicker(
-                        value = draft.departmentId, picks = state.departments.map { Pick(it.id, it.name, colour = Color(deptColour(it.id))) },
-                        emptyLabel = str(if (creating) S.desktop_choose_a_department else S.desktop_tasks_no_department),
+                        value = draft.departmentId, picks = deptPicks(state.departments, state.crew),
+                        // A new task with none goes to the server's default: the creator's own department.
+                        emptyLabel = str(if (creating) S.desktop_tasks_department_default else S.desktop_tasks_no_department),
                         onChange = { set(draft.copy(departmentId = it)) }, enabled = !readOnly, searchHint = str(S.desktop_tasks_pick_dept),
                     )
                 }
@@ -405,8 +446,8 @@ private fun Crumb(state: TasksUiState, panel: TaskPanel, draft: TaskDraft, task:
                 TText(
                     when {
                         priv -> str(S.desktop_tasks_self_only_you)
-                        task?.assigneeId == state.me -> first(state.crewById[task?.createdBy])
-                        else -> first(state.crewById[task?.assigneeId])
+                        task?.assigneeId == state.me -> "${str(S.fromText)} ${first(state.crewById[task?.createdBy])}"
+                        else -> "${str(S.desktop_tasks_field_assignee)} ${first(state.crewById[draft.assigneeId])}"
                     },
                     13, color = k.muted, maxLines = 1,
                 )
@@ -454,17 +495,18 @@ private fun Seg(label: String, on: Boolean, dot: Color, fg: Color, bg: Color, ed
     }
 }
 
-/** "In 3 days" / "Today" / "2 days ago", tinted as the due chip is. */
+/** "Overdue by 2 days" / "Due today" / "Tomorrow" / "In 5 days" beside the date; nothing once the task is closed. */
 @Composable
 private fun DueHint(draft: TaskDraft, today: LocalDate) {
     val k = TasksTheme.c
+    if (draft.status.isClosed) return
     val n = daysUntil(draft.dueDate, today) ?: return
     val text = when {
-        n == 0 -> str(S.today)
-        n == 1 -> str(S.desktop_tasks_in_day)
-        n > 1 -> str(S.desktop_tasks_in_days, n)
-        n == -1 -> str(S.desktop_tasks_day_ago_due)
-        else -> str(S.desktop_tasks_days_ago_due, -n)
+        n < -1 -> str(S.desktop_tasks_hint_overdue, -n)
+        n == -1 -> str(S.desktop_tasks_hint_overdue_one)
+        n == 0 -> str(S.desktop_inv_due_today)
+        n == 1 -> str(S.tomorrow)
+        else -> str(S.desktop_tasks_in_days, n)
     }
     val tone = dueTone(Task(id = "", title = "", dueDate = draft.dueDate, status = draft.status), today)
     TText(text, 12, SemiBold, when (tone) { DueTone.Late -> k.late; DueTone.Today -> k.warn; DueTone.None -> k.muted })
@@ -555,8 +597,12 @@ private fun SubtaskSection(state: TasksUiState, task: Task, today: LocalDate, on
                     StatusBox(sub.status, enabled = state.canPost && sub.id !in state.busy, onToggle = { actions.onStatus(sub, it) })
                     TaskTitle(sub, Modifier.weight(1f).padding(vertical = 5.dp), maxLines = 2)
                     StatusChip(sub.status)
-                    TAvatar(sub.assigneeId?.let { state.crewById[it] }, 22.dp)
-                    DueChip(sub, today)
+                    // The avatar alone: hovering it says who (or "Unassigned" / "Former crew member").
+                    val who = sub.assigneeId?.let { state.crewById[it] }
+                    ZillitTooltip(
+                        who?.nameRole ?: str(if (sub.assigneeId != null) S.desktop_tasks_former_member else S.unassigned),
+                    ) { TAvatar(who, 22.dp) }
+                    if (sub.dueDate != null) DueChip(sub, today)
                     TaskMenu(
                         task = sub, canPost = state.canPost, blocker = 0, onStatus = { actions.onStatus(sub, it) }, onDelete = { actions.onDelete(sub) },
                         onOpen = { actions.onOpen(sub) }, blockerNote = ::blockerNote,
@@ -623,35 +669,101 @@ private fun CommentText(text: String, names: List<String>) {
     ZillitText(text = annotated, style = txt(14, lineHeight = 20.sp), color = k.fg)
 }
 
-/** The comment box with its @mention list: typing "@" lists the people who can be mentioned. */
+/**
+ * The comment box with its @mention list, as the web's `MentionInput`.
+ * Typing "@" lists the people who can be mentioned, each with their photo,
+ * name and designation, over the box:
+ *
+ *  - the list follows what is typed after the "@" (a name, a designation or a
+ *    department); ↑/↓ move, Enter or Tab puts "@Full Name " in the text, and
+ *    the mouse works too;
+ *  - Escape closes only the list, and it stays closed for that "@" until
+ *    another is typed — as it does after a pick, so a longer name starting the
+ *    same way ("Ravi", then "Ravi Kapoor") cannot reopen it and swallow Enter;
+ *  - with the list closed, Enter sends.
+ */
 @Composable
 private fun Composer(panel: TaskPanel, state: TasksUiState, people: List<TaskPerson>, onEvent: (TasksEvent) -> Unit) {
     val k = TasksTheme.c
     var field by remember(panel.key) { mutableStateOf(TextFieldValue(panel.comment)) }
     // The view model clears the box after a send.
     LaunchedEffect(panel.comment) { if (panel.comment != field.text) field = TextFieldValue(panel.comment) }
+    // The "@" (its index) the list was closed for, by Escape or a pick.
+    var closedAt by remember(panel.key) { mutableStateOf<Int?>(null) }
+    var active by remember(panel.key) { mutableStateOf(0) }
     val mention = mentionAt(field.text, field.selection.start, people)
-    val offered = mention?.let { mentionMatches(people, it.query).take(MENTION_ROWS) }.orEmpty()
+    val matches = mention?.let { mentionMatches(people, it.query) }.orEmpty()
+    val open = mention != null && matches.isNotEmpty() && closedAt != mention.start
+    LaunchedEffect(mention?.query) { active = 0 }
+    LaunchedEffect(mention?.start) { if (mention == null) closedAt = null }
+    val at = active.coerceIn(0, (matches.size - 1).coerceAtLeast(0))
+    val list = rememberLazyListState()
+    // Keep the highlighted person in view as the arrows move it.
+    LaunchedEffect(at, open) {
+        if (!open) return@LaunchedEffect
+        val shown = list.layoutInfo.visibleItemsInfo
+        val first = shown.firstOrNull()?.index ?: 0
+        val last = shown.lastOrNull()?.index ?: 0
+        if (at < first) list.scrollToItem(at) else if (at >= last && shown.size > 1) list.scrollToItem((at - shown.size + 2).coerceAtLeast(0))
+    }
+    val pick = { person: TaskPerson ->
+        mention?.let { m ->
+            val (text, caret) = applyMention(field.text, m, field.selection.start, person)
+            field = TextFieldValue(text, TextRange(caret.coerceAtMost(text.length)))
+            closedAt = m.start
+            onEvent(TasksEvent.CommentChanged(text))
+        }
+    }
+    val onKey = { event: KeyEvent ->
+        val enter = event.key == Key.Enter || event.key == Key.NumPadEnter
+        when {
+            open && (event.key == Key.DirectionDown || event.key == Key.DirectionUp) -> {
+                if (event.type == KeyEventType.KeyDown) active = (at + if (event.key == Key.DirectionDown) 1 else -1).coerceIn(0, matches.size - 1)
+                true
+            }
+            open && (enter || event.key == Key.Tab) -> {
+                if (event.type == KeyEventType.KeyDown) matches.getOrNull(at)?.let(pick)
+                true
+            }
+            open && event.key == Key.Escape -> {
+                if (event.type == KeyEventType.KeyDown) closedAt = mention?.start
+                true
+            }
+            enter -> {
+                if (event.type == KeyEventType.KeyDown) onEvent(TasksEvent.SendComment)
+                true
+            }
+            else -> false
+        }
+    }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        offered.forEach { person ->
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable {
-                    val (text, caret) = applyMention(field.text, mention!!, field.selection.start, person)
-                    field = TextFieldValue(text, TextRange(caret))
-                    onEvent(TasksEvent.CommentChanged(text))
-                }.padding(6.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        if (open) {
+            val shape = RoundedCornerShape(10.dp)
+            LazyColumn(
+                state = list,
+                modifier = Modifier.fillMaxWidth().heightIn(max = MENTION_LIST_MAX).clip(shape).background(k.surface).border(BorderStroke(1.dp, k.line2), shape).padding(4.dp),
             ) {
-                TAvatar(person, 24.dp)
-                PersonName(person, state.me)
+                itemsIndexed(matches, key = { _, person -> person.id }) { index, person ->
+                    val source = remember { MutableInteractionSource() }
+                    val hovered by source.collectIsHoveredAsState()
+                    LaunchedEffect(hovered) { if (hovered) active = index }
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(if (index == at) k.accentSoft else Color.Transparent)
+                            .hoverable(source).clickable(interactionSource = source, indication = null) { pick(person) }.padding(6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TAvatar(person, 28.dp)
+                        PersonName(person, state.me)
+                    }
+                }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TAvatar(state.crewById[state.me], 30.dp)
             val shape = RoundedCornerShape(999.dp)
             Row(Modifier.weight(1f).height(38.dp).clip(shape).background(k.surface).border(BorderStroke(1.dp, k.line2), shape).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                com.zillit.desktop.feature.tasks.ui.CommentField(field, { field = it; onEvent(TasksEvent.CommentChanged(it.text)) }, str(S.desktop_tasks_comment_placeholder)) { onEvent(TasksEvent.SendComment) }
+                CommentField(field, { field = it; onEvent(TasksEvent.CommentChanged(it.text)) }, str(S.desktop_tasks_comment_placeholder), onKey)
             }
             TBtn(str(S.send), { onEvent(TasksEvent.SendComment) }, small = true, enabled = !panel.sending && panel.comment.isNotBlank())
         }
@@ -679,7 +791,7 @@ private fun HistorySection(state: TasksUiState, task: Task, today: LocalDate, ke
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             PersonName(person, state.me, fallback = entry.userName.ifEmpty { null })
-                            TText(timeAgo(entry.createdMillis, now), 12, color = k.faint)
+                            ZillitTooltip(historyWhen(entry.createdMillis)) { TText(timeAgo(entry.createdMillis, now), 12, color = k.faint) }
                         }
                         historyLines(entry, task.isSubtask).forEach { line ->
                             TText(historyText(line, state.crewById, state::departmentName, today), 13, color = if (line is HistoryLine.Note) k.faint else k.muted)
@@ -689,7 +801,7 @@ private fun HistorySection(state: TasksUiState, task: Task, today: LocalDate, ke
             }
             if (history.size > HISTORY_PREVIEW) {
                 TText(
-                    if (all) str(S.cs_templates_show_less) else str(S.desktop_tasks_history_show_all, history.size), 13, SemiBold, k.accent,
+                    if (all) str(S.desktop_tasks_history_show_less) else str(S.desktop_tasks_history_show_all, history.size), 13, SemiBold, k.accent,
                     Modifier.clickable { all = !all }.padding(vertical = 4.dp),
                 )
             }
@@ -701,4 +813,4 @@ private val PANEL_WIDTH = 640.dp
 private const val TITLE_MAX = 300
 private const val SCENES_MAX = 200
 private const val DESCRIPTION_MAX = 10000
-private const val MENTION_ROWS = 6
+private val MENTION_LIST_MAX = 240.dp

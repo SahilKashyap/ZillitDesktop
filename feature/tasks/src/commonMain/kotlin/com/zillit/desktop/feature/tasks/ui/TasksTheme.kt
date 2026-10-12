@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -148,7 +149,7 @@ internal fun statusLook(status: com.zillit.desktop.feature.tasks.domain.TaskStat
 
 internal enum class BtnKind { Primary, Ghost }
 
-/** `.zt-btn`: 40dp, or 32dp when [small]; the accent button, or the white one with a line. */
+/** `.zt-btn`: 40dp, or 32dp when [small]; the accent button (red when [danger]), or the white one with a line. */
 @Composable
 internal fun TBtn(
     text: String,
@@ -158,6 +159,7 @@ internal fun TBtn(
     small: Boolean = false,
     enabled: Boolean = true,
     icon: ImageVector? = null,
+    danger: Boolean = false,
 ) {
     val k = TasksTheme.c
     val primary = kind == BtnKind.Primary
@@ -166,7 +168,7 @@ internal fun TBtn(
         modifier
             .height(if (small) 32.dp else 40.dp)
             .clip(shape)
-            .background(if (primary) k.accent else k.surface)
+            .background(if (primary) (if (danger) k.late else k.accent) else k.surface)
             .then(if (primary) Modifier else Modifier.border(BorderStroke(1.dp, k.line2), shape))
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = if (small) 10.dp else 16.dp),
@@ -304,14 +306,33 @@ internal fun TText(text: String, size: Int = 14, weight: FontWeight = FontWeight
 
 // -- pickers ----------------------------------------------------------------------------
 
-/** What a [TPicker] offers; `id == ""` is "nothing chosen". */
-internal data class Pick(val id: String, val label: String, val subtitle: String? = null, val person: TaskPerson? = null, val colour: Color? = null)
+/**
+ * What a [TPicker] offers; `id == ""` is "nothing chosen". [section] is the
+ * heading it is listed under (the crew picker's departments), [search] more
+ * text a search finds it by (the department picker's people), and a pick that
+ * is not [enabled] is shown but cannot be chosen.
+ */
+internal data class Pick(
+    val id: String,
+    val label: String,
+    val subtitle: String? = null,
+    val person: TaskPerson? = null,
+    val colour: Color? = null,
+    val section: String? = null,
+    val search: String = "",
+    val enabled: Boolean = true,
+)
 
 /**
  * The crew and department pickers: a ghost button showing the choice (with an
  * avatar or a department dot), opening the app's shared searchable list.
  * [compact] is the bordered 36dp form of the Board's toolbar. The "nothing
  * chosen" row ([emptyLabel]) leads the list and drops out once a search is typed.
+ *
+ * With [former], a value the list no longer holds (someone who left, or can no
+ * longer view Tasks) still shows as that ("Former crew member") rather than
+ * as nobody, and sits greyed out at the top of the list, as the web's crew
+ * picker does.
  */
 @Composable
 internal fun TPicker(
@@ -324,11 +345,13 @@ internal fun TPicker(
     enabled: Boolean = true,
     avatars: Boolean = false,
     searchHint: String = str(S.dd_history_sender_picker_search_hint),
+    former: String? = null,
 ) {
     val k = TasksTheme.c
     var open by remember { mutableStateOf(false) }
     val none = Pick("", emptyLabel)
-    val chosen = picks.firstOrNull { it.id == (value ?: "") } ?: none
+    val gone = if (former != null && !value.isNullOrEmpty() && picks.none { it.id == value }) Pick(value, former, enabled = false) else null
+    val chosen = picks.firstOrNull { it.id == (value ?: "") } ?: gone ?: none
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(if (compact) 8.dp else 6.dp)
@@ -352,14 +375,14 @@ internal fun TPicker(
                 avatars && chosen.id.isEmpty() -> TAvatar(null, 22.dp)
                 chosen.colour != null && chosen.id.isNotEmpty() -> Dot(chosen.colour)
             }
-            TText(chosen.label, 14, color = if (chosen.id.isEmpty()) k.faint else k.fg, maxLines = 1, modifier = Modifier.widthIn(max = 220.dp))
+            TText(chosen.label, 14, color = if (chosen.id.isEmpty() || chosen === gone) k.faint else k.fg, maxLines = 1, modifier = Modifier.widthIn(max = 220.dp))
             ZillitIcon(ZillitIcons.ChevronDown, tint = k.faint, size = 14.dp)
         }
         if (open) {
             ZillitOptionPopup(
                 onDismiss = { open = false },
                 width = maxOf(anchor.popupWidth(), 300.dp),
-                options = listOf(none) + picks,
+                options = listOf(none) + listOfNotNull(gone) + picks,
                 isSelected = { it.id == chosen.id },
                 onPick = { p ->
                     open = false
@@ -368,9 +391,11 @@ internal fun TPicker(
                 label = Pick::label,
                 searchable = true,
                 searchPlaceholder = searchHint,
-                // The "nothing" row matches no search, so it shows only unsearched.
-                searchText = { p -> if (p.id.isEmpty()) "" else "${p.label} ${p.subtitle.orEmpty()}" },
+                // The "nothing" row and a former member match no search, so they show only unsearched.
+                searchText = { p -> if (p.id.isEmpty() || p === gone) "" else "${p.label} ${p.subtitle.orEmpty()} ${p.search}" },
                 subtitle = Pick::subtitle,
+                isEnabled = Pick::enabled,
+                section = Pick::section,
                 optionLeading = { p ->
                     when {
                         p.person != null -> TAvatar(p.person, 28.dp)
@@ -389,9 +414,11 @@ private val WEEKDAYS = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 private fun Month.title(): String = name.take(3).lowercase().replaceFirstChar { it.uppercase() }
 
 /**
- * A date button and its calendar. Days outside [min]..[max] are greyed out and
- * cannot be picked, as the web's picker greys the days the server would
- * refuse; "No due date" always clears.
+ * A date button and its calendar (Monday first) with Today / Tomorrow / Next
+ * week / Clear, as the web's. Days outside [min]..[max] are greyed out and
+ * cannot be picked — the quick picks too — as the web's picker greys the days
+ * the server would refuse; Clear always clears. It opens on the chosen day,
+ * or on today, or on the nearest day that can be picked when today cannot.
  */
 @Composable
 internal fun TDate(
@@ -409,9 +436,16 @@ internal fun TDate(
     val k = TasksTheme.c
     var open by remember { mutableStateOf(false) }
     val selected = value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-    var month by remember(open) { mutableStateOf(LocalDate((selected ?: today).year, (selected ?: today).month, 1)) }
     val lo = min?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     val hi = max?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val nearest = when {
+        hi != null && today > hi -> hi
+        lo != null && today < lo -> lo
+        else -> today
+    }
+    val base = selected ?: nearest
+    var month by remember(open) { mutableStateOf(LocalDate(base.year, base.month, 1)) }
+    val allowedDay = { day: LocalDate -> (lo == null || day >= lo) && (hi == null || day <= hi) }
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(if (compact) 8.dp else 6.dp)
@@ -448,7 +482,7 @@ internal fun TDate(
                         (week + List(7 - week.size) { null }).forEach { day ->
                             Box(Modifier.weight(1f).height(32.dp), contentAlignment = Alignment.Center) {
                                 if (day != null) {
-                                    val allowed = (lo == null || day >= lo) && (hi == null || day <= hi)
+                                    val allowed = allowedDay(day)
                                     val on = day == selected
                                     Box(
                                         Modifier.size(30.dp).clip(CircleShape)
@@ -474,9 +508,17 @@ internal fun TDate(
                     }
                 }
                 hint?.let { TText(it, 12, color = k.muted) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TText(str(S.desktop_tasks_no_date_pick), 13, SemiBold, k.accent, Modifier.clickable { open = false; onChange(null) }.padding(4.dp))
-                    TText(str(S.today), 13, SemiBold, k.accent, Modifier.clickable { open = false; onChange(today.toString()) }.padding(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf(str(S.today) to 0, str(S.tomorrow) to 1, str(S.desktop_cr_next_week) to WEEK_DAYS).forEach { (text, days) ->
+                        val day = today.plus(DatePeriod(days = days))
+                        val ok = allowedDay(day)
+                        TText(
+                            text, 13, SemiBold, if (ok) k.accent else k.line2,
+                            (if (ok) Modifier.clickable { open = false; onChange(day.toString()) } else Modifier).padding(4.dp),
+                        )
+                    }
+                    Box(Modifier.weight(1f))
+                    TText(str(S.ah_clear), 13, SemiBold, k.muted, Modifier.clickable { open = false; onChange(null) }.padding(4.dp))
                 }
             }
         }
@@ -485,19 +527,27 @@ internal fun TDate(
 
 private val Normal = FontWeight.Normal
 
-/** The comment line: a TextFieldValue input (so the caret is known for @mentions) with no chrome of its own. */
+/**
+ * The comment line: a TextFieldValue input (so the caret is known for
+ * @mentions) with no chrome of its own. [onKey] sees each key first — the
+ * mention list's arrows, Enter, Tab and Escape, and Enter to send — and
+ * answers whether it used it.
+ */
 @Composable
-internal fun CommentField(value: androidx.compose.ui.text.input.TextFieldValue, onChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit, placeholder: String, onEnter: () -> Unit) {
+internal fun CommentField(
+    value: androidx.compose.ui.text.input.TextFieldValue,
+    onChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit,
+    placeholder: String,
+    onKey: (androidx.compose.ui.input.key.KeyEvent) -> Boolean,
+) {
     val k = TasksTheme.c
     BasicTextField(
         value = value,
         onValueChange = { if (it.text.length <= COMMENT_MAX) onChange(it) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onPreviewKeyEvent(onKey),
         singleLine = true,
         textStyle = txt(14).copy(color = k.fg),
         cursorBrush = SolidColor(k.accent),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-        keyboardActions = KeyboardActions(onSend = { onEnter() }),
         decorationBox = { inner ->
             Box {
                 if (value.text.isEmpty()) ZillitText(placeholder, style = txt(14), color = k.faint, maxLines = 1)
@@ -508,3 +558,4 @@ internal fun CommentField(value: androidx.compose.ui.text.input.TextFieldValue, 
 }
 
 private const val COMMENT_MAX = 4000
+private const val WEEK_DAYS = 7

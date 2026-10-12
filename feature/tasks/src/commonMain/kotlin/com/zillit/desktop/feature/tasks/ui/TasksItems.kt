@@ -40,6 +40,7 @@ internal fun blockerNote(open: Int): String =
     if (open == 1) str(S.desktop_tasks_open_subtasks_short_one) else str(S.desktop_tasks_open_subtasks_short, open)
 
 /** What every card and row needs from the view that shows it. */
+@Suppress("LongParameterList") // One bundle of what a card or row reads and does, so each view passes one thing.
 internal class TaskActions(
     val canPost: Boolean,
     val me: String?,
@@ -50,6 +51,8 @@ internal class TaskActions(
     val onDelete: (Task) -> Unit,
     val blockerOf: (Task) -> Int,
     val isBusy: (Task) -> Boolean,
+    /** How many subtasks a main task has: deleting it takes them too. */
+    val subtaskCountOf: (Task) -> Int = { 0 },
 )
 
 /**
@@ -92,10 +95,11 @@ internal fun TaskCard(
             TaskMenu(
                 task = task, canPost = actions.canPost, blocker = actions.blockerOf(task),
                 onStatus = { actions.onStatus(task, it) }, onDelete = { actions.onDelete(task) },
-                modifier = Modifier.padding(end = 0.dp), blockerNote = ::blockerNote,
+                onOpen = { actions.onOpen(task) }, blockerNote = ::blockerNote, subtaskCount = actions.subtaskCountOf(task),
             )
         }
-        TaskTitle(task)
+        // The whole title, wrapped, as the web's card shows it.
+        TaskTitle(task, maxLines = Int.MAX_VALUE)
         MetaRow {
             SceneChip(task.scenes)
             DueChip(task, actions.today)
@@ -143,7 +147,7 @@ internal fun TaskRow(
         ) {
             StatusBox(task.status, enabled = actions.canPost && !actions.isBusy(task), onToggle = { actions.onStatus(task, it) })
             Column(Modifier.weight(1f).clickable { actions.onOpen(task) }.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                TaskTitle(task, maxLines = 1)
+                TaskTitle(task, maxLines = Int.MAX_VALUE)
                 if (parentTitle.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         TText("↳", 12, color = k.faint)
@@ -156,7 +160,7 @@ internal fun TaskRow(
             TaskMenu(
                 task = task, canPost = actions.canPost, blocker = actions.blockerOf(task),
                 onStatus = { actions.onStatus(task, it) }, onDelete = { actions.onDelete(task) },
-                onOpen = { actions.onOpen(task) }, blockerNote = ::blockerNote,
+                onOpen = { actions.onOpen(task) }, blockerNote = ::blockerNote, subtaskCount = actions.subtaskCountOf(task),
             )
         }
     }

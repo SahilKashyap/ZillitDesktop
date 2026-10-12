@@ -13,6 +13,10 @@ import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.math.roundToInt
+import kotlin.time.Instant
 
 /** The words the Tasks screens use, kept out of the composables so they can be tested. */
 
@@ -41,6 +45,21 @@ fun dayText(date: LocalDate, today: LocalDate): String =
 /** "Tue, Oct 6, 2026" for a date picker's button. */
 fun fullDayText(date: LocalDate): String = "${date.dayOfWeek.short()}, ${date.month.short()} ${date.day}, ${date.year}"
 
+/** "Oct 24, 2026" (the web's `MMM D, YYYY`), for the due-date limits; a day that does not parse is shown as it came. */
+fun yearDayText(day: String?): String {
+    val date = day?.let { runCatching { LocalDate.parse(it.take(DAY)) }.getOrNull() } ?: return day.orEmpty()
+    return "${date.month.short()} ${date.day}, ${date.year}"
+}
+
+/** "Mon, Oct 12, 2026 · 4:05 PM" (the web's `historyWhen`): when a history entry was made, in full. */
+fun historyWhen(millis: Long): String {
+    if (millis <= 0) return ""
+    val at = Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.currentSystemDefault())
+    val hour = (at.hour % HALF_DAY).let { if (it == 0) HALF_DAY else it }
+    val minute = at.minute.toString().padStart(2, '0')
+    return "${fullDayText(at.date)} · $hour:$minute ${if (at.hour < HALF_DAY) "AM" else "PM"}"
+}
+
 /** Short label for a card or row: Today / Tomorrow / Yesterday / Tue, Oct 6 / Oct 20. */
 fun dueText(label: DueLabel): String = when (label) {
     DueLabel.None -> str(S.ah_template_no_date)
@@ -58,15 +77,14 @@ fun bucketTitle(bucket: DueBucket): String = when (bucket) {
     DueBucket.Later -> str(S.later)
 }
 
-/** "just now / 5 min ago / 3 h ago / 2 d ago". */
+/** "just now / 5m ago / 3h ago / 2d ago", each step rounded to the nearest, as the web's `timeAgo`. */
 fun timeAgo(millis: Long, now: Long): String {
-    val minutes = ((now - millis) / MINUTE_MS).toInt()
-    return when {
-        minutes < 1 -> str(S.docusign_template_just_now)
-        minutes < MINUTES_PER_HOUR -> str(S.desktop_tasks_minutes_ago, minutes)
-        minutes < MINUTES_PER_DAY -> str(S.desktop_tasks_hours_ago, minutes / MINUTES_PER_HOUR)
-        else -> str(S.desktop_tasks_days_ago, minutes / MINUTES_PER_DAY)
-    }
+    val minutes = ((now - millis).toDouble() / MINUTE_MS).roundToInt()
+    if (minutes < 1) return str(S.docusign_template_just_now)
+    if (minutes < MINUTES_PER_HOUR) return str(S.desktop_tasks_minutes_ago, minutes)
+    val hours = (minutes.toDouble() / MINUTES_PER_HOUR).roundToInt()
+    if (hours < HOURS_PER_DAY) return str(S.desktop_tasks_hours_ago, hours)
+    return str(S.desktop_tasks_days_ago, (hours.toDouble() / HOURS_PER_DAY).roundToInt())
 }
 
 /** The name of a history field, as the panel labels it. */
@@ -131,4 +149,5 @@ private const val SHORT = 3
 private const val DAY = 10
 private const val MINUTE_MS = 60_000L
 private const val MINUTES_PER_HOUR = 60
-private const val MINUTES_PER_DAY = 1440
+private const val HOURS_PER_DAY = 24
+private const val HALF_DAY = 12

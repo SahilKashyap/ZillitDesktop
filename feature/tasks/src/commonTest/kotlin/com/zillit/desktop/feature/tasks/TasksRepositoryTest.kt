@@ -100,6 +100,29 @@ class TasksRepositoryTest {
         assertEquals(JsonPrimitive(123), call.body["expected_updated"])
     }
 
+    @Test
+    fun `the quick-add row sends only its own fields, as the web's does`() = runTest {
+        val repo = repository { ok("""{"_id":"t1","title":"x","is_self":true}""") }
+
+        repo.create(TaskDraft(title = " Call rental house ", dueDate = "2026-10-12", isSelf = true), "client-1", quick = true)
+
+        val body = sent.single().body!!
+        assertEquals(setOf("unique_id", "title", "due_date", "assignee_id", "is_self"), body.keys)
+        assertEquals("Call rental house", body["title"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a saved write and a delete carry the service's own message`() = runTest {
+        val repo = repository { HttpStatusCode.OK to """{"status":1,"message":"task_updated","data":{"_id":"t1","title":"x"}}""" }
+
+        val write = repo.update("t1", mapOf("status" to "done"))
+        val deleted = repo.delete("t1")
+
+        assertIs<TaskWrite.Saved>(write)
+        assertEquals("task_updated", write.message)
+        assertEquals("task_updated", (deleted as com.zillit.desktop.core.common.ZillitResult.Success).data)
+    }
+
     /** The 409's body does not survive the client's error path, so their version is read again. */
     @Test
     fun `a 409 is answered with the other person's version`() = runTest {

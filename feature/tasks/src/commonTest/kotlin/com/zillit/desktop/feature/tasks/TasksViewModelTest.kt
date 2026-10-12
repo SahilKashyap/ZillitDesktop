@@ -18,7 +18,19 @@ import com.zillit.desktop.feature.tasks.ui.TasksEvent
 import com.zillit.desktop.feature.tasks.ui.TasksViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.zillit.desktop.core.socket.SocketClient
+import com.zillit.desktop.core.socket.SocketConfig
+import com.zillit.desktop.core.socket.SocketConnectionState
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.core.socket.SocketMessage
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -60,12 +72,32 @@ class TasksViewModelTest {
     private fun model(
         repository: FakeTasksRepository,
         viewer: TasksViewer = granted,
+        rights: (() -> TasksViewer)? = null,
+        socket: FakeSocket? = null,
     ) = TasksViewModel(
         repository = repository,
-        viewer = { viewer },
-        people = flowOf(TaskPeople("me", listOf(TaskPerson("me", "Me Myself"), TaskPerson("u1", "Una One")))),
+        viewer = rights ?: { viewer },
+        people = flowOf(TaskPeople("me", listOf(TaskPerson("me", "Me Myself"), TaskPerson("u1", "Una One")), projectId = "p1")),
+        events = socket?.let { SocketEventBus(it) },
         newId = { "id-${repository.created.size}" },
     )
+
+    /** A socket whose frames the test sends. */
+    private class FakeSocket : SocketClient {
+        val frames = MutableSharedFlow<SocketMessage>(extraBufferCapacity = 8)
+        override val connectionState = MutableStateFlow<SocketConnectionState>(SocketConnectionState.Connected("fake"))
+        override val messages: Flow<SocketMessage> = frames
+        override suspend fun connect(config: SocketConfig) = Unit
+        override suspend fun disconnect() = Unit
+        override suspend fun <T> emit(event: SocketEventName, payload: T, serializer: KSerializer<T>) = ZillitResult.Success(Unit)
+        override suspend fun emit(event: SocketEventName): ZillitResult<Unit> = ZillitResult.Success(Unit)
+        override suspend fun <T> emitForAck(event: SocketEventName, payload: T, serializer: KSerializer<T>): ZillitResult<JsonElement> =
+            ZillitResult.Success(Json.parseToJsonElement("{}"))
+
+        fun send(project: String, task: String) {
+            frames.tryEmit(SocketMessage(SocketEventName("tasks:updated"), Json.parseToJsonElement("""{"project_id":"$project","task_id":"$task"}""")))
+        }
+    }
 
     /** A production without the tool: the service would answer 403, which reads as "removed from the project". */
     @Test
@@ -317,6 +349,124 @@ class TasksViewModelTest {
         assertTrue(model.state.value.tasks.isEmpty())
     }
 
+    @Test
+    fun `a dropped card waits in its new column until the server answers`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository.holding(task("a"))
+        val model = model(repository)
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+
+        model.onEvent(TasksEvent.Move(task("a"), TaskStatus.Progress))
+        assertEquals(TaskStatus.Progress, model.state.value.moving["a"])
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.moving.isEmpty())
+        assertEquals(TaskStatus.Progress, model.state.value.byId.getValue("a").status)
+    }
+
+    @Test
+    fun `a refused drop lets the card go back at once`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository.holding(task("a")).also { it.refuseUpdates = true }
+        val model = model(repository)
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+
+        model.onEvent(TasksEvent.Move(task("a"), TaskStatus.Done))
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.moving.isEmpty())
+        assertEquals(TaskStatus.Todo, model.state.value.byId.getValue("a").status)
+        assertNotNull(model.state.value.error)
+    }
+
+    @Test
+    fun `a main task with open subtasks is not moved to Done at all`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository.holding(task("m"), task("s", parent = "m"))
+        val model = model(repository)
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+
+        model.onEvent(TasksEvent.Move(task("m"), TaskStatus.Done))
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.moving.isEmpty())
+        assertTrue(repository.updates.isEmpty())
+        assertNotNull(model.state.value.notice)
+    }
+
+    @Test
+    fun `a saved write shows what the server announced`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository.holding(task("a"))
+        val model = model(repository)
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+
+        model.onEvent(TasksEvent.SetStatus(task("a"), TaskStatus.Progress))
+        advanceUntilIdle()
+
+        assertNotNull(model.state.value.success)
+        assertNull(model.state.value.error)
+    }
+
+    @Test
+    fun `quick add sends only its own fields and lets go of the text only when saved`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository().also { it.failNextCreate = true }
+        val model = model(repository)
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+
+        model.onEvent(TasksEvent.QuickAdd("Call rental house", "2026-10-12", null))
+        advanceUntilIdle()
+        assertEquals(0, model.state.value.quickAdded)
+
+        model.onEvent(TasksEvent.QuickAdd("Call rental house", "2026-10-12", null))
+        advanceUntilIdle()
+        assertEquals(1, model.state.value.quickAdded)
+        // Both attempts went as quick adds, and the retry reused the refused one's id.
+        assertEquals(2, repository.quickCreates)
+        assertEquals(1, repository.createAttempts.distinct().size)
+    }
+
+    @Test
+    fun `rights granted while the tool is open load it, and taken away close the panel`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository.holding(task("a"))
+        var rights = TasksViewer(resolved = true, enabled = true, canView = false)
+        val model = model(repository, rights = { rights })
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+        assertEquals(0, repository.listCalls)
+
+        rights = granted
+        model.onRightsChanged()
+        advanceUntilIdle()
+        assertEquals(1, repository.listCalls)
+        model.onEvent(TasksEvent.OpenTask("a"))
+        advanceUntilIdle()
+        assertNotNull(model.state.value.panel)
+
+        rights = TasksViewer(resolved = true, enabled = true, canView = false)
+        model.onRightsChanged()
+        assertNull(model.state.value.panel)
+    }
+
+    @Test
+    fun `a socket frame for another production is ignored`() = runTest(dispatcher) {
+        val repository = FakeTasksRepository.holding(task("a"))
+        val socket = FakeSocket()
+        val model = model(repository, socket = socket)
+        model.onEvent(TasksEvent.Load)
+        advanceUntilIdle()
+        val before = repository.listCalls
+
+        socket.send(project = "other", task = "a")
+        advanceUntilIdle()
+        assertEquals(before, repository.listCalls)
+
+        socket.send(project = "p1", task = "a")
+        advanceUntilIdle()
+        assertEquals(before + 1, repository.listCalls)
+    }
+
     /** A fake service holding its tasks in memory and recording what was asked of it. */
     private class FakeTasksRepository : TasksRepository {
         companion object {
@@ -332,6 +482,8 @@ class TasksViewModelTest {
         val deleted = mutableListOf<String>()
         var conflictWith: Task? = null
         var failNextCreate = false
+        var refuseUpdates = false
+        var quickCreates = 0
 
         override suspend fun tasks(): ZillitResult<List<Task>> {
             listCalls += 1
@@ -346,8 +498,9 @@ class TasksViewModelTest {
             held.firstOrNull { it.id == taskId }?.let { ZillitResult.Success(it.copy(comments = emptyList(), history = emptyList())) }
                 ?: ZillitResult.Failure(ZillitError.Http(404, "task_not_exists"))
 
-        override suspend fun create(draft: TaskDraft, uniqueId: String): TaskWrite {
+        override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean): TaskWrite {
             createAttempts += uniqueId
+            if (quick) quickCreates += 1
             if (failNextCreate) {
                 failNextCreate = false
                 return TaskWrite.Refused("boom", 500, ZillitError.Http(500, "boom"))
@@ -358,12 +511,13 @@ class TasksViewModelTest {
                 dueDate = draft.dueDate, createdBy = "me", status = draft.status,
             )
             held = held + made
-            return TaskWrite.Saved(made)
+            return TaskWrite.Saved(made, "task_created")
         }
 
         override suspend fun update(taskId: String, changes: Map<String, String?>, expectedUpdated: Long?): TaskWrite {
             updates += Triple(taskId, changes, expectedUpdated)
             conflictWith?.let { return TaskWrite.Conflict(it) }
+            if (refuseUpdates) return TaskWrite.Refused("task_open_subtasks", 422, ZillitError.Http(422, "task_open_subtasks"))
             val current = held.first { it.id == taskId }
             val next = current.copy(
                 status = changes["status"]?.let { TaskStatus.fromWire(it) } ?: current.status,
@@ -371,13 +525,13 @@ class TasksViewModelTest {
                 updatedMillis = current.updatedMillis + 1,
             )
             held = held.map { if (it.id == taskId) next else it }
-            return TaskWrite.Saved(next)
+            return TaskWrite.Saved(next, "task_updated")
         }
 
-        override suspend fun delete(taskId: String): ZillitResult<Unit> {
+        override suspend fun delete(taskId: String): ZillitResult<String?> {
             deleted += taskId
             held = held.filter { it.id != taskId && it.parentId != taskId }
-            return ZillitResult.Success(Unit)
+            return ZillitResult.Success("task_deleted")
         }
 
         override suspend fun comment(taskId: String, text: String, mentions: List<String>): ZillitResult<Task> {

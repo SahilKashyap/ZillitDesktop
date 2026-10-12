@@ -49,6 +49,7 @@ import com.zillit.desktop.feature.tasks.domain.rebaseDraft
 import com.zillit.desktop.feature.tasks.domain.subtaskStats
 import com.zillit.desktop.feature.tasks.domain.subtasksOf
 import com.zillit.desktop.feature.tasks.domain.toDraft
+import com.zillit.desktop.feature.tasks.ui.yearDayText
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -94,6 +95,14 @@ class TaskLogicTest {
         val changes = diffDraft(orig, orig.copy(dueDate = null, assigneeId = null))
 
         assertEquals(mapOf<String, String?>("due_date" to null, "assignee_id" to null), changes)
+    }
+
+    @Test
+    fun `a cleared description or scenes is sent empty, as the web sends it`() {
+        val orig = TaskDraft(title = "x", description = "notes", scenes = "12")
+        val changes = diffDraft(orig, orig.copy(description = "", scenes = ""))
+
+        assertEquals(mapOf<String, String?>("description" to "", "scenes" to ""), changes)
     }
 
     @Test
@@ -369,6 +378,13 @@ class TaskLogicTest {
         assertEquals(DueLabel.Soon(LocalDate(2026, 10, 6)), dueLabel("2026-10-06", today))
         assertEquals(DueLabel.On(LocalDate(2026, 10, 20)), dueLabel("2026-10-20", today))
         assertEquals(DueLabel.None, dueLabel(null, today))
+    }
+
+    @Test
+    fun `a due-date limit is named with its year, as the web's MMM D, YYYY`() {
+        assertEquals("Oct 24, 2026", yearDayText("2026-10-24"))
+        assertEquals("Jan 3, 2027", yearDayText("2027-01-03T00:00:00Z"))
+        assertEquals("", yearDayText(null))
     }
 
     @Test

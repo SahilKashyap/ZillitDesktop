@@ -5,6 +5,7 @@ package com.zillit.desktop.feature.tasks.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
@@ -63,10 +64,20 @@ class TasksViewModel(
     private var panelKeys = 0L
     private var quickId = newId()
     private var refreshJob: Job? = null
+    private var panelRefreshJob: Job? = null
     private var rightsPoll: Job? = null
+    private var projectId: String? = null
+
+    /** The tool has been opened at least once: rights changes from then on reload it. */
+    private var started = false
 
     init {
-        launch { people.collect { setState { copy(me = it.me, crew = it.crew) } } }
+        launch {
+            people.collect {
+                projectId = it.projectId
+                setState { copy(me = it.me, crew = it.crew) }
+            }
+        }
         events?.let { bus ->
             launch { bus.onAny(tasksSyncEvents).collect { message -> onSocket(message.payload) } }
         }
@@ -80,8 +91,9 @@ class TasksViewModel(
             is TasksEvent.BoardFilterChanged -> setState { copy(boardFilter = event.filter) }
             is TasksEvent.MineQueryChanged -> setState { copy(mineQuery = event.query) }
             is TasksEvent.SelfQueryChanged -> setState { copy(selfQuery = event.query) }
-            TasksEvent.DismissMessage -> setState { copy(error = null, notice = null) }
+            TasksEvent.DismissMessage -> setState { copy(error = null, notice = null, success = null) }
             is TasksEvent.SetStatus -> setStatus(event.task, event.status)
+            is TasksEvent.Move -> move(event.task, event.status)
             is TasksEvent.Delete -> deleteTask(event.task)
             is TasksEvent.Share -> share(event.taskId, event.assigneeId)
             is TasksEvent.QuickAdd -> quickAdd(event)
@@ -114,6 +126,7 @@ class TasksViewModel(
      * unanswered list is asked again for a few seconds.
      */
     private fun load() {
+        started = true
         val now = viewer()
         setState { copy(viewer = now) }
         if (!now.resolved) {
@@ -148,6 +161,22 @@ class TasksViewModel(
         }
     }
 
+    /**
+     * The production's rights list answered again (a right was granted or
+     * taken away, here or on another device). As the web's provider does, the
+     * tool follows at once: it loads when it may call the service now, and
+     * stops showing anything — the panel included — when it may no longer.
+     */
+    fun onRightsChanged() {
+        if (!started) return
+        val before = currentState.viewer
+        val now = viewer()
+        if (now == before) return
+        setState { copy(viewer = now, panel = if (now.canCall) panel else null) }
+        if (now.resolved) rightsPoll?.cancel()
+        if (now.canCall && !before.canCall) loadAll()
+    }
+
     /** The whole visible list. [silent] skips the loader, as a socket refresh must. */
     private fun loadList(silent: Boolean) {
         if (!currentState.viewer.canCall) return
@@ -164,16 +193,31 @@ class TasksViewModel(
         }
     }
 
+    /**
+     * A `tasks:*` frame. Frames for another production are dropped. As on the
+     * web there are two listeners, each debouncing its own burst: the list
+     * reloads for any frame, and the open panel reads its task again only for
+     * frames that name it — so a frame about another task arriving right after
+     * one about this task cannot swallow this one's refresh.
+     */
     private fun onSocket(payload: kotlinx.serialization.json.JsonElement?) {
         if (!currentState.viewer.canCall) return
-        val taskId = ((payload as? JsonObject)?.get("task_id") as? JsonPrimitive)?.contentOrNull
-        // A burst of frames is one reload.
+        val frame = payload as? JsonObject
+        val project = (frame?.get("project_id") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        if (project != null && projectId != null && project != projectId) return
+        val taskId = (frame?.get("task_id") as? JsonPrimitive)?.contentOrNull
         refreshJob?.cancel()
         refreshJob = launch {
             delay(SOCKET_DEBOUNCE_MS)
             loadList(silent = true)
-            val open = currentState.panel
-            if (open?.task != null && taskId != null && open.task.id == taskId) fetchTask(open.key, taskId, again = true)
+        }
+        val open = currentState.panel
+        if (open?.task != null && taskId != null && open.task.id == taskId) {
+            panelRefreshJob?.cancel()
+            panelRefreshJob = launch {
+                delay(SOCKET_DEBOUNCE_MS)
+                currentState.panel?.takeIf { it.key == open.key }?.let { fetchTask(it.key, taskId, again = true) }
+            }
         }
     }
 
@@ -195,9 +239,15 @@ class TasksViewModel(
         setTasks { dropTask(it, taskId) }
     }
 
-    private fun fail(error: ZillitError) = setState { copy(error = error.localised()) }
+    // One toast at a time: the latest outcome replaces whatever was showing.
+    private fun fail(error: ZillitError) = setState { copy(error = error.localised(), success = null) }
 
-    private fun notice(text: String) = setState { copy(notice = text) }
+    private fun notice(text: String) = setState { copy(notice = text, success = null) }
+
+    /** The server's announcement for a write it saved (a message key), when it sent one. */
+    private fun announce(message: String?) {
+        message?.takeIf { it.isNotBlank() }?.let { key -> setState { copy(success = key.localisedMessage(), error = null, notice = null) } }
+    }
 
     private fun blockerText(open: Int) =
         if (open == 1) str(S.desktop_tasks_open_subtasks_one) else str(S.desktop_tasks_open_subtasks, open)
@@ -227,10 +277,27 @@ class TasksViewModel(
             busy(task.id, true)
             writeOutcome(task.id, repository.update(task.id, mapOf("status" to status.wire)))
             busy(task.id, false)
+            setState { copy(moving = moving - task.id) }
             // The write may have moved other tasks, or been refused because of
             // subtasks this list had not heard of yet: either way, catch up.
             loadList(silent = true)
         }
+    }
+
+    /**
+     * A card dropped on another Board column. It waits in that column until
+     * the server answers, saved or refused (then the list has the answer).
+     * Completing a main task with open subtasks moves nothing: [setStatus]
+     * refuses it and says why.
+     */
+    private fun move(task: Task, status: TaskStatus) {
+        val state = currentState
+        val latest = state.byId[task.id] ?: task
+        if (!state.canPost || status == latest.status || latest.id in state.busy) return
+        if (status != TaskStatus.Done || closeBlocker(state.tasks, latest) == 0) {
+            setState { copy(moving = moving + (latest.id to status)) }
+        }
+        setStatus(latest, status)
     }
 
     private fun share(taskId: String, assigneeId: String?) {
@@ -246,6 +313,7 @@ class TasksViewModel(
     private fun writeOutcome(taskId: String, write: TaskWrite): Boolean = when (write) {
         is TaskWrite.Saved -> {
             upsert(write.task)
+            announce(write.message)
             true
         }
         is TaskWrite.Conflict -> {
@@ -272,7 +340,11 @@ class TasksViewModel(
             val answer = repository.delete(task.id)
             busy(task.id, false)
             val gone = answer is ZillitResult.Success || (answer as? ZillitResult.Failure)?.error?.httpStatus == NOT_FOUND
-            if (answer is ZillitResult.Failure && !gone) fail(answer.error)
+            // The server says what happened either way, a 404 included.
+            when (answer) {
+                is ZillitResult.Success -> announce(answer.data)
+                is ZillitResult.Failure -> fail(answer.error)
+            }
             if (gone) {
                 // Read the list as it is now, before the task and its subtasks leave it.
                 val before = currentState.byId
@@ -303,11 +375,14 @@ class TasksViewModel(
         setState { copy(quickAdding = true) }
         launch {
             val draft = TaskDraft(title = title, dueDate = event.dueDate, assigneeId = event.assigneeId, isSelf = true)
-            val write = repository.create(draft, quickId)
+            val write = repository.create(draft, quickId, quick = true)
             setState { copy(quickAdding = false) }
             if (write is TaskWrite.Saved) {
                 upsert(write.task)
                 quickId = newId()
+                // Only now does the row let go of what was typed; a refused add keeps it.
+                setState { copy(quickAdded = quickAdded + 1) }
+                announce(write.message)
             } else if (write is TaskWrite.Refused) {
                 fail(write.error)
             }
@@ -315,6 +390,8 @@ class TasksViewModel(
     }
 
     private fun askForRights() {
+        // The request opens over the app: the panel closes first so it is not left in front of it.
+        setState { copy(panel = null) }
         rights?.ask(str(S.desktop_tasks_tool_label), RightsKind.Post)
             ?: setState { copy(error = str(S.desktop_tasks_read_only_hint)) }
     }
@@ -368,7 +445,8 @@ class TasksViewModel(
     /** From a subtask (open, or being created) back to its main task; with none to go to, the panel closes. */
     private fun backToParent() {
         val open = currentState.panel ?: return
-        val target = open.parentId ?: open.draft?.parentId ?: open.task?.parentId
+        // Before the task itself has loaded, the list still knows its main task.
+        val target = open.parentId ?: open.draft?.parentId ?: open.task?.parentId ?: open.taskId?.let { currentState.byId[it]?.parentId }
         if (target == null) setState { copy(panel = null) } else openTask(target)
     }
 
@@ -485,8 +563,8 @@ class TasksViewModel(
         val problem = dueProblem(due, limits) ?: return false
         notice(
             when (problem) {
-                DueProblem.AfterMain -> str(S.desktop_tasks_due_after_main, limits.max.orEmpty())
-                DueProblem.BeforeSubtasks -> str(S.desktop_tasks_due_before_subtasks, limits.min.orEmpty())
+                DueProblem.AfterMain -> str(S.desktop_tasks_due_after_main, yearDayText(limits.max))
+                DueProblem.BeforeSubtasks -> str(S.desktop_tasks_due_before_subtasks, yearDayText(limits.min))
             },
         )
         return true
@@ -508,7 +586,8 @@ class TasksViewModel(
         }
         // Likewise a due date out of range (the main task's date may have moved since it was picked).
         if ("due_date" in changes && dueNotice(changes["due_date"], draft.parentId, task.id)) return
-        put(open, changes, expected = if (overwrite) null else task.updatedMillis)
+        // Without a known `updated` there is nothing to compare: send none, as the web does.
+        put(open, changes, expected = if (overwrite) null else task.updatedMillis.takeIf { it > 0 })
     }
 
     /** PUT [changes] and take the server's reply, keeping anything typed while it was in flight. */
@@ -543,6 +622,7 @@ class TasksViewModel(
                     }
                     upsert(answer.task)
                     if (cascades) loadList(silent = true)
+                    announce(answer.message)
                 }
                 is TaskWrite.Conflict -> editPanel { copy(conflict = answer.latest, nag = false) }
                 is TaskWrite.Refused -> {
@@ -572,6 +652,7 @@ class TasksViewModel(
             when (answer) {
                 is TaskWrite.Saved -> {
                     upsert(answer.task)
+                    announce(answer.message)
                     if (draft.parentId == null) {
                         if (stillOpen) setState { copy(panel = null) }
                     } else {

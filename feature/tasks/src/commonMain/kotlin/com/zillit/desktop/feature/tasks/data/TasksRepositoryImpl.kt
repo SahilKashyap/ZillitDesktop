@@ -11,6 +11,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskAssignees
 import com.zillit.desktop.feature.tasks.domain.TaskDepartment
@@ -55,7 +57,7 @@ class TasksRepositoryImpl(
             val answer = call(HttpVerb.Get, "", query = mapOf("page" to page, "limit" to PAGE_SIZE))
             val (batch, total) = when (answer) {
                 is ZillitResult.Failure -> return ZillitResult.Failure(answer.error)
-                is ZillitResult.Success -> answer.data.toTaskPage()
+                is ZillitResult.Success -> answer.data.data.toTaskPage()
             }
             all += batch
             if (batch.isEmpty() || all.size >= (total ?: all.size)) break
@@ -87,7 +89,19 @@ class TasksRepositoryImpl(
     override suspend fun task(taskId: String): ZillitResult<Task> =
         call(HttpVerb.Get, "/$taskId").mapTask()
 
-    override suspend fun create(draft: TaskDraft, uniqueId: String): TaskWrite {
+    override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean): TaskWrite {
+        // The Self Tasks quick-add row sends only what it asks for, as the web's
+        // does; the server fills in the rest.
+        if (quick) {
+            val body = buildJsonObject {
+                put("unique_id", uniqueId)
+                put("title", draft.title.trim())
+                put("due_date", draft.dueDate)
+                put("assignee_id", draft.assigneeId)
+                put("is_self", true)
+            }
+            return call(HttpVerb.Post, "", body = body).asWrite()
+        }
         val body = buildJsonObject {
             put("unique_id", uniqueId)
             put("title", draft.title.trim())
@@ -102,7 +116,7 @@ class TasksRepositoryImpl(
             // Only for a subtask: a null would be refused as a malformed id.
             draft.parentId?.let { put("parent_id", it) }
         }
-        return call(HttpVerb.Post, "", body = body).mapTask().asWrite()
+        return call(HttpVerb.Post, "", body = body).asWrite()
     }
 
     override suspend fun update(taskId: String, changes: Map<String, String?>, expectedUpdated: Long?): TaskWrite {
@@ -110,20 +124,23 @@ class TasksRepositoryImpl(
             changes.forEach { (key, value) -> put(key, value) }
             expectedUpdated?.let { put("expected_updated", it) }
         }
-        val answer = call(HttpVerb.Put, "/$taskId", body = body).mapTask()
+        val answer = call(HttpVerb.Put, "/$taskId", body = body)
         // The 409's body (their version) does not survive the client's error
         // path, so read it again: that is the same task the service would have sent.
         if (answer is ZillitResult.Failure && answer.error.httpStatus == CONFLICT) {
             return when (val latest = task(taskId)) {
                 is ZillitResult.Success -> TaskWrite.Conflict(latest.data)
-                is ZillitResult.Failure -> latest.asWrite()
+                is ZillitResult.Failure -> TaskWrite.Refused(latest.error.serverMessageOrNull, latest.error.httpStatus ?: 0, latest.error)
             }
         }
         return answer.asWrite()
     }
 
-    override suspend fun delete(taskId: String): ZillitResult<Unit> =
-        call(HttpVerb.Delete, "/$taskId").mapData { }
+    override suspend fun delete(taskId: String): ZillitResult<String?> =
+        when (val answer = call(HttpVerb.Delete, "/$taskId")) {
+            is ZillitResult.Failure -> ZillitResult.Failure(answer.error)
+            is ZillitResult.Success -> ZillitResult.Success(answer.data.message)
+        }
 
     override suspend fun comment(taskId: String, text: String, mentions: List<String>): ZillitResult<Task> {
         val body = buildJsonObject {
@@ -133,14 +150,18 @@ class TasksRepositoryImpl(
         return call(HttpVerb.Post, "/$taskId/comments", body = body).mapTask()
     }
 
+    /** One answer from the service: its `data`, and the `message` it announced with it. */
+    private class Reply(val data: JsonElement?, val message: String?)
+
     /** A call on the Tasks service; [path] is what follows `/tasks`. */
     private suspend fun call(
         verb: HttpVerb,
         path: String,
         body: JsonElement? = null,
         query: Map<String, Any?> = emptyMap(),
-    ): ZillitResult<JsonElement?> {
-        val base = root ?: return ZillitResult.Failure(ZillitError.Validation(NOT_CONFIGURED))
+    ): ZillitResult<Reply> {
+        // No Tasks host in this environment: the web answers its generic "something went wrong".
+        val base = root ?: return ZillitResult.Failure(ZillitError.Validation(str(S.something_went_wrong)))
         return send(verb, base + path, body, query)
     }
 
@@ -149,34 +170,35 @@ class TasksRepositoryImpl(
         url: String,
         body: JsonElement? = null,
         query: Map<String, Any?> = emptyMap(),
-    ): ZillitResult<JsonElement?> = when (
+    ): ZillitResult<Reply> = when (
         val answer = apiClient.envelope(verb = verb, url = url, module = RequestModule.ProjectUser, body = body, queryParameters = query)
     ) {
         is ZillitResult.Failure -> ZillitResult.Failure(answer.error)
-        is ZillitResult.Success -> answer.data.asData()
+        is ZillitResult.Success -> answer.data.asReply()
     }
 
-    private fun ApiEnvelope.asData(): ZillitResult<JsonElement?> = if (status == 1) {
-        ZillitResult.Success(data)
+    private fun ApiEnvelope.asReply(): ZillitResult<Reply> = if (status == 1) {
+        ZillitResult.Success(Reply(data, message?.takeIf { it.isNotBlank() }))
     } else {
         ZillitResult.Failure(ZillitError.Http(status = OK, serverMessage = message))
     }
 
-    private inline fun <T> ZillitResult<JsonElement?>.mapData(transform: (JsonElement?) -> T): ZillitResult<T> = when (this) {
+    private inline fun <T> ZillitResult<Reply>.mapData(transform: (JsonElement?) -> T): ZillitResult<T> = when (this) {
         is ZillitResult.Failure -> ZillitResult.Failure(error)
-        is ZillitResult.Success -> ZillitResult.Success(transform(data))
+        is ZillitResult.Success -> ZillitResult.Success(transform(data.data))
     }
 
-    private fun ZillitResult<JsonElement?>.mapTask(): ZillitResult<Task> = when (this) {
+    private fun ZillitResult<Reply>.mapTask(): ZillitResult<Task> = when (this) {
         is ZillitResult.Failure -> ZillitResult.Failure(error)
-        is ZillitResult.Success -> (data as? JsonObject)?.toTask()
+        is ZillitResult.Success -> (data.data as? JsonObject)?.toTask()
             ?.let { ZillitResult.Success(it) }
             ?: ZillitResult.Failure(ZillitError.Serialization("the task answer had no task in it"))
     }
 
-    private fun ZillitResult<Task>.asWrite(): TaskWrite = when (this) {
-        is ZillitResult.Success -> TaskWrite.Saved(data)
-        is ZillitResult.Failure -> TaskWrite.Refused(error.serverMessageOrNull, error.httpStatus ?: 0, error)
+    /** A write's answer: the task with the server's message, or why not. */
+    private fun ZillitResult<Reply>.asWrite(): TaskWrite = when (val task = mapTask()) {
+        is ZillitResult.Success -> TaskWrite.Saved(task.data, (this as? ZillitResult.Success)?.data?.message)
+        is ZillitResult.Failure -> TaskWrite.Refused(task.error.serverMessageOrNull, task.error.httpStatus ?: 0, task.error)
     }
 
     private companion object {
@@ -184,7 +206,6 @@ class TasksRepositoryImpl(
         const val MAX_PAGES = 20
         const val OK = 200
         const val CONFLICT = 409
-        const val NOT_CONFIGURED = "The Tasks service is not set up for this environment."
     }
 }
 

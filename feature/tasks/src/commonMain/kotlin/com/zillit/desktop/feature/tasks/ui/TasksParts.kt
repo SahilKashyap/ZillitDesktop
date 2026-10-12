@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,11 +31,13 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.CrewGroup
+import com.zillit.desktop.feature.tasks.domain.TaskDepartment
 import com.zillit.desktop.feature.tasks.domain.DueTone
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
@@ -99,10 +102,9 @@ internal fun StatusBox(status: TaskStatus, enabled: Boolean, onToggle: (TaskStat
     }
 }
 
-/** The due date, tinted when it is late or due today (`.zt-due`). */
+/** The due date, tinted when it is late or due today (`.zt-due`); "No date" for an undated task, as the web's cards and rows show it. */
 @Composable
 internal fun DueChip(task: Task, today: LocalDate, modifier: Modifier = Modifier) {
-    if (task.dueDate == null) return
     val k = TasksTheme.c
     val (fg, bg) = when (dueTone(task, today)) {
         DueTone.Late -> k.late to k.lateBg
@@ -130,20 +132,20 @@ internal fun DeptTag(id: String?, name: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** "Self task · Only you" / "Self task · name" on a self task. */
+/** "Self task · only you / from Priya / assigned to Arjun" on a self task: which way it went. */
 @Composable
 internal fun SelfTag(task: Task, me: String?, crewById: Map<String, TaskPerson>, modifier: Modifier = Modifier) {
     val k = TasksTheme.c
-    val first = { p: TaskPerson? -> p?.fullName?.substringBefore(' ') ?: str(S.desktop_tasks_former_member) }
+    val first = { id: String? -> crewById[id]?.fullName?.substringBefore(' ') ?: str(S.desktop_tasks_former_member) }
     val who = when {
-        isPrivate(task) -> str(S.desktop_tasks_self_only_you)
-        task.assigneeId == me -> first(crewById[task.createdBy])
-        else -> first(crewById[task.assigneeId])
+        isPrivate(task) -> str(S.desktop_tasks_self_only_you_lc)
+        task.assigneeId == me -> "${str(S.desktop_tasks_self_from)} ${first(task.createdBy)}"
+        else -> "${str(S.desktop_tasks_self_assigned_to)} ${first(task.assigneeId)}"
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ZillitIcon(ZillitIcons.Lock, tint = k.muted, size = 12.dp)
         TText(str(S.desktop_tasks_self_task), 12, SemiBold, k.chipFg, maxLines = 1)
-        TText(who, 12, Medium, k.faint, maxLines = 1)
+        TText("· $who", 12, Medium, k.faint, maxLines = 1)
     }
 }
 
@@ -161,13 +163,27 @@ internal fun PersonName(person: TaskPerson?, me: String?, modifier: Modifier = M
 @Composable
 internal fun PersonAvatar(person: TaskPerson?, size: androidx.compose.ui.unit.Dp = 26.dp) = TAvatar(person, size)
 
-/** "Assigned by …" under the assignee on a card. */
+/**
+ * Who assigned the task, for cards and rows: "Assigned by Sameer Khan ·
+ * 2nd Assistant Director" (with "(you)" when it was me), or "Self-assigned"
+ * when the assignee took it themselves. Nothing for an unassigned task.
+ */
 @Composable
 internal fun AssignLine(task: Task, me: String?, crewById: Map<String, TaskPerson>) {
+    if (task.assigneeId == null) return
     val by = assignerOf(task) ?: return
-    if (task.assigneeId == null || by == task.assigneeId) return
-    val name = if (by == me) str(S.desktop_tasks_you).trim('(', ')') else crewById[by]?.fullName ?: str(S.desktop_tasks_former_member)
-    TText(str(S.desktop_tasks_assigned_by_line, name), 12, color = TasksTheme.c.faint, maxLines = 1)
+    val k = TasksTheme.c
+    if (by == task.assigneeId) {
+        TText(str(S.desktop_tasks_self_assigned), 12, color = k.faint, maxLines = 1)
+        return
+    }
+    val person = crewById[by]
+    val text = buildString {
+        append(str(S.desktop_tasks_assigned_by_line, person?.fullName ?: str(S.desktop_tasks_former_member)))
+        if (by == me) append(" ").append(str(S.desktop_tasks_you))
+        if (person != null && person.designation.isNotBlank()) append(" · ").append(person.designation)
+    }
+    TText(text, 12, color = k.faint, maxLines = 1)
 }
 
 /** "☑ 1/2" for a main task's subtasks; cancelled ones are not counted. */
@@ -206,7 +222,17 @@ internal fun GroupBox(title: String, count: Int, modifier: Modifier = Modifier, 
     }
 }
 
-/** The ⋯ button and its menu, with the two confirmations (cancel, delete) in a dialog. */
+/**
+ * The ⋯ button and its menu, on every board card, list row and subtask row,
+ * and in the panel's header. The two confirmations (cancel, delete) open in a
+ * popover at the same button, as the web's do, never as a page dialog: this
+ * sits inside cards and scrolling lists, where a full-page shell would be
+ * drawn inline. Without posting rights there is no menu at all.
+ *
+ * [blocker] is how many open subtasks the task has: "Mark complete" is greyed
+ * out with the reason while there are any, and cancelling says they go too.
+ * [subtaskCount] is how many subtasks it has at all (deleting takes them too).
+ */
 @Composable
 internal fun TaskMenu(
     task: Task,
@@ -217,14 +243,15 @@ internal fun TaskMenu(
     modifier: Modifier = Modifier,
     onOpen: (() -> Unit)? = null,
     blockerNote: (Int) -> String = { "" },
+    subtaskCount: Int = 0,
 ) {
     var open by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
     val canDelete = canPost && task.canDelete
-    if (onOpen == null && !canPost) return
+    if (!canPost) return
 
     Box(modifier) {
-        TIconBtn(ZillitIcons.MoreHorizontal, str(S.docusign_bulk_job_more_actions_cd), { open = true })
+        TIconBtn(ZillitIcons.MoreHorizontal, str(S.desktop_tasks_menu_label), { open = true })
         val entries = buildList<ZillitMenuEntry> {
             onOpen?.let { add(ZillitMenuEntry.Action(str(if (task.isSubtask) S.desktop_tasks_menu_open_subtask else S.desktop_tasks_menu_open_task), onClick = it)) }
             if (canPost) {
@@ -249,42 +276,74 @@ internal fun TaskMenu(
             }
         }
         ZillitActionMenu(expanded = open, onDismissRequest = { open = false }, entries = entries)
-    }
-
-    confirm?.let { which ->
-        val cancelling = which == Confirm.Cancel
-        com.zillit.desktop.core.designsystem.component.ZillitDialogShell(
-            title = str(if (cancelling) S.desktop_tasks_confirm_cancel_title else S.desktop_tasks_confirm_delete_title),
-            subtitle = when {
-                cancelling && !task.isSubtask -> str(S.desktop_tasks_confirm_cancel_main)
-                cancelling -> null
-                else -> str(S.desktop_tasks_confirm_delete_body)
-            },
-            onDismiss = { confirm = null },
-            visible = true,
-            width = 420.dp,
-            scrollable = false,
-            actions = {
-                TBtn(str(S.desktop_ds_keep_it), { confirm = null }, kind = BtnKind.Ghost, small = true)
-                TBtn(str(if (cancelling) S.desktop_tasks_menu_cancel_task else S.delete), {
-                    confirm = null
-                    if (cancelling) onStatus(TaskStatus.Cancelled) else onDelete()
-                }, small = true)
-            },
-        ) {}
+        ZillitMenuSurface(expanded = confirm != null, onDismissRequest = { confirm = null }) {
+            val cancelling = confirm == Confirm.Cancel
+            val sub = task.isSubtask
+            val title = when {
+                cancelling && sub -> S.desktop_tasks_confirm_cancel_subtask_title
+                cancelling -> S.desktop_tasks_confirm_cancel_title
+                sub -> S.desktop_tasks_confirm_delete_subtask_title
+                else -> S.desktop_tasks_confirm_delete_title
+            }
+            val hint = when {
+                !cancelling -> str(if (subtaskCount > 0) S.desktop_tasks_confirm_delete_subtasks else S.desktop_cannot_be_undone)
+                blocker == 1 -> str(S.desktop_tasks_confirm_cancel_subtasks_one)
+                blocker > 1 -> str(S.desktop_tasks_confirm_cancel_subtasks, blocker)
+                else -> str(S.desktop_tasks_confirm_cancel_hint)
+            }
+            Column(Modifier.widthIn(max = 300.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TText(str(title), 14, SemiBold)
+                TText(hint, 13, color = TasksTheme.c.muted)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    // The safe answer comes first, as on the web.
+                    TBtn(str(S.desktop_ds_keep_it), { confirm = null }, kind = BtnKind.Ghost, small = true)
+                    TBtn(str(if (cancelling) S.desktop_tasks_menu_cancel_task else S.delete), {
+                        confirm = null
+                        if (cancelling) onStatus(TaskStatus.Cancelled) else onDelete()
+                    }, small = true, danger = true)
+                }
+            }
+        }
     }
 }
 
 private enum class Confirm { Cancel, Delete }
 
-/** The crew picker's choices: grouped by department, heads of department first. */
-internal fun crewPicks(crew: List<TaskPerson>, hodIds: Set<String>, exclude: String? = null): List<Pick> {
-    val groups: List<CrewGroup> = groupCrew(crew, hodIds = hodIds, exclude = exclude)
+/**
+ * The crew picker's choices: under a heading per department (A–Z, nobody's
+ * department last), heads of department first, then by name; "(you)" on my
+ * own row. A search finds a name, a designation or a department.
+ */
+internal fun crewPicks(crew: List<TaskPerson>, hodIds: Set<String>, exclude: String? = null, me: String? = null): List<Pick> {
+    val groups: List<CrewGroup> = groupCrew(crew, hodIds = hodIds, exclude = exclude, noDepartment = str(S.desktop_tasks_no_department))
     return groups.flatMap { group ->
         group.people.map { person ->
-            Pick(person.id, person.fullName, listOf(person.designation, group.name).filter { it.isNotBlank() }.joinToString(" · ").ifEmpty { null }, person)
+            Pick(
+                id = person.id,
+                label = if (person.id == me) "${person.fullName} ${str(S.desktop_tasks_you)}" else person.fullName,
+                subtitle = person.designation.ifBlank { null },
+                person = person,
+                section = group.name,
+                search = person.department,
+            )
         }
     }
+}
+
+/**
+ * The department picker's choices, each with its colour and how many people
+ * are in it. A search finds a department by its name, or by the name or
+ * designation of someone in it, as the web's does.
+ */
+internal fun deptPicks(departments: List<TaskDepartment>, crew: List<TaskPerson>): List<Pick> = departments.map { dept ->
+    val people = crew.filter { it.department.isNotBlank() && it.department.equals(dept.name, ignoreCase = true) }
+    Pick(
+        id = dept.id,
+        label = dept.name,
+        subtitle = if (people.size == 1) str(S.desktop_tasks_people_count_one) else str(S.desktop_tasks_people_count, people.size),
+        colour = Color(deptColour(dept.id)),
+        search = people.joinToString(" ") { "${it.fullName} ${it.designation}" },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

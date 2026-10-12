@@ -36,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -70,11 +72,11 @@ import com.zillit.desktop.feature.tasks.domain.daysUntil
 import com.zillit.desktop.feature.tasks.domain.deptColour
 import com.zillit.desktop.feature.tasks.domain.dropStatus
 import com.zillit.desktop.feature.tasks.domain.dueBucket
+import com.zillit.desktop.feature.tasks.domain.dueLabel
 import com.zillit.desktop.feature.tasks.domain.isPrivate
 import com.zillit.desktop.feature.tasks.domain.listRows
 import com.zillit.desktop.feature.tasks.domain.matchesFilter
 import com.zillit.desktop.feature.tasks.domain.parentTitle
-import kotlinx.coroutines.delay
 import kotlinx.datetime.LocalDate
 
 internal fun TasksUiState.actions(today: LocalDate, onEvent: (TasksEvent) -> Unit) = TaskActions(
@@ -87,11 +89,24 @@ internal fun TasksUiState.actions(today: LocalDate, onEvent: (TasksEvent) -> Uni
     onDelete = { onEvent(TasksEvent.Delete(it)) },
     blockerOf = { closeBlocker(tasks, it) },
     isBusy = { it.id in busy },
+    subtaskCountOf = { subtasksOf(it.id).size },
 )
 
-/** The page heading (`.zt-top`): the view's name and what it shows, with its main action at the right. */
+/**
+ * The page heading (`.zt-top`): the view's name and what it shows, with its
+ * main action at the right — or, read-only, "Request access" where the web
+ * offers it ([askWhenReadOnly]: the Board only).
+ */
 @Composable
-private fun TopBar(title: String, sub: String, state: TasksUiState, onEvent: (TasksEvent) -> Unit, addLabel: String?, onAdd: (() -> Unit)?) {
+private fun TopBar(
+    title: String,
+    sub: String,
+    state: TasksUiState,
+    onEvent: (TasksEvent) -> Unit,
+    addLabel: String?,
+    askWhenReadOnly: Boolean = false,
+    onAdd: (() -> Unit)?,
+) {
     val k = TasksTheme.c
     Column(Modifier.fillMaxWidth().background(k.surface)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -99,7 +114,7 @@ private fun TopBar(title: String, sub: String, state: TasksUiState, onEvent: (Ta
             TText(sub, 13, color = k.muted, maxLines = 1, modifier = Modifier.weight(1f))
             if (state.canPost) {
                 if (addLabel != null && onAdd != null) TBtn(addLabel, onAdd, icon = ZillitIcons.Add)
-            } else {
+            } else if (askWhenReadOnly) {
                 TBtn(str(S.desktop_request_access), { onEvent(TasksEvent.AskForRights) }, kind = BtnKind.Ghost)
             }
         }
@@ -173,14 +188,9 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
     val actions = state.actions(today, onEvent)
     val filter = state.boardFilter
     val drag = remember { DragState() }
-    // A dropped card waits in its new column while the write is in flight, and comes back if it is refused.
-    val moving = remember { mutableStateMapOf<String, TaskStatus>() }
-    LaunchedEffect(moving.keys.toList()) {
-        if (moving.isNotEmpty()) {
-            delay(MOVE_WAIT_MS)
-            moving.clear()
-        }
-    }
+    // A dropped card waits in its new column while the write is in flight; the
+    // view model lets go when the server answers (and a refused one goes back).
+    val moving = state.moving
     val visible = state.mainTasks.filter { matchesFilter(it, filter, state.lookup) }
         .map { task -> moving[task.id]?.let { task.copy(status = it) } ?: task }
         .sortedWith(compareBoard)
@@ -188,17 +198,13 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
     val dueToday = open.count { daysUntil(it.dueDate, today) == 0 }
     val late = open.count { (daysUntil(it.dueDate, today) ?: 0) < 0 }
     val set = { next: TaskFilter -> onEvent(TasksEvent.BoardFilterChanged(next)) }
-    val drop = { task: Task ->
-        val target = dropStatus(task, drag.overColumn())
-        if (target != null) {
-            if (target != TaskStatus.Done || actions.blockerOf(task) == 0) moving[task.id] = target
-            onEvent(TasksEvent.SetStatus(state.byId[task.id] ?: task, target))
-        }
+    val drop: (Task) -> Unit = { task ->
+        dropStatus(task, drag.overColumn())?.let { target -> onEvent(TasksEvent.Move(state.byId[task.id] ?: task, target)) }
     }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { drag.origin = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(str(S.desktop_tasks_nav_board), str(S.desktop_tasks_board_top), state, onEvent, str(S.desktop_tasks_add_task)) { onEvent(TasksEvent.NewTask()) }
+            TopBar(str(S.desktop_tasks_nav_board), str(S.desktop_tasks_board_top), state, onEvent, str(S.desktop_tasks_add_task), askWhenReadOnly = true) { onEvent(TasksEvent.NewTask()) }
             Box(Modifier.weight(1f)) {
                 Page {
                     if (state.loading && !state.loaded) {
@@ -213,7 +219,7 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.clip(RoundedCornerShape(9.dp)).background(k.chip).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            listOf(TaskKind.All to str(S.desktop_tasks_filter_all), TaskKind.Project to str(S.desktop_tasks_filter_project), TaskKind.Self to str(S.desktop_tasks_nav_self)).forEach { (kind, label) ->
+                            listOf(TaskKind.All to str(S.desktop_tasks_filter_all), TaskKind.Project to str(S.desktop_tasks_filter_project), TaskKind.Self to str(S.desktop_tasks_filter_self)).forEach { (kind, label) ->
                                 val on = filter.kind == kind
                                 TText(
                                     label, 13, if (on) SemiBold else FontWeight.Normal, if (on) k.fg else k.muted,
@@ -225,14 +231,15 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
                         }
                         TPicker(
                             value = filter.department.ifEmpty { null },
-                            picks = state.departments.map { Pick(it.id, it.name, colour = Color(deptColour(it.id))) },
+                            picks = deptPicks(state.departments, state.crew),
                             emptyLabel = str(S.desktop_inv_all_departments), onChange = { set(filter.copy(department = it.orEmpty())) },
                             compact = true, searchHint = str(S.desktop_tasks_pick_dept),
                         )
                         TPicker(
                             value = filter.assignee.ifEmpty { null },
-                            picks = listOf(Pick(TaskFilter.NO_ASSIGNEE, str(S.desktop_tasks_filter_unassigned_only))) + crewPicks(state.crew, state.hodIds),
+                            picks = listOf(Pick(TaskFilter.NO_ASSIGNEE, str(S.desktop_tasks_filter_unassigned_only))) + crewPicks(state.crew, state.hodIds, me = state.me),
                             emptyLabel = str(S.desktop_tasks_all_assignees), onChange = { set(filter.copy(assignee = it.orEmpty())) }, compact = true,
+                            searchHint = str(S.desktop_tasks_search_people), former = str(S.desktop_tasks_former_member),
                         )
                         TSearch(filter.query, { set(filter.copy(query = it)) }, str(S.desktop_tasks_search_ph), Modifier.widthIn(min = 220.dp, max = 320.dp).weight(1f, fill = false))
                     }
@@ -439,16 +446,25 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
     // The person each row is being moved to, before Save ("" = only me).
     val pending = remember { mutableStateMapOf<String, String>() }
     var title by remember { mutableStateOf("") }
-    var due by remember(today) { mutableStateOf<String?>(today.toString()) }
+    var due by remember { mutableStateOf<String?>(today.toString()) }
     var who by remember { mutableStateOf<String?>(null) }
+    val titleFocus = remember { FocusRequester() }
     val sharable = state.assignableCrew
-    val add = {
-        onEvent(TasksEvent.QuickAdd(title, due, who))
-        if (title.isNotBlank()) title = ""
+    // Typed text goes only once the server has saved the task: a refused add keeps it to try again.
+    val added = remember { mutableStateOf(state.quickAdded) }
+    LaunchedEffect(state.quickAdded) {
+        if (state.quickAdded != added.value) {
+            added.value = state.quickAdded
+            title = ""
+            runCatching { titleFocus.requestFocus() }
+        }
     }
+    val add = { if (title.isNotBlank() && !state.quickAdding) onEvent(TasksEvent.QuickAdd(title, due, who)) }
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(str(S.desktop_tasks_nav_self), str(S.desktop_tasks_top_self_sub), state, onEvent, null, null)
+        TopBar(str(S.desktop_tasks_nav_self), str(S.desktop_tasks_top_self_sub), state, onEvent, str(S.desktop_tasks_add_self_task)) {
+            runCatching { titleFocus.requestFocus() }
+        }
         Box(Modifier.weight(1f)) {
             Page {
                 if (state.loading && !state.loaded) {
@@ -462,16 +478,19 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
                             Modifier.fillMaxWidth().clip(shape).background(k.surface).border(BorderStroke(1.dp, k.line2), shape).padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            TInput(title, { title = it }, Modifier.weight(1f).padding(horizontal = 6.dp), placeholder = str(S.desktop_tasks_self_add_placeholder), style = txt(15), maxLength = TITLE_MAX, onEnter = add)
-                            TDate(
-                                due, due?.let { runCatching { dayText(LocalDate.parse(it), today) }.getOrNull() } ?: str(S.ah_template_no_date),
-                                { due = it }, today, compact = true,
+                            TInput(title, { title = it }, Modifier.weight(1f).padding(horizontal = 6.dp).focusRequester(titleFocus), placeholder = str(S.desktop_tasks_self_add_placeholder), style = txt(15), maxLength = TITLE_MAX, onEnter = add)
+                            TDate(due, dueText(dueLabel(due, today)), { due = it }, today, compact = true)
+                            TPicker(
+                                who, crewPicks(sharable, state.hodIds, exclude = state.me, me = state.me), str(S.desktop_tasks_self_just_me), { who = it },
+                                compact = true, avatars = true, searchHint = str(S.desktop_tasks_search_people),
                             )
-                            TPicker(who, crewPicks(sharable, state.hodIds, exclude = state.me), str(S.desktop_tasks_self_just_me), { who = it }, compact = true, avatars = true)
                             TBtn(str(if (state.quickAdding) S.desktop_tasks_adding else S.desktop_tasks_self_add), add, enabled = title.isNotBlank() && !state.quickAdding)
                         }
                     } else {
-                        TText(str(S.desktop_tasks_read_only_hint), 14, color = k.muted)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            TText(str(S.desktop_tasks_read_only_hint), 14, color = k.muted)
+                            TBtn(str(S.desktop_request_access), { onEvent(TasksEvent.AskForRights) })
+                        }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ZillitIcon(ZillitIcons.Lock, tint = k.muted, size = 12.dp)
@@ -515,6 +534,8 @@ private fun SelfRow(
     val editing = task.id in pending
     val value = if (editing) pending.getValue(task.id) else current
     val busy = task.id in state.busy
+    // A share the server saved clears the row's Save / Cancel; a refused one keeps it to try again.
+    LaunchedEffect(current) { if (pending[task.id] == current) pending.remove(task.id) }
     TaskRow(
         task = task, actions = actions, editing = editing,
         tags = {
@@ -537,25 +558,25 @@ private fun SelfRow(
             }
             if (state.canPost) {
                 TPicker(
-                    value = value.ifEmpty { null }, picks = crewPicks(sharable, state.hodIds, exclude = state.me),
-                    emptyLabel = str(if (private) S.desktop_assign_to else S.desktop_tasks_self_only_me_private),
+                    value = value.ifEmpty { null }, picks = crewPicks(sharable, state.hodIds, exclude = state.me, me = state.me),
+                    emptyLabel = str(if (private) S.desktop_tasks_self_assign_to else S.desktop_tasks_self_only_me_private),
                     onChange = { picked -> if ((picked ?: "") == current) pending.remove(task.id) else pending[task.id] = picked.orEmpty() },
-                    compact = true, enabled = !busy,
+                    compact = true, enabled = !busy, searchHint = str(S.desktop_tasks_search_people), former = str(S.desktop_tasks_former_member),
                 )
             }
             if (editing) {
                 TBtn(str(S.cancel), { pending.remove(task.id) }, kind = BtnKind.Ghost, small = true)
-                TBtn(str(S.save), {
-                    onEvent(TasksEvent.Share(task.id, pending[task.id]?.ifEmpty { null }))
-                    pending.remove(task.id)
-                }, small = true, enabled = !busy)
+                TBtn(
+                    str(if (busy) S.desktop_tasks_saving else S.save),
+                    { onEvent(TasksEvent.Share(task.id, pending[task.id]?.ifEmpty { null })) },
+                    small = true, enabled = !busy,
+                )
             }
         },
     )
 }
 
 private val NARROW = 980.dp
-private const val MOVE_WAIT_MS = 4000L
 private const val GHOST_ALPHA = 0.35f
 private const val CARRIED_ALPHA = 0.92f
 private const val TITLE_MAX = 300
