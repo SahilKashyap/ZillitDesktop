@@ -183,6 +183,15 @@ private fun FormActions(form: PoFormState, onEvent: (PoEvent) -> Unit) {
             size = ButtonSize.Small,
             enabled = !form.saving,
         )
+        // And "Save as Draft" under the divider: the form as a new draft order,
+        // the template itself untouched.
+        ZillitButton(
+            text = str(S.ah_save_as_draft_opt),
+            onClick = { onEvent(PoEvent.SaveDraft) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = !form.saving,
+        )
         ZillitButton(
             text = form.saveTemplateLabel,
             onClick = { onEvent(PoEvent.SaveAsTemplate(form.templateName)) },

@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.purchaseorder.ui.PurchaseOrderViewModel
 import com.zillit.desktop.feature.purchaseorder.ui.clampTaxRate
 import com.zillit.desktop.feature.purchaseorder.ui.collapseUnknownTaxTypes
 import com.zillit.desktop.feature.purchaseorder.ui.splitByPeriod
+import com.zillit.desktop.feature.purchaseorder.ui.toEntry
 import com.zillit.desktop.feature.purchaseorder.ui.withExpenditureType
 import com.zillit.desktop.feature.purchaseorder.ui.withRental
 import com.zillit.desktop.feature.purchaseorder.ui.withTaxRate
@@ -193,6 +194,41 @@ class PoEntryGridTest {
 
         assertEquals("[[9999]]", update.header.nominalCode)
         assertEquals(listOf("[[9999]]", "2400", "[[8888]]"), update.lines.map { it.nominalCode })
+    }
+
+    // -- the tax line's Tags ---------------------------------------------------------
+
+    @Test
+    fun `the tax line sends the tags picked on the page, starting from the saved row's`() {
+        val taxRow = PoLine(
+            id = "tax-row", description = "", quantity = 1.0, unitPrice = 5.0, nominalCode = "8888",
+            vatRate = null, amount = 5.0, tags = listOf("Camera"), isTax = true,
+        )
+        val order = parityOrder(lines = listOf(line(), taxRow))
+
+        val opened = order.toEntry()
+        assertEquals(listOf("Camera"), opened.taxTags)
+        val sent = PoEntryLedger(opened, recoverable = emptySet(), ready = true).linesWithTax.last()
+        assertEquals(listOf("Camera"), sent.tags)
+        assertEquals("tax-row", sent.id, "the saved row is updated in place")
+
+        val edited = opened.copy(taxTags = listOf("Camera", "Grip"))
+        assertEquals(
+            listOf("Camera", "Grip"),
+            PoEntryLedger(edited, recoverable = emptySet(), ready = true).linesWithTax.last().tags,
+        )
+        val cleared = PoEntryLedger(opened.copy(taxTags = emptyList()), recoverable = emptySet(), ready = true)
+        assertEquals(emptyList(), cleared.update(header).lines.last().tags)
+    }
+
+    @Test
+    fun `an order with no tax row opens with no tags and a tag can still be added`() {
+        val opened = parityOrder(lines = listOf(line())).toEntry()
+        assertEquals(emptyList(), opened.taxTags)
+
+        val tagged = opened.copy(taxOverride = 5.0, taxTags = listOf("Grip"))
+        val ledger = PoEntryLedger(tagged, recoverable = emptySet(), ready = true)
+        assertEquals(listOf("Grip"), ledger.linesWithTax.last().tags)
     }
 
     /** The web's `handlePostPO` maps the lines' `account` as typed; only `hdrPatch` is wrapped. */

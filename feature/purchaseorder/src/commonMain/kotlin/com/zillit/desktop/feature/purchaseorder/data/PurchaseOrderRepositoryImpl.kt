@@ -548,6 +548,7 @@ internal data class PoDto(
             reassignmentReason = reassignmentReason,
             deliveryAddress = deliveryAddressRaw.addressText()?.takeIf { it.isNotBlank() } ?: delivery,
             deliveryAddressRaw = deliveryAddressRaw?.takeUnless { it is JsonNull },
+            deliveryAddressParts = deliveryAddressRaw.asAddress(),
             lines = parsedLines,
             approvals = approvals.orEmpty().map { it.toDomain() },
             attachmentCount = attachments?.size ?: 0,

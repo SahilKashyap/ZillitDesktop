@@ -228,12 +228,18 @@ internal fun PoFilterRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
  * Columns, headers and order are the web's: PO Number, Vendor, Dept, Amount,
  * Eff. Date, Status, Assigned — with the accountant's selection checkbox in
  * front. Clicking a header sorts by it; clicking a row opens the order.
+ * [selectable] is false on the Queue tab, which the web gives no checkbox column.
  */
 @Composable
-internal fun PoOrderTable(state: PoUiState, rows: List<PurchaseOrder>, onEvent: (PoEvent) -> Unit) {
+internal fun PoOrderTable(
+    state: PoUiState,
+    rows: List<PurchaseOrder>,
+    onEvent: (PoEvent) -> Unit,
+    selectable: Boolean = true,
+) {
     ZillitDataTable(
         rows = rows,
-        columns = poColumns(state, rows, onEvent),
+        columns = poColumns(state, rows, onEvent, selectable),
         key = { it.id },
         loading = state.loading,
         onRowClick = { onEvent(PoEvent.OpenOrder(it.id)) },
@@ -290,10 +296,11 @@ internal fun poColumns(
     state: PoUiState,
     rows: List<PurchaseOrder>,
     onEvent: (PoEvent) -> Unit,
+    selectable: Boolean = true,
 ): List<TableColumn<PurchaseOrder>> = buildList {
     // The senior's, in the console: an assistant has no selection column (the web's `isAccountant`).
-    if (state.viewer.isConsoleSenior) {
-        val selectable = state.selectable(rows).map { it.id }
+    if (selectable && state.viewer.isConsoleSenior) {
+        val pickable = state.selectable(rows).map { it.id }
         add(
             TableColumn(
                 header = "",
@@ -301,9 +308,9 @@ internal fun poColumns(
                 // All on, or all off — the view model's SelectAll toggles.
                 headerContent = {
                     ZillitCheckbox(
-                        checked = selectable.isNotEmpty() && state.selection.containsAll(selectable),
-                        onCheckedChange = { onEvent(PoEvent.SelectAll(selectable)) },
-                        enabled = selectable.isNotEmpty(),
+                        checked = pickable.isNotEmpty() && state.selection.containsAll(pickable),
+                        onCheckedChange = { onEvent(PoEvent.SelectAll(pickable)) },
+                        enabled = pickable.isNotEmpty(),
                     )
                 },
                 cell = { order ->

@@ -122,7 +122,7 @@ internal fun PoEntryPage(state: PoUiState, entry: PoEntryState, onEvent: (PoEven
                 }
                 HeaderCard(state, entry, onEvent)
                 CodingCard(state, entry, onEvent)
-                TaxLineCard(entry, ledger, order.currency, onEvent)
+                TaxLineCard(entry, ledger, order.currency, state.tags, onEvent)
                 EntryTotals(
                     ledger = ledger,
                     orderGross = order.gross,
@@ -795,6 +795,7 @@ private fun TaxLineCard(
     entry: PoEntryState,
     ledger: PoEntryLedger,
     currency: String?,
+    accountTags: List<String>,
     onEvent: (PoEvent) -> Unit,
 ) {
     val set = { next: PoEntryState -> onEvent(PoEvent.EditEntry(next)) }
@@ -818,6 +819,17 @@ private fun TaxLineCard(
                 label = str(S.amount),
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.width(PRICE_FIELD),
+            )
+            // The same Account Tags picker the coded lines have; a tag already on
+            // the tax line stays offered even if Production Setup dropped it.
+            ZillitMultiSelect(
+                selected = entry.taxTags,
+                options = (accountTags + entry.taxTags).distinct(),
+                label = { it },
+                onChange = { tags -> set(entry.copy(taxTags = tags)) },
+                placeholder = str(S.drive_tags),
+                emptyText = str(S.desktop_po_no_tags_add_in_production_setup),
+                modifier = Modifier.width(TAGS_FIELD),
             )
             ZillitText(
                 text = Money.format(ledger.reclaimable, currency),

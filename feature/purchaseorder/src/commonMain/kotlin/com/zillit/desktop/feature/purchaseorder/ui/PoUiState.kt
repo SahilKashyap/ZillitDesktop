@@ -478,8 +478,10 @@ data class PoEntryState(
     val deliveryDate: Long? = null,
     val vatTreatment: String = "pending",
     // -- the consolidated tax line ---------------------------------------------
-    /** The persisted `is_tax` row, kept for its id, tags and tracking codes. */
+    /** The persisted `is_tax` row, kept for its id and tracking codes. */
     val taxLine: PoLine? = null,
+    /** The tax line's Account Tags — the persisted row's, until the page edits them. */
+    val taxTags: List<String> = emptyList(),
     /** A typed tax amount; null derives it from the lines. Sticky, like the web's `overridden`. */
     val taxOverride: Double? = null,
     /** The reclaim nominal the tax line posts to. */

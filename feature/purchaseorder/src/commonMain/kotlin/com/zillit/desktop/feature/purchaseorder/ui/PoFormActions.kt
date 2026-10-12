@@ -11,6 +11,7 @@ import com.zillit.desktop.core.sync.LocalDraft
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
+import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
@@ -18,6 +19,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.addCivilMonths
 import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayNumber
 import com.zillit.desktop.feature.purchaseorder.domain.toIsoDay
+import com.zillit.desktop.feature.purchaseorder.domain.wrapNominal
 import com.zillit.desktop.feature.purchaseorder.domain.splitCadence
 import com.zillit.desktop.feature.purchaseorder.domain.PoSplitType
 import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
@@ -137,7 +139,12 @@ internal class PoFormActions(
         vm.update { copy(busy = true) }
         vm.launchWork {
             when (val answer = repository.order(id)) {
-                is ZillitResult.Success -> vm.update { copy(busy = false, form = answer.data.toForm(mode)) }
+                is ZillitResult.Success -> vm.update {
+                    copy(
+                        busy = false,
+                        form = answer.data.toForm(mode, savedAddressIds = addresses.map { it.id }.toSet()),
+                    )
+                }
                 is ZillitResult.Failure -> {
                     vm.update { copy(busy = false) }
                     vm.fail(answer.error.localised())
@@ -275,7 +282,7 @@ internal class PoFormActions(
         // tier 1 already. Accounts' own raise (ACCT_ENTERED) goes straight to the
         // ledger queue and carries none.
         val signs = !vm.ui.viewer.isAccountant && (status == PurchaseOrderViewModel.STATUS_PENDING || form.mode == PoFormMode.EditOrder)
-        val request = form.toRequest(status, layout).let {
+        val request = form.toRequest(status, layout, vm.ui.chartCodes).let {
             if (!signs) it else it.copy(approvals = vm.ui.tiers.autoApprovals(it.departmentId, vm.ui.viewer.userId, vm.nowMillis()))
         }
         val problems = validate(request, form, layout)
@@ -289,7 +296,7 @@ internal class PoFormActions(
     /** Saves without submitting — the order waits as a draft. */
     private fun saveDraft() {
         val form = vm.ui.form ?: return
-        val request = form.toRequest(PurchaseOrderViewModel.STATUS_DRAFT, vm.ui.formLayout)
+        val request = form.toRequest(PurchaseOrderViewModel.STATUS_DRAFT, vm.ui.formLayout, vm.ui.chartCodes)
         // A draft is deliberately not validated the way a submission is: the
         // point of it is to stop half way. Only a vendor-less, line-less,
         // description-less shell is refused, because there would be nothing to
@@ -330,7 +337,9 @@ internal class PoFormActions(
                 ?: repository.create(request)
             when (result) {
                 is ZillitResult.Success -> {
-                    forgetDraft()
+                    // The on-disk draft is the new-order form's alone: saving an
+                    // edit or a template's order must not throw it away.
+                    if (form.mode == PoFormMode.NewOrder) forgetDraft()
                     vm.update { copy(form = null, notice = success, detail = null) }
                     vm.load(vm.ui.destination)
                 }
@@ -378,7 +387,7 @@ internal class PoFormActions(
         }
         vm.update { copy(form = form.copy(saving = true, problems = emptyList())) }
         vm.launchWork {
-            val template = form.toTemplate(name.trim(), asNew, vm.ui.formLayout)
+            val template = form.toTemplate(name.trim(), asNew, vm.ui.formLayout, vm.ui.chartCodes)
             when (val answer = repository.saveTemplate(template)) {
                 is ZillitResult.Success -> {
                     vm.update { copy(form = null, notice = str(S.ah_template_saved_msg)) }
@@ -792,19 +801,26 @@ internal fun PoUiState.defaultCurrency(): String = currencies.firstOrNull() ?: "
 internal fun PoUiState.orderById(id: String): PurchaseOrder? =
     detail?.takeIf { it.id == id } ?: (localOrders + orders).firstOrNull { it.id == id }
 
-/** The form's values as the create/update body wants them. */
-internal fun PoFormState.toRequest(status: String?, layout: FormLayout) = NewPurchaseOrder(
+/**
+ * The form's values as the create/update body wants them.
+ *
+ * The header code and every line's go through [wrapNominal] against [chart] —
+ * the web's `POForm.buildPayload`, which every save (order, draft, template)
+ * funnels through. Only the body is wrapped, never the form on screen.
+ */
+internal fun PoFormState.toRequest(status: String?, layout: FormLayout, chart: Set<String> = emptySet()) =
+    NewPurchaseOrder(
     vendorId = vendorId,
     vendorName = vendorName.trim(),
     description = description.trim(),
     departmentId = departmentId,
     companyId = companyId,
     currency = currency,
-    nominalCode = nominalCode.takeIf { it.isNotBlank() },
+    nominalCode = wrappedNominal(chart),
     episode = episode.takeIf { it.isNotBlank() },
     notes = notes.takeIf { it.isNotBlank() },
     effectiveDate = effectiveDate,
-    lines = lines.filter { it.description.isNotBlank() },
+    lines = wrappedLines(chart),
     vatTreatment = vatTreatment.takeIf { it.isNotBlank() },
     deliveryDate = deliveryDate,
     deliveryAddressId = deliveryAddressId,
@@ -816,8 +832,26 @@ internal fun PoFormState.toRequest(status: String?, layout: FormLayout) = NewPur
     customFields = listOfNotNull(layout.customValues(PoFormFields.DETAILS, customFields)),
 )
 
-/** An order, as the form that edits it. */
-internal fun PurchaseOrder.toForm(mode: PoFormMode) = PoFormState(
+/** The header code as it is sent: wrapped when the chart lacks it, null when blank. */
+internal fun PoFormState.wrappedNominal(chart: Set<String>): String? =
+    wrapNominal(nominalCode, chart).takeIf { it.isNotEmpty() }
+
+/** The described lines as they are sent, each line's code wrapped like the header's. */
+internal fun PoFormState.wrappedLines(chart: Set<String>): List<PoLine> =
+    lines.filter { it.description.isNotBlank() }.map { line ->
+        line.copy(nominalCode = line.nominalCode?.let { code -> wrapNominal(code, chart) })
+    }
+
+/**
+ * An order, as the form that edits it.
+ *
+ * The delivery block is filled from the order's own address, so a hand-typed one
+ * is there to read and re-save instead of coming back empty and clearing it. A
+ * saved-address link that is no longer in the book is dropped and the snapshot
+ * kept, as the web's re-select does; with no book read yet ([savedAddressIds]
+ * empty) the link is kept, not guessed at.
+ */
+internal fun PurchaseOrder.toForm(mode: PoFormMode, savedAddressIds: Set<String> = emptySet()) = PoFormState(
     mode = mode,
     orderId = id,
     vendorId = vendorId,
@@ -832,7 +866,8 @@ internal fun PurchaseOrder.toForm(mode: PoFormMode) = PoFormState(
     effectiveDate = effectiveDate,
     deliveryDate = deliveryDate,
     vatTreatment = vatTreatment ?: "pending",
-    deliveryAddressId = deliveryAddressId,
+    deliveryAddressId = deliveryAddressId?.takeIf { savedAddressIds.isEmpty() || it in savedAddressIds },
+    deliveryAddress = deliveryAddressParts ?: PoAddress(),
     lines = lines.ifEmpty { listOf(blankLine()) },
     attachments = attachments,
     customFields = customFields.flatMap { group -> group.fields }.associate { it.label to it.value },

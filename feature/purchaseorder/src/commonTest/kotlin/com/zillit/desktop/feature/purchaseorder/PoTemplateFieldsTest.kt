@@ -24,6 +24,7 @@ import com.zillit.desktop.feature.purchaseorder.ui.PoPrompt
 import com.zillit.desktop.feature.purchaseorder.ui.PoReasonAction
 import com.zillit.desktop.feature.purchaseorder.ui.PurchaseOrderViewModel
 import com.zillit.desktop.feature.purchaseorder.ui.toForm
+import com.zillit.desktop.feature.purchaseorder.ui.toRequest
 import com.zillit.desktop.feature.purchaseorder.ui.toTemplate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -266,11 +267,13 @@ class PoTemplateFieldsTest {
 
     private val accountant = PoViewer("acct-1", "department_accounts", "designation_production_accountant_accounts")
 
-    private class Fake(private val templates: List<PoTemplate>) : PurchaseOrderRepository by FlowFake(emptyList()) {
+    private class Fake(private val templates: List<PoTemplate>, private val chart: Set<String> = emptySet()) :
+        PurchaseOrderRepository by FlowFake(emptyList()) {
         val savedTemplates = mutableListOf<PoTemplate>()
         val created = mutableListOf<NewPurchaseOrder>()
 
         override suspend fun templates() = ZillitResult.Success(templates)
+        override suspend fun chartCodes() = ZillitResult.Success(chart)
         override suspend fun saveTemplate(template: PoTemplate): ZillitResult<PoTemplate> {
             savedTemplates += template
             return ZillitResult.Success(template)
@@ -338,6 +341,97 @@ class PoTemplateFieldsTest {
             assertEquals("ACCT_ENTERED", order.status)
             assertEquals(address, order.deliveryAddress)
         }
+
+    @Test
+    fun `Save as Draft writes the template editor as a new draft order and leaves the template alone`() =
+        runTest(dispatcher) {
+            val repository = Fake(listOf(full))
+            val model = editing(repository)
+
+            model.onEvent(PoEvent.SaveDraft)
+            runCurrent()
+
+            assertTrue(repository.savedTemplates.isEmpty(), "the template is not rewritten")
+            val draft = repository.created.single()
+            assertEquals("DRAFT", draft.status)
+            assertEquals("v-1", draft.vendorId)
+            assertEquals(address, draft.deliveryAddress)
+            assertNull(model.state.value.form, "the editor closes, as after every other save")
+        }
+
+    // -- the nominal wrap ------------------------------------------------------------
+
+    private val chart = setOf("2400")
+    private val unknown = full.copy(
+        nominalCode = "9999",
+        lines = listOf(
+            PoLine("l1", "Body", 1.0, 100.0, "9999", 20.0),
+            PoLine("l2", "Lens", 1.0, 50.0, "2400", 20.0),
+            PoLine("l3", "Tape", 1.0, 5.0, null, 20.0),
+        ),
+    )
+
+    @Test
+    fun `an order body wraps the header and every line the chart does not know`() {
+        val form = unknown.toForm(asTemplate = true, fallbackDepartmentId = "d", fallbackCurrency = "GBP")
+        val layout = FormLayout(FormTemplate())
+
+        val wrapped = form.toRequest(status = null, layout = layout, chart = chart)
+        assertEquals("[[9999]]", wrapped.nominalCode)
+        assertEquals(listOf("[[9999]]", "2400", null), wrapped.lines.map { it.nominalCode })
+        // The form on screen keeps the clean code, and a chart that did not load wraps nothing.
+        assertEquals("9999", form.nominalCode)
+        val unread = form.toRequest(status = null, layout = layout)
+        assertEquals("9999", unread.nominalCode)
+        assertEquals(listOf("9999", "2400", null), unread.lines.map { it.nominalCode })
+    }
+
+    @Test
+    fun `a template body wraps the same way`() {
+        val form = unknown.toForm(asTemplate = true, fallbackDepartmentId = "d", fallbackCurrency = "GBP")
+
+        val wrapped = form.toTemplate("Copy", asNew = true, layout = FormLayout(FormTemplate()), chart = chart)
+        assertEquals("[[9999]]", wrapped.nominalCode)
+        assertEquals(listOf("[[9999]]", "2400", null), wrapped.lines.map { it.nominalCode })
+    }
+
+    @Test
+    fun `submit, draft and template saves all send the wrapped codes`() = runTest(dispatcher) {
+        val repository = Fake(listOf(unknown), chart)
+        val model = editing(repository)
+
+        model.onEvent(PoEvent.SubmitForm)
+        runCurrent()
+        model.onEvent(PoEvent.EditTemplate("t-1"))
+        runCurrent()
+        model.onEvent(PoEvent.SaveDraft)
+        runCurrent()
+        model.onEvent(PoEvent.EditTemplate("t-1"))
+        runCurrent()
+        model.onEvent(PoEvent.SaveAsTemplate("Weekly camera package"))
+        runCurrent()
+
+        assertEquals(listOf("ACCT_ENTERED", "DRAFT"), repository.created.map { it.status })
+        repository.created.forEach { order ->
+            assertEquals("[[9999]]", order.nominalCode)
+            assertEquals("[[9999]]", order.lines.first().nominalCode)
+            assertEquals("2400", order.lines[1].nominalCode)
+        }
+        val template = repository.savedTemplates.single()
+        assertEquals("[[9999]]", template.nominalCode)
+        assertEquals("[[9999]]", template.lines.first().nominalCode)
+    }
+
+    @Test
+    fun `a chart that failed to load wraps nothing on save`() = runTest(dispatcher) {
+        val repository = Fake(listOf(unknown), chart = emptySet())
+        val model = editing(repository)
+
+        model.onEvent(PoEvent.SubmitForm)
+        runCurrent()
+
+        assertEquals("9999", repository.created.single().nominalCode)
+    }
 
     @Test
     fun `a blank name for Save As is refused in the prompt's own words`() = runTest(dispatcher) {

@@ -10,19 +10,25 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 /**
  * The form as the template the web saves — every field it keeps, not just the
  * vendor and the lines. [asNew] drops the id so the save creates a template
- * instead of replacing the one being edited.
+ * instead of replacing the one being edited. Codes the [chart] lacks go out
+ * wrapped, as on every other save.
  */
-internal fun PoFormState.toTemplate(name: String, asNew: Boolean, layout: FormLayout) = PoTemplate(
+internal fun PoFormState.toTemplate(
+    name: String,
+    asNew: Boolean,
+    layout: FormLayout,
+    chart: Set<String> = emptySet(),
+) = PoTemplate(
     id = if (asNew) "" else templateId.orEmpty(),
     name = name,
     vendorId = vendorId,
     vendorName = vendorName,
     departmentId = departmentId,
-    nominalCode = nominalCode.takeIf { it.isNotBlank() },
+    nominalCode = wrappedNominal(chart),
     description = description.trim(),
     currency = currency,
     notes = notes.takeIf { it.isNotBlank() },
-    lines = lines.filter { it.description.isNotBlank() },
+    lines = wrappedLines(chart),
     companyId = companyId,
     episode = episode.takeIf { it.isNotBlank() },
     deliveryAddressId = deliveryAddressId,

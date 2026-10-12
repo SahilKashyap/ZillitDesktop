@@ -95,6 +95,12 @@ data class PurchaseOrder(
      * (the web's `poDetails.delivery_address`), so neither shape is flattened.
      */
     val deliveryAddressRaw: JsonElement? = null,
+    /**
+     * [deliveryAddressRaw] read back into its parts — an object, a JSON string
+     * holding one, or plain text as the first line. What the edit form fills
+     * its address block from, so a hand-typed address survives an edit.
+     */
+    val deliveryAddressParts: PoAddress? = null,
 ) {
     val isLocalOnly: Boolean get() = local != null
 

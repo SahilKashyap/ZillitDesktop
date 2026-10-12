@@ -89,10 +89,10 @@ internal fun PoQueuePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 padded = false,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                PoOrderTable(state, rows, onEvent)
+                // The web's POQueue has no checkbox column and no bulk bar: only All POs does.
+                PoOrderTable(state, rows, onEvent, selectable = false)
             }
         }
-        PoBulkBar(state, onEvent, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 

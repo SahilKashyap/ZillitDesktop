@@ -201,9 +201,18 @@ class PoVendorEmailGatesTest {
 
     @Test
     fun `the selection column is the senior's alone`() {
-        fun columns(viewer: PoViewer) = poColumns(PoUiState(viewer = viewer), emptyList()) { }.size
+        fun columns(viewer: PoViewer) = poColumns(PoUiState(viewer = viewer), emptyList(), { }).size
         assertEquals(columns(assistant) + 1, columns(senior))
         assertEquals(columns(assistant), columns(senior.copy(enteredAsTool = true)))
+    }
+
+    /** The web's POQueue has no checkbox column — only All POs does. */
+    @Test
+    fun `the queue table has no selection column even for a senior`() {
+        fun columns(viewer: PoViewer, selectable: Boolean) =
+            poColumns(PoUiState(viewer = viewer), emptyList(), { }, selectable).size
+        assertEquals(columns(senior, selectable = true) - 1, columns(senior, selectable = false))
+        assertEquals(columns(assistant, selectable = true), columns(senior, selectable = false))
     }
 
     @Test
