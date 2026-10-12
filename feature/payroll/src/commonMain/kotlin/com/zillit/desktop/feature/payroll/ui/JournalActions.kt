@@ -244,25 +244,30 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
                 (row.timecardId == null || row.timecardId in postable) &&
                     (
                         Journal.codeOf(row, journal.edits[row.id]).isBlank() ||
-                            Journal.dateOf(row, journal.edits[row.id]).isNullOrBlank()
+                            !Journal.hasDate(row, journal.edits[row.id])
                     )
             }.map { it.id }.toSet()
             editJournal {
                 copy(
                     alert = JournalAlert(str(S.desktop_payroll_cannot_post_yet), describe(incomplete)),
                     flagged = flagged,
+                    // A red cell must not sit inside a collapsed group with no hint it is there.
+                    expandSignal = expandSignal + 1,
                 )
             }
             return
         }
-        val inScope = rows.filter { it.timecardId in postable }
+        // The run's account lines post with the timecards' (`PayrollRunModule.jsx:6926`), so they count; the
+        // gross is the debit side alone, since the account rows are the same money seen from the credit side.
+        val lineCount = rows.count { it.timecardId == null || it.timecardId in postable }
+        val debits = rows.filter { !it.isCredit && it.timecardId in postable }.sumOf { it.amount ?: 0.0 }
         val earliest = ui.earliestEffectiveDate
         editJournal {
             copy(
                 post = JournalPostDialog(
                     timecardIds = postable.toList(),
-                    lineCount = inScope.size,
-                    gross = ui.run.timecards.filter { it.id in postable }.sumOf { it.gross },
+                    lineCount = lineCount,
+                    gross = debits,
                     currency = ui.run.timecards.firstOrNull { it.id in postable }?.currency,
                     effectiveDate = if (earliest != null && ui.todayIso < earliest) earliest else ui.todayIso,
                 ),
@@ -279,8 +284,11 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         val dialog = journal.post ?: return
         val week = ui.run.weekStarting ?: return
         if (dialog.saving || !ui.viewer.seesAccountantViews) return
-        val date = openDate(dialog.effectiveDate)
-        if (date == null) {
+        // Optional, as on the web: each line carries its own date and this is only the default, so a blank
+        // one posts with none. A date that is typed must still fall after the cost-report lock.
+        val typed = dialog.effectiveDate.trim()
+        val date = if (typed.isEmpty()) null else openDate(typed)
+        if (typed.isNotEmpty() && date == null) {
             val refusal = ui.earliestEffectiveDate?.let { str(S.desktop_payroll_date_in_locked_period, it) }
                 ?: str(S.desktop_payroll_choose_effective_date)
             editJournal { copy(post = dialog.copy(error = refusal)) }

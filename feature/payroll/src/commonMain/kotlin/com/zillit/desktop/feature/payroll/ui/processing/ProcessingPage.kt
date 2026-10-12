@@ -327,11 +327,13 @@ private fun ProcessingTiles(state: PayrollUiState) {
             Money.format(allowances.first, allowances.second),
             tile,
         )
+        // Day View counts against the crew working that day: "Approved Today 3/8", as the web words it.
+        val daily = processing.view == ProcessingView.Daily
         ZillitStatTile(
-            str(S.approved),
-            approved.toString(),
+            str(if (daily) S.desktop_payroll_approved_today else S.approved),
+            if (daily) "$approved/${rows.size}" else approved.toString(),
             tile,
-            str(S.desktop_payroll_of_count, rows.size),
+            if (daily) str(S.desktop_payroll_timecards_word) else str(S.desktop_payroll_of_count, rows.size),
             tone = StatusTone.Ready,
         )
     }

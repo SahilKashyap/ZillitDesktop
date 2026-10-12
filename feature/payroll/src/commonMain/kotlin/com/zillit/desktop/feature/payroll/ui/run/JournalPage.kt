@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.payroll.ui.run
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
@@ -132,8 +133,13 @@ private fun JournalHeaderActions(state: PayrollUiState, rows: List<JournalRow>, 
         loading = journal.saving,
     )
     if (rows.any { it.timecardId != null }) {
+        // Postable cards that have ledger lines — a card with none cannot post (`postableTimecardIds`).
+        val withLines = rows.mapNotNullTo(mutableSetOf()) { it.timecardId }
         ZillitButton(
-            text = str(S.desktop_payroll_post_count, state.run.timecards.count { Journal.isPostable(it.status) }),
+            text = str(
+                S.desktop_payroll_post_count,
+                state.run.timecards.count { it.id in withLines && Journal.isPostable(it.status) },
+            ),
             onClick = { onEvent(JournalEvent.Post) },
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.Send,
@@ -206,6 +212,9 @@ private fun JournalTable(state: PayrollUiState, rows: List<JournalRow>, onEvent:
         rows.filter { it.timecardId in withoutTax }.groupBy { it.timecardId }
             .values.mapNotNull { it.lastOrNull()?.id }.toSet()
     }
+    // Company groups fold away, as the web's do; a refused post opens them all onto its red cells.
+    var collapsed by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(state.run.journal.expandSignal) { collapsed = emptySet() }
     BoxWithConstraints(
         Modifier.fillMaxSize().padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
     ) {
@@ -224,9 +233,16 @@ private fun JournalTable(state: PayrollUiState, rows: List<JournalRow>, onEvent:
                 HeaderLine()
                 ZillitLazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
                     groups.forEach { (title, list) ->
-                        item(key = "group-$title") { GroupLine(title, list.size) }
-                        items(list, key = { it.id }) { row ->
-                            JournalLine(state, row, row.id in taxAnchors, onEvent)
+                        val isCollapsed = title in collapsed
+                        item(key = "group-$title") {
+                            GroupLine(title, list.size, isCollapsed) {
+                                collapsed = if (isCollapsed) collapsed - title else collapsed + title
+                            }
+                        }
+                        if (!isCollapsed) {
+                            items(list, key = { it.id }) { row ->
+                                JournalLine(state, row, row.id in taxAnchors, onEvent)
+                            }
                         }
                     }
                 }
@@ -266,12 +282,19 @@ private fun Header(text: String, modifier: Modifier, align: TextAlign = TextAlig
 }
 
 @Composable
-private fun GroupLine(title: String, count: Int) {
+private fun GroupLine(title: String, count: Int, collapsed: Boolean, onToggle: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(ZillitTheme.colors.canvas)
+            .clickable(onClick = onToggle)
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        ZillitIcon(
+            icon = if (collapsed) ZillitIcons.ChevronRight else ZillitIcons.ChevronDown,
+            size = LOCK_ICON,
+            tint = ZillitTheme.colors.textMuted,
+        )
+        Spacer(Modifier.width(ZillitTheme.spacing.xs))
         ZillitText(text = title, style = ZillitTheme.typography.titleSmall, modifier = Modifier.weight(1f))
         ZillitText(
             text = str(S.desktop_payroll_lines_count, count),
@@ -310,12 +333,11 @@ private fun JournalLine(
         ) {
             DescriptionCell(row, edit, editable, Modifier.weight(1f), onEvent)
             CodeCell(row, code, editable, flagged, state.metadata.chart, onEvent)
-            ZillitTextField(
+            ZillitDateField(
                 value = date,
                 onValueChange = { onEvent(JournalEvent.Date(row.id, it)) },
-                placeholder = "YYYY-MM-DD",
                 enabled = editable,
-                errorText = if (flagged && date.isBlank()) str(S.docusign_field_edit_required) else null,
+                errorText = if (flagged && !Journal.hasDate(row, edit)) str(S.docusign_field_edit_required) else null,
                 modifier = Modifier.width(DATE_WIDTH),
             )
             LayersCell(
@@ -689,10 +711,9 @@ private fun SplitLine(
                 modifier = Modifier.width(CODE_WIDTH),
             ) { onEvent(JournalEvent.SplitCode(row.id, child.id, it)) }
         }
-        ZillitTextField(
+        ZillitDateField(
             value = child.effectiveDate.orEmpty(),
             onValueChange = { onEvent(JournalEvent.SplitDate(row.id, child.id, it)) },
-            placeholder = "YYYY-MM-DD",
             enabled = editable,
             modifier = Modifier.width(DATE_WIDTH),
         )
@@ -871,14 +892,14 @@ internal fun JournalPostDialog(state: PayrollUiState, onEvent: (PayrollEvent) ->
 
 private val HEADER_DATE_WIDTH = 170.dp
 /** Description + code + date + layers + tags + tax + both money columns + actions. */
-private val TABLE_MIN_WIDTH = 1464.dp
+private val TABLE_MIN_WIDTH = 1484.dp
 private val LAYERS_WIDTH = 150.dp
 private val TAGS_WIDTH = 150.dp
 private val TAX_WIDTH = 190.dp
 private val ACTIONS_WIDTH = 210.dp
 private val CODE_WIDTH = 170.dp
 private val CODE_MENU_WIDTH = 300.dp
-private val DATE_WIDTH = 140.dp
+private val DATE_WIDTH = 160.dp
 private val AMOUNT_WIDTH = 120.dp
 private val LOCK_ICON = 14.dp
 private val DIALOG_WIDTH = 520.dp

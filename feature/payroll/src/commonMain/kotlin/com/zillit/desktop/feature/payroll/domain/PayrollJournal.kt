@@ -392,6 +392,13 @@ object Journal {
 
     fun dateOf(row: JournalRow, edit: JournalEdit?): String? = edit?.effectiveDate ?: row.effectiveDate
 
+    /**
+     * Whether the row carries a date a post can send. The web's date input can only hold a real day or
+     * nothing; the text typed here can be anything, and a half-typed `2026-1` must not read as filled.
+     */
+    fun hasDate(row: JournalRow, edit: JournalEdit?): Boolean =
+        dateOf(row, edit)?.trim()?.let { PayPeriod.parseIsoDate(it) != null } == true
+
     /** Sums the rows on screen, each on its own side; a null amount is nothing. */
     fun balance(rows: List<JournalRow>, edits: Map<String, JournalEdit>): JournalBalance {
         var debit = 0.0
@@ -415,7 +422,7 @@ object Journal {
         rows.filter { it.timecardId == null || it.timecardId in postable }.mapNotNull { row ->
             val edit = edits[row.id]
             val missingCode = codeOf(row, edit).isBlank()
-            val missingDate = dateOf(row, edit).isNullOrBlank()
+            val missingDate = !hasDate(row, edit)
             if (!missingCode && !missingDate) return@mapNotNull null
             IncompleteLine(row.description.ifBlank { row.label.ifBlank { row.code } }, missingCode, missingDate)
         }

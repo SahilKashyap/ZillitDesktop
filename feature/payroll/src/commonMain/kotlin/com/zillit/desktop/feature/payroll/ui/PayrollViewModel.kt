@@ -118,6 +118,7 @@ class PayrollViewModel(
 
     /** The rights and the crew land after the production opens; only those change here. */
     fun onRightsChanged() {
+        refreshClock()
         val resolved = viewer()
         val crew = people()
         setState {
@@ -242,7 +243,18 @@ class PayrollViewModel(
         }
     }
 
+    /**
+     * Today and the current week come from [PayrollUiState.now], which `start` read once; a window left open
+     * past midnight would otherwise keep offering yesterday. Read again on each event, once a minute has
+     * passed, so the state is not rewritten by every click.
+     */
+    private fun refreshClock() {
+        val clock = now()
+        if (clock - currentState.now >= CLOCK_STEP_MILLIS) setState { copy(now = clock) }
+    }
+
     override fun onEvent(event: PayrollEvent) {
+        refreshClock()
         when (event) {
             is HistoryEvent -> history.onEvent(event)
             is RunEvent -> run.onEvent(event)
@@ -297,5 +309,7 @@ class PayrollViewModel(
     companion object {
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+
+        private const val CLOCK_STEP_MILLIS = 60_000L
     }
 }

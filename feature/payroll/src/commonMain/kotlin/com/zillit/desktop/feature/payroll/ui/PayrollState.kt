@@ -219,6 +219,8 @@ data class JournalState(
     val alert: JournalAlert? = null,
     /** Rows whose missing fields are drawn red after a refused post. */
     val flagged: Set<String> = emptySet(),
+    /** Bumped by a refused post so every collapsed company group opens onto its red cells. */
+    val expandSignal: Int = 0,
     /** The production's tracking sets and account tags, for the Layers and Tags cells. */
     val reference: JournalReference = JournalReference(),
     /**
