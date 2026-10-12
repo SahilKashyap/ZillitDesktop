@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.drive.ui.DrivePreviewHost
 import com.zillit.desktop.feature.drive.ui.DriveUploader
 import com.zillit.desktop.feature.drive.ui.PickedFile
 import com.zillit.desktop.feature.drive.ui.UploadTarget
+import com.zillit.desktop.feature.drive.ui.archiveMimeType
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -88,7 +89,8 @@ internal class DriveFilePicker {
             path = file.absolutePath,
             name = file.name,
             sizeBytes = file.length(),
-            mimeType = URLConnection.guessContentTypeFromName(file.name)
+            mimeType = archiveMimeType(file.name)
+                ?: URLConnection.guessContentTypeFromName(file.name)
                 ?: "application/octet-stream",
         )
     }
@@ -331,4 +333,4 @@ private const val WRITE_SLICE = 256 * 1024
 
 /** The shared picker's path onto Drive's own row. */
 internal fun com.zillit.desktop.core.media.PickedPath.toDrivePick() =
-    PickedFile(path = path, name = name, sizeBytes = sizeBytes, mimeType = contentType)
+    PickedFile(path = path, name = name, sizeBytes = sizeBytes, mimeType = archiveMimeType(name) ?: contentType)

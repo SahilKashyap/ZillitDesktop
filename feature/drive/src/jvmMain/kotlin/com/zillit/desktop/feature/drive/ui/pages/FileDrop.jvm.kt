@@ -12,6 +12,7 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import com.zillit.desktop.feature.drive.ui.PickedFile
+import com.zillit.desktop.feature.drive.ui.archiveMimeType
 import java.awt.datatransfer.DataFlavor
 import java.io.File
 import java.net.URLConnection
@@ -68,7 +69,7 @@ internal fun File.describe(relativePath: String): PickedFile = PickedFile(
     path = absolutePath,
     name = name,
     sizeBytes = length(),
-    mimeType = URLConnection.guessContentTypeFromName(name) ?: FALLBACK_TYPE,
+    mimeType = archiveMimeType(name) ?: URLConnection.guessContentTypeFromName(name) ?: FALLBACK_TYPE,
     relativePath = relativePath,
 )
 
