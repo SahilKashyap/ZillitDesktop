@@ -320,13 +320,13 @@ internal fun BalanceBar(state: BankRecUiState, view: WorkspaceView, onEvent: () 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Balance(str(S.desktop_br_opening_bank), BankRecFormat.plainMoney(period.openingBank, view.statementCurrency))
+        Balance(str(S.desktop_br_opening_bank), BankRecFormat.money(period.openingBank, view.statementCurrency))
         ZillitText("→", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
-        Balance(str(S.desktop_br_closing_bank), BankRecFormat.plainMoney(period.closingBank, view.statementCurrency))
+        Balance(str(S.desktop_br_closing_bank), BankRecFormat.money(period.closingBank, view.statementCurrency))
         ZillitText("|", style = ZillitTheme.typography.bodySmall, color = colors.border)
         Balance(
             str(S.desktop_br_closing_zillit),
-            BankRecFormat.plainMoney(state.workspace.closingZillit ?: period.closingZillit, state.projectCurrency),
+            BankRecFormat.money(state.workspace.closingZillit ?: period.closingZillit, state.projectCurrency),
         )
         Spacer(Modifier.weight(1f))
         val fraud = view.counts.fraud

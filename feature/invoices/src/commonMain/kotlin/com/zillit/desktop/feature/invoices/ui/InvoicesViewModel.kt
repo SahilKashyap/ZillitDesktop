@@ -390,8 +390,10 @@ class InvoicesViewModel(
         val s = currentState
         val row = s.invoices.firstOrNull { it.id == id } ?: return true
         if (id in s.selected) return true
-        // The Inbox ticks a closed-period row like any other (`InboxPage.jsx:433-434`).
-        if (s.isAccountant && s.page == AccountantPage.Inbox) return true
+        // The Inbox ticks a closed-period row like any other (`InboxPage.jsx:433-434`),
+        // and so does Pre-approval, which has no lock logic (`MatchingPage.jsx:433-439`):
+        // select-all there already takes every waiting row, so a single tick agrees.
+        if (s.isAccountant && (s.page == AccountantPage.Inbox || s.page == AccountantPage.Matching)) return true
         if (s.isLocked(row)) return false
         return s.page != AccountantPage.Entry || s.canAccessEntry(row)
     }

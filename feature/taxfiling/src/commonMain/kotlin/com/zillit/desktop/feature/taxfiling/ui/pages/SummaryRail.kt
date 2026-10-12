@@ -267,7 +267,7 @@ private fun RailActions(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> Un
             size = MtdButtonSize.Large,
             icon = ZillitIcons.Calculator,
             loading = returnState.calculating,
-            enabled = period != null && !returnState.savingMapping,
+            enabled = period != null && !returnState.savingMapping && returnState.mappingLoaded,
             full = true,
         )
         MtdButton(

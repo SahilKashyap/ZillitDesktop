@@ -111,6 +111,11 @@ data class ReturnState(
     /** The company's boxes as edited on screen; a box with no entry is unmapped. */
     val mappings: Map<VatBox, BoxMapping> = emptyMap(),
     val mappingLoading: Boolean = false,
+    /**
+     * The saved boxes were read. The map is saved by replacement, so Save and
+     * Calculate on a map that never loaded would PUT an empty list and wipe it.
+     */
+    val mappingLoaded: Boolean = false,
     val savingMapping: Boolean = false,
     /** Which accordion rows are open. Box 1 starts open, as on the web. */
     val expanded: Set<VatBox> = setOf(VatBox.DueOnSales),

@@ -187,6 +187,8 @@ private fun AppGraph.Ready.bankRecLookups(): BankRecLookups = object : BankRecLo
         return CompanyDetails(
             projectName = project?.name.orEmpty(),
             companyName = project?.companyName.orEmpty(),
+            companyAddress = project?.companyAddress.orEmpty(),
+            companyEmail = project?.companyEmail.orEmpty(),
         )
     }
 }

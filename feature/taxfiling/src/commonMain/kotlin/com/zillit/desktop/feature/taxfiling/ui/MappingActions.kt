@@ -43,7 +43,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
         vm.request({ vm.repository.boxMap(registration.companyId) }, { rows ->
             if (!isOpen(registration.id)) return@request
             val byBox = rows.mapNotNull { row -> VatBox.bySlot(row.box)?.let { it to row } }.toMap()
-            vm.update { copy(returnState = returnState.copy(mappings = byBox, mappingLoading = false)) }
+            vm.update { copy(returnState = returnState.copy(mappings = byBox, mappingLoading = false, mappingLoaded = true)) }
         }, { error ->
             if (isOpen(registration.id)) vm.update { copy(returnState = returnState.copy(mappingLoading = false)) }
             vm.fail(error)
@@ -107,7 +107,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     private fun save() {
         val state = vm.current.returnState
         val registration = state.registration ?: return
-        if (state.savingMapping || state.calculating || refuseInvalidDates(state)) return
+        if (state.savingMapping || state.calculating || !state.mappingLoaded || refuseInvalidDates(state)) return
         vm.update { copy(returnState = returnState.copy(savingMapping = true)) }
         vm.request({ vm.repository.saveBoxMap(registration.companyId, state.mappingRows) }, {
             if (isOpen(registration.id)) vm.update { copy(returnState = returnState.copy(savingMapping = false)) }
@@ -127,7 +127,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     private fun calculate() {
         val state = vm.current.returnState
         val registration = state.registration ?: return
-        if (state.calculating || state.savingMapping) return
+        if (state.calculating || state.savingMapping || !state.mappingLoaded) return
         if (state.periodKey.isBlank()) return vm.info(str(S.desktop_tax_select_period_first))
         if (refuseInvalidDates(state)) return
         val rows = state.mappingRows

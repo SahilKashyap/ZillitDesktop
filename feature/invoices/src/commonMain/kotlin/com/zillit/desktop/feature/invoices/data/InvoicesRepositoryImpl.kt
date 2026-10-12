@@ -194,7 +194,7 @@ class InvoicesRepositoryImpl(
             .mapData { parseRule(it) ?: rule.copy(persisted = true) }
 
     override suspend fun updateRule(rule: InvoiceAssignmentRule): ZillitResult<InvoiceAssignmentRule> =
-        mutate(HttpVerb.Patch, "${hub}account-hub/assignment-rules/${'$'}{rule.id}", ruleBody(rule))
+        mutate(HttpVerb.Patch, "${hub}account-hub/assignment-rules/${rule.id}", ruleBody(rule))
             .mapData { parseRule(it) ?: rule }
 
     override suspend fun deleteRule(id: String): ZillitResult<Unit> =

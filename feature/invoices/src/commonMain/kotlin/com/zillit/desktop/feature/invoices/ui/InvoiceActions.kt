@@ -106,7 +106,9 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         val s = vm.state.value
         // The department board hands its detail no override at all
         // (`DepartmentInvoiceModule.jsx:1246-1277`), whatever the reader's rights.
-        if (!s.isAccountant || !s.viewer.canOverride || s.isLocked(invoice) || readOnlyDetail(invoice)) return
+        // Pre-approval has no period lock on its Override either (`MatchingPage.jsx:567-576`).
+        val locked = s.isLocked(invoice) && s.page != AccountantPage.Matching
+        if (!s.isAccountant || !s.viewer.canOverride || locked || readOnlyDetail(invoice)) return
         val fromQueue = vm.onApprovalQueue
         vm.update { copy(busy = true, detail = detail?.copy(acting = true)) }
         vm.run { finish(vm.repo.overrideWithMessage(invoice.id), invoice.id, success, fromQueue) }
