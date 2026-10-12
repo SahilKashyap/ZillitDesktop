@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardDestination
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.InboxEvent
+import com.zillit.desktop.feature.cardexpenses.ui.ReceiptDetailSource
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptBadgeRule
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptDetailView
 
@@ -27,11 +28,10 @@ import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptDetailView
  */
 @Composable
 fun InboxDialogs(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    // The shared receipt detail belongs to whichever page opened it.
+    ReceiptDetailDialog(state, onEvent)
     when (state.destination) {
-        CardDestination.ReceiptInbox -> {
-            ReceiptDetailDialog(state, onEvent)
-            ManualMatchDialog(state, onEvent)
-        }
+        CardDestination.ReceiptInbox -> ManualMatchDialog(state, onEvent)
 
         CardDestination.ImportStatement -> ImportStatementDialog(state, onEvent)
         CardDestination.AllTransactions -> {
@@ -43,7 +43,13 @@ fun InboxDialogs(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     }
 }
 
-/** The inbox's receipt detail: the reconciliation badge, and Query for the accountant. */
+/**
+ * The shared read-only receipt detail (`ReceiptDetailModal.jsx`), whoever
+ * opened it: the inbox (reconciliation badge, Query), a card's receipts, My
+ * Transactions (Edit), the accountant's Approval Queue (Reject / Approve /
+ * Override) and the cardholder's (Reject / Approve). Query is off in both
+ * approval queues (ZL-20913).
+ */
 @Composable
 private fun ReceiptDetailDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val open = state.inbox.detail ?: return
@@ -51,15 +57,31 @@ private fun ReceiptDetailDialog(state: CardUiState, onEvent: (CardEvent) -> Unit
         detail = open.detail,
         people = state.people,
         loading = open.loading,
-        badgeRule = ReceiptBadgeRule.Inbox,
-        isTelevision = state.viewer.isTelevision,
+        badgeRule = when (open.source) {
+            ReceiptDetailSource.Inbox -> ReceiptBadgeRule.Inbox
+            ReceiptDetailSource.MyTransactions -> ReceiptBadgeRule.Crew
+            else -> ReceiptBadgeRule.Workflow
+        },
+        isTelevision = state.viewer.isTelevision || state.crew.isTelevision,
         media = open.media,
         onOpenMedia = { onEvent(CardEvent.ViewReceipt(it.key)) },
         history = open.history,
+        allowQuery = open.source.allowQuery,
         onClose = { onEvent(InboxEvent.CloseDetail) },
         onShowHistory = { onEvent(InboxEvent.ShowHistory) },
         onHideHistory = { onEvent(InboxEvent.HideHistory) },
         onQuery = { onEvent(CardEvent.OpenQuery(open.receiptId)) },
+        actions = {
+            when (open.source) {
+                ReceiptDetailSource.ApprovalQueue ->
+                    ApprovalDetailActions(state, open.detail.receipt, open.loading, onEvent)
+
+                ReceiptDetailSource.CrewApproval, ReceiptDetailSource.MyTransactions ->
+                    CrewReceiptActions(state, open, onEvent)
+
+                else -> Unit
+            }
+        },
     )
 }
 

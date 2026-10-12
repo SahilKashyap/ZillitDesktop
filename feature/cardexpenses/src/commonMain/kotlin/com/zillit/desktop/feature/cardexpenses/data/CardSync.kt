@@ -30,6 +30,12 @@ import kotlinx.coroutines.flow.map
  * `accountHubListeners.js:1535-1549` also refetches the top-up list on
  * `card:topup:completed|partial|skipped`, and its receipt family carries
  * `awaiting_approval` and `escalated`; those five were added 2026-09-24.
+ *
+ * The three bulk verbs — `batch:submitted|approved|posted` — are the one
+ * exception to the `card:` prefix (`accountHubListeners.js:1478-1495`: "Card-namespaced
+ * bulk event (cash bulk uses `cash:batch:*`, no collision)"): a bulk submit,
+ * approval or post moves many receipts at once and is exactly the burst a
+ * queue left open must follow.
  */
 val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:activated", "card:alert:created",
@@ -59,6 +65,7 @@ val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:transaction:rejected", "card:transaction:updated",
     "card:transactions:submitted_to_users", "card:transactions:submitted_to_users:accountants",
     "card:updated", "card:updated_by_accountant",
+    "batch:submitted", "batch:approved", "batch:posted",
 ).map(::SocketEventName)
 
 /**

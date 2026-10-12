@@ -5,12 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -24,9 +25,11 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
+import com.zillit.desktop.feature.cardexpenses.domain.storedMedia
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CrewEvent
+import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptMediaPanel
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
@@ -137,7 +140,12 @@ internal fun CodeReceiptDialog(state: CardUiState, onEvent: (CardEvent) -> Unit)
             if (receipt.urgent) UrgentPill()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            ReceiptFilePane(receipt, onEvent, Modifier.width(PANE_WIDTH).heightIn(min = PANE_HEIGHT))
+            ReceiptMediaPanel(
+                stored = receipt.storedMedia,
+                media = open.media,
+                onOpen = { onEvent(CardEvent.ViewReceipt(it.key)) },
+                modifier = Modifier.width(PANE_WIDTH).height(PANE_HEIGHT).clip(ZillitTheme.shapes.large),
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -194,5 +202,5 @@ internal fun CodeReceiptDialog(state: CardUiState, onEvent: (CardEvent) -> Unit)
 }
 
 private val CODE_WIDTH = 780.dp
-private val PANE_WIDTH = 260.dp
-private val PANE_HEIGHT = 300.dp
+private val PANE_WIDTH = 280.dp
+private val PANE_HEIGHT = 380.dp

@@ -1,6 +1,11 @@
 package com.zillit.desktop.feature.cardexpenses.domain
 
 import com.zillit.desktop.core.common.MessageElement
+import com.zillit.desktop.core.common.currencyCode
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 
 /**
  * The register's own rules — search, the approval-chain walk, the tile badge,
@@ -186,7 +191,25 @@ data class ConvertedTotal(
 enum class CapSource { Max, Weekly, Fallback }
 
 /** A requester's weekly rate on their active deal, in its own currency. */
-data class DealRate(val weekly: Double, val currency: String?)
+data class DealRate(val weekly: Double, val currency: String?) {
+    companion object {
+        /**
+         * What the cap reads off a deal (`requestCap.js resolveRequestCap`):
+         * `rates.weekly.rate`, in `rates.pay_currency` or else
+         * `rates.contract_currency`. A flat-fee or buy-out deal carries a rate
+         * of 0, which [RequestCapGuard] does not mistake for a 0 cap. Null with
+         * no deal at all.
+         */
+        fun of(deal: JsonObject?): DealRate? {
+            if (deal == null) return null
+            val rates = deal["rates"] as? JsonObject
+            val weekly = ((rates?.get("weekly") as? JsonObject)?.get("rate") as? JsonPrimitive)
+                ?.takeIf { it !is JsonNull }?.let { it.doubleOrNull ?: it.content.trim().toDoubleOrNull() }
+            val currency = rates?.get("pay_currency").currencyCode() ?: rates?.get("contract_currency").currencyCode()
+            return DealRate(weekly = weekly?.takeIf { it.isFinite() } ?: 0.0, currency = currency)
+        }
+    }
+}
 
 /** A cap, resolved: its amount (null = no cap), its source and its currency (null = the default). */
 data class ResolvedCap(val amount: Double?, val source: CapSource, val currency: String?)
@@ -234,6 +257,20 @@ object RequestCapGuard {
     /** Whether [limit] in [requestCurrency] is over an enforced cap. */
     fun exceeds(verdict: CapVerdict, limit: Double, requestCurrency: String?, reference: CardReference): Boolean =
         verdict is CapVerdict.Enforced && reference.toDefault(limit, requestCurrency) > verdict.capInDefault
+}
+
+/** The utilisation the card detail prints and colours its bar by. */
+object CardUtilisation {
+    private const val PERCENT = 100.0
+    private const val HALF = 0.5
+
+    /**
+     * `Math.round(spent / limit * 100)` (`CardDetailModal.jsx:278`): to the
+     * nearest whole percent, halves up as JavaScript rounds them — a card
+     * 99.6% spent reads 100%, not 99%. Zero for a card with no limit.
+     */
+    fun percent(spent: Double, limit: Double): Int =
+        if (limit > 0) kotlin.math.floor(spent / limit * PERCENT + HALF).toInt() else 0
 }
 
 /** A card number as typed: digits only, at most sixteen (`CardRegisterPage.jsx:1350`). */

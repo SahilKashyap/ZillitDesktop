@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,7 +25,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitDataTable
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
@@ -41,7 +39,6 @@ import com.zillit.desktop.feature.cardexpenses.domain.ProcessRules
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
-import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
@@ -133,7 +130,6 @@ fun ApprovalQueuePage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 }
             }
         }
-        ApprovalDetailDialog(state, onEvent)
         RejectDialog(state, onEvent)
     }
 }
@@ -243,74 +239,13 @@ private fun RowAction(state: CardUiState, row: CardReceipt, onEvent: (CardEvent)
 }
 
 /**
- * A row, opened: what the approver is signing off, read fresh from the
- * detail route, and the same decision as the row — Reject and Approve for the
- * next approver, Override for an override-holder, else nothing
- * (`ApprovalQueuePage.jsx:392-426`). No Query: this whole page is the queue.
+ * The shared receipt detail's footer for a row opened here: the same decision
+ * as the row — Reject and Approve for the next approver, Override for an
+ * override-holder, else a note (`ApprovalQueuePage.jsx:392-426`). No Query:
+ * this whole page is the queue.
  */
-@Suppress("LongMethod") // One dialog, the web's order.
 @Composable
-private fun ApprovalDetailDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    val receipt = state.processPages.detail ?: return
-    val loading = state.processPages.detailLoading
-    val person = state.people.firstOrNull { it.id == receipt.holderId }
-    ZillitDialogShell(
-        title = str(S.ah_receipt_details),
-        subtitle = receipt.description.ifBlank { null },
-        icon = ZillitIcons.Receipt,
-        visible = true,
-        width = DETAIL_WIDTH,
-        onDismiss = { onEvent(ProcessPageEvent.CloseDetail) },
-        actions = {
-            Spacer(Modifier.weight(1f))
-            DetailActions(state, receipt, loading, onEvent)
-        },
-    ) {
-        if (loading) {
-            Row(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md), Arrangement.Center) { ZillitSpinner() }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            DetailFact(str(S.ah_merchant), receipt.description.ifBlank { EM_DASH }, Modifier.weight(1f))
-            DetailFact(str(S.amount), money(receipt.amount, receipt.currency), Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            DetailFact(str(S.date), date(receipt.date), Modifier.weight(1f))
-            DetailFact(
-                str(S.desktop_card_card_holder),
-                listOfNotNull(
-                    state.personName(receipt.holderId, receipt.holderName),
-                    person?.designation?.takeIf { it.isNotBlank() },
-                ).joinToString(" · "),
-                Modifier.weight(1f),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            DetailFact(str(S.department), person?.department.orDash(), Modifier.weight(1f))
-            DetailFact(str(S.ah_cost_code_label), receipt.nominalCode.orDash(), Modifier.weight(1f))
-        }
-        if (state.viewer.isTelevision && !receipt.episode.isNullOrBlank()) {
-            DetailFact(str(S.episode), receipt.episode.orEmpty())
-        }
-        receipt.attachmentKey?.takeIf { it.isNotBlank() }?.let { key ->
-            ZillitButton(
-                text = str(S.desktop_card_view_receipt),
-                onClick = { onEvent(CardEvent.ViewReceipt(key)) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Eye,
-            )
-        } ?: ZillitText(
-            text = str(S.desktop_ce_process_no_receipt),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-        ApprovalProgress(state, receipt)
-    }
-}
-
-/** Reject and Approve for the next approver, Override for an override-holder, else a note. */
-@Composable
-private fun DetailActions(
+internal fun ApprovalDetailActions(
     state: CardUiState,
     receipt: CardReceipt,
     loading: Boolean,
@@ -344,34 +279,6 @@ private fun DetailActions(
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
-    }
-}
-
-/** Who has signed so far, tier by tier. */
-@Composable
-private fun ApprovalProgress(state: CardUiState, receipt: CardReceipt) {
-    if (receipt.approvals.isEmpty()) return
-    FieldGroupLabel(str(S.desktop_po_approval_progress))
-    receipt.approvals.forEach { approval ->
-        val approver = state.people.firstOrNull { it.id == approval.userId }
-        ZillitText(
-            text = listOfNotNull(
-                "✓ " + state.personName(approval.userId),
-                approver?.designation?.takeIf { it.isNotBlank() }?.let { "($it)" },
-                str(S.desktop_level_n, approval.tierNumber),
-            ).joinToString(" "),
-            style = ZillitTheme.typography.bodySmall,
-        )
-    }
-}
-
-private fun String?.orDash(): String = this?.takeIf { it.isNotBlank() } ?: EM_DASH
-
-@Composable
-private fun DetailFact(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldGroupLabel(label)
-        ZillitText(text = value, style = ZillitTheme.typography.bodyMedium)
     }
 }
 
@@ -415,5 +322,4 @@ private fun RejectDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     }
 }
 
-private val DETAIL_WIDTH = 720.dp
 private val REJECT_WIDTH = 480.dp

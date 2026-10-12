@@ -188,6 +188,7 @@ internal data class TransactionDto(
             matchStatus = MatchStatus.from(matchStatus),
             receiptId = (receiptId ?: receiptIdCamel)?.takeIf { it.isNotBlank() },
             personal = workflow == CardWorkflowStatus.Personal,
+            statusWire = status?.trim()?.takeIf { it.isNotEmpty() },
         )
     }
 }

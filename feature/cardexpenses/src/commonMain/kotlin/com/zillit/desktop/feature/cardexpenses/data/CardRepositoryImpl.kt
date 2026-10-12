@@ -44,6 +44,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
+import com.zillit.desktop.feature.cardexpenses.domain.DealRate
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptScope
@@ -117,6 +118,8 @@ class CardRepositoryImpl(
     override suspend fun cardHistory(cardId: String): ZillitResult<List<CardHistoryEntry>> =
         get("$base/cards/$cardId/history", ListSerializer(CardHistoryDto.serializer()))
             .map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun myActiveDeal(): ZillitResult<DealRate?> = deals.activeRate()
 
     override suspend fun cardReceipts(cardId: String): ZillitResult<List<CardReceipt>> =
         receiptList("$base/cards/$cardId/receipts")
@@ -331,6 +334,7 @@ class CardRepositoryImpl(
     // -- the reconciliation surfaces (see CardInboxCalls) -------------------
 
     private val inbox = CardInboxCalls(apiClient, config)
+    private val deals = CardDealCalls(apiClient, config)
 
     override suspend fun inboxReceiptDetail(receiptId: String) = inbox.receiptDetail(receiptId)
 

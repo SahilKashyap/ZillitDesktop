@@ -97,6 +97,8 @@ data class CardTransaction(
     val matchStatus: MatchStatus,
     val receiptId: String?,
     val personal: Boolean,
+    /** The status as the server spelled it — for the words [status] has no entry for. */
+    val statusWire: String? = null,
 )
 
 /** A receipt a cardholder uploaded, before or after it is matched. */

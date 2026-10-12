@@ -61,6 +61,8 @@ data class ProcessDraft(
     val gated: Boolean = true,
     /** The receipt's trail, while the History panel is open; empty while it loads. */
     val history: List<CardHistoryEntry>? = null,
+    /** The document's bytes for the inline preview, fetched once the detail has landed. */
+    val media: MediaState = MediaState(),
 ) {
     /** The editor's arithmetic, against the production's tax types. */
     fun figures(refs: ProcessRefs): ProcessFigures = ProcessFigures(
@@ -136,13 +138,10 @@ internal fun localDay(millis: Long): String =
 /**
  * The accountant's process pages — Approval Queue, Process, Bulk Process,
  * History — beyond the rows themselves: what they read besides the card
- * routes, and the approval queue's open detail and reject dialog.
+ * routes, and the approval queue's reject dialog (its detail is the shared one).
  */
 data class ProcessPagesState(
     val refs: ProcessRefs = ProcessRefs(),
-    /** The approval row opened for a closer look, and whether its detail is still coming. */
-    val detail: CardReceipt? = null,
-    val detailLoading: Boolean = false,
     /** The reject dialog: the receipt and the reason being typed. */
     val reject: RejectDraft? = null,
     /** The row whose Approve or Override is in flight. */

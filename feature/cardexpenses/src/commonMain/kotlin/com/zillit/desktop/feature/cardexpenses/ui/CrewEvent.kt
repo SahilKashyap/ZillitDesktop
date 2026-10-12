@@ -13,8 +13,6 @@ sealed interface CrewEvent : CardEvent {
 
     /** A receipt card was clicked: rejected rows open the edit, the rest the detail view. */
     data class OpenReceipt(val receiptId: String) : CrewEvent
-    data object CloseDetail : CrewEvent
-    data object ToggleDetailHistory : CrewEvent
 
     /** Edit Receipt, from a card's Upload Receipt button or the detail view. */
     data class OpenEdit(val receiptId: String) : CrewEvent
@@ -44,6 +42,9 @@ sealed interface CrewEvent : CardEvent {
 
     data class ShowApprovalTab(val tab: CrewApprovalTab) : CrewEvent
     data class OpenApprovalCard(val cardId: String?) : CrewEvent
+
+    /** Opens (or closes) the open card request's History panel. */
+    data class ShowApprovalCardHistory(val open: Boolean) : CrewEvent
     data class ApproveCard(val cardId: String) : CrewEvent
     data class OpenApprovalReceipt(val receiptId: String) : CrewEvent
     data class ApproveReceipt(val receiptId: String) : CrewEvent

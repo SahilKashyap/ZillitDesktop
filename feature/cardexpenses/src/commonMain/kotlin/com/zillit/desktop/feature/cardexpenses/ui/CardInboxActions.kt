@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ImportedRow
 import com.zillit.desktop.feature.cardexpenses.domain.InboxWrite
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptDetail
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptMedia
 import com.zillit.desktop.feature.cardexpenses.domain.StatementCurrencyOptions
 import com.zillit.desktop.feature.cardexpenses.domain.StatementFile
 import com.zillit.desktop.feature.cardexpenses.domain.TransactionSelection
@@ -41,7 +42,7 @@ internal class CardInboxActions(
             }
 
             is InboxEvent.OpenDetail -> openDetail(event.receiptId)
-            InboxEvent.CloseDetail -> edit { copy(detail = null) }
+            InboxEvent.CloseDetail -> close()
             InboxEvent.ShowHistory -> showHistory()
             InboxEvent.HideHistory -> edit { copy(detail = detail?.copy(history = null)) }
 
@@ -150,14 +151,20 @@ internal class CardInboxActions(
 
     // -- inbox -----------------------------------------------------------------
 
-    /**
-     * Opens the detail on the slim row and reads the full one
-     * (`ReceiptInboxPage.jsx:324-336`). Only the newest open may write: a
-     * reply for a receipt already closed or replaced is dropped.
-     */
     private fun openDetail(receiptId: String) {
         val row = vm.current.receipts.firstOrNull { it.id == receiptId } ?: return
-        edit { copy(detail = ReceiptDetailState(receiptId, ReceiptDetail.of(row))) }
+        open(row, ReceiptDetailSource.Inbox)
+    }
+
+    /**
+     * Opens the shared detail on the slim [row] and reads the full one
+     * (`ReceiptInboxPage.jsx:324-336`) — for any page that shows a receipt,
+     * [source] telling the view whose it is. Only the newest open may write:
+     * a reply for a receipt already closed or replaced is dropped.
+     */
+    fun open(row: CardReceipt, source: ReceiptDetailSource) {
+        val receiptId = row.id
+        edit { copy(detail = ReceiptDetailState(receiptId, ReceiptDetail.of(row), source = source)) }
         vm.readRow(CardRowReads.detail(vm.current.destination), receiptId)
         vm.run {
             val read = vm.repo.inboxReceiptDetail(receiptId)
@@ -176,20 +183,30 @@ internal class CardInboxActions(
         }
     }
 
+    /** Closes the shared detail, whoever opened it. */
+    fun close() = edit { copy(detail = null) }
+
     private suspend fun loadMedia(receiptId: String) {
         val media = vm.current.inbox.detail?.detail?.media ?: return
-        val store = host ?: return
+        if (host == null) return
         editDetail(receiptId) { copy(media = MediaState(loading = true)) }
-        val fetched = store.media(media)
-        editDetail(receiptId) {
-            copy(
-                media = when (fetched) {
-                    is ZillitResult.Success -> MediaState(bytes = fetched.data)
-                    is ZillitResult.Failure -> MediaState(failed = true)
-                },
-            )
-        }
+        val fetched = fetchMedia(media)
+        editDetail(receiptId) { copy(media = fetched) }
     }
+
+    /**
+     * A document's bytes for an inline preview, as the pane holds them; the
+     * caller shows its own spinner meanwhile. Without a document store the
+     * pane reads as the file, not as a failure — an empty state.
+     */
+    suspend fun fetchMedia(media: ReceiptMedia): MediaState = when (val fetched = host?.media(media)) {
+        null -> MediaState()
+        is ZillitResult.Success -> MediaState(bytes = fetched.data)
+        is ZillitResult.Failure -> MediaState(failed = true)
+    }
+
+    /** Whether this build can fetch a document at all — the host's store is optional. */
+    val canPreview: Boolean get() = host != null
 
     /** The trail, read when History is pressed — not with the detail. */
     private fun showHistory() {

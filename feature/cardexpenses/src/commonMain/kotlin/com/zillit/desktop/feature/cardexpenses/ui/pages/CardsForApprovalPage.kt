@@ -48,6 +48,8 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CrewApprovalTab
 import com.zillit.desktop.feature.cardexpenses.ui.CrewEvent
+import com.zillit.desktop.feature.cardexpenses.ui.HistoryState
+import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.PersonCell
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -372,12 +374,14 @@ private fun ApprovalChain(state: CardUiState, card: ExpenseCard, chain: List<Lis
 
 /**
  * A card request opened from the queue, taking over the page (`:213-239`):
- * the whole request, its chain, and Reject / Approve for the next approver.
+ * the whole request, its chain, its provider, and Reject / Approve for the
+ * next approver. History opens beside it, as the shared card detail's does.
  * Closes on its own once the request leaves the queue.
  */
 @Composable
 private fun ApprovalCardDetail(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
     val (chain, step) = state.step(card)
+    val history = state.crew.approvalCardHistory
     CrewScrollPage {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -393,16 +397,53 @@ private fun ApprovalCardDetail(state: CardUiState, card: ExpenseCard, onEvent: (
                 style = ZillitTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
             )
+            ZillitButton(
+                text = str(S.history),
+                onClick = { onEvent(CrewEvent.ShowApprovalCardHistory(open = history == null)) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Clock,
+            )
             if (step.canApprove) ApprovalButtons(state, card, onEvent)
         }
-        CrewTile(modifier = Modifier.widthIn(max = DETAIL_MAX)) {
-            CardSummary(state, card, chain, step)
-            val department = state.people.firstOrNull { it.id == card.holderId }?.department
-            if (!department.isNullOrBlank()) CrewField(str(S.department), department)
-            card.justification?.takeIf { it.isNotBlank() }?.let {
-                CrewField(str(S.desktop_card_justification), it)
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Top) {
+            CrewTile(modifier = Modifier.widthIn(max = DETAIL_MAX).weight(1f, fill = false)) {
+                CardSummary(state, card, chain, step)
+                val department = state.people.firstOrNull { it.id == card.holderId }?.department
+                if (!department.isNullOrBlank()) CrewField(str(S.department), department)
+                // By the card's own provider id alone — never the issuing bank (`CardDetailModal.jsx:279-283`).
+                val provider = state.providers.firstOrNull { it.id == card.providerId }?.name
+                CrewField(str(S.desktop_ce_cards_card_provider), provider ?: "—")
+                card.justification?.takeIf { it.isNotBlank() }?.let {
+                    CrewField(str(S.desktop_card_justification), it)
+                }
+                card.createdAt?.let { CrewField(str(S.txt_submitted), date(it)) }
             }
-            card.createdAt?.let { CrewField(str(S.txt_submitted), date(it)) }
+            if (history != null) CardHistoryTile(history, onEvent)
+        }
+    }
+}
+
+/** The request's trail beside it, closed by its own X (`CardDetailModal`'s "Card History" panel). */
+@Composable
+private fun CardHistoryTile(history: HistoryState, onEvent: (CardEvent) -> Unit) {
+    CrewTile(modifier = Modifier.width(HISTORY_WIDTH)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(
+                text = str(S.desktop_ce_cards_card_history),
+                style = ZillitTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitIconButton(
+                icon = ZillitIcons.Close,
+                contentDescription = str(S.close),
+                onClick = { onEvent(CrewEvent.ShowApprovalCardHistory(open = false)) },
+            )
+        }
+        if (history.loading) {
+            CenteredNote(str(S.ah_loading))
+        } else {
+            CardHistoryTrail(entries = history.entries, emptyMessage = str(S.desktop_card_no_history_yet))
         }
     }
 }
@@ -461,6 +502,7 @@ private val STEP_WIDTH = 72.dp
 private val STEP_DOT = 26.dp
 private val STEP_RULE = 24.dp
 private val DETAIL_MAX = 720.dp
+private val HISTORY_WIDTH = 320.dp
 private val REJECT_WIDTH = 480.dp
 private val REASON_HEIGHT = 110.dp
 private const val HOLDER_WEIGHT = 1.5f

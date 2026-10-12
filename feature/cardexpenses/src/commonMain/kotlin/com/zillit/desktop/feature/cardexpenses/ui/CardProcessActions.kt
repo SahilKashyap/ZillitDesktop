@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ReceiptAssignment
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptScope
 import com.zillit.desktop.feature.cardexpenses.domain.TaxLineWire
 import com.zillit.desktop.feature.cardexpenses.domain.TopUpMethod
+import com.zillit.desktop.feature.cardexpenses.domain.storedMedia
 
 /**
  * The accountant's process pages and the process editor — the web's
@@ -75,7 +76,7 @@ internal class CardProcessActions(
             is ProcessPageEvent.ApproveRow -> approve(event.receiptId)
             is ProcessPageEvent.OverrideRow -> override(event.receiptId)
             is ProcessPageEvent.OpenDetail -> openDetail(event.receiptId)
-            ProcessPageEvent.CloseDetail -> pages { copy(detail = null, detailLoading = false) }
+            ProcessPageEvent.CloseDetail -> vm.inboxActions.close()
             is ProcessPageEvent.AskReject -> askReject(event.receiptId)
             is ProcessPageEvent.EditRejectReason -> pages { copy(reject = reject?.copy(reason = event.reason)) }
             ProcessPageEvent.CancelReject -> pages { copy(reject = null) }
@@ -172,8 +173,11 @@ internal class CardProcessActions(
             val detail = vm.repo.receiptDetail(receiptId)
             if (vm.current.process?.receipt?.id != receiptId) return@run
             when (detail) {
-                is ZillitResult.Success -> vm.update {
-                    copy(process = ProcessDraft.of(detail.data, mode, loading = false, today(), lock, gated))
+                is ZillitResult.Success -> {
+                    vm.update {
+                        copy(process = ProcessDraft.of(detail.data, mode, loading = false, today(), lock, gated))
+                    }
+                    loadMedia(receiptId)
                 }
 
                 is ZillitResult.Failure -> {
@@ -182,6 +186,19 @@ internal class CardProcessActions(
                 }
             }
         }
+    }
+
+    /** The receipt's document for the editor's preview pane (`ReceiptPreviewPane`), as the inbox detail loads it. */
+    private suspend fun loadMedia(receiptId: String) {
+        val media = vm.current.process?.receipt?.takeIf { it.id == receiptId }?.storedMedia ?: return
+        if (!vm.inboxActions.canPreview) return
+        setMedia(receiptId, MediaState(loading = true))
+        setMedia(receiptId, vm.inboxActions.fetchMedia(media))
+    }
+
+    /** Only while the editor is still on [receiptId]: a late answer for a closed one is dropped. */
+    private fun setMedia(receiptId: String, media: MediaState) = vm.update {
+        copy(process = process?.takeIf { it.receipt.id == receiptId }?.copy(media = media) ?: process)
     }
 
     /** The History panel: the receipt's trail, read when it opens. */
@@ -330,7 +347,7 @@ internal class CardProcessActions(
     /** The receipt as freshest known: the open detail when it is this one, else the row. */
     private fun receipt(id: String): CardReceipt? {
         val state = vm.current
-        return state.processPages.detail?.takeIf { it.id == id && !state.processPages.detailLoading }
+        return state.inbox.detail?.takeIf { it.receiptId == id && !it.loading }?.detail?.receipt
             ?: state.receipts.firstOrNull { it.id == id }
     }
 
@@ -358,7 +375,8 @@ internal class CardProcessActions(
     }
 
     private fun row(id: String, notice: String, block: suspend () -> ZillitResult<Unit>) {
-        pages { copy(acting = id, detail = null, detailLoading = false) }
+        pages { copy(acting = id) }
+        vm.inboxActions.close()
         vm.run {
             val result = block()
             pages { copy(acting = null) }
@@ -374,30 +392,21 @@ internal class CardProcessActions(
     }
 
     /**
-     * A row opened for a closer look: at once with the row, then the full
-     * detail (`ApprovalQueuePage.jsx:283-296`). A failed read keeps the row.
+     * A row opened for a closer look: the shared receipt detail, at once on
+     * the row and then the full read (`ApprovalQueuePage.jsx:283-296`). A
+     * failed read keeps the row.
      */
     private fun openDetail(id: String) {
         val row = vm.current.receipts.firstOrNull { it.id == id } ?: return
-        pages { copy(detail = row, detailLoading = true) }
-        vm.readRow(CardRowReads.detail(vm.current.destination), id)
-        vm.run {
-            val read = vm.repo.receiptDetail(id)
-            pages {
-                if (detail?.id != id) {
-                    this
-                } else {
-                    copy(detail = (read as? ZillitResult.Success)?.data ?: detail, detailLoading = false)
-                }
-            }
-        }
+        vm.inboxActions.open(row, ReceiptDetailSource.ApprovalQueue)
     }
 
     private fun askReject(id: String) {
         val viewer = vm.current.viewer
         val receipt = receipt(id) ?: return
         if (!isNextApprover(viewer, receipt)) return refuse()
-        pages { copy(reject = RejectDraft(receipt), detail = null, detailLoading = false) }
+        pages { copy(reject = RejectDraft(receipt)) }
+        vm.inboxActions.close()
     }
 
     private fun reject() {
@@ -582,7 +591,6 @@ internal suspend fun CardExpensesViewModel.readProcessPage(destination: CardDest
             receipts = list,
             processPages = processPages.copy(
                 refs = refs,
-                detail = processPages.detail.takeIf { destination == CardDestination.ApprovalQueue },
                 reject = processPages.reject.takeIf { destination == CardDestination.ApprovalQueue },
             ),
         )

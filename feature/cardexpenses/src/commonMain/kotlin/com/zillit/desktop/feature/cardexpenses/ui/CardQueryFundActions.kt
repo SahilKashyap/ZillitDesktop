@@ -5,6 +5,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
+import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cardexpenses.domain.FundRequestDraft
 import com.zillit.desktop.feature.cardexpenses.domain.QueryThread
@@ -61,17 +62,23 @@ internal class CardQueryFundActions(
 
     /** An accountant, or the receipt's own holder answering. */
     private fun mayQuery(receiptId: String): Boolean {
+        val receipt = known(receiptId) ?: return false
         val state = vm.current
-        val receipt = state.receipts.firstOrNull { it.id == receiptId }
-            ?: state.process?.receipt?.takeIf { it.id == receiptId }
-            ?: return false
         return state.viewer.isAccountant || (receipt.holderId != null && receipt.holderId == state.viewer.userId)
+    }
+
+    /** The receipt as a page holds it: its queue row, the editor's, or the shared detail's. */
+    private fun known(receiptId: String): CardReceipt? {
+        val state = vm.current
+        return state.receipts.firstOrNull { it.id == receiptId }
+            ?: state.process?.receipt?.takeIf { it.id == receiptId }
+            ?: state.inbox.detail?.detail?.receipt?.takeIf { it.id == receiptId }
     }
 
     private fun openQuery(receiptId: String) {
         if (!mayQuery(receiptId)) return refuse()
         val state = vm.current
-        val receipt = state.receipts.firstOrNull { it.id == receiptId } ?: state.process?.receipt
+        val receipt = known(receiptId)
         val title = receipt?.description?.ifBlank { null } ?: str(S.desktop_receipt)
         vm.update { copy(query = QueryDraft(receiptId = receiptId, title = title)) }
         vm.readRow(CardRowReads.query(state.destination), receiptId)

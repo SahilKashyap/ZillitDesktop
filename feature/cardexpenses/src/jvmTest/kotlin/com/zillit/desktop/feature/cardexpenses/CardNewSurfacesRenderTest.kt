@@ -30,6 +30,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.DepartmentCoordinator
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.domain.MatchStatus
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptDetail
 import com.zillit.desktop.feature.cardexpenses.ui.CardDestination
 import com.zillit.desktop.feature.cardexpenses.ui.CardDetail
 import com.zillit.desktop.feature.cardexpenses.ui.CardEditDraft
@@ -39,8 +40,15 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardsArea
 import com.zillit.desktop.feature.cardexpenses.ui.CodeReceiptDraft
 import com.zillit.desktop.feature.cardexpenses.ui.CodingDraft
 import com.zillit.desktop.feature.cardexpenses.ui.CrewState
+import com.zillit.desktop.feature.cardexpenses.ui.HistoryState
+import com.zillit.desktop.feature.cardexpenses.ui.InboxState
+import com.zillit.desktop.feature.cardexpenses.ui.ProcessDraft
+import com.zillit.desktop.feature.cardexpenses.ui.ProcessMode
+import com.zillit.desktop.feature.cardexpenses.ui.ReceiptDetailSource
+import com.zillit.desktop.feature.cardexpenses.ui.ReceiptDetailState
 import com.zillit.desktop.feature.cardexpenses.ui.NewCardDraft
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
  * The surfaces this port was missing, composed for real.
@@ -168,6 +176,111 @@ class CardNewSurfacesRenderTest {
     ) {
         onNodeWithText("Edit Card Details").assertIsDisplayed()
         onNodeWithText("Submit for Approval").assertIsDisplayed()
+    }
+
+    // -- the shared receipt detail ---------------------------------------------
+
+    /** The Approval Queue opens the shared view, with the queue's decision in its footer and no Query. */
+    @Test
+    fun `the accountant's approval queue opens the shared detail without Query`() = screen(
+        state(CardDestination.ApprovalQueue).copy(
+            inbox = InboxState(detail = detailOf(ReceiptDetailSource.ApprovalQueue)),
+        ),
+    ) {
+        onNodeWithText("Receipt Details").assertExists()
+        onAllNodesWithText("History").assertCountEquals(2) // the page's own, and the footer's
+        onAllNodesWithText("Query").assertCountEquals(0)
+        assertFileShown()
+    }
+
+    @Test
+    fun `My Transactions opens the shared detail with Query and Edit Receipt`() = screen(
+        state(CardDestination.MyTransactions, crew).copy(
+            inbox = InboxState(detail = detailOf(ReceiptDetailSource.MyTransactions)),
+        ),
+    ) {
+        onNodeWithText("Receipt Details").assertExists()
+        onNodeWithText("Query").assertExists()
+        onNodeWithText("Edit Receipt").assertExists()
+    }
+
+    @Test
+    fun `the cardholder's approval queue opens it with Reject and Approve, and no Query`() = screen(
+        state(CardDestination.CardsForApproval, crew).copy(
+            inbox = InboxState(detail = detailOf(ReceiptDetailSource.CrewApproval)),
+        ),
+    ) {
+        onNodeWithText("Reject").assertExists()
+        onNodeWithText("Approve").assertExists()
+        onAllNodesWithText("Query").assertCountEquals(0)
+    }
+
+    @Test
+    fun `a card's receipt row opens a detail with no decision in its footer`() = screen(
+        state(CardDestination.CardRegister).copy(
+            cardsArea = CardsArea(openCardId = "card-1"),
+            cardDetail = CardDetail(cardId = "card-1", receipts = listOf(receipt()), receiptsRead = true),
+            inbox = InboxState(detail = detailOf(ReceiptDetailSource.Card)),
+        ),
+    ) {
+        onNodeWithText("Receipt Details").assertExists()
+        onNodeWithText("Query").assertExists()
+        onAllNodesWithText("Edit Receipt").assertCountEquals(0)
+        onAllNodesWithText("Approve").assertCountEquals(0)
+    }
+
+    /** The pane names the file somewhere — its file bar, whatever else repeats it. */
+    private fun ComposeUiTest.assertFileShown() =
+        assertTrue(onAllNodesWithText("receipt.jpg").fetchSemanticsNodes().isNotEmpty(), "the receipt's file name")
+
+    private fun detailOf(source: ReceiptDetailSource) = ReceiptDetailState(
+        receiptId = "receipt-1",
+        detail = ReceiptDetail.of(receipt()),
+        loading = false,
+        source = source,
+    )
+
+    // -- the document, inline ------------------------------------------------------
+
+    /** The editor's preview pane and the Code Receipt dialog draw the file bar, as the inbox detail does. */
+    @Test
+    fun `the process editor and the coding dialog show the receipt's file`() {
+        val detail = receipt().copy(status = CardWorkflowStatus.Approved, assignedTo = "user-1")
+        screen(
+            state(CardDestination.ProcessQueue).copy(
+                receipts = listOf(detail),
+                process = ProcessDraft.of(detail, ProcessMode.Process, loading = false, today = 1_754_000_000_000),
+            ),
+        ) {
+            assertFileShown()
+        }
+        screen(
+            state(CardDestination.CodingQueue, crew).copy(crew = CrewState(code = CodeReceiptDraft.of(receipt()))),
+        ) {
+            assertFileShown()
+        }
+    }
+
+    // -- a card request in the approval queue --------------------------------------
+
+    @Test
+    fun `a card request opened from the queue offers its History and names its provider`() = screen(
+        state(CardDestination.CardsForApproval, crew).copy(
+            crew = CrewState(
+                approvalCards = listOf(card().copy(status = CardStatus.Pending)),
+                approvalCardId = "card-1",
+                approvalCardHistory = HistoryState(
+                    loading = false,
+                    entries = listOf(CardHistoryEntry("card_requested", "user-2", null, 1_754_000_000_000)),
+                ),
+            ),
+        ),
+    ) {
+        onNodeWithText("Card Request").assertExists()
+        onAllNodesWithText("History").assertCountEquals(1)
+        onNodeWithText("Card History").assertExists()
+        onNodeWithText("Card requested").assertExists()
+        onNodeWithText("Card Provider", ignoreCase = true).assertExists()
     }
 
     // -- the coding queues ----------------------------------------------------

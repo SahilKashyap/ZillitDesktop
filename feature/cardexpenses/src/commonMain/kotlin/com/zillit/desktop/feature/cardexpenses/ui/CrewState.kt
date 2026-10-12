@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachment
 import com.zillit.desktop.feature.cardexpenses.domain.CardCompanyRef
-import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
 import com.zillit.desktop.feature.cardexpenses.domain.CardNominal
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
@@ -23,8 +22,6 @@ data class CrewState(
     val uploadOpen: Boolean = false,
     /** My Transactions' status chip; null is All. */
     val filter: CardWorkflowStatus? = null,
-    /** The receipt open in the read-only detail view. */
-    val detail: CrewReceiptView? = null,
     /** The Edit Receipt / Edit & Resubmit dialog. */
     val edit: ReceiptEditDraft? = null,
     /** A receipt waiting on "Delete Receipt?". */
@@ -36,6 +33,8 @@ data class CrewState(
     val approvalReceipts: List<CardReceipt> = emptyList(),
     /** The card request open full screen from the queue. */
     val approvalCardId: String? = null,
+    /** That request's History panel; null while it is closed. */
+    val approvalCardHistory: HistoryState? = null,
     /** The reject-with-reason dialog, over a card or a receipt. */
     val reject: CrewReject? = null,
     /** The row whose approve or reject is in flight — its buttons read "…". */
@@ -70,18 +69,6 @@ data class CrewState(
 
 /** The crew Approval Queue's two sections (`CardsForApprovalPage.jsx:246-274`). */
 enum class CrewApprovalTab { Cards, Receipts }
-
-/** A receipt opened read-only; [loading] while `/receipts/:id/detail` is out. */
-data class CrewReceiptView(
-    val receipt: CardReceipt,
-    val loading: Boolean = true,
-    /** Where it was opened from — My Transactions offers Edit, the Approval Queue Approve / Reject. */
-    val origin: CrewOrigin = CrewOrigin.MyTransactions,
-    val historyOpen: Boolean = false,
-    val history: List<CardHistoryEntry>? = null,
-)
-
-enum class CrewOrigin { MyTransactions, ApprovalQueue }
 
 /** A reject waiting on its reason; [receipt] tells the two dialogs' wording apart. */
 data class CrewReject(
@@ -141,6 +128,8 @@ data class CodeReceiptDraft(
     val episode: String,
     val description: String,
     val saving: Boolean = false,
+    /** The document for the dialog's inline preview. */
+    val media: MediaState = MediaState(),
 ) {
     companion object {
         fun of(receipt: CardReceipt) = CodeReceiptDraft(

@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardRepository
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
+import com.zillit.desktop.feature.cardexpenses.domain.DealRate
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.domain.ExportFormat
@@ -25,6 +26,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cardexpenses.domain.FundRequestDraft
 import com.zillit.desktop.feature.cardexpenses.domain.QueryMessage
 import com.zillit.desktop.feature.cardexpenses.domain.QueryThread
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptDetail
 import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessSubmission
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptAssignment
@@ -69,7 +71,26 @@ internal class FakeCardRepository(
     override suspend fun analytics(fromIso: String?, toIso: String?) = read(CardAnalytics())
     override suspend fun cards(mineOnly: Boolean) = read(cards)
     override suspend fun cardHistory(cardId: String) = read(emptyList<CardHistoryEntry>())
-    override suspend fun cardReceipts(cardId: String) = read(emptyList<CardReceipt>())
+
+    /** The receipts a card's drilldown answers, whichever card. */
+    var cardReceipts: List<CardReceipt> = emptyList()
+    override suspend fun cardReceipts(cardId: String) = read(cardReceipts)
+
+    /** The requester's active deal; null is "none", and [dealReads] says whether anyone asked. */
+    var activeDeal: DealRate? = null
+    var dealReads = 0
+    override suspend fun myActiveDeal(): ZillitResult<DealRate?> {
+        dealReads++
+        return read(activeDeal)
+    }
+
+    /** `/receipts/:id/detail`: the slim row as the detail, from whichever list holds it. */
+    override suspend fun inboxReceiptDetail(receiptId: String): ZillitResult<ReceiptDetail> {
+        calls += "inboxReceiptDetail"
+        val row = (receipts + cardReceipts).firstOrNull { it.id == receiptId }
+            ?: return ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Unknown("no such receipt"))
+        return read(ReceiptDetail.of(row))
+    }
     override suspend fun requestCard(request: NewCardRequest) = ok("requestCard")
     override suspend fun updateCardDetails(cardId: String, edit: CardDetailsEdit) = ok("updateCardDetails")
     override suspend fun deleteCard(cardId: String) = ok("deleteCard")

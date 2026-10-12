@@ -95,6 +95,25 @@ enum class CardWorkflowStatus(val wire: String, private val labelKey: String) {
 }
 
 /**
+ * The word for a statement line whose status is not on the workflow list
+ * (`TransactionTable.jsx:9-22, 283`): the web labels coded, matched and
+ * declined and prints anything else as the server sent it — never "Unknown".
+ * Null when the status is a workflow one, which has its own pill, or blank.
+ */
+val CardTransaction.otherStatusLabel: String?
+    get() {
+        if (status != CardWorkflowStatus.Unknown) return null
+        val raw = statusWire?.trim().orEmpty()
+        return when (raw.lowercase()) {
+            "" -> null
+            "coded" -> str(S.desktop_ce_coded)
+            "matched" -> str(S.desktop_matched)
+            "declined" -> str(S.declined_events)
+            else -> raw
+        }
+    }
+
+/**
  * Whether a statement line may still be removed.
  *
  * Approved means someone signed it off and posted means it reached the ledger —

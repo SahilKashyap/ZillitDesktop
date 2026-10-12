@@ -52,6 +52,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardNumbers
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardRules
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
+import com.zillit.desktop.feature.cardexpenses.domain.CardUtilisation
 import com.zillit.desktop.feature.cardexpenses.domain.ChainStepStatus
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
@@ -448,7 +449,7 @@ private fun DetailsCard(state: CardUiState, card: ExpenseCard, onEvent: (CardEve
     val limit = card.detailLimit
     val balance = card.balance ?: limit
     val spent = (limit - balance).coerceAtLeast(0.0)
-    val percent = if (limit > 0) (spent / limit * PERCENT).toInt() else 0
+    val percent = CardUtilisation.percent(spent, limit)
 
     Box(modifier.cardSurface()) {
         Column {
@@ -895,7 +896,6 @@ private val HISTORY_WIDTH = 380.dp
 private val CHAIN_RULE = 40.dp
 private val HAIRLINE = 1.dp
 private val NOTE_PADDING = 48.dp
-private const val PERCENT = 100
 private const val DANGER_PERCENT = 80
 private const val WARN_PERCENT = 50
 private const val STRONG_MATCH = 80
