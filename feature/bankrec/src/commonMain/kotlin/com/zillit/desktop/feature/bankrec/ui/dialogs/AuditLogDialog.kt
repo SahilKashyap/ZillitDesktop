@@ -133,7 +133,8 @@ private fun Filters(
                 if (id.isBlank()) {
                     str(S.desktop_all_periods)
                 } else {
-                    BankRecFormat.monthLabel(periods.firstOrNull { it.periodId == id }?.periodMillis)
+                    // The web's `1 Mar 2026`: the period's first day, not a bare month.
+                    BankRecFormat.day(periods.firstOrNull { it.periodId == id }?.periodMillis)
                 }
             },
         ) { onEvent(BankRecEvent.FilterAuditLog(filters.copy(periodId = it))) }
@@ -298,8 +299,8 @@ private fun AuditTable(
             sortable(str(S.desktop_risk), AuditSort.Risk, 64) { entry ->
                 ZillitText(entry.riskScore?.toString() ?: BankRecFormat.DASH, style = mono(11.5.sp, FontWeight.Bold))
             },
-            BrColumn(str(S.cr_meta_period), width = 72.dp) { entry ->
-                ZillitText(BankRecFormat.monthLabel(entry.periodMillis), style = small, color = colors.textSecondary)
+            BrColumn(str(S.cr_meta_period), width = 92.dp) { entry ->
+                ZillitText(BankRecFormat.day(entry.periodMillis), style = small, color = colors.textSecondary)
             },
             BrColumn(str(S.description), width = 280.dp) { entry ->
                 ZillitText(entry.detail.ifBlank { BankRecFormat.DASH }, style = small, maxLines = 3)
@@ -312,9 +313,10 @@ private fun AuditTable(
                     style = mono(11.5.sp, FontWeight.Bold),
                 )
             },
-            BrColumn(str(S.desktop_txn_date), width = 88.dp) { entry ->
+            // The web prints the transaction's instant in the viewer's zone, time included.
+            BrColumn(str(S.desktop_txn_date), width = 128.dp) { entry ->
                 ZillitText(
-                    BankRecFormat.day(entry.transaction?.transactionDateMillis),
+                    BankRecFormat.dateTime(entry.transaction?.transactionDateMillis),
                     style = figure,
                     color = colors.textSecondary,
                 )

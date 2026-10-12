@@ -61,6 +61,7 @@ import com.zillit.desktop.feature.taxfiling.ui.pages.RegistrationsPage
 import com.zillit.desktop.feature.taxfiling.ui.pages.RemoveDialog
 import com.zillit.desktop.feature.taxfiling.ui.pages.ReturnPage
 import com.zillit.desktop.feature.taxfiling.ui.pages.SubmitDialog
+import com.zillit.desktop.feature.taxfiling.ui.pages.UnknownCodeDialog
 
 /**
  * Tax filing — the web's filing hub, its MTD VAT module and one company's
@@ -106,6 +107,7 @@ fun TaxFilingScreen(
 
         RegisterDialog(state, onEvent)
         RemoveDialog(state, onEvent)
+        UnknownCodeDialog(state, onEvent)
         SubmitDialog(state, onEvent)
         BoxLayersDialog(
             state = state,

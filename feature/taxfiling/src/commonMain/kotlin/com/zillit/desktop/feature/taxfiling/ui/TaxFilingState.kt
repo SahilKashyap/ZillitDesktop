@@ -93,7 +93,15 @@ data class MappingLookups(
     val coaFailed: Boolean = false,
     val layerSets: List<LayerSet> = emptyList(),
     val assetTags: List<String> = emptyList(),
-)
+) {
+    /** The chart was read, so a code missing from it is known to be missing. */
+    val coaReady: Boolean get() = loaded && !coaLoading && !coaFailed
+
+    fun inChart(code: String): Boolean = coa.any { it.code.equals(code, ignoreCase = true) }
+}
+
+/** A typed ledger code the chart does not hold, waiting to be confirmed for [box]. */
+data class UnknownCode(val box: VatBox, val code: String)
 
 /**
  * One registration's filing surface — the web's `VATReturnView`.
@@ -147,6 +155,8 @@ data class ReturnState(
      * has to interpret rather than a button that has stopped offering.
      */
     val filedPeriodKey: String = "",
+    /** A code outside the Chart of Accounts being asked about before it joins a box. */
+    val unknownCode: UnknownCode? = null,
 ) {
     val period: FilingObligation?
         get() = obligations.firstOrNull { it.periodKey == periodKey && periodKey.isNotBlank() }

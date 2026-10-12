@@ -151,7 +151,7 @@ class BankRecRepositoryImpl(
         )
     }
 
-    override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit> =
+    override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<String?> =
         apiClient.envelope(
             verb = HttpVerb.Post,
             url = "$base/$id/match",
@@ -162,7 +162,7 @@ class BankRecRepositoryImpl(
                 // invoice, which is what the web sends when it has no type.
                 put("matched_to_type", JsonPrimitive(if (kind == LedgerEntryKind.Other) "invoice" else kind.wire))
             },
-        ).map { }
+        ).flatMap { it.refusedOrMessage() }
 
     override suspend fun unmatchTransaction(id: String): ZillitResult<String?> = apiClient.envelope(
         verb = HttpVerb.Post,
@@ -178,11 +178,11 @@ class BankRecRepositoryImpl(
             body = buildJsonObject { put("transaction_ids", transactionIds.toJsonArray()) },
         ).flatMap { it.refusedOrMessage() }
 
-    override suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit> = apiClient.envelope(
+    override suspend fun rerunAutoMatch(periodId: String): ZillitResult<String?> = apiClient.envelope(
         verb = HttpVerb.Post,
         url = "$base/rerun-match/$periodId",
         module = RequestModule.ProjectUser,
-    ).map { }
+    ).flatMap { it.refusedOrMessage() }
 
     override suspend fun importStatement(
         attachment: StatementUpload,

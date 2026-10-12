@@ -64,9 +64,10 @@ interface BankRecRepository {
      *
      * One target, not a list: the service matches a transaction to a single
      * record, and the type has to travel with the id because an invoice, a
-     * quick-added transaction and an FX posting are different tables.
+     * quick-added transaction and an FX posting are different tables. Answers
+     * the server's own message when it names one, which the toast shows.
      */
-    suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit>
+    suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<String?>
 
     /**
      * Reverses a match: the line and its invoice go back to unmatched, and a
@@ -85,8 +86,8 @@ interface BankRecRepository {
      */
     suspend fun bulkUnmatchTransactions(transactionIds: List<String>): ZillitResult<String?>
 
-    /** Runs the matching rules over a period again. */
-    suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit>
+    /** Runs the matching rules over a period again; answers the server's message, null when it names none. */
+    suspend fun rerunAutoMatch(periodId: String): ZillitResult<String?>
 
     /**
      * Ingests a statement already uploaded to storage.

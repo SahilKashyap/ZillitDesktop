@@ -39,7 +39,7 @@ internal class ImportActions(
 
             is BankRecEvent.SelectImportAccount -> edit { copy(bankAccountId = event.bankAccountId, error = null) }
             BankRecEvent.BrowseStatement -> browse()
-            is BankRecEvent.DropStatement -> choose(event.file)
+            is BankRecEvent.DropStatement -> choose(event.file, dropped = true)
             is BankRecEvent.ImportDragOver -> edit { copy(dragOver = event.over) }
             BankRecEvent.StartImport -> start()
             BankRecEvent.CloseImport -> close()
@@ -64,20 +64,21 @@ internal class ImportActions(
     }
 
     /**
-     * Takes a file, from the picker or a drop, if it is one the service reads.
+     * Takes a file, from the picker or a drop.
      *
-     * Checked by extension, as the web's `accept` list is: an operating system
-     * reports `.ofx` and `.qif` as plain text or as an opaque stream, and a
-     * type allowlist refuses perfectly good statements.
+     * The web's `accept` list narrows only its file picker: a dropped file is
+     * taken as it comes, and no size is checked either way. The desktop picker
+     * is the system's open-ended Document chooser, so the same list is checked
+     * here for a picked file, by extension — an operating system reports `.ofx`
+     * and `.qif` as plain text or as an opaque stream, and a type allowlist
+     * refuses perfectly good statements.
      */
-    private fun choose(file: PickedStatement) {
+    private fun choose(file: PickedStatement, dropped: Boolean = false) {
         if (state.processing) return
-        val refusal = when {
-            file.extension !in StatementFiles.EXTENSIONS ->
-                str(S.desktop_br_not_statement_file, file.name)
-
-            file.bytes.size > StatementFiles.MAX_BYTES -> str(S.desktop_br_over_size_limit, file.name)
-            else -> null
+        val refusal = if (!dropped && file.extension !in StatementFiles.EXTENSIONS) {
+            str(S.desktop_br_not_statement_file, file.name)
+        } else {
+            null
         }
         edit {
             if (refusal != null) {

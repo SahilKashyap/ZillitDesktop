@@ -74,7 +74,7 @@ internal fun MtdCodeInput(
 ) {
     val picker = remember { CodePicker() }
     var width by remember { mutableIntStateOf(0) }
-    val ranked = remember(codes, picker.query) { CoaCodes.rank(codes, picker.query).take(MAX_ROWS) }
+    val ranked = remember(codes, picker.rankQuery) { CoaCodes.rank(codes, picker.rankQuery).take(MAX_ROWS) }
     val commit: (String) -> Unit = { code -> picker.commit(code, onCommit) }
 
     Box(modifier = modifier.onSizeChanged { width = it.width }) {
@@ -120,13 +120,20 @@ private class CodePicker {
     var highlight by mutableIntStateOf(0)
     var navigated by mutableStateOf(false)
 
-    val typed: String get() = query.trim()
+    /** Letters make the text a search by code and name: it filters, and commits nothing of its own. */
+    val searching: Boolean get() = !CoaCodes.isCodeQuery(query)
+
+    /** What the list is ranked by: the search as typed, or the code the digits stand for. */
+    val rankQuery: String get() = if (searching) query.trim() else CoaCodes.sanitise(query)
+
+    /** The code typed, ready to be added as it stands; blank while a search is under way. */
+    val typed: String get() = if (searching) "" else CoaCodes.sanitise(query)
 
     /** A row is lit once something is typed or the arrows have moved, never before. */
-    val lit: Boolean get() = typed.isNotEmpty() || navigated
+    val lit: Boolean get() = rankQuery.isNotEmpty() || navigated
 
     fun type(next: String) {
-        query = CoaCodes.sanitise(next)
+        query = CoaCodes.typedText(next)
         highlight = 0
         navigated = false
         open = true
@@ -151,6 +158,7 @@ private class CodePicker {
             Key.DirectionDown -> down(ranked.size)
             Key.DirectionUp -> up()
             Key.Enter, Key.NumPadEnter -> {
+                // A search with no match adds nothing: text with letters is never a code.
                 if (lit) commit(ranked.getOrNull(highlight)?.code ?: typed, onCommit)
                 true
             }

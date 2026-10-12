@@ -61,6 +61,13 @@ sealed interface TaxFilingEvent {
 
     data class EditMapping(val mapping: BoxMapping) : TaxFilingEvent
 
+    /** A ledger code picked or typed for a box; one the chart lacks is confirmed first. */
+    data class AddCode(val box: VatBox, val code: String) : TaxFilingEvent
+
+    data object ConfirmUnknownCode : TaxFilingEvent
+
+    data object DismissUnknownCode : TaxFilingEvent
+
     data class ToggleBox(val box: VatBox) : TaxFilingEvent
 
     data object ToggleAllBoxes : TaxFilingEvent

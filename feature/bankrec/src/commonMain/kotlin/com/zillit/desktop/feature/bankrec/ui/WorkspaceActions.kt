@@ -146,9 +146,9 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
         val periodId = workspace.periodId.ifBlank { return }
         if (workspace.rerunning) return
         edit { copy(rerunning = true, selectedId = null) }
-        vm.runResult({ vm.repo.rerunAutoMatch(periodId) }, {
+        vm.runResult({ vm.repo.rerunAutoMatch(periodId) }, { message ->
             edit { copy(rerunning = false) }
-            vm.notify(str(S.desktop_br_auto_match_rerun_toast))
+            vm.notify(message.serverText() ?: str(S.desktop_br_auto_match_rerun_toast))
             load(periodId)
             // A re-run moves counts, can add or remove fraud flags, and clears
             // exceptions a new match now answers.

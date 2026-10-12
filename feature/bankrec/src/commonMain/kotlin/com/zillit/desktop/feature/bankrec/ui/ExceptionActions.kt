@@ -58,7 +58,7 @@ internal class ExceptionActions(private val vm: BankRecViewModel) {
 
     /**
      * The web's Quick Add form, filled from the line: its date, its reference
-     * as the invoice number, the type's own guidance as the description, and
+     * as the invoice number, the type's fixed English hint as the description, and
      * the amount it moved.
      */
     private fun openQuickAdd(id: String) {
@@ -72,7 +72,7 @@ internal class ExceptionActions(private val vm: BankRecViewModel) {
         return QuickAddForm(
             date = BankRecFormat.isoDate(txn?.transactionDateMillis),
             invoiceNumber = txn?.reference.orEmpty(),
-            description = exception.type.guidance.takeIf { exception.type.seedsDescription }.orEmpty()
+            description = exception.type.seedText.takeIf { exception.type.seedsDescription }.orEmpty()
                 .ifBlank { exception.description }
                 .ifBlank { txn?.description.orEmpty() },
             amount = amountText(amount),

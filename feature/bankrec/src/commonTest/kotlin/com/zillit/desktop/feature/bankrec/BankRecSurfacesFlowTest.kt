@@ -70,7 +70,8 @@ class BankRecSurfacesFlowTest {
         val seeded = model.state.value.exceptionsPage.quickAdd?.form
         assertEquals("2025-04-02", seeded?.date)
         assertEquals("SVC-04", seeded?.invoiceNumber)
-        assertEquals(ExceptionType.BankCharge.guidance, seeded?.description)
+        // Fixed English as the web's, not the on-screen guidance in the reader's language.
+        assertEquals("Monthly service charge. No matching entry in Zillit.", seeded?.description)
         assertEquals(35.0, seeded?.amountValue)
 
         model.onEvent(BankRecEvent.EditExceptionQuickAdd(seeded!!.copy(effectiveDate = "2025-04-30", nominal = "7900")))
