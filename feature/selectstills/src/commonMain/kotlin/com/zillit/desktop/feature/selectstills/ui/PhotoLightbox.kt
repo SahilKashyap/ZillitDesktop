@@ -2,6 +2,10 @@
 
 package com.zillit.desktop.feature.selectstills.ui
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,6 +41,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -60,7 +72,6 @@ import com.zillit.desktop.feature.selectstills.domain.ApprovalRow
 import com.zillit.desktop.feature.selectstills.domain.Decision
 import com.zillit.desktop.feature.selectstills.domain.Face
 import com.zillit.desktop.feature.selectstills.domain.FaceEdit
-import com.zillit.desktop.feature.selectstills.domain.FaceState
 import com.zillit.desktop.feature.selectstills.domain.Photo
 import com.zillit.desktop.feature.selectstills.domain.PublicState
 import com.zillit.desktop.feature.selectstills.domain.allowanceWords
@@ -69,27 +80,37 @@ import com.zillit.desktop.feature.selectstills.domain.discardBlocked
 import com.zillit.desktop.feature.selectstills.domain.discardIsFree
 import com.zillit.desktop.feature.selectstills.domain.errorKey
 import com.zillit.desktop.feature.selectstills.domain.stateMeta
+import com.zillit.desktop.feature.selectstills.domain.ZOOM_STEP
 
 /**
- * One photo, full size — the web's lightbox: the picture on the left with face
- * boxes drawn to scale over it, and a side panel with where it stands, who is
- * in it and what the reader may do.
+ * One photo, full size — the web's lightbox: the picture on the left, and a
+ * side panel with where it stands, who is in it and what the reader may do.
+ *
+ * The picture is left clear. The web's demo drew a labelled box over every
+ * face; on a group shot that is thirty labels over thirty faces, and the photo
+ * cannot be seen for them (the product owner had them taken out, 8 October).
+ * Instead the face a row in the panel is about is outlined while the pointer
+ * (or the keyboard's focus) is on that row, and the picture zooms: click or
+ * scroll on it, drag to move, + − 0 on the keyboard, or the buttons in its
+ * corner.
  *
  * The web has two of these and so does this, in one composable:
- *   from the gallery   the approval panel (✓ Approve · ✕ Reject on the
+ *   from the gallery   the approval panel (✓ Approve · ✕ Kill on the
  *                      reader's own rows), the face rows — which production
  *                      names — and production's tools in the footer;
  *   from the queue     (`run`) the wider panel: the reader's actor, what the
  *                      other agents said, read-only faces with the reader's
- *                      own marked, and ✓ Keep · ✕ Discard… pinned in the
+ *                      own marked, and ✓ Approve · ✕ Kill… pinned in the
  *                      footer. Naming a face is the crew's job, in the gallery.
  *
  * The service decides what each reader is shown and which rows they may
  * decide, and this only draws that.
  *
- * Its keys — ← → to move, K keep, D discard, Esc close — act only while the
- * focus is inside it: a keystroke meant for another window can never decide a
- * photo. K and D act only when the reader has exactly one row to decide.
+ * Its keys — ← → to move, A approve, K kill, + − to zoom (0 for the whole
+ * photo), Esc close — act only while the focus is inside it: a keystroke meant
+ * for another window can never decide a photo. A and K act only when the
+ * reader has exactly one row to decide. (K used to keep and D to discard,
+ * before the buttons said Approve and Kill; D is no key now.)
  */
 @Composable
 internal fun PhotoLightbox(state: StillsUiState, box: LightboxState, onEvent: (StillsEvent) -> Unit) {
@@ -100,6 +121,9 @@ internal fun PhotoLightbox(state: StillsUiState, box: LightboxState, onEvent: (S
 
     val mineRows = photo?.approvals.orEmpty().filter { it.canDecide }
     val decides = mineRows.size == 1 && photo?.status?.isDone == true
+    // One per photo: a new photo starts again at the whole of it.
+    val zoom = remember(box.photoId) { StillsZoomState() }
+    val zoomable = photo != null && photo.previewUrl.isNotBlank()
 
     Box(
         Modifier
@@ -119,13 +143,17 @@ internal fun PhotoLightbox(state: StillsUiState, box: LightboxState, onEvent: (S
                     Key.Escape -> { onEvent(StillsEvent.ClosePhoto); true }
                     Key.DirectionLeft -> { onEvent(StillsEvent.StepPhoto(-1)); true }
                     Key.DirectionRight -> { onEvent(StillsEvent.StepPhoto(1)); true }
-                    Key.K -> if (decides && !box.busy && !box.asking) {
+                    Key.Plus, Key.Equals, Key.NumPadAdd -> zoomable.also { if (it) zoom.by(ZOOM_STEP) }
+                    Key.Minus, Key.NumPadSubtract -> zoomable.also { if (it) zoom.by(1 / ZOOM_STEP) }
+                    Key.Zero, Key.NumPad0 -> zoomable.also { if (it) zoom.reset() }
+                    // A approves, K kills: the letters of the words on the buttons.
+                    Key.A -> if (decides && !box.busy && !box.asking) {
                         onEvent(StillsEvent.DecideInPhoto(mineRows.first().memberId, Decision.Approved))
                         true
                     } else {
                         false
                     }
-                    Key.D -> if (decides && !box.busy && !box.asking) {
+                    Key.K -> if (decides && !box.busy && !box.asking) {
                         onEvent(StillsEvent.AskWhy)
                         true
                     } else {
@@ -154,12 +182,12 @@ internal fun PhotoLightbox(state: StillsUiState, box: LightboxState, onEvent: (S
 
             if (stacked) {
                 Column(frame.fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    Box(Modifier.fillMaxWidth().weight(if (box.run) 0.38f else 0.6f)) { Stage(box, onEvent) }
+                    Box(Modifier.fillMaxWidth().weight(if (box.run) 0.38f else 0.6f)) { Stage(box, zoom, onEvent) }
                     Box(Modifier.fillMaxWidth().weight(1f)) { SidePanel(state, box, onEvent, mineRows, decides) }
                 }
             } else {
                 Row(frame.fillMaxHeight(0.92f)) {
-                    Box(Modifier.weight(1f).fillMaxHeight()) { Stage(box, onEvent) }
+                    Box(Modifier.weight(1f).fillMaxHeight()) { Stage(box, zoom, onEvent) }
                     Box(Modifier.width(if (box.run) 380.dp else 320.dp).fillMaxHeight()) {
                         SidePanel(state, box, onEvent, mineRows, decides)
                     }
@@ -171,30 +199,30 @@ internal fun PhotoLightbox(state: StillsUiState, box: LightboxState, onEvent: (S
     }
 }
 
-/** `.stk-lb-img-wrap` — the picture, its face boxes, the arrows and the counter. */
+/** `.stk-lb-img-wrap` — the picture, the arrows, the counter and the zoom control. */
 @Composable
-private fun Stage(box: LightboxState, onEvent: (StillsEvent) -> Unit) {
+private fun Stage(box: LightboxState, zoom: StillsZoomState, onEvent: (StillsEvent) -> Unit) {
     val k = StillsTheme.c
     val photo = box.photo
     Box(Modifier.fillMaxSize().background(k.stageBg).padding(14.dp), contentAlignment = Alignment.Center) {
         if (photo != null && photo.previewUrl.isNotBlank()) {
-            // The box is the picture's own frame: the ratios a face box carries
-            // are of the preview, so they only land correctly over the picture
-            // itself, never over the padding around it.
+            // The box is the picture's own frame: the ratio a face's outline
+            // carries is of the preview, so it only lands correctly over the
+            // picture itself, never over the padding around it.
             val ratio = if (photo.width > 0 && photo.height > 0) photo.width.toFloat() / photo.height else 3f / 2f
-            Box(
-                Modifier
-                    .then(if (ratio >= 1f) Modifier.fillMaxWidth() else Modifier.fillMaxHeight())
-                    .aspectRatio(ratio),
-            ) {
-                SImage(
-                    url = photo.previewUrl,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)),
-                    contentScale = ContentScale.Fit,
-                    description = photo.originalName,
-                    placeholder = Color.Transparent,
-                )
-                FaceBoxes(photo, box, onEvent)
+            // Always inside the tooltip: dropping it once zoomed would rebuild
+            // the picture (and its gesture, and its image) mid-gesture.
+            ZillitTooltip(text = str(S.desktop_stk_zoom_hint)) {
+                Box(
+                    Modifier
+                        .then(if (ratio >= 1f) Modifier.fillMaxWidth() else Modifier.fillMaxHeight())
+                        .aspectRatio(ratio)
+                        .clip(RoundedCornerShape(6.dp))
+                        .onSizeChanged { zoom.frameIs(it) }
+                        .stillsZoomGestures(zoom),
+                ) {
+                    ZoomedPicture(photo, box, zoom)
+                }
             }
         } else {
             Column(
@@ -219,6 +247,9 @@ private fun Stage(box: LightboxState, onEvent: (StillsEvent) -> Unit) {
         }
         NavArrow("›", str(S.desktop_stk_next_photo), Alignment.CenterEnd, box.index in 0 until box.ids.size - 1) {
             onEvent(StillsEvent.StepPhoto(1))
+        }
+        if (photo != null && photo.previewUrl.isNotBlank()) {
+            StillsZoomer(zoom, Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 10.dp))
         }
         if (box.index >= 0) {
             SText(
@@ -275,52 +306,72 @@ private fun BoxScope.NavArrow(
 }
 
 /**
- * `.stk-lb-box` — face boxes drawn to scale over the photo: amber and solid
- * for a named face, white and dashed for an unknown one, the name in the
- * corner — and green for the reader's own actor, so a group shot needs no
- * guessing.
+ * The picture at its zoom, and over it — moving and scaling with it — the
+ * outline of the one face a row in the panel is about. Only that face: the
+ * photo is otherwise left clear.
  *
- * A box is given as ratios of the preview, so it is placed in fractions and
- * follows the image at any size. A person added by hand has no box (there was
- * no face to point at).
+ * A jump (a click, a button, a key) is eased; the wheel and a drag follow the
+ * hand.
  */
 @Composable
-private fun FaceBoxes(photo: Photo, box: LightboxState, onEvent: (StillsEvent) -> Unit) {
+private fun ZoomedPicture(photo: Photo, box: LightboxState, zoom: StillsZoomState) {
+    val spec = if (zoom.smooth) tween<Float>(ZOOM_EASE_MS, easing = LinearOutSlowInEasing) else snap()
+    val z by animateFloatAsState(zoom.view.z, spec)
+    val x by animateFloatAsState(zoom.view.x, spec)
+    val y by animateFloatAsState(zoom.view.y, spec)
+    val marked = box.activeFace?.let { id -> photo.faces.firstOrNull { it.id == id && it.box != null } }
+    val mine = marked != null && marked.id in remember(photo) { minedFaceIds(photo) }
+
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            transformOrigin = TransformOrigin(0f, 0f)
+            scaleX = z
+            scaleY = z
+            translationX = x
+            translationY = y
+        },
+    ) {
+        SImage(
+            url = photo.previewUrl,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            description = photo.originalName,
+            placeholder = Color.Transparent,
+        )
+        marked?.box?.let { b -> FaceMark(b, mine, z) }
+    }
+}
+
+/**
+ * `.stk-lb-mark` — the outline: amber, or green for the reader's own actor, a
+ * thin dark line outside it and a soft light one beyond, so it reads on any
+ * frame. Drawn inside the zoomed layer, so its lines are divided by the zoom
+ * and keep their thickness at any zoom.
+ */
+@Composable
+private fun BoxScope.FaceMark(b: com.zillit.desktop.feature.selectstills.domain.FaceBox, mine: Boolean, z: Float) {
     val k = StillsTheme.c
-    val mineIds = remember(photo) { minedFaceIds(photo) }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val width = maxWidth
-        val height = maxHeight
-        photo.faces.filter { it.box != null }.forEach { face ->
-            val b = face.box ?: return@forEach
-            val dismissed = face.state == FaceState.Dismissed
-            val mine = face.id in mineIds
-            val edge = when {
-                mine -> k.ok
-                dismissed -> Color.White.copy(alpha = 0.4f)
-                face.name.isNotBlank() -> k.accent
-                else -> Color.White.copy(alpha = 0.9f)
-            }
-            Box(
-                Modifier
-                    .offset(x = width * b.left, y = height * b.top)
-                    .size(width = width * b.width, height = height * b.height)
-                    .border(BorderStroke(if (mine) 3.dp else 2.dp, edge))
-                    .then(if (box.activeFace == face.id) Modifier.border(BorderStroke(4.dp, Color.White.copy(alpha = 0.55f))) else Modifier)
-                    .clickable { onEvent(StillsEvent.PickFace(face.id)) },
-            ) {
-                SText(
-                    text = if (dismissed) str(S.desktop_stk_face_not_cast) else face.name.ifBlank { str(S.desktop_unknown_lower) },
-                    size = 11,
-                    weight = Bold,
-                    color = if (mine) Color(0xFF06240F) else if (face.name.isNotBlank() && !dismissed) Color(0xFF221503) else Color(0xFFD6DADF),
-                    modifier = Modifier
-                        .background(if (mine) k.ok else if (face.name.isNotBlank() && !dismissed) k.accent else Color(0xF2323438))
-                        .padding(horizontal = 6.dp),
-                    maxLines = 1,
-                )
-            }
-        }
+    val edge = if (mine) k.ok else k.accent
+    BoxWithConstraints(Modifier.matchParentSize()) {
+        Box(
+            Modifier
+                .offset(x = maxWidth * b.left, y = maxHeight * b.top)
+                .size(width = maxWidth * b.width, height = maxHeight * b.height)
+                .drawBehind {
+                    val px = 1.dp.toPx() / z
+                    val corner = CornerRadius(4.dp.toPx() / z)
+                    fun ring(outset: Float, width: Float, colour: Color) = drawRoundRect(
+                        color = colour,
+                        topLeft = Offset(-outset, -outset),
+                        size = Size(size.width + outset * 2, size.height + outset * 2),
+                        cornerRadius = corner,
+                        style = Stroke(width),
+                    )
+                    ring(outset = 3 * px, width = 4 * px, colour = Color.White.copy(alpha = 0.4f))
+                    ring(outset = 0.5f * px, width = px, colour = Color.Black.copy(alpha = 0.6f))
+                    ring(outset = -px, width = 2 * px, colour = edge)
+                },
+        )
     }
 }
 
@@ -346,7 +397,7 @@ private fun SidePanel(
     // As on a tile: "public" is not stamped on a photo nobody had to clear.
     val showState = done && meta != null && (photo.publicState != PublicState.Approved || photo.approvals.isNotEmpty())
     val edits = state.canPost && !box.run
-    val tip = str(if (decides) (if (box.run) S.desktop_stk_keys_decide else S.desktop_stk_keys_gate) else S.desktop_stk_keys_move)
+    val tip = str(if (decides) S.desktop_stk_keys_decide else S.desktop_stk_keys_move)
 
     Column(Modifier.fillMaxSize()) {
         // `.stk-lb-head`
@@ -518,3 +569,4 @@ internal expect fun formatStamp(millis: Long): String
 
 private val STACK_AT: Dp = 900.dp
 private const val DIMMED = 0.25f
+private const val ZOOM_EASE_MS = 160

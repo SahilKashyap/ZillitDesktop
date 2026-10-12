@@ -3,7 +3,9 @@ package com.zillit.desktop.feature.selectstills.domain
 import com.zillit.desktop.core.strings.S
 
 /**
- * Discard allowances, as the screens word them — the web's `lib/allowance.js`.
+ * Kill allowances, as the screens word them — the web's `lib/allowance.js`.
+ * (The code and the wire still say "discard": the web renamed the words on
+ * screen, not the fields, keys or routes.)
  *
  * An allowance is set per head-count SECTION — solo, 2, 3, 4, 5, and six or
  * more — keyed "1".."5" and "6+", as the service gives them:
@@ -104,9 +106,16 @@ fun limitsFromInputs(inputs: Map<String, String>): Map<String, Int>? {
     return out
 }
 
+/** One capped section of an allowance: which, and how many. */
+data class CappedSection(val section: String, val value: Int)
+
+/** The capped sections of an allowance, in order. Empty when nothing is capped. */
+fun limitsList(limits: Map<String, Int>?): List<CappedSection> =
+    STILLS_SECTIONS.mapNotNull { section -> limits?.get(section)?.let { CappedSection(section, it) } }
+
 /** A short line for a list: "Solo 2 · 2 people 0", or null when nothing is capped. */
 fun limitsSummary(limits: Map<String, Int>?, label: (String) -> String): String? {
-    val parts = STILLS_SECTIONS.filter { limits?.get(it) != null }.map { "${label(sectionKey(it))} ${limits?.get(it)}" }
+    val parts = limitsList(limits).map { "${label(sectionKey(it.section))} ${it.value}" }
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 

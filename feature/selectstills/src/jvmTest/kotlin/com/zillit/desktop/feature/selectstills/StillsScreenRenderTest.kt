@@ -1,17 +1,26 @@
-@file:Suppress("MaxLineLength", "LongParameterList", "LongMethod")
+@file:Suppress("MaxLineLength", "LongParameterList", "LongMethod", "LargeClass")
 // One fixture carrying every state the pages draw from; splitting it would
 // mean five near-copies that drift apart.
 
 package com.zillit.desktop.feature.selectstills
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.selectstills.data.HeadshotOutcome
+import com.zillit.desktop.feature.selectstills.data.PutOutcome
+import com.zillit.desktop.feature.selectstills.data.StillsUploadQueue
+import com.zillit.desktop.feature.selectstills.data.StillsUploader
 import com.zillit.desktop.feature.selectstills.domain.ApprovalRow
 import com.zillit.desktop.feature.selectstills.domain.Client
 import com.zillit.desktop.feature.selectstills.domain.Decision
@@ -28,6 +37,7 @@ import com.zillit.desktop.feature.selectstills.domain.Recognition
 import com.zillit.desktop.feature.selectstills.domain.ReviewCounts
 import com.zillit.desktop.feature.selectstills.domain.SectionAllowance
 import com.zillit.desktop.feature.selectstills.domain.StillsMe
+import com.zillit.desktop.feature.selectstills.domain.StillsPick
 import com.zillit.desktop.feature.selectstills.domain.StillsSettings
 import com.zillit.desktop.feature.selectstills.domain.StillsSummary
 import com.zillit.desktop.feature.selectstills.domain.StillsViewer
@@ -48,7 +58,10 @@ import com.zillit.desktop.feature.selectstills.ui.StillsPerson
 import com.zillit.desktop.feature.selectstills.ui.StillsScreen
 import com.zillit.desktop.feature.selectstills.ui.StillsUiState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.StandardTestDispatcher
 
 /**
  * Composes every page of the real screen in each state.
@@ -84,7 +97,7 @@ class StillsScreenRenderTest {
             allowance = mapOf("1" to SectionAllowance(2, 1, 1)),
             photoCount = 12,
         ),
-        // Nobody has to approve: marked loudly, because photos of them go public unasked.
+        // Nobody has to approve: marked loudly, because photos of them are cleared unasked.
         Member(id = "m2", name = "Ben Bold", approvalRequired = false, recognition = Recognition.SuggestOnly),
         // Needs approval and has no agent: every photo they are in is held.
         Member(id = "m3", name = "Cal Clay"),
@@ -205,13 +218,14 @@ class StillsScreenRenderTest {
         listOf(false, true).forEach { dark ->
             runComposeUiTest {
                 setContent { ZillitTheme(darkTheme = dark) { StillsScreen(state(StillsPage.Photos), onEvent = {}) } }
-                onNodeWithText("Enroll member").assertExists()
-                onNodeWithText("Photographer upload").assertExists()
-                onNodeWithText("Publisher review").assertExists()
+                // The film industry's words (the web, 9 October).
+                onNodeWithText("Cast").assertExists()
+                onNodeWithText("Upload").assertExists()
+                onNodeWithText("Approvals").assertExists()
                 onNodeWithText("Settings").assertExists()
-                // The tool's own name sits on the left, in the accent.
-                onNodeWithText("Select Stills").assertExists()
-                // How many photos wait on this person, beside "Publisher review".
+                // No wordmark: inside Zillit it read as a second logo.
+                onAllNodesWithText("Select Stills").assertCountEquals(0)
+                // How many photos wait on this person, beside "Approvals".
                 onNodeWithText("7", substring = true).assertExists()
             }
         }
@@ -227,24 +241,37 @@ class StillsScreenRenderTest {
     fun `every destination the reader has is actually on the bar, not just composed`() {
         runComposeUiTest {
             setContent { ZillitTheme(darkTheme = true) { StillsScreen(state(StillsPage.Photos), onEvent = {}) } }
-            listOf("Enroll member", "Photographer upload", "Publisher review").forEach {
+            listOf("Cast", "Upload", "Approvals").forEach {
                 onNodeWithText(it).assertIsDisplayed()
             }
-            // "Photos" and "Settings" are each on the bar and on their page, so
+            // "Stills" and "Settings" are each on the bar and on their page, so
             // the bar's one is the first of the two.
-            onAllNodesWithText("Photos").onFirst().assertIsDisplayed()
+            onAllNodesWithText("Stills").onFirst().assertIsDisplayed()
             onAllNodesWithText("Settings").onFirst().assertIsDisplayed()
         }
     }
 
     @Test
-    fun `a reader who can only view is offered no upload and no settings`() {
+    fun `a reader who can only view is offered no upload, no settings and no cast list`() {
         runComposeUiTest {
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(state(StillsPage.Photos, canPost = false, scope = ViewerScope.Cleared), onEvent = {}) } }
-            onAllNodesWithText("Photographer upload").assertCountEquals(0)
+            onAllNodesWithText("Upload").assertCountEquals(0)
             onAllNodesWithText("Settings").assertCountEquals(0)
-            // The bar's link and the page's own heading both say "Photos".
-            onAllNodesWithText("Photos").assertCountEquals(2)
+            // The cast list is production's: a viewer was shown everybody by name.
+            onAllNodesWithText("Cast").assertCountEquals(0)
+            // The bar's link and the page's own heading both say "Stills".
+            onAllNodesWithText("Stills").assertCountEquals(2)
+            // Nor may they pick photos to delete.
+            onAllNodesWithText("Select photos").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun `a viewer sent to the cast page gets the gallery instead`() {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = false) { StillsScreen(state(StillsPage.Cast, canPost = false, scope = ViewerScope.Cleared), onEvent = {}) } }
+            onAllNodesWithText("Enrolled cast members", substring = true).assertCountEquals(0)
+            onNodeWithText("Browse the photos that are cleared. Click a cast member to see every photo they appear in.").assertExists()
         }
     }
 
@@ -293,11 +320,55 @@ class StillsScreenRenderTest {
                 // Once in the by-member list (with her count), once on the tile.
                 onAllNodesWithText("Anna Bell", substring = true).assertCountEquals(3)
                 // Where each photo stands, and who is in it.
-                onNodeWithText("✓ public").assertExists()
-                onNodeWithText("✕ blocked").assertExists()
+                onNodeWithText("✓ cleared").assertExists()
+                onNodeWithText("✕ killed").assertExists()
                 onNodeWithText("2 unknown").assertExists()
                 onNodeWithText("failed").assertExists()
+                // Production can clear photos out in bulk.
+                onNodeWithText("Select photos").assertExists()
             }
+        }
+    }
+
+    @Test
+    fun `selecting photos counts what is picked and offers one delete for all of it`() {
+        listOf(false, true).forEach { dark ->
+            runComposeUiTest {
+                val picking = state(StillsPage.Photos).let { it.copy(gallery = it.gallery.copy(picking = true, picked = setOf("p1", "p2"))) }
+                setContent { ZillitTheme(darkTheme = dark) { StillsScreen(picking, onEvent = {}) } }
+                onNodeWithText("2 selected").assertExists()
+                onNodeWithText("Select all shown (4)").assertExists()
+                onNodeWithText("Clear selection").assertExists()
+                onNodeWithText("Delete 2 photos").assertExists()
+                onNodeWithText("Done").assertExists()
+                onAllNodesWithText("Select photos").assertCountEquals(0)
+                // Picking, a tile is a tick box: the ticked ones say so.
+                onAllNodesWithText("✓").assertCountEquals(2)
+            }
+        }
+    }
+
+    @Test
+    fun `with nothing picked the bar says how, and Delete waits`() {
+        runComposeUiTest {
+            val picking = state(StillsPage.Photos).let { it.copy(gallery = it.gallery.copy(picking = true)) }
+            setContent { ZillitTheme(darkTheme = false) { StillsScreen(picking, onEvent = {}) } }
+            onNodeWithText("0 selected").assertExists()
+            onNodeWithText("Click photos to select them. Shift-click takes everything in between.").assertExists()
+            onAllNodesWithText("Clear selection").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun `a bulk delete asks once, and counts as it goes`() {
+        runComposeUiTest {
+            val asking = state(StillsPage.Photos).let {
+                it.copy(gallery = it.gallery.copy(picking = true, picked = setOf("p1", "p2", "p3"), askingDelete = true, removing = 1 to 3))
+            }
+            setContent { ZillitTheme(darkTheme = false) { StillsScreen(asking, onEvent = {}) } }
+            onNodeWithText("Delete these 3 photos?").assertExists()
+            onNodeWithText("They leave the gallery for everybody, and the face data found in them is deleted. This cannot be undone from here.").assertExists()
+            onNodeWithText("Deleting 1 of 3…").assertExists()
         }
     }
 
@@ -351,15 +422,15 @@ class StillsScreenRenderTest {
             runComposeUiTest {
                 setContent { ZillitTheme(darkTheme = dark) { StillsScreen(state(StillsPage.Review), onEvent = {}) } }
                 onNodeWithText("To decide").assertExists()
-                onNodeWithText("Kept").assertExists()
-                onNodeWithText("Discarded").assertExists()
+                onNodeWithText("Approved").assertExists()
+                onNodeWithText("Killed").assertExists()
                 onNodeWithText("Everything").assertExists()
                 onNodeWithText("Represents").assertExists()
-                onNodeWithText("✓ Keep").assertExists()
-                onNodeWithText("✕ Discard").assertExists()
-                // The other agent's refusal, and what it means for this one.
-                onNodeWithText("Ben Bold: discarded").assertExists()
-                onNodeWithText("Already discarded by another agent, so this will not go public even if you keep it.").assertExists()
+                onNodeWithText("✓ Approve").assertExists()
+                onNodeWithText("✕ Kill").assertExists()
+                // The other agent's kill, and what it means for this one.
+                onNodeWithText("Ben Bold: killed").assertExists()
+                onNodeWithText("Already killed by another agent, so this will not be cleared even if you approve it.").assertExists()
             }
         }
     }
@@ -374,8 +445,10 @@ class StillsScreenRenderTest {
                 )
             }
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(spent, onEvent = {}) } }
-            // Once over the queue (what is left of each capped section), once on the card.
-            onAllNodesWithText("3 people: no discards left, all 2 used").assertCountEquals(2)
+            // On the card only: over the queue it is behind an (i), so the
+            // page starts with the photos rather than five lines of numbers.
+            onAllNodesWithText("3 people: no kills left, all 2 used").assertCountEquals(1)
+            onNodeWithContentDescription("Show what is left of the kill allowance").assertExists()
         }
     }
 
@@ -399,7 +472,7 @@ class StillsScreenRenderTest {
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(two, onEvent = {}) } }
             onNodeWithText("Open to decide").assertExists()
             // One pair of buttons cannot answer for two people.
-            onAllNodesWithText("✓ Keep").assertCountEquals(0)
+            onAllNodesWithText("✓ Approve").assertCountEquals(0)
         }
     }
 
@@ -441,7 +514,7 @@ class StillsScreenRenderTest {
                 onNodeWithText("1 of 2").assertExists()
                 // The gate: one row per member who needs an agent's say.
                 onNodeWithText("✓ Approve").assertExists()
-                onNodeWithText("✕ Reject").assertExists()
+                onNodeWithText("✕ Kill").assertExists()
                 onNodeWithText("\"eyes closed\"").assertExists()
                 onNodeWithText("no agent yet").assertExists()
                 // A face set aside is still drawn, so the crew can see what was
@@ -456,6 +529,32 @@ class StillsScreenRenderTest {
                 onNodeWithText("🗑 Delete photo").assertExists()
                 // More than 100 faces is said, not hidden.
                 onNodeWithText("More than 100 faces: only the first 100 were looked at.").assertExists()
+                // The picture zooms, from its corner as well as by click and wheel.
+                onNodeWithText("100%").assertExists()
+                onNodeWithContentDescription("Zoom in").assertExists()
+            }
+        }
+    }
+
+    /**
+     * The picture is left clear: no labelled box over every face (thirty
+     * labels over a group shot hid the photo). Only the face whose row is
+     * pointed at is outlined, and an outline carries no name.
+     */
+    @Test
+    fun `the picture carries no face labels, pointed at or not`() {
+        listOf(null, "f1").forEach { active ->
+            runComposeUiTest {
+                val open = state(StillsPage.Photos).copy(
+                    lightbox = LightboxState(photoId = "p1", ids = listOf("p1"), photo = photo, loading = false, activeFace = active),
+                )
+                setContent { ZillitTheme(darkTheme = false) { StillsScreen(open, onEvent = {}) } }
+                // Two faces nobody has named yet (one only suggested): each is
+                // "unknown" once, in its row — the picture adds no label of its
+                // own, and pointing at a row adds none either.
+                onAllNodesWithText("unknown").assertCountEquals(2)
+                // The face set aside: its row says so, the picture does not.
+                onAllNodesWithText("not cast").assertCountEquals(1)
             }
         }
     }
@@ -513,8 +612,8 @@ class StillsScreenRenderTest {
                 lightbox = LightboxState(photoId = "p1", ids = listOf("p1"), run = true, photo = photo, loading = false),
             )
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(open, onEvent = {}) } }
-            onNodeWithText("✕ Discard…").assertExists()
-            onNodeWithText("← → move · K keep · D discard · Esc close").assertExists()
+            onNodeWithText("✕ Kill…").assertExists()
+            onNodeWithText("← → move · A approve · K kill · + − zoom · Esc close").assertExists()
             // `.stk-rl-block h4` is upper-cased by the stylesheet.
             onNodeWithText("OTHER AGENTS").assertExists()
             // Naming a face is the crew's job, in the gallery.
@@ -538,10 +637,10 @@ class StillsScreenRenderTest {
                 ),
             )
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(asking, onEvent = {}) } }
-            onNodeWithText("Why are you discarding it? The crew and the other agents will see this.").assertExists()
+            onNodeWithText("Why are you killing it? The crew and the other agents will see this.").assertExists()
             onNodeWithText("⌘/Ctrl + Enter").assertExists()
-            // Two "Discard" controls at once would read as two different actions.
-            onAllNodesWithText("✕ Discard…").assertCountEquals(0)
+            // Two "Kill" controls at once would read as two different actions.
+            onAllNodesWithText("✕ Kill…").assertCountEquals(0)
         }
     }
 
@@ -594,26 +693,21 @@ class StillsScreenRenderTest {
             runComposeUiTest {
                 setContent { ZillitTheme(darkTheme = dark) { StillsScreen(state(StillsPage.Cast), onEvent = {}) } }
                 onNodeWithText("Actor name").assertExists()
-                onNodeWithText("Who decides which photos of this person may go public?").assertExists()
-                onNodeWithText("Discard allowance").assertExists()
+                onNodeWithText("Who decides which photos of this person may be cleared?").assertExists()
+                // The form's field, and Anna's row — where it is behind an (i).
+                onAllNodesWithText("Kill allowance").assertCountEquals(2)
+                onNodeWithContentDescription("Show the kill allowance").assertExists()
+                onNodeWithText("Enroll cast member").assertExists()
                 onNodeWithText("This person has agreed to their face being used to find them in photos.").assertExists()
-                onNodeWithText("Enrolled members (3)").assertExists()
+                onNodeWithText("Enrolled cast members (3)").assertExists()
                 onNodeWithText("Anna Bell").assertExists()
-                // Loudly: photos of them go public without anybody being asked.
+                // Loudly: photos of them are cleared without anybody being asked.
                 onNodeWithText("no approval needed").assertExists()
-                // Needs approval, no agent: every photo they are in is held.
-                onNodeWithText(" · no agent yet").assertExists()
+                // Needs approval, no agent: every photo they are in is held. A
+                // part of the line of its own, so the line breaks between parts.
+                onNodeWithText("no agent yet").assertExists()
                 onNodeWithText("Suggest only").assertExists()
             }
-        }
-    }
-
-    @Test
-    fun `a viewer reads the list and is offered no enrolment card`() {
-        runComposeUiTest {
-            setContent { ZillitTheme(darkTheme = false) { StillsScreen(state(StillsPage.Cast, canPost = false), onEvent = {}) } }
-            onNodeWithText("Enrolled members").assertExists()
-            onAllNodesWithText("Actor name").assertCountEquals(0)
         }
     }
 
@@ -633,11 +727,37 @@ class StillsScreenRenderTest {
             )
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(open, onEvent = {}) } }
             onNodeWithText("1 profile photo").assertExists()
-            onAllNodesWithText("Agent / photo publisher", substring = true).assertCountEquals(2)
+            onAllNodesWithText("Agent").onFirst().assertExists()
             onNodeWithText("Erase face data").assertExists()
-            onNodeWithText("Remove member").assertExists()
+            onNodeWithText("Remove cast member").assertExists()
             // What is already spent, so a cap is not set below it by accident.
             onNodeWithText("1 used").assertExists()
+        }
+    }
+
+    /**
+     * A headshot the service turned away can be let go. Before, a refusal that
+     * could not be overruled had no button at all, and the notice stayed until
+     * the card was closed.
+     */
+    @Test
+    fun `every turned-away headshot can be removed, and the overrulable ones added anyway`() {
+        runComposeUiTest {
+            val open = state(StillsPage.Cast).copy(
+                memberDialog = MemberDialogState(
+                    memberId = "m1",
+                    member = members.first(),
+                    loading = false,
+                    name = "Anna Bell",
+                    results = listOf(
+                        HeadshotOutcome(name = "side.jpg", path = "/h/side.jpg", ok = false, reason = "still_kills_headshot_matches_other", matchedName = "Ben Bold"),
+                        HeadshotOutcome(name = "crowd.jpg", path = "/h/crowd.jpg", ok = false, reason = "still_kills_headshot_many_faces"),
+                    ),
+                ),
+            )
+            setContent { ZillitTheme(darkTheme = false) { StillsScreen(open, onEvent = {}) } }
+            onAllNodesWithText("Add anyway").assertCountEquals(1)
+            onAllNodesWithText("Remove").assertCountEquals(2)
         }
     }
 
@@ -679,6 +799,62 @@ class StillsScreenRenderTest {
         }
     }
 
+    /**
+     * Every file of the upload is listed from the moment it is chosen — not
+     * only the two or three moving at that moment — what needs a person first.
+     */
+    @Test
+    fun `the upload lists every file it was given, what needs a person first`() {
+        runComposeUiTest {
+            val queue = waitingQueue("a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg", refused = "z.heic")
+            setContent { ZillitTheme(darkTheme = false) { StillsScreen(state(StillsPage.Upload), onEvent = {}, queue = queue) } }
+            listOf("a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg", "z.heic").forEach { onNodeWithText(it).assertExists() }
+            // Nothing moves in this test, so every file the queue took waits.
+            onAllNodesWithText("Waiting").assertCountEquals(5)
+            val refused = onNodeWithText("z.heic").fetchSemanticsNode().positionInRoot.y
+            val first = onNodeWithText("a.jpg").fetchSemanticsNode().positionInRoot.y
+            assertTrue(refused < first, "the file that needs a person is listed above the waiting ones")
+        }
+    }
+
+    // -- a wide tool -------------------------------------------------------------------
+
+    /**
+     * On a tool at least 1100 wide the settings' three sections stand side by
+     * side (the web, 8 October); below that they stack, as before. Positions,
+     * not existence, are what tell the two apart.
+     */
+    @Test
+    fun `settings stand side by side on a wide tool and stack on a narrow one`() {
+        mapOf(1500.dp to true, 900.dp to false).forEach { (width, beside) ->
+            runComposeUiTest {
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        Box(Modifier.requiredSize(width, 1400.dp)) { StillsScreen(state(StillsPage.Settings), onEvent = {}) }
+                    }
+                }
+                val scope = onNodeWithText("Who can browse the gallery").fetchSemanticsNode().positionInRoot
+                val numbers = onNodeWithText("Name automatically at").fetchSemanticsNode().positionInRoot
+                assertEquals(beside, numbers.x > scope.x + 200f, "at $width the matching numbers are at $numbers, the scope at $scope")
+            }
+        }
+    }
+
+    @Test
+    fun `on a wide tool the cast list takes the room the form leaves`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    Box(Modifier.requiredSize(1600.dp, 1200.dp)) { StillsScreen(state(StillsPage.Cast), onEvent = {}) }
+                }
+            }
+            // `.stk-member-list` is a grid at this width: two of the three side by side.
+            val anna = onNodeWithText("Anna Bell").fetchSemanticsNode().positionInRoot
+            val ben = onNodeWithText("Ben Bold").fetchSemanticsNode().positionInRoot
+            assertEquals(anna.y, ben.y, 1f, "Anna at $anna and Ben at $ben should share a row")
+        }
+    }
+
     // -- settings ----------------------------------------------------------------------
 
     @Test
@@ -687,9 +863,9 @@ class StillsScreenRenderTest {
             runComposeUiTest {
                 setContent { ZillitTheme(darkTheme = dark) { StillsScreen(state(StillsPage.Settings), onEvent = {}) } }
                 onNodeWithText("Who can browse the gallery").assertExists()
-                onNodeWithText("Public photos only").assertExists()
+                onNodeWithText("Cleared photos only").assertExists()
                 onNodeWithText("Everything").assertExists()
-                onNodeWithText("Default discard allowance").assertExists()
+                onNodeWithText("Default kill allowance").assertExists()
                 onNodeWithText("Name automatically at").assertExists()
                 onNodeWithText("Lead over the next match").assertExists()
                 onNodeWithText("Delete all face data").assertExists()
@@ -713,5 +889,30 @@ class StillsScreenRenderTest {
             setContent { ZillitTheme(darkTheme = false) { StillsScreen(notAdmin, onEvent = {}) } }
             onNodeWithText("Only a project admin can delete all face data.").assertExists()
         }
+    }
+
+    /**
+     * A queue holding these files, none of which ever moves: its coroutines
+     * run on a dispatcher nobody advances. [refused] is a file the queue turns
+     * away before anything is sent.
+     */
+    private fun waitingQueue(vararg names: String, refused: String): StillsUploadQueue {
+        val queue = StillsUploadQueue(
+            repository = FakeStillsRepository(),
+            uploader = NeverUploads,
+            files = FakeStillsFiles(),
+            openProject = { "proj-1" },
+            newId = { "id-${names.size}-${System.nanoTime()}" },
+            scope = CoroutineScope(StandardTestDispatcher()),
+        )
+        val picks = names.map { StillsPick(path = "/card/$it", name = it, size = 1000, type = "image/jpeg") } +
+            StillsPick(path = "/card/$refused", name = refused, size = 1000, type = "image/heic")
+        queue.add(picks, shootLabel = "", types = listOf("image/jpeg"), maxBytes = 50_000)
+        return queue
+    }
+
+    private object NeverUploads : StillsUploader {
+        override suspend fun put(url: String, headers: Map<String, String>, path: String, contentType: String, size: Long, onProgress: (Float) -> Unit) = PutOutcome.Ok
+        override suspend fun putBytes(url: String, headers: Map<String, String>, bytes: ByteArray, contentType: String) = PutOutcome.Ok
     }
 }

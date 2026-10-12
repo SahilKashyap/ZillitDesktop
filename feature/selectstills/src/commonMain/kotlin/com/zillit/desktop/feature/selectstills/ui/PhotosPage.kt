@@ -2,17 +2,19 @@
 
 package com.zillit.desktop.feature.selectstills.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -49,6 +52,14 @@ import com.zillit.desktop.feature.selectstills.domain.stateMeta
  * What comes back depends on who asks — production sees everything, an agent
  * their own actors' photos, anybody else only cleared ones — and the service
  * decides that; the filters here only ever narrow it.
+ *
+ * Production can also clear out photos in bulk: "Select photos" turns the
+ * tiles into tick boxes (shift-click takes a run of them, "Select all shown"
+ * takes what is loaded, not the whole production), and one confirmed Delete
+ * removes everything picked. The bar that counts and deletes stays in sight
+ * while the grid scrolls.
+ *
+ * The grid takes the tool's whole width: four tiles across became six at 1920.
  */
 @Composable
 internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
@@ -67,6 +78,13 @@ internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
     }
     LaunchedEffect(grid) { snapshotFlow { atEnd }.collect { if (it) onEvent(StillsEvent.LoadMorePhotos) } }
 
+    // Production only, and only with photos to pick from.
+    val selectable = state.canPost && gallery.photos.isNotEmpty() && !gallery.failed
+    // The bar in the grid has scrolled away: a copy is pinned over the top.
+    val barGone by remember {
+        derivedStateOf { grid.layoutInfo.visibleItemsInfo.none { it.key == SELECT_KEY } }
+    }
+
     SNarrow(NARROW) { narrow ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             // One sheet, as the web's page is: the heading and the filters
@@ -75,7 +93,7 @@ internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(if (narrow) TILE_MIN_NARROW else TILE_MIN),
                 state = grid,
-                modifier = Modifier.widthIn(max = PAGE_MAX).fillMaxSize(),
+                modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
@@ -83,7 +101,7 @@ internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
                 item(key = "head", span = { GridItemSpan(maxLineSpan) }) {
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SPageHead(
-                            title = str(S.desktop_photos),
+                            title = str(S.desktop_stk_nav_photos),
                             lede = if (state.me.scope == ViewerScope.Cleared) str(S.desktop_stk_photos_lede_viewer) else str(S.desktop_stk_photos_lede),
                         )
                         if (narrow) {
@@ -102,12 +120,22 @@ internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
                     }
                 }
 
+                if (selectable) {
+                    item(key = SELECT_KEY, span = { GridItemSpan(maxLineSpan) }) { SelectBar(state, onEvent) }
+                }
+
                 val empty = gallery.loading && gallery.photos.isEmpty() || gallery.failed || gallery.photos.isEmpty()
                 if (empty) {
                     item(key = "body", span = { GridItemSpan(maxLineSpan) }) { GalleryEmpty(state, onEvent) }
                 } else {
                     items(gallery.photos, key = { it.id }) { photo ->
-                        SPhotoTile(photo, onOpen = { onEvent(StillsEvent.OpenPhoto(photo.id, ids, run = false)) })
+                        SPhotoTile(
+                            photo = photo,
+                            onOpen = { onEvent(StillsEvent.OpenPhoto(photo.id, ids, run = false)) },
+                            picking = gallery.picking,
+                            picked = photo.id in gallery.picked,
+                            onPick = { shift -> onEvent(StillsEvent.PickPhoto(photo.id, shift)) },
+                        )
                     }
                     item(key = "foot", span = { GridItemSpan(maxLineSpan) }) {
                         SText(
@@ -119,7 +147,78 @@ internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
                     }
                 }
             }
+
+            // `position: sticky; top: 0` — a grid has no sticky item, so the
+            // bar is pinned over the top once its own row has scrolled away.
+            if (selectable && gallery.picking && barGone) {
+                Box(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp)) { SelectBar(state, onEvent) }
+            }
         }
+    }
+
+    if (gallery.askingDelete) {
+        val n = gallery.chosen.size
+        SConfirmDialog(
+            title = if (n == 1) str(S.desktop_stk_delete_selected_title_one) else str(S.desktop_stk_delete_selected_title_n, n),
+            message = str(S.desktop_stk_delete_selected_body),
+            confirmLabel = gallery.removing?.let { (done, total) -> str(S.desktop_stk_deleting_n, done, total) }
+                ?: if (n == 1) str(S.desktop_stk_delete_selected_one) else str(S.desktop_stk_delete_selected_n, n),
+            busy = gallery.removing != null,
+            onConfirm = { onEvent(StillsEvent.DeletePicked) },
+            onClose = { onEvent(StillsEvent.AskDeletePicked(false)) },
+        )
+    }
+}
+
+/**
+ * `.stk-select-bar` — "Select photos"; then, while picking, what is picked and
+ * what to do with it.
+ */
+@Composable
+private fun SelectBar(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
+    val k = StillsTheme.c
+    val gallery = state.gallery
+    if (!gallery.picking) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            SBtn(str(S.desktop_stk_select_photos), { onEvent(StillsEvent.Picking(true)) }, small = true)
+        }
+        return
+    }
+    val chosen = gallery.chosen.size
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    FlowRow(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(k.panel)
+            .border(androidx.compose.foundation.BorderStroke(1.dp, k.line), shape)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        SText(str(S.desktop_n_selected, chosen), 15, Bold, maxLines = 1)
+        SBtn(
+            text = str(S.desktop_stk_select_all_shown, gallery.photos.size),
+            onClick = { onEvent(StillsEvent.PickAllShown) },
+            kind = SBtnKind.Link,
+            small = true,
+            enabled = chosen < gallery.photos.size && gallery.removing == null,
+        )
+        if (chosen > 0) {
+            SBtn(str(S.desktop_ce_inbox_clear_selection), { onEvent(StillsEvent.ClearPicked) }, kind = SBtnKind.Link, small = true, enabled = gallery.removing == null)
+        } else {
+            SText(str(S.desktop_stk_select_hint), 13, color = k.muted)
+        }
+        Spacer(Modifier.weight(1f))
+        SBtn(
+            text = if (chosen == 1) str(S.desktop_stk_delete_selected_one) else str(S.desktop_stk_delete_selected_n, chosen),
+            onClick = { onEvent(StillsEvent.AskDeletePicked(true)) },
+            kind = SBtnKind.Danger,
+            small = true,
+            enabled = chosen > 0 && gallery.removing == null,
+        )
+        SBtn(str(S.ah_done), { onEvent(StillsEvent.Picking(false)) }, small = true, enabled = gallery.removing == null)
     }
 }
 
@@ -364,8 +463,8 @@ private fun pubHint(state: PublicState) = when (state) {
 }
 
 private val NARROW = 800.dp
-private val PAGE_MAX = 1280.dp
 private val SIDE_WIDTH = 240.dp
+private const val SELECT_KEY = "select"
 
 /** `repeat(auto-fill, minmax(230px, 1fr))`, and 144px on a narrow window. */
 private val TILE_MIN = 230.dp

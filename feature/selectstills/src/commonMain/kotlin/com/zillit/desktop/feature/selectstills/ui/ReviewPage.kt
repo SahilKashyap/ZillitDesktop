@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -51,15 +50,15 @@ import com.zillit.desktop.feature.selectstills.domain.discardBlocked
 import com.zillit.desktop.feature.selectstills.domain.sectionKey
 
 /**
- * The web's Publisher review page: the stills the reader's actors appear in,
- * to keep or discard.
+ * The web's Approvals page (Publisher review, before the 9 October terms
+ * pass): the stills the reader's actors appear in, to approve or kill.
  *
- * Discard does NOT delete. The photo stays in the production and stays in this
+ * Kill does NOT delete. The photo stays in the production and stays in this
  * list, so a decision can be explained and undone, and the crew can see what
- * was refused rather than wonder where a shot went.
+ * was killed rather than wonder where a shot went.
  *
- * Built for a run: Keep or Discard on a card, or open a photo and use
- * K / D / ← →; after a decision the lightbox moves on to the next photo by
+ * Built for a run: Approve or Kill on a card, or open a photo and use
+ * A / K / ← →; after a decision the lightbox moves on to the next photo by
  * itself.
  */
 @Composable
@@ -77,11 +76,11 @@ internal fun ReviewPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
     }
     LaunchedEffect(list) { snapshotFlow { atEnd }.collect { if (it) onEvent(StillsEvent.LoadMoreReview) } }
 
-    // `.stk-rv-grid`: as many 290px cards as fit, one on a narrow window — and
-    // the columns are worked out here, so every row agrees on them.
+    // `.stk-rv-grid`: as many 290px cards as fit across the tool's whole
+    // width, one on a narrow window — and the columns are worked out here, so
+    // every row agrees on them.
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val page = minOf(maxWidth, PAGE_MAX)
-        val room = page - PAGE_GUTTER * 2
+        val room = maxWidth - PAGE_GUTTER * 2
         val columns = if (maxWidth <= NARROW) 1 else maxOf(1, ((room + GAP) / (CARD_MIN + GAP)).toInt())
         val rows = remember(review.photos, columns) { review.photos.chunked(columns) }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -90,13 +89,13 @@ internal fun ReviewPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
             // and a grid of equal cells cannot hold that.
             LazyColumn(
                 state = list,
-                modifier = Modifier.widthIn(max = PAGE_MAX).fillMaxSize(),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
             ) {
                 item(key = "head") {
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SPageHead(str(S.desktop_stk_nav_review), str(S.desktop_stk_review_lede))
+                        SPageHead(str(S.cs_approvals), str(S.desktop_stk_review_lede))
                         Represents(state, onEvent)
                         val tabsLabel = str(S.desktop_stk_review_tabs)
                         FlowRow(
@@ -159,39 +158,60 @@ internal fun ReviewPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
  * There is no "Reviewing as" picker beside it: the queue is the signed-in
  * person's, and the service will not hand out anybody else's. With more than
  * one actor the names are chips, and one narrows the queue to that actor.
- * Under them, what is left of each allowance, for the sections that are capped.
+ *
+ * What is left of each allowance, for the sections that are capped, is behind
+ * the (i) beside them — it turns red once a section is spent — so the page
+ * starts with the photos (it took five lines above them). Each card still says
+ * what is left for its own photo.
  */
 @Composable
 private fun Represents(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
     val k = StillsTheme.c
     val clients = state.clients
+    val capped = clients
+        .map { client -> client to STILLS_SECTIONS.filter { client.allowance[it]?.limit != null } }
+        .filter { (_, sections) -> sections.isNotEmpty() }
+    val spent = capped.any { (client, sections) -> sections.any { allowanceWords(client.allowance[it]).bad } }
+    val allowance: @Composable () -> Unit = {
+        if (capped.isNotEmpty()) {
+            SInfoTip(label = str(S.desktop_stk_allow_show), title = str(S.desktop_stk_limits), bad = spent) {
+                capped.forEach { (client, sections) ->
+                    if (clients.size > 1) SInfoSub(client.name)
+                    sections.forEach { section ->
+                        val words = allowanceWords(client.allowance[section])
+                        SInfoRow(str(sectionKey(section)), allowanceText(words), bad = words.bad)
+                    }
+                }
+                SInfoNote(str(S.desktop_stk_allow_note))
+            }
+        }
+    }
+
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SText(str(S.desktop_stk_represents), 13, color = k.muted)
         when {
             clients.isEmpty() -> SText(str(S.desktop_stk_represents_nobody), 15, color = k.muted, italic = true)
-            clients.size == 1 -> SText(clients.first().name, 15)
-            else -> FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            clients.size == 1 -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SText(clients.first().name, 15, SemiBold)
+                allowance()
+            }
+            else -> FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 SChip(str(S.desktop_stk_review_all_actors), state.review.member == null, { onEvent(StillsEvent.ReviewMemberChanged(null)) })
                 clients.forEach { client ->
                     SChip(client.name, state.review.member == client.memberId, { onEvent(StillsEvent.ReviewMemberChanged(client.memberId)) })
                 }
-            }
-        }
-        // The sections that are capped, with what is left of each.
-        clients.forEach { client ->
-            STILLS_SECTIONS.filter { client.allowance[it]?.limit != null }.forEach { section ->
-                val words = allowanceWords(client.allowance[section])
-                AllowanceLine(
-                    prefix = if (clients.size > 1) "${client.name} · " else "",
-                    section = section,
-                    words = words,
-                )
+                allowance()
             }
         }
     }
 }
 
-/** `.stk-dl-left` — "Solo: 2 of 3 discards left", in the colour its news deserves. */
+/** `.stk-dl-left` — "Solo: 2 of 3 kills left", in the colour its news deserves. */
 @Composable
 internal fun AllowanceLine(
     prefix: String,
@@ -221,9 +241,10 @@ internal fun allowanceText(words: com.zillit.desktop.feature.selectstills.domain
 }
 
 /**
- * `.stk-rv-card` — one photo in the queue: the picture (4:3, stamped "kept" or
- * "discarded"), whose photo it is to the reader, what the other agents said,
- * what is left of the allowance, and Keep / Discard / Undo right there.
+ * `.stk-rv-card` — one photo in the queue: the picture (4:3, stamped
+ * "approved" or "killed"), whose photo it is to the reader, what the other
+ * agents said, what is left of the allowance, and Approve / Kill / Undo right
+ * there.
  *
  * A photo with two of the reader's actors in it is opened to be decided: one
  * pair of buttons cannot answer for two people.
@@ -239,7 +260,7 @@ private fun ReviewCard(state: StillsUiState, photo: PhotoTile, ids: List<String>
     val allowance = one?.let { row -> state.clients.firstOrNull { it.memberId == row.memberId }?.allowance }
     val section = photo.section?.let { allowance?.get(it) }
     // Shown only where there is a cap — and not when another agent already
-    // refused the photo: agreeing with a refusal is free.
+    // killed the photo: agreeing with a kill is free.
     val words = section?.takeIf { it.limit != null && !free }?.let { allowanceWords(it) }
     val blocked = one?.let { discardBlocked(allowance, photo.section, it.state, free) } == true
     val refused = photo.others.any { it.state == Decision.Rejected }
@@ -297,7 +318,7 @@ private fun ReviewCard(state: StillsUiState, photo: PhotoTile, ids: List<String>
             }
 
             // In a group the other agents' decisions matter: a photo already
-            // refused by somebody else will not go public whatever you choose.
+            // killed by somebody else will not be cleared whatever you choose.
             if (photo.others.isNotEmpty()) {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     photo.others.forEach { row ->
@@ -338,7 +359,7 @@ private fun ReviewCard(state: StillsUiState, photo: PhotoTile, ids: List<String>
 
 private fun tabLabel(tab: ReviewTab) = when (tab) {
     ReviewTab.Pending -> S.desktop_stk_review_tab_pending
-    ReviewTab.Approved -> S.desktop_stk_review_tab_approved
+    ReviewTab.Approved -> S.approved
     ReviewTab.Rejected -> S.desktop_stk_review_tab_rejected
     ReviewTab.All -> S.desktop_stk_review_tab_all
 }
@@ -358,7 +379,6 @@ private fun emptyWords(tab: ReviewTab) = when (tab) {
 }
 
 private val NARROW: Dp = 760.dp
-private val PAGE_MAX = 1280.dp
 
 /** `.stk-page`'s side padding, and the grid's own gap. */
 private val PAGE_GUTTER = 24.dp

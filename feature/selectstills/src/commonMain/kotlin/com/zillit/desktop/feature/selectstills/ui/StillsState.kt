@@ -26,15 +26,18 @@ import com.zillit.desktop.core.strings.S
  * (`/film-tools/still-kills/photos` and friends); nothing outside the tool
  * links to them, so one window owns all five.
  *
- * The order is the web's top bar: Enroll · Upload · Photos · Review ·
- * Settings. `short` is the label a narrow window fits all five of.
+ * The order is the web's top bar: Cast · Upload · Stills · Approvals ·
+ * Settings — the film industry's words since the web's 9 October terms pass
+ * (were Enroll member · Photographer upload · Photos · Publisher review). The
+ * paths are not renamed. Where the app already had the word ("Cast",
+ * "Upload", "Approvals") its key is used, so the label is translated.
  */
-enum class StillsPage(val path: String, val title: String, val short: String) {
-    Cast("cast", S.desktop_stk_nav_cast, S.desktop_stk_nav_cast_short),
-    Upload("upload", S.desktop_stk_nav_upload, S.upload),
-    Photos("photos", S.desktop_photos, S.desktop_photos),
-    Review("review", S.desktop_stk_nav_review, S.av_review),
-    Settings("settings", S.settings, S.settings),
+enum class StillsPage(val path: String, val title: String) {
+    Cast("cast", S.desktop_draft_cast),
+    Upload("upload", S.upload),
+    Photos("photos", S.desktop_stk_nav_photos),
+    Review("review", S.cs_approvals),
+    Settings("settings", S.settings),
 }
 
 /** How far `GET /me` has got. Nothing but the gate is drawn until it is ready. */
@@ -62,12 +65,24 @@ data class GalleryState(
     val loading: Boolean = true,
     val failed: Boolean = false,
     val summary: StillsSummary? = null,
+    /** "Select photos": the tiles are tick boxes, for production to delete in bulk. */
+    val picking: Boolean = false,
+    val picked: Set<String> = emptySet(),
+    /** The photo last clicked while picking, where a shift-click's run starts. */
+    val lastPick: String? = null,
+    /** The one question before a bulk delete is on screen. */
+    val askingDelete: Boolean = false,
+    /** A bulk delete under way: how many have been answered, of how many. */
+    val removing: Pair<Int, Int>? = null,
 ) {
     /**
      * The counts are for the whole production (or one shoot): beside a member
      * or an agent they would be the wrong numbers, so they step aside.
      */
     val counted: Boolean get() = filters.member.isNullOrBlank() && filters.agent.isNullOrBlank()
+
+    /** What is picked and still in the list, in the list's order. */
+    val chosen: List<String> get() = if (picked.isEmpty()) emptyList() else photos.map { it.id }.filter { it in picked }
 }
 
 /** The reader's own queue. */
@@ -91,7 +106,7 @@ data class ReviewState(
     val draftNote: String = "",
 )
 
-/** The Enroll page's list and its search. */
+/** The Cast page's list and its search. */
 data class CastState(val query: String = "", val accepting: Boolean = false)
 
 /** The Upload page. */
@@ -159,7 +174,10 @@ data class LightboxState(
     val failed: Boolean = false,
     val busy: Boolean = false,
     val deleting: Boolean = false,
-    /** Which face's box and row are tied together right now. */
+    /**
+     * The face a row in the panel is about, while the pointer or the focus is
+     * on that row: the picture outlines it. No other face is marked.
+     */
     val activeFace: String? = null,
     /** The reason being typed, when a discard asked why. */
     val asking: Boolean = false,
@@ -235,10 +253,15 @@ data class StillsUiState(
      * Which pages this reader gets. The service has the last word on everything
      * behind them; this only decides what is offered.
      *
-     *   production (posting rights)  Enroll · Upload · Photos · Review · Settings
-     *   an agent without posting     Review — and nothing else, unless the
+     *   production (posting rights)  Cast · Upload · Stills · Approvals · Settings
+     *   an agent without posting     Approvals — and nothing else, unless the
      *                                production opened the gallery to viewers
-     *   anybody else who can view    Photos (cleared ones) · Enroll (the list)
+     *   anybody else who can view    Stills (cleared ones), and nothing else
+     *
+     * The cast list is production's (the web, 9 October): a viewer offered the
+     * Cast page had the whole cast by name. The service now sends a viewer only
+     * the cast members in photos they are shown, so the gallery's "By cast
+     * member" names nobody else either.
      */
     val pages: Set<StillsPage>
         get() {
@@ -246,7 +269,7 @@ data class StillsUiState(
             return buildSet {
                 if (gallery) add(StillsPage.Photos)
                 if (canPost) add(StillsPage.Upload)
-                if (gallery) add(StillsPage.Cast)
+                if (canPost) add(StillsPage.Cast)
                 // Production gets the link too, as in the web's bar, where all
                 // four are always there; somebody who is nobody's agent finds
                 // an empty queue.
@@ -283,6 +306,16 @@ sealed interface StillsEvent {
     data object ReloadGallery : StillsEvent
     data object LoadMorePhotos : StillsEvent
 
+    // -- selecting photos, to delete them together
+    data class Picking(val on: Boolean) : StillsEvent
+
+    /** A tile clicked while picking; [shift] takes everything from the last one clicked. */
+    data class PickPhoto(val photoId: String, val shift: Boolean) : StillsEvent
+    data object PickAllShown : StillsEvent
+    data object ClearPicked : StillsEvent
+    data class AskDeletePicked(val asking: Boolean) : StillsEvent
+    data object DeletePicked : StillsEvent
+
     // -- the queue
     data class ReviewTabChanged(val tab: ReviewTab) : StillsEvent
     data class ReviewMemberChanged(val memberId: String?) : StillsEvent
@@ -290,7 +323,7 @@ sealed interface StillsEvent {
     data object LoadMoreReview : StillsEvent
     data class CardDraft(val photoId: String?, val note: String) : StillsEvent
 
-    /** Keep or discard one of the reader's actors in one photo, from a card. */
+    /** Approve or kill one of the reader's actors in one photo, from a card. */
     data class DecideOnCard(
         val photoId: String,
         val memberId: String,
@@ -303,14 +336,15 @@ sealed interface StillsEvent {
     data object ClosePhoto : StillsEvent
     data class StepPhoto(val delta: Int) : StillsEvent
     data object ReloadPhoto : StillsEvent
-    data class PickFace(val faceId: String?) : StillsEvent
+    /** The pointer or the focus came to a face's row ([on]), or left it. */
+    data class PointFace(val faceId: String, val on: Boolean) : StillsEvent
     data class SetFace(val faceId: String, val edit: FaceEdit) : StillsEvent
     data class AddPerson(val memberId: String) : StillsEvent
     data object DismissUnknown : StillsEvent
     data class DisputeFace(val faceId: String) : StillsEvent
     data class DecideInPhoto(val memberId: String, val state: Decision, val note: String = "") : StillsEvent
 
-    /** The D key, or a click on Discard: open the reason box. */
+    /** The K key, or a click on Kill: open the reason box. */
     data object AskWhy : StillsEvent
     data class WhyTyped(val note: String) : StillsEvent
     data object CancelWhy : StillsEvent
@@ -345,6 +379,9 @@ sealed interface StillsEvent {
     /** Headshots dropped on the open member's card. */
     data class DropMemberHeadshots(val paths: List<String>) : StillsEvent
     data class ForceHeadshot(val outcome: HeadshotOutcome) : StillsEvent
+
+    /** "Remove" on a turned-away headshot: it was never added, so only the notice goes. */
+    data class DismissHeadshot(val outcome: HeadshotOutcome) : StillsEvent
     data class RemoveHeadshot(val headshotId: String) : StillsEvent
     data class Ask(val ask: MemberAsk) : StillsEvent
     data object EraseFaceData : StillsEvent

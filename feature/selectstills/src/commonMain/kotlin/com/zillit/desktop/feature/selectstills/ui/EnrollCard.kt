@@ -32,7 +32,7 @@ import com.zillit.desktop.feature.selectstills.domain.limitsFromInputs
 
 /**
  * The web's enrolment card: a headshot (or a few angles), the actor's name,
- * who their agent is and how many photos that agent may discard — the moment
+ * who their agent is and how many photos that agent may kill — the moment
  * production decides who answers for this person is the moment it knows what
  * their contract allows.
  *
@@ -111,7 +111,7 @@ private fun ColumnScopeAlias.EnrollBody(state: StillsUiState, form: EnrollState,
     // The policy is part of naming the agent, not a separate admin screen.
     if (form.needsApproval) {
         SField(
-            label = str(S.desktop_stk_agent),
+            label = str(S.agent),
             hint = str(S.desktop_stk_agent_hint),
             warn = if (form.agent.isBlank()) str(S.desktop_stk_agent_missing_warn) else null,
         ) {
@@ -138,7 +138,7 @@ private fun ColumnScopeAlias.EnrollBody(state: StillsUiState, form: EnrollState,
     )
 
     SBtn(
-        text = if (form.busy) str(S.desktop_stk_enrolling) else str(S.desktop_stk_nav_cast),
+        text = if (form.busy) str(S.desktop_stk_enrolling) else str(S.desktop_stk_enroll_submit),
         onClick = { onEvent(StillsEvent.Enrol) },
         modifier = Modifier.padding(top = 6.dp),
         kind = SBtnKind.Primary,

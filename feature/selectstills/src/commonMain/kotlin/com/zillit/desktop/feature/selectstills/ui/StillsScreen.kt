@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -19,10 +20,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.strings.S
@@ -43,10 +46,11 @@ import com.zillit.desktop.feature.selectstills.data.countsOf
 /**
  * Select Stills — the tool's shell.
  *
- * The look is the web's (`StillKills.css`): a dark studio theme (there is no
- * light one), a top bar with the tool's pages, and a page that scrolls under
- * it. One window owns all five pages; the web nests them as routes, but
- * nothing outside the tool links to one.
+ * The look is the web's (`StillKills.css`): its studio palette (and a light
+ * one beside it, as the app has), a top bar with the tool's pages, and a page
+ * that scrolls under it and takes the tool's whole width. One window owns all
+ * five pages; the web nests them as routes, but nothing outside the tool links
+ * to one.
  *
  * Rights gate everything. Until the tool's row has answered nothing is shown
  * or requested; a production without the tool, or a reader without view
@@ -67,26 +71,31 @@ fun StillsScreen(
         Box(modifier.fillMaxSize().background(k.bg)) {
             Column(Modifier.fillMaxSize()) {
                 StillsTopBar(state, uploads, onEvent)
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    when {
-                        // The rights list has not answered: nothing may call the
-                        // service until it does.
-                        !state.viewer.resolved -> SPageBox { SLoading() }
-                        !state.viewer.enabled -> SPageBox {
-                            SStatePanel(str(S.desktop_stk_gate_disabled_title), str(S.desktop_stk_gate_disabled_hint))
-                        }
-                        !state.viewer.canView -> SPageBox {
-                            SStatePanel(str(S.desktop_stk_gate_noview_title), str(S.desktop_stk_gate_noview_hint)) {
-                                SBtn(str(S.desktop_request_access), { onEvent(StillsEvent.AskForRights) }, kind = SBtnKind.Plain, small = true)
+                // The tool's own width, for the layouts that change on a wide
+                // tool (the web's `@container stk (min-width: 1100px)`): a
+                // tool window can be narrow on a wide screen.
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    CompositionLocalProvider(LocalStillsWidth provides maxWidth) {
+                        when {
+                            // The rights list has not answered: nothing may call the
+                            // service until it does.
+                            !state.viewer.resolved -> SPageBox { SLoading() }
+                            !state.viewer.enabled -> SPageBox {
+                                SStatePanel(str(S.desktop_stk_gate_disabled_title), str(S.desktop_stk_gate_disabled_hint))
                             }
-                        }
-                        state.meState == MeState.Idle || state.meState == MeState.Loading -> SPageBox { SLoading() }
-                        state.meState == MeState.Error -> SPageBox {
-                            SStatePanel(str(S.desktop_stk_me_failed_title), str(S.desktop_stk_me_failed_hint), bad = true) {
-                                SBtn(str(S.desktop_csync_try_again), { onEvent(StillsEvent.ReloadMe) }, small = true)
+                            !state.viewer.canView -> SPageBox {
+                                SStatePanel(str(S.desktop_stk_gate_noview_title), str(S.desktop_stk_gate_noview_hint)) {
+                                    SBtn(str(S.desktop_request_access), { onEvent(StillsEvent.AskForRights) }, kind = SBtnKind.Plain, small = true)
+                                }
                             }
+                            state.meState == MeState.Idle || state.meState == MeState.Loading -> SPageBox { SLoading() }
+                            state.meState == MeState.Error -> SPageBox {
+                                SStatePanel(str(S.desktop_stk_me_failed_title), str(S.desktop_stk_me_failed_hint), bad = true) {
+                                    SBtn(str(S.desktop_csync_try_again), { onEvent(StillsEvent.ReloadMe) }, small = true)
+                                }
+                            }
+                            else -> StillsPages(state, uploads, onEvent)
                         }
-                        else -> StillsPages(state, uploads, onEvent)
                     }
                 }
             }
@@ -120,9 +129,14 @@ private fun StillsPages(state: StillsUiState, uploads: UploadQueueState, onEvent
 }
 
 /**
- * `.stk-topbar` — the tool's name, its pages, and on the right what the
- * service is still working on (or an upload that is still running, which
- * carries on behind every page and is the way back to it).
+ * `.stk-topbar` — the tool's pages, and on the right what the service is still
+ * working on (or an upload that is still running, which carries on behind
+ * every page and is the way back to it).
+ *
+ * No wordmark: the demo's amber "Select Stills" read as a second logo inside
+ * Zillit, and the web took it out at the product owner's request (8 October).
+ * Do not put the tool's name or a logo back in the bar — the window's title
+ * says which tool it is.
  *
  * No "‹ Film Tools" exit: the web draws one only when the tool is NOT in a
  * tool window (`!inWindow`), and here it always is — the window has its own
@@ -142,8 +156,6 @@ private fun StillsTopBar(state: StillsUiState, uploads: UploadQueueState, onEven
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        SText(str(S.desktop_stk_tool_label), 15, Bold, k.accent, maxLines = 1)
-
         val ready = state.meState == MeState.Ready
         val pages = if (ready) StillsPage.entries.filter { it in state.pages } else emptyList()
         val views = str(S.desktop_stk_views)
@@ -156,7 +168,7 @@ private fun StillsTopBar(state: StillsUiState, uploads: UploadQueueState, onEven
                 NavLink(
                     label = str(page.title),
                     active = page == state.page,
-                    // How many photos wait on this person, beside "Publisher review".
+                    // How many photos wait on this person, beside "Approvals".
                     count = state.reviewCounts.pending.takeIf { page == StillsPage.Review && it > 0 },
                     onClick = { onEvent(StillsEvent.Open(page)) },
                 )
@@ -254,7 +266,12 @@ private fun StatusSlot(state: StillsUiState, uploads: UploadQueueState, onEvent:
     }
 }
 
-/** `.stk-page` — the page's own column, centred and scrolling under the bar. */
+/**
+ * `.stk-page` — the page's own column, scrolling under the bar, as wide as the
+ * tool. (Held to a 1280 column until the web's 8 October pass: on a 1920
+ * screen that left 340 empty on each side.) What should not stretch is held to
+ * its own width where it is laid out.
+ */
 @Composable
 internal fun SPageBox(
     modifier: Modifier = Modifier,
@@ -264,7 +281,6 @@ internal fun SPageBox(
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
-                .widthIn(max = 1280.dp)
                 .fillMaxWidth()
                 .then(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
@@ -273,6 +289,23 @@ internal fun SPageBox(
         )
     }
 }
+
+/** The tool's own width; unspecified outside the shell (a page drawn on its own). */
+internal val LocalStillsWidth = compositionLocalOf { Dp.Unspecified }
+
+/**
+ * Whether the tool is wide enough for the layouts that use its width — the
+ * web's `@container stk (min-width: 1100px)`: Cast's form beside a grid of
+ * cast, Settings' three sections side by side, an upload's list beside the
+ * drop zone.
+ */
+@Composable
+internal fun stillsWide(): Boolean {
+    val width = LocalStillsWidth.current
+    return width != Dp.Unspecified && width >= WIDE_AT
+}
+
+private val WIDE_AT = 1100.dp
 
 /** Asks the view model to load once per view model, as every tool does. */
 @Composable

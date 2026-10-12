@@ -148,6 +148,33 @@ fun countsOf(items: List<UploadItem>): UploadCounts {
     return UploadCounts(items.size, active, done, failed, duplicate, refused, cancelled, bytes, sent)
 }
 
+/**
+ * The files of an upload, in the order a person wants to read them — the web's
+ * `queueRows`: the ones that need them (failed, already uploaded, turned away,
+ * stopped), the ones moving right now, the ones that have arrived — latest
+ * first — and the ones still waiting.
+ *
+ * Every file is in the list from the moment it is chosen until the list is
+ * cleared, so the list only ever changes a row's place and state; it does not
+ * come and go.
+ */
+fun queueRows(items: List<UploadItem>): List<UploadItem> {
+    val attention = mutableListOf<UploadItem>()
+    val moving = mutableListOf<UploadItem>()
+    val arrived = mutableListOf<UploadItem>()
+    val waiting = mutableListOf<UploadItem>()
+    items.forEach { item ->
+        when (item.status) {
+            FileStatus.Failed, FileStatus.Duplicate, FileStatus.Refused, FileStatus.Cancelled -> attention += item
+            FileStatus.Uploading, FileStatus.Signing -> moving += item
+            FileStatus.Uploaded, FileStatus.Done -> arrived += item
+            FileStatus.Waiting -> waiting += item
+        }
+    }
+    // Files are sent in the order they were chosen, so the last arrived is the latest.
+    return attention + moving + arrived.asReversed() + waiting
+}
+
 /** How many were queued, and how many were turned away here. */
 data class QueueOutcome(val added: Int, val refused: Int)
 

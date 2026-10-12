@@ -5,6 +5,9 @@
 package com.zillit.desktop.feature.selectstills
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.feature.selectstills.data.HeadshotFlow
+import com.zillit.desktop.feature.selectstills.data.PutOutcome
+import com.zillit.desktop.feature.selectstills.data.StillsUploader
 import com.zillit.desktop.feature.selectstills.domain.ApprovalRow
 import com.zillit.desktop.feature.selectstills.domain.Client
 import com.zillit.desktop.feature.selectstills.domain.Decision
@@ -37,6 +40,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -168,7 +172,7 @@ class StillsViewModelTest {
     }
 
     @Test
-    fun `a production that opened the gallery gives a viewer the photos and the cast list`() = runTest {
+    fun `a production that opened the gallery gives a viewer the photos, and never the cast list`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             repository.me = StillsMe(userId = "u3", canPost = false, scope = ViewerScope.Cleared, settings = StillsSettings())
@@ -176,7 +180,9 @@ class StillsViewModelTest {
             vm.onEvent(StillsEvent.Load)
             advanceUntilIdle()
 
-            assertEquals(setOf(StillsPage.Photos, StillsPage.Cast), vm.state.value.pages)
+            // The cast list is production's (the web, 9 October): a viewer was
+            // shown everybody cast, by name.
+            assertEquals(setOf(StillsPage.Photos), vm.state.value.pages)
             assertEquals(StillsPage.Photos, vm.state.value.page)
             // Cleared-only: a publication filter would be noise.
             assertFalse(vm.state.value.showsPublicationFilter)
@@ -492,7 +498,7 @@ class StillsViewModelTest {
     }
 
     @Test
-    fun `the D key opens the reason box only when there is one row to decide`() = runTest {
+    fun `the K key opens the reason box only when there is one row to decide`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             repository.photo = Photo(
@@ -537,6 +543,159 @@ class StillsViewModelTest {
             advanceUntilIdle()
             assertTrue(vm.state.value.gallery.photos.isEmpty())
             assertNull(vm.state.value.lightbox)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // -- selecting photos, to delete them together ---------------------------------------
+
+    private fun kotlinx.coroutines.test.TestScope.galleryOf(vararg ids: String, hasMore: Boolean = false): StillsViewModel {
+        repository.gallery = PhotoPage(photos = ids.mapIndexed { index, id -> tile(id, sortAt = 100L - index) }, hasMore = hasMore, next = "c1".takeIf { hasMore })
+        val vm = viewModel()
+        vm.onEvent(StillsEvent.Load)
+        advanceUntilIdle()
+        vm.onEvent(StillsEvent.Open(StillsPage.Photos))
+        advanceUntilIdle()
+        return vm
+    }
+
+    @Test
+    fun `a shift-click picks everything from the last photo clicked`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val vm = galleryOf("p1", "p2", "p3", "p4", "p5")
+            vm.onEvent(StillsEvent.Picking(true))
+            vm.onEvent(StillsEvent.PickPhoto("p4", shift = false))
+            vm.onEvent(StillsEvent.PickPhoto("p2", shift = true))
+            assertEquals(setOf("p2", "p3", "p4"), vm.state.value.gallery.picked)
+            // A plain click lets one go again.
+            vm.onEvent(StillsEvent.PickPhoto("p3", shift = false))
+            assertEquals(listOf("p2", "p4"), vm.state.value.gallery.chosen)
+            vm.onEvent(StillsEvent.PickAllShown)
+            assertEquals(5, vm.state.value.gallery.chosen.size)
+            vm.onEvent(StillsEvent.Picking(false))
+            assertTrue(vm.state.value.gallery.picked.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `a bulk delete sends one request a photo and keeps what was refused picked`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            repository.deleteErrors = mapOf(
+                "p2" to ZillitError.Http(409, "still_kills_photo_in_use"),
+                // Somebody else got there first: as good as deleted.
+                "p3" to ZillitError.Http(404, "still_kills_photo_not_found"),
+            )
+            val vm = galleryOf("p1", "p2", "p3", "p4")
+            vm.onEvent(StillsEvent.Picking(true))
+            vm.onEvent(StillsEvent.PickPhoto("p1", shift = false))
+            vm.onEvent(StillsEvent.PickPhoto("p3", shift = true))
+            vm.onEvent(StillsEvent.AskDeletePicked(true))
+            assertTrue(vm.state.value.gallery.askingDelete)
+
+            vm.onEvent(StillsEvent.DeletePicked)
+            advanceUntilIdle()
+
+            // The service deletes one photo per request.
+            assertEquals(listOf("deletePhoto(p1)", "deletePhoto(p2)", "deletePhoto(p3)"), repository.calls.filter { it.startsWith("deletePhoto(") }.sorted())
+            val gallery = vm.state.value.gallery
+            assertEquals(listOf("p2", "p4"), gallery.photos.map { it.id })
+            // The refusal is said, and what it refused is still picked to try again.
+            assertEquals(setOf("p2"), gallery.picked)
+            assertTrue(gallery.picking)
+            assertFalse(gallery.askingDelete)
+            assertNull(gallery.removing)
+            assertTrue(vm.state.value.error != null)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `a bulk delete that all went says so once and stops picking`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val vm = galleryOf("p1", "p2", "p3", "p4", "p5", "p6")
+            vm.onEvent(StillsEvent.Picking(true))
+            vm.onEvent(StillsEvent.PickAllShown)
+            vm.onEvent(StillsEvent.AskDeletePicked(true))
+            vm.onEvent(StillsEvent.DeletePicked)
+            advanceUntilIdle()
+
+            assertEquals(6, repository.calls.count { it.startsWith("deletePhoto(") })
+            assertTrue(vm.state.value.gallery.photos.isEmpty())
+            assertFalse(vm.state.value.gallery.picking)
+            assertTrue(vm.state.value.notice != null)
+            assertNull(vm.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `deleting everything shown fetches on rather than saying the gallery is empty`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val vm = galleryOf("p1", "p2", hasMore = true)
+            val asked = repository.calls.count { it.startsWith("photos(") }
+            // The next page, as the service will answer it once these are gone.
+            repository.gallery = PhotoPage(photos = listOf(tile("p9", sortAt = 1)))
+            vm.onEvent(StillsEvent.Picking(true))
+            vm.onEvent(StillsEvent.PickAllShown)
+            vm.onEvent(StillsEvent.DeletePicked)
+            advanceUntilIdle()
+
+            assertTrue(repository.calls.count { it.startsWith("photos(") } > asked)
+            assertEquals(listOf("p9"), vm.state.value.gallery.photos.map { it.id })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `only production may pick photos`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            repository.me = repository.me.copy(canPost = false)
+            repository.gallery = PhotoPage(photos = listOf(tile("p1")))
+            val vm = viewModel(viewing())
+            vm.onEvent(StillsEvent.Load)
+            advanceUntilIdle()
+            vm.onEvent(StillsEvent.Picking(true))
+            assertFalse(vm.state.value.gallery.picking)
+            vm.onEvent(StillsEvent.DeletePicked)
+            advanceUntilIdle()
+            assertTrue(repository.calls.none { it.startsWith("deletePhoto(") })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // -- the lightbox's outline -------------------------------------------------------
+
+    @Test
+    fun `the face outlined is the row last pointed at, and leaving another row keeps it`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            repository.photo = Photo(id = "p1", status = PhotoStatus.Done)
+            val vm = viewModel()
+            vm.onEvent(StillsEvent.Load)
+            advanceUntilIdle()
+            vm.onEvent(StillsEvent.OpenPhoto("p1", listOf("p1"), run = false))
+            advanceUntilIdle()
+
+            vm.onEvent(StillsEvent.PointFace("f1", on = true))
+            assertEquals("f1", vm.state.value.lightbox?.activeFace)
+            vm.onEvent(StillsEvent.PointFace("f2", on = true))
+            // f1's row lets go after f2's took the outline: f2 keeps it.
+            vm.onEvent(StillsEvent.PointFace("f1", on = false))
+            assertEquals("f2", vm.state.value.lightbox?.activeFace)
+            vm.onEvent(StillsEvent.PointFace("f2", on = false))
+            assertNull(vm.state.value.lightbox?.activeFace)
         } finally {
             Dispatchers.resetMain()
         }
@@ -651,7 +810,75 @@ class StillsViewModelTest {
         }
     }
 
+    @Test
+    fun `"enrolled" is said once the headshots are checked, not when the member is made`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val check = CompletableDeferred<Unit>()
+            repository.headshotCheck = check
+            val vm = StillsViewModel(
+                repository = repository,
+                viewer = { posting() },
+                headshots = HeadshotFlow(repository, OkUploader, FakeStillsFiles()),
+                now = { now },
+            )
+            vm.onEvent(StillsEvent.Load)
+            advanceUntilIdle()
+            vm.onEvent(StillsEvent.EnrollName("Anna"))
+            vm.onEvent(StillsEvent.EnrollConsent(true))
+            vm.onEvent(StillsEvent.EnrollPicks(listOf(StillsPick("/h/a.jpg", "a.jpg", 10, "image/jpeg"))))
+            vm.onEvent(StillsEvent.Enrol)
+            advanceUntilIdle()
+
+            // The member exists; the picture is still being checked. Said now,
+            // "enrolled" would sit beside a button that is still busy.
+            assertTrue(repository.calls.any { it == "createMember(Anna)" })
+            assertNull(vm.state.value.notice)
+            assertTrue(vm.state.value.enroll?.busy == true)
+
+            check.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(vm.state.value.notice != null)
+            assertFalse(vm.state.value.enroll?.busy == true)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     // -- the member's card -------------------------------------------------------------
+
+    @Test
+    fun `remove on a turned-away headshot only takes the notice away`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            repository.members = listOf(Member(id = "m1", name = "Anna"))
+            repository.headshotVerdicts = listOf(
+                com.zillit.desktop.feature.selectstills.domain.HeadshotVerdict("h0", ok = false, reason = "still_kills_headshot_matches_other", matchedName = "Ben"),
+            )
+            val vm = StillsViewModel(
+                repository = repository,
+                viewer = { posting() },
+                headshots = HeadshotFlow(repository, OkUploader, FakeStillsFiles()),
+                now = { now },
+            )
+            vm.onEvent(StillsEvent.Load)
+            advanceUntilIdle()
+            vm.onEvent(StillsEvent.OpenMember("m1"))
+            advanceUntilIdle()
+            vm.onEvent(StillsEvent.AddHeadshots(listOf(StillsPick("/h/side.jpg", "side.jpg", 10, "image/jpeg"))))
+            advanceUntilIdle()
+            val refused = vm.state.value.memberDialog?.results.orEmpty().single()
+            assertTrue(refused.canForce)
+
+            val before = repository.calls.size
+            vm.onEvent(StillsEvent.DismissHeadshot(refused))
+            assertTrue(vm.state.value.memberDialog?.results.orEmpty().isEmpty())
+            // The picture was never added: there is nothing to ask the service.
+            assertEquals(before, repository.calls.size)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
 
     @Test
     fun `a card saves the basics, the agent and the allowance in the web's order`() = runTest {
@@ -839,5 +1066,11 @@ class StillsViewModelTest {
         } finally {
             Dispatchers.resetMain()
         }
+    }
+
+    /** Storage that takes every file. */
+    private object OkUploader : StillsUploader {
+        override suspend fun put(url: String, headers: Map<String, String>, path: String, contentType: String, size: Long, onProgress: (Float) -> Unit) = PutOutcome.Ok
+        override suspend fun putBytes(url: String, headers: Map<String, String>, bytes: ByteArray, contentType: String) = PutOutcome.Ok
     }
 }

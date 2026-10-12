@@ -20,7 +20,7 @@ import com.zillit.desktop.feature.selectstills.domain.limitsFromInputs
 import com.zillit.desktop.feature.selectstills.domain.usedOf
 
 /**
- * A member's profile — the web's member card: the name on top, to be typed
+ * A cast member's profile — the web's member card: the name on top, to be typed
  * over; their agent and allowance; their headshots, each with a ✕; and a drop
  * zone for more angles.
  *
@@ -95,7 +95,7 @@ internal fun MemberDialog(state: StillsUiState, dialog: MemberDialogState, onEve
 
         if (dialog.needsApproval) {
             SField(
-                label = str(S.desktop_stk_agent),
+                label = str(S.agent),
                 hint = str(S.desktop_stk_agent_change_hint),
                 warn = if (dialog.agent.isBlank()) str(S.desktop_stk_agent_missing_warn) else null,
             ) {
@@ -156,7 +156,7 @@ internal fun MemberDialog(state: StillsUiState, dialog: MemberDialogState, onEve
             DangerRow(str(S.desktop_stk_erase_face_data_hint), str(S.desktop_stk_erase_face_data), !dialog.busy) {
                 onEvent(StillsEvent.Ask(MemberAsk.Erase))
             }
-            DangerRow(str(S.desktop_stk_member_remove_hint), str(S.desktop_ce_remove_member), !dialog.busy) {
+            DangerRow(str(S.desktop_stk_member_remove_hint), str(S.desktop_stk_member_remove), !dialog.busy) {
                 onEvent(StillsEvent.Ask(MemberAsk.Remove))
             }
         }
@@ -172,16 +172,16 @@ internal fun MemberDialog(state: StillsUiState, dialog: MemberDialogState, onEve
             onClose = { onEvent(StillsEvent.Ask(MemberAsk.None)) },
         )
         MemberAsk.Remove -> SConfirmDialog(
-            title = str(S.desktop_ce_remove_member),
+            title = str(S.desktop_stk_member_remove),
             message = str(S.desktop_stk_member_remove_confirm, member?.name.orEmpty()),
-            confirmLabel = str(S.desktop_ce_remove_member),
+            confirmLabel = str(S.desktop_stk_member_remove),
             busy = dialog.busy,
             onConfirm = { onEvent(StillsEvent.RemoveMember(false)) },
             onClose = { onEvent(StillsEvent.Ask(MemberAsk.None)) },
         )
         // Named in photos: say what removing them does, and ask again.
         MemberAsk.RemoveInUse -> SConfirmDialog(
-            title = str(S.desktop_ce_remove_member),
+            title = str(S.desktop_stk_member_remove),
             message = str(S.desktop_stk_member_remove_in_use, member?.name.orEmpty(), member?.photoCount ?: 0),
             confirmLabel = str(S.desktop_stk_member_remove_anyway),
             busy = dialog.busy,
@@ -202,7 +202,15 @@ private fun DangerRow(words: String, label: String, enabled: Boolean, onClick: (
     }
 }
 
-/** What the service said about each headshot, with "add anyway" where a person may overrule it. */
+/**
+ * What the service said about each headshot it turned away. Two answers a
+ * person can give: "Add anyway" where they may overrule it (it IS this person,
+ * whatever it looks like), and "Remove", which lets the picture go — it was
+ * never added, so this only takes the notice away. A refusal that cannot be
+ * overruled (no face, several people) has "Remove" alone; before the web's
+ * 8 October fix it had no button at all, and the notice stayed until the card
+ * was closed.
+ */
 @Composable
 private fun HeadshotResults(results: List<HeadshotOutcome>, busy: Boolean, onEvent: (StillsEvent) -> Unit) {
     val k = StillsTheme.c
@@ -219,8 +227,11 @@ private fun HeadshotResults(results: List<HeadshotOutcome>, busy: Boolean, onEve
                 size = 13,
                 color = k.accentInk,
             )
-            if (result.canForce) {
-                SBtn(str(S.desktop_stk_add_anyway), { onEvent(StillsEvent.ForceHeadshot(result)) }, kind = SBtnKind.Primary, small = true, enabled = !busy)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (result.canForce) {
+                    SBtn(str(S.desktop_stk_add_anyway), { onEvent(StillsEvent.ForceHeadshot(result)) }, kind = SBtnKind.Primary, small = true, enabled = !busy)
+                }
+                SBtn(str(S.remove), { onEvent(StillsEvent.DismissHeadshot(result)) }, small = true, enabled = !busy)
             }
         }
     }

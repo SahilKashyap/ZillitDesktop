@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +41,14 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -83,28 +93,49 @@ internal fun peopleWords(people: Int): String = when {
  * and chips read better at a glance; they are in the lightbox. Unlike the
  * web's demo, a tile that is still being processed, or that failed, opens too:
  * that is where production retries or deletes it.
+ *
+ * While production is selecting photos ([picking]) a tile is a tick box
+ * instead: a click picks it or lets it go (`onPick(shift)`), and nothing opens.
  */
 @Composable
-internal fun SPhotoTile(photo: PhotoTile, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SPhotoTile(
+    photo: PhotoTile,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+    picking: Boolean = false,
+    picked: Boolean = false,
+    onPick: (shift: Boolean) -> Unit = {},
+) {
+    val body: @Composable () -> Unit = { PhotoTileBody(photo, onOpen, modifier, picking, picked, onPick) }
     if (photo.originalName.isBlank()) {
-        PhotoTileBody(photo, onOpen, modifier)
+        body()
         return
     }
     // The camera's own file name, as the web's `title` gives it.
-    ZillitTooltip(text = photo.originalName) { PhotoTileBody(photo, onOpen, modifier) }
+    ZillitTooltip(text = photo.originalName) { body() }
 }
 
 @Composable
-private fun PhotoTileBody(photo: PhotoTile, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+private fun PhotoTileBody(
+    photo: PhotoTile,
+    onOpen: () -> Unit,
+    modifier: Modifier,
+    picking: Boolean,
+    picked: Boolean,
+    onPick: (Boolean) -> Unit,
+) {
     val k = StillsTheme.c
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
+    // Whether shift was held when the press began: a click carries no keys.
+    val shift = remember { BooleanArray(1) }
     val shape = RoundedCornerShape(12.dp)
     val done = photo.status.isDone
     val failed = photo.status.isFailed
     val meta = stateMeta(photo.publicState)
-    // To a reader who only ever sees cleared photos, "public" on every tile is noise.
+    // To a reader who only ever sees cleared photos, "cleared" on every tile is noise.
     val showState = done && (photo.publicState != com.zillit.desktop.feature.selectstills.domain.PublicState.Approved || photo.hasApprovals)
+    val on = picking && picked
 
     Box(
         modifier
@@ -112,11 +143,28 @@ private fun PhotoTileBody(photo: PhotoTile, onOpen: () -> Unit, modifier: Modifi
             .aspectRatio(1f)
             .clip(shape)
             .background(k.panel2)
-            .border(BorderStroke(1.dp, if (hovered) k.lineHover else k.line), shape)
+            .border(
+                BorderStroke(if (on) PICKED_EDGE else 1.dp, if (on) k.accent else if (hovered) k.lineHover else k.line),
+                shape,
+            )
+            .then(if (picking) Modifier.semantics { toggleableState = ToggleableState(picked) } else Modifier)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) shift[0] = event.keyboardModifiers.isShiftPressed
+                    }
+                }
+            }
             .hoverable(source)
-            .clickable(interactionSource = source, indication = null, onClick = onOpen),
+            .clickable(
+                interactionSource = source,
+                indication = null,
+                role = if (picking) Role.Checkbox else Role.Button,
+                onClick = { if (picking) onPick(shift[0]) else onOpen() },
+            ),
     ) {
-        SImage(photo.thumbUrl, Modifier.fillMaxSize(), description = photo.originalName) {
+        SImage(photo.thumbUrl, Modifier.fillMaxSize().then(if (on) Modifier.alpha(PICKED_ALPHA) else Modifier), description = photo.originalName) {
             SText(
                 text = if (failed) str(errorKey(photo.errorCode)) else str(S.desktop_stk_status_processing),
                 size = 13,
@@ -159,6 +207,22 @@ private fun PhotoTileBody(photo: PhotoTile, onOpen: () -> Unit, modifier: Modifi
                 if (photo.unnamed > 0) SPill(str(S.desktop_stk_tile_unknown, photo.unnamed), SPillKind.Unknown)
             }
         }
+
+        // `.stk-pick` — the tick box in the corner, filled once picked.
+        if (picking) {
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (picked) k.accent else Color(0x8C0A0A0C))
+                    .border(BorderStroke(2.dp, if (picked) k.accent else Color.White.copy(alpha = 0.85f)), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (picked) SText("✓", 14, Bold, Color(0xFF1B1405), maxLines = 1)
+            }
+        }
     }
 }
 
@@ -179,6 +243,8 @@ internal fun SDropZone(
     secondary: Pair<String, () -> Unit>? = null,
     /** Set to take an OS drop here too; the paths arrive unread. */
     onPaths: ((List<String>) -> Unit)? = null,
+    /** Taller beside an upload's list on a wide tool (`.stk-drop { padding: 56px 30px }`). */
+    padding: PaddingValues = PaddingValues(30.dp),
 ) {
     val k = StillsTheme.c
     val source = remember { MutableInteractionSource() }
@@ -205,7 +271,7 @@ internal fun SDropZone(
                 .background(if (lit) k.accent.copy(alpha = 0.06f) else Color.Transparent)
                 .border(BorderStroke(2.dp, if (lit) k.accent else k.dashed), shape)
                 .then(if (enabled) Modifier.hoverable(source).clickable(interactionSource = source, indication = null, onClick = onClick) else Modifier.alpha(0.6f))
-                .padding(30.dp),
+                .padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -478,10 +544,11 @@ internal fun SDecisionChip(name: String, state: Decision, note: String = "", mod
 
 /**
  * The three places a decision is taken, and their words — the web's
- * `DecisionBar`:
- *   Gate  the gallery lightbox's approval row   ✓ Approve · ✕ Reject · Undo
- *   Card  a card in the review queue            ✓ Keep · ✕ Discard · Undo
- *   Foot  the review lightbox's pinned footer   ✓ Keep · ✕ Discard… · undo
+ * `DecisionBar`, in the contract's words since 9 October (an actor's right to
+ * refuse a still is a kill right; Keep / Discard / Reject are gone):
+ *   Gate  the gallery lightbox's approval row   ✓ Approve · ✕ Kill · Undo
+ *   Card  a card in the review queue            ✓ Approve · ✕ Kill · Undo
+ *   Foot  the review lightbox's pinned footer   ✓ Approve · ✕ Kill… · undo
  *
  * The first two are chips and ask why on one line; the footer has room for
  * real buttons and a few lines of reason.
@@ -491,19 +558,20 @@ internal enum class SDecideWhere { Gate, Card, Foot }
 private class DecideWords(val yes: String, val no: String, val confirm: String, val why: String, val eg: String)
 
 private fun wordsFor(where: SDecideWhere) = when (where) {
-    SDecideWhere.Gate -> DecideWords(S.desktop_stk_approve, S.desktop_stk_reject, S.reject, S.desktop_stk_reject_why, S.desktop_stk_why_placeholder)
-    SDecideWhere.Card -> DecideWords(S.desktop_stk_keep, S.desktop_stk_discard_start, S.ah_discard, S.desktop_stk_discard_why, S.desktop_stk_why_placeholder)
-    SDecideWhere.Foot -> DecideWords(S.desktop_stk_keep, S.desktop_stk_discard_ellipsis, S.ah_discard, S.desktop_stk_discard_why_all, S.desktop_stk_why_placeholder_long)
+    SDecideWhere.Gate, SDecideWhere.Card ->
+        DecideWords(S.desktop_stk_approve, S.desktop_stk_reject, S.desktop_stk_discard, S.desktop_stk_reject_why, S.desktop_stk_why_placeholder)
+    SDecideWhere.Foot ->
+        DecideWords(S.desktop_stk_approve, S.desktop_stk_discard_ellipsis, S.desktop_stk_discard, S.desktop_stk_discard_why_all, S.desktop_stk_why_placeholder_long)
 }
 
 /**
- * Keep, discard or undo, for one of the reader's actors in one photo.
+ * Approve, kill or undo, for one of the reader's actors in one photo.
  *
- * Discard asks why first, and the question REPLACES the buttons rather than
- * opening under them: two "Discard" controls on screen at once read as two
+ * Kill asks why first, and the question REPLACES the buttons rather than
+ * opening under them: two "Kill" controls on screen at once read as two
  * different actions. One question at a time, one way to answer it.
  *
- * @param blocked no discard allowance is left for this photo's section
+ * @param blocked no kill allowance is left for this photo's section
  */
 @Composable
 internal fun SDecisionBar(
@@ -607,13 +675,18 @@ internal fun SDecisionBar(
     }
 }
 
-/** A heading above a page's body — `.stk-page h1` plus its lede. */
+/**
+ * A heading above a page's body — `.stk-page h1` plus its lede. The lede runs
+ * as far as the page does (the web, 9 October): held to a measure, it broke
+ * after "they appear" and left "in." on a line of its own with half the
+ * screen empty beside it.
+ */
 @Composable
 internal fun SPageHead(title: String, lede: String?, modifier: Modifier = Modifier) {
     val k = StillsTheme.c
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SText(title, 26, Bold, k.ink)
-        if (!lede.isNullOrBlank()) SText(lede, 15, color = k.muted, modifier = Modifier.widthIn(max = 760.dp))
+        if (!lede.isNullOrBlank()) SText(lede, 15, color = k.muted, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -676,6 +749,10 @@ internal fun SFaceCrop(url: String, modifier: Modifier = Modifier, size: Dp = 48
 }
 
 internal const val SEARCHABLE_AT = 8
+
+/** `.stk-tile.stk-picked`: the accent border plus its 2px ring. */
+private val PICKED_EDGE = 3.dp
+private const val PICKED_ALPHA = 0.72f
 private const val NOTE_LIMIT = 1000
 private val SHADE = 90.dp
 private val EDGE_HEIGHT = 22.dp

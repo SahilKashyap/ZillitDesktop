@@ -87,6 +87,19 @@ fun removeIds(list: List<PhotoTile>, ids: Collection<String>): List<PhotoTile> {
     return if (next.size == list.size) list else next
 }
 
+/**
+ * The ids from [from] to [to] in the order of [ids], both included, whichever
+ * comes first — what a shift-click selects. Just [to] when [from] is not in the
+ * list any more (the photo it started from has gone).
+ */
+fun idsBetween(ids: List<String>, from: String, to: String): List<String> {
+    val a = ids.indexOf(from)
+    val b = ids.indexOf(to)
+    if (b < 0) return emptyList()
+    if (a < 0) return listOf(to)
+    return ids.subList(minOf(a, b), maxOf(a, b) + 1)
+}
+
 /** Split ids into requests the service accepts (`ids` takes at most 200). */
 fun idBatches(ids: Collection<String>, size: Int = ID_BATCH): List<List<String>> =
     ids.distinct().chunked(size)

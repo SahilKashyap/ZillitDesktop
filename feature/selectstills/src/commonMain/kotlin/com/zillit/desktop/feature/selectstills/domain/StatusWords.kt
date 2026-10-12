@@ -19,10 +19,11 @@ fun stateMeta(state: PublicState): StateMeta = when (state) {
     PublicState.Blocked -> StateMeta(S.desktop_stk_state_blocked, S.desktop_stk_state_blocked_hint, PillTone.Bad)
 }
 
-/** An agent's own decision on one row: undecided · kept · discarded. */
+/** An agent's own decision on one row: undecided · approved · killed. */
 fun decisionKey(state: Decision): String = when (state) {
     Decision.Pending -> S.desktop_stk_decision_undecided
-    Decision.Approved -> S.desktop_stk_decision_kept
+    // The app already says "approved" (Deal Memo, in 22 languages): same word, same key.
+    Decision.Approved -> S.desktop_dm_approved_suffix
     Decision.Rejected -> S.desktop_stk_decision_discarded
 }
 

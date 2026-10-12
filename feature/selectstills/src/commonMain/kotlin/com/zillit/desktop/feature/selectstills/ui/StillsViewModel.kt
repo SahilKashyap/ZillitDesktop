@@ -44,12 +44,14 @@ import com.zillit.desktop.feature.selectstills.domain.Thresholds
 import com.zillit.desktop.feature.selectstills.domain.Wrote
 import com.zillit.desktop.feature.selectstills.domain.appendPage
 import com.zillit.desktop.feature.selectstills.domain.idBatches
+import com.zillit.desktop.feature.selectstills.domain.idsBetween
 import com.zillit.desktop.feature.selectstills.domain.limitsFromInputs
 import com.zillit.desktop.feature.selectstills.domain.limitsToInputs
 import com.zillit.desktop.feature.selectstills.domain.patchList
 import com.zillit.desktop.feature.selectstills.domain.removeIds
 import com.zillit.desktop.feature.selectstills.domain.toQuery
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -145,6 +147,17 @@ class StillsViewModel(
             StillsEvent.ReloadGallery -> loadGallery()
             StillsEvent.LoadMorePhotos -> loadMorePhotos()
 
+            is StillsEvent.Picking -> setState {
+                copy(gallery = gallery.copy(picking = event.on && canPost, picked = emptySet(), lastPick = null, askingDelete = false))
+            }
+            is StillsEvent.PickPhoto -> pickPhoto(event.photoId, event.shift)
+            StillsEvent.PickAllShown -> setState { copy(gallery = gallery.copy(picked = gallery.photos.map { it.id }.toSet())) }
+            StillsEvent.ClearPicked -> setState { copy(gallery = gallery.copy(picked = emptySet())) }
+            is StillsEvent.AskDeletePicked -> setState {
+                copy(gallery = gallery.copy(askingDelete = event.asking && gallery.chosen.isNotEmpty() || gallery.removing != null))
+            }
+            StillsEvent.DeletePicked -> deletePicked()
+
             is StillsEvent.ReviewTabChanged -> {
                 closeLightbox()
                 setState { copy(review = review.copy(tab = event.tab, draftFor = null, draftNote = "")) }
@@ -164,7 +177,10 @@ class StillsViewModel(
             StillsEvent.ClosePhoto -> closeLightbox()
             is StillsEvent.StepPhoto -> stepPhoto(event.delta)
             StillsEvent.ReloadPhoto -> currentState.lightbox?.let { loadPhoto(it.photoId, quiet = false) }
-            is StillsEvent.PickFace -> editLightbox { copy(activeFace = event.faceId) }
+            // The row the pointer left lets go of the outline only if it still has it.
+            is StillsEvent.PointFace -> editLightbox {
+                copy(activeFace = if (event.on) event.faceId else activeFace.takeIf { it != event.faceId })
+            }
             is StillsEvent.SetFace -> writePhoto { photoId -> repository.setFace(photoId, event.faceId, event.edit) }
             is StillsEvent.AddPerson -> writePhoto { photoId -> repository.addPerson(photoId, event.memberId) }
             StillsEvent.DismissUnknown -> writePhoto { photoId -> repository.dismissUnknown(photoId) }
@@ -200,6 +216,7 @@ class StillsViewModel(
             StillsEvent.PickMemberHeadshots -> launch { addHeadshots(pickPhotos(true)) }
             is StillsEvent.DropMemberHeadshots -> addHeadshots(describe(event.paths))
             is StillsEvent.ForceHeadshot -> forceHeadshot(event.outcome)
+            is StillsEvent.DismissHeadshot -> editMember { copy(results = results.filterNot { it === event.outcome }) }
             is StillsEvent.RemoveHeadshot -> removeHeadshot(event.headshotId)
             is StillsEvent.Ask -> editMember { copy(ask = event.ask) }
             StillsEvent.EraseFaceData -> eraseFaceData()
@@ -363,7 +380,7 @@ class StillsViewModel(
         }
     }
 
-    /** The queue's count, for the number beside "Publisher review" and the landing page. */
+    /** The queue's count, for the number beside "Approvals" and the landing page. */
     private fun reloadReviewCounts() {
         val state = currentState
         if (!state.viewer.canCall || !state.isApprover) {
@@ -388,7 +405,7 @@ class StillsViewModel(
      * the module's base page, and this picks one: an agent with photos waiting
      * goes to their queue (that is what the notification was about);
      * production and viewers go to the gallery; an agent who can see nothing
-     * else goes to Review.
+     * else goes to Approvals.
      */
     private fun land() {
         val state = currentState
@@ -466,14 +483,18 @@ class StillsViewModel(
                 is ZillitResult.Failure -> setState { copy(gallery = gallery.copy(loading = false, failed = true)) }
                 is ZillitResult.Success -> {
                     val page = answer.data
+                    val photos = urls.stableTiles(page.photos, page.linksExpireAt)
                     setState {
                         copy(
                             gallery = gallery.copy(
                                 loading = false,
                                 failed = false,
-                                photos = urls.stableTiles(page.photos, page.linksExpireAt),
+                                photos = photos,
                                 hasMore = page.hasMore,
                                 next = page.next,
+                                // A photo no longer in the list (filtered away,
+                                // deleted by somebody else) is no longer picked.
+                                picked = gallery.picked.intersect(photos.map { it.id }.toSet()),
                             ),
                         )
                     }
@@ -587,8 +608,8 @@ class StillsViewModel(
                                 counts = page.counts ?: this.review.counts,
                             ),
                             clientsOverride = page.clients ?: clientsOverride,
-                            // The count beside "Publisher review" is for every
-                            // actor, so only an unfiltered answer may set it.
+                            // The count beside "Approvals" is for every actor,
+                            // so only an unfiltered answer may set it.
                             reviewCounts = if (this.review.member == null) page.counts ?: reviewCounts else reviewCounts,
                         )
                     }
@@ -712,6 +733,7 @@ class StillsViewModel(
                 review = review.copy(photos = removeIds(review.photos, listOf(box.photoId))),
             )
         }
+        fetchOn()
         loadSummary(soon = true)
         if (next != null) {
             setState { copy(lightbox = box.copy(photoId = next, ids = box.ids - box.photoId, photo = null, loading = true, activeFace = null, similar = null)) }
@@ -744,7 +766,7 @@ class StillsViewModel(
         }
     }
 
-    /** The D key, or a click on Discard: open the reason box. */
+    /** The K key, or a click on Kill: open the reason box. */
     private fun askWhy() {
         val box = currentState.lightbox ?: return
         val row = box.photo?.approvals?.singleOrNull { it.canDecide } ?: return
@@ -819,6 +841,99 @@ class StillsViewModel(
             val answer = repository.deletePhoto(photoId)
             editLightbox { copy(busy = false, deleting = false) }
             if (say(answer)) leavePhoto()
+        }
+    }
+
+    // -- selecting photos, to delete them together ---------------------------------------
+
+    /** A click picks a photo or lets it go; a shift-click picks everything from the last one clicked. */
+    private fun pickPhoto(photoId: String, shift: Boolean) {
+        val gallery = currentState.gallery
+        if (!gallery.picking || gallery.removing != null) return
+        val from = gallery.lastPick
+        val ids = gallery.photos.map { it.id }
+        val picked = when {
+            shift && from != null && from != photoId -> gallery.picked + idsBetween(ids, from, photoId)
+            photoId in gallery.picked -> gallery.picked - photoId
+            else -> gallery.picked + photoId
+        }
+        setState { copy(gallery = this.gallery.copy(picked = picked, lastPick = photoId)) }
+    }
+
+    /**
+     * One request per photo — the service deletes one at a time — a few at
+     * once. The outcome is said once, in the service's own words: its
+     * "deleted" when everything went, or the first refusal, with what was
+     * refused left picked. A 404 is as good as deleted (somebody else got
+     * there first).
+     */
+    private fun deletePicked() {
+        val todo = currentState.gallery.chosen
+        if (todo.isEmpty() || currentState.gallery.removing != null || !currentState.canPost) return
+        setState { copy(gallery = gallery.copy(removing = 0 to todo.size)) }
+        launch {
+            val gone = mutableListOf<String>()
+            var next = 0
+            var done = 0
+            var lastOk: ZillitResult<*>? = null
+            var firstBad: ZillitResult<*>? = null
+            // Lanes are children of this scope (not the view model's), so the
+            // outcome below waits for every one of them.
+            coroutineScope {
+                repeat(minOf(DELETE_LANES, todo.size)) {
+                    this@coroutineScope.launch {
+                        while (next < todo.size) {
+                            val photoId = todo[next]
+                            next += 1
+                            val answer = repository.deletePhoto(photoId)
+                            val missing = (answer as? ZillitResult.Failure)?.error?.stillsHttpStatus == NOT_FOUND
+                            when {
+                                answer is ZillitResult.Success -> {
+                                    lastOk = answer
+                                    gone += photoId
+                                }
+                                missing -> gone += photoId
+                                firstBad == null -> firstBad = answer
+                            }
+                            done += 1
+                            setState { copy(gallery = gallery.copy(removing = done to todo.size)) }
+                        }
+                    }
+                }
+            }
+            setState {
+                copy(
+                    gallery = gallery.copy(
+                        photos = removeIds(gallery.photos, gone),
+                        picked = gallery.picked - gone.toSet(),
+                        removing = null,
+                        askingDelete = false,
+                    ),
+                )
+            }
+            fetchOn()
+            loadSummary(soon = true)
+            val refused = firstBad
+            if (refused != null) {
+                say(refused)
+            } else {
+                lastOk?.let { say(it) }
+                setState { copy(gallery = gallery.copy(picking = false, picked = emptySet(), lastPick = null)) }
+            }
+        }
+    }
+
+    /**
+     * Photos taken out of the list here can leave it short, or empty, while the
+     * service has more. The grid only asks for more when it is scrolled to its
+     * end — and an empty list has no grid — so fetch on from here.
+     */
+    private fun fetchOn() {
+        val gallery = currentState.gallery
+        if (!gallery.hasMore) return
+        when {
+            gallery.photos.isEmpty() -> loadGallery()
+            gallery.photos.size < PAGE -> loadMorePhotos()
         }
     }
 
@@ -1048,18 +1163,26 @@ class StillsViewModel(
                     discardLimits = limits,
                 ),
             )
-            if (!say(answer)) {
+            // A refusal is said at once. "Enrolled" is said when the headshots
+            // are in as well: checking them takes a few seconds, and said any
+            // sooner it would sit beside a button that is still busy.
+            if (answer !is ZillitResult.Success) {
+                say(answer)
                 editEnroll { copy(busy = false) }
                 return@launch
             }
-            var saved = (answer as ZillitResult.Success).data.value
+            var saved = answer.data.value
             var results = emptyList<HeadshotOutcome>()
+            var failed: ZillitError? = null
             if (form.picks.isNotEmpty() && headshots != null) {
                 val outcome = headshots.add(saved.id, form.picks)
-                outcome.failure?.let { setState { copy(error = it.localised()) } }
+                failed = outcome.failure
                 outcome.member?.let { saved = it }
                 results = outcome.results
             }
+            // Both outcomes together, when only the headshot step failed.
+            say(answer)
+            failed?.let { setState { copy(error = it.localised()) } }
             editEnroll { copy(busy = false) }
             reloadMembers()
             // Name the face that started this, now that they exist.
@@ -1202,7 +1325,7 @@ class StillsViewModel(
      * Toast the outcome of a write from the backend's own `message` key — this
      * app never authors success or error copy.
      *
-     * [quiet] skips the success line (a run of keep / discard decisions would
+     * [quiet] skips the success line (a run of approve / kill decisions would
      * otherwise stack one per photo); a refusal always speaks.
      *
      * @return whether the call succeeded.
@@ -1236,6 +1359,9 @@ class StillsViewModel(
 
     private companion object {
         const val PAGE = 60
+
+        /** Deleting many photos is one request each: this many at a time. */
+        const val DELETE_LANES = 4
         const val ID_LIMIT = 200
         const val MAX_APPLY = 200
         const val SUMMARY_EVERY_MS = 3000L

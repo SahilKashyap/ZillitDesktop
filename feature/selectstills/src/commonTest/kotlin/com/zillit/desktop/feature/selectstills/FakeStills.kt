@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.selectstills.domain.Decision
 import com.zillit.desktop.feature.selectstills.domain.DecisionAnswer
 import com.zillit.desktop.feature.selectstills.domain.FaceEdit
 import com.zillit.desktop.feature.selectstills.domain.HeadshotLink
+import com.zillit.desktop.feature.selectstills.domain.HeadshotVerdict
 import com.zillit.desktop.feature.selectstills.domain.HeadshotsChecked
 import com.zillit.desktop.feature.selectstills.domain.Member
 import com.zillit.desktop.feature.selectstills.domain.MemberDraft
@@ -32,6 +33,7 @@ import com.zillit.desktop.feature.selectstills.domain.UploadLink
 import com.zillit.desktop.feature.selectstills.domain.UploadsConfirmed
 import com.zillit.desktop.feature.selectstills.domain.ViewerScope
 import com.zillit.desktop.feature.selectstills.domain.Wrote
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * A stand-in for the service, driven by the test rather than by a server.
@@ -68,6 +70,15 @@ class FakeStillsRepository : StillsRepository {
     var presignError: ZillitError? = null
     var confirmed: UploadsConfirmed = UploadsConfirmed(emptySet(), emptySet())
     var removeError: ZillitError? = null
+
+    /** Holds the service's headshot check until the test completes it. */
+    var headshotCheck: CompletableDeferred<Unit>? = null
+
+    /** What the service says of each headshot it checks (`h0`, `h1`, … in the order sent). */
+    var headshotVerdicts: List<HeadshotVerdict> = emptyList()
+
+    /** Photos whose delete is refused, and how. */
+    var deleteErrors: Map<String, ZillitError> = emptyMap()
 
     override suspend fun me(): ZillitResult<StillsMe> {
         calls += "me"
@@ -164,8 +175,10 @@ class FakeStillsRepository : StillsRepository {
         memberId: String,
         headshotIds: List<String>,
         force: Boolean,
-    ): ZillitResult<Wrote<HeadshotsChecked>> =
-        ZillitResult.Success(Wrote(HeadshotsChecked(members.firstOrNull { it.id == memberId }, emptyList())))
+    ): ZillitResult<Wrote<HeadshotsChecked>> {
+        headshotCheck?.await()
+        return ZillitResult.Success(Wrote(HeadshotsChecked(members.firstOrNull { it.id == memberId }, headshotVerdicts)))
+    }
 
     override suspend fun removeHeadshot(memberId: String, headshotId: String): ZillitResult<Wrote<Member>> =
         ZillitResult.Success(Wrote(members.first { it.id == memberId }))
@@ -236,7 +249,8 @@ class FakeStillsRepository : StillsRepository {
 
     override suspend fun deletePhoto(photoId: String): ZillitResult<Wrote<Unit>> {
         calls += "deletePhoto($photoId)"
-        return ZillitResult.Success(Wrote(Unit))
+        deleteErrors[photoId]?.let { return ZillitResult.Failure(it) }
+        return ZillitResult.Success(Wrote(Unit, "still_kills_photo_deleted"))
     }
 
     override suspend fun restorePhoto(photoId: String) = ZillitResult.Success(Wrote(Unit))

@@ -3,6 +3,9 @@
 package com.zillit.desktop.feature.selectstills.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.strings.S
@@ -33,7 +38,7 @@ import kotlin.math.roundToInt
  * `.stk-face-row` — one face of a photo in the side panel: a 48px crop, who it
  * is, and how sure the system is.
  *
- * Production (posting rights) names it as the web does: pick a member, or type
+ * Production (posting rights) names it as the web does: pick a cast member, or type
  * a new name and Save (which opens the enrolment card with the name filled in:
  * a new member needs their agreement and an answer about approval, so nobody
  * is enrolled by a keystroke). Choosing "— pick member —" again takes the name
@@ -80,9 +85,22 @@ internal fun FaceRow(
         ""
     }
 
+    // The pointer or the focus on this row outlines its face on the picture —
+    // the only face the picture marks. Leaving lets go, unless another row
+    // has taken the outline meanwhile (the view model checks).
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    var focused by remember { mutableStateOf(false) }
+    val pointed = hovered || focused
+    LaunchedEffect(face.id, pointed) {
+        if (pointed || active) onEvent(StillsEvent.PointFace(face.id, pointed))
+    }
+
     Column(
         Modifier
             .fillMaxWidth()
+            .hoverable(source)
+            .onFocusChanged { focused = it.hasFocus }
             .background(if (active) k.overlay.copy(alpha = ACTIVE_WASH) else Color.Transparent)
             .padding(vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -218,5 +236,5 @@ internal fun faceNote(face: Face, byCrew: Boolean): String = when {
     else -> str(S.desktop_stk_face_not_recognised)
 }
 
-/** The row a face box points at, picked out without a border. */
+/** The row whose face is outlined, picked out without a border. */
 private const val ACTIVE_WASH = 0.05f
