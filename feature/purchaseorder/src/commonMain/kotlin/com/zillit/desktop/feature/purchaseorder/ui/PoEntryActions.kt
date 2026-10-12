@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
+import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
 
 /**
  * The accountant's side of an order: opening one, emailing it, and the four
@@ -44,14 +45,16 @@ internal class PoEntryActions(
             PoEvent.DismissClose -> vm.update { copy(closePo = null) }
 
             is PoEvent.AskCloseOff -> vm.update {
-                copy(closeOff = PoCloseOffState(period = event.period, ids = event.ids))
+                copy(closeOff = PoCloseOffState(period = event.period, ids = event.ids, date = firstSelectableDay()))
             }
 
             is PoEvent.EditCloseOff -> vm.update { copy(closeOff = event.closeOff) }
             PoEvent.ConfirmCloseOff -> closeOffPeriod()
             PoEvent.DismissCloseOff -> vm.update { copy(closeOff = null) }
 
-            is PoEvent.AskBulkDate -> vm.update { copy(bulkDate = PoBulkDateState(ids = event.ids)) }
+            is PoEvent.AskBulkDate -> vm.update {
+                copy(bulkDate = PoBulkDateState(ids = event.ids, date = firstSelectableDay()))
+            }
             is PoEvent.EditBulkDate -> vm.update { copy(bulkDate = event.bulk) }
             PoEvent.ConfirmBulkDate -> applyBulkDate()
             PoEvent.DismissBulkDate -> vm.update { copy(bulkDate = null) }
@@ -277,7 +280,20 @@ internal class PoEntryActions(
             return
         }
         val number = order.number.ifBlank { str(S.desktop_po_this_order) }
-        vm.update { copy(closePo = PoCloseState(orderId = id, number = number)) }
+        // The order's own effective date is pre-filled, as the web's Close PO does.
+        vm.update { copy(closePo = PoCloseState(orderId = id, number = number, date = order.effectiveDate)) }
+    }
+
+    /**
+     * The first day an effective date may be set to — `max(today, lock + 1)`,
+     * as every effective-date picker on the web opens, so a field never starts
+     * blank or on a locked day. UTC midnight, the form the server stores.
+     */
+    private fun firstSelectableDay(): Long {
+        val now = vm.nowMillis()
+        val today = now - now % MILLIS_PER_DAY
+        val afterLock = vm.ui.periodLock.lockedThrough.isoDayToUtcMidnight()?.plus(MILLIS_PER_DAY)
+        return maxOf(today, afterLock ?: today)
     }
 
     /**
@@ -329,6 +345,11 @@ internal class PoEntryActions(
         val dialog = vm.ui.closeOff ?: return
         if (!dialog.confirmed) {
             vm.fail(str(S.desktop_po_tick_confirmation_close_off))
+            return
+        }
+        // The web's Close Off cannot be confirmed without a date.
+        if (dialog.date == null) {
+            vm.fail(str(S.desktop_po_pick_an_effective_date))
             return
         }
         // The web's closeable set, re-derived here: not already closed, and not
@@ -423,3 +444,5 @@ internal fun PurchaseOrder.withVendorName(state: PoUiState): PurchaseOrder =
 
 /** The ledger lines a fresh order starts with. */
 internal fun PurchaseOrder.ledgerLines(): List<PoLine> = lines.filterNot { it.isTax }
+
+private const val MILLIS_PER_DAY = 86_400_000L

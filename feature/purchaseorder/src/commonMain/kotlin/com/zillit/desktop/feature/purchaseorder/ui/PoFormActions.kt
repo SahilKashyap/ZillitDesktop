@@ -9,6 +9,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.LocalDraft
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
@@ -274,7 +275,14 @@ internal class PoFormActions(
             vm.ui.viewer.isAccountant -> PurchaseOrderViewModel.STATUS_ACCOUNTS_ENTERED
             else -> PurchaseOrderViewModel.STATUS_PENDING
         }
-        val request = form.toRequest(status, layout)
+        // The web's department view re-applies the creator's own signatures on
+        // every submit and edit: a tier-1 approver who raises a PO has approved
+        // tier 1 already. Accounts' own raise (ACCT_ENTERED) goes straight to the
+        // ledger queue and carries none.
+        val signs = !vm.ui.viewer.isAccountant && (status == PurchaseOrderViewModel.STATUS_PENDING || form.mode == PoFormMode.EditOrder)
+        val request = form.toRequest(status, layout).let {
+            if (!signs) it else it.copy(approvals = vm.ui.tiers.autoApprovals(it.departmentId, vm.ui.viewer.userId, vm.nowMillis()))
+        }
         val problems = validate(request, form, layout)
         if (problems.isNotEmpty()) {
             vm.update { copy(form = form.copy(problems = problems)) }
@@ -295,15 +303,18 @@ internal class PoFormActions(
             vm.update { copy(form = form.copy(problems = listOf(str(S.desktop_po_needs_vendor_or_description)))) }
             return
         }
-        send(form, request, str(S.ah_draft_saved_msg))
+        // Saving a draft from an order that already exists writes a *new* draft and
+        // leaves the order as it is, as the web's `draftId: null` does. Updating it
+        // in place with a DRAFT status demoted a pending or rejected order.
+        send(form, request, str(S.ah_draft_saved_msg), asNewDraft = form.mode == PoFormMode.EditOrder)
     }
 
-    private fun send(form: PoFormState, request: NewPurchaseOrder, success: String) {
+    private fun send(form: PoFormState, request: NewPurchaseOrder, success: String, asNewDraft: Boolean = false) {
         // The commit is what writes: EditForm/SubmitForm can reach here with
         // any orderId the caller likes, not only one requestEdit() opened, so
         // an update is re-checked against the order as it now stands. Create
         // (orderId == null) stays open to everyone, as the web has it.
-        val orderId = form.orderId
+        val orderId = form.orderId.takeUnless { asNewDraft }
         if (orderId != null) {
             val order = vm.ui.orderById(orderId)
             val allowAmend = vm.ui.projectSettings.allowAmendAfterApproval
@@ -313,13 +324,13 @@ internal class PoFormActions(
             }
         }
         val support = vm.offline
-        if (support != null && support.isOffline && form.orderId == null) {
+        if (support != null && support.isOffline && orderId == null) {
             vm.launchWork { vm.queueOrder(support, request) }
             return
         }
         vm.update { copy(form = form.copy(saving = true, problems = emptyList())) }
         vm.launchWork {
-            val result = form.orderId
+            val result = orderId
                 ?.let { repository.update(it, request) }
                 ?: repository.create(request)
             when (result) {
@@ -333,7 +344,7 @@ internal class PoFormActions(
                     // The request never left this machine: queue it rather than
                     // make the user retype it. Anything else — a timeout, a
                     // refusal — is reported, and the form keeps their words.
-                    if (support != null && result.error is ZillitError.NoConnection && form.orderId == null) {
+                    if (support != null && result.error is ZillitError.NoConnection && orderId == null) {
                         vm.queueOrder(support, request)
                     } else {
                         vm.update { copy(form = form.copy(saving = false)) }
@@ -408,7 +419,15 @@ internal class PoFormActions(
         // Vendor and description first, as the web's panel lists them.
         addAll(headerProblems(request, form, layout))
         request.validationError()?.let { add(it) }
-        if (form.lines.any { it.isDivisibleRental && it.rentalEnd!! <= it.rentalStart!! }) {
+        // End before start — the web's check (`isRentalRangeInvalid`). It used to
+        // test `isDivisibleRental`, which already needs end > start, so it never
+        // fired and an inverted window went to the server. Equal dates are one day.
+        if (form.lines.any { line ->
+                !line.isSplitChild && line.expenditureType == RENTAL_EXPENDITURE_TYPE &&
+                    !line.rentalStart.isNullOrBlank() && !line.rentalEnd.isNullOrBlank() &&
+                    line.rentalEnd < line.rentalStart
+            }
+        ) {
             add(str(S.desktop_po_rental_end_after_start))
         }
         addAll(lineProblems(form, layout))
@@ -422,6 +441,54 @@ internal class PoFormActions(
         }
         layout.missingCustom(PoFormFields.DETAILS, form.customFields).forEach { field ->
             add(str(S.desktop_po_field_required_on_orders, field.name))
+        }
+        addAll(requiredDetailProblems(form, layout))
+        addAll(deliveryProblems(form, layout))
+    }
+
+    /** The web's required system fields of PO Details that the checks above do not cover. */
+    private fun requiredDetailProblems(form: PoFormState, layout: FormLayout): List<String> = buildList {
+        fun need(field: String, fallback: String, missing: Boolean) {
+            if (missing && layout.isRequired(PoFormFields.DETAILS, field)) {
+                add(str(S.desktop_po_field_required_on_orders, layout.label(PoFormFields.DETAILS, field, fallback)))
+            }
+        }
+        need(PoFormFields.COMPANY, str(S.company), form.companyId.isNullOrBlank())
+        need(PoFormFields.DEPARTMENT, str(S.department), form.departmentId.isNullOrBlank())
+        need(PoFormFields.CURRENCY, str(S.ah_lbl_currency), form.currency.isNullOrBlank())
+        need(PoFormFields.DELIVERY_DATE, str(S.delivery_date), form.deliveryDate == null)
+        // Accounts set the effective date; for everyone else it is theirs to leave.
+        need(PoFormFields.EFFECTIVE_DATE, str(S.ah_lbl_eff_date), vm.ui.viewer.isAccountant && form.effectiveDate == null)
+    }
+
+    /**
+     * The delivery block's own rules — skipped when a saved address is picked
+     * (read-only and already valid), as the web does.
+     */
+    private fun deliveryProblems(form: PoFormState, layout: FormLayout): List<String> = buildList {
+        if (form.deliveryAddressId != null) return@buildList
+        val address = form.deliveryAddress
+        val fields = mapOf(
+            PoFormFields.DELIVERY_NAME to address.name,
+            PoFormFields.DELIVERY_EMAIL to address.email,
+            PoFormFields.DELIVERY_PHONE to address.phone,
+            PoFormFields.DELIVERY_LINE1 to address.line1,
+            PoFormFields.DELIVERY_LINE2 to address.line2,
+            PoFormFields.DELIVERY_CITY to address.city,
+            PoFormFields.DELIVERY_STATE to address.state,
+            PoFormFields.DELIVERY_POSTAL_CODE to address.postalCode,
+            PoFormFields.COUNTRY to address.country,
+        )
+        fields.forEach { (field, value) ->
+            if (value.isBlank() && layout.isRequired(PoFormFields.DELIVERY, field)) {
+                add(str(S.desktop_po_field_required_on_orders, layout.label(PoFormFields.DELIVERY, field, field)))
+            }
+        }
+        if (address.email.isNotBlank() && !DELIVERY_EMAIL.matches(address.email)) {
+            add(str(S.desktop_po_invalid_email_format))
+        }
+        if (address.phone.isNotBlank() && address.phone.trim().length < MIN_PHONE) {
+            add(str(S.ah_err_phone_min))
         }
     }
 
@@ -752,6 +819,8 @@ internal fun PoFormState.toRequest(status: String?, layout: FormLayout) = NewPur
     deliveryDate = deliveryDate,
     deliveryAddressId = deliveryAddressId,
     deliveryAddress = deliveryAddress.takeIf { !it.isEmpty },
+    // Only for a hand-typed address: one picked from the book is already in it.
+    saveDeliveryAddress = deliveryAddressId == null && saveDeliveryAddress && !deliveryAddress.isEmpty,
     attachments = attachments,
     status = status,
     customFields = listOfNotNull(layout.customValues(PoFormFields.DETAILS, customFields)),
@@ -923,3 +992,6 @@ private const val ISO_YEAR_MONTH_LENGTH = 7
 
 /** Money is divided in pennies so the children always add back to the parent. */
 private const val PENNIES_PER_UNIT = 100.0
+
+private val DELIVERY_EMAIL = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+private const val MIN_PHONE = 5

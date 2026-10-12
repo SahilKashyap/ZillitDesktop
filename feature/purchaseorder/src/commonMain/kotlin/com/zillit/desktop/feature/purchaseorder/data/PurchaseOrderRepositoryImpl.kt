@@ -398,10 +398,27 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
     if (deliveryAddress != null && !deliveryAddress.isEmpty) {
         put("delivery_address", deliveryAddress.toJson())
     }
+    saveDeliveryAddress?.let { put("save_delivery_address", JsonPrimitive(it)) }
     // The files ride the record; there is no attachment sub-resource. The array
     // is sent even when empty, because that is how the last one comes off —
     // omitting the key would leave it in place.
     put("attachments", attachments.attachmentsJson())
+    approvals?.let { signed ->
+        put(
+            "approvals",
+            buildJsonArray {
+                signed.forEach {
+                    add(
+                        buildJsonObject {
+                            put("user_id", JsonPrimitive(it.userId))
+                            put("tier_number", JsonPrimitive(it.tierNumber))
+                            put("approved_at", JsonPrimitive(it.approvedAt))
+                        },
+                    )
+                }
+            },
+        )
+    }
     // Only when the production has configured some: an empty array on every
     // order would be a column of nothing on the printed form.
     if (customFields.isNotEmpty()) put("custom_fields", customFields.customFieldsJson())
@@ -429,7 +446,9 @@ private fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArra
                         group.fields.forEach { field ->
                             add(
                                 buildJsonObject {
-                                    put("name", JsonPrimitive(field.name))
+                                    // The form's own key, as the web's `cf.label || cf.name`:
+                                    // what an edit reads back to find the field's value.
+                                    put("name", JsonPrimitive(field.label.ifBlank { field.name }))
                                     put("value", JsonPrimitive(field.value))
                                 },
                             )
@@ -835,7 +854,10 @@ internal data class PoCustomFieldGroupDto(
 ) {
     fun toDomain() = CustomFieldGroup(
         section = section.orEmpty(),
-        fields = fields.orEmpty().map { CustomFieldValue(name = it.name.orEmpty(), value = it.value.orEmpty()) },
+        // The stored `name` is the form's key, so it is the label an edit looks the value up by.
+        fields = fields.orEmpty().map {
+            CustomFieldValue(name = it.name.orEmpty(), value = it.value.orEmpty(), label = it.name.orEmpty())
+        },
     )
 }
 

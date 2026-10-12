@@ -540,6 +540,11 @@ data class NewPurchaseOrder(
     /** The saved address this one came from, so the server can link them. */
     val deliveryAddressId: String? = null,
     val deliveryAddress: PoAddress? = null,
+    /**
+     * Whether the server should add a hand-typed delivery address to the
+     * address book — the web's `save_delivery_address`. Null leaves the key out.
+     */
+    val saveDeliveryAddress: Boolean? = null,
     /** Quotes and paperwork, uploaded before the order is sent. */
     val attachments: List<PoAttachment> = emptyList(),
     /**
@@ -556,6 +561,12 @@ data class NewPurchaseOrder(
      * one.
      */
     val customFields: List<CustomFieldGroup> = emptyList(),
+    /**
+     * Tiers the creator signs by raising or editing this order. Null leaves the
+     * key out (accounts' own raise, drafts); an empty list is sent, because an
+     * edit has to clear what an earlier approval left.
+     */
+    val approvals: List<PoAutoApproval>? = null,
 ) {
     /** Net of the parent lines — what the server stores as `net_amount`. */
     val total: Double get() = PoTotals.of(lines).net
@@ -577,7 +588,8 @@ data class NewPurchaseOrder(
     fun validationError(): String? = when {
         lines.isEmpty() -> str(S.desktop_po_needs_a_line)
         lines.any { it.description.isBlank() } -> str(S.desktop_po_line_needs_description)
-        lines.any { it.total <= 0 } -> str(S.desktop_po_line_needs_qty_price)
+        // Zero only: a credit or deduction line is negative, and the web accepts it.
+        lines.any { it.total == 0.0 } -> str(S.desktop_po_line_needs_qty_price)
         else -> null
     }
 }

@@ -581,7 +581,7 @@ private fun PoCloseOffDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 loading = dialog.saving,
-                enabled = dialog.confirmed && !dialog.saving,
+                enabled = dialog.confirmed && dialog.date != null && !dialog.saving,
             )
         },
     ) {

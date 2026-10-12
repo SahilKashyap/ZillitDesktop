@@ -388,6 +388,8 @@ data class PoFormState(
     val vatTreatment: String = "pending",
     val deliveryAddressId: String? = null,
     val deliveryAddress: PoAddress = PoAddress(),
+    /** The web's "Save this delivery address for future use", on by default. */
+    val saveDeliveryAddress: Boolean = true,
     val lines: List<PoLine> = listOf(blankLine()),
     val attachments: List<PoAttachment> = emptyList(),
     /** The extra fields this production added, by their form key. */

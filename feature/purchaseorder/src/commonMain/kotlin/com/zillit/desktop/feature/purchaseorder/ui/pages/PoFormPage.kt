@@ -30,6 +30,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
@@ -593,6 +594,14 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+        }
+        // Only for a hand-typed address; one picked from the book is already in it.
+        if (form.deliveryAddressId == null) {
+            ZillitCheckbox(
+                checked = form.saveDeliveryAddress,
+                onCheckedChange = { onEvent(PoEvent.EditForm(form.copy(saveDeliveryAddress = it))) },
+                label = str(S.desktop_po_save_delivery_address_future),
+            )
         }
         }
     }
