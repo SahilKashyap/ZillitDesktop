@@ -98,6 +98,7 @@ private val WEB: List<WebEntry> = listOf(
             viewer.departmentIdentifier?.contains("accounts") == true
         if (deals) S.desktop_tool_info_deal_memo_info_admin else S.desktop_tool_info_deal_memo_info_user
     },
+    WebEntry("talent_deals", always(S.desktop_td_tool_tooltip)),
     WebEntry("timecard", always(S.desktop_tool_info_timecard_tool_tooltip)),
     WebEntry("payroll", always(S.desktop_tool_info_payroll_tool_tooltip)),
     WebEntry("cost_report", always(S.desktop_tool_info_cost_report_tool_tooltip)),

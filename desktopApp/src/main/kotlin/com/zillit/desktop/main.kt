@@ -242,6 +242,7 @@ import com.zillit.desktop.feature.accounthub.ui.DealMemoApproversToolProvider
 import com.zillit.desktop.feature.accounthub.ui.ProductionCompaniesToolProvider
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
+import com.zillit.desktop.feature.talentdeals.ui.TalentDealsViewModel
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
 import com.zillit.desktop.feature.tasks.ui.TasksViewModel
@@ -1422,6 +1423,7 @@ private fun ToolsRefresh(ready: AppGraph.Ready, home: HomeViewModel?) {
  * Keyed on the production id, so switching reloads rather than carrying the
  * previous one's rights and board.
  */
+@Suppress("LongMethod") // One reset or re-read per tool, a line each.
 @Composable
 private fun ProjectScopedLoads(
     projectId: String?,
@@ -1471,6 +1473,7 @@ private fun ProjectScopedLoads(
         viewModels.timecards?.onProjectChanged()
         viewModels.payroll?.onProjectChanged()
         viewModels.dealMemos?.onProjectChanged()
+        viewModels.talentDeals?.onProjectChanged()
         // The library tools are gated by the tool-access grid, which is
         // per-production too — carrying the previous production's grid would
         // show someone a Send button on a shoot they may only read.
@@ -1504,6 +1507,7 @@ private fun ProjectScopedLoads(
         viewModels.cardExpenses?.onRightsChanged()
         viewModels.cardExpensesTool?.onRightsChanged()
         viewModels.dealMemos?.onRightsChanged()
+        viewModels.talentDeals?.onRightsChanged()
         viewModels.payroll?.onRightsChanged()
         viewModels.accountHub?.onRightsChanged()
         viewModels.docDist?.onRightsChanged()
@@ -3132,6 +3136,8 @@ internal class AppViewModels(
     val timecards: TimecardViewModel?,
     val payroll: PayrollViewModel?,
     val dealMemos: DealMemoViewModel?,
+    /** The register of executed talent contracts — its own tool since Deal Memo's tab moved out. */
+    val talentDeals: TalentDealsViewModel?,
     /** The finance console that hosts the rest of the accounting tools. */
     val accountHub: AccountHubViewModel?,
     /** Deal Memo's own Approvers page — the console's screen locked to the Deal Memo chain. */
@@ -3474,6 +3480,7 @@ private fun rememberAppViewModels(
             },
             payroll = ready?.buildPayroll(permissions),
             dealMemos = ready?.buildDealMemos(permissions),
+            talentDeals = ready?.buildTalentDeals(permissions),
             accountHub = ready?.let { graph -> graph.buildAccountHub { graph.accountHubViewer(permissions()) } },
             // Deal Memo's Approvers page, on a view model of its own so it does not
             // trample the console's module. Its posting users may edit the Deal Memo
@@ -4109,6 +4116,7 @@ private fun buildRegistry(
     val deals = viewModels.dealMemos?.let { vm ->
         (graph as? AppGraph.Ready)?.dealMemoProvider(vm) ?: DealMemoToolProvider(vm)
     }
+    val talentDeals = viewModels.talentDeals?.let(::talentDealsProvider)
     val distribution = viewModels.docDist?.let {
         // openInBrowser is the guarded launcher — https only, so a presigned
         // storage URL opens and anything else is refused.
@@ -4210,7 +4218,7 @@ private fun buildRegistry(
     val real = listOfNotNull(
         home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
         settings, notifications, sos, help,
-        cash, cards, orders, timecards, payroll, deals, distribution, drive,
+        cash, cards, orders, timecards, payroll, deals, talentDeals, distribution, drive,
         accountHub, productionCompanies, dealMemoApprovers, taxFiling, bankRec, budgetBuilder, formSignature,
         esignature,
         callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
