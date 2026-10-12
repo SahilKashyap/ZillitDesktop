@@ -331,10 +331,15 @@ internal fun DialogActions(
     busy: Boolean,
     enabled: Boolean = true,
     danger: Boolean = false,
+    /** A second way through, between Cancel and the primary — Export CSV's "Export Only". */
+    secondary: Pair<String, () -> Unit>? = null,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Spacer(Modifier.weight(1f))
         ZillitButton(text = str(S.cancel), onClick = cancel, variant = ButtonVariant.Secondary, enabled = !busy)
+        secondary?.let { (text, onClick) ->
+            ZillitButton(text = text, onClick = onClick, variant = ButtonVariant.Secondary, enabled = !busy)
+        }
         ZillitButton(
             text = confirmText,
             onClick = confirm,

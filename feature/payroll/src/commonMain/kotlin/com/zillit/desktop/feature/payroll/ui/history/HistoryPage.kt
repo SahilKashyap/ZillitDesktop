@@ -45,6 +45,7 @@ import com.zillit.desktop.feature.payroll.ui.PayrollDestination
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
 import com.zillit.desktop.feature.payroll.ui.components.PayrollTopBar
+import com.zillit.desktop.feature.payroll.ui.components.TimecardNotesButton
 import com.zillit.desktop.feature.payroll.ui.components.WeekNavigator
 import com.zillit.desktop.feature.payroll.ui.components.historyTone
 import com.zillit.desktop.feature.payroll.ui.historyGroups
@@ -226,7 +227,7 @@ private fun HistoryDetail(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit
             contentPadding = androidx.compose.foundation.layout.PaddingValues(ZillitTheme.spacing.xl),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            CrewHeader(state, row)
+            CrewHeader(state, row, onEvent)
             HistoryFigures(state)
             ZillitTabStrip(
                 tabs = listOf(
@@ -248,7 +249,7 @@ private fun HistoryDetail(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit
 
 /** Name, role · department · week ending, the posting date once posted, and the holiday-pay treatment. */
 @Composable
-private fun CrewHeader(state: PayrollUiState, row: PayrollTimecard) {
+private fun CrewHeader(state: PayrollUiState, row: PayrollTimecard, onEvent: (PayrollEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val week = state.history.weekStarting
     Row(
@@ -282,6 +283,8 @@ private fun CrewHeader(state: PayrollUiState, row: PayrollTimecard) {
             )
         }
         ZillitStatusPill(label = str(S.desktop_payroll_rates_visible), tone = StatusTone.Escalated)
+        // The notes ride on the full timecard this pane has fetched.
+        TimecardNotesButton(state.viewer, state.history.detail, state.nameOf(row.userId), onEvent)
         Spacer(Modifier.width(ZillitTheme.spacing.xs))
     }
 }

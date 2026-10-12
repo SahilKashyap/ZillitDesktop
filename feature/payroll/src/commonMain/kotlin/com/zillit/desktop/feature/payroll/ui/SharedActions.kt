@@ -10,10 +10,12 @@ import com.zillit.desktop.feature.payroll.domain.ClaimLine
 import com.zillit.desktop.feature.payroll.domain.ManualClaim
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
+import com.zillit.desktop.feature.payroll.domain.TimecardAttachment
 
 /**
- * The two dialogs any payroll screen can open: Override Approval, and the
- * claims and deductions on one timecard.
+ * The dialogs any payroll screen can open: Override Approval, the claims and
+ * deductions on one timecard, and the read-only week with its notes and
+ * invoice.
  *
  * Claims and deductions save the moment they are added or removed — the web
  * has no Save step — and each write re-reads the timecard and the screen
@@ -38,7 +40,63 @@ internal class SharedActions(private val vm: PayrollViewModel) {
             is PayrollEvent.RemoveDeduction -> removeDeduction(event.deductionId)
             PayrollEvent.UnlockAdjusted -> unlockAdjusted()
             PayrollEvent.DismissAdjustments -> vm.update { copy(adjustment = null) }
+            is PayrollEvent.OpenNotes -> openNotes(event.timecard, event.crewName)
+            PayrollEvent.CloseNotes -> vm.update { copy(notesView = null) }
+            is PayrollEvent.OpenTimecardView -> openTimecardView(event.timecard)
+            PayrollEvent.CloseTimecardView -> vm.update { copy(timecardView = null) }
+            is PayrollEvent.OpenInvoice -> openInvoice(event.attachment)
             else -> Unit
+        }
+    }
+
+    /**
+     * Notes are an accountant's to read, and never on their own card — the
+     * button hides itself under that rule, and the handler holds it too.
+     */
+    private fun openNotes(timecard: PayrollTimecard, crewName: String) {
+        val viewer = vm.ui.viewer
+        if (!viewer.isAccountant || timecard.userId == viewer.userId) return
+        vm.update { copy(notesView = NotesView(crewName = crewName, notes = timecard.notes)) }
+    }
+
+    /**
+     * "View Time Card": the week read-only in the wide modal. The drawer's
+     * timecard is the full document and opens as it stands; a list row is a
+     * slim projection, so the full one is fetched while the modal waits.
+     */
+    private fun openTimecardView(timecard: PayrollTimecard) {
+        if (!vm.ui.viewer.seesAccountantViews) return
+        val needsFetch = timecard.days.isEmpty()
+        vm.update { copy(timecardView = TimecardView(timecard = timecard, loading = needsFetch)) }
+        if (!needsFetch) return
+        vm.launchWork {
+            val full = vm.repository.timecard(timecard.id).getOrNull()
+            // Closed, or swapped for another week, while the fetch ran: nothing to settle.
+            vm.update {
+                val open = timecardView?.takeIf { it.timecard.id == timecard.id } ?: return@update this
+                copy(timecardView = open.copy(timecard = full ?: open.timecard, loading = false))
+            }
+        }
+    }
+
+    /**
+     * The invoice a crew member attached. An older document carries a link
+     * that opens as it is; the stored shape is an S3 object, presigned here
+     * the way the web's preview does before anything can open it.
+     */
+    private fun openInvoice(attachment: TimecardAttachment) {
+        attachment.url?.takeIf { it.isNotBlank() }?.let {
+            vm.emit(PayrollEffect.OpenUrl(it))
+            return
+        }
+        val links = vm.attachmentLinks
+        if (!attachment.isStored || links == null) {
+            vm.fail(str(S.desktop_payroll_invoice_failed))
+            return
+        }
+        vm.launchWork {
+            val link = runCatching { links.link(attachment) }.getOrNull()?.takeIf { it.isNotBlank() }
+            if (link == null) vm.fail(str(S.desktop_payroll_invoice_failed)) else vm.emit(PayrollEffect.OpenUrl(link))
         }
     }
 

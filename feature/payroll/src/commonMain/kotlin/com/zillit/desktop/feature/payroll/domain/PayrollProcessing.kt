@@ -100,7 +100,7 @@ data class ProcessingRow(val timecard: PayrollTimecard, val weekStarting: Long) 
 
 /**
  * One crew member's unsettled weeks summed — the web's
- * `aggregateOutstandingByUser`: one row per user, the heaviest first.
+ * `aggregateOutstandingByUser`: one row per user, the heaviest gross first.
  */
 data class OutstandingRow(val userId: String, val weeks: List<ProcessingRow>) {
     val id: String get() = "outstanding-$userId"
@@ -126,14 +126,22 @@ data class OutstandingRow(val userId: String, val weeks: List<ProcessingRow>) {
     val allowancesMoney: Pair<Double, String?> get() = moneyOf { it.allowanceTotal }
     val totalMoney: Pair<Double, String?> get() = moneyOf { it.totalPay }
 
-    /** The raw face-value figure — for sorting only; use `*Money` to display. */
+    /** The raw face-value figure — for display-free uses; use `*Money` to display. */
     val total: Double get() = totalMoney.first
+
+    /**
+     * What the heaviest-first order sorts on — the web's `agg.gross`
+     * (`aggregateOutstandingByUser`, `payrollData.js` 1003): pay before
+     * deductions, so a crew member with a large advance does not drop below
+     * someone who is owed less. [total] is net of them.
+     */
+    val gross: Double get() = weeks.sumOf { it.totalPay + it.timecard.deductionsTotal }
 
     companion object {
         fun of(timecards: List<PayrollTimecard>, weekStarting: Long): List<OutstandingRow> =
             timecards.groupBy { it.userId }
                 .map { (userId, cards) -> OutstandingRow(userId, cards.map { ProcessingRow(it, weekStarting) }) }
-                .sortedByDescending { it.total }
+                .sortedByDescending { it.gross }
     }
 }
 

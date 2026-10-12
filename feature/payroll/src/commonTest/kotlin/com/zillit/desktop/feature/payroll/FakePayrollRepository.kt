@@ -39,6 +39,7 @@ internal class FakePayrollRepository(
     var defaultCurrency: String? = "GBP",
     var currencyRates: PayrollCurrencyRates = PayrollCurrencyRates(defaultCode = "GBP"),
     override val refreshes: Flow<Unit> = emptyFlow(),
+    override val settingsChanged: Flow<Unit> = emptyFlow(),
 ) : PayrollRepository {
 
     /** Set directly; it is reference data, not something a test varies at construction. */

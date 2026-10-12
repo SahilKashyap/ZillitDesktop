@@ -466,4 +466,24 @@ class PayrollViewModelTest {
         runCurrent()
         assertEquals(2, repository.paidWeeks.size, "three frames collapse into one reload of the week on screen")
     }
+
+    @Test
+    fun `a production setup change re-reads the payroll settings, once for a burst, and not the week`() =
+        runTest(dispatcher) {
+            val changes = MutableSharedFlow<Unit>()
+            val repository = FakePayrollRepository(settingsChanged = changes)
+            val (model, _) = model(repository, route = "/film-tools/payroll/accountant-payroll")
+            assertEquals(PayPeriod.MONDAY, model.state.value.metadata.payPeriodStartDay)
+            val weeksRead = repository.paidWeeks.size
+
+            repository.metadata = repository.metadata.copy(payPeriodStartDay = 3, isFinalApprover = true)
+            repeat(3) { changes.emit(Unit) }
+            runCurrent()
+            advanceTimeBy(PayrollViewModel.SYNC_DEBOUNCE_MILLIS + 1)
+            runCurrent()
+
+            assertEquals(3, model.state.value.metadata.payPeriodStartDay, "the new pay period reached the open screen")
+            assertTrue(model.state.value.viewer.onApproverList, "so did the approvers list")
+            assertEquals(weeksRead, repository.paidWeeks.size, "the week's rows are the socket sync's, not this one's")
+        }
 }

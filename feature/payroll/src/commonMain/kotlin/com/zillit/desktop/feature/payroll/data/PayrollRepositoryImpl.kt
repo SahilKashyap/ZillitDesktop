@@ -65,6 +65,14 @@ class PayrollRepositoryImpl(
             }
             ?: emptyFlow()
 
+    /** See [PayrollRepository.settingsChanged]; gated on the project the same way. */
+    override val settingsChanged: Flow<Unit> =
+        bus?.onAny(PAYROLL_SETTINGS_EVENTS, PayrollSyncEnvelope.serializer())
+            ?.mapNotNull { (_, envelope) ->
+                Unit.takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
+
     private val http = PayrollHttp(apiClient)
     private val payroll = "${config.baseUrl(ZillitService.Payroll)}/api/v2/payroll"
     private val weekly = "$payroll/weekly"

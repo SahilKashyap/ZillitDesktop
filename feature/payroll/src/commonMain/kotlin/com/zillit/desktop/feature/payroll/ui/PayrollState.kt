@@ -27,6 +27,7 @@ import com.zillit.desktop.feature.payroll.domain.PendingClaim
 import com.zillit.desktop.feature.payroll.domain.RunAction
 import com.zillit.desktop.feature.payroll.domain.RunRow
 import com.zillit.desktop.feature.payroll.domain.SendToRun
+import com.zillit.desktop.feature.payroll.domain.TimecardNote
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 
 /** Everything the payroll tool is showing. */
@@ -76,6 +77,10 @@ data class PayrollUiState(
     val override: OverridePrompt? = null,
     /** Claims or deductions, over whichever screen asked for them. */
     val adjustment: AdjustmentDialog? = null,
+    /** The Notes on a week, over whichever screen asked. */
+    val notesView: NotesView? = null,
+    /** A week read-only in the wide modal — "View Time Card" — over whichever screen asked. */
+    val timecardView: TimecardView? = null,
     val notice: String? = null,
 ) {
     /** Override Approval is offered — fails closed until the flags have answered. */
@@ -174,6 +179,8 @@ data class RunState(
 /**
  * A bulk transition waiting on confirmation. [thenPost] is the journal's
  * "…& Post": the lock blockers are moved first and the post is retried.
+ * [thenExport] is Export CSV's "…& Export": the same, then the workbook
+ * downloads — or, from "Export Only", just the workbook.
  */
 data class RunConfirm(
     val action: RunAction,
@@ -183,6 +190,7 @@ data class RunConfirm(
     val selectedTotal: Int,
     val runScope: Boolean = false,
     val thenPost: Boolean = false,
+    val thenExport: Boolean = false,
     val working: Boolean = false,
 )
 
@@ -445,6 +453,16 @@ data class AdjustmentDialog(
 }
 
 enum class AdjustmentKind { Claims, Deductions }
+
+/** The notes a crew member left on their week, read-only. */
+data class NotesView(val crewName: String, val notes: List<TimecardNote>)
+
+/**
+ * A crew member's week in the wide read-only modal. A list row is a slim
+ * projection with no days on it, so the full document is fetched while
+ * [loading]; the row stands in meanwhile for the header.
+ */
+data class TimecardView(val timecard: PayrollTimecard, val loading: Boolean = false)
 
 /** The statuses whose timecard the server refuses to change. */
 internal val TimecardStatus.readOnly: Boolean get() = refusesWrites

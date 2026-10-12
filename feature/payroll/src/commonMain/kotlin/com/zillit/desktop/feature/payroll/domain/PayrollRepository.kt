@@ -24,6 +24,13 @@ interface PayrollRepository {
      */
     val refreshes: Flow<Unit> get() = emptyFlow()
 
+    /**
+     * Socket announcements that Production Setup changed — the pay period, the
+     * approvers, the companies — answered by re-reading the payroll settings
+     * (the web's `ah:payroll:metadata`), not the week's rows.
+     */
+    val settingsChanged: Flow<Unit> get() = emptyFlow()
+
     /** The journal ledger's reads and writes. */
     val journal: PayrollJournalRepository
 
@@ -246,4 +253,15 @@ class PayrollExportFile(val bytes: ByteArray, val extension: String) {
 /** Saves a rendered file and hands it to the OS. */
 fun interface PayrollFiles {
     suspend fun saveAndOpen(fileName: String, bytes: ByteArray): ZillitResult<Unit>
+}
+
+/**
+ * A link the OS can open for an invoice a crew member attached — the web's
+ * `useAttachmentPreview`, which presigns the stored `{media, bucket, region}`.
+ * Null when the file cannot be reached (no storage credentials, a dead object).
+ * A host with no storage leaves this seam empty, and a stored invoice then
+ * says it could not be loaded rather than opening nothing.
+ */
+fun interface PayrollAttachmentLinks {
+    suspend fun link(attachment: TimecardAttachment): String?
 }

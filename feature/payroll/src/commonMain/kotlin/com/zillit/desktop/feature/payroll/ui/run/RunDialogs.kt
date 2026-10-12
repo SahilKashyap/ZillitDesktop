@@ -85,12 +85,24 @@ internal fun RunConfirmDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> 
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitText(text = open.impact(), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
+        if (open.thenExport) {
+            ZillitText(
+                text = str(S.desktop_payroll_export_csv_note),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
         DialogActions(
             cancel = { onEvent(RunEvent.DismissConfirm) },
             confirmText = if (open.working) str(S.desktop_working_ellipsis) else open.buttonText(),
             confirm = { onEvent(RunEvent.Confirm) },
             busy = open.working,
             enabled = open.ids.isNotEmpty(),
+            secondary = if (open.thenExport) {
+                str(S.desktop_payroll_export_only) to { onEvent(RunEvent.ExportOnly) }
+            } else {
+                null
+            },
         )
     }
 }
@@ -107,7 +119,11 @@ private fun RunConfirm.buttonText(): String {
         RunAction.MarkPaid -> "${str(S.desktop_mark_paid)} · ${ids.size}"
         else -> "${action.label} ${ids.size}"
     }
-    return if (thenPost) str(S.desktop_payroll_and_post, base) else base
+    return when {
+        thenPost -> str(S.desktop_payroll_and_post, base)
+        thenExport -> str(S.desktop_payroll_and_export, base)
+        else -> base
+    }
 }
 
 private fun RunConfirm.intro(state: PayrollUiState): String {

@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.payroll.data.PayrollBinaryTransport
 import com.zillit.desktop.feature.payroll.data.PayrollDocumentsImpl
 import com.zillit.desktop.feature.payroll.data.payrollProducerSeams
+import com.zillit.desktop.feature.payroll.domain.PayrollAttachmentLinks
 import com.zillit.desktop.feature.payroll.domain.PayrollExportFile
 import com.zillit.desktop.feature.payroll.domain.PayrollFiles
 import com.zillit.desktop.feature.payroll.domain.PayrollPerson
@@ -46,6 +47,7 @@ internal fun AppGraph.Ready.buildPayroll(permissions: () -> ProjectPermissions):
     // Rhino runs it here so the desktop's overtime money is the same
     // arithmetic every other client's is. See RhinoScriptHost.
     val seams = payrollProducerSeams(apiClient, config, transport, RhinoScriptHost())
+    val presigner = S3Presigner(credentials = { awsKeyPair(remoteConfigRepository) })
     return PayrollViewModel(
         repository = payrollRepository,
         viewer = { payrollViewer(permissions()) },
@@ -55,6 +57,14 @@ internal fun AppGraph.Ready.buildPayroll(permissions: () -> ProjectPermissions):
         documents = PayrollDocumentsImpl(config, transport),
         files = payrollFiles(),
         seams = seams,
+        // A stored invoice lives in a private bucket the app holds keys for and
+        // the OS browser does not, so it opens on a presigned GET — the route
+        // Document Distribution and the hub's documents take.
+        attachmentLinks = presigner.let { signer ->
+            PayrollAttachmentLinks { a ->
+                signer.presignedGet(bucket = a.bucket.orEmpty(), region = a.region.orEmpty(), key = a.media.orEmpty())
+            }
+        },
     )
 }
 

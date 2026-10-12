@@ -35,6 +35,7 @@ internal class RunActions(private val vm: PayrollViewModel) {
     private val state: RunState get() = vm.ui.run
     private var loadJob: Job? = null
     private var drawerJob: Job? = null
+    private val exports = RunExportActions(vm, this)
 
     /** Set by the journal: a successful lock-then-post confirm re-opens the post. */
     var afterConfirm: (() -> Unit)? = null
@@ -62,7 +63,8 @@ internal class RunActions(private val vm: PayrollViewModel) {
             is RunEvent.Row -> row(event.timecardId, event.action)
             is RunEvent.OpenDrawer -> openDrawer(event.timecardId)
             is RunEvent.Unlock -> unlock(event.timecardId)
-            is RunEvent.Export -> export(event.format)
+            is RunEvent.Export -> exports.ask(event.format)
+            RunEvent.ExportOnly -> exports.only()
             RunEvent.GoToProcessing -> vm.emit(PayrollEffect.Navigate(PayrollDestination.Processing.path))
             is RunEvent.Journal -> edit { copy(journalOpen = event.open) }
         }
@@ -176,7 +178,7 @@ internal class RunActions(private val vm: PayrollViewModel) {
                 is ZillitResult.Success -> {
                     edit { copy(confirm = null, selected = if (confirm.runScope) selected else emptySet()) }
                     vm.notify(result.data?.localisedMessage() ?: str(S.done_text))
-                    state.weekStarting?.let { load(it, silent = true, next = afterConfirm.takeIf { confirm.thenPost }) }
+                    state.weekStarting?.let { load(it, silent = true, next = afterConfirmFor(confirm)) }
                 }
 
                 is ZillitResult.Failure -> {
@@ -185,6 +187,13 @@ internal class RunActions(private val vm: PayrollViewModel) {
                 }
             }
         }
+    }
+
+    /** What runs once the week has reloaded: the journal's post, or the export that was waiting on the statuses. */
+    private fun afterConfirmFor(confirm: RunConfirm): (() -> Unit)? = when {
+        confirm.thenPost -> afterConfirm
+        confirm.thenExport -> ({ exports.export(ExportFormat.Csv) })
+        else -> null
     }
 
     private suspend fun perform(confirm: RunConfirm): ZillitResult<String?> {
@@ -297,27 +306,6 @@ internal class RunActions(private val vm: PayrollViewModel) {
                 }
                 is ZillitResult.Failure -> vm.fail(result.error.localised())
             }
-        }
-    }
-
-    /** Export Summary — the server renders it; a declined export names why. */
-    private fun export(format: ExportFormat) {
-        val week = state.weekStarting ?: return
-        val documents = vm.documents ?: return
-        val files = vm.files ?: return
-        if (state.exporting || !vm.ui.viewer.seesAccountantViews) return
-        edit { copy(exporting = true) }
-        vm.launchWork {
-            val saved = when (val file = documents.runSummary(week, format)) {
-                is ZillitResult.Success ->
-                    files.saveAndOpen(
-                        "payroll-run-summary_${fileStamp(vm.ui.now)}.${file.data.extension}",
-                        file.data.bytes,
-                    )
-                is ZillitResult.Failure -> file
-            }
-            edit { copy(exporting = false) }
-            if (saved is ZillitResult.Failure) vm.fail(saved.error.localised())
         }
     }
 

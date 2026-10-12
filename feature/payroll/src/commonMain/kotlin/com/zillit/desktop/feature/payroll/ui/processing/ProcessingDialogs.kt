@@ -35,6 +35,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
+import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.ProcessingRow
 import com.zillit.desktop.feature.payroll.domain.SendToRun
 import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
@@ -44,6 +45,8 @@ import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
 import com.zillit.desktop.feature.payroll.ui.ProcessingEvent
 import com.zillit.desktop.feature.payroll.ui.components.DialogActions
+import com.zillit.desktop.feature.payroll.ui.components.InvoiceViewButton
+import com.zillit.desktop.feature.payroll.ui.components.ViewTimecardButton
 import com.zillit.desktop.feature.payroll.ui.components.tone
 
 /**
@@ -229,15 +232,11 @@ private fun WeekCard(row: ProcessingRow, latest: Boolean, pick: Pick, onEvent: (
             )
             if (latest) ZillitStatusPill(label = str(S.cs_latest), tone = StatusTone.InTransit)
             ZillitStatusPill(label = timecard.status.label, tone = timecard.status.tone, dot = true)
+            // Notes ride in the week's own header, as the web's do: this row is slim, with none.
+            WeekDrillIn(timecard, onEvent)
         }
         ZillitText(
-            text = listOf(
-                "${str(S.desktop_payroll_basic)} ${Money.format(row.basicTotal, code)}",
-                "${str(S.desktop_payroll_ots_premiums)} ${Money.format(row.otTotal, code)}",
-                "${str(S.desktop_payroll_allowances_rental)} ${Money.format(row.allowanceTotal, code)}",
-                "${str(S.desktop_ce_claims)} ${Money.format(timecard.claimsTotal, code)}",
-                "${str(S.desktop_deductions)} −${Money.format(timecard.deductionsTotal, code)}",
-            ).joinToString(" · "),
+            text = weekFigures(row),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -264,6 +263,26 @@ private fun WeekCard(row: ProcessingRow, latest: Boolean, pick: Pick, onEvent: (
             )
         }
     }
+}
+
+/** View Time Card, and the invoice where the week has one. */
+@Composable
+private fun WeekDrillIn(timecard: PayrollTimecard, onEvent: (PayrollEvent) -> Unit) {
+    ViewTimecardButton(timecard, onEvent)
+    InvoiceViewButton(timecard.attachment, onOpen = { onEvent(PayrollEvent.OpenInvoice(it)) })
+}
+
+/** `Basic £400.00 · OTs / Premiums £50.00 · …` — the week's parts, in the currency it is paid in. */
+private fun weekFigures(row: ProcessingRow): String {
+    val timecard = row.timecard
+    val code = timecard.currency
+    return listOf(
+        "${str(S.desktop_payroll_basic)} ${Money.format(row.basicTotal, code)}",
+        "${str(S.desktop_payroll_ots_premiums)} ${Money.format(row.otTotal, code)}",
+        "${str(S.desktop_payroll_allowances_rental)} ${Money.format(row.allowanceTotal, code)}",
+        "${str(S.desktop_ce_claims)} ${Money.format(timecard.claimsTotal, code)}",
+        "${str(S.desktop_deductions)} −${Money.format(timecard.deductionsTotal, code)}",
+    ).joinToString(" · ")
 }
 
 /**

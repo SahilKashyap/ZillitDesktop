@@ -23,6 +23,9 @@ import com.zillit.desktop.feature.payroll.domain.PayrollPerson
 import com.zillit.desktop.feature.payroll.domain.PayrollTaxType
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
+import com.zillit.desktop.feature.payroll.domain.RunAction
+import com.zillit.desktop.feature.payroll.domain.TimecardAttachment
+import com.zillit.desktop.feature.payroll.domain.TimecardNote
 import com.zillit.desktop.feature.payroll.domain.TimecardDay
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import com.zillit.desktop.feature.payroll.ui.AdjustmentDialog
@@ -32,6 +35,7 @@ import com.zillit.desktop.feature.payroll.domain.TrackingNode
 import com.zillit.desktop.feature.payroll.domain.TrackingSet
 import com.zillit.desktop.feature.payroll.ui.HistoryState
 import com.zillit.desktop.feature.payroll.ui.JournalState
+import com.zillit.desktop.feature.payroll.ui.NotesView
 import com.zillit.desktop.feature.payroll.ui.OutstandingDetail
 import com.zillit.desktop.feature.payroll.ui.HistoryTab
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
@@ -41,7 +45,10 @@ import com.zillit.desktop.feature.payroll.ui.PayrollTile
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
 import com.zillit.desktop.feature.payroll.ui.ProcessingState
 import com.zillit.desktop.feature.payroll.ui.ProcessingView
+import com.zillit.desktop.feature.payroll.ui.RunConfirm
+import com.zillit.desktop.feature.payroll.ui.RunEvent
 import com.zillit.desktop.feature.payroll.ui.RunState
+import com.zillit.desktop.feature.payroll.ui.TimecardView
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -189,8 +196,9 @@ class PayrollScreenRenderTest {
                 }
             }
             onNodeWithText("PAY BREAKDOWN").assertExists()
-            // Monday's own line, with the hours it covers — not a week total.
-            onNodeWithText("Basic").assertExists()
+            // Monday's own line, with the hours it covers — not a week total —
+            // and again on Monday's card in the Daily Breakdown below it.
+            onAllNodesWithText("Basic").assertCountEquals(2)
             onNodeWithText("DAY TOTAL").assertExists()
             // Every day of the week is offered, so the reader can move between them.
             onAllNodesWithText("MON").assertCountEquals(1)
@@ -420,6 +428,147 @@ class PayrollScreenRenderTest {
                 }
                 onAllNodesWithText("Select all 1").assertCountEquals(offered)
                 onAllNodesWithText("Send to Payroll Run").assertCountEquals(offered)
+            }
+        }
+    }
+
+    private fun drawerState(open: PayrollTimecard, viewer: PayrollViewer = controller) =
+        state(viewer, PayrollDestination.Run).copy(
+            run = RunState(weekStarting = week, timecards = listOf(open), drawerId = open.id, drawer = open),
+        )
+
+    /**
+     * Below the open day the drawer lists the whole week: every day as a card,
+     * and the claims and deductions with the pill that says where each came from.
+     */
+    @Test
+    fun `the crew drawer lists every day, the claims and the deductions with their pills`() {
+        runComposeUiTest {
+            val open = card("a", TimecardStatus.Approved).copy(
+                weeklyAllowances = listOf(PayLine(identifier = "kit", label = "Kit", rateAmount = 30.0)),
+                weeklyExtras = listOf(PayLine(label = "Stunt Upgrade", rateAmount = 40.0, kind = "upgrade")),
+            )
+            setContent { ZillitTheme(darkTheme = false) { PayrollScreen(drawerState(open), onEvent = {}) } }
+            onNodeWithText("DAILY BREAKDOWN").assertExists()
+            onNodeWithText("ALLOWANCES, RENTALS, UPGRADES & EXTRAS").assertExists()
+            onNodeWithText("Stunt Upgrade").assertExists()
+            onNodeWithText("Upgrade").assertExists()
+            onNodeWithText("Taxi").assertExists()
+            onNodeWithText("CASH").assertExists()
+            onNodeWithText("Advance").assertExists()
+            onNodeWithText("FLAT").assertExists()
+        }
+    }
+
+    /** The footer's View Time Card, the invoice only where one is attached, and the header's Notes. */
+    @Test
+    fun `the crew drawer offers notes, the week and an invoice only where one exists`() {
+        listOf(null, TimecardAttachment(name = "inv.pdf", url = null, media = "m", bucket = "b", region = "r"))
+            .forEach { attachment ->
+                runComposeUiTest {
+                    val open = card("a", TimecardStatus.Approved).copy(attachment = attachment)
+                    val events = mutableListOf<PayrollEvent>()
+                    setContent {
+                        ZillitTheme(darkTheme = false) { PayrollScreen(drawerState(open), onEvent = { events += it }) }
+                    }
+                    onAllNodesWithText("View Invoice").assertCountEquals(if (attachment == null) 0 else 1)
+                    onNodeWithText("Notes").performClick()
+                    onNodeWithText("View Time Card").performClick()
+                    assertEquals(
+                        listOf(PayrollEvent.OpenNotes(open, "Crew a"), PayrollEvent.OpenTimecardView(open)),
+                        events,
+                    )
+                }
+            }
+    }
+
+    /** Notes are an accountant's, and never on their own card. */
+    @Test
+    fun `the notes button hides on the accountant's own card`() {
+        runComposeUiTest {
+            val mine = card("a", TimecardStatus.Approved).copy(userId = "me")
+            setContent { ZillitTheme(darkTheme = false) { PayrollScreen(drawerState(mine), onEvent = {}) } }
+            onAllNodesWithText("Notes").assertCountEquals(0)
+            onAllNodesWithText("View Time Card").assertCountEquals(1)
+        }
+    }
+
+    @Test
+    fun `view time card opens the week with its notes button and the notes list opens over it`() {
+        runComposeUiTest {
+            val open = card("a", TimecardStatus.Approved)
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        state(destination = PayrollDestination.Processing).copy(
+                            timecardView = TimecardView(open),
+                            notesView = NotesView("Crew a", listOf(TimecardNote("Left early", week))),
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("Crew a — W/E", substring = true).assertExists()
+            onNodeWithText("Notes").assertExists()
+            onNodeWithText("Left early").assertExists()
+        }
+    }
+
+    /** Export CSV with something to approve names what it would do, and offers to export without doing it. */
+    @Test
+    fun `the export csv confirm offers export only beside the action`() {
+        runComposeUiTest {
+            val events = mutableListOf<PayrollEvent>()
+            val confirm = RunConfirm(
+                action = RunAction.FinalApproveAndLock,
+                ids = listOf("a"),
+                selectedTotal = 3,
+                runScope = true,
+                thenExport = true,
+            )
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        state(destination = PayrollDestination.Run)
+                            .copy(run = RunState(weekStarting = week, confirm = confirm)),
+                        onEvent = { events += it },
+                    )
+                }
+            }
+            onNodeWithText("Final Approve & Lock 1 & Export", substring = true).assertExists()
+            onNodeWithText("The payroll CSV downloads", substring = true).assertExists()
+            onNodeWithText("Export Only").performClick()
+            assertEquals(listOf<PayrollEvent>(RunEvent.ExportOnly), events)
+        }
+    }
+
+    /** The grid draws a header per department with its crew count; one department chosen draws none. */
+    @Test
+    fun `processing groups the crew under department headers and summarises the week in its sidebar`() {
+        listOf<String?>(null, "department_camera").forEach { chosen ->
+            runComposeUiTest {
+                val base = state(destination = PayrollDestination.Processing)
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        PayrollScreen(
+                            base.copy(
+                                processing = ProcessingState(
+                                    weekStarting = week,
+                                    timecards = listOf(
+                                        card("l", TimecardStatus.Locked),
+                                        card("b", TimecardStatus.Paid),
+                                    ),
+                                    view = ProcessingView.Weekly,
+                                    department = chosen,
+                                ),
+                            ),
+                            onEvent = {},
+                        )
+                    }
+                }
+                onAllNodesWithText("WEEK SUMMARY").assertCountEquals(1)
+                onAllNodesWithText("Total Crew").assertCountEquals(1)
+                onAllNodesWithText("(2 crew)").assertCountEquals(if (chosen == null) 1 else 0)
             }
         }
     }

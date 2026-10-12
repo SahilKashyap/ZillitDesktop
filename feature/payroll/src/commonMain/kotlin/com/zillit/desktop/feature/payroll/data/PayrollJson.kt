@@ -128,16 +128,22 @@ private fun JsonObject.toDay() = TimecardDay(
 )
 
 /**
- * The attachment is an object on the timecard the owner's card writes
- * (`{ name, url, … }`), and older documents carry a bare URL string. Reading
- * only the string left every Schedule D invoice invisible, because an object
- * is not a primitive and the reader answered null.
+ * The attachment is an object on the timecard the owner's card writes —
+ * `{ name, url, … }` in the shape a live capture showed, `{ media, bucket,
+ * region, name, content_type, content_subtype }` (the web's `AttachmentModel`,
+ * an S3 object to presign) in the shape its uploader writes — and older
+ * documents carry a bare URL string. Reading only the string left every
+ * Schedule D invoice invisible, because an object is not a primitive and the
+ * reader answered null.
  */
 private fun JsonElement?.toAttachment(): TimecardAttachment? = when (this) {
     is JsonObject -> TimecardAttachment(
         name = text("name", "file_name", "original_name"),
         url = text("url", "file_url", "location", "path"),
-    ).takeIf { it.url != null || it.name != null }
+        media = text("media"),
+        bucket = text("bucket"),
+        region = text("region"),
+    ).takeIf { it.url != null || it.name != null || it.media != null }
 
     is JsonPrimitive -> content.trim().takeIf { it.isNotEmpty() && !isJsonNullLiteral() }
         ?.let { TimecardAttachment(name = null, url = it) }
@@ -171,6 +177,7 @@ internal fun JsonObject.toPayLine() = PayLine(
     currency = this["currency"].currencyCode(),
     nominalCode = text("nominal_code"),
     isRental = flag("is_rental"),
+    kind = text("kind"),
 )
 
 private fun JsonObject.toClaim() = ClaimLine(

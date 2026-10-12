@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.payroll.ui.processing
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.SIDE_NAV_WIDTH
 import com.zillit.desktop.core.designsystem.component.SideNavItem
 import com.zillit.desktop.core.designsystem.component.SideNavSection
 import com.zillit.desktop.core.designsystem.component.StatusTone
@@ -82,39 +86,89 @@ fun ProcessingPage(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, modif
     }
 }
 
-/** "Payroll": All Time Cards, Pending, Approved with counts; "Output": Export CSV. */
+/**
+ * "Payroll": All Time Cards, Pending, Approved with counts; "Output": Export
+ * CSV; and under them the summary card of what the view lists.
+ */
 @Composable
 private fun ProcessingNavRail(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
     val counts = state.processingCounts()
-    ZillitSideNav(
-        sections = listOf(
-            SideNavSection(
-                title = str(S.dm_section_payroll),
-                items = listOf(
-                    SideNavItem(
-                        ProcessingNav.All.name,
-                        str(S.desktop_payroll_all_time_cards),
-                        ZillitIcons.Grid,
-                        counts.all,
+    Column(Modifier.width(SIDE_NAV_WIDTH).fillMaxHeight()) {
+        ZillitSideNav(
+            sections = listOf(
+                SideNavSection(
+                    title = str(S.dm_section_payroll),
+                    items = listOf(
+                        SideNavItem(
+                            ProcessingNav.All.name,
+                            str(S.desktop_payroll_all_time_cards),
+                            ZillitIcons.Grid,
+                            counts.all,
+                        ),
+                        SideNavItem(ProcessingNav.Pending.name, str(S.pending), ZillitIcons.Clock, counts.pending),
+                        SideNavItem(ProcessingNav.Approved.name, str(S.approved), ZillitIcons.Check, counts.approved),
                     ),
-                    SideNavItem(ProcessingNav.Pending.name, str(S.pending), ZillitIcons.Clock, counts.pending),
-                    SideNavItem(ProcessingNav.Approved.name, str(S.approved), ZillitIcons.Check, counts.approved),
+                ),
+                SideNavSection(
+                    title = str(S.desktop_payroll_output),
+                    items = listOf(SideNavItem(EXPORT_ID, str(S.dd_action_export_csv), ZillitIcons.Download)),
                 ),
             ),
-            SideNavSection(
-                title = str(S.desktop_payroll_output),
-                items = listOf(SideNavItem(EXPORT_ID, str(S.dd_action_export_csv), ZillitIcons.Download)),
-            ),
-        ),
-        activeId = state.processing.nav.name,
-        onSelect = { id ->
-            if (id == EXPORT_ID) {
-                onEvent(ProcessingEvent.Export(open = true))
-            } else {
-                onEvent(ProcessingEvent.Nav(ProcessingNav.valueOf(id)))
+            activeId = state.processing.nav.name,
+            onSelect = { id ->
+                if (id == EXPORT_ID) {
+                    onEvent(ProcessingEvent.Export(open = true))
+                } else {
+                    onEvent(ProcessingEvent.Nav(ProcessingNav.valueOf(id)))
+                }
+            },
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        SummaryCard(state.processingSummary())
+    }
+}
+
+/** The web's "Week Summary" paper card: four figures over the rows the view lists. */
+@Composable
+private fun SummaryCard(summary: ProcessingSummary) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.md)
+            .padding(bottom = ZillitTheme.spacing.md)
+            .clip(ZillitTheme.shapes.large)
+            .background(colors.surface)
+            .border(1.dp, colors.border, ZillitTheme.shapes.large)
+            .padding(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
+            text = summary.title.uppercase(),
+            style = ZillitTheme.typography.columnHeader,
+            color = colors.textMuted,
+        )
+        summary.lines.forEach { line ->
+            Row(verticalAlignment = Alignment.Top) {
+                ZillitText(
+                    text = line.label,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitText(
+                    text = line.value,
+                    style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
+                    color = when (line.emphasis) {
+                        SummaryEmphasis.Plain -> colors.textPrimary
+                        SummaryEmphasis.Gross -> colors.accentText
+                        SummaryEmphasis.Approved -> colors.success
+                        SummaryEmphasis.Overtime -> colors.warning
+                    },
+                    maxLines = 1,
+                )
             }
-        },
-    )
+        }
+    }
 }
 
 /** View tabs, the day picker, the tiles, the department chips and search, then the grid. */

@@ -133,6 +133,7 @@ private fun EstimatePane(state: PayrollUiState, modifier: Modifier, onEvent: (Pa
                         viewer = state.viewer,
                         timecard = estimate.timecard,
                         crewName = state.nameOf(crew.userId),
+                        onEvent = onEvent,
                     )
                     FillActions(state, onEvent)
                 },
@@ -147,6 +148,7 @@ private fun EstimatePane(state: PayrollUiState, modifier: Modifier, onEvent: (Pa
             } else {
                 str(S.desktop_payroll_select_crew_short)
             },
+            onOpenInvoice = { onEvent(PayrollEvent.OpenInvoice(it)) },
             modifier = Modifier.weight(1f),
             holidayPay = state.holidayPayFor(timecard),
             dayCellExtra = { row -> FillDayChip(state, row.index, onEvent) },
