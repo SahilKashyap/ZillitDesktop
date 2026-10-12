@@ -1472,7 +1472,17 @@ sealed interface AppGraph {
             liveKitLine = if (callSocketUrl != null && callApiBase != null) {
                 LiveKitLine(
                     scope = appScope,
-                    api = LiveKitApi(LiveKitHttp(storageClient, headerProvider), callApiBase),
+                    api = LiveKitApi(
+                        // The /v1 routes take the production's Bearer (token
+                        // mode), alongside moduledata as the phones send it.
+                        LiveKitHttp(
+                            storageClient,
+                            headerProvider,
+                            bearer = tokenSession.callBearer(),
+                            ambientProjectId = { headerContext.value.projectId },
+                        ),
+                        callApiBase,
+                    ),
                     sockets = OkHttpLiveKitSocket(),
                     socketUrl = { callSocketUrl },
                     handshake = {

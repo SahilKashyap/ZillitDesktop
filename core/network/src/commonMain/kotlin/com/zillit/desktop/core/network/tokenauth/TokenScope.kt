@@ -21,11 +21,14 @@ sealed interface TokenScope {
  * header the server reads beyond identity — the scanning device's id on a
  * QR link — and what has no session to ride: the pre-auth device calls, the
  * session bootstrap itself (it would recurse), the map-route lookup, the
- * socket handshake (its own path), and Line 3's calling backend, which
- * signs with `moduledata` on the phones as well, and the error log, whose
- * handler reads identity out of the blob. Sending `moduledata`
- * alongside a token does not work — the token path never decrypts it — so
- * a request carries one or the other, never both.
+ * socket handshake (its own path), the error log, whose handler reads
+ * identity out of the blob, and the LiveKit calling backend. That last one
+ * is a different server: its `/v1` routes take the PROJECT token, and the
+ * desktop's `LiveKitHttp` attaches it itself ALONGSIDE `moduledata`, as the
+ * phones' `ModuleDataInterceptor` does — so `moduledata` stays its header
+ * here. For the core API, sending `moduledata` alongside a token does not
+ * work — the token path never decrypts it — so a request carries one or the
+ * other, never both.
  *
  * A project-scoped module with no production in context falls back to the
  * **device** token, not to `moduledata`. Several genuinely device-level calls

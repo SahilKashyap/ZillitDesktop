@@ -217,25 +217,19 @@ class LiveKitApi(
 
     /** `POST /v1/calls/{id}/ringing` — the socket-down way to say the popup is up. */
     suspend fun ackRinging(callId: String, projectId: String?, userId: String?): ZillitResult<Unit> =
-        bare("$baseUrl/v1/calls/${callId.encoded()}/ringing", projectId, userId)
+        acting("$baseUrl/v1/calls/${callId.encoded()}/ringing", projectId, userId)
 
     /** `POST /v1/calls/{id}/hangup` — decline, cancel or leave when the socket cannot carry it. */
     suspend fun hangup(callId: String, projectId: String?, userId: String?): ZillitResult<Unit> =
-        bare("$baseUrl/v1/calls/${callId.encoded()}/hangup", projectId, userId)
+        acting("$baseUrl/v1/calls/${callId.encoded()}/hangup", projectId, userId)
 
     /** `POST /v1/calls/{id}/react` — the socket-down way to throw an emoji; the server floats it back. */
     suspend fun react(callId: String, emoji: String, projectId: String?, userId: String?): ZillitResult<Unit> =
-        http.call(
-            HttpVerb.Post,
-            "$baseUrl/v1/calls/${callId.encoded()}/react",
-            buildJsonObject { put("emoji", JsonPrimitive(emoji)) },
-            projectId,
-            userId,
-        ).map { }
+        acting("$baseUrl/v1/calls/${callId.encoded()}/react", projectId, userId, mapOf("emoji" to JsonPrimitive(emoji)))
 
     /** `POST /v1/calls/{id}/hold` and `/resume` — the socket-down twins of `holdCall` / `resumeCall`. */
     suspend fun hold(callId: String, on: Boolean, projectId: String?, userId: String?): ZillitResult<Unit> =
-        bare("$baseUrl/v1/calls/${callId.encoded()}/${if (on) "hold" else "resume"}", projectId, userId)
+        acting("$baseUrl/v1/calls/${callId.encoded()}/${if (on) "hold" else "resume"}", projectId, userId)
 
     /**
      * `POST /v1/livekit/mute` — the host has the SFU mute someone's
@@ -340,6 +334,33 @@ class LiveKitApi(
 
     private suspend fun bare(url: String, projectId: String?, userId: String?): ZillitResult<Unit> =
         http.call(HttpVerb.Post, url, JsonObject(emptyMap()), projectId, userId).map { }
+
+    /**
+     * One of the socket-less call actions — ringing, hangup, hold, resume,
+     * react — whose body says WHO is acting: `{ userId }` plus [extra].
+     *
+     * These used to send nothing of the kind; the server read the actor out of
+     * `moduledata`. A Bearer token is authentication only — it says who you
+     * are, not what you are acting on — so the id travels in the body now, as
+     * the phones send it. Blank is omitted rather than sent as `""`: the
+     * legacy header can still authenticate a request with no id, and an empty
+     * one is a value the server has to refuse.
+     */
+    private suspend fun acting(
+        url: String,
+        projectId: String?,
+        userId: String?,
+        extra: Map<String, JsonElement> = emptyMap(),
+    ): ZillitResult<Unit> = http.call(
+        HttpVerb.Post,
+        url,
+        buildJsonObject {
+            userId?.takeIf { it.isNotBlank() }?.let { put("userId", JsonPrimitive(it)) }
+            extra.forEach { (key, value) -> put(key, value) }
+        },
+        projectId,
+        userId,
+    ).map { }
 
     /** A body that does not carry [what] is the server's failure, reported, not a crash. */
     private fun <T> ZillitResult<JsonElement?>.reading(
