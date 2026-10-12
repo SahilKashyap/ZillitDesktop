@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
+import com.zillit.desktop.core.designsystem.component.SIGN_OUT_CONFIRM_TAG
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
@@ -350,19 +351,19 @@ class AppShellTest {
         // once, so it confirms before it does anything.
         onNodeWithContentDescription("Logout").performClick()
         assertEquals(0, signedOut, "Logout must ask before signing anyone out")
-        onNodeWithText("Sign out?").assertIsDisplayed()
+        onNodeWithTag(SIGN_OUT_CONFIRM_TAG).assertIsDisplayed()
 
         // The question belongs to the frame. Composed inside the rail it was
         // laid out in a 60pt column — the buttons came out five points high
         // and the rail's own entries were pushed around to make room.
         assertEquals(railBefore, onNodeWithContentDescription("Film Tools").getUnclippedBoundsInRoot())
-        val confirm = onNodeWithText("Sign out").getUnclippedBoundsInRoot()
+        val confirm = onNodeWithTag(SIGN_OUT_CONFIRM_TAG).getUnclippedBoundsInRoot()
         assertTrue(
             confirm.height > MIN_DIALOG_BUTTON_HEIGHT,
             "the confirm button is $confirm — the dialog is being squeezed",
         )
 
-        onNodeWithText("Sign out").performClick()
+        onNodeWithTag(SIGN_OUT_CONFIRM_TAG).performClick()
         assertEquals(1, signedOut)
     }
 

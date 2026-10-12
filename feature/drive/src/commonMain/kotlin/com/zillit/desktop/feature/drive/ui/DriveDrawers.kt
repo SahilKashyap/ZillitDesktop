@@ -581,12 +581,30 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     }
 }
 
-/** The web's `UPLOAD_ACCEPTED_TYPES`, as bare extensions. */
+/**
+ * The web's `UPLOAD_ACCEPTED_TYPES`, as bare extensions, plus compressed
+ * archives — a production hands over whole folders of paperwork as a .zip,
+ * and refusing it sent people off to unzip and re-upload file by file.
+ */
 val ACCEPTED_EXTENSIONS: Set<String> = setOf(
     "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "ods", "odp",
     "csv", "xml", "json", "md",
     "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "heic", "heif",
     "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v",
     "mp3", "wav", "aac", "flac", "ogg", "m4a", "mpeg",
+    "zip", "rar", "7z", "tar", "gz", "tgz",
 )
+
+/**
+ * The type an archive is uploaded as. The JVM's name-based guess knows .zip
+ * and nothing else here, so a .rar or .7z went up as a bare octet-stream.
+ */
+fun archiveMimeType(fileName: String): String? = when (fileName.substringAfterLast('.', "").lowercase()) {
+    "zip" -> "application/zip"
+    "rar" -> "application/vnd.rar"
+    "7z" -> "application/x-7z-compressed"
+    "tar" -> "application/x-tar"
+    "gz", "tgz" -> "application/gzip"
+    else -> null
+}
 

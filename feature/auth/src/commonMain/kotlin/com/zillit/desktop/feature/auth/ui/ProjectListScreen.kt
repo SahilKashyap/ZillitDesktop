@@ -320,9 +320,9 @@ private fun ProjectListHeader(
             // just to reach the rail's Logout.
             onSignOut?.let { signOut ->
                 ZillitButton(
-                    text = str(S.desktop_sign_out),
+                    text = str(S.logout),
                     onClick = signOut,
-                    variant = ButtonVariant.Tertiary,
+                    variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Logout,
                 )

@@ -19,7 +19,10 @@ import com.zillit.desktop.feature.drive.domain.folderTree
 import com.zillit.desktop.feature.drive.domain.formatBytes
 import com.zillit.desktop.feature.drive.domain.innerTabTotals
 import com.zillit.desktop.feature.drive.domain.relativeTime
+import com.zillit.desktop.feature.drive.ui.ACCEPTED_EXTENSIONS
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.feature.drive.ui.PickedFile
+import com.zillit.desktop.feature.drive.ui.archiveMimeType
 import com.zillit.desktop.feature.drive.ui.PreviewState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -221,6 +224,20 @@ class DriveListingTest {
         assertEquals("5 minutes ago", relativeTime(now - 5 * 60_000, now))
         assertEquals("an hour ago", relativeTime(now - 3_600_000, now))
         assertEquals("2 days ago", relativeTime(now - 2 * 86_400_000, now))
+    }
+
+    // -- uploads ----------------------------------------------------------------
+
+    @Test
+    fun `compressed archives are accepted for upload and sent with their own type`() {
+        listOf("zip", "rar", "7z", "tar", "gz", "tgz").forEach { ext ->
+            assertTrue(PickedFile("/tmp/a.$ext", "Paperwork.$ext", 10, "x").extension in ACCEPTED_EXTENSIONS, ext)
+        }
+        assertEquals("application/zip", archiveMimeType("Paperwork.ZIP"))
+        assertEquals("application/vnd.rar", archiveMimeType("Paperwork.rar"))
+        assertEquals("application/x-7z-compressed", archiveMimeType("Paperwork.7z"))
+        assertEquals(null, archiveMimeType("Scene 12.pdf"))
+        assertFalse("exe" in ACCEPTED_EXTENSIONS)
     }
 
     // -- preview stepping ------------------------------------------------------

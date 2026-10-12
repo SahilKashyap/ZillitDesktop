@@ -181,7 +181,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
             )
         }
         ZillitButton(
-            text = str(S.desktop_sign_out),
+            text = str(S.logout),
             variant = ButtonVariant.Danger,
             size = ButtonSize.Small,
             onClick = { onEvent(SettingsEvent.AskSignOut) },
@@ -541,7 +541,7 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
 @Composable
 private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent) -> Unit) {
     ZillitDialogShell(
-        title = str(S.desktop_sign_out_title),
+        title = str(S.logout),
         subtitle = str(S.desktop_sign_out_subtitle),
         icon = ZillitIcons.User,
         visible = visible,
@@ -572,7 +572,7 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
                 onClick = { onEvent(SettingsEvent.DismissSignOut) },
             )
             ZillitButton(
-                text = str(S.desktop_sign_out),
+                text = str(S.logout),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(SettingsEvent.ConfirmSignOut) },
             )
