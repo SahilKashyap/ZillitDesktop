@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.payroll
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -9,12 +12,15 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.payroll.domain.AuditEvent
+import com.zillit.desktop.feature.payroll.domain.ChartAccount
 import com.zillit.desktop.feature.payroll.domain.ClaimLine
 import com.zillit.desktop.feature.payroll.domain.DeductionLine
+import com.zillit.desktop.feature.payroll.domain.JournalEdit
 import com.zillit.desktop.feature.payroll.domain.PayLine
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollPerson
+import com.zillit.desktop.feature.payroll.domain.PayrollTaxType
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
 import com.zillit.desktop.feature.payroll.domain.TimecardDay
@@ -26,6 +32,7 @@ import com.zillit.desktop.feature.payroll.domain.TrackingNode
 import com.zillit.desktop.feature.payroll.domain.TrackingSet
 import com.zillit.desktop.feature.payroll.ui.HistoryState
 import com.zillit.desktop.feature.payroll.ui.JournalState
+import com.zillit.desktop.feature.payroll.ui.OutstandingDetail
 import com.zillit.desktop.feature.payroll.ui.HistoryTab
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
@@ -346,6 +353,74 @@ class PayrollScreenRenderTest {
             }
             onNodeWithText("This timecard is locked", substring = true).assertExists()
             onNodeWithText("Taxi").assertExists()
+        }
+    }
+
+    /**
+     * The tax line carries a type picker, and Other opens a percentage field.
+     * Picking and typing are asserted through the view model — a synthetic
+     * click cannot be relied on inside these popups.
+     */
+    @Test
+    fun `a tax line offers the type picker, and Other adds the percentage field`() {
+        runComposeUiTest {
+            val paid = card("a", TimecardStatus.Paid)
+            val journal = { type: String ->
+                JournalState(
+                    taxAdded = setOf("a"),
+                    reference = JournalReference(taxTypes = listOf(PayrollTaxType("vat_20", "VAT", 20.0, "UK"))),
+                    edits = mapOf("tax::a" to JournalEdit(taxType = type, taxRate = 12.5)),
+                )
+            }
+            var type by mutableStateOf("")
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        state(destination = PayrollDestination.Run).copy(
+                            metadata = PayrollMetadata(chart = listOf(ChartAccount("5000", "Crew costs"))),
+                            run = RunState(
+                                weekStarting = week,
+                                timecards = listOf(paid),
+                                journalOpen = true,
+                                journal = journal(type),
+                            ),
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onAllNodesWithText("Select…").assertCountEquals(1)
+            onAllNodesWithText("Tax percentage").assertCountEquals(0)
+            type = "other"
+            waitForIdle()
+            onAllNodesWithText("Select…").assertCountEquals(0)
+            onNodeWithText("12.5").assertExists()
+        }
+    }
+
+    /** Send to Payroll Run: a checkbox only where the Run would accept the week, and only for an accountant. */
+    @Test
+    fun `the outstanding detail offers send to run for sendable weeks to an accountant only`() {
+        val detail = OutstandingDetail(
+            userId = "u-a",
+            weeks = listOf(card("a", TimecardStatus.Submitted), card("b", TimecardStatus.Approved)),
+            loading = false,
+        )
+        listOf(controller to 1, producer to 0).forEach { (viewer, offered) ->
+            runComposeUiTest {
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        PayrollScreen(
+                            state(viewer, PayrollDestination.Processing).copy(
+                                processing = ProcessingState(weekStarting = week, detail = detail),
+                            ),
+                            onEvent = {},
+                        )
+                    }
+                }
+                onAllNodesWithText("Select all 1").assertCountEquals(offered)
+                onAllNodesWithText("Send to Payroll Run").assertCountEquals(offered)
+            }
         }
     }
 }

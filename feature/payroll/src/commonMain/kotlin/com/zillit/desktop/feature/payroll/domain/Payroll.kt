@@ -98,6 +98,8 @@ data class PayrollMetadata(
     val journalGroupByCategory: Boolean = false,
     /** `title` rather than `uppercase` — how a journal line's description is cased. */
     val journalTitleCase: Boolean = false,
+    /** The chart's postable accounts, ascending by code — what the journal's Code cell offers. */
+    val chart: List<ChartAccount> = emptyList(),
 )
 
 /**
@@ -150,11 +152,13 @@ data class PayrollViewer(
 
     /**
      * Production Accountant or Financial Controller — the web's
-     * `isSeniorAccountant`. Matched on the normalised value so the
-     * identifier and the translated name both work.
+     * `isSeniorAccountant`, an **exact** match on the two identifiers (or the
+     * two display names). A substring would also pass "Assistant Production
+     * Accountant" and hand them Final Approve, Lock and Mark Paid.
      */
     val isSenior: Boolean
-        get() = designationIdentifier.normalised().let { value -> SENIOR.any { value.contains(it) } }
+        get() = designationIdentifier?.trim()?.lowercase() in SENIOR_IDENTIFIERS ||
+            designationIdentifier.normalised().trim() in SENIOR
 
     /**
      * The accountant approver: named on the approvers list, or senior. The
@@ -175,6 +179,10 @@ data class PayrollViewer(
     private companion object {
         const val ACCOUNTS = "accounts"
         val SENIOR = setOf("production accountant", "financial controller")
+        val SENIOR_IDENTIFIERS = setOf(
+            "designation_production_accountant_accounts",
+            "designation_financial_controller_accounts",
+        )
         val PAYROLL_ACCOUNTANT_DESIGNATIONS = setOf(
             "designation_office_production_assistant_additional_crew",
             "designation_payroll_accounts",

@@ -60,11 +60,15 @@ internal fun AppGraph.Ready.buildPayroll(permissions: () -> ProjectPermissions):
 
 private fun AppGraph.Ready.payrollViewer(permissions: ProjectPermissions): PayrollViewer {
     val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
+    val profile = context?.profile
+    val me = context?.user(profile?.userId)
     return PayrollViewer(
-        userId = context?.profile?.userId.orEmpty(),
-        departmentIdentifier = me?.department,
-        designationIdentifier = me?.designation,
+        userId = profile?.userId.orEmpty(),
+        // The profile's identifiers, as the web's `AuthContext` reads them. The
+        // crew-list row lands after sign-in, so building from it alone left an
+        // accountant resolving as a non-accountant until it did.
+        departmentIdentifier = profile?.departmentIdentifier ?: me?.department,
+        designationIdentifier = profile?.designationIdentifier ?: me?.designation,
         canView = permissions.canView(PAYROLL_TOOL),
         rightsLoaded = permissions !== ProjectPermissions.Empty,
     )

@@ -139,6 +139,10 @@ class PayrollRepositoryImpl(
     override suspend fun override(timecardId: String, reason: String): ZillitResult<String?> =
         http.write("$timecards/$timecardId/override", overrideBody(reason))
 
+    // The same optional-reason body as the override; a different server permission rule.
+    override suspend fun sendToPayrollRun(timecardId: String, reason: String): ZillitResult<String?> =
+        http.write("$timecards/$timecardId/send-to-payroll-run", overrideBody(reason))
+
     override suspend fun markPaid(timecardId: String): ZillitResult<String?> =
         http.write("$timecards/$timecardId/mark-paid", body = null)
 

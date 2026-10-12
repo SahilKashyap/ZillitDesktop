@@ -7,6 +7,8 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
+import com.zillit.desktop.feature.payroll.domain.SendOutcome
+import com.zillit.desktop.feature.payroll.domain.SendToRun
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import kotlinx.coroutines.Job
 
@@ -40,6 +42,13 @@ internal class ProcessingActions(private val vm: PayrollViewModel) {
             is ProcessingEvent.DrawerMarkPaid -> transition(event.timecardId, pay = true, fromDrawer = true)
             is ProcessingEvent.OpenDrawer -> openDrawer(event.timecardId)
             is ProcessingEvent.OpenOutstanding -> openOutstanding(event.userId)
+            is ProcessingEvent.PickWeek -> pickWeek(event.timecardId)
+            ProcessingEvent.PickAllWeeks -> pickAllWeeks()
+            ProcessingEvent.AskSendToRun -> askSendToRun()
+            is ProcessingEvent.EditSendReason -> editSend { copy(reason = event.reason) }
+            ProcessingEvent.ConfirmSendToRun -> confirmSendToRun()
+            ProcessingEvent.DismissSendToRun ->
+                if (state.detail?.send?.sending != true) editDetail { copy(send = null) }
             is ProcessingEvent.Export -> edit { copy(exportOpen = event.open) }
             is ProcessingEvent.ExportScope -> export(event.outstanding)
         }
@@ -174,18 +183,116 @@ internal class ProcessingActions(private val vm: PayrollViewModel) {
             return
         }
         edit { copy(detail = OutstandingDetail(userId)) }
+        loadDetail(userId)
+    }
+
+    /** Reads the weeks into the open detail; a re-read keeps the ticks that are still sendable. */
+    private fun loadDetail(userId: String) {
         vm.launchWork {
             val result = vm.repository.outstandingFor(userId)
             edit {
                 val open = detail?.takeIf { it.userId == userId } ?: return@edit this
                 copy(
                     detail = when (result) {
-                        is ZillitResult.Success -> open.copy(loading = false, weeks = result.data)
+                        is ZillitResult.Success -> {
+                            val weeks = result.data
+                            val sendable = weeks.filter(SendToRun::canSend).map { it.id }.toSet()
+                            open.copy(
+                                loading = false,
+                                error = null,
+                                weeks = weeks,
+                                picked = open.picked intersect sendable,
+                            )
+                        }
                         is ZillitResult.Failure -> open.copy(loading = false, error = result.error)
                     },
                 )
             }
         }
+    }
+
+    /** A checkbox on a week the Run would accept — and only for an accountant. */
+    private fun pickWeek(id: String) {
+        val open = state.detail ?: return
+        if (!vm.ui.viewer.seesAccountantViews || open.sendable.none { it.id == id }) return
+        editDetail { copy(picked = if (id in picked) picked - id else picked + id) }
+    }
+
+    private fun pickAllWeeks() {
+        val open = state.detail ?: return
+        if (!vm.ui.viewer.seesAccountantViews) return
+        val all = open.sendable.map { it.id }.toSet()
+        editDetail { copy(picked = if (open.chosen.size == all.size) emptySet() else all) }
+    }
+
+    /** Opens the confirm for the ticked weeks, naming each — "send 3 weeks" says nothing of which. */
+    private fun askSendToRun() {
+        val open = state.detail ?: return
+        if (!vm.ui.viewer.seesAccountantViews || open.send != null) return
+        val chosen = open.chosen.ifEmpty { return }
+        editDetail {
+            copy(send = SendToRunPrompt(timecardIds = chosen.map { it.id }, weekLabels = chosen.map(::weekLabel)))
+        }
+    }
+
+    private fun editSend(change: SendToRunPrompt.() -> SendToRunPrompt) =
+        editDetail { copy(send = send?.takeUnless { it.sending }?.change() ?: send) }
+
+    /**
+     * One call per week, in order — these writes flip a status and notify the
+     * owner, and a burst of them against one crew member is a needless herd.
+     * A refusal does not stop the rest: the point of the fan-out is to clear
+     * what can be cleared, and the report names each week that was not. The
+     * confirm stays up on any failure so the reason survives a retry.
+     */
+    private fun confirmSendToRun() {
+        val open = state.detail ?: return
+        val prompt = open.send ?: return
+        if (prompt.sending || !vm.ui.viewer.seesAccountantViews) return
+        editDetail { copy(send = prompt.copy(sending = true)) }
+        vm.launchWork {
+            val outcomes = prompt.timecardIds.mapIndexed { index, id ->
+                when (val result = vm.repository.sendToPayrollRun(id, prompt.reason)) {
+                    is ZillitResult.Success -> SendOutcome(id)
+                    is ZillitResult.Failure ->
+                        SendOutcome(id, "${prompt.weekLabels[index]} — ${result.error.localised()}")
+                }
+            }
+            val failed = outcomes.filterNot { it.ok }
+            if (failed.isEmpty()) {
+                editDetail { copy(send = null, picked = emptySet()) }
+                vm.notify(describeSent(outcomes))
+            } else {
+                editDetail { copy(send = send?.copy(sending = false)) }
+                vm.fail(describeSent(outcomes))
+            }
+            // The sent weeks leave the pre-approval queue: re-read this list and the aggregate behind it.
+            loadDetail(open.userId)
+            reload(silent = true)
+        }
+    }
+
+    /** The batch in one sentence — partial success is the normal case, so a bare count would not do. */
+    private fun describeSent(outcomes: List<SendOutcome>): String {
+        val sent = outcomes.count { it.ok }
+        val failed = outcomes.filterNot { it.ok }
+        val detail = failed.joinToString("; ") { it.error.orEmpty() }
+        return when {
+            failed.isEmpty() -> if (sent == 1) {
+                str(S.desktop_payroll_sent_to_run_one)
+            } else {
+                str(S.desktop_payroll_sent_to_run_many, sent)
+            }
+            sent == 0 -> str(S.desktop_payroll_nothing_sent, detail)
+            else -> str(S.desktop_payroll_sent_some_failed, sent, failed.size, detail)
+        }
+    }
+
+    private fun weekLabel(timecard: PayrollTimecard): String =
+        str(S.desktop_payroll_week_ending, timecard.weekStarting?.let(PayPeriod::compactRangeLabel).orEmpty())
+
+    private fun editDetail(reducer: OutstandingDetail.() -> OutstandingDetail) = edit {
+        copy(detail = detail?.reducer())
     }
 
     /**

@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +40,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -44,6 +49,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.payroll.domain.ChartAccount
 import com.zillit.desktop.feature.payroll.domain.Journal
 import com.zillit.desktop.feature.payroll.domain.JournalEdit
 import com.zillit.desktop.feature.payroll.domain.JournalReference
@@ -51,6 +57,8 @@ import com.zillit.desktop.feature.payroll.domain.JournalRow
 import com.zillit.desktop.feature.payroll.domain.JournalSplit
 import com.zillit.desktop.feature.payroll.domain.JournalSplits
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
+import com.zillit.desktop.feature.payroll.domain.PayrollTaxType
+import com.zillit.desktop.feature.payroll.domain.TaxOption
 import com.zillit.desktop.feature.payroll.ui.JournalEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
@@ -106,9 +114,11 @@ private fun JournalHeaderActions(state: PayrollUiState, rows: List<JournalRow>, 
         helperText = state.earliestEffectiveDate?.let { str(S.desktop_payroll_earliest_date, it) },
         modifier = Modifier.width(HEADER_DATE_WIDTH),
     )
-    if (journal.edits.isNotEmpty()) {
+    // A removed tax line is a change with no edit behind it, so the count is the ledger's own.
+    val pending = journal.pendingCount(rows)
+    if (pending > 0) {
         ZillitText(
-            text = str(S.desktop_payroll_unsaved_count, journal.edits.size),
+            text = str(S.desktop_payroll_unsaved_count, pending),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.warning,
         )
@@ -118,7 +128,7 @@ private fun JournalHeaderActions(state: PayrollUiState, rows: List<JournalRow>, 
         onClick = { onEvent(JournalEvent.Save) },
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
-        enabled = journal.edits.isNotEmpty() && !journal.saving,
+        enabled = pending > 0 && !journal.saving,
         loading = journal.saving,
     )
     if (rows.any { it.timecardId != null }) {
@@ -299,7 +309,7 @@ private fun JournalLine(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             DescriptionCell(row, edit, editable, Modifier.weight(1f), onEvent)
-            CodeCell(row, code, editable, flagged, onEvent)
+            CodeCell(row, code, editable, flagged, state.metadata.chart, onEvent)
             ZillitTextField(
                 value = date,
                 onValueChange = { onEvent(JournalEvent.Date(row.id, it)) },
@@ -320,7 +330,11 @@ private fun JournalLine(
                 editable = editable,
                 modifier = Modifier.width(TAGS_WIDTH),
             ) { onEvent(JournalEvent.Tags(row.id, it)) }
-            if (row.isTax) TaxCell(row, edit, editable, onEvent) else Spacer(Modifier.width(TAX_WIDTH))
+            if (row.isTax) {
+                TaxCell(row, edit, editable, state.run.journal.reference.taxTypes, onEvent)
+            } else {
+                Spacer(Modifier.width(TAX_WIDTH))
+            }
             if (row.isCredit) {
                 ZillitText(
                     text = "—",
@@ -341,7 +355,7 @@ private fun JournalLine(
             RowActions(state, row, editable, offersTax, onEvent)
         }
         splits.forEach { child ->
-            SplitLine(row, child, editable, currency, state.run.journal.reference, onEvent)
+            SplitLine(row, child, editable, currency, state.run.journal.reference, state.metadata.chart, onEvent)
         }
     }
 }
@@ -385,6 +399,7 @@ private fun CodeCell(
     code: String,
     editable: Boolean,
     flagged: Boolean,
+    chart: List<ChartAccount>,
     onEvent: (PayrollEvent) -> Unit,
 ) {
     if (row.codeLocked) {
@@ -397,33 +412,119 @@ private fun CodeCell(
             )
         }
     } else {
-        ZillitTextField(
-            value = code,
-            onValueChange = { onEvent(JournalEvent.Code(row.id, it)) },
-            placeholder = str(S.code),
+        CodePicker(
+            code = code,
+            chart = chart,
             enabled = editable,
-            errorText = if (flagged && code.isBlank()) str(S.docusign_field_edit_required) else null,
+            isError = flagged && code.isBlank(),
             modifier = Modifier.width(CODE_WIDTH),
-        )
+        ) { onEvent(JournalEvent.Code(row.id, it)) }
     }
 }
 
 /**
- * The tax line's rate, and the money it derives. Picking a rate re-derives the
- * figure; typing a figure is an override that stands on its own.
+ * The chart of accounts as a typeahead over code and name — the web's
+ * `CoaCodeInput`: only postable nominals and codes are offered, ascending by
+ * code. A code the chart does not hold (a deal's, or one typed before the
+ * chart had it) stays selectable so history is not hidden, and a number typed
+ * that matches nothing can be used as it is, as the web's custom-code offer.
  */
 @Composable
-private fun TaxCell(row: JournalRow, edit: JournalEdit?, editable: Boolean, onEvent: (PayrollEvent) -> Unit) {
+private fun CodePicker(
+    code: String,
+    chart: List<ChartAccount>,
+    enabled: Boolean,
+    isError: Boolean,
+    modifier: Modifier,
+    onPick: (String) -> Unit,
+) {
+    val options = remember(chart, code) {
+        if (code.isBlank() || chart.any { it.code == code }) chart else listOf(ChartAccount(code, "")) + chart
+    }
+    ZillitSearchSelect(
+        value = options.firstOrNull { it.code == code },
+        options = options,
+        onSelect = { onPick(it.code) },
+        label = { it.code },
+        modifier = modifier,
+        placeholder = "—",
+        enabled = enabled,
+        isError = isError,
+        searchText = { it.caption },
+        subtitle = { it.name.takeIf(String::isNotBlank) },
+        onCreate = { typed ->
+            typed.filter { it.isDigit() || it == '-' }.trimStart('-').takeIf(String::isNotEmpty)?.let(onPick)
+        },
+        dropdownWidth = CODE_MENU_WIDTH,
+        onClear = { onPick("") },
+        showInitials = false,
+        searchPlaceholder = str(S.desktop_br_search_code_or_name),
+    )
+}
+
+/**
+ * The tax line's type, its rate, and the money they derive. Picking a type
+ * stamps its rate and re-derives the figure; Other opens a percentage field;
+ * typing a figure is an override that stands on its own and turns the type to
+ * Other, with the rate back-solved from it.
+ */
+@Composable
+private fun TaxCell(
+    row: JournalRow,
+    edit: JournalEdit?,
+    editable: Boolean,
+    taxTypes: List<PayrollTaxType>,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    val type = Journal.taxTypeOf(row, edit)
+    val options = remember(taxTypes, type) {
+        val known = Journal.taxOptions(taxTypes)
+        // A type saved before it left Production Setup still shows, as the tags do.
+        if (type.isBlank() || known.any { it.value == type }) known else known + TaxOption(type, type, null, null)
+    }
+    val other = str(S.other)
+    val custom = str(S.custom)
+    Column(Modifier.width(TAX_WIDTH), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitSearchSelect(
+            value = options.firstOrNull { it.value == type },
+            options = options,
+            onSelect = { onEvent(JournalEvent.TaxType(row.id, it.value)) },
+            label = { if (it.value == Journal.TAX_OTHER) other else it.label },
+            placeholder = str(S.desktop_inv_select_ellipsis),
+            enabled = editable,
+            section = { it.group ?: custom },
+            showInitials = false,
+        )
+        if (type == Journal.TAX_OTHER) {
+            CustomRateField(Journal.rateOf(row, edit), editable) { onEvent(JournalEvent.TaxRate(row.id, it)) }
+        }
+    }
+}
+
+/**
+ * The "Other %" field. It keeps what is being typed rather than echoing the
+ * parsed rate, or `12.` would lose its point before the digit after it.
+ */
+@Composable
+private fun CustomRateField(rate: Double?, enabled: Boolean, onChange: (String) -> Unit) {
+    var text by remember { mutableStateOf(rate.percent()) }
+    // A rate that moves from elsewhere (a back-solve, a picked type) replaces the text.
+    LaunchedEffect(rate) { if (text.toDoubleOrNull() != rate) text = rate.percent() }
     ZillitTextField(
-        value = Journal.rateOf(row, edit).percent(),
-        onValueChange = { onEvent(JournalEvent.TaxRate(row.id, it)) },
+        value = text,
+        onValueChange = { typed ->
+            if (typed.all { it.isDigit() || it == '.' }) {
+                text = typed
+                onChange(typed)
+            }
+        },
         placeholder = str(S.desktop_payroll_tax_percentage),
         keyboardType = KeyboardType.Decimal,
-        enabled = editable,
+        enabled = enabled,
         trailingContent = {
             ZillitText(text = "%", style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
         },
-        modifier = Modifier.width(TAX_WIDTH),
+        modifier = Modifier.fillMaxWidth(),
     )
 }
 
@@ -547,6 +648,7 @@ private fun SplitLine(
     editable: Boolean,
     currency: String?,
     reference: JournalReference,
+    chart: List<ChartAccount>,
     onEvent: (PayrollEvent) -> Unit,
 ) {
     Row(
@@ -579,13 +681,13 @@ private fun SplitLine(
                 modifier = Modifier.width(CODE_WIDTH),
             )
         } else {
-            ZillitTextField(
-                value = child.nominalCode,
-                onValueChange = { onEvent(JournalEvent.SplitCode(row.id, child.id, it)) },
-                placeholder = str(S.code),
+            CodePicker(
+                code = child.nominalCode,
+                chart = chart,
                 enabled = editable,
+                isError = false,
                 modifier = Modifier.width(CODE_WIDTH),
-            )
+            ) { onEvent(JournalEvent.SplitCode(row.id, child.id, it)) }
         }
         ZillitTextField(
             value = child.effectiveDate.orEmpty(),
@@ -769,12 +871,13 @@ internal fun JournalPostDialog(state: PayrollUiState, onEvent: (PayrollEvent) ->
 
 private val HEADER_DATE_WIDTH = 170.dp
 /** Description + code + date + layers + tags + tax + both money columns + actions. */
-private val TABLE_MIN_WIDTH = 1320.dp
+private val TABLE_MIN_WIDTH = 1464.dp
 private val LAYERS_WIDTH = 150.dp
 private val TAGS_WIDTH = 150.dp
-private val TAX_WIDTH = 96.dp
+private val TAX_WIDTH = 190.dp
 private val ACTIONS_WIDTH = 210.dp
-private val CODE_WIDTH = 120.dp
+private val CODE_WIDTH = 170.dp
+private val CODE_MENU_WIDTH = 300.dp
 private val DATE_WIDTH = 140.dp
 private val AMOUNT_WIDTH = 120.dp
 private val LOCK_ICON = 14.dp

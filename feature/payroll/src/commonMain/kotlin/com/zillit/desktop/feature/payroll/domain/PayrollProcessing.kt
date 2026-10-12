@@ -136,3 +136,37 @@ data class OutstandingRow(val userId: String, val weeks: List<ProcessingRow>) {
                 .sortedByDescending { it.total }
     }
 }
+
+/**
+ * Send to Payroll Run — the web's `lib/sendToPayrollRunAction`: force a week
+ * into the Run (status to `approved`), skipping the approval tiers. The same
+ * effect as Override Approval, under a different server rule: senior
+ * accountants and admins may send any week, everyone else only their own
+ * payroll groups, which the client cannot know — so the server's refusal is
+ * the backstop, reported week by week.
+ */
+object SendToRun {
+
+    /**
+     * The statuses the server refuses: a week at or past `approved` is already
+     * in the Run. Stated as a block list, not an allow list — the allow side
+     * is open-ended (draft, submitted, queried, rejected…), and a status
+     * nobody enumerated would silently lose its checkbox.
+     */
+    private val BLOCKED = setOf(
+        TimecardStatus.Approved,
+        TimecardStatus.FinalApproved,
+        TimecardStatus.Locked,
+        TimecardStatus.Paid,
+        TimecardStatus.Unpaid,
+        TimecardStatus.Posted,
+    )
+
+    /** Can this week still be sent? Nothing without an id to address the call to. */
+    fun canSend(timecard: PayrollTimecard): Boolean = timecard.id.isNotBlank() && timecard.status !in BLOCKED
+}
+
+/** How one week's send went: `error` is the server's refusal, null when it moved. */
+data class SendOutcome(val timecardId: String, val error: String? = null) {
+    val ok: Boolean get() = error == null
+}

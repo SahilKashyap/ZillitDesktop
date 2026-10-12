@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.payroll
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.payroll.domain.BatchOutcome
 import com.zillit.desktop.feature.payroll.domain.ClaimLine
@@ -42,6 +43,12 @@ internal class FakePayrollRepository(
 
     /** Set directly; it is reference data, not something a test varies at construction. */
     var reference: JournalReference = JournalReference()
+
+    /** What a crew member's Outstanding detail lists. */
+    var outstandingWeeks: List<PayrollTimecard> = emptyList()
+
+    /** Timecard id to the message the server refuses its send-to-run with. */
+    val sendRefusals = mutableMapOf<String, String>()
 
     val calls = mutableListOf<String>()
     val submissions = mutableListOf<JournalSubmission>()
@@ -98,7 +105,7 @@ internal class FakePayrollRepository(
     override suspend fun runQueue(weekStarting: Long) = ZillitResult.Success(run)
     override suspend fun processingQueue() = ZillitResult.Success(ProcessingQueue(null, processing))
     override suspend fun outstanding() = ZillitResult.Success(emptyList<PayrollTimecard>())
-    override suspend fun outstandingFor(userId: String) = ZillitResult.Success(emptyList<PayrollTimecard>())
+    override suspend fun outstandingFor(userId: String) = ZillitResult.Success(outstandingWeeks)
 
     override suspend fun timecard(timecardId: String): ZillitResult<PayrollTimecard> =
         (paid + run + processing).firstOrNull { it.id == timecardId }?.let { ZillitResult.Success(it) }
@@ -110,6 +117,12 @@ internal class FakePayrollRepository(
 
     override suspend fun unlock(timecardId: String) = single("unlock:$timecardId")
     override suspend fun override(timecardId: String, reason: String) = single("override:$timecardId:$reason")
+    override suspend fun sendToPayrollRun(timecardId: String, reason: String): ZillitResult<String?> {
+        calls += "sendToRun:$timecardId:$reason"
+        val refusal = sendRefusals[timecardId] ?: return ZillitResult.Success(null)
+        return ZillitResult.Failure(ZillitError.Http(status = 422, serverMessage = refusal))
+    }
+
     override suspend fun markPaid(timecardId: String) = single("markPaid:$timecardId")
     override suspend fun markUnpaid(timecardId: String) = single("markUnpaid:$timecardId")
 

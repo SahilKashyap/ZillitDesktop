@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.payroll.domain
 
 import kotlin.math.abs
+import kotlin.math.floor
 
 /**
  * One saved journal line, as `/journal-ledger/fetch` returns it and as
@@ -159,6 +160,8 @@ data class JournalEdit(
     val description: String? = null,
     val taxType: String? = null,
     val taxRate: Double? = null,
+    /** The rate was emptied: no rate at all, rather than the row's own. */
+    val taxRateCleared: Boolean = false,
     /** Null leaves the row's saved allocations; an empty list un-splits it. */
     val splits: List<JournalSplit>? = null,
     /** Null leaves the row's own; an empty map clears every layer. */
@@ -195,12 +198,38 @@ data class TrackingSet(val id: String, val name: String, val nodes: List<Trackin
 
 data class TrackingNode(val code: String, val label: String)
 
-/** What the journal's Layers and Tags cells are drawn against. */
+/** What the journal's Layers, Tags and Tax cells are drawn against. */
 data class JournalReference(
     val trackingSets: List<TrackingSet> = emptyList(),
     /** Production Setup → Account Tags. */
     val assetTags: List<String> = emptyList(),
+    /** Production Setup → Tax Types. */
+    val taxTypes: List<PayrollTaxType> = emptyList(),
 )
+
+/**
+ * One of the production's tax types — a row of `project_accounting_setup.tax_types`.
+ * [percent] is the numeric rate (20), null for a type saved without one.
+ */
+data class PayrollTaxType(
+    val identifier: String,
+    val label: String,
+    val percent: Double?,
+    val country: String?,
+)
+
+/**
+ * A choice in the tax picker: the posting key, its caption, and the rate it
+ * stamps on the line — the web's `useProjectTaxTypes().options`. [group] is
+ * the country heading, null for the custom ones.
+ */
+data class TaxOption(val value: String, val label: String, val percent: Double?, val group: String?)
+
+/** The chart of accounts' postable rows — what a journal line may be coded to. */
+data class ChartAccount(val code: String, val name: String) {
+    /** `1100 — Petty cash`, or the bare code for an account created without a name. */
+    val caption: String get() = if (name.isBlank()) code else "$code — $name"
+}
 
 /** The journal's debit and credit totals. */
 data class JournalBalance(val debit: Double, val credit: Double) {
@@ -218,6 +247,13 @@ data class IncompleteLine(val description: String, val missingCode: Boolean, val
 /** The journal's rules, in one place so the screen and the view model read the same ones. */
 object Journal {
     private const val PERCENT = 100.0
+    private const val HALF = 0.5
+
+    /** The custom-rate option's value, and the type a hand-typed tax line takes. */
+    const val TAX_OTHER = "other"
+
+    /** The highest rate the percentage field will hold — the web's `TAX_RATE_MAX`. */
+    const val TAX_RATE_MAX = 100.0
 
     const val SRC_ACCOUNT = "payroll_account"
     const val SRC_TAX = "tax"
@@ -254,7 +290,98 @@ object Journal {
 
     fun descriptionOf(row: JournalRow, edit: JournalEdit?): String = edit?.description ?: row.description
 
-    fun rateOf(row: JournalRow, edit: JournalEdit?): Double? = edit?.taxRate ?: row.taxRate
+    fun rateOf(row: JournalRow, edit: JournalEdit?): Double? =
+        if (edit?.taxRateCleared == true) null else edit?.taxRate ?: row.taxRate
+
+    fun taxTypeOf(row: JournalRow, edit: JournalEdit?): String = edit?.taxType ?: row.taxType
+
+    /**
+     * The picker's choices — the web's `mapTaxTypesToOptions`: each type as
+     * `Label · 20%` keyed by its identifier, grouped by country (alphabetical)
+     * with the custom-rate option last under no heading.
+     */
+    fun taxOptions(types: List<PayrollTaxType>): List<TaxOption> {
+        val named = types.filter { it.identifier.isNotBlank() }.map { type ->
+            val label = type.percent?.let { "${type.label} · ${percentText(it)}%" } ?: type.label
+            TaxOption(type.identifier, label, type.percent, type.country?.takeIf { it.isNotBlank() })
+        }
+        val grouped = named.filter { it.group != null }.sortedBy { it.group }
+        return grouped + named.filter { it.group == null } + TaxOption(TAX_OTHER, "Other", null, null)
+    }
+
+    /** A whole rate reads as `20`, not `20.0`. */
+    fun percentText(percent: Double): String =
+        if (percent == percent.toLong().toDouble()) percent.toLong().toString() else percent.toString()
+
+    /**
+     * Picks a tax type — the web's `TaxCell` select. The line takes the type's
+     * own rate; the one exception is moving from Other to Other, which keeps
+     * the custom rate typed so far. The money follows the new rate again, so
+     * any typed figure is dropped.
+     */
+    fun pickTaxType(row: JournalRow, edit: JournalEdit, type: String, options: List<TaxOption>): JournalEdit {
+        val keepsCustom = type == TAX_OTHER && taxTypeOf(row, edit) == TAX_OTHER
+        val rate = if (keepsCustom) rateOf(row, edit) else options.firstOrNull { it.value == type }?.percent
+        return edit.copy(
+            taxType = type,
+            taxRate = rate,
+            taxRateCleared = rate == null,
+            amount = null,
+            amountCleared = false,
+        )
+    }
+
+    /**
+     * Types into the custom-rate field, clamped to 0-100 as the web's
+     * `clampTaxRateInput` is. Blank is no rate; text that is not a number is
+     * ignored. The money follows the rate again.
+     */
+    fun typeTaxRate(edit: JournalEdit, text: String): JournalEdit {
+        val typed = text.trim()
+        val rate = if (typed.isEmpty()) null else typed.toDoubleOrNull()?.coerceIn(0.0, TAX_RATE_MAX) ?: return edit
+        return edit.copy(taxRate = rate, taxRateCleared = rate == null, amount = null, amountCleared = false)
+    }
+
+    /**
+     * Types a figure over a tax line. A hand-typed tax no longer follows a
+     * picked rate, so its type becomes Other, and the rate is back-solved from
+     * the figure so the "Other %" field agrees with the money beside it.
+     */
+    fun typeTaxAmount(row: JournalRow, edit: JournalEdit, amount: Double): JournalEdit {
+        val implied = impliedRate(row.taxBase, amount)
+        return edit.copy(
+            amount = amount,
+            amountCleared = false,
+            taxType = TAX_OTHER,
+            taxRate = implied,
+            taxRateCleared = implied == null,
+        )
+    }
+
+    /**
+     * `amount ÷ base × 100` to two places, or nothing — the web's back-solve.
+     * Only a rate the % field could itself hold is kept: a figure larger than
+     * the base implies over 100%, which has no valid rate, so none is stored
+     * rather than a clamped one that would not produce the typed figure.
+     */
+    fun impliedRate(base: Double?, amount: Double): Double? {
+        if (base == null || base <= 0.0 || !amount.isFinite()) return null
+        val implied = floor(amount / base * PERCENT * PERCENT + HALF) / PERCENT
+        return implied.takeIf { it in 0.0..TAX_RATE_MAX }
+    }
+
+    /**
+     * Changes waiting to be saved — the web's `journalEditCount`: the rows on
+     * screen with edits, plus every tax line added or removed. A removal has no
+     * edit-buffer entry (the row is gone and its edits dropped), yet it is a
+     * real change: the payload omits the line, and the omission is the delete.
+     */
+    fun pendingCount(
+        rows: List<JournalRow>,
+        edits: Map<String, JournalEdit>,
+        added: Set<String>,
+        removed: Set<String>,
+    ): Int = rows.count { it.id in edits } + added.size + removed.size
 
     fun layersOf(row: JournalRow, edit: JournalEdit?): Map<String, String> = edit?.trackingCodes ?: row.trackingCodes
 
@@ -300,7 +427,9 @@ object Journal {
      * code is the configured one on account rows; the date is epoch millis.
      */
     fun lineFor(row: JournalRow, edit: JournalEdit?): List<JournalLine> {
-        val amount = amountOf(row, edit)
+        // The tax line's debit is the figure the grid shows, or zero: sending
+        // nothing would post a tax line of nothing beside a figure on screen.
+        val amount = amountOf(row, edit) ?: 0.0.takeIf { row.isTax }
         val sided = when {
             row.isCredit -> null to amount
             row.isTax -> amount to null

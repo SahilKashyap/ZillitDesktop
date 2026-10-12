@@ -122,7 +122,7 @@ internal class RunActions(private val vm: PayrollViewModel) {
                             error = null,
                             timecards = timecards,
                             selected = selected.filter { it in alive }.toSet(),
-                            journal = journal.copy(coding = coding ?: JournalCoding()),
+                            journal = journal.settled(coding ?: JournalCoding()),
                         )
                     }
                 }

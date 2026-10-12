@@ -118,6 +118,16 @@ sealed interface ProcessingEvent : PayrollEvent {
     data class DrawerMarkPaid(val timecardId: String) : ProcessingEvent
     data class OpenDrawer(val timecardId: String?) : ProcessingEvent
     data class OpenOutstanding(val userId: String?) : ProcessingEvent
+
+    // -- Send to Payroll Run, from the Outstanding detail --
+    data class PickWeek(val timecardId: String) : ProcessingEvent
+
+    /** Ticks every sendable week, or clears the ticks when they are all ticked already. */
+    data object PickAllWeeks : ProcessingEvent
+    data object AskSendToRun : ProcessingEvent
+    data class EditSendReason(val reason: String) : ProcessingEvent
+    data object ConfirmSendToRun : ProcessingEvent
+    data object DismissSendToRun : ProcessingEvent
     data class Export(val open: Boolean) : ProcessingEvent
     data class ExportScope(val outstanding: Boolean) : ProcessingEvent
 }

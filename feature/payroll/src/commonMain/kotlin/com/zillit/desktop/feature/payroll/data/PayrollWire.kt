@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.feature.payroll.domain.BatchOutcome
+import com.zillit.desktop.feature.payroll.domain.ChartAccount
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollAccount
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
@@ -38,7 +39,33 @@ internal fun parseMetadata(meta: JsonObject?, settings: JsonObject?, chart: List
         payrollAccounts = setting?.array("payroll_accounts").orEmpty().mapNotNull { it.toPayrollAccount(names) },
         journalGroupByCategory = grouped == true,
         journalTitleCase = format.equals("title", ignoreCase = true),
+        chart = chart.toPostableAccounts(),
     )
+}
+
+/**
+ * Only nominals (`category`) and codes (`sub_category`) are postable: headers
+ * and sections are group titles. A row predating `line_type` passes, and an
+ * account with Posting unticked is not offered — the web's `CoaCodeInput`
+ * filter, in the chart's own numeric order.
+ */
+internal fun List<JsonObject>.toPostableAccounts(): List<ChartAccount> = mapNotNull { row ->
+    val lineType = row.text("line_type")
+    val postable = lineType == null || lineType == "category" || lineType == "sub_category"
+    if (!postable || row.boolean("posting_box") == false) return@mapNotNull null
+    row.text("code")?.let { ChartAccount(code = it, name = row.text("name").orEmpty()) }
+}.distinctBy { it.code }.sortedWith { a, b -> compareChartCodes(a.code, b.code) }
+
+/** Numeric codes by value, then the unsortable ones (`125L`) in natural order — the web's `compareCoaCodeNumeric`. */
+internal fun compareChartCodes(a: String, b: String): Int {
+    val numberA = a.trim().toDoubleOrNull()
+    val numberB = b.trim().toDoubleOrNull()
+    return when {
+        numberA != null && numberB != null -> numberA.compareTo(numberB).takeIf { it != 0 } ?: a.compareTo(b)
+        numberA != null -> -1
+        numberB != null -> 1
+        else -> a.compareTo(b)
+    }
 }
 
 /** One `payroll_accounts` entry — a bare code or `{code}` — named from the chart of accounts. */

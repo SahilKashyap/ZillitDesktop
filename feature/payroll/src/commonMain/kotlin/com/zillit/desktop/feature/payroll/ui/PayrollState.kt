@@ -11,9 +11,11 @@ import com.zillit.desktop.feature.payroll.domain.EstimatedDay
 import com.zillit.desktop.feature.payroll.domain.PayrollCrewRow
 import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.Employment
+import com.zillit.desktop.feature.payroll.domain.Journal
 import com.zillit.desktop.feature.payroll.domain.JournalCoding
 import com.zillit.desktop.feature.payroll.domain.JournalEdit
 import com.zillit.desktop.feature.payroll.domain.JournalReference
+import com.zillit.desktop.feature.payroll.domain.JournalRow
 import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
@@ -24,6 +26,7 @@ import com.zillit.desktop.feature.payroll.domain.PayrollViewer
 import com.zillit.desktop.feature.payroll.domain.PendingClaim
 import com.zillit.desktop.feature.payroll.domain.RunAction
 import com.zillit.desktop.feature.payroll.domain.RunRow
+import com.zillit.desktop.feature.payroll.domain.SendToRun
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 
 /** Everything the payroll tool is showing. */
@@ -219,7 +222,28 @@ data class JournalState(
      */
     val taxAdded: Set<String> = emptySet(),
     val taxRemoved: Set<String> = emptySet(),
-)
+    /**
+     * The tax additions and removals a save has just stored. They stay in force
+     * until the re-read lands — dropping them sooner would show a deleted line
+     * again, or hide an added one, for the moment the old coding is still on
+     * screen — and are then forgotten, since the server now holds the answer.
+     */
+    val taxSettling: TaxSettling? = null,
+) {
+    /** What waits to be saved: edited rows on screen, and each tax line added or removed. */
+    fun pendingCount(rows: List<JournalRow>): Int = Journal.pendingCount(rows, edits, taxAdded, taxRemoved)
+
+    /** The re-read coding landed: it holds what the last save stored, so that tax bookkeeping is spent. */
+    fun settled(fresh: JournalCoding): JournalState = copy(
+        coding = fresh,
+        taxAdded = taxAdded - taxSettling?.added.orEmpty(),
+        taxRemoved = taxRemoved - taxSettling?.removed.orEmpty(),
+        taxSettling = null,
+    )
+}
+
+/** The tax lines a save stored, to be released once the week has been re-read. */
+data class TaxSettling(val added: Set<String>, val removed: Set<String>)
 
 data class JournalPostDialog(
     val timecardIds: List<String>,
@@ -271,6 +295,23 @@ data class OutstandingDetail(
     val weeks: List<PayrollTimecard> = emptyList(),
     val loading: Boolean = true,
     val error: ZillitError? = null,
+    /** The weeks ticked for Send to Payroll Run, by timecard id. */
+    val picked: Set<String> = emptySet(),
+    val send: SendToRunPrompt? = null,
+) {
+    /** The weeks the Run would accept — only these are offered a checkbox. */
+    val sendable: List<PayrollTimecard> get() = weeks.filter(SendToRun::canSend)
+
+    /** The ticked weeks that are still sendable, in the list's order. */
+    val chosen: List<PayrollTimecard> get() = sendable.filter { it.id in picked }
+}
+
+/** Send to Payroll Run's confirm: the weeks it names, and the optional reason. */
+data class SendToRunPrompt(
+    val timecardIds: List<String>,
+    val weekLabels: List<String>,
+    val reason: String = "",
+    val sending: Boolean = false,
 )
 
 // -- Producer Board ------------------------------------------------------------------------

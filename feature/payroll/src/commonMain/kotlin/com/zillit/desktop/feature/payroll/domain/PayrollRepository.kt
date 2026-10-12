@@ -69,6 +69,12 @@ interface PayrollRepository {
     /** `POST /{id}/override` — force-approve past every approval tier. */
     suspend fun override(timecardId: String, reason: String): ZillitResult<String?>
 
+    /**
+     * `POST /{id}/send-to-payroll-run` — force one week into the Run, with an
+     * optional audit [reason]. One timecard per call; there is no batch form.
+     */
+    suspend fun sendToPayrollRun(timecardId: String, reason: String): ZillitResult<String?>
+
     /** `POST /{id}/mark-paid`. */
     suspend fun markPaid(timecardId: String): ZillitResult<String?>
 

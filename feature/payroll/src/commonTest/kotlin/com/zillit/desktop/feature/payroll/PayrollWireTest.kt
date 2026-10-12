@@ -127,6 +127,25 @@ class PayrollWireTest {
     }
 
     @Test
+    fun `send to payroll run posts to the week's own route, the reason only when given`() = runTest {
+        val (repo, sent) = repository()
+        repo.sendToPayrollRun("t1", "  HOD away  ")
+        repo.sendToPayrollRun("t2", "   ")
+        assertEquals(HttpMethod.Post, sent[0].method)
+        assertEquals("https://payroll.test/api/v2/payroll/timecards/weekly/t1/send-to-payroll-run", sent[0].url)
+        assertEquals("HOD away", sent[0].body!!["reason"]!!.jsonPrimitive.content)
+        assertTrue(sent[1].url.endsWith("/timecards/weekly/t2/send-to-payroll-run"))
+        assertEquals(JsonObject(emptyMap()), sent[1].body, "`{}`, as the web's `reason ? { reason } : {}`")
+        sent.noAccountantPayrollRoutes()
+    }
+
+    @Test
+    fun `a refused send to run is a failure, not a quiet success`() = runTest {
+        val (repo, _) = repository("""{"status":0,"message":"timecard_cannot_override_status"}""")
+        assertIs<ZillitResult.Failure>(repo.sendToPayrollRun("t1", ""))
+    }
+
+    @Test
     fun `the history queue is the week's paid list and the run is the week's processing list`() = runTest {
         val (repo, sent) = repository("""{"status":1,"data":[]}""")
         repo.paidCrew(1_785_715_200_000)

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,22 +23,27 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.ProcessingRow
+import com.zillit.desktop.feature.payroll.domain.SendToRun
 import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
 import com.zillit.desktop.feature.payroll.ui.AdjustmentKind
+import com.zillit.desktop.feature.payroll.ui.OutstandingDetail
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
 import com.zillit.desktop.feature.payroll.ui.ProcessingEvent
+import com.zillit.desktop.feature.payroll.ui.components.DialogActions
 import com.zillit.desktop.feature.payroll.ui.components.tone
 
 /**
@@ -111,6 +117,8 @@ fun OutstandingDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Un
         visible = detail != null,
         width = WIDE_DIALOG,
         onDismiss = { onEvent(ProcessingEvent.OpenOutstanding(null)) },
+        actions = open?.takeIf { state.viewer.seesAccountantViews && it.sendable.isNotEmpty() }
+            ?.let { sendActions(it, onEvent) },
     ) {
         if (open == null) return@ZillitDialogShell
         when {
@@ -138,14 +146,62 @@ fun OutstandingDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Un
                     ),
                     tone = StatusTone.Pending,
                 )
-                rows.forEachIndexed { index, row -> WeekCard(row, latest = index == 0, onEvent = onEvent) }
+                rows.forEachIndexed { index, row ->
+                    WeekCard(
+                        row = row,
+                        latest = index == 0,
+                        // A checkbox only on a week the Run would accept — never a disabled one.
+                        pick = Pick(
+                            offered = state.viewer.seesAccountantViews && SendToRun.canSend(row.timecard),
+                            picked = row.timecard.id in open.picked,
+                        ),
+                        onEvent = onEvent,
+                    )
+                }
             }
         }
     }
 }
 
+/** Whether a week card carries a Send to Payroll Run checkbox, and whether it is ticked. */
+private data class Pick(val offered: Boolean, val picked: Boolean)
+
+/**
+ * The footer: take every sendable week at once (or clear them), and send the
+ * ticked ones. The web keeps the button quiet until a week is ticked; here it
+ * is shown disabled with the hint, so the action can be found.
+ */
+private fun sendActions(open: OutstandingDetail, onEvent: (PayrollEvent) -> Unit): @Composable RowScope.() -> Unit = {
+    val all = open.chosen.size == open.sendable.size
+    ZillitText(
+        text = str(S.desktop_payroll_pick_week_for_run),
+        style = ZillitTheme.typography.labelSmall,
+        color = ZillitTheme.colors.textMuted,
+        modifier = Modifier.weight(1f),
+    )
+    ZillitButton(
+        text = if (all) {
+            str(S.desktop_ce_inbox_clear_selection)
+        } else {
+            str(S.desktop_select_all_count, open.sendable.size)
+        },
+        onClick = { onEvent(ProcessingEvent.PickAllWeeks) },
+        variant = ButtonVariant.Tertiary,
+    )
+    ZillitButton(
+        text = if (open.chosen.isEmpty()) {
+            str(S.desktop_payroll_send_to_run)
+        } else {
+            str(S.desktop_payroll_send_to_run_count, open.chosen.size)
+        },
+        onClick = { onEvent(ProcessingEvent.AskSendToRun) },
+        variant = ButtonVariant.Secondary,
+        enabled = open.chosen.isNotEmpty() && open.send == null,
+    )
+}
+
 @Composable
-private fun WeekCard(row: ProcessingRow, latest: Boolean, onEvent: (PayrollEvent) -> Unit) {
+private fun WeekCard(row: ProcessingRow, latest: Boolean, pick: Pick, onEvent: (PayrollEvent) -> Unit) {
     val timecard = row.timecard
     val code = timecard.currency
     Column(
@@ -160,6 +216,12 @@ private fun WeekCard(row: ProcessingRow, latest: Boolean, onEvent: (PayrollEvent
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
+            if (pick.offered) {
+                ZillitCheckbox(
+                    checked = pick.picked,
+                    onCheckedChange = { onEvent(ProcessingEvent.PickWeek(timecard.id)) },
+                )
+            }
             ZillitText(
                 text = timecard.weekStarting?.let(PayPeriod::compactRangeLabel).orEmpty(),
                 style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
@@ -201,6 +263,50 @@ private fun WeekCard(row: ProcessingRow, latest: Boolean, onEvent: (PayrollEvent
                 style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
             )
         }
+    }
+}
+
+/**
+ * Send to Payroll Run's confirm — the web reuses `OverrideTimecardModal` with
+ * its own words, so this does too: the weeks it names, an optional reason the
+ * server records, and the batch's outcome reported week by week.
+ */
+@Composable
+fun SendToRunDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
+    val prompt = state.processing.detail?.send
+    val shown = remember(prompt != null) { prompt } ?: prompt
+    ZillitDialogShell(
+        title = str(S.desktop_payroll_send_to_run),
+        subtitle = shown?.let {
+            listOf(state.nameOf(state.processing.detail?.userId.orEmpty()), it.weekLabels.joinToString(", "))
+                .filter(String::isNotBlank).joinToString(" · ")
+        },
+        icon = ZillitIcons.Shield,
+        visible = prompt != null,
+        width = DIALOG_WIDTH,
+        onDismiss = { onEvent(ProcessingEvent.DismissSendToRun) },
+    ) {
+        val open = prompt ?: shown ?: return@ZillitDialogShell
+        ZillitText(
+            text = str(S.desktop_payroll_send_to_run_explainer),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        ZillitTextField(
+            value = open.reason,
+            onValueChange = { onEvent(ProcessingEvent.EditSendReason(it)) },
+            label = str(S.av_reason_optional),
+            placeholder = str(S.desktop_payroll_override_reason_placeholder),
+            singleLine = false,
+            enabled = !open.sending,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        DialogActions(
+            cancel = { onEvent(ProcessingEvent.DismissSendToRun) },
+            confirmText = str(if (open.sending) S.desktop_inv_sending else S.desktop_payroll_send_to_run_confirm),
+            confirm = { onEvent(ProcessingEvent.ConfirmSendToRun) },
+            busy = open.sending,
+        )
     }
 }
 

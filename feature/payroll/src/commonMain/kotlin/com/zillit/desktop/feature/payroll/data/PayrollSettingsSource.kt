@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.payroll.domain.PayrollCompany
 import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollSettingsRepository
+import com.zillit.desktop.feature.payroll.domain.PayrollTaxType
 import com.zillit.desktop.feature.payroll.domain.TrackingNode
 import com.zillit.desktop.feature.payroll.domain.TrackingSet
 import kotlinx.coroutines.async
@@ -124,9 +125,9 @@ internal class PayrollSettingsSource(
         }
 
     /**
-     * Both halves at once. The sets come from the hub's tracking-sets route
-     * with their nodes bundled; the tags are a field of the project settings
-     * document, as Production Setup writes them.
+     * Both reads at once. The sets come from the hub's tracking-sets route
+     * with their nodes bundled; the tags and the tax types are fields of the
+     * project settings document, as Production Setup writes them.
      */
     override suspend fun journalReference(): ZillitResult<JournalReference> = coroutineScope {
         val sets = async {
@@ -137,6 +138,7 @@ internal class PayrollSettingsSource(
             JournalReference(
                 trackingSets = (sets.await() as? ZillitResult.Success)?.data.toTrackingSets(),
                 assetTags = (settings.await() as? ZillitResult.Success)?.data.toAssetTags(),
+                taxTypes = (settings.await() as? ZillitResult.Success)?.data.toTaxTypes(),
             ),
         )
     }
@@ -168,10 +170,33 @@ internal fun JsonElement?.toTrackingSets(): List<TrackingSet> = rows()
         )
     }
 
+/** The combined project-settings document's `settings` object, however the envelope wrapped it. */
+private fun JsonElement?.settingsBody(): JsonObject? {
+    val root = obj()?.let { it.obj("value") ?: it }
+    return root?.obj("settings") ?: root
+}
+
+/**
+ * Production Setup's Tax Types — the web's `useProjectTaxTypes`, which reads
+ * `settings.tax_types`. `value` is the numeric percent, sent as a number or
+ * (legacy) as `"20%"`; a type with no usable rate keeps none rather than 0.
+ */
+internal fun JsonElement?.toTaxTypes(): List<PayrollTaxType> =
+    settingsBody()?.objects("tax_types").orEmpty().mapNotNull { row ->
+        val identifier = row.text("identifier") ?: return@mapNotNull null
+        PayrollTaxType(
+            identifier = identifier,
+            label = row.text("label").orEmpty(),
+            percent = row.text("value")?.let { LEADING_NUMBER.find(it)?.value?.toDoubleOrNull() },
+            country = row.text("country", "country_code"),
+        )
+    }
+
+private val LEADING_NUMBER = Regex("^-?\\d+(\\.\\d+)?")
+
 /** Production Setup's Account Tags — the web's `useProjectAssetTags`. */
 internal fun JsonElement?.toAssetTags(): List<String> {
-    val root = obj()?.let { it.obj("value") ?: it }
-    val settings = root?.obj("settings") ?: root ?: return emptyList()
+    val settings = settingsBody() ?: return emptyList()
     return settings.array("asset_tags").mapNotNull {
         (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.trim()?.takeIf(String::isNotEmpty)
     }
