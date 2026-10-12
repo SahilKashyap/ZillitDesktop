@@ -20,7 +20,9 @@ import com.zillit.desktop.feature.auth.domain.AuthSession
 import com.zillit.desktop.feature.auth.domain.DeviceIdentity
 import com.zillit.desktop.feature.auth.domain.DeviceReport
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -140,18 +142,6 @@ class AuthRepositoryImpl(
         }
 
     /**
-     * Tells the server first — while the headers still carry the device and
-     * the session — then clears local state.
-     *
-     * The server call is best-effort: a failure does not un-sign-out, because
-     * signing out only on a successful round trip leaves someone stuck signed
-     * in on a machine they are trying to leave (Android likewise clears
-     * `SharedPref` whatever the answer, `ProjectListActivity.kt:194-211`).
-     * But it has to go *before* the local wipe: `POST device/unlink` needs the
-     * device id in its body and the project-user headers, and both are gone a
-     * line later.
-     */
-    /**
      * The device id reaches the headers first — the report is authenticated
      * by it — and then the server is told what this device is, once a launch.
      */
@@ -198,7 +188,28 @@ class AuthRepositoryImpl(
         }
     }
 
-    override suspend fun signOut(): ZillitResult<kotlin.Unit> {
+    /**
+     * Tells the server first — while the headers still carry the device and
+     * the session — then clears local state.
+     *
+     * The server call is best-effort: a failure does not un-sign-out, because
+     * signing out only on a successful round trip leaves someone stuck signed
+     * in on a machine they are trying to leave (Android likewise clears
+     * `SharedPref` whatever the answer, `ProjectListActivity.kt:194-211`).
+     * But it has to go *before* the local wipe: `POST device/unlink` needs the
+     * device id in its body and the project-user headers, and both are gone a
+     * line later.
+     *
+     * Non-cancellable, because clearing [_session] cancels the caller. The
+     * rail's Logout runs this on the signed-in shell's scope, and a null
+     * session takes the shell off screen — so the keychain clear resumed into
+     * a dead coroutine and [onSignOut] never ran, whenever the frame won the
+     * race. The old account's device and project tokens, its saved project
+     * list and its caches all survived, and the next QR sign-in listed — and
+     * opened — the previous person's productions (2026-10-11: no
+     * "session cleared" after any of three logouts).
+     */
+    override suspend fun signOut(): ZillitResult<kotlin.Unit> = withContext(NonCancellable) {
         val deviceId = _session.value?.device?.deviceId
             ?: runCatching { storedDeviceId() }.getOrNull()
         if (deviceId != null) {
@@ -215,7 +226,7 @@ class AuthRepositoryImpl(
         _session.value = null
         val cleared = secureStore.clear()
         onSignOut()
-        return cleared
+        cleared
     }
 
     /**

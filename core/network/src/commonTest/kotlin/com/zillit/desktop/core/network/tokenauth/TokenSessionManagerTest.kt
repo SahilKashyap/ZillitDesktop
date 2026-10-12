@@ -368,6 +368,28 @@ class TokenSessionManagerTest {
         assertNull(store.refresh)
     }
 
+    /**
+     * The next account's first call — its project list, straight after a QR
+     * link — comes before the launched clear has had a thread. It must not
+     * ride the previous device's token: a Bearer outranks the new device's
+     * `moduledata`, and the picker listed the old account's productions.
+     */
+    @Test
+    fun `a call straight after clearing never carries the previous device's token`() = runTest {
+        val api = FakeApi()
+        val store = FakeStore()
+        val manager = manager(api, store)
+        runCurrent()
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, path))
+
+        // Sign-out empties the keychain before the session is cleared.
+        store.refresh = null
+        api.establish = { SessionCallResult.Success(DeviceSession("dev-next", "ref-next", HOUR)) }
+        manager.clearSession()
+
+        assertEquals("dev-next", manager.bearerFor(RequestModule.Default, null, path))
+    }
+
     @Test
     fun `a token the socket refused is not shown again until a fresh one exists`() = runTest {
         val api = FakeApi()

@@ -1133,6 +1133,8 @@ sealed interface AppGraph {
             var callingLines: CallingLinesGate? = null
             var primaryDeviceForHandshake: String? = null
             var handshakeRecord: com.zillit.desktop.feature.auth.domain.DeviceIdentity? = null
+            // The id the QR on screen was minted under, until a sign-in replaces it.
+            var qrDeviceId: String? = null
             // Folded: this companion sits at detekt's LargeClass line limit.
             val authRepository = AuthRepositoryImpl(
                 apiClient = apiClient, secureStore = secureStore, config = config,
@@ -1143,7 +1145,11 @@ sealed interface AppGraph {
                     // those belong to the machine, not the account.
                     preferences.clear(PreferenceScope.User)
                     preferences.clear(PreferenceScope.Project)
-                    headerContext.value = HeaderContext(deviceId = "")
+                    // Keeps a QR's id: the picker leaves at the null session and
+                    // mints the next code while the keychain is still clearing, so
+                    // a blank reset here left that code polling as nobody — every
+                    // poll 406 until it went stale (2026-10-09).
+                    headerContext.value = HeaderContext(deviceId = qrDeviceId.orEmpty())
                     keyProvider.invalidate()
                     remoteConfigRepository.clear()
                     tokenSession.clearSession()
@@ -1161,6 +1167,7 @@ sealed interface AppGraph {
                     socketClient.disconnect()
                 },
                 onDeviceIdentified = { identity ->
+                    qrDeviceId = null
                     val changed = headerContext.value.deviceId != identity.deviceId
                     headerContext.update { it.copy(deviceId = identity.deviceId) }
                     // The device record names the account device it was linked
@@ -1614,6 +1621,7 @@ sealed interface AppGraph {
                 onDeviceIdGenerated = { id ->
                     // Must land before the QR call goes out — the `moduledata`
                     // header on that call carries it.
+                    qrDeviceId = id
                     headerContext.update { it.copy(deviceId = id) }
                 },
                 onScannerIdentified = { id ->
@@ -1621,6 +1629,16 @@ sealed interface AppGraph {
                     headerContext.update { it.copy(scannerDeviceId = id) }
                 },
                 onLinked = { identity ->
+                    // A link is a new device, maybe a new person. Tokens or a
+                    // saved list still here are the previous device's — a
+                    // sign-out whose wipe never ran (2026-10-11) or a quit
+                    // mid-way — and a cached Bearer outranks the new id's
+                    // moduledata: the picker listed, and opened, the old
+                    // account's productions. Usually there is nothing to drop.
+                    // First: remembering the device launches `PUT device`, which
+                    // would otherwise go out under the old Bearer.
+                    tokenSession.clearSession()
+                    projectListCache?.clear()
                     // Without this a QR-linked machine is asked to scan again on
                     // every launch — the id exists but is never written down.
                     authRepository.rememberDevice(identity)

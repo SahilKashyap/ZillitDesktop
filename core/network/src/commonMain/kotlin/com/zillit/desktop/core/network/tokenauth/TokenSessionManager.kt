@@ -281,6 +281,10 @@ class TokenSessionManager(
     /** Sign-out: forget everything, the stored refresh token included. */
     fun clearSession() {
         epoch++
+        // Now, not in the launched clear: the next call — the new account's
+        // project list, straight after a QR link — must not find the old
+        // device's token still cached while that job waits for a thread.
+        deviceToken = null
         scope.launch { clearTokens() }
         ZillitLog.i(TAG) { "session cleared" }
     }
