@@ -31,6 +31,9 @@ data class MatchCandidate(
     val currency: String?,
     /** Whole percent, 0..100. */
     val scorePercent: Int,
+    /** For the currency cascade: the row's card and its `transaction_currency` ([CurrencyCascade]). */
+    val cardId: String? = null,
+    val transactionCurrency: String? = null,
 )
 
 /** The receipt's stored document, as the detail view previews it. */

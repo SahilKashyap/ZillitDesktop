@@ -7,6 +7,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardAction
 import com.zillit.desktop.feature.cardexpenses.domain.CardActivation
+import com.zillit.desktop.feature.cardexpenses.domain.CardCompanies
 import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.CardExportRow
 import com.zillit.desktop.feature.cardexpenses.domain.CardFiles
@@ -71,14 +72,22 @@ internal class CardLifecycleActions(
         if (!state.viewer.isAccountant || card == null) return refuse()
         draft.validationError(state.providers.isNotEmpty())?.let { return vm.fail(it) }
         val provider = state.providers.firstOrNull { it.id == draft.providerId }.takeIf { draft.needsProvider }
+        // The pin, in the web's order (`CardRegisterPage.jsx:477-481, 758-760`): a provider picked here
+        // supplies its company; a card that already has one starts from its own pin, else the company
+        // owning its issuing bank; then the card's own, then nothing — the server derives one.
+        val seeded = if (draft.needsProvider) {
+            provider?.companyId
+        } else {
+            card.companyId?.ifBlank { null }
+                ?: CardCompanies.forBank(card.issuer, state.cardsArea.reference.companies)
+        }
+        val pinnedCompany = seeded?.ifBlank { null } ?: card.companyId?.ifBlank { null }
         val activation = CardActivation(
             cardType = draft.type ?: return,
             cardNumber = draft.digits,
             providerId = provider?.id,
             bankId = provider?.bankId?.ifBlank { null },
-            // The pin, in the web's order: the provider's company, then the
-            // card's own, then nothing — the server derives one from the bank.
-            companyId = provider?.companyId?.ifBlank { null } ?: card.companyId?.ifBlank { null },
+            companyId = pinnedCompany,
         )
         vm.cardWrite(CardAction.Activate(card.id, activation), str(S.ah_card_activated_toast)) {
             copy(activation = null)

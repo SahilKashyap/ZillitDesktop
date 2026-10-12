@@ -35,6 +35,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
@@ -47,6 +48,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.ProcessMode
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
 import com.zillit.desktop.feature.cardexpenses.ui.money
+import com.zillit.desktop.feature.cardexpenses.ui.projectCurrency
 
 /**
  * Bulk Process — the web's `BulkProcessPage`: the process queue's approved
@@ -151,11 +153,8 @@ fun BulkProcessPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 private fun OverrideBar(state: CardUiState, ticked: List<CardReceipt>, onEvent: (CardEvent) -> Unit) {
     val coding = state.bulkCoding
     val refs = state.processPages.refs
-    val departments = state.people
-        .filter { it.departmentId.isNotBlank() }
-        .distinctBy { it.departmentId }
-        .map { it.departmentId to it.department.ifBlank { it.departmentId } }
-        .sortedBy { it.second.lowercase() }
+    // Every project department, not the ones the crew list happens to hold (`BulkProcessPage.jsx:41,490`).
+    val departments = state.inbox.ledger.departments.map { it.id to it.name.localised() }
     fun edit(change: (BulkCoding) -> BulkCoding) = onEvent(CardEvent.EditBulkCoding(change(coding)))
 
     SelectionBar {
@@ -243,7 +242,7 @@ private fun OverrideBar(state: CardUiState, ticked: List<CardReceipt>, onEvent: 
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitText(
-                    text = money(ticked.sumOf { it.amount }, ticked.firstNotNullOfOrNull { it.currency }),
+                    text = money(ticked.sumOf { it.amount }, state.projectCurrency),
                     style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = ZillitTheme.colors.accentText,
                 )
@@ -331,7 +330,7 @@ private fun bulkColumns(
                 viewer.isTelevision,
             )
         },
-        TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { AmountCell(it) },
+        TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { AmountCell(state, it) },
     )
 }
 

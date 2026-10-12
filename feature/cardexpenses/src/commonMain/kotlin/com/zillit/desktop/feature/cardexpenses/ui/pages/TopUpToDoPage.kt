@@ -41,6 +41,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.TopUpBoard
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.GbDate
 import com.zillit.desktop.feature.cardexpenses.ui.InsightsEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardCalcInput
 import com.zillit.desktop.feature.cardexpenses.ui.components.InsightBar
@@ -49,6 +50,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.components.InsightEyebrow
 import com.zillit.desktop.feature.cardexpenses.ui.components.InsightFigure
 import com.zillit.desktop.feature.cardexpenses.ui.components.InsightTag
 import com.zillit.desktop.feature.cardexpenses.ui.components.insightCard
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
 
@@ -192,7 +194,7 @@ private fun PendingRow(state: CardUiState, topUp: CardTopUp, onEvent: (CardEvent
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl)) {
             InsightFigure(
                 label = str(S.desktop_ce_insights_current_bal),
-                value = money(balance, topUp.currency),
+                value = money(balance, state.currencyOf(topUp)),
                 color = colors.success,
                 modifier = Modifier.weight(1f),
             )
@@ -200,10 +202,10 @@ private fun PendingRow(state: CardUiState, topUp: CardTopUp, onEvent: (CardEvent
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
             ) {
-                InsightFigure(label = str(S.desktop_card_card_limit), value = money(limit, topUp.currency))
+                InsightFigure(label = str(S.desktop_card_card_limit), value = money(limit, state.currencyOf(topUp)))
                 InsightBar(fraction = if (limit > 0) (spent / limit).toFloat() else 0f, color = colors.warning)
                 ZillitText(
-                    text = str(S.desktop_ce_insights_spent_x, money(spent, topUp.currency)),
+                    text = str(S.desktop_ce_insights_spent_x, money(spent, state.currencyOf(topUp))),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
@@ -220,14 +222,14 @@ private fun PendingRow(state: CardUiState, topUp: CardTopUp, onEvent: (CardEvent
             )
             InsightFigure(
                 label = str(S.ah_topup_amount_label),
-                value = money(topUp.amount, topUp.currency),
+                value = money(topUp.amount, state.currencyOf(topUp)),
                 color = colors.warning,
                 style = ZillitTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        sourceLine(listOf(topUp))?.let { line ->
+        sourceLine(state, listOf(topUp))?.let { line ->
             ZillitText(text = line, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         }
 
@@ -288,11 +290,11 @@ private fun PendingRow(state: CardUiState, topUp: CardTopUp, onEvent: (CardEvent
  * (`TopUpToDoPage.jsx:87-98`), which each row calls with itself alone: each
  * API row is its own top-up and is never summed with another.
  */
-private fun sourceLine(topUps: List<CardTopUp>): String? {
+private fun sourceLine(state: CardUiState, topUps: List<CardTopUp>): String? {
     val named = topUps.filter { it.receiptMerchant != null }
     val rest = topUps.size - named.size
     val parts = named.take(2).map { row ->
-        val amount = row.receiptAmount?.takeIf { it != 0.0 }?.let { " ${money(it, row.currency)}" }.orEmpty()
+        val amount = row.receiptAmount?.takeIf { it != 0.0 }?.let { " ${money(it, state.currencyOf(row))}" }.orEmpty()
         "${row.receiptMerchant}$amount"
     }.toMutableList()
     if (named.size > 2) parts += str(S.desktop_ce_insights_n_more, named.size - 2)
@@ -346,10 +348,10 @@ private fun doneColumns(state: CardUiState): List<TableColumn<CardTopUp>> = list
         }
     },
     textColumn(str(S.ah_my_cards), muted = true) { "••••${it.cardLastFour ?: "0000"}" },
-    textColumn(str(S.desktop_issued), numeric = true) { money(it.issuedAmount ?: it.amount, it.currency) },
+    textColumn(str(S.desktop_issued), numeric = true) { money(it.issuedAmount ?: it.amount, state.currencyOf(it)) },
     textColumn(str(S.desktop_method), muted = true) { methodTitle(it.method) },
     TableColumn(header = str(S.status)) { row -> DoneStatus(row.status) },
-    textColumn(str(S.date), muted = true) { EpochDate.date(it.createdAt).ifEmpty { "—" } },
+    textColumn(str(S.date), muted = true) { GbDate.date(it.createdAt).ifEmpty { "—" } },
 )
 
 @Composable
@@ -397,7 +399,7 @@ private fun TopUpDialogs(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 @Composable
 private fun PartialDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val draft = state.insights.partial ?: return
-    val currency = state.topUps.firstOrNull { it.id == draft.topUpId }?.currency
+    val currency = state.topUps.firstOrNull { it.id == draft.topUpId }?.let { state.currencyOf(it) }
     ZillitDialogShell(
         title = str(S.ah_partial_topup),
         icon = ZillitIcons.Edit,
@@ -449,17 +451,17 @@ private fun DetailDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val facts = buildList {
         add(Triple(str(S.desktop_card_card_holder), name, designation(state, topUp.holderId)))
         add(Triple(str(S.ah_my_cards), "···· ${topUp.cardLastFour ?: "0000"}", null))
-        add(Triple(str(S.amount), money(topUp.amount, topUp.currency), null))
+        add(Triple(str(S.amount), money(topUp.amount, state.currencyOf(topUp)), null))
         add(Triple(str(S.desktop_method), methodTitle(topUp.method), null))
         add(Triple(str(S.status), topUp.status.replaceFirstChar { it.uppercase() }, null))
-        add(Triple(str(S.date), EpochDate.date(topUp.createdAt).ifEmpty { "—" }, null))
+        add(Triple(str(S.date), GbDate.date(topUp.createdAt).ifEmpty { "—" }, null))
         topUp.bsControlCode?.let { add(Triple(str(S.desktop_ce_insights_bs_control), it, null)) }
         topUp.receiptMerchant?.let { merchant ->
             add(
                 Triple(
                     str(S.desktop_ce_insights_source_receipt),
                     merchant,
-                    topUp.receiptAmount?.let { money(it, topUp.currency) },
+                    topUp.receiptAmount?.let { money(it, state.currencyOf(topUp)) },
                 ),
             )
         }

@@ -47,6 +47,11 @@ data class CardNominal(val code: String, val name: String = "")
  * NULL and an accountant can set it while coding.
  */
 object CardCompanies {
+    /** The company whose banks include [bankId] (`resolveCompanyForBank`, `CardRegisterPage.jsx:317`). */
+    fun forBank(bankId: String?, companies: List<CardCompany>): String? =
+        bankId?.takeIf { it.isNotBlank() }?.let { bank -> companies.firstOrNull { bank in it.bankIds }?.id }
+
+
     fun resolve(card: ExpenseCard?, companies: List<CardCompanyRef>): String? {
         card?.companyId?.takeIf { it.isNotBlank() }?.let { return it }
         val bank = card?.issuer?.takeIf { it.isNotBlank() } ?: return null

@@ -51,6 +51,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.DepartmentCoordinator
+import com.zillit.desktop.feature.cardexpenses.domain.ProviderIds
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapProblem
@@ -126,7 +127,7 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
             )
             ZillitButton(
                 text = str(S.desktop_ce_insights_add_card_provider),
-                onClick = { edit(providers + CardProvider(id = newProviderId(providers), name = "")) },
+                onClick = { edit(providers + CardProvider(id = ProviderIds.mint(), name = "")) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
@@ -1036,20 +1037,6 @@ private fun ErrorLine(text: String) {
     ZillitText(text = text, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.danger)
 }
 
-/**
- * An id for a provider the server has not seen.
- *
- * The card forms pin a provider by id and the settings row is the only place
- * one is minted, so it has to be stable and unique within the list — the
- * highest existing number plus one, rather than a timestamp, so a list saved
- * twice in the same second does not collide.
- */
-private fun newProviderId(existing: List<CardProvider>): String {
-    val highest = existing.mapNotNull { it.id.removePrefix(PROVIDER_PREFIX).toIntOrNull() }.maxOrNull() ?: 0
-    return "$PROVIDER_PREFIX${highest + 1}"
-}
-
-private const val PROVIDER_PREFIX = "provider-"
 private val ACTIONS_WIDTH = 110.dp
 private val CODING_WIDTH = 120.dp
 private val REMOVE_WIDTH = 100.dp

@@ -70,6 +70,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptMediaPanel
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.localDay
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -91,7 +92,9 @@ import kotlin.time.Clock
  */
 @Composable
 fun ProcessEditorPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    val draft = state.process ?: return
+    val open = state.process ?: return
+    // Amounts print in the cascade's code (`ProcessReceiptModal.jsx:307`); the draft the events act on is untouched.
+    val draft = open.copy(receipt = open.receipt.copy(currency = state.currencyOf(open.receipt)))
     val refs = state.processPages.refs
     val figures = draft.figures(refs)
     val locked = draft.periodLocked(refs.lock)
@@ -357,7 +360,7 @@ private fun DetailsCard(
             FieldGroupLabel(str(S.ah_receipt_details))
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
                 Fact(str(S.amount), money(receipt.amount, receipt.currency), Modifier.weight(1f), accent = true)
-                Fact(str(S.date), date(receipt.date), Modifier.weight(1f))
+                Fact(str(S.date), date(receipt.ownDate), Modifier.weight(1f))
                 Fact(
                     str(S.desktop_card_card_holder),
                     state.personName(receipt.holderId, receipt.holderName),

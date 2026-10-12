@@ -128,7 +128,7 @@ private fun sharedColumns(state: CardUiState, review: Boolean): List<TableColumn
             Dim(open(row)) { CodeCell(row.nominalCode, row.episode, viewer.isTelevision) }
         },
         TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { row ->
-            Dim(open(row)) { AmountCell(row) }
+            Dim(open(row)) { AmountCell(state, row) }
         },
     )
 }

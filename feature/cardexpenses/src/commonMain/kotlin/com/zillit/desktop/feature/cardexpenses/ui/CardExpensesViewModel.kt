@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.cardexpenses.data.cardRightsChanges
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
 import com.zillit.desktop.feature.cardexpenses.domain.CardCrewHost
+import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.CardFiles
 import com.zillit.desktop.feature.cardexpenses.domain.CardHubSource
 import com.zillit.desktop.feature.cardexpenses.domain.CardInboxHost
@@ -209,7 +210,10 @@ class CardExpensesViewModel(
         if (bus != null && !listening) {
             listening = true
             launch {
-                cardRefreshes(bus).collect { currentState.destination.let(::load) }
+                cardRefreshes(bus).collect {
+                    currentState.destination.let(::load)
+                    refreshCardCurrencies()
+                }
             }
             launch { cardRightsChanges(bus).collect { refreshRights() } }
         }
@@ -303,8 +307,20 @@ class CardExpensesViewModel(
         // outside the reducer — `setState` takes a plain lambda.
         val crew = people()
         setState { copy(people = crew) }
+        refreshCardCurrencies()
         cardActions.start()
         load(currentState.destination)
+    }
+
+    /**
+     * Reads the card catalogue for its currencies, once per production and again on a card change.
+     * The web's `CardsProvider` does the same (`my` for a cardholder, the register for the console);
+     * a failed read keeps what was known.
+     */
+    private suspend fun refreshCardCurrencies() {
+        val catalogue = repository.cards(mineOnly = !currentState.viewer.isAccountant).getOrNull() ?: return
+        val byId = catalogue.mapNotNull { card -> card.currency?.takeIf(String::isNotBlank)?.let { card.id to it } }
+        setState { copy(cardCurrencies = byId.toMap()) }
     }
 
     override fun onEvent(event: CardEvent) {
@@ -343,7 +359,7 @@ class CardExpensesViewModel(
             is CardEvent.SetTransactionFilters -> {
                 // The selection outlives the filters, as the web's raw set does:
                 // what Delete sends is intersected with the rows on screen.
-                setState { copy(transactionFilters = event.filters) }
+                setState { copy(transactionFilters = event.filters.withDateRules(CardDates.toIso(today()))) }
                 if (currentState.destination == CardDestination.AllTransactions) reload()
             }
             is CardEvent.SelectReceipt -> receipts.select(event.receiptId)
@@ -471,10 +487,13 @@ class CardExpensesViewModel(
             val landing = CardDestination.landing(moved)
             if (started) openPage(landing) else setState { copy(destination = landing) }
         }
+        // The catalogue follows the door: a cardholder's own cards, or the whole register.
+        if (started) launch { refreshCardCurrencies() }
     }
 
     private fun openPage(destination: CardDestination) {
         setState {
+            val leavingImport = this.destination == CardDestination.ImportStatement && destination != this.destination
             copy(
                 destination = destination,
                 search = "",
@@ -492,9 +511,13 @@ class CardExpensesViewModel(
                 processTab = ProcessTab.Processing,
                 fullScreen = false,
                 cardsArea = cardsArea.copy(openCardId = null, historyOpen = false, bsDraft = null),
-                // The receipt detail and manual match belong to the inbox; the
-                // import's statement stays until New Import, as the web's page does.
-                inbox = inbox.copy(detail = null, manualMatch = null),
+                // The receipt detail and manual match belong to the inbox; the import's
+                // statement is the web page's own state and goes when the page is left.
+                inbox = inbox.copy(
+                    detail = null,
+                    manualMatch = null,
+                    import = if (leavingImport) inbox.import.leaving() else inbox.import,
+                ),
                 crew = crew.onPageChange(),
                 // All Transactions opens on the last month of spend, as the
                 // web's does; the filters say so and one press clears them.

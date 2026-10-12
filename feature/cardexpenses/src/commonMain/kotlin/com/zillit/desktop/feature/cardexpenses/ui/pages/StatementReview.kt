@@ -33,7 +33,6 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -60,6 +59,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.StatementImportResult
 import com.zillit.desktop.feature.cardexpenses.ui.CardDestination
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.GbDate
 import com.zillit.desktop.feature.cardexpenses.ui.ImportState
 import com.zillit.desktop.feature.cardexpenses.ui.InboxEvent
 import com.zillit.desktop.feature.cardexpenses.ui.date
@@ -368,7 +368,7 @@ private fun ImportedRows(
                         }
                     }
                     Muted(row.rowIndex?.toString().orEmpty(), Modifier.width(INDEX_COLUMN))
-                    Muted(row.date?.let(EpochDate::dateTime)?.ifBlank { null } ?: EM_DASH, Modifier.width(DATE_COLUMN))
+                    Muted(row.date?.let(GbDate::dateTime)?.ifBlank { null } ?: EM_DASH, Modifier.width(DATE_COLUMN))
                     ZillitText(
                         text = row.merchant.ifBlank { EM_DASH },
                         style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),

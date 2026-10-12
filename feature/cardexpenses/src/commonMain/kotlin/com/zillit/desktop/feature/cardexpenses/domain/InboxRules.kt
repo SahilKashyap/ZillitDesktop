@@ -50,6 +50,15 @@ enum class ReconciliationBadge(private val labelKey: String) {
     }
 }
 
+/**
+ * Whether a row's menu offers Manual Match (`ReceiptInboxPage.jsx:593-597`): an unmatched or suggested
+ * row, or one with neither a match status nor a transaction. A row with no status that already
+ * carries a transaction is left alone.
+ */
+val CardReceipt.offersManualMatch: Boolean
+    get() = matchWire == "unmatched" || matchWire == "suggested_match" ||
+        (matchWire.isNullOrEmpty() && transactionId.isNullOrEmpty())
+
 /** The inbox rule applied to a receipt row or detail. */
 val CardReceipt.inboxBadge: ReconciliationBadge?
     get() = ReconciliationBadge.inbox(matchStatus, !attachmentKey.isNullOrBlank())

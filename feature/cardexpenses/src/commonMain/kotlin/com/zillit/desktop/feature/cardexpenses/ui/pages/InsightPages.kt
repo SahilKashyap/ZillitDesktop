@@ -29,7 +29,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -61,6 +60,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CashFlowWeek
 import com.zillit.desktop.feature.cardexpenses.ui.AlertAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.GbDate
 import com.zillit.desktop.feature.cardexpenses.ui.InsightsEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.InsightBar
 import com.zillit.desktop.feature.cardexpenses.ui.components.InsightChips
@@ -750,23 +750,9 @@ private fun statusStyle(status: String): Pair<String, Color> {
 
 /** `dd Mon yyyy · HH:mm` (`formatTs`, `SmartAlertsPage.jsx:177-187`). */
 private fun detectedAt(millis: Long?): String {
-    val day = EpochDate.date(millis).replace(",", "")
+    val day = GbDate.date(millis)
     if (day.isEmpty()) return "—"
-    val iso = EpochDate.dateTime(millis).substringAfter("| ")
-    return "$day · ${twentyFourHour(iso)}"
-}
-
-/** `4:35 PM` → `16:35`. */
-private fun twentyFourHour(twelve: String): String {
-    val (clock, meridiem) = twelve.split(' ').let { it.getOrElse(0) { "" } to it.getOrElse(1) { "" } }
-    val hour = clock.substringBefore(':').toIntOrNull() ?: return twelve
-    val minute = clock.substringAfter(':')
-    val h24 = when {
-        meridiem == "PM" && hour != NOON -> hour + NOON
-        meridiem == "AM" && hour == NOON -> 0
-        else -> hour
-    }
-    return "${h24.toString().padStart(2, '0')}:$minute"
+    return "$day · ${GbDate.time(millis)}"
 }
 
 @Composable
@@ -935,7 +921,6 @@ private const val VAT_DIVISOR = 6.0
 private const val MEDIAN_FACTOR = 0.6
 private const val NEAR_BUDGET = 80
 private const val TENTHS = 10.0
-private const val NOON = 12
 private const val RECENT = 5
 private const val DASH = 8f
 private const val AUTO_CLOSED = "auto_closed"

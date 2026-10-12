@@ -125,6 +125,19 @@ data class ImportState(
     val importedCurrency: String = "",
     val projectCurrencies: CardCurrencies = CardCurrencies(),
 ) {
+    /**
+     * What leaving the page drops: the statement in hand and its review, which are the web page's
+     * component state (`ImportStatementPage.jsx:44-47`). The catalogue of currencies stays.
+     */
+    fun leaving(): ImportState = copy(
+        pendingFile = null,
+        currency = currencies.resolve(""),
+        result = null,
+        selected = emptySet(),
+        submission = null,
+        importedCurrency = "",
+    )
+
     /** Hidden when there is nothing to choose — the server's project default is right then. */
     val showCurrency: Boolean get() = currenciesLoading || currencies.codes.isNotEmpty()
 

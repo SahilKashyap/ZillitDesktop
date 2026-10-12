@@ -34,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -70,6 +69,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.otherStatusLabel
 import com.zillit.desktop.feature.cardexpenses.ui.ALL_STATUSES
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.GbDate
 import com.zillit.desktop.feature.cardexpenses.ui.InboxEvent
 import com.zillit.desktop.feature.cardexpenses.ui.WorkflowStatusPill
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -503,7 +503,7 @@ private fun LedgerRow(state: CardUiState, row: CardTransaction, selected: Boolea
             }
         }
         ZillitText(
-            text = row.date?.let(EpochDate::dateTime)?.ifBlank { null } ?: EM_DASH,
+            text = row.date?.let(GbDate::dateTime)?.ifBlank { null } ?: EM_DASH,
             style = ZillitTheme.typography.labelSmall,
             color = colors.textSecondary,
             modifier = Modifier.width(DATE_COLUMN),

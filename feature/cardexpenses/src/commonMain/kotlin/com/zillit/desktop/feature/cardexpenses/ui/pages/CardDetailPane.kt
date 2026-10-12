@@ -55,6 +55,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.CardUtilisation
 import com.zillit.desktop.feature.cardexpenses.domain.ChainStepStatus
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
+import com.zillit.desktop.feature.cardexpenses.domain.ScoreBands
+import com.zillit.desktop.feature.cardexpenses.domain.matchRaw
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CardsEvent
@@ -62,6 +64,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.WorkflowStatusPill
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
 import com.zillit.desktop.feature.cardexpenses.ui.components.StepDot
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.defaultCurrency
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -680,12 +683,14 @@ private fun ReceiptRow(state: CardUiState, receipt: CardReceipt, onEvent: (CardE
                     maxLines = 2,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                receipt.matchScore?.let { score ->
+                // Shown only for a score above zero, and toned on the raw fraction (`CardDetailModal.jsx:982`).
+                val fraction = receipt.matchRaw
+                if (fraction != null && fraction > 0.0) {
                     ZillitStatusPill(
-                        label = "$score%",
+                        label = "${receipt.matchScore ?: 0}%",
                         tone = when {
-                            score >= STRONG_MATCH -> StatusTone.Done
-                            score >= WEAK_MATCH -> StatusTone.Pending
+                            ScoreBands.isStrong(fraction) -> StatusTone.Done
+                            ScoreBands.isFair(fraction) -> StatusTone.Pending
                             else -> StatusTone.Neutral
                         },
                     )
@@ -697,7 +702,7 @@ private fun ReceiptRow(state: CardUiState, receipt: CardReceipt, onEvent: (CardE
                 Small(
                     str(S.desktop_ce_cards_linked_txn) + " " + listOfNotNull(
                         receipt.transactionMerchant ?: receipt.description,
-                        receipt.transactionAmount?.let { money(it, receipt.currency) },
+                        receipt.transactionAmount?.let { money(it, state.currencyOf(receipt)) },
                         receipt.transactionCardLastFour?.let { "···· $it" },
                         receipt.transactionDate?.let(::date),
                     ).joinToString(" · "),
@@ -721,10 +726,14 @@ private fun ReceiptRow(state: CardUiState, receipt: CardReceipt, onEvent: (CardE
                 style = ZillitTheme.typography.numeric,
                 color = ZillitTheme.colors.gold,
             )
+            // Episode is a television field (`CardDetailModal.jsx:1032`).
+            receipt.episode?.takeIf { it.isNotBlank() && state.viewer.isTelevision }?.let {
+                Small(str(S.desktop_episode_abbrev_list, it))
+            }
         }
         Cell(4) {
             ZillitText(
-                text = receipt.amount.takeIf { it != 0.0 }?.let { money(it, receipt.currency) } ?: "—",
+                text = receipt.amount.takeIf { it != 0.0 }?.let { money(it, state.currencyOf(receipt)) } ?: "—",
                 style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
                 color = ZillitTheme.colors.accentText,
             )
@@ -898,7 +907,5 @@ private val HAIRLINE = 1.dp
 private val NOTE_PADDING = 48.dp
 private const val DANGER_PERCENT = 80
 private const val WARN_PERCENT = 50
-private const val STRONG_MATCH = 80
-private const val WEAK_MATCH = 50
 private const val SKELETON_ROWS = 4
 private const val BANNER_EDGE = 0.4f

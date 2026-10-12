@@ -15,7 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.StatusTone
@@ -27,9 +26,14 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.AlertSeverity
+import com.zillit.desktop.feature.cardexpenses.domain.CurrencyCascade
+import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
+import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
+import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
+import com.zillit.desktop.feature.cardexpenses.domain.MatchCandidate
 import com.zillit.desktop.feature.cardexpenses.domain.MatchStatus
 
 /** How the card domain is rendered. One mapping, read by every screen. */
@@ -118,7 +122,7 @@ fun MatchStatusPill(status: MatchStatus, score: Int?, modifier: Modifier = Modif
 
 fun money(amount: Double?, currency: String?): String = Money.format(amount, currency)
 
-fun date(millis: Long?): String = EpochDate.date(millis).ifEmpty { "—" }
+fun date(millis: Long?): String = GbDate.date(millis).ifEmpty { "—" }
 
 /** `•••• 4821`, the way a card is named everywhere it appears. */
 fun cardLabel(card: ExpenseCard): String =
@@ -224,3 +228,40 @@ private val HEX_LETTERS = 'a'..'f'
 private const val NEARLY_SPENT = 0.85f
 private val HAIRLINE = 1.dp
 private val METER_HEIGHT = 7.dp
+
+/**
+ * The code a record's amount prints in (`useCardCurrency().byRecord`): its own
+ * currency, then the card it names by `card_id` (read from the catalogue the
+ * view model keeps), then the production's default — see [CurrencyCascade].
+ */
+internal fun CardUiState.currencyOf(
+    cardId: String?,
+    currency: String?,
+    transactionCurrency: String? = null,
+    fallback: String? = null,
+): String = CurrencyCascade.resolve(
+    currency,
+    transactionCurrency,
+    fallback ?: cardId?.let { cardCurrencies[it] ?: cards.firstOrNull { card -> card.id == it }?.currency },
+    projectCurrency,
+)
+
+/** The production's default currency, which totals print in (`defaultCode`); never blank. */
+internal val CardUiState.projectCurrency: String
+    get() = CurrencyCascade.resolve(
+        null,
+        null,
+        null,
+        defaultCurrency.ifBlank { inbox.ledger.defaultCurrency.orEmpty() },
+    )
+
+internal fun CardUiState.currencyOf(receipt: CardReceipt, fallback: String? = null): String =
+    currencyOf(receipt.cardId, receipt.currency, receipt.transactionCurrency, fallback)
+
+internal fun CardUiState.currencyOf(topUp: CardTopUp): String = currencyOf(topUp.cardId, topUp.currency)
+
+internal fun CardUiState.currencyOf(candidate: MatchCandidate): String =
+    currencyOf(candidate.cardId, candidate.currency, candidate.transactionCurrency)
+
+internal fun CardUiState.currencyOf(transaction: CardTransaction): String =
+    currencyOf(transaction.cardId, transaction.currency, transaction.transactionCurrency)

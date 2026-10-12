@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.cardexpenses.domain
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlin.math.max
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * The rules behind Top-Up To Do, Analytics, Smart Alerts, Settings and Fund
@@ -276,6 +278,16 @@ fun RequestCap.problem(): RequestCapProblem? = when {
 /** The company that owns [bankId], if any (`CardProvidersEditor.jsx:131-132`). */
 fun List<CardCompany>.ownerOf(bankId: String): CardCompany? =
     bankId.takeIf { it.isNotBlank() }?.let { id -> firstOrNull { id in it.bankIds } }
+
+/**
+ * The id of a provider the server has not seen: `prov_` and a UUID, as the web's editor mints
+ * it (`CardProvidersEditor.jsx:36`). Providers are pinned by id across both clients, and a
+ * numbered `provider-3` from here would collide with another's `provider-3`.
+ */
+object ProviderIds {
+    @OptIn(ExperimentalUuidApi::class)
+    fun mint(): String = "prov_${Uuid.random()}"
+}
 
 // -- fund requests ---------------------------------------------------------------
 

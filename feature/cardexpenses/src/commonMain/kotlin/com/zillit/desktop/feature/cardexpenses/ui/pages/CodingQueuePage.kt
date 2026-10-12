@@ -30,6 +30,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CrewEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptMediaPanel
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
@@ -76,7 +77,7 @@ private fun CodingCard(state: CardUiState, receipt: CardReceipt, onEvent: (CardE
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = if (receipt.amount != 0.0) money(receipt.amount, receipt.currency) else "—",
+                text = if (receipt.amount != 0.0) money(receipt.amount, state.currencyOf(receipt)) else "—",
                 style = ZillitTheme.typography.titleSmall,
                 color = ZillitTheme.colors.accentText,
             )
@@ -154,7 +155,7 @@ internal fun CodeReceiptDialog(state: CardUiState, onEvent: (CardEvent) -> Unit)
                     CrewField(str(S.ah_merchant), receipt.description.ifBlank { "—" }, Modifier.weight(1f))
                     CrewField(
                         str(S.amount),
-                        if (receipt.amount != 0.0) money(receipt.amount, receipt.currency) else "—",
+                        if (receipt.amount != 0.0) money(receipt.amount, state.currencyOf(receipt)) else "—",
                         Modifier.weight(1f),
                         emphasised = true,
                     )

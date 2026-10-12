@@ -129,6 +129,11 @@ data class CardUiState(
     val insights: InsightsState = InsightsState(),
     /** The cardholder pages' own state; see [CrewState]. */
     val crew: CrewState = CrewState(),
+    /**
+     * Each card's currency by id — the web's `CardsProvider` catalogue, kept for the
+     * whole module so a row that names its card but no currency still prints one.
+     */
+    val cardCurrencies: Map<String, String> = emptyMap(),
 ) {
     /** This viewer's own card, for the cardholder screens. */
     val myCard: ExpenseCard?

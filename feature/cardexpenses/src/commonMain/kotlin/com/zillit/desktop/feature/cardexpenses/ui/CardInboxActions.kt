@@ -118,9 +118,14 @@ internal class CardInboxActions(
         val project = host?.currencies() ?: CardCurrencies()
         val bankAccounts = loadBanks()
         return ZillitResult.Success {
-            val options = StatementCurrencyOptions.of(providers, bankAccounts, project.codes)
+            val known = bankAccounts.ifEmpty { banks }
+            // The host's bank seam answers an empty list for a failed read too, so providers bound to
+            // banks with none readable is the web's `banksFailed` (`BankAccountsContext.jsx`): the
+            // project list is then not the right source and is never auto-selected.
+            val banksFailed = known.isEmpty() && providers.any { it.bankId.isNotBlank() }
+            val options = StatementCurrencyOptions.of(providers, known, project.codes, banksFailed)
             copy(
-                banks = bankAccounts.ifEmpty { banks },
+                banks = known,
                 inbox = inbox.copy(
                     import = inbox.import.copy(
                         currencies = options,

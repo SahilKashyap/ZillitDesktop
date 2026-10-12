@@ -39,6 +39,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ProcessRules
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
@@ -174,7 +175,7 @@ private fun approvalColumns(
             }
             if (locked) ZillitTooltip(str(S.desktop_inv_locked_period, lock.lockedThrough), box) else box()
         },
-        TableColumn(str(S.date), ColumnWidth.Fixed(120.dp)) { DateCell(it) },
+        TableColumn(str(S.date), ColumnWidth.Fixed(120.dp)) { DateCell(it, ownOnly = true) },
         TableColumn(str(S.ah_merchant), ColumnWidth.Weight(1.8f)) { row ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -196,7 +197,7 @@ private fun approvalColumns(
         },
         TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { row ->
             ZillitText(
-                text = money(row.amount, row.currency),
+                text = money(row.amount, state.currencyOf(row)),
                 style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
                 maxLines = 1,
             )

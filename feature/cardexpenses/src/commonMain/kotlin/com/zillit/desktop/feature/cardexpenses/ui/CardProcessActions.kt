@@ -586,8 +586,10 @@ internal suspend fun CardExpensesViewModel.readProcessPage(destination: CardDest
     val list = (rows as ZillitResult.Success).data
     val known = current.processPages.refs.takeIf { it.loaded }
     val refs = known ?: repo.processReferences().getOrNull() ?: ProcessRefs()
+    // Bulk Process's department override lists the project's, as All Transactions' filter does.
+    val catalogues = if (destination == CardDestination.BulkProcess) inboxActions.ledgerCatalogues() else null
     return ZillitResult.Success {
-        copy(
+        (catalogues?.invoke(this) ?: this).copy(
             receipts = list,
             processPages = processPages.copy(
                 refs = refs,

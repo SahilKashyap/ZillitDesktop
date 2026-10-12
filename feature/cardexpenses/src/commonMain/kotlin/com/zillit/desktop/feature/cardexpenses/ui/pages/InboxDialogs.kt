@@ -19,6 +19,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.InboxEvent
 import com.zillit.desktop.feature.cardexpenses.ui.ReceiptDetailSource
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptBadgeRule
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptDetailView
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 
 /**
  * The reconciliation pages' dialogs, drawn at the screen root with the rest —
@@ -63,6 +64,7 @@ private fun ReceiptDetailDialog(state: CardUiState, onEvent: (CardEvent) -> Unit
             else -> ReceiptBadgeRule.Workflow
         },
         isTelevision = state.viewer.isTelevision || state.crew.isTelevision,
+        currency = state.currencyOf(open.detail.receipt),
         media = open.media,
         onOpenMedia = { onEvent(CardEvent.ViewReceipt(it.key)) },
         history = open.history,

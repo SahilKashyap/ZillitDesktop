@@ -50,7 +50,6 @@ import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptScope
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
 import com.zillit.desktop.feature.cardexpenses.domain.StatementImport
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -111,12 +110,12 @@ class CardRepositoryImpl(
     override suspend fun cards(mineOnly: Boolean): ZillitResult<List<ExpenseCard>> =
         get(
             url = "$base/cards",
-            serializer = ListSerializer(CardDto.serializer()),
+            serializer = ListOrEmpty(CardDto.serializer()),
             query = if (mineOnly) mapOf("my" to "true") else emptyMap(),
         ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun cardHistory(cardId: String): ZillitResult<List<CardHistoryEntry>> =
-        get("$base/cards/$cardId/history", ListSerializer(CardHistoryDto.serializer()))
+        get("$base/cards/$cardId/history", ListOrEmpty(CardHistoryDto.serializer()))
             .map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun myActiveDeal(): ZillitResult<DealRate?> = deals.activeRate()
@@ -262,13 +261,13 @@ class CardRepositoryImpl(
     // -- statement imports -------------------------------------------------
 
     override suspend fun imports(): ZillitResult<List<StatementImport>> =
-        get("$base/imports", ListSerializer(ImportDto.serializer()))
+        get("$base/imports", ListOrEmpty(ImportDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
     // -- transactions ------------------------------------------------------
 
     override suspend fun transactions(filters: TransactionFilters): ZillitResult<List<CardTransaction>> =
-        get("$base/transactions", ListSerializer(TransactionDto.serializer()), filters.query())
+        get("$base/transactions", ListOrEmpty(TransactionDto.serializer()), filters.query())
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun codeTransaction(
@@ -356,7 +355,7 @@ class CardRepositoryImpl(
         receiptList("$base${scope.path}")
 
     override suspend fun matchCandidates(receiptId: String): ZillitResult<List<CardTransaction>> =
-        get("$base/receipts/$receiptId/match-candidates", ListSerializer(TransactionDto.serializer()))
+        get("$base/receipts/$receiptId/match-candidates", ListOrEmpty(TransactionDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun matchReceipt(receiptId: String, transactionId: String): ZillitResult<Unit> =
@@ -504,7 +503,7 @@ class CardRepositoryImpl(
         delete("$base/receipts/$receiptId")
 
     override suspend fun receiptHistory(receiptId: String): ZillitResult<List<CardHistoryEntry>> =
-        get("$base/receipts/$receiptId/history", ListSerializer(CardHistoryDto.serializer()))
+        get("$base/receipts/$receiptId/history", ListOrEmpty(CardHistoryDto.serializer()))
             .map { rows -> rows.map { it.toDomain() } }
 
     // -- the cardholder's pages ----------------------------------------------
@@ -512,7 +511,7 @@ class CardRepositoryImpl(
     override suspend fun cardsForApproval(): ZillitResult<List<ExpenseCard>> =
         get(
             url = "$base/cards",
-            serializer = ListSerializer(CardDto.serializer()),
+            serializer = ListOrEmpty(CardDto.serializer()),
             query = mapOf("status" to PENDING, "for_approval" to "true"),
         ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
@@ -525,7 +524,7 @@ class CardRepositoryImpl(
     // -- bulk processing ---------------------------------------------------
 
     override suspend fun bulkProcessable(): ZillitResult<List<BulkItem>> =
-        get("$base/bulk", ListSerializer(BulkItemDto.serializer()))
+        get("$base/bulk", ListOrEmpty(BulkItemDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun bulkProcess(
@@ -615,7 +614,7 @@ class CardRepositoryImpl(
         topUpList("$base/cards/$cardId/top-ups")
 
     override suspend fun topUpHistory(topUpId: String): ZillitResult<List<CardHistoryEntry>> =
-        get("$base/topups/$topUpId/history", ListSerializer(CardHistoryDto.serializer()))
+        get("$base/topups/$topUpId/history", ListOrEmpty(CardHistoryDto.serializer()))
             .map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun requestTopUp(
@@ -691,7 +690,7 @@ class CardRepositoryImpl(
             ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_cannot_download_exports)))
 
     override suspend fun alerts(): ZillitResult<List<CardAlert>> =
-        get("$base/alerts", ListSerializer(AlertDto.serializer()))
+        get("$base/alerts", ListOrEmpty(AlertDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
     /**
@@ -794,10 +793,10 @@ class CardRepositoryImpl(
     // -- plumbing ----------------------------------------------------------
 
     private suspend fun receiptList(url: String) =
-        get(url, ListSerializer(ReceiptDto.serializer())).map { rows -> rows.mapNotNull { it.toDomain() } }
+        get(url, ListOrEmpty(ReceiptDto.serializer())).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     private suspend fun topUpList(url: String) =
-        get(url, ListSerializer(CardTopUpDto.serializer())).map { rows -> rows.mapNotNull { it.toDomain() } }
+        get(url, ListOrEmpty(CardTopUpDto.serializer())).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     private suspend fun <T> get(
         url: String,

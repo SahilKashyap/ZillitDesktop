@@ -51,6 +51,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.CrewEvent
 import com.zillit.desktop.feature.cardexpenses.ui.HistoryState
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.PersonCell
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
@@ -152,7 +153,7 @@ private fun SectionTab(
 
 private fun receiptColumns(state: CardUiState, onEvent: (CardEvent) -> Unit): List<TableColumn<CardReceipt>> = listOf(
     TableColumn(str(S.date), ColumnWidth.Fixed(DATE_COLUMN)) { receipt ->
-        ZillitText(text = date(receipt.date), style = ZillitTheme.typography.numeric)
+        ZillitText(text = date(receipt.ownDate), style = ZillitTheme.typography.numeric)
     },
     TableColumn(str(S.ah_merchant), ColumnWidth.Weight(2f)) { receipt ->
         Row(
@@ -170,7 +171,7 @@ private fun receiptColumns(state: CardUiState, onEvent: (CardEvent) -> Unit): Li
         if (name == "—") ZillitText(text = name) else PersonCell(name = name, userId = receipt.holderId)
     },
     TableColumn(str(S.amount), ColumnWidth.Fixed(AMOUNT_COLUMN), numeric = true) { receipt ->
-        ZillitText(text = money(receipt.amount, receipt.currency), style = ZillitTheme.typography.numeric)
+        ZillitText(text = money(receipt.amount, state.currencyOf(receipt)), style = ZillitTheme.typography.numeric)
     },
     TableColumn(str(S.code), ColumnWidth.Fixed(CODE_COLUMN)) { receipt ->
         ZillitText(
