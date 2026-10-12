@@ -409,6 +409,8 @@ data class CashTeamMember(
     val isSenior: Boolean,
     val canOverride: Boolean,
     val postingLimit: Double?,
+    /** Every stored key this client does not model, written back on a save as the web's `...m` does. */
+    val extras: Map<String, JsonElement> = emptyMap(),
 )
 
 /** A saved cost code, offered on the coding screens. */
@@ -426,6 +428,8 @@ data class QuickCode(
     val keywords: List<String> = emptyList(),
     /** Per cent, as configured; null when the category carries no default. */
     val vat: Double? = null,
+    /** Stored keys this client does not model, written back on a save. */
+    val extras: Map<String, JsonElement> = emptyMap(),
 ) {
     /** "Fuel · 2400", or just the name where no code is set. */
     val label: String get() = if (nominalCode.isBlank()) name else "$name · $nominalCode"
@@ -453,6 +457,8 @@ data class DeductionRule(
     val systemDefault: Boolean = false,
     /** The stored `type`, round-tripped so a save cannot rename a system rule. */
     val type: String = "",
+    /** Stored keys this client does not model, written back on a save. */
+    val extras: Map<String, JsonElement> = emptyMap(),
 )
 
 /** What a [DeductionRule] does when it fires. */

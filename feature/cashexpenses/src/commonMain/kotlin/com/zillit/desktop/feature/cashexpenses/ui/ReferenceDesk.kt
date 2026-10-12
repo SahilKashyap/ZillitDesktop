@@ -18,6 +18,8 @@ import kotlinx.coroutines.Job
 internal class ReferenceDesk(private val host: CashHost, private val sources: CashReferenceSources) {
 
     private var chartJob: Job? = null
+    private var vendorsJob: Job? = null
+    private var countriesJob: Job? = null
 
     /** Currencies, departments and tax types, once per production — from `start`. */
     fun load() {
@@ -37,6 +39,25 @@ internal class ReferenceDesk(private val host: CashHost, private val sources: Ca
         host.work {
             val loaded = sources.trackingSets()
             host.update { copy(trackingSets = loaded) }
+        }
+    }
+
+    /** The vendors, once per production — what a Vendor field stores is an id, and the detail shows the name. */
+    fun loadVendors() {
+        if (host.state.vendors.isNotEmpty() || vendorsJob?.isActive == true) return
+        vendorsJob = host.work {
+            val loaded = sources.vendors()
+            if (loaded.isNotEmpty()) host.update { copy(vendors = loaded) }
+        }
+    }
+
+    /** The vendors and countries the float request form's custom fields pick from, once per production. */
+    fun loadRequestLists() {
+        loadVendors()
+        if (host.state.countries.isNotEmpty() || countriesJob?.isActive == true) return
+        countriesJob = host.work {
+            val loaded = sources.countries()
+            if (loaded.isNotEmpty()) host.update { copy(countries = loaded) }
         }
     }
 

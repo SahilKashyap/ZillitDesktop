@@ -295,7 +295,11 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
     override suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule> = fail()
     override suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit> = write("deleteRule:$id")
     override suspend fun lockedThrough(): ZillitResult<String?> = ZillitResult.Success(lock)
-    override suspend fun companies(): ZillitResult<List<CashCompany>> = ZillitResult.Success(emptyList())
+    var companyRows: List<CashCompany> = emptyList()
+    override suspend fun companies(): ZillitResult<List<CashCompany>> {
+        calls += "companies"
+        return ZillitResult.Success(companyRows)
+    }
     override suspend fun fundRequests(): ZillitResult<List<FundRequest>> = ZillitResult.Success(emptyList())
     override suspend fun createFundRequest(fundAccount: String, currency: String?, amount: Double): ZillitResult<Unit> =
         write("createFunds")

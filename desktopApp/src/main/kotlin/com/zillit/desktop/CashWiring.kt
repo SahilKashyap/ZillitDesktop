@@ -17,12 +17,16 @@ import com.zillit.desktop.feature.cashexpenses.data.CashRepositoryImpl
 import com.zillit.desktop.feature.cashexpenses.domain.CashAccount
 import com.zillit.desktop.feature.cashexpenses.domain.CashAttachment
 import com.zillit.desktop.feature.cashexpenses.domain.CashAttachmentUploader
+import com.zillit.desktop.feature.accounthub.domain.CoaLineType
+import com.zillit.desktop.feature.accounthub.domain.IsdCountries
+import com.zillit.desktop.feature.cashexpenses.domain.CashCountry
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrency
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
 import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
 import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingNode
 import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingSet
+import com.zillit.desktop.feature.cashexpenses.domain.CashVendor
 import com.zillit.desktop.feature.cashexpenses.domain.CashReferenceSources
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.ui.CashBadges
@@ -70,6 +74,8 @@ internal fun AppGraph.Ready.cashReferenceSources() = CashReferenceSources(
     departments = { cashDepartments() },
     chartAccounts = { cashChartAccounts() },
     taxTypes = { cashTaxTypes() },
+    vendors = { cashVendors() },
+    countries = { cashCountries() },
     uploader = cashAttachmentUploader(),
     trackingSets = { cashTrackingSets() },
 )
@@ -89,6 +95,15 @@ internal suspend fun AppGraph.Ready.cashTaxTypes(): List<CashTaxType> =
             country = it.country,
         )
     }
+
+/** The vendor list a float request's Vendor field offers; a failed read answers none. */
+internal suspend fun AppGraph.Ready.cashVendors(): List<CashVendor> =
+    accountHubRepository.vendors().getOrNull().orEmpty().map { CashVendor(id = it.id, name = it.name) }
+
+/** The ISD country list a float request's Country field offers; the web's own copy when the service is unreachable. */
+internal suspend fun AppGraph.Ready.cashCountries(): List<CashCountry> =
+    accountHubRepository.isdCodes().getOrNull().orEmpty().ifEmpty { IsdCountries.bundled }
+        .map { CashCountry(code = it.code, name = it.name) }
 
 /**
  * Production Setup's tracking sets, for the receipt lines' Layers column. A failed read answers none,
@@ -137,6 +152,13 @@ internal suspend fun AppGraph.Ready.cashDepartments(): List<CashDepartment> =
 internal suspend fun AppGraph.Ready.cashChartAccounts(): List<CashAccount> {
     val rows = accountHubRepository.accounts().getOrNull().orEmpty()
     val parents = rows.mapNotNullTo(mutableSetOf()) { it.parentId }
+    // `computeNominalRows` runs over the balance-sheet rows alone: a section is a nominal-level pick only
+    // while no category sits under it, a category only while no code does.
+    val balanceSheet = rows.filter { it.costType.isBalanceSheet }
+    val sectionsWithCategories = balanceSheet.filter { it.lineType == CoaLineType.Category }
+        .mapNotNullTo(mutableSetOf()) { it.sectionId }
+    val categoriesWithCodes = balanceSheet.filter { it.lineType == CoaLineType.SubCategory }
+        .mapNotNullTo(mutableSetOf()) { it.categoryId }
     return rows.filter { it.code.isNotBlank() }.map { row ->
         CashAccount(
             code = row.code,
@@ -144,6 +166,12 @@ internal suspend fun AppGraph.Ready.cashChartAccounts(): List<CashAccount> {
             balanceSheet = row.costType.isBalanceSheet,
             postable = row.isPosting && row.isActive,
             leaf = row.id !in parents,
+            nominal = when (row.lineType) {
+                CoaLineType.SubCategory -> true
+                CoaLineType.Category -> row.id !in categoriesWithCodes
+                CoaLineType.Section -> row.id !in sectionsWithCategories
+                CoaLineType.Header -> false
+            },
         )
     }
 }

@@ -23,12 +23,14 @@ import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
 import com.zillit.desktop.feature.cashexpenses.domain.CashAccount
 import com.zillit.desktop.feature.cashexpenses.domain.CashAssignmentRule
+import com.zillit.desktop.feature.cashexpenses.domain.CashCountry
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartments
 import com.zillit.desktop.feature.cashexpenses.domain.CashNominals
 import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
 import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingSet
+import com.zillit.desktop.feature.cashexpenses.domain.CashVendor
 import com.zillit.desktop.feature.cashexpenses.domain.recoverableIds
 import com.zillit.desktop.feature.cashexpenses.domain.FloatDetails
 import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
@@ -139,6 +141,10 @@ data class CashUiState(
     val chartAccounts: List<CashAccount>? = null,
     /** Production Setup's tax types, for the coding editor; empty until read, or when the production has none. */
     val taxTypes: List<CashTaxType> = emptyList(),
+    /** The vendors a float request's Vendor field offers; empty until read. */
+    val vendors: List<CashVendor> = emptyList(),
+    /** The countries a float request's Country field offers; empty until read. */
+    val countries: List<CashCountry> = emptyList(),
     /** Production Setup's tracking sets, for the Layers column; empty when the production has none. */
     val trackingSets: List<CashTrackingSet> = emptyList(),
     /** The float whose detail dialog is open, if any. */

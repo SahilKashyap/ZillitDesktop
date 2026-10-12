@@ -40,6 +40,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -753,10 +754,17 @@ internal data class SettingsDto(
             overrideReceiptBatch = overrides.flag("override_receipt_batch"),
             requireCoordinatorCoding = overrides.flag("require_coord_code"),
             requireSeniorSignOff = overrides.flag("require_senior_sign_off"),
-            teamMembers = teamMembers.readList(TeamMemberDto.serializer()).map { it.toDomain() },
-            quickCodes = quickCodes.readList(QuickCodeDto.serializer()).map { it.toDomain() },
+            teamMembers = teamMembers.readRows(TeamMemberDto.serializer(), TeamMemberDto.WRITTEN) { dto, extras ->
+                dto.toDomain().copy(extras = extras)
+            },
+            quickCodes = quickCodes.readRows(QuickCodeDto.serializer(), QuickCodeDto.WRITTEN) { dto, extras ->
+                dto.toDomain().copy(extras = extras)
+            },
             reimburseToPayroll = reimburseToPayroll == true,
-            deductionRules = deductionRules.readList(DeductionRuleDto.serializer()).map { it.toDomain() },
+            deductionRules = deductionRules.readRows(
+                DeductionRuleDto.serializer(),
+                DeductionRuleDto.WRITTEN,
+            ) { dto, extras -> dto.toDomain().copy(extras = extras) },
             requestCap = requestCap.readObject().toRequestCap(),
             assignmentRules = assignmentRules.readList(CashRuleDto.serializer()).mapNotNull { it.toDomain() },
             departmentCoordinators = departmentCoordinators.readList(CoordinatorDto.serializer())
@@ -783,8 +791,12 @@ internal data class TeamMemberDto(
     )
 
     companion object {
+        /** The keys [of] writes; every other stored key is carried through as an extra. */
+        val WRITTEN = setOf("user_id", "posting_limit", "can_override", "is_senior")
+
         /** `{user_id, posting_limit, can_override, is_senior}` — a null limit is unlimited. */
         fun of(member: CashTeamMember): JsonObject = buildJsonObject {
+            member.extras.forEach { (key, value) -> put(key, value) }
             put("user_id", JsonPrimitive(member.userId))
             put("posting_limit", member.postingLimit?.let(::JsonPrimitive) ?: JsonNull)
             put("can_override", JsonPrimitive(member.canOverride))
@@ -820,7 +832,10 @@ internal data class QuickCodeDto(
     )
 
     companion object {
+        val WRITTEN = setOf("name", "nominal_code", "keywords", "vat")
+
         fun of(code: QuickCode): JsonObject = buildJsonObject {
+            code.extras.forEach { (key, value) -> put(key, value) }
             put("name", JsonPrimitive(code.name))
             put("nominal_code", JsonPrimitive(code.nominalCode))
             put("keywords", buildJsonArray { code.keywords.forEach { add(JsonPrimitive(it)) } })
@@ -858,7 +873,13 @@ internal data class DeductionRuleDto(
     )
 
     companion object {
+        val WRITTEN = setOf(
+            "id", "type", "title", "description", "process_type", "threshold_type", "threshold_value", "enable",
+            "trigger_codes", "system_default",
+        )
+
         fun of(rule: DeductionRule): JsonObject = buildJsonObject {
+            rule.extras.forEach { (key, value) -> put(key, value) }
             put("id", JsonPrimitive(rule.id))
             put("type", JsonPrimitive(rule.type.ifBlank { rule.id }))
             put("title", JsonPrimitive(rule.title))
@@ -894,6 +915,32 @@ internal fun JsonElement?.readObject(): JsonObject? = when {
     }.getOrNull()
 
     else -> null
+}
+
+/**
+ * [readList] for rows a save writes back whole: each row's keys outside
+ * [written] reach [convert] as extras, since the web rewrites the stored
+ * object (`{...m}`) and a rebuilt row would drop whatever the server added.
+ * A row that does not decode is skipped, as [readList] skips a bad list.
+ */
+internal fun <T, R> JsonElement?.readRows(
+    serializer: kotlinx.serialization.KSerializer<T>,
+    written: Set<String>,
+    convert: (T, Map<String, JsonElement>) -> R,
+): List<R> {
+    val element = when {
+        this == null -> return emptyList()
+        this is JsonPrimitive && isString -> runCatching { lenientJson.parseToJsonElement(content) }.getOrNull()
+            ?: return emptyList()
+
+        else -> this
+    }
+    return (element as? JsonArray).orEmpty().mapNotNull { row ->
+        val body = row as? JsonObject ?: return@mapNotNull null
+        val dto = runCatching { lenientJson.decodeFromJsonElement(serializer, body) }.getOrNull()
+            ?: return@mapNotNull null
+        convert(dto, body.filterKeys { it !in written })
+    }
 }
 
 internal fun <T> JsonElement?.readList(serializer: kotlinx.serialization.KSerializer<T>): List<T> {

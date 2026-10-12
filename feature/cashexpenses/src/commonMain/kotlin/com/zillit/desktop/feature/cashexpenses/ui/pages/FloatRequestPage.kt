@@ -549,6 +549,18 @@ private fun CustomFieldInput(state: CashUiState, field: FormField, onEvent: (Cas
             PickSelect(value, state.currencies.currencies.map { it.code to it.code }, set)
         field.type == "select" && field.selection == SelectionType.ExpenditureType ->
             PickSelect(value, EXPENDITURE_TYPES.map { it to it }, set)
+        field.type == "select" && field.selection == SelectionType.Vendor ->
+            PickSelect(value, state.vendors.map { it.id to it.name }, set)
+        // The identifier is what is stored; tax types group under their country, as the web's picker does.
+        field.type == "select" && field.selection == SelectionType.Tax -> {
+            val taxes = state.taxTypes.filter { it.identifier != "other" }
+                .sortedWith(compareBy({ it.country.isBlank() }, { it.country }))
+            PickSelect(value, taxes.map { it.identifier to it.optionLabel }, set) { id ->
+                taxes.firstOrNull { it.identifier == id }?.country?.takeIf { it.isNotBlank() }
+            }
+        }
+        field.type == "select" && field.selection == SelectionType.Country ->
+            PickSelect(value, state.countries.map { it.code to it.name }, set)
         field.type == "select" && field.selection == SelectionType.AccountCode -> SuggestField(
             value = value,
             onValueChange = set,
@@ -588,7 +600,12 @@ private fun CustomFieldInput(state: CashUiState, field: FormField, onEvent: (Cas
 
 /** A select over `(value, label)` pairs, with an empty first option. */
 @Composable
-private fun PickSelect(value: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
+private fun PickSelect(
+    value: String,
+    options: List<Pair<String, String>>,
+    onPick: (String) -> Unit,
+    section: ((String) -> String?)? = null,
+) {
     ZillitSelect(
         value = value,
         options = listOf("") + options.map { it.first },
@@ -596,6 +613,7 @@ private fun PickSelect(value: String, options: List<Pair<String, String>>, onPic
         label = { id ->
             if (id.isBlank()) str(S.dm_step2_select_rtw) else options.firstOrNull { it.first == id }?.second ?: id
         },
+        section = section,
         modifier = Modifier.fillMaxWidth(),
     )
 }

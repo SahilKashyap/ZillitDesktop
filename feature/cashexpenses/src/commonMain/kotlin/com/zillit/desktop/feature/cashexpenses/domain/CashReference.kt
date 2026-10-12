@@ -97,6 +97,12 @@ data class CashTaxType(
         get() = rate?.let { "$label · ${if (it == it.toLong().toDouble()) it.toLong() else it}%" } ?: label
 }
 
+/** A vendor a float request's Vendor field can name — the id is what the field stores. */
+data class CashVendor(val id: String, val name: String)
+
+/** A country of the ISD list a float request's Country field offers; the ISO [code] is what it stores. */
+data class CashCountry(val code: String, val name: String)
+
 /** One code in a [CashTrackingSet]. */
 data class CashTrackingNode(val id: String, val code: String)
 
@@ -146,6 +152,11 @@ data class CashAccount(
     val balanceSheet: Boolean = false,
     val postable: Boolean = true,
     val leaf: Boolean = true,
+    /**
+     * Whether `pickableLevels="nominals"` offers the row (`computeNominalRows`): a code always, a nominal or
+     * section only when nothing sits below it, a header never. True when the host does not say.
+     */
+    val nominal: Boolean = true,
 ) {
     /** "5010 — Materials", or the bare code — the web's `coaLabel`. */
     val label: String get() = if (name.isNotBlank()) "$code — $name" else code
@@ -280,6 +291,10 @@ class CashReferenceSources(
     val chartAccounts: suspend () -> List<CashAccount> = { emptyList() },
     /** Production Setup's tax types, for the coding editor's Tax select. */
     val taxTypes: suspend () -> List<CashTaxType> = { emptyList() },
+    /** The vendor list, for a float request's Vendor field (`vendorsApi.list`). */
+    val vendors: suspend () -> List<CashVendor> = { emptyList() },
+    /** The ISD country list, for a float request's Country field (`useIsdCodes`). */
+    val countries: suspend () -> List<CashCountry> = { emptyList() },
     /** Picks and stores a receipt; null refuses the attach. */
     val uploader: CashAttachmentUploader? = null,
     /** Production Setup's tracking sets with their codes, for the receipt lines' Layers column. */

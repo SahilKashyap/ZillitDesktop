@@ -118,6 +118,17 @@ class CashAccessTest {
         assertFalse(viewer(metadata = full).canOverrideFloat())
     }
 
+    /** The web checks only the metadata flags (`PCApprovalPage.jsx:1169-1172`), not the department. */
+    @Test
+    fun `override does not ask the viewer's department`() {
+        val full = CashMetadata(canOverride = true, overrideReceiptBatch = true, overrideFloatRequest = true)
+        val approver = viewer(department = "department_art", metadata = full.copy(isApprover = true))
+        assertTrue(approver.canOverrideBatch())
+        assertTrue(approver.canOverrideFloat())
+        // An accountant who came in through the tool tile sees the crew view, and the same grant.
+        assertTrue(viewer(metadata = full, enteredAsTool = true).canOverrideBatch())
+    }
+
     /**
      * The web's `canPostBatch`: a senior posts by role; anyone else needs to be
      * on the team with an unlimited or non-zero limit. The amount is not

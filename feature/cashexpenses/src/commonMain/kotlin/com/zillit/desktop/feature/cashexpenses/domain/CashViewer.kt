@@ -104,12 +104,15 @@ data class CashViewer(
      */
     val canOpenSettings: Boolean get() = isSeniorAccountant
 
-    /** Whether an approval row offers the accountant's override action. */
-    fun canOverrideFloat(): Boolean =
-        isAccountant && metadata.canOverride && metadata.overrideFloatRequest
+    /**
+     * Whether an approval row offers the override action: the grant and the
+     * specific right, nothing else — the web checks only the metadata flags
+     * (`PCApprovalPage.jsx:1169-1172`), so the crew view of an accountant who
+     * entered through the tool tile offers it too. The server judges the rest.
+     */
+    fun canOverrideFloat(): Boolean = metadata.canOverride && metadata.overrideFloatRequest
 
-    fun canOverrideBatch(): Boolean =
-        isAccountant && metadata.canOverride && metadata.overrideReceiptBatch
+    fun canOverrideBatch(): Boolean = metadata.canOverride && metadata.overrideReceiptBatch
 
     private companion object {
         const val ACCOUNTS = "accounts"

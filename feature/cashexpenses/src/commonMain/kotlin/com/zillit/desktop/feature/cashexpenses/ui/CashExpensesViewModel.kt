@@ -195,6 +195,8 @@ class CashExpensesViewModel(
                 departments = emptyList(),
                 taxTypes = emptyList(),
                 trackingSets = emptyList(),
+                vendors = emptyList(),
+                countries = emptyList(),
                 currencies = CashCurrencies(),
                 floatDetail = null,
             )
@@ -302,7 +304,11 @@ class CashExpensesViewModel(
             is CashEvent.Search -> setState { copy(search = event.query) }
             is CashEvent.SelectBatch -> batchDesk.open(event.batchId)
             is CashEvent.SelectFloat -> setState { copy(selectedFloatId = event.floatId) }
-            is CashEvent.OpenFloatDetail -> floatDesk.openDetail(event.floatId)
+            is CashEvent.OpenFloatDetail -> {
+                loadCompanies()
+                referenceDesk.loadVendors()
+                floatDesk.openDetail(event.floatId)
+            }
             CashEvent.CloseFloatDetail -> floatDesk.closeDetail()
             is CashEvent.SaveFloatBsCode -> floatDesk.saveBsCode(event.floatId, event.bsCode)
             CashEvent.OpenApprovalLevels -> sendEffect(CashEffect.Navigate(CASH_APPROVERS_ROUTE))
@@ -482,7 +488,7 @@ class CashExpensesViewModel(
 
     /** Opens a dialog, filling what it needs from what is loaded. */
     private fun ask(prompt: CashPrompt) {
-        if (prompt is CashPrompt.ReadyToCollect && currentState.companies.isEmpty()) loadCompanies()
+        if (prompt is CashPrompt.ReadyToCollect) loadCompanies(quiet = false)
         setState { copy(prompt = prompt) }
     }
 
@@ -503,6 +509,9 @@ class CashExpensesViewModel(
         val crew = CashDepartments.withIds(assignees(), currentState.departments)
         setState { copy(loading = true, error = null, assignees = crew) }
         if (destination.codes && currentState.settings == null) loadQuickCodes()
+        // The company chip and search read `state.companies`; `/details` and the row carry only the id.
+        if (destination == CashDestination.ActiveFloats) loadCompanies()
+        if (destination == CashDestination.FloatRequest) referenceDesk.loadRequestLists()
         if (destination.codes) referenceDesk.loadChart()
         loadJob = launch {
             val outcome: ZillitResult<CashUiState.() -> CashUiState> = when (destination) {
@@ -662,11 +671,16 @@ class CashExpensesViewModel(
         }
     }
 
-    private fun loadCompanies() {
+    /**
+     * Reads the production's companies once (the web's `useProjectCompanies` loads on mount). Quiet by default: a
+     * crew member may not read the slice, and the chip then simply falls back to the float's own name.
+     */
+    private fun loadCompanies(quiet: Boolean = true) {
+        if (currentState.companies.isNotEmpty()) return
         launch {
             when (val companies = repository.companies()) {
                 is ZillitResult.Success -> setState { copy(companies = companies.data) }
-                is ZillitResult.Failure -> host.report(companies.error)
+                is ZillitResult.Failure -> if (!quiet) host.report(companies.error)
             }
         }
     }
