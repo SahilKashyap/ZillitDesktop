@@ -71,7 +71,7 @@ internal class PoEntryLedger(
         amount = taxAmount,
         tags = entry.taxTags,
         isTax = true,
-        trackingCodes = entry.taxLine?.trackingCodes,
+        trackingCodes = entry.taxTrackingCodes,
         customFields = entry.taxLine?.customFields,
     )
 
@@ -191,6 +191,7 @@ internal fun PurchaseOrder.toEntry(): PoEntryState {
         vatTreatment = vatTreatmentOrPending,
         taxLine = taxRow,
         taxTags = taxRow?.tags.orEmpty(),
+        taxTrackingCodes = taxRow?.trackingCodes,
         taxOverride = taxRow?.total,
         taxCode = taxRow?.nominalCode.orEmpty(),
     )

@@ -231,6 +231,26 @@ class PoEntryGridTest {
         assertEquals(listOf("Grip"), ledger.linesWithTax.last().tags)
     }
 
+    @Test
+    fun `the tax line sends the layers picked on the page, starting from the saved row's`() {
+        val saved = kotlinx.serialization.json.buildJsonObject {
+            put("set-a", kotlinx.serialization.json.JsonPrimitive("EP1"))
+        }
+        val taxRow = PoLine(
+            id = "tax-row", description = "", quantity = 1.0, unitPrice = 5.0, nominalCode = "8888",
+            vatRate = null, amount = 5.0, isTax = true, trackingCodes = saved,
+        )
+        val opened = parityOrder(lines = listOf(line(), taxRow)).toEntry()
+        assertEquals(saved, opened.taxTrackingCodes)
+        assertEquals(saved, PoEntryLedger(opened, recoverable = emptySet(), ready = true).linesWithTax.last().trackingCodes)
+
+        val repicked = kotlinx.serialization.json.buildJsonObject {
+            put("set-a", kotlinx.serialization.json.JsonPrimitive("EP2"))
+        }
+        val sent = PoEntryLedger(opened.copy(taxTrackingCodes = repicked), recoverable = emptySet(), ready = true)
+        assertEquals(repicked, sent.linesWithTax.last().trackingCodes)
+    }
+
     /** The web's `handlePostPO` maps the lines' `account` as typed; only `hdrPatch` is wrapped. */
     @Test
     fun `post wraps the header code only, as the web does`() {

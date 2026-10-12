@@ -51,6 +51,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
 import com.zillit.desktop.feature.purchaseorder.domain.customFieldsJson
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
+import com.zillit.desktop.feature.purchaseorder.domain.TrackingSet
 import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
 import com.zillit.desktop.feature.purchaseorder.domain.trackingPicks
 import com.zillit.desktop.feature.purchaseorder.ui.PoConfirmAction
@@ -122,7 +123,7 @@ internal fun PoEntryPage(state: PoUiState, entry: PoEntryState, onEvent: (PoEven
                 }
                 HeaderCard(state, entry, onEvent)
                 CodingCard(state, entry, onEvent)
-                TaxLineCard(entry, ledger, order.currency, state.tags, onEvent)
+                TaxLineCard(entry, ledger, order.currency, state.tags, state.trackingSets, onEvent)
                 EntryTotals(
                     ledger = ledger,
                     orderGross = order.gross,
@@ -796,6 +797,7 @@ private fun TaxLineCard(
     ledger: PoEntryLedger,
     currency: String?,
     accountTags: List<String>,
+    trackingSets: List<TrackingSet>,
     onEvent: (PoEvent) -> Unit,
 ) {
     val set = { next: PoEntryState -> onEvent(PoEvent.EditEntry(next)) }
@@ -831,6 +833,15 @@ private fun TaxLineCard(
                 emptyText = str(S.desktop_po_no_tags_add_in_production_setup),
                 modifier = Modifier.width(TAGS_FIELD),
             )
+            // The same Layers picker the coded lines have, where the production has any.
+            if (trackingSets.isNotEmpty()) {
+                PoLineLayersField(
+                    sets = trackingSets,
+                    picked = entry.taxTrackingCodes.trackingPicks(),
+                    enabled = true,
+                    modifier = Modifier.width(PO_LAYERS_WIDTH),
+                ) { picks -> set(entry.copy(taxTrackingCodes = picks.trackingJson())) }
+            }
             ZillitText(
                 text = Money.format(ledger.reclaimable, currency),
                 style = ZillitTheme.typography.numeric,

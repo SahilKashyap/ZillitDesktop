@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoTotals
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.TrackingSet
+import kotlinx.serialization.json.JsonObject
 import com.zillit.desktop.feature.purchaseorder.domain.Vendor
 
 /** Everything the purchase order tool is showing. */
@@ -482,6 +483,8 @@ data class PoEntryState(
     val taxLine: PoLine? = null,
     /** The tax line's Account Tags — the persisted row's, until the page edits them. */
     val taxTags: List<String> = emptyList(),
+    /** The tax line's Layers — the persisted row's, until the page edits them. */
+    val taxTrackingCodes: JsonObject? = null,
     /** A typed tax amount; null derives it from the lines. Sticky, like the web's `overridden`. */
     val taxOverride: Double? = null,
     /** The reclaim nominal the tax line posts to. */
