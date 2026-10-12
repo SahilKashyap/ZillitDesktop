@@ -334,6 +334,8 @@ class PurchaseOrderRepositoryImpl(
 
     override suspend fun nominalCodes() = settingsSource.nominalCodes()
 
+    override suspend fun chartCodes() = settingsSource.chartCodes()
+
     override suspend fun assetTags() = settingsSource.assetTags()
 
     override suspend fun trackingSets() = settingsSource.trackingSets()
@@ -435,7 +437,7 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
 }
 
 /** The extra fields, grouped by the section a reader sees them under. */
-private fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArray {
+internal fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArray {
     forEach { group ->
         add(
             buildJsonObject {

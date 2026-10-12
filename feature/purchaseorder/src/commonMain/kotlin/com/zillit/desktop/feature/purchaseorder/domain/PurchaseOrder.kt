@@ -242,6 +242,9 @@ data class PoLine(
 /** The expenditure type the rental date pickers and the period split hang off. */
 const val RENTAL_EXPENDITURE_TYPE = "Rent"
 
+/** The web's `OTHER_TAX_OPTION` value: a tax type whose rate is typed on the line, not a Production Setup row. */
+const val OTHER_TAX_TYPE = "other"
+
 /**
  * Net, tax and gross for a set of lines — one formula, every surface.
  *
@@ -458,6 +461,20 @@ data class PoViewer(
      */
     val isSeniorAccountant: Boolean
         get() = designationIdentifier.seniorRole() in SENIOR_DESIGNATIONS
+
+    /**
+     * The console's own `isAccountant` — the senior designation, *in the
+     * console*.
+     *
+     * `PurchaseOrdersModule.jsx:2256` (`canAccessAnyPO_accountant(viewingUser)`)
+     * gates the selection checkboxes, the bulk bar, the assignee chip and the
+     * Posted and Settings tabs on exactly this: not the accounts department
+     * ([isAccountant], which an assistant satisfies) and not the designation
+     * alone ([isSeniorAccountant], which stays true through the Film Tools
+     * tile, whose department module has none of those controls).
+     */
+    val isConsoleSenior: Boolean
+        get() = isAccountant && isSeniorAccountant
 
     /**
      * Who sees every order on the production — and it is not one rule.
@@ -844,6 +861,14 @@ interface PurchaseOrderRepository {
 
     /** The chart's postable lines, for a rule's nominal codes. */
     suspend fun nominalCodes(): ZillitResult<List<PoNominal>> = noSettings()
+
+    /**
+     * Every active code on the chart, leaves and headings alike — what
+     * [wrapNominal] checks a typed code against. Wider than [nominalCodes]:
+     * the web's `useCoaByCode` holds every active row, and a heading code is
+     * still a code the chart knows.
+     */
+    suspend fun chartCodes(): ZillitResult<Set<String>> = noSettings()
 
     /** The production's line-item tags, for the asset register rule. */
     suspend fun assetTags(): ZillitResult<List<String>> = noSettings()

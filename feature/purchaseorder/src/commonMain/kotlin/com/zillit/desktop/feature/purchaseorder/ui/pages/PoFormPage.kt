@@ -13,10 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,9 +88,11 @@ internal fun PoFormPage(state: PoUiState, form: PoFormState, onEvent: (PoEvent) 
             }
             if (form.isTemplate) TemplateNameCard(form, onEvent)
             PoDetailsSection(state, form, onEvent)
-            if (!form.isTemplate) DeliverySection(state, form, onEvent)
+            // A template keeps the delivery block and the files too (the web's
+            // template save sends both), so they are on the editor.
+            DeliverySection(state, form, onEvent)
             LineItemsSection(state, form, onEvent)
-            if (!form.isTemplate) AttachmentsSection(state.busy, form, onEvent)
+            AttachmentsSection(state.busy, form, onEvent)
             TotalsCard(form)
         }
     }
@@ -152,16 +150,15 @@ private fun FormBreadcrumb(state: PoUiState, form: PoFormState, modifier: Modifi
 /** Attach, every save, and the submit button — the web's right-hand cluster. */
 @Composable
 private fun FormActions(form: PoFormState, onEvent: (PoEvent) -> Unit) {
-    var templateName by remember(form.templateId) { mutableStateOf(form.templateName) }
+    ZillitButton(
+        text = str(S.dd_action_attach),
+        onClick = { onEvent(PoEvent.AttachFile) },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Paperclip,
+        enabled = !form.saving && !form.uploading,
+    )
     if (!form.isTemplate) {
-        ZillitButton(
-            text = str(S.dd_action_attach),
-            onClick = { onEvent(PoEvent.AttachFile) },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Paperclip,
-            enabled = !form.saving && !form.uploading,
-        )
         ZillitButton(
             text = form.saveDraftLabel,
             onClick = { onEvent(PoEvent.SaveDraft) },
@@ -177,15 +174,42 @@ private fun FormActions(form: PoFormState, onEvent: (PoEvent) -> Unit) {
             enabled = !form.saving,
         )
     }
-    ZillitButton(
-        text = if (form.isTemplate) form.saveTemplateLabel else form.submitLabel,
-        onClick = {
-            if (form.isTemplate) onEvent(PoEvent.SaveAsTemplate(templateName)) else onEvent(PoEvent.SubmitForm)
-        },
-        size = ButtonSize.Small,
-        loading = form.saving,
-        enabled = !form.saving,
-    )
+    if (form.mode == PoFormMode.EditTemplate) {
+        // The web's Save menu offers "Save As" beside "Update template".
+        ZillitButton(
+            text = str(S.cs_save_as),
+            onClick = { onEvent(PoEvent.SaveTemplateAs) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = !form.saving,
+        )
+        ZillitButton(
+            text = form.saveTemplateLabel,
+            onClick = { onEvent(PoEvent.SaveAsTemplate(form.templateName)) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = !form.saving,
+        )
+    }
+    if (form.mode == PoFormMode.NewTemplate) {
+        ZillitButton(
+            text = form.saveTemplateLabel,
+            onClick = { onEvent(PoEvent.SaveAsTemplate(form.templateName)) },
+            size = ButtonSize.Small,
+            loading = form.saving,
+            enabled = !form.saving,
+        )
+    } else {
+        // Every mode but a brand-new template raises an order from what is on
+        // screen: a template being edited gets "Create & Submit PO" too.
+        ZillitButton(
+            text = form.submitLabel,
+            onClick = { onEvent(PoEvent.SubmitForm) },
+            size = ButtonSize.Small,
+            loading = form.saving,
+            enabled = !form.saving,
+        )
+    }
 }
 
 /** "Acct Entered" for an accountant raising fresh, "Draft"/"Template" while editing one — nothing for the rest. */
@@ -1080,10 +1104,10 @@ internal fun Double.trimmed(): String {
 private const val PENNIES = 100.0
 private const val BANNER_BORDER_ALPHA = 0.4f
 
-private val EXPENDITURE_TYPES = listOf("Purchase", "Consumption", RENTAL_EXPENDITURE_TYPE)
+internal val EXPENDITURE_TYPES = listOf("Purchase", "Consumption", RENTAL_EXPENDITURE_TYPE)
 
 /** The web's `expenditureTypeLabel` — the wire says "Consumption", every reader sees "Consumables". */
-private fun expenditureTypeLabel(value: String?): String = when (value) {
+internal fun expenditureTypeLabel(value: String?): String = when (value) {
     null -> str(S.desktop_exp_type)
     "Consumption" -> str(S.ah_exp_consumption)
     else -> value

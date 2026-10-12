@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoPostRequest
 import com.zillit.desktop.feature.purchaseorder.domain.PoTotals
 import com.zillit.desktop.feature.purchaseorder.domain.PoVat
+import com.zillit.desktop.feature.purchaseorder.domain.wrapNominal
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import kotlin.math.abs
 import kotlin.math.round
@@ -92,20 +93,39 @@ internal class PoEntryLedger(
             (index + 1).takeIf { !placeholder && line.nominalCode.isNullOrBlank() }
         }
 
-    fun update(header: PoEntryHeader): PoEntryUpdate =
-        PoEntryUpdate(header = header, lines = linesWithTax, vat = vat, effectiveDate = entry.effectiveDate)
-
-    fun post(order: PurchaseOrder, header: PoEntryHeader): PoPostRequest = PoPostRequest(
-        header = header,
-        lines = linesWithTax,
+    /**
+     * Save's body. The header code and every line's — the tax line's too — go
+     * through [wrapNominal] against [chart], as the web's `buildLineItemsPayload`
+     * and `hdrPatch` do, so a code typed that the chart lacks is created
+     * rather than stored loose.
+     */
+    fun update(header: PoEntryHeader, chart: Set<String> = emptySet()): PoEntryUpdate = PoEntryUpdate(
+        header = header.wrapped(chart),
+        lines = linesWithTax.map { it.copy(nominalCode = it.nominalCode?.let { code -> wrapNominal(code, chart) }) },
         vat = vat,
         effectiveDate = entry.effectiveDate,
-        description = order.description,
-        notes = order.notes,
-        episode = order.episode,
-        deliveryAddress = order.deliveryAddressRaw,
-        deliveryAddressId = order.deliveryAddressId,
     )
+
+    /**
+     * Post's body. Only the header code is wrapped: the web's `handlePostPO`
+     * maps the lines' `account` as typed (the wrap lives in the editor's save
+     * payload and `hdrPatch`, and Post sends neither), so this does the same.
+     */
+    fun post(order: PurchaseOrder, header: PoEntryHeader, chart: Set<String> = emptySet()): PoPostRequest =
+        PoPostRequest(
+            header = header.wrapped(chart),
+            lines = linesWithTax,
+            vat = vat,
+            effectiveDate = entry.effectiveDate,
+            description = order.description,
+            notes = order.notes,
+            episode = order.episode,
+            deliveryAddress = order.deliveryAddressRaw,
+            deliveryAddressId = order.deliveryAddressId,
+        )
+
+    private fun PoEntryHeader.wrapped(chart: Set<String>) =
+        copy(nominalCode = nominalCode?.let { code -> wrapNominal(code, chart) }?.takeIf { it.isNotEmpty() })
 
     private companion object {
         const val PENNY = 0.01
@@ -131,6 +151,17 @@ internal fun PoEntryState.header(defaultCurrency: String): PoEntryHeader = PoEnt
     currency = currency?.takeIf { it.isNotBlank() } ?: defaultCurrency,
     deliveryDate = deliveryDate,
 )
+
+/**
+ * [order] opened on this production's tax types: a type the production no
+ * longer lists becomes "Other" over its stored rate ([collapseUnknownTaxTypes]).
+ * Skipped while no types are read, which would collapse every named one.
+ */
+internal fun PoUiState.entryFor(order: PurchaseOrder): PoEntryState {
+    val entry = order.toEntry()
+    if (taxTypes.isEmpty()) return entry
+    return entry.copy(lines = entry.lines.collapseUnknownTaxTypes(taxTypes.map { it.id }.toSet()))
+}
 
 /**
  * The page opened on [order]: its lines minus the persisted tax row, which is

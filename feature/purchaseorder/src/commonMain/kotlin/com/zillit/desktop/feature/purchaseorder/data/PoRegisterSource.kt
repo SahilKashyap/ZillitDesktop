@@ -17,10 +17,15 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * The two registers hanging off the purchase-order service: saved order shapes
@@ -99,7 +104,16 @@ internal class PoRegisterSource(private val apiClient: ApiClient, config: AppCon
     }
 }
 
-private fun PoTemplate.body() = buildJsonObject {
+/**
+ * The template's save body — the web's `handleSaveTemplate`, key for key.
+ *
+ * Its blanks go out as explicit `null` (and `""` for the address), not as a
+ * missing key: the edit is a PATCH, and a key left out leaves the stored value
+ * behind, so a company, episode or date cleared in the editor would come back
+ * on the next open. The address object is sent even when empty for the same
+ * reason; `vat_treatment` falls back to `pending` as the web's does.
+ */
+internal fun PoTemplate.body() = buildJsonObject {
     put("template_name", JsonPrimitive(name))
     putIfPresent("vendor_id", vendorId)
     putIfPresent("department_id", departmentId)
@@ -107,8 +121,20 @@ private fun PoTemplate.body() = buildJsonObject {
     put("description", JsonPrimitive(description))
     put("currency", JsonPrimitive(currency?.takeIf { it.isNotBlank() } ?: "GBP"))
     putIfPresent("notes", notes)
+    put("company_id", companyId.orJsonNull())
+    put("episode", episode.orJsonNull())
+    put("delivery_address", (deliveryAddress ?: PoAddress()).toJson())
+    put("delivery_address_id", deliveryAddressId.orJsonNull())
+    put("delivery_date", deliveryDate?.let { JsonPrimitive(it) } ?: JsonNull)
+    put("effective_date", effectiveDate?.let { JsonPrimitive(it) } ?: JsonNull)
+    put("vat_treatment", JsonPrimitive(vatTreatment?.takeIf { it.isNotBlank() } ?: "pending"))
+    put("custom_fields", customFields.customFieldsJson())
+    put("attachments", attachments.attachmentsJson())
     put("line_items", buildJsonArray { lines.forEach { add(it.body()) } })
 }
+
+private fun String?.orJsonNull(): JsonElement =
+    this?.trim()?.takeIf { it.isNotEmpty() }?.let { JsonPrimitive(it) } ?: JsonNull
 
 @Serializable
 internal data class PoTemplateDto(
@@ -129,6 +155,18 @@ internal data class PoTemplateDto(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("created_by") val createdBy: String? = null,
     @SerialName("user_id") val userId: String? = null,
+    @SerialName("company_id") val companyId: String? = null,
+    @SerialName("episode") val episode: String? = null,
+    // An object from the form, a JSON string or plain text on older rows —
+    // typed `String` it would fail the decode of the whole list.
+    @SerialName("delivery_address") val deliveryAddress: JsonElement? = null,
+    @SerialName("delivery_address_id") val deliveryAddressId: String? = null,
+    @SerialName("delivery_date") val deliveryDate: String? = null,
+    @SerialName("effective_date") val effectiveDate: String? = null,
+    @SerialName("vat_treatment") val vatTreatment: String? = null,
+    @SerialName("custom_fields") val customFields: JsonElement? = null,
+    // An array, or a JSON string holding one, like `line_items`.
+    @SerialName("attachments") val attachments: JsonElement? = null,
 ) {
     fun toDomain(): PoTemplate? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -147,9 +185,48 @@ internal data class PoTemplateDto(
             lines = lineItems.asLineItems().map { it.toDomain() },
             createdAt = createdAt.toEpochMillisOrNull(),
             createdBy = createdBy ?: userId,
+            companyId = companyId?.takeIf { it.isNotBlank() },
+            episode = episode?.takeIf { it.isNotBlank() },
+            deliveryAddressId = deliveryAddressId?.takeIf { it.isNotBlank() },
+            deliveryAddress = deliveryAddress.asAddress(),
+            deliveryDate = deliveryDate.toEpochMillisOrNull(),
+            effectiveDate = effectiveDate.toEpochMillisOrNull(),
+            vatTreatment = vatTreatment?.takeIf { it.isNotBlank() },
+            customFields = customFields.asEmbeddedArray().asCustomFieldGroups(),
+            attachments = (attachments.asEmbeddedArray() as? JsonArray).orEmpty()
+                .mapNotNull { (it as? JsonObject)?.asAttachment() },
         )
     }
 }
+
+/**
+ * The `delivery_address` object back into its parts. A JSON string holding one
+ * is read too; plain text (an older template) has no parts to recover, so it
+ * becomes the first address line rather than being dropped.
+ */
+internal fun JsonElement?.asAddress(): PoAddress? {
+    val parts = when (this) {
+        is JsonObject -> this
+        is JsonPrimitive -> {
+            val text = contentOrNull?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            runCatching { Json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return PoAddress(line1 = text)
+        }
+
+        else -> return null
+    }
+    return runCatching { PoAddressJson.decodeFromJsonElement(PoAddressDto.serializer(), parts).toDomain() }
+        .getOrNull()
+        ?.takeUnless { it.isEmpty }
+}
+
+/** An array column, or a JSON string holding one — the same tolerance `line_items` needs. */
+internal fun JsonElement?.asEmbeddedArray(): JsonElement? = when (this) {
+    is JsonArray -> this
+    is JsonPrimitive -> contentOrNull?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() }
+    else -> null
+}
+
+private val PoAddressJson = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
 @Serializable
 internal data class PoDeliveryAddressDto(

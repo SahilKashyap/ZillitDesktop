@@ -17,6 +17,8 @@ sealed interface PoPrompt {
         val message: String,
         /** Set when the confirm is about an amendment, which re-opens the approval chain. */
         val destructive: Boolean = false,
+        /** The confirming button's words where "Confirm" would say less than the action does. */
+        val confirmLabel: String? = null,
     ) : PoPrompt
 
     data class WithReason(
@@ -36,6 +38,9 @@ enum class PoConfirmAction {
 
     /** Editing a fully-approved order discards its approvals — asked first. */
     AmendOrder,
+
+    /** Emailing the vendor after a warning: lines not coded, or a second copy of the PO. */
+    SendToVendor,
 }
 
 enum class PoReasonAction {
@@ -49,6 +54,9 @@ enum class PoReasonAction {
      * next month.
      */
     NameTemplate,
+
+    /** Naming the copy an edited template is saved as — the web's "Save As", which leaves the original alone. */
+    SaveTemplateAs,
 }
 
 sealed interface PoEvent {
@@ -158,6 +166,9 @@ sealed interface PoEvent {
 
     /** Asks what to call the template first — the web's own name prompt. */
     data object NameTemplate : PoEvent
+
+    /** An edited template's "Save As": asks for a name, then writes a new template beside the original. */
+    data object SaveTemplateAs : PoEvent
 
     // -- the PO Entry page ----------------------------------------------------
 

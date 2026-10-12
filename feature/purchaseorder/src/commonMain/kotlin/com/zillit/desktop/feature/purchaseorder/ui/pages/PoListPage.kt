@@ -291,7 +291,8 @@ internal fun poColumns(
     rows: List<PurchaseOrder>,
     onEvent: (PoEvent) -> Unit,
 ): List<TableColumn<PurchaseOrder>> = buildList {
-    if (state.viewer.isAccountant) {
+    // The senior's, in the console: an assistant has no selection column (the web's `isAccountant`).
+    if (state.viewer.isConsoleSenior) {
         val selectable = state.selectable(rows).map { it.id }
         add(
             TableColumn(
@@ -461,7 +462,7 @@ internal fun PoStatus.tone(): StatusTone = when (this) {
 @Composable
 internal fun PoBulkBar(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: Modifier = Modifier) {
     val selection = state.selection
-    if (selection.isEmpty() || !state.viewer.isAccountant) return
+    if (selection.isEmpty() || !state.viewer.isConsoleSenior) return
     val selected = state.rows.filter { it.id in selection }
     ZillitSectionCard(
         modifier = modifier.padding(ZillitTheme.spacing.xl),

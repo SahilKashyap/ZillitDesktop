@@ -118,6 +118,17 @@ internal class PoSettingsSource(private val apiClient: ApiClient, config: AppCon
         queryParameters = mapOf("active_only" to "true"),
     ).map { rows -> rows.leaves() }
 
+    /** The whole active chart's codes — what a typed nominal is checked against before it is wrapped. */
+    suspend fun chartCodes(): ZillitResult<Set<String>> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "$hubBase/chart-of-accounts",
+        serializer = ListSerializer(CoaRowDto.serializer()),
+        module = RequestModule.ProjectUser,
+        queryParameters = mapOf("active_only" to "true"),
+    ).map { rows ->
+        rows.filter { it.isActive != false }.mapNotNull { it.code?.trim()?.takeIf(String::isNotEmpty) }.toSet()
+    }
+
     suspend fun assetTags(): ZillitResult<List<String>> = apiClient.request(
         verb = HttpVerb.Get,
         url = "$hubBase/project-settings/asset-tags",

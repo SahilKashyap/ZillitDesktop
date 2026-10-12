@@ -842,7 +842,7 @@ internal fun PoPromptDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    text = str(S.confirm),
+                    text = prompt.confirmLabel ?: str(S.confirm),
                     onClick = { onEvent(PoEvent.ConfirmPrompt) },
                     variant = if (prompt.destructive) ButtonVariant.Danger else ButtonVariant.Primary,
                     size = ButtonSize.Small,

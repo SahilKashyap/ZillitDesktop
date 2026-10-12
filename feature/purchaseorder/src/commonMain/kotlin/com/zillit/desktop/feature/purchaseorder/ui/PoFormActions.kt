@@ -72,7 +72,8 @@ internal class PoFormActions(
             PoEvent.SubmitForm -> submit()
             PoEvent.SaveDraft -> saveDraft()
             is PoEvent.SaveAsTemplate -> saveTemplate(event.name)
-            PoEvent.NameTemplate -> askTemplateName()
+            PoEvent.NameTemplate -> askTemplateName(PoReasonAction.NameTemplate)
+            PoEvent.SaveTemplateAs -> askTemplateName(PoReasonAction.SaveTemplateAs)
             is PoEvent.PickSavedAddress -> pickSavedAddress(event.id)
             else -> Unit
         }
@@ -150,28 +151,20 @@ internal class PoFormActions(
      *
      * [asTemplate] decides which document the save writes: the Templates tab's
      * pencil edits the template itself, its "Use" raises an order from it. The
-     * two are the same screen and the same values, which is why the web passes
-     * a mode rather than building two.
+     * two are the same screen, but not the same restore: the web's editor
+     * (`mapTemplateToFormData`) re-fills the whole header, while its "Use"
+     * (`handleUseTemplate`) carries only the vendor, department, coding,
+     * description, currency, notes and lines.
      */
     private fun openTemplate(id: String, asTemplate: Boolean) {
         val template = vm.ui.templates.firstOrNull { it.id == id } ?: return
         vm.update {
             copy(
-                form = PoFormState(
-                    mode = if (asTemplate) PoFormMode.EditTemplate else PoFormMode.NewOrder,
-                    templateId = template.id.takeIf { asTemplate },
-                    templateName = template.name,
-                    vendorId = template.vendorId,
-                    vendorName = template.vendorName,
-                    description = template.description,
-                    departmentId = template.departmentId ?: viewer.departmentId,
-                    nominalCode = template.nominalCode.orEmpty(),
-                    currency = template.currency ?: defaultCurrency(),
-                    notes = template.notes.orEmpty(),
-                    // A template's lines carry no ids: they are a shape, and
-                    // reusing the stored ids would make the server think it
-                    // already has these lines.
-                    lines = template.lines.map { it.copy(id = null) }.ifEmpty { listOf(blankLine()) },
+                form = template.toForm(
+                    asTemplate = asTemplate,
+                    fallbackDepartmentId = viewer.departmentId,
+                    fallbackCurrency = defaultCurrency(),
+                    savedAddressIds = addresses.map { it.id }.toSet(),
                 ),
             )
         }
@@ -262,7 +255,9 @@ internal class PoFormActions(
 
     private fun submit() {
         val form = vm.ui.form ?: return
-        if (form.isTemplate) {
+        // A new template has nothing to submit; an edited one raises an order
+        // from what is on screen, as the web's "Create & Submit PO" does.
+        if (form.mode == PoFormMode.NewTemplate) {
             saveTemplate(form.templateName)
             return
         }
@@ -355,21 +350,27 @@ internal class PoFormActions(
         }
     }
 
-    /** Asks what to call it, seeded with the order's description. */
-    private fun askTemplateName() {
+    /** Asks what to call it, seeded with the template's name or the order's description. */
+    private fun askTemplateName(action: PoReasonAction) {
         val form = vm.ui.form ?: return
         vm.ask(
             PoPrompt.WithReason(
-                action = PoReasonAction.NameTemplate,
+                action = action,
                 targetId = "",
-                title = str(S.save_as_template),
+                title = if (action == PoReasonAction.SaveTemplateAs) str(S.cs_save_as) else str(S.save_as_template),
                 label = str(S.nda_template_name),
                 reason = form.templateName.ifBlank { form.description.trim() },
             ),
         )
     }
 
-    fun saveTemplate(name: String) {
+    /**
+     * Writes the form as a template.
+     *
+     * [asNew] is the web's "Save As": the same values under a new name, posted
+     * as a second template rather than patched over the one being edited.
+     */
+    fun saveTemplate(name: String, asNew: Boolean = false) {
         val form = vm.ui.form ?: return
         if (name.isBlank()) {
             vm.update { copy(form = form.copy(problems = listOf(str(S.ah_template_name_required)))) }
@@ -377,18 +378,7 @@ internal class PoFormActions(
         }
         vm.update { copy(form = form.copy(saving = true, problems = emptyList())) }
         vm.launchWork {
-            val template = PoTemplate(
-                id = form.templateId.orEmpty(),
-                name = name.trim(),
-                vendorId = form.vendorId,
-                vendorName = form.vendorName,
-                departmentId = form.departmentId,
-                nominalCode = form.nominalCode.takeIf { it.isNotBlank() },
-                description = form.description.trim(),
-                currency = form.currency,
-                notes = form.notes.takeIf { it.isNotBlank() },
-                lines = form.lines.filter { it.description.isNotBlank() },
-            )
+            val template = form.toTemplate(name.trim(), asNew, vm.ui.formLayout)
             when (val answer = repository.saveTemplate(template)) {
                 is ZillitResult.Success -> {
                     vm.update { copy(form = null, notice = str(S.ah_template_saved_msg)) }

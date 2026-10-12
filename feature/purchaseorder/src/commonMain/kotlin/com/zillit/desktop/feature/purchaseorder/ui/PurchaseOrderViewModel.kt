@@ -159,6 +159,7 @@ class PurchaseOrderViewModel(
         launch { loadTeam() }
         launch { loadProjectSettings() }
         launch { loadNominals() }
+        launch { loadChartAndTags() }
         launch { loadTrackingSets() }
         launch { loadPoSettings() }
         loadWorkflow()
@@ -225,6 +226,10 @@ class PurchaseOrderViewModel(
                 staleSince = null,
                 templates = emptyList(),
                 addresses = emptyList(),
+                // Another production's chart: a code wrapped against the old
+                // one would be created as "new" in the new one.
+                chartCodes = emptySet(),
+                tags = emptyList(),
             )
         }
         start()
@@ -437,7 +442,7 @@ class PurchaseOrderViewModel(
             is PoEvent.RemoveLine, is PoEvent.SplitLine, is PoEvent.SplitLineByPeriod,
             is PoEvent.SetLineAmount,
             PoEvent.AttachFile, is PoEvent.RemoveAttachment, PoEvent.CloseForm, PoEvent.SubmitForm,
-            PoEvent.SaveDraft, is PoEvent.SaveAsTemplate, PoEvent.NameTemplate,
+            PoEvent.SaveDraft, is PoEvent.SaveAsTemplate, PoEvent.NameTemplate, PoEvent.SaveTemplateAs,
             is PoEvent.PickSavedAddress,
             -> formActions.onEvent(event)
 
@@ -619,6 +624,17 @@ class PurchaseOrderViewModel(
         repository.nominalCodes().getOrNull()?.let { rows -> setState { copy(nominals = rows) } }
     }
 
+    /**
+     * What the processing grid needs beside the nominals: the whole chart, to
+     * tell a known code from a typed one at save, and the Account Tags its
+     * Tags picker offers. A failure leaves them empty — with no chart nothing
+     * is wrapped, and a picker with no tags offers none.
+     */
+    private suspend fun loadChartAndTags() {
+        repository.chartCodes().getOrNull()?.let { codes -> setState { copy(chartCodes = codes) } }
+        repository.assetTags().getOrNull()?.let { rows -> setState { copy(tags = rows) } }
+    }
+
     /** The Layers picker's sets — loaded once, like the nominal codes it sits beside on a line. */
     private suspend fun loadTrackingSets() {
         repository.trackingSets().getOrNull()?.let { rows -> setState { copy(trackingSets = rows) } }
@@ -789,6 +805,8 @@ class PurchaseOrderViewModel(
                 PoConfirmAction.Delete -> order != null && state.mayDelete(order)
                 PoConfirmAction.RemoveRule -> state.viewer.isSeniorAccountant
                 PoConfirmAction.AmendOrder -> mayAmend()
+                PoConfirmAction.SendToVendor -> order != null &&
+                    PoAccess.canSendVendorEmail(order, state.viewer, allowResend = state.entry?.orderId == order.id)
                 else -> true
             }
 
@@ -834,6 +852,8 @@ class PurchaseOrderViewModel(
                 PoConfirmAction.RemoveRule -> settingsActions.deleteRule(prompt.targetId)
                 // Confirmed: the amendment opens the form on the order.
                 PoConfirmAction.AmendOrder -> formActions.openOrder(prompt.targetId, PoFormMode.EditOrder)
+                // The warning was the question; the send itself does not save again.
+                PoConfirmAction.SendToVendor -> entryActions.sendConfirmed(prompt.targetId)
             }
 
             is PoPrompt.WithReason -> resolveAnswer(prompt)
@@ -851,7 +871,8 @@ class PurchaseOrderViewModel(
             sendEffect(
                 PoEffect.Failed(
                     when (prompt.action) {
-                        PoReasonAction.NameTemplate -> str(S.ah_template_name_required)
+                        PoReasonAction.NameTemplate, PoReasonAction.SaveTemplateAs ->
+                            str(S.ah_template_name_required)
                         PoReasonAction.Reject -> str(S.desktop_a_reason_is_required)
                     },
                 ),
@@ -867,6 +888,7 @@ class PurchaseOrderViewModel(
                 setState { copy(detail = null) }
             }
             PoReasonAction.NameTemplate -> formActions.saveTemplate(answer)
+            PoReasonAction.SaveTemplateAs -> formActions.saveTemplate(answer, asNew = true)
         }
     }
 

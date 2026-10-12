@@ -7,9 +7,11 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
+import com.zillit.desktop.feature.purchaseorder.domain.PoVendorEmailWarning
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
+import com.zillit.desktop.feature.purchaseorder.domain.vendorEmailWarning
 
 /**
  * The accountant's side of an order: opening one, emailing it, and the four
@@ -144,10 +146,45 @@ internal class PoEntryActions(
         // From the processing page the page is saved first (the web's "Saves
         // FIRST" decision): the vendor must receive what the accountant is
         // looking at, and a refused save — unbalanced lines — sends nothing.
+        // The warning is then asked of the order read back from that save.
         if (vm.ui.entry?.orderId == id) {
-            vm.processActions.save { saved -> deliver(saved.id) }
+            vm.processActions.save { saved -> confirmOrDeliver(saved) }
             return
         }
+        // A list row is slim — no lines — and an order with none reads as fully
+        // coded, which would silence the warning; the open detail has them, and
+        // anything else is re-read.
+        vm.launchWork {
+            val saved = order.takeIf { vm.ui.detail?.id == id } ?: repository.order(id).getOrNull() ?: order
+            confirmOrDeliver(saved)
+        }
+    }
+
+    /**
+     * Raises the web's `vendorEmailConfirm` when the order gives it something
+     * to say, and sends straight away when it does not. The prompt's confirm
+     * comes back through [sendConfirmed], which sends without saving again.
+     */
+    private suspend fun confirmOrDeliver(order: PurchaseOrder) {
+        val warning = order.vendorEmailWarning()
+        if (warning == null) {
+            deliver(order.id)
+            return
+        }
+        val uncoded = warning == PoVendorEmailWarning.Uncoded
+        vm.ask(
+            PoPrompt.Confirm(
+                action = PoConfirmAction.SendToVendor,
+                targetId = order.id,
+                title = str(if (uncoded) S.desktop_po_uncoded_send_title else S.desktop_po_resend_title),
+                message = str(if (uncoded) S.desktop_po_uncoded_send_message else S.desktop_po_resend_message),
+                confirmLabel = str(if (uncoded) S.dm_nda_send_anyway else S.desktop_po_resend_confirm),
+            ),
+        )
+    }
+
+    /** The send behind a confirmed warning. */
+    fun sendConfirmed(id: String) {
         vm.launchWork { deliver(id) }
     }
 
@@ -392,9 +429,9 @@ internal class PoEntryActions(
     private fun applyBulkDate() {
         val dialog = vm.ui.bulkDate ?: return
         // Re-checked here too: the bulk bar that opens this dialog is gated on
-        // isAccountant (PoBulkBar), same as reassign()'s own re-check above —
+        // isConsoleSenior (PoBulkBar), same as reassign()'s own re-check above —
         // the dialog has no auto-dismiss, so the handler must not trust it.
-        if (!vm.ui.viewer.isAccountant) {
+        if (!vm.ui.viewer.isConsoleSenior) {
             vm.update { copy(bulkDate = null) }
             vm.fail(str(S.desktop_po_no_rights_on_project))
             return

@@ -61,6 +61,10 @@ data class PoUiState(
     val countries: List<PoCountry> = emptyList(),
     /** The chart's postable leaves — the form's Nominal Code typeahead. */
     val nominals: List<PoNominal> = emptyList(),
+    /** Every active code on the chart — what a typed nominal is wrapped against on save. */
+    val chartCodes: Set<String> = emptySet(),
+    /** The production's Account Tags — the processing grid's Tags picker. */
+    val tags: List<String> = emptyList(),
     /** The Layers picker's sets — an accountant's line-level analysis codes. */
     val trackingSets: List<TrackingSet> = emptyList(),
     /** The accounts team — who a reassignment may hand an order to. */
