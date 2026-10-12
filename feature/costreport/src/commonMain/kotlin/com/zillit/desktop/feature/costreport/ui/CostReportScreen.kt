@@ -50,7 +50,12 @@ fun CostReportScreen(
                 CrHeaderBar(
                     tabs = listOf(
                         CrHeaderTab(CostReportTab.Current.id, CostReportTab.Current.label, ZillitIcons.Monitor),
-                        CrHeaderTab(CostReportTab.Posted.id, CostReportTab.Posted.label, ZillitIcons.Clock),
+                        CrHeaderTab(
+                            CostReportTab.Posted.id,
+                            CostReportTab.Posted.label,
+                            ZillitIcons.Clock,
+                            unread = state.postedTotal,
+                        ),
                     ),
                     activeId = state.tab.id,
                     onTab = { id -> onEvent(CostReportEvent.SelectTab(CostReportTab.entries.first { it.id == id })) },

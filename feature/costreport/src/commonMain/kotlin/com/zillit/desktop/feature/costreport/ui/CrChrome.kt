@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -66,6 +67,8 @@ internal data class CrHeaderTab(
     val label: String,
     val icon: ImageVector? = null,
     val badge: String? = null,
+    /** Unread items — drawn as the app's count badge, not the worksheet's "N over" pill. */
+    val unread: Int = 0,
 )
 
 /**
@@ -192,6 +195,7 @@ private fun HeaderTab(tab: CrHeaderTab, active: Boolean, onClick: () -> Unit) {
                 },
                 maxLines = 1,
             )
+            ZillitBadge(count = tab.unread)
             tab.badge?.let { badge ->
                 ZillitText(
                     text = badge.uppercase(),

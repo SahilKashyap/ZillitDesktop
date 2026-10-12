@@ -147,6 +147,10 @@ data class CostReportUiState(
      * button turns into a pill until pressed.
      */
     val sourceStale: Boolean = false,
+    /** Unread Posted CRs in all — the tab chip (`CostReportToolModule.jsx:68-80`). */
+    val postedTotal: Int = 0,
+    /** Unread per posted snapshot, by its id (the ledger's `level_3`) — the timeline rows' red counts. */
+    val postedUnread: Map<String, Int> = emptyMap(),
 ) {
     /** The project list first, the preset catalogue when the project has none, then the static table. */
     fun symbolFor(code: String?): String {

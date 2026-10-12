@@ -8,6 +8,7 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:badges"))
             implementation(project(":core:socket"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
