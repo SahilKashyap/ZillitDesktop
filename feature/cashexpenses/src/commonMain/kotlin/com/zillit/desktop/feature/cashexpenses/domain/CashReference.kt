@@ -2,6 +2,11 @@ package com.zillit.desktop.feature.cashexpenses.domain
 
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 // The production's reference data this module reads but does not own — its
 // currencies, departments and chart of accounts, all Account Hub documents —
@@ -90,6 +95,36 @@ data class CashTaxType(
     /** "VAT · 20%", the web's option label. */
     val optionLabel: String
         get() = rate?.let { "$label · ${if (it == it.toLong().toDouble()) it.toLong() else it}%" } ?: label
+}
+
+/** One code in a [CashTrackingSet]. */
+data class CashTrackingNode(val id: String, val code: String)
+
+/**
+ * A Production Setup tracking set — a "layer" a line can be coded to, such as
+ * a location or an episode. The Layers column shows only the active sets, and
+ * only on a production that has some (`ClaimCard.jsx` `showTracking`).
+ */
+data class CashTrackingSet(val id: String, val active: Boolean = true, val nodes: List<CashTrackingNode> = emptyList())
+
+/**
+ * The codes a line carries in the production's sets, in set order.
+ *
+ * `tracking_codes` is `{set_id: code}` — an object or a string holding one.
+ * Rows written before the switch to codes hold the node's id instead, so a
+ * pick resolves by code or id (the picker's `resolvePicked`); a pick that
+ * matches no node of its set is dropped, and so is a set that is gone.
+ */
+fun List<CashTrackingSet>.layersOf(trackingCodes: JsonElement?): List<String> {
+    val picks = when (trackingCodes) {
+        is JsonObject -> trackingCodes
+        is JsonPrimitive -> runCatching { Json.parseToJsonElement(trackingCodes.content) as? JsonObject }.getOrNull()
+        else -> null
+    } ?: return emptyList()
+    return filter { it.active }.mapNotNull { set ->
+        val picked = (picks[set.id] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.trim().orEmpty()
+        if (picked.isEmpty()) null else set.nodes.firstOrNull { it.code == picked || it.id == picked }?.code
+    }
 }
 
 /** The identifiers whose tax is recoverable — `makeRecoverablePredicate`. */
@@ -247,4 +282,6 @@ class CashReferenceSources(
     val taxTypes: suspend () -> List<CashTaxType> = { emptyList() },
     /** Picks and stores a receipt; null refuses the attach. */
     val uploader: CashAttachmentUploader? = null,
+    /** Production Setup's tracking sets with their codes, for the receipt lines' Layers column. */
+    val trackingSets: suspend () -> List<CashTrackingSet> = { emptyList() },
 )

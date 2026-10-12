@@ -265,7 +265,7 @@ private fun CashBody(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         CashDestination.ReceiptsHistory, CashDestination.OutOfPocketHistory ->
             ReceiptsHistoryPage(state, onEvent)
 
-        CashDestination.PaymentRouting -> PaymentRoutingPage(state)
+        CashDestination.PaymentRouting -> PaymentRoutingPage(state, onEvent)
         CashDestination.CashReconciliation -> ReconciliationPage(state, onEvent)
         CashDestination.Settings -> CashSettingsPage(state, onEvent)
         // -- floats parity --

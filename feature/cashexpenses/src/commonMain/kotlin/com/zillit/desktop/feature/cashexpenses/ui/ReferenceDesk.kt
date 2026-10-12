@@ -34,6 +34,10 @@ internal class ReferenceDesk(private val host: CashHost, private val sources: Ca
             val loaded = sources.taxTypes()
             host.update { copy(taxTypes = loaded) }
         }
+        host.work {
+            val loaded = sources.trackingSets()
+            host.update { copy(trackingSets = loaded) }
+        }
     }
 
     /**

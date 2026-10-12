@@ -137,6 +137,7 @@ internal data class FloatDto(
             companyName = companyName?.takeIf { it.isNotBlank() },
             episode = episode?.takeIf { it.isNotBlank() },
             createdBy = createdBy?.takeIf { it.isNotBlank() },
+            issuedReported = issuedFloat != null,
         )
     }
 }
@@ -154,6 +155,8 @@ internal data class BatchDto(
     @SerialName("expense_type") val expenseType: String? = null,
     @SerialName("claim_count") val claimCount: Int? = null,
     @SerialName("total_gross") val totalGross: String? = null,
+    @SerialName("total_net") val totalNet: String? = null,
+    @SerialName("total_vat") val totalVat: String? = null,
     @SerialName("reimbursement_amount") val reimbursementAmount: String? = null,
     @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
@@ -196,6 +199,8 @@ internal data class BatchDto(
             expenseType = ExpenseType.from(expenseType),
             claimCount = claimCount ?: claims?.size ?: 0,
             totalGross = totalGross.toAmount(),
+            totalNet = totalNet.toAmountOrNull(),
+            totalVat = totalVat.toAmount(),
             reimbursementAmount = reimbursementAmount.toAmount(),
             currency = currency ?: transactionCurrency,
             settlementType = settlementType,
@@ -259,7 +264,7 @@ internal data class ClaimDto(
     @SerialName("receipt_url") val receiptUrl: String? = null,
     @SerialName("line_items") val lineItems: JsonElement? = null,
     @SerialName("is_verified") val isVerified: JsonElement? = null,
-    /** Strings or `{flag}` objects, in an array or a string holding one. */
+    /** Strings or `{flag, title, threshold_value…}` objects, in an array or a string holding one. */
     @SerialName("processing_flags") val processingFlags: JsonElement? = null,
     /** The uploaded file object, or a string holding one — see [readAttachment]. */
     @SerialName("attachment") val attachment: JsonElement? = null,
@@ -288,7 +293,7 @@ internal data class ClaimDto(
             receiptUrl = receiptUrl,
             lineItems = lineItems.readLineItems(),
             isVerified = isVerified.isTrue(),
-            processingFlags = processingFlags.readFlags(),
+            processingRules = processingFlags.readRules(),
             rawLines = lineItems.readRawLines(),
             attachment = attachment.readAttachment(),
             deductionAmount = deductionAmount.toAmount(),

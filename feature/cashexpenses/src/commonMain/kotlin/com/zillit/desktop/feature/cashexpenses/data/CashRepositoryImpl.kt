@@ -37,6 +37,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.MyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.NewFloatRequest
 import com.zillit.desktop.feature.cashexpenses.domain.OutOfPocketOverview
+import com.zillit.desktop.feature.cashexpenses.domain.RequesterDeal
 import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.PostBatchRequest
@@ -79,6 +80,7 @@ class CashRepositoryImpl(
 ) : CashRepository {
 
     private val base = "${config.baseUrl(ZillitService.CashExpenses)}/api/v2/cash-expenses"
+    private val dealUrl = "${config.baseUrl(ZillitService.DealMemo)}/api/v2/deal-memo/deal"
 
     /** The account hub and cost-report routes, and the exports — see [CashHubSource]. */
     private val hub = CashHubSource(apiClient, config, binaryPost, base)
@@ -103,6 +105,13 @@ class CashRepositoryImpl(
                 ),
             )
         }
+
+    override suspend fun myActiveDeal(): ZillitResult<RequesterDeal?> = apiClient.envelope(
+        verb = HttpVerb.Get,
+        url = dealUrl,
+        module = RequestModule.ProjectUser,
+        queryParameters = mapOf("status" to "active"),
+    ).map { envelope -> (envelope.data as? JsonObject).toRequesterDeal() }
 
     // -- floats ------------------------------------------------------------
 

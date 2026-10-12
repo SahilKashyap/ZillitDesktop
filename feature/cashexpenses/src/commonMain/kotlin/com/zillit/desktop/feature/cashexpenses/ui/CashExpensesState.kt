@@ -28,6 +28,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartments
 import com.zillit.desktop.feature.cashexpenses.domain.CashNominals
 import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
+import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingSet
 import com.zillit.desktop.feature.cashexpenses.domain.recoverableIds
 import com.zillit.desktop.feature.cashexpenses.domain.FloatDetails
 import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
@@ -138,6 +139,8 @@ data class CashUiState(
     val chartAccounts: List<CashAccount>? = null,
     /** Production Setup's tax types, for the coding editor; empty until read, or when the production has none. */
     val taxTypes: List<CashTaxType> = emptyList(),
+    /** Production Setup's tracking sets, for the Layers column; empty when the production has none. */
+    val trackingSets: List<CashTrackingSet> = emptyList(),
     /** The float whose detail dialog is open, if any. */
     val floatDetail: FloatDetailState? = null,
     /** The Submit form's receipt row whose attachment is uploading. */

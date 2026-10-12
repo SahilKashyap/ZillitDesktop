@@ -194,6 +194,7 @@ class CashExpensesViewModel(
                 chartAccounts = null,
                 departments = emptyList(),
                 taxTypes = emptyList(),
+                trackingSets = emptyList(),
                 currencies = CashCurrencies(),
                 floatDetail = null,
             )
@@ -305,6 +306,7 @@ class CashExpensesViewModel(
             CashEvent.CloseFloatDetail -> floatDesk.closeDetail()
             is CashEvent.SaveFloatBsCode -> floatDesk.saveBsCode(event.floatId, event.bsCode)
             CashEvent.OpenApprovalLevels -> sendEffect(CashEffect.Navigate(CASH_APPROVERS_ROUTE))
+            CashEvent.OpenPayrollRun -> sendEffect(CashEffect.Navigate(PAYROLL_RUN_ROUTE))
             CashEvent.LoadChartAccounts -> referenceDesk.loadChart()
             CashEvent.ClearNotice -> setState { copy(notice = null) }
 

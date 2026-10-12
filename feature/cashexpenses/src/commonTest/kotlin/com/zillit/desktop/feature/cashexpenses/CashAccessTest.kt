@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
 import com.zillit.desktop.feature.cashexpenses.domain.Lifecycle
+import com.zillit.desktop.feature.cashexpenses.domain.ProcessingRule
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -221,7 +222,7 @@ class CashAccessTest {
         id = "c1", batchId = "b1", description = "Tape", supplier = null, category = null, costCode = "5010",
         codedDescription = null, episode = null, receiptDate = null, grossAmount = 10.0, netAmount = 10.0,
         vatAmount = 0.0, taxRate = null, taxType = null, settlementType = null, status = BatchStatus.ReadyToPost,
-        receiptUrl = null, processingFlags = flags,
+        receiptUrl = null, processingRules = flags.map { ProcessingRule(flag = it) },
     )
 
     @Test

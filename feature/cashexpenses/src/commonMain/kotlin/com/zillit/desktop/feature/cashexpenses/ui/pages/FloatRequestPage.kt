@@ -50,7 +50,7 @@ import com.zillit.desktop.feature.cashexpenses.ui.FloatRequestDraft
 import com.zillit.desktop.feature.cashexpenses.ui.FloatStatusPill
 import com.zillit.desktop.feature.cashexpenses.ui.LocalCashPeople
 import com.zillit.desktop.feature.cashexpenses.ui.date
-import com.zillit.desktop.feature.cashexpenses.ui.floatCap
+import com.zillit.desktop.feature.cashexpenses.ui.floatCapGuard
 import com.zillit.desktop.feature.cashexpenses.ui.floatCapApplies
 import com.zillit.desktop.feature.cashexpenses.ui.floatRequestFields
 import com.zillit.desktop.feature.cashexpenses.ui.floatValue
@@ -89,7 +89,12 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     WhatHappensNext()
                 }
             }
-            FloatForm(state, onEvent, Modifier.weight(1f))
+            val sent = state.crew.sentFloat
+            if (sent != null && !accountant) {
+                FloatSentView(state, sent, Modifier.weight(1f))
+            } else {
+                FloatForm(state, onEvent, Modifier.weight(1f))
+            }
         }
     }
 }
@@ -417,16 +422,20 @@ private fun helperFor(state: CashUiState, field: FormField): String? = when (fie
     else -> null
 }
 
-/** The live cap under the amount — `useRequestCapGuard.hint`, for what this client can judge. */
+/** The live cap under the amount — `useRequestCapGuard.hint`, with the on-behalf case spelled out. */
 @Composable
 private fun capHint(state: CashUiState): String? {
-    val cap = state.floatCap?.takeIf { it.enabled && !it.isWeekly && it.maxAmount > 0 } ?: return null
+    val guard = state.floatCapGuard
+    if (guard.amount == null) return null
+    // On behalf: say so rather than quoting the accountant's own cap.
     if (!state.floatCapApplies) return str(S.desktop_pc_requester_cap_applies)
-    val currency = state.floatDraft.currency.ifBlank { state.currencies.default }
-    if (!CrewRequestCap.enforceable(cap, currency, state.currencies.default)) {
-        return str(S.desktop_pc_cap_no_rate, currency)
+    if (!guard.enforceable) return str(S.desktop_pc_cap_no_rate, guard.unrated.orEmpty())
+    val shown = state.formatAggregate(guard.capInDefault)
+    return when (guard.source) {
+        CrewRequestCap.Source.Weekly -> str(S.desktop_ce_cards_cap_hint_weekly, shown)
+        CrewRequestCap.Source.Fallback -> str(S.desktop_ce_cards_cap_hint_fallback, shown)
+        CrewRequestCap.Source.Max -> str(S.desktop_pc_cap_hint, shown)
     }
-    return str(S.desktop_pc_cap_hint, state.currencies.formatAggregate(cap.maxAmount))
 }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod") // One control per system field.

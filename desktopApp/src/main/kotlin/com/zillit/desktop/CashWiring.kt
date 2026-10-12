@@ -21,6 +21,8 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrency
 import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
 import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
+import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingNode
+import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingSet
 import com.zillit.desktop.feature.cashexpenses.domain.CashReferenceSources
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.ui.CashBadges
@@ -69,6 +71,7 @@ internal fun AppGraph.Ready.cashReferenceSources() = CashReferenceSources(
     chartAccounts = { cashChartAccounts() },
     taxTypes = { cashTaxTypes() },
     uploader = cashAttachmentUploader(),
+    trackingSets = { cashTrackingSets() },
 )
 
 /**
@@ -84,6 +87,19 @@ internal suspend fun AppGraph.Ready.cashTaxTypes(): List<CashTaxType> =
             rate = it.value.removeSuffix("%").trim().toDoubleOrNull(),
             recoverable = it.isRecoverable,
             country = it.country,
+        )
+    }
+
+/**
+ * Production Setup's tracking sets, for the receipt lines' Layers column. A failed read answers none,
+ * and the column stays hidden, as it does on a production with no sets.
+ */
+internal suspend fun AppGraph.Ready.cashTrackingSets(): List<CashTrackingSet> =
+    accountHubRepository.trackingSets().getOrNull().orEmpty().map { set ->
+        CashTrackingSet(
+            id = set.id,
+            active = set.isActive,
+            nodes = set.nodes.map { CashTrackingNode(id = it.id, code = it.code) },
         )
     }
 

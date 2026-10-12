@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses.data
 
 import com.zillit.desktop.core.common.CurrencyCodeSerializer
+import com.zillit.desktop.core.common.currencyCode
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
@@ -10,10 +11,12 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashAssignmentRule
 import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.FundRequest
+import com.zillit.desktop.feature.cashexpenses.domain.ProcessingRule
 import com.zillit.desktop.feature.cashexpenses.domain.QueryMessage
 import com.zillit.desktop.feature.cashexpenses.domain.QueryThread
 import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
 import com.zillit.desktop.feature.cashexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cashexpenses.domain.RequesterDeal
 import com.zillit.desktop.feature.cashexpenses.domain.TierApproval
 import com.zillit.desktop.feature.cashexpenses.domain.TierRule
 import kotlinx.serialization.SerialName
@@ -91,13 +94,27 @@ internal fun JsonElement?.readTierConfigs(): List<ApprovalTierConfig> =
 /** `true` in either spelling the wire uses; anything else is false. */
 internal fun JsonElement?.isTrue(): Boolean = (this as? JsonPrimitive)?.contentOrNull == "true"
 
-/** `["review"]` or `[{flag: "review"}]`, in an array or a string holding one. */
-internal fun JsonElement?.readFlags(): List<String> = readArray().mapNotNull { entry ->
+/**
+ * `["review"]` or `[{flag: "review", title, threshold_value, threshold_type, description}]`, in an
+ * array or a string holding one. The bare string is a match with nothing else to say.
+ */
+internal fun JsonElement?.readRules(): List<ProcessingRule> = readArray().mapNotNull { entry ->
     when (entry) {
-        is JsonPrimitive -> entry.contentOrNull
-        is JsonObject -> (entry["flag"] as? JsonPrimitive)?.contentOrNull
+        is JsonPrimitive -> entry.contentOrNull?.takeIf { it.isNotBlank() }?.let { ProcessingRule(flag = it) }
+        is JsonObject -> {
+            fun text(key: String) = (entry[key] as? JsonPrimitive)?.contentOrNull?.trim()
+            text("flag")?.takeIf { it.isNotBlank() }?.let { flag ->
+                ProcessingRule(
+                    flag = flag,
+                    title = text("title").orEmpty(),
+                    thresholdValue = text("threshold_value").toAmountOrNull(),
+                    thresholdType = text("threshold_type")?.takeIf { it.isNotBlank() },
+                    description = text("description").orEmpty(),
+                )
+            }
+        }
         else -> null
-    }?.takeIf { it.isNotBlank() }
+    }
 }
 
 /**
@@ -205,6 +222,20 @@ internal fun List<com.zillit.desktop.feature.cashexpenses.domain.Denomination>.t
 }
 
 // -- settings sections ---------------------------------------------------------
+
+/**
+ * What a cap reads off a deal (`resolveRequestCap`): `rates.weekly.rate`, in
+ * `rates.pay_currency` or else `rates.contract_currency`. Null with no deal.
+ */
+internal fun JsonObject?.toRequesterDeal(): RequesterDeal? {
+    val deal = this ?: return null
+    val rates = deal["rates"] as? JsonObject
+    val weekly = ((rates?.get("weekly") as? JsonObject)?.get("rate") as? JsonPrimitive)?.contentOrNull.toAmountOrNull()
+    return RequesterDeal(
+        weeklyRate = weekly?.takeIf { it.isFinite() } ?: 0.0,
+        currency = rates?.get("pay_currency").currencyCode() ?: rates?.get("contract_currency").currencyCode(),
+    )
+}
 
 internal fun JsonObject?.toRequestCap(): RequestCap {
     val body = this ?: return RequestCap()

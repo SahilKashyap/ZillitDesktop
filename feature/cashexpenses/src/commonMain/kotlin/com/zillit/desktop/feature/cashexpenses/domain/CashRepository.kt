@@ -23,6 +23,14 @@ interface CashRepository {
 
     suspend fun metadata(): ZillitResult<CashMetadata>
 
+    /**
+     * The requester's own active deal — `GET /deal-memo/deal?status=active`,
+     * self-scoped by the auth headers — which a weekly-salary request cap
+     * multiplies (`dealMemoApi.getMyDeal("active")`). Null when they have none.
+     * A default of none keeps a fake from having to answer it.
+     */
+    suspend fun myActiveDeal(): ZillitResult<RequesterDeal?> = ZillitResult.Success(null)
+
     // -- floats ------------------------------------------------------------
 
     suspend fun myFloats(): ZillitResult<List<CashFloat>>
