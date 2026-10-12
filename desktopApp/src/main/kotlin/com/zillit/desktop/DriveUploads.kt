@@ -209,7 +209,15 @@ internal class MultipartDriveUploader(
         }
 
         onProgress(0, session.parts.size)
-        val completed = sendParts(source, session, file.mimeType, onProgress)
+        // Which headers the server signed into the part URLs — names only, no
+        // secret: a header sent that the URL signed differently is a 403 S3
+        // answers by closing the connection, which reads as a broken pipe.
+        ZillitLog.d(TAG) {
+            val signed = session.parts.firstOrNull()?.url
+                ?.substringAfter("X-Amz-SignedHeaders=", "")?.substringBefore('&')
+            "upload ${session.parts.size} part(s); part URLs sign: ${signed?.ifBlank { "?" } ?: "?"}"
+        }
+        val completed = sendParts(source, session, onProgress)
             ?: return abort(session.uploadId, file.name)
 
         return repository.completeUpload(
@@ -230,14 +238,13 @@ internal class MultipartDriveUploader(
     private suspend fun sendParts(
         source: File,
         session: UploadSession,
-        contentType: String,
         onProgress: (uploaded: Int, total: Int) -> Unit,
     ): List<UploadPart>? = try {
         val completed = mutableListOf<UploadPart>()
         RandomAccessFile(source, "r").use { handle ->
             for (part in session.parts) {
                 val bytes = handle.readPart(session.plan.rangeOf(part.partNumber))
-                val etag = putPart(part.url, bytes, contentType) ?: return null
+                val etag = putPart(part.url, bytes) ?: return null
                 completed += part.copy(etag = etag)
                 onProgress(completed.size, session.parts.size)
             }
@@ -262,11 +269,20 @@ internal class MultipartDriveUploader(
      * part's back, and S3 rejects an assembly whose ETags do not match what it
      * stored. Quotes are stripped because S3 returns it quoted and the server's
      * validator compares the bare value.
+     *
+     * Every part goes as `application/octet-stream`, whatever the file is —
+     * exactly what the web sends (`useFileUpload.js`). A part's type is not the
+     * object's (that was fixed when the session opened). On 2026-10-12 a `.zip`
+     * sent as `application/zip` failed: S3 closed the connection five seconds
+     * into the first part (a broken pipe), and the same file sent as
+     * `application/octet-stream` uploaded. Why is not established — the part
+     * URLs sign only `host`, so the type is not in the signature, and only one
+     * failure was seen — but this is the web's request, and the web's works.
      */
-    private suspend fun putPart(url: String, bytes: ByteArray, contentType: String): String? {
+    private suspend fun putPart(url: String, bytes: ByteArray): String? {
         val response: HttpResponse = httpClient.put(url) {
-            header(HttpHeaders.ContentType, contentType)
-            setBody(streamedBody(bytes, contentType))
+            header(HttpHeaders.ContentType, PART_CONTENT_TYPE)
+            setBody(streamedBody(bytes, PART_CONTENT_TYPE))
         }
         if (!response.status.isSuccess()) {
             ZillitLog.w(TAG) { "S3 refused a part: ${response.status.value}" }
@@ -284,6 +300,9 @@ internal class MultipartDriveUploader(
 
     private companion object {
         const val TAG = "Drive"
+
+        /** What every part is sent as — the web's own choice; see [putPart]. */
+        const val PART_CONTENT_TYPE = "application/octet-stream"
     }
 }
 
