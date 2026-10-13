@@ -576,24 +576,36 @@
      * and on again, which is what finally produced an event the chain agreed
      * with.
      *
-     * Only the CHANGES are reported, never the state at consume time: a
-     * freshly consumed track is always muted until its first packet, and
-     * announcing that would blank a tile that is about to light up.
+     * Only `unmute` is reported, and this is the whole point: the track can
+     * prove a camera is ON and can never show that one is off. `muted` means
+     * "no RTP right now", which on a crowded call is the normal state of a
+     * camera nobody stopped — a simulcast layer switch, a keyframe gap, or the
+     * SFU's bandwidth estimator forwarding no layer at all while five other
+     * videos share the downlink. Sent as a camera-off it hid live faces behind
+     * their initials for half the call, each tile flapping every few seconds
+     * and frozen on its last frame in between (reported 2026-10-13, five
+     * peers, gaps of eight seconds and more — which is why no grace period
+     * saves this: starvation outlasts any of them).
+     *
+     * A camera that really stops comes back through signalling instead —
+     * `producerPaused` in the offer, `consumerPaused`, `consumerClosed`,
+     * `peerClosed` — which is where it was always meant to come from. The
+     * price is a lost `consumerPaused`: their last frame then sits in the tile
+     * until the producer closes. That is the bug this was written for, in its
+     * milder direction, and worth it to stop hiding cameras that are on.
      */
     function watchTrack(consumer, peerId) {
         var track = consumer.track;
         if (!track || consumer.kind !== 'video') { return; }
-        var say = function () {
-            emit('ms-track', {
-                consumerId: consumer.id,
-                peerId: peerId,
-                kind: consumer.kind,
-                muted: !!track.muted,
-            });
-        };
         try {
-            track.addEventListener('mute', say);
-            track.addEventListener('unmute', say);
+            track.addEventListener('unmute', function () {
+                emit('ms-track', {
+                    consumerId: consumer.id,
+                    peerId: peerId,
+                    kind: consumer.kind,
+                    muted: false,
+                });
+            });
         } catch (e) {
             warn('watch-track', e);
         }

@@ -345,6 +345,37 @@ class MediasoupSessionTest {
     }
 
     /**
+     * Reported live 2026-10-13: remote video "not streaming" on Line 1 with
+     * everybody's camera on. The tracks were arriving and decoding at 720p;
+     * each tile flapped between the face and the initials disc every few
+     * seconds, frozen in between. The SFU forwards no layer at all to a
+     * consumer its bandwidth estimator has starved — five incoming videos on
+     * one downlink — and the track reports that as `muted`, which this read as
+     * a camera-off. Camera-off is signalling's to report, and only its.
+     */
+    @Test
+    fun `a stalled track never hides a camera nobody switched off`() = runTest(StandardTestDispatcher()) {
+        val events = mutableListOf<CallEngineEvent>()
+        val session = MediasoupSession(
+            backgroundScope, ProtooPeer(backgroundScope, { }), FakeSignalling(), FakePage(),
+            turn = { TurnCredentials(emptyList(), 600) }, emit = { events += it },
+        )
+
+        session.onPageConsumer("cam-1", "them:phone", "video", share = false)
+        session.onPageTrackState("cam-1", "them:phone", "video", muted = false)
+        runCurrent()
+        events.clear()
+
+        session.onPageTrackState("cam-1", "them:phone", "video", muted = true)
+        runCurrent()
+
+        assertTrue(
+            events.filterIsInstance<CallEngineEvent.PeerVideoMuted>().isEmpty(),
+            "the packets stopping is not a camera going off: $events",
+        )
+    }
+
+    /**
      * The other direction, and the web's rule 1: the offer says the producer
      * is paused, so the tile must not draw them camera-on over a track that
      * carries nothing (`data.producerPaused`, mediasoupCallEngine.js).

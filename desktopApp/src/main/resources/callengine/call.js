@@ -982,7 +982,11 @@
             // A camera turned off is a muted (LiveKit) or paused (mediasoup)
             // track, and either still shows its last frame: keep it out and
             // the tile shows their picture. A shared screen still mounts.
-            if (cell.model.camOff && !entry.share) { report.push('camera off ' + entry.peerId); return; }
+            if (cell.model.camOff && !entry.share) {
+                park(entry);
+                report.push('camera off ' + entry.peerId);
+                return;
+            }
             const held = chosen.get(cell);
             // Later entries win ties: the map iterates oldest first, and the
             // oldest was once a dead track from the previous call, mounted over
@@ -1060,6 +1064,23 @@
     }
 
     /**
+     * Takes a video the stage is not showing out of the page.
+     *
+     * A camera-off entry used to be skipped where it stood, which left its
+     * element parented to the cell the last `render` threw away: invisible,
+     * paused, and still being decoded for nobody. It also read as "at face" in
+     * the log — a tile that looked mounted and was not. Kept rather than
+     * released: `entry.element` is re-appended and resumed the moment their
+     * camera comes back, and rebuilding it would restart the stream.
+     */
+    function park(entry) {
+        const video = entry.element;
+        if (!video || !video.parentNode) { return; }
+        video.parentNode.removeChild(video);
+        video.pause();
+    }
+
+    /**
      * Drops every remote track the page still holds. The end of a call: the
      * lines release their own as they go, but Line 1's teardown never told
      * the page, and its dead videos sat in the next call's tiles for the same
@@ -1081,9 +1102,21 @@
         focusPick = null;
     }
 
+    /**
+     * One video's state for the log.
+     *
+     * `document.contains` and not just `parentNode`: a `render` replaces the
+     * stage wholesale, so an element left behind is still parented — to a cell
+     * that is no longer in the page. Reported by its class name it read
+     * "at face", which is how a whole call's worth of orphaned, paused videos
+     * looked mounted in the log of 2026-10-13.
+     */
     function videoState(who, video) {
+        const where = !video.parentNode ? 'nowhere'
+            : document.contains(video) ? video.parentNode.className
+            : 'detached ' + video.parentNode.className;
         return who + '=' + video.videoWidth + 'x' + video.videoHeight + ' rs' + video.readyState +
-            (video.paused ? ' paused' : ' playing') + ' at ' + (video.parentNode ? video.parentNode.className : 'nowhere');
+            (video.paused ? ' paused' : ' playing') + ' at ' + where;
     }
 
     window.zillitCall = {
