@@ -10,10 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,12 +116,15 @@ interface VideoEngine {
 val LocalVideoEngine = staticCompositionLocalOf<VideoEngine?> { null }
 
 /**
- * The window's full-screen switch, as the viewer sees it.
+ * The window's own full-screen switch.
  *
  * The viewer cannot reach the OS window it is drawn in — it is composed deep
- * inside a tool — so the host provides this. Null hides the button rather than
- * offering a dead one, which is this app's rule for every affordance it cannot
- * honour.
+ * inside a tool — so the host provides this. It is *not* the viewer's full
+ * screen button on its own: filling the display with the app, while the clip
+ * stays the size of the pane it was playing in, is what that button used to do
+ * and is the bug this seam now only assists with. [ZillitVideoStage] is the
+ * other half, and the half that matters. Null where the host has no window to
+ * offer — a clip then fills its window rather than the display.
  */
 interface FullScreen {
     val isFullScreen: Boolean
@@ -125,6 +132,61 @@ interface FullScreen {
 }
 
 val LocalFullScreen = staticCompositionLocalOf<FullScreen?> { null }
+
+/**
+ * Where a clip goes when it is made full screen: one slot per window, over
+ * everything else in it.
+ *
+ * A viewer is composed inside a pane, inside a tool, inside a tab strip, and
+ * nothing it can do to its own layout escapes that — which is why the button
+ * used to reach for the OS window instead and left the picture exactly as
+ * small as it was. The player is moved *out* of the pane and into this slot,
+ * which the host mounts over the whole window ([ZillitVideoStage]), and back
+ * when it is collapsed.
+ *
+ * Moved, not re-created: the content put here is [androidx.compose.runtime.movableContentOf],
+ * so the same platform surface is re-parented with the clip still playing.
+ * Re-creating it would restart a stream — and for the shared JavaFX surface,
+ * tearing one down while the other end is mounting it is the ordering bug that
+ * once left the picture black.
+ */
+class VideoStage {
+    /** The player, while one is full screen. Null the rest of the time. */
+    internal var showing by mutableStateOf<(@Composable () -> Unit)?>(null)
+}
+
+/** Null where no host mounted one — the button is not drawn there. */
+val LocalVideoStage = staticCompositionLocalOf<VideoStage?> { null }
+
+/**
+ * Mounts one window's full-screen slot around [content].
+ *
+ * Every window that can show a clip wraps its content in this, beside the
+ * player itself: the slot has to be an ancestor of every viewer in the window
+ * and a sibling of nothing else, or "full screen" would again mean "as large
+ * as some pane".
+ */
+@Composable
+fun ZillitVideoStage(content: @Composable () -> Unit) {
+    val stage = remember { VideoStage() }
+    CompositionLocalProvider(LocalVideoStage provides stage) {
+        Box(Modifier.fillMaxSize()) {
+            content()
+            stage.showing?.let { player ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                        // Nothing under the layer answers a press meant for it —
+                        // the viewer beneath closes on a click outside its picture.
+                        .swallowPresses(),
+                ) {
+                    player()
+                }
+            }
+        }
+    }
+}
 
 /**
  * A clip, as a viewer shows one: the picture, the controls under it, and words
@@ -179,20 +241,98 @@ private fun Playing(engine: VideoEngine, url: String, onOpenOutside: (() -> Unit
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            // The picture only once there is one. The host's surface is a
-            // platform component that paints over anything Compose draws in its
-            // bounds, so a spinner on top of it would simply not be there — it
-            // takes the surface's place instead, and the surface arrives with
-            // the first frame.
-            if (state.started) {
-                engine.Picture(playback, Modifier.fillMaxSize())
-            } else {
-                Starting()
+    val slot = remember { PlayerSlot() }
+    slot.stage = LocalVideoStage.current
+    slot.window = LocalFullScreen.current
+
+    // One player, composed either here in the pane or in the window's
+    // full-screen slot. `movableContentOf` is what makes that a *move* rather
+    // than a fresh start: the same platform surface is re-parented and the clip
+    // plays straight through the switch, which is the whole point of it.
+    val player = remember(playback) {
+        movableContentOf {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    // The picture only once there is one. The host's surface is a
+                    // platform component that paints over anything Compose draws in its
+                    // bounds, so a spinner on top of it would simply not be there — it
+                    // takes the surface's place instead, and the surface arrives with
+                    // the first frame.
+                    if (state.started) {
+                        engine.Picture(playback, Modifier.fillMaxSize())
+                    } else {
+                        Starting()
+                    }
+                }
+                VideoControls(
+                    state = state,
+                    playback = playback,
+                    fullScreen = slot.isFullScreen,
+                    // No slot in this window, no button: the rule this app keeps
+                    // for every affordance it cannot honour.
+                    onToggleFullScreen = if (slot.stage == null) null else slot::toggle,
+                )
             }
         }
-        VideoControls(state, playback)
+    }
+    slot.player = player
+
+    // Dismissed while full screen — the viewer underneath can be closed from
+    // the keyboard — would otherwise leave a dead player filling the window.
+    DisposableEffect(slot) { onDispose { slot.collapse() } }
+
+    // Here only while it is not in the slot: in both places at once is the one
+    // thing movable content must never be.
+    if (!slot.isFullScreen) player()
+}
+
+/**
+ * The player, the window it is in, and the switch between the two places it
+ * can be drawn.
+ *
+ * A holder rather than three locals because the switch is *inside* the thing
+ * it moves — it is a button in the transport bar — so it cannot name it
+ * directly. Everything it reads to decide is state the composition is already
+ * watching, so the pane and the slot recompose together, in one pass, which is
+ * what makes the hand-over a move.
+ */
+private class PlayerSlot {
+    var stage: VideoStage? = null
+    var window: FullScreen? = null
+    var player: (@Composable () -> Unit)? = null
+
+    /** Whether we were the one to put the window full screen, and so may put it back. */
+    private var tookWindow = false
+
+    val isFullScreen: Boolean
+        get() = player != null && stage?.showing === player
+
+    /** Into the slot, or back out of it; the OS window follows either way. */
+    fun toggle() {
+        if (isFullScreen) collapse() else expand()
+    }
+
+    private fun expand() {
+        val stage = stage ?: return
+        stage.showing = player ?: return
+        // Full screen has to mean the display, not merely this window — a
+        // window at half the screen would otherwise call half the screen full.
+        val window = window ?: return
+        if (!window.isFullScreen) {
+            window.toggle()
+            tookWindow = true
+        }
+    }
+
+    /** Idempotent: also the way out when the viewer is closed from under it. */
+    fun collapse() {
+        if (isFullScreen) {
+            stage?.showing = null
+        }
+        // Only a window we put full screen goes back; one the user had that way
+        // already is theirs.
+        if (tookWindow && window?.isFullScreen == true) window?.toggle()
+        tookWindow = false
     }
 }
 
@@ -221,7 +361,12 @@ private fun Starting() {
  * scrub the same way.
  */
 @Composable
-private fun VideoControls(state: VideoPlaybackState, playback: VideoPlayback) {
+private fun VideoControls(
+    state: VideoPlaybackState,
+    playback: VideoPlayback,
+    fullScreen: Boolean,
+    onToggleFullScreen: (() -> Unit)?,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,13 +402,13 @@ private fun VideoControls(state: VideoPlaybackState, playback: VideoPlayback) {
             onClick = playback::toggleMute,
             tint = Color.White,
         )
-        LocalFullScreen.current?.let { screen ->
+        onToggleFullScreen?.let { toggle ->
             ZillitIconButton(
-                icon = if (screen.isFullScreen) ZillitIcons.Collapse else ZillitIcons.Expand,
+                icon = if (fullScreen) ZillitIcons.Collapse else ZillitIcons.Expand,
                 contentDescription = str(
-                    if (screen.isFullScreen) S.desktop_br_exit_full_screen else S.desktop_video_full_screen,
+                    if (fullScreen) S.desktop_br_exit_full_screen else S.desktop_video_full_screen,
                 ),
-                onClick = screen::toggle,
+                onClick = toggle,
                 tint = Color.White,
             )
         }

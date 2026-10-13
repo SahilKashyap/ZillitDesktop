@@ -17,6 +17,7 @@ import com.zillit.desktop.core.designsystem.component.LocalVideoEngine
 import com.zillit.desktop.core.designsystem.component.VideoEngine
 import com.zillit.desktop.core.designsystem.component.VideoPlayback
 import com.zillit.desktop.core.designsystem.component.VideoPlaybackState
+import com.zillit.desktop.core.designsystem.component.ZillitVideoStage
 import com.zillit.desktop.core.media.Mp4Rotation
 import javafx.animation.PauseTransition
 import javafx.application.Platform
@@ -125,10 +126,19 @@ internal fun FullScreenMount(state: WindowState, content: @Composable () -> Unit
     CompositionLocalProvider(LocalFullScreen provides toggle, content = content)
 }
 
-/** Puts the player in reach of every viewer in [content]. */
+/**
+ * Puts the player in reach of every viewer in [content], and mounts this
+ * window's full-screen slot around it.
+ *
+ * The two travel together because a viewer that can play a clip must also be
+ * able to make it full screen, and the slot has to sit *outside* everything
+ * else in the window for that to mean anything.
+ */
 @Composable
 internal fun VideoPlayerMount(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalVideoEngine provides ZillitVideoEngine, content = content)
+    CompositionLocalProvider(LocalVideoEngine provides ZillitVideoEngine) {
+        ZillitVideoStage(content)
+    }
 }
 
 /**

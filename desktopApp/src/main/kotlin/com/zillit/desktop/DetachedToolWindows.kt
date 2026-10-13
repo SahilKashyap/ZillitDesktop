@@ -74,6 +74,9 @@ fun DetachedToolWindows(
                 ) {
                     ZillitTheme(darkTheme = darkTheme) {
                         AvatarFaces(graph) {
+                            // A clip opened in a torn-off tool goes full screen
+                            // on *this* window, which is the one it is in.
+                            FullScreenMount(windowState) {
                             VideoPlayerMount {
                                 PreviewPostersMount { LocationPickerMount(graph) {
                                     Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -86,6 +89,7 @@ fun DetachedToolWindows(
                                         }
                                     }
                                 } }
+                            }
                             }
                         }
                     }
