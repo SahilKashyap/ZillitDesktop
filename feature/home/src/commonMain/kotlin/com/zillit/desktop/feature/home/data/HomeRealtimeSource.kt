@@ -72,10 +72,14 @@ class HomeRealtimeSource(
 
         return when (message.event) {
             ZillitSocketEvents.Home.MessageAdded ->
-                readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeAdded(unitId, it) }
+                readNotice(body, decryptBody)?.let {
+                    HomeRealtimeEvent.NoticeAdded(unitId, it, body.toString())
+                }
 
             ZillitSocketEvents.Home.MessageEdited ->
-                readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeEdited(unitId, it) }
+                readNotice(body, decryptBody)?.let {
+                    HomeRealtimeEvent.NoticeEdited(unitId, it, body.toString())
+                }
 
             ZillitSocketEvents.Home.MessageDeleted ->
                 body.stringField("_id")?.let { HomeRealtimeEvent.NoticeDeleted(unitId, it) }

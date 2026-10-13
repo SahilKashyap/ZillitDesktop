@@ -882,6 +882,11 @@ class HomeFeedViewModel(
 
             else -> {
                 setState { copy(notices = notices.applyRealtime(event, selectedUnitId)) }
+                currentState.selectedUnitId?.let { open -> boards[open] = currentState.notices }
+                // The offline copy keeps up with the screen. Without this a
+                // post that arrived while somebody watched is missing from the
+                // next cold open, and worse, a *deleted* one comes back.
+                launch { fileRealtime(event) }
                 // A post landing on the open board is read as it lands —
                 // the web emits on `home_message_added` while visible.
                 val added = event as? HomeRealtimeEvent.NoticeAdded
@@ -889,6 +894,22 @@ class HomeFeedViewModel(
                     launch { onBoardViewed(added.unitId) }
                 }
             }
+        }
+    }
+
+    /** One socket delta, written through to wherever the board is kept. */
+    private suspend fun fileRealtime(event: HomeRealtimeEvent) {
+        when (event) {
+            is HomeRealtimeEvent.NoticeAdded ->
+                repository.rememberNotice(event.unitId, event.notice, event.wire)
+
+            is HomeRealtimeEvent.NoticeEdited ->
+                repository.rememberNotice(event.unitId, event.notice, event.wire)
+
+            is HomeRealtimeEvent.NoticeDeleted ->
+                repository.forgetNotice(event.unitId, event.noticeId)
+
+            else -> Unit
         }
     }
 

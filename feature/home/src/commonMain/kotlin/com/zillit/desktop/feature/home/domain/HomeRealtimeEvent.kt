@@ -8,8 +8,25 @@ package com.zillit.desktop.feature.home.domain
  * `home:message:added` means.
  */
 sealed interface HomeRealtimeEvent {
-    data class NoticeAdded(val unitId: String?, val notice: Notice) : HomeRealtimeEvent
-    data class NoticeEdited(val unitId: String?, val notice: Notice) : HomeRealtimeEvent
+    /**
+     * [wire] is the server's own row for this post, carried alongside the
+     * parsed [notice] so the board's offline copy can be brought up to date
+     * without a second shape to serialise into — see [NoticeWire]. Null when
+     * the producer has no row to hand, which only costs the post its place on
+     * disk until the board's next read.
+     */
+    data class NoticeAdded(
+        val unitId: String?,
+        val notice: Notice,
+        val wire: String? = null,
+    ) : HomeRealtimeEvent
+
+    data class NoticeEdited(
+        val unitId: String?,
+        val notice: Notice,
+        val wire: String? = null,
+    ) : HomeRealtimeEvent
+
     data class NoticeDeleted(val unitId: String?, val noticeId: String) : HomeRealtimeEvent
 
     /** Units or rights changed; the tab strip has to be refetched. */

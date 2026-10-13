@@ -216,8 +216,12 @@ private fun BoardRealtimeEvents.postEvent(
 ): HomeRealtimeEvent? {
     val unitId = body.stringField("unit_id")
     return when (message.event) {
-        in added -> readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeAdded(unitId, it) }
-        in edited -> readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeEdited(unitId, it) }
+        in added -> readNotice(body, decryptBody)?.let {
+            HomeRealtimeEvent.NoticeAdded(unitId, it, body.toString())
+        }
+        in edited -> readNotice(body, decryptBody)?.let {
+            HomeRealtimeEvent.NoticeEdited(unitId, it, body.toString())
+        }
         in deleted -> body.stringField("_id")?.let { HomeRealtimeEvent.NoticeDeleted(unitId, it) }
         else -> null
     }

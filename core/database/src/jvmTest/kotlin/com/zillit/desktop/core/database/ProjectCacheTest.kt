@@ -32,9 +32,6 @@ class ProjectCacheTest {
     private fun tool(id: String, view: Boolean = true) =
         ToolSnapshot(id, null, null, null, true, view, false, false, isTool = true, onHome = false)
 
-    private fun notice(id: String, at: Long) =
-        NoticeSnapshot(id, "u1", "body", "Author", null, at, false, false, 0, 0)
-
     @Test
     fun `tools round-trip in server order`() {
         // Order is the production's configured order; sorting alphabetically
@@ -87,30 +84,12 @@ class ProjectCacheTest {
                 isAdmin = true,
             ),
         )
-        cache.saveNotices(projectA, "u1", listOf(notice("n1", 10)))
 
         cache.clearProject(projectA)
 
         assertTrue(cache.tools(projectA).isEmpty())
         assertNull(cache.profile(projectA))
-        assertTrue(cache.notices(projectA, "u1").isEmpty())
         assertEquals(1, cache.tools(projectB).size, "the other project was cleared too")
-    }
-
-    @Test
-    fun `notices come back oldest first`() {
-        cache.saveNotices(projectA, "u1", listOf(notice("c", 300), notice("a", 100), notice("b", 200)))
-
-        assertEquals(listOf("a", "b", "c"), cache.notices(projectA, "u1").map { it.noticeId })
-    }
-
-    @Test
-    fun `saving a unit's notices does not disturb another unit`() {
-        cache.saveNotices(projectA, "u1", listOf(notice("n1", 10)))
-        cache.saveNotices(projectA, "u2", listOf(notice("n2", 20).copy(unitId = "u2")))
-
-        assertEquals(1, cache.notices(projectA, "u1").size)
-        assertEquals(1, cache.notices(projectA, "u2").size)
     }
 
     @Test

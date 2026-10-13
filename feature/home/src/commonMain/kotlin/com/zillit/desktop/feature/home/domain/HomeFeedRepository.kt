@@ -27,6 +27,23 @@ interface HomeFeedRepository {
     suspend fun cachedNotices(unitId: String): List<Notice>? = null
 
     /**
+     * Files a post that arrived over the socket, so the offline copy keeps up
+     * with what is on screen.
+     *
+     * [wire] is the server's own row when the event carried one; without it
+     * there is nothing to file and the call is a no-op — the post reaches disk
+     * on the board's next read instead.
+     */
+    suspend fun rememberNotice(unitId: String?, notice: Notice, wire: String?) = Unit
+
+    /**
+     * Forgets a deleted post. Without this a post deleted while somebody
+     * watched comes back from disk on the next cold open, until the board's
+     * first read of the session replaces it.
+     */
+    suspend fun forgetNotice(unitId: String?, noticeId: String) = Unit
+
+    /**
      * The page behind [beforeMillis] (a [Notice.pageStamp]) — [loadNotices]
      * without filing it as the board's newest page in the offline cache.
      */

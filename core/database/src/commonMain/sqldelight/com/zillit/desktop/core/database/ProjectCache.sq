@@ -5,10 +5,11 @@
 -- and friends as serialised strings in `SharedPref`, which has no TTL — so they
 -- go stale silently and invalidation means deleting keys by hand.
 --
--- Everything here is scoped by `projectId` and dropped on project switch. The
--- file is SQLCipher-encrypted, which is what makes it acceptable to store
--- decrypted notice bodies: they are already on this disk in the OS keychain's
--- reach, and the alternative is re-decrypting the whole board on every open.
+-- Everything here is scoped by `projectId` and dropped on project switch.
+--
+-- The notice boards used to be here too, as a `cachedNotice` nothing ever
+-- wrote to; they live in `NoticeCache.sq` now, which says why its rows keep
+-- the server's own JSON and leave the post bodies encrypted.
 
 CREATE TABLE cachedProfile (
     userId     TEXT NOT NULL PRIMARY KEY,
@@ -103,24 +104,6 @@ CREATE TABLE cachedTool (
     PRIMARY KEY (projectId, identifier, unitId)
 );
 
--- Notices are stored decrypted; see the file header for why that is acceptable.
-CREATE TABLE cachedNotice (
-    noticeId        TEXT NOT NULL PRIMARY KEY,
-    projectId       TEXT NOT NULL,
-    unitId          TEXT NOT NULL,
-    body            TEXT NOT NULL,
-    authorName      TEXT NOT NULL,
-    authorId        TEXT,
-    createdAt       INTEGER NOT NULL,
-    isEdited        INTEGER NOT NULL DEFAULT 0,
-    isPinned        INTEGER NOT NULL DEFAULT 0,
-    attachmentCount INTEGER NOT NULL DEFAULT 0,
-    commentCount    INTEGER NOT NULL DEFAULT 0,
-    cachedAt        INTEGER NOT NULL
-);
-
-CREATE INDEX cachedNotice_unit ON cachedNotice(projectId, unitId, createdAt);
-
 -- profile ------------------------------------------------------------------
 upsertProfile:
 INSERT OR REPLACE INTO cachedProfile VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -155,15 +138,6 @@ SELECT * FROM cachedTool WHERE projectId = ? ORDER BY ordinal;
 deleteTools:
 DELETE FROM cachedTool WHERE projectId = ?;
 
--- notices ------------------------------------------------------------------
-upsertNotice:
-INSERT OR REPLACE INTO cachedNotice VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-selectNotices:
-SELECT * FROM cachedNotice WHERE projectId = ? AND unitId = ? ORDER BY createdAt;
-
-deleteNoticesForUnit:
-DELETE FROM cachedNotice WHERE projectId = ? AND unitId = ?;
 
 -- wipe ---------------------------------------------------------------------
 -- Called on project switch and sign-out. One statement per table rather than a
@@ -174,8 +148,6 @@ DELETE FROM cachedProject WHERE projectId = ?;
 deleteProfileData:
 DELETE FROM cachedProfile WHERE projectId = ?;
 
-deleteNoticeData:
-DELETE FROM cachedNotice WHERE projectId = ?;
 
 -- sign-out: everything, every production ---------------------------------
 deleteAllProfiles:
@@ -190,5 +162,3 @@ DELETE FROM cachedProjectUser;
 deleteAllTools:
 DELETE FROM cachedTool;
 
-deleteAllNotices:
-DELETE FROM cachedNotice;
