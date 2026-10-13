@@ -110,7 +110,7 @@ internal fun CalendarScreen(
                             .fillMaxHeight()
                             .background(ZillitTheme.colors.surface),
                     ) {
-                        DayColumn(state, state.focusedDay, onEvent)
+                        DayColumn(state, state.focusedDay, onEvent, onJoinCall = onJoinCall)
                     }
                 }
             }
@@ -721,7 +721,12 @@ private fun EventChip(
 
 /** The selected day, in full. */
 @Composable
-private fun DayColumn(state: CalendarUiState, date: LocalDate, onEvent: (CalendarEvent2Event) -> Unit) {
+private fun DayColumn(
+    state: CalendarUiState,
+    date: LocalDate,
+    onEvent: (CalendarEvent2Event) -> Unit,
+    onJoinCall: ((CalendarEvent) -> Unit)? = null,
+) {
     val colors = ZillitTheme.colors
     val events = state.eventsOn(date)
     val isToday = date == state.today
@@ -742,7 +747,12 @@ private fun DayColumn(state: CalendarUiState, date: LocalDate, onEvent: (Calenda
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             items(events, key = CalendarEvent::id) { event ->
-                EventRow(event, state) { onEvent(CalendarEvent2Event.OpenDetail(event)) }
+                EventRow(
+                    event = event,
+                    state = state,
+                    onJoinCall = onJoinCall,
+                    onOpen = { onEvent(CalendarEvent2Event.OpenDetail(event)) },
+                )
             }
         }
     }
@@ -832,11 +842,20 @@ private fun EmptyDay(onEvent: (CalendarEvent2Event) -> Unit) {
 }
 
 @Composable
-private fun EventRow(event: CalendarEvent, state: CalendarUiState, onOpen: () -> Unit) {
+private fun EventRow(
+    event: CalendarEvent,
+    state: CalendarUiState,
+    onOpen: () -> Unit,
+    onJoinCall: ((CalendarEvent) -> Unit)? = null,
+) {
     val colors = ZillitTheme.colors
     val tint = event.tint()
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    // The same clock the popover's button is gated on — the start of today,
+    // read off the state rather than a clock in the composable.
+    val joinable = onJoinCall != null &&
+        event.canJoinCall(state.today.startOfDayMillis(state.zone))
 
     Row(
         modifier = Modifier
@@ -850,6 +869,7 @@ private fun EventRow(event: CalendarEvent, state: CalendarUiState, onOpen: () ->
                 shape = ZillitTheme.shapes.large,
             )
             .clickable(interactionSource = interaction, indication = null, onClick = onOpen),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // The event's own colour down the leading edge.
         Box(Modifier.width(ROW_STRIPE).fillMaxHeight().background(tint))
@@ -869,7 +889,9 @@ private fun EventRow(event: CalendarEvent, state: CalendarUiState, onOpen: () ->
                     color = colors.textSecondary,
                     modifier = Modifier.weight(1f),
                 )
-                if (event.hasCall) {
+                // The button below already says there is a call to join; the
+                // icon is for the events that only mention one.
+                if (event.hasCall && !joinable) {
                     ZillitIcon(icon = ZillitIcons.Monitor, tint = colors.textMuted, size = ROW_ICON)
                 }
             }
@@ -880,6 +902,19 @@ private fun EventRow(event: CalendarEvent, state: CalendarUiState, onOpen: () ->
                 maxLines = 2,
             )
             event.location?.takeIf { it.isNotBlank() }?.let { EventLocation(it) }
+        }
+
+        // The same door as the popover's, without having to open the popover
+        // first — the agenda is where people look when a call is starting.
+        if (joinable) {
+            ZillitButton(
+                text = str(S.join_call),
+                onClick = { onJoinCall(event) },
+                variant = ButtonVariant.Primary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Phone,
+                modifier = Modifier.padding(end = ZillitTheme.spacing.md),
+            )
         }
     }
 }
