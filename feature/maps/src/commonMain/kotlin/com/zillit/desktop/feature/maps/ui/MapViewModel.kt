@@ -199,6 +199,7 @@ class MapViewModel(
         when (event) {
             MapEvent.Toolbar.Back -> sendEffect(MapEffect.Leave)
             MapEvent.Toolbar.FitAll -> fitAll()
+            MapEvent.Toolbar.MyLocation -> goToMyLocation()
             MapEvent.Toolbar.ToggleSearch -> setState {
                 if (search != null) copy(search = null) else copy(search = SearchState(), filterOpen = false)
             }
@@ -241,6 +242,30 @@ class MapViewModel(
     }
 
     /** "Fit All" — every pin the filter shows; one pin settles at street zoom. */
+    /**
+     * The crosshair: put the camera where this machine is.
+     *
+     * Camera only — no pin is dropped and nothing is selected. The map tool's
+     * pins are the production's locations, and a marker for the person looking
+     * at the screen would read as one more of those.
+     *
+     * The web's map has no such control (its only "use my current location" is
+     * the Directions pickup field, `MapView.jsx:1898`); it is here because a
+     * map that can find you should be able to take you back.
+     */
+    private fun goToMyLocation() {
+        launch {
+            val here = positionFinder.current()
+            if (here == null) {
+                store.notice(str(S.desktop_map_no_current_location), NoticeTone.Error)
+                return@launch
+            }
+            // The zoom CityController starts an un-citied map at: close enough
+            // to place a town, honest about a fix that came off the network.
+            canvasClient.panTo(here, MY_LOCATION_ZOOM)
+        }
+    }
+
     private fun fitAll() {
         val points = currentState.filteredLocations.mapNotNull { it.point }
         if (points.isEmpty()) {
@@ -405,6 +430,9 @@ class MapViewModel(
     private companion object {
         /** The web's zoom on selecting a city. */
         const val CITY_ZOOM = 13
+
+        /** `CityController.HERE_ZOOM` — the same meaning, so the same number. */
+        const val MY_LOCATION_ZOOM = 12
 
         /** The web's zoom on a search result. */
         const val SEARCH_ZOOM = 16

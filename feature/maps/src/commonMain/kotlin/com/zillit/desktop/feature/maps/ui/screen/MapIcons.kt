@@ -43,6 +43,21 @@ internal object MapIcons {
         circle(12f, 12f, 2f)
     }
 
+    /**
+     * A crosshair — "where am I", on the toolbar.
+     *
+     * Not [Target], which the zone pill already owns: three concentric rings
+     * next to a zone mean a zone, and the two controls sit on the same bar.
+     */
+    val Locate: ImageVector = stroked("Locate") {
+        circle(12f, 12f, 7f)
+        moveTo(12f, 1f); lineTo(12f, 4f)
+        moveTo(12f, 20f); lineTo(12f, 23f)
+        moveTo(1f, 12f); lineTo(4f, 12f)
+        moveTo(20f, 12f); lineTo(23f, 12f)
+        circle(12f, 12f, 1f)
+    }
+
     val List: ImageVector = stroked("List") {
         moveTo(8f, 6f); lineTo(21f, 6f)
         moveTo(8f, 12f); lineTo(21f, 12f)

@@ -331,8 +331,19 @@ private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
         label = if (draft.callType?.needsLocation == true) str(S.desktop_cal_location_required) else str(S.location),
         placeholder = str(S.desktop_cal_where_to_meet),
         errorText = form.errors.messageFor(EventFieldError.LocationMissing),
+        // The event's own place, when it has one. Without this the picker gets
+        // nothing and now opens on the user's own position — one click from
+        // overwriting the address of an event being edited.
+        initial = draft.pickedLocation(),
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/** What the draft already holds as a place to reopen the map on, or null. */
+private fun EventDraft.pickedLocation(): PickedLocation? {
+    val lat = locationLat ?: return null
+    val lng = locationLng ?: return null
+    return PickedLocation(name = location, address = location, lat = lat, lng = lng)
 }
 
 /**

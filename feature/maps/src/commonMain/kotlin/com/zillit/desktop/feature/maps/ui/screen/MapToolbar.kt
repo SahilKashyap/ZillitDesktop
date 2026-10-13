@@ -121,6 +121,8 @@ internal fun MapToolbar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
 @Composable
 private fun ControlPills(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     ToolbarPill(str(S.desktop_map_fit_all), ZillitIcons.Maximize, onClick = { onEvent(MapEvent.Toolbar.FitAll) })
+    // Beside Fit all: the two controls that only move the camera.
+    ToolbarPill(str(S.my_location), MapIcons.Locate, onClick = { onEvent(MapEvent.Toolbar.MyLocation) })
     ToolbarPill(
         str(S.search),
         ZillitIcons.Search,

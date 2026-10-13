@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -887,35 +888,7 @@ private fun EventRow(
         // The event's own colour down the leading edge.
         Box(Modifier.width(ROW_STRIPE).fillMaxHeight().background(tint))
 
-        Column(
-            modifier = Modifier.weight(1f).padding(ZillitTheme.spacing.md),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                ZillitIcon(icon = ZillitIcons.Clock, tint = tint, size = ROW_ICON)
-                ZillitText(
-                    text = event.timeLabel(state.zone),
-                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = colors.textSecondary,
-                    modifier = Modifier.weight(1f),
-                )
-                // The button below already says there is a call to join; the
-                // icon is for the events that only mention one.
-                if (event.hasCall && !joinable) {
-                    ZillitIcon(icon = ZillitIcons.Monitor, tint = colors.textMuted, size = ROW_ICON)
-                }
-            }
-            ZillitText(
-                text = event.title,
-                style = ZillitTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = colors.textPrimary,
-                maxLines = 2,
-            )
-            event.location?.takeIf { it.isNotBlank() }?.let { EventLocation(it) }
-        }
+        EventRowDetails(event, state, joinable)
 
         // The same door as the popover's, without having to open the popover
         // first — the agenda is where people look when a call is starting.
@@ -929,6 +902,47 @@ private fun EventRow(
                 modifier = Modifier.padding(end = ZillitTheme.spacing.md),
             )
         }
+    }
+}
+
+/**
+ * The middle of an event row: its time, its title, and where it is.
+ *
+ * A `RowScope` extension because the column it draws takes `weight(1f)` from
+ * the row above — a plain composable would drop that modifier and the row
+ * would lay out wrong.
+ */
+@Composable
+private fun RowScope.EventRowDetails(event: CalendarEvent, state: CalendarUiState, joinable: Boolean) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = Modifier.weight(1f).padding(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitIcon(icon = ZillitIcons.Clock, tint = event.tint(), size = ROW_ICON)
+            ZillitText(
+                text = event.timeLabel(state.zone),
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.textSecondary,
+                modifier = Modifier.weight(1f),
+            )
+            // The button beside this row already says there is a call to join;
+            // the icon is for the events that only mention one.
+            if (event.hasCall && !joinable) {
+                ZillitIcon(icon = ZillitIcons.Monitor, tint = colors.textMuted, size = ROW_ICON)
+            }
+        }
+        ZillitText(
+            text = event.title,
+            style = ZillitTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textPrimary,
+            maxLines = 2,
+        )
+        event.location?.takeIf { it.isNotBlank() }?.let { EventLocation(it) }
     }
 }
 

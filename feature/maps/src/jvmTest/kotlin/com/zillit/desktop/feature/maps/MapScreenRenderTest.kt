@@ -84,6 +84,7 @@ class MapScreenRenderTest {
             "Mumbai",
             "4 locations",
             "Fit All",
+            "My Location",
             "Search",
             "Filter",
             "Pin Location",
@@ -93,8 +94,10 @@ class MapScreenRenderTest {
         )
 
         click("Fit All")
+        click("My Location")
         click("Pin Location")
         assertTrue(MapEvent.Toolbar.FitAll in events, events.toString())
+        assertTrue(MapEvent.Toolbar.MyLocation in events, events.toString())
         assertTrue(MapEvent.Toolbar.TogglePinMode in events, events.toString())
     }
 

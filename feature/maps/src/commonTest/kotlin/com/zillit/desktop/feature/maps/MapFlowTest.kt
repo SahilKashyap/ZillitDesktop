@@ -624,6 +624,38 @@ class MapFlowTest {
         assertEquals(51.5, tool.canvas.lastCameraLat())
     }
 
+    @Test
+    fun `the crosshair takes the camera back to this machine, and says so when it cannot`() =
+        runTest(dispatcher) {
+            val repo = FakeMapRepository(
+                cityList = mutableListOf(mumbai),
+                locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)),
+            )
+            val locator = object : MapLocator {
+                override suspend fun locate() = LatLng(51.5, -0.12)
+            }
+            val tool = open(Tool(repo, locator = locator))
+            // A city opened, so the camera is on it rather than on the machine.
+            send(tool, MapEvent.Toolbar.MyLocation)
+            assertEquals(51.5, tool.canvas.lastCameraLat())
+
+            // Nothing is picked and no pin is dropped: the camera moved, that is all.
+            assertEquals(0, tool.canvas.scripts.count { "setPin" in it })
+        }
+
+    @Test
+    fun `the crosshair reports a position nobody could find`() = runTest(dispatcher) {
+        val locator = object : MapLocator {
+            override suspend fun locate(): LatLng? = null
+        }
+        val tool = open(Tool(FakeMapRepository(cityList = mutableListOf(mumbai)), locator = locator))
+
+        send(tool, MapEvent.Toolbar.MyLocation)
+
+        val notice = tool.effects.filterIsInstance<MapEffect.Notice>().last()
+        assertEquals(NoticeTone.Error, notice.tone)
+    }
+
     // Finding and sharing ----------------------------------------------------------------------
 
     @Test

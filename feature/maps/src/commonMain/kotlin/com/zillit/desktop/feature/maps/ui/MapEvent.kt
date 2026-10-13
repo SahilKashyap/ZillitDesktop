@@ -12,6 +12,7 @@ sealed interface MapEvent {
     sealed interface Toolbar : MapEvent {
         data object Back : Toolbar
         data object FitAll : Toolbar
+        data object MyLocation : Toolbar
         data object ToggleSearch : Toolbar
         data object ToggleFilter : Toolbar
         data object TogglePinMode : Toolbar
