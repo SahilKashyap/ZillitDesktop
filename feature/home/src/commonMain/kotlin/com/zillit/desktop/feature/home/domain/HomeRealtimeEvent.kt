@@ -64,7 +64,7 @@ fun List<Notice>.applyRealtime(
             val incoming = event.notice
             // Match on id **or** local id: our own post arrives back carrying the
             // `unique_id` we sent, while the optimistic card is keyed by it.
-            val existing = indexOfFirst { it.matches(incoming) }
+            val existing = indexOfFirst { it.sameAs(incoming) }
             if (existing >= 0) {
                 // Replace: the server's copy is authoritative and confirms the
                 // send, which also clears the "Sending" state.
@@ -81,7 +81,7 @@ fun List<Notice>.applyRealtime(
         } else {
             // Only replaces something already shown. An edit to a post outside
             // the loaded page is not an invitation to insert it.
-            map { if (it.matches(event.notice)) event.notice else it }
+            map { if (it.sameAs(event.notice)) event.notice else it }
         }
     }
 
@@ -114,6 +114,11 @@ internal fun HomeRealtimeEvent.matchesUnit(selectedUnitId: String?): Boolean = w
     is HomeRealtimeEvent.ReadByChanged -> true
 }
 
-/** Same post, whether it is known by server id or by the id we generated. */
-private fun Notice.matches(other: Notice): Boolean =
+/**
+ * Same post, whether it is known by server id or by the id we generated.
+ *
+ * Internal rather than private: the view model asks it of a post still going
+ * up when a fetched page lands, to tell its own card from the server's copy.
+ */
+internal fun Notice.sameAs(other: Notice): Boolean =
     id == other.id || (localId != null && localId == other.localId)

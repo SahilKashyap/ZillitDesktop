@@ -163,6 +163,98 @@ class ReadCacheTest {
         assertEquals(1, cache.rows.size, "a PUT is a write whatever it calls itself")
     }
 
+    // -- peeking: the same rows, read before the network rather than after ---
+
+    /**
+     * The one invariant that matters for cache-first reads.
+     *
+     * `peekCached` and the write inside `remembered` build their key through
+     * the same helper. If they ever stop agreeing, nothing fails — screens
+     * just silently never find anything, which is the bug this pins.
+     */
+    @Test
+    fun `a peek finds exactly what the matching request kept`() = runTest {
+        val options = CallOptions(cacheAs = "$URL/newest")
+        client(answering).request(
+            HttpVerb.Get, "$URL/1000/previous", String.serializer(), RequestModule.ProjectUser,
+            options = options,
+        )
+
+        val peeked = client(answering).peekCached(
+            url = "$URL/newest",
+            serializer = String.serializer(),
+            module = RequestModule.ProjectUser,
+            options = options,
+        )
+        assertEquals("hello", peeked, "the kept page was not found under the name it was written with")
+    }
+
+    /** A plain GET is peeked by its URL and query, as it was kept. */
+    @Test
+    fun `a peek of an unnamed read matches on url and query`() = runTest {
+        val query = mapOf("status" to "open")
+        client(answering).request(
+            HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser,
+            queryParameters = query,
+        )
+        val api = client(answering)
+
+        assertEquals(
+            "hello",
+            api.peekCached(URL, String.serializer(), RequestModule.ProjectUser, query),
+        )
+        assertNull(
+            api.peekCached(URL, String.serializer(), RequestModule.ProjectUser, mapOf("status" to "closed")),
+            "a different question has its own answer",
+        )
+    }
+
+    @Test
+    fun `a peek never reaches the network`() = runTest {
+        // Nothing kept, and an engine that would throw if it were called: a
+        // miss has to be a miss, not a request behind the caller's back.
+        assertNull(client(unreachable).peekCached(URL, String.serializer(), RequestModule.ProjectUser))
+    }
+
+    @Test
+    fun `a peek is scoped like every other read`() = runTest {
+        client(answering).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        scope = ReadScope("u1", "p2")
+        assertNull(
+            client(answering).peekCached(URL, String.serializer(), RequestModule.ProjectUser),
+            "another production's board",
+        )
+
+        scope = null
+        assertNull(client(answering).peekCached(URL, String.serializer(), RequestModule.ProjectUser))
+    }
+
+    @Test
+    fun `a peek of a read that is never kept finds nothing`() = runTest {
+        client(answering).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+        val api = client(answering)
+
+        assertNull(api.peekCached(URL, String.serializer(), RequestModule.Device), "an uncacheable module")
+        assertNull(
+            api.peekCached(
+                URL,
+                String.serializer(),
+                RequestModule.ProjectUser,
+                options = CallOptions(readCache = false),
+            ),
+            "a read that opted out",
+        )
+    }
+
+    /** A kept body whose shape has moved on is a miss, not a failure. */
+    @Test
+    fun `a peek of a row that no longer decodes finds nothing`() = runTest {
+        client(answering).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertNull(client(answering).peekCached(URL, Int.serializer(), RequestModule.ProjectUser))
+    }
+
     private companion object {
         const val URL = "https://api.example.com/api/v2/thing"
     }
