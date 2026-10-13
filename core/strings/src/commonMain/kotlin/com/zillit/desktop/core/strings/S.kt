@@ -9356,6 +9356,7 @@ object S {
     const val desktop_drive_upload_failed: String = "desktop_drive_upload_failed"
     const val desktop_drive_upload_files_root_hint: String = "desktop_drive_upload_files_root_hint"
     const val desktop_drive_upload_my_drive_only: String = "desktop_drive_upload_my_drive_only"
+    const val desktop_drive_upload_paused: String = "desktop_drive_upload_paused"
     const val desktop_drive_upload_to_folder: String = "desktop_drive_upload_to_folder"
     const val desktop_drive_upload_unavailable: String = "desktop_drive_upload_unavailable"
     const val desktop_drive_uploading_of: String = "desktop_drive_uploading_of"

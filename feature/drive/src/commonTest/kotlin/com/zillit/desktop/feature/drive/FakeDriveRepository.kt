@@ -63,8 +63,7 @@ internal open class FakeDriveRepository(
         description: String,
     ): ZillitResult<DriveItem> = unused()
     override suspend fun abortUpload(uploadId: String): ZillitResult<Unit> = ok()
-    override suspend fun remainingParts(uploadId: String): ZillitResult<List<UploadPart>> =
-        ZillitResult.Success(emptyList())
+    override suspend fun resumeUpload(uploadId: String, sizeBytes: Long): ZillitResult<UploadSession> = unused()
     override suspend fun trash(): ZillitResult<List<DriveItem>> = ZillitResult.Success(emptyList())
     override suspend fun restore(ref: DriveRef): ZillitResult<Unit> = ok()
     override suspend fun purge(ref: DriveRef): ZillitResult<Unit> = ok()

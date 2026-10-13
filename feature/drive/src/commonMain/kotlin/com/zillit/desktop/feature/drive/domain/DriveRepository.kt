@@ -160,8 +160,13 @@ interface DriveRepository {
 
     suspend fun abortUpload(uploadId: String): ZillitResult<Unit>
 
-    /** Presigned URLs for the parts not yet uploaded, so a session can resume. */
-    suspend fun remainingParts(uploadId: String): ZillitResult<List<UploadPart>>
+    /**
+     * An open session again, with fresh presigned URLs — what a resume starts
+     * from. `GET /uploads/{id}/parts` answers with the session itself, in the
+     * shape the opening call does; [sizeBytes] stands in when it omits the size.
+     * Fails once the server has forgotten the session (reaped, or aborted).
+     */
+    suspend fun resumeUpload(uploadId: String, sizeBytes: Long): ZillitResult<UploadSession>
 
     // -- trash -------------------------------------------------------------
 

@@ -144,10 +144,37 @@ data class UploadSession(
     val isComplete: Boolean get() = outstanding.isEmpty()
 }
 
+/**
+ * What survives a pause or a failure, so the upload can carry on instead of
+ * starting over — the web's `uploadContextMap` entry.
+ *
+ * The server only tracks the session; the **ETags are the client's**. S3's
+ * completion needs every part's back, and nothing here can ask S3 for the ones
+ * already sent, so they are kept as each part is acknowledged.
+ */
+data class UploadCheckpoint(
+    val uploadId: String,
+    /** The slicing the ETags were earned under; a resumed session must agree. */
+    val plan: UploadPlan,
+    /** Part number → ETag, for the parts S3 has accepted. */
+    val etags: Map<Int, String> = emptyMap(),
+) {
+    val uploadedParts: Int get() = etags.size
+}
+
 /** Where one queued upload has got to. */
 sealed interface UploadState {
     data object Queued : UploadState
     data class InProgress(val uploadedParts: Int, val totalParts: Int) : UploadState {
+        val fraction: Float
+            get() = if (totalParts <= 0) 0f else uploadedParts.toFloat() / totalParts
+
+        /** Every part is in and the completion call is under way — too late to stop. */
+        val isFinishing: Boolean get() = totalParts > 0 && uploadedParts >= totalParts
+    }
+
+    /** Stopped by the user; resumes from the parts already accepted. */
+    data class Paused(val uploadedParts: Int, val totalParts: Int) : UploadState {
         val fraction: Float
             get() = if (totalParts <= 0) 0f else uploadedParts.toFloat() / totalParts
     }
@@ -168,11 +195,29 @@ data class QueuedUpload(
     val isSettled: Boolean
         get() = state is UploadState.Done || state is UploadState.Failed
 
+    /** Waiting or sending, and not yet at the completion call. */
+    val canPause: Boolean
+        get() = when (val current = state) {
+            UploadState.Queued -> true
+            is UploadState.InProgress -> !current.isFinishing
+            else -> false
+        }
+
+    val isPaused: Boolean get() = state is UploadState.Paused
+
+    /** A failure the user did not cause; a cancelled upload is gone, not stalled. */
+    val canRetry: Boolean
+        get() = (state as? UploadState.Failed)?.let { it.reason != CANCELLED } ?: false
+
     val fraction: Float
         get() = when (val current = state) {
             is UploadState.InProgress -> current.fraction
+            is UploadState.Paused -> current.fraction
             UploadState.Completing -> 1f
             is UploadState.Done -> 1f
             else -> 0f
         }
 }
+
+/** `Failed.reason` of an upload the user cancelled — see [QueuedUpload.canRetry]. */
+const val CANCELLED = "Cancelled"

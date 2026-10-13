@@ -450,9 +450,13 @@ class DriveRepositoryImpl(
     override suspend fun abortUpload(uploadId: String): ZillitResult<Unit> =
         mutate(HttpVerb.Delete, "$base/uploads/$uploadId", null)
 
-    override suspend fun remainingParts(uploadId: String): ZillitResult<List<UploadPart>> =
-        get("$base/uploads/$uploadId/parts", ListSerializer(UploadPartDto.serializer()))
-            .map { rows -> rows.mapNotNull { it.toDomain() } }
+    override suspend fun resumeUpload(uploadId: String, sizeBytes: Long): ZillitResult<UploadSession> =
+        get("$base/uploads/$uploadId/parts", UploadSessionDto.serializer()).flatMap { dto ->
+            // The same body the opening call answers with, fresh presigned
+            // URLs included — the old ones may have expired during a long pause.
+            dto.toDomain(sizeBytes)?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("upload session had no id"))
+        }
 
     // -- trash -------------------------------------------------------------
 

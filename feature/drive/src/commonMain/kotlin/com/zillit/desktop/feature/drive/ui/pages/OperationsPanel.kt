@@ -34,6 +34,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitProgressBar
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.drive.domain.CANCELLED
 import com.zillit.desktop.feature.drive.domain.QueuedUpload
 import com.zillit.desktop.feature.drive.domain.UploadState
 import com.zillit.desktop.feature.drive.domain.formatBytes
@@ -125,10 +126,11 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
     val (label, tone) = when (val s = upload.state) {
         UploadState.Queued -> str(S.drive_pending_chip) to StatusTone.Neutral
         is UploadState.InProgress -> str(S.txt_uploading) to StatusTone.Progress
+        is UploadState.Paused -> str(S.desktop_drive_upload_paused) to StatusTone.Neutral
         UploadState.Completing -> str(S.drive_uploads_status_posting) to StatusTone.Progress
         is UploadState.Done -> str(S.completed) to StatusTone.Done
         is UploadState.Failed ->
-            (if (s.reason == "Cancelled") str(S.cancelled) else str(S.dd_legend_failed)) to StatusTone.Rejected
+            (if (s.reason == CANCELLED) str(S.cancelled) else str(S.dd_legend_failed)) to StatusTone.Rejected
     }
     Column(
         modifier = Modifier.fillMaxWidth().padding(
@@ -149,6 +151,27 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             ZillitStatusPill(label = label, tone = tone)
+            if (upload.canPause) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Pause,
+                    contentDescription = str(S.drive_cd_pause_upload),
+                    onClick = { onEvent(DriveEvent.PauseUpload(upload.id)) },
+                )
+            }
+            if (upload.isPaused) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Play,
+                    contentDescription = str(S.drive_cd_resume_upload),
+                    onClick = { onEvent(DriveEvent.ResumeUpload(upload.id)) },
+                )
+            }
+            if (upload.canRetry) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Reload,
+                    contentDescription = str(S.drive_cd_retry_upload),
+                    onClick = { onEvent(DriveEvent.RetryUpload(upload.id)) },
+                )
+            }
             if (upload.isSettled) {
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
@@ -179,7 +202,10 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
                     is UploadState.InProgress ->
                         str(S.desktop_drive_part_of, s.uploadedParts, s.totalParts) +
                             " · " + formatBytes(upload.sizeBytes)
-                    is UploadState.Failed -> if (s.reason == "Cancelled") str(S.cancelled) else s.reason
+                    is UploadState.Paused ->
+                        str(S.desktop_drive_part_of, s.uploadedParts, s.totalParts) +
+                            " · " + formatBytes(upload.sizeBytes)
+                    is UploadState.Failed -> if (s.reason == CANCELLED) str(S.cancelled) else s.reason
                     else -> formatBytes(upload.sizeBytes)
                 },
                 style = ZillitTheme.typography.labelSmall,

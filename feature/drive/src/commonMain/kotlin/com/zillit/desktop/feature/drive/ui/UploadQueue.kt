@@ -2,8 +2,10 @@ package com.zillit.desktop.feature.drive.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.drive.domain.CANCELLED
 import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.QueuedUpload
+import com.zillit.desktop.feature.drive.domain.UploadCheckpoint
 import com.zillit.desktop.feature.drive.domain.UploadPlan
 import com.zillit.desktop.feature.drive.domain.UploadState
 import kotlinx.coroutines.Job
@@ -37,6 +39,7 @@ internal class UploadQueue(
 ) {
 
     private val jobs = mutableMapOf<String, Job>()
+    private val entries = mutableMapOf<String, Entry>()
     private val permits = Semaphore(PARALLEL_FILES)
 
     /**
@@ -136,48 +139,135 @@ internal class UploadQueue(
         return ids.filterKeys { it.isNotEmpty() }
     }
 
+    /** What a row needs to be sent again: the file, where it goes, and how far it got. */
+    private class Entry(val file: PickedFile, val target: UploadTarget) {
+        var checkpoint: UploadCheckpoint? = null
+    }
+
     private fun start(queued: QueuedUpload, file: PickedFile, target: UploadTarget) {
-        jobs[queued.id] = vm.run {
+        entries[queued.id] = Entry(file, target)
+        launch(queued.id)
+    }
+
+    /**
+     * Sends the row — from the start, or from its checkpoint after a pause or a
+     * failure. Every settle goes through [patchLive]: a row the user has since
+     * paused or cancelled keeps the state they gave it, whatever the cancelled
+     * coroutine still manages to report on its way out.
+     */
+    private fun launch(id: String) {
+        val entry = entries[id] ?: return
+        jobs[id] = vm.run {
             permits.withPermit {
-                if (vm.state.value.uploads.none { it.id == queued.id }) return@withPermit
+                if (vm.state.value.uploads.none { it.id == id }) return@withPermit
                 val result = uploader.upload(
-                    file = file,
-                    target = target,
+                    file = entry.file,
+                    target = entry.target,
+                    resume = entry.checkpoint,
+                    onCheckpoint = { entry.checkpoint = it },
                     onProgress = { uploaded, total ->
-                        patch(queued.id) { copy(state = UploadState.InProgress(uploaded, total)) }
+                        patchLive(id) { copy(state = UploadState.InProgress(uploaded, total)) }
                     },
                 )
                 val settled = when (result) {
                     is ZillitResult.Success -> UploadState.Done(result.data.id)
                     is ZillitResult.Failure -> UploadState.Failed(result.error.localised())
                 }
-                patch(queued.id) { copy(state = settled) }
-                jobs.remove(queued.id)
+                patchLive(id) { copy(state = settled) }
+                jobs.remove(id)
+                // A finished upload has nothing left to resume. A failed one
+                // keeps its entry — and its open session — for Retry.
+                if (settled is UploadState.Done) entries.remove(id)
                 // Only the scope the file landed in is refreshed, and only
                 // while the user is still looking at it — a completed
                 // background upload must not yank the listing out from
                 // under someone browsing elsewhere.
                 if (settled is UploadState.Done && !vm.state.value.showTrash) vm.loadListing()
                 if (settled is UploadState.Failed) {
-                    vm.reportFailure(str(S.desktop_drive_upload_failed, file.name, settled.reason))
+                    vm.reportFailure(str(S.desktop_drive_upload_failed, entry.file.name, settled.reason))
                 }
             }
         }
     }
 
-    /** Stops one upload; the server's session is left for its 24-hour TTL to reap. */
-    fun cancel(uploadId: String) {
+    /**
+     * Stops one upload where it is, keeping every part S3 has accepted.
+     *
+     * The part in flight is abandoned — the web does the same — so a pause
+     * costs at most one part's worth of bytes. Refused once the completion call
+     * is under way: cutting that off could leave the file assembled on the
+     * server while the row says "paused", and a resume would then upload it twice.
+     */
+    fun pause(uploadId: String) {
+        val row = vm.state.value.uploads.firstOrNull { it.id == uploadId } ?: return
+        if (!row.canPause) return
         jobs.remove(uploadId)?.cancel()
-        patch(uploadId) { copy(state = UploadState.Failed("Cancelled")) }
+        val checkpoint = entries[uploadId]?.checkpoint
+        val total = checkpoint?.plan?.totalParts ?: (row.state as? UploadState.InProgress)?.totalParts ?: 0
+        patch(uploadId) { copy(state = UploadState.Paused(checkpoint?.uploadedParts ?: 0, total)) }
     }
+
+    /** Carries a paused upload on from its last accepted part. */
+    fun resume(uploadId: String) {
+        val row = vm.state.value.uploads.firstOrNull { it.id == uploadId } ?: return
+        if (!row.isPaused || uploadId !in entries) return
+        patch(uploadId) { copy(state = UploadState.Queued) }
+        launch(uploadId)
+    }
+
+    /**
+     * Tries a failed upload again — from its checkpoint when it had one, so a
+     * dropped connection at part 40 of 50 costs ten parts, not fifty. A
+     * cancelled upload is not retried: cancelling aborted its session.
+     */
+    fun retry(uploadId: String) {
+        val row = vm.state.value.uploads.firstOrNull { it.id == uploadId } ?: return
+        if (!row.canRetry || uploadId !in entries) return
+        patch(uploadId) { copy(state = UploadState.Queued) }
+        launch(uploadId)
+    }
+
+    /** Stops one upload and tells the server to drop its session. */
+    fun cancel(uploadId: String) {
+        val row = vm.state.value.uploads.firstOrNull { it.id == uploadId }
+        jobs.remove(uploadId)?.cancel()
+        patch(uploadId) { copy(state = UploadState.Failed(CANCELLED)) }
+        // Not while finishing: the file may already be assembled, and an abort
+        // arriving after that is either ignored or undoes it.
+        val finishing = (row?.state as? UploadState.InProgress)?.isFinishing == true
+        if (finishing) entries.remove(uploadId) else abortSession(uploadId)
+    }
+
+    /**
+     * Rows removed from the panel without being retried: their sessions are
+     * dropped rather than left open for the server's 24-hour reaper.
+     */
+    fun discard(uploadIds: Collection<String>) = uploadIds.forEach(::abortSession)
 
     fun cancelAll() {
         jobs.values.forEach { it.cancel() }
         jobs.clear()
+        entries.clear()
+    }
+
+    private fun abortSession(uploadId: String) {
+        val session = entries.remove(uploadId)?.checkpoint ?: return
+        vm.run { vm.repo.abortUpload(session.uploadId) }
     }
 
     private fun patch(uploadId: String, change: QueuedUpload.() -> QueuedUpload) = vm.update {
         copy(uploads = uploads.map { row -> if (row.id == uploadId) row.change() else row })
+    }
+
+    /** As [patch], but only for a row that is still waiting or sending. */
+    private fun patchLive(uploadId: String, change: QueuedUpload.() -> QueuedUpload) = vm.update {
+        copy(
+            uploads = uploads.map { row ->
+                val live = row.state is UploadState.Queued || row.state is UploadState.InProgress ||
+                    row.state is UploadState.Completing
+                if (row.id == uploadId && live) row.change() else row
+            },
+        )
     }
 
     private companion object {

@@ -22,6 +22,7 @@ import com.zillit.desktop.feature.drive.domain.DriveUnreadRow
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.domain.MyDriveFilter
 import com.zillit.desktop.feature.drive.domain.PreviewKind
+import com.zillit.desktop.feature.drive.domain.UploadCheckpoint
 import com.zillit.desktop.feature.drive.domain.breadcrumbTo
 import com.zillit.desktop.feature.drive.domain.driveUnread
 import com.zillit.desktop.feature.drive.domain.eligible
@@ -290,10 +291,17 @@ class DriveViewModel(
             DriveEvent.CancelDrop -> setState { copy(dropUpload = null) }
 
             is DriveEvent.CancelUpload -> uploads.cancel(event.uploadId)
-            is DriveEvent.RemoveUpload -> setState {
-                copy(uploads = this.uploads.filterNot { it.id == event.uploadId })
+            is DriveEvent.PauseUpload -> uploads.pause(event.uploadId)
+            is DriveEvent.ResumeUpload -> uploads.resume(event.uploadId)
+            is DriveEvent.RetryUpload -> uploads.retry(event.uploadId)
+            is DriveEvent.RemoveUpload -> {
+                uploads.discard(listOf(event.uploadId))
+                setState { copy(uploads = this.uploads.filterNot { it.id == event.uploadId }) }
             }
-            DriveEvent.ClearFinishedUploads -> setState { copy(uploads = this.uploads.filterNot { it.isSettled }) }
+            DriveEvent.ClearFinishedUploads -> {
+                uploads.discard(currentState.uploads.filter { it.isSettled }.map { it.id })
+                setState { copy(uploads = this.uploads.filterNot { it.isSettled }) }
+            }
             DriveEvent.ToggleOperations -> setState { copy(operationsExpanded = !operationsExpanded) }
 
             // -- create folder ---------------------------------------------
@@ -1071,10 +1079,19 @@ interface DriveUploader {
      * [onProgress] receives (uploaded parts, total parts) as each part is
      * acknowledged — parts rather than bytes, because that is what the client
      * can honestly observe: a part is either accepted by S3 or it is not.
+     *
+     * [onCheckpoint] hears the session the moment it opens and after every
+     * part, so a pause or a failure leaves the caller holding what it needs to
+     * carry on. Pass the last one back as [resume] and only the parts S3 has
+     * not accepted are sent; if the server has forgotten the session the
+     * upload starts again from nothing rather than failing. A failed upload
+     * leaves its session open for exactly that — only a cancel aborts it.
      */
     suspend fun upload(
         file: PickedFile,
         target: UploadTarget,
+        resume: UploadCheckpoint? = null,
+        onCheckpoint: (UploadCheckpoint) -> Unit = {},
         onProgress: (uploaded: Int, total: Int) -> Unit,
     ): ZillitResult<DriveItem>
 
@@ -1089,6 +1106,8 @@ interface DriveUploader {
         override suspend fun upload(
             file: PickedFile,
             target: UploadTarget,
+            resume: UploadCheckpoint?,
+            onCheckpoint: (UploadCheckpoint) -> Unit,
             onProgress: (Int, Int) -> Unit,
         ): ZillitResult<DriveItem> = ZillitResult.Failure(
             ZillitError.Validation(str(S.desktop_drive_upload_unavailable)),

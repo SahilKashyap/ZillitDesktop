@@ -12865,4 +12865,5 @@
     <string name="desktop_fc_all_pos_in_project">All Po\'s In The Project</string>
     <string name="desktop_fc_no_purchase_orders">No purchase orders</string>
     <string name="desktop_cabinet_no_view_rights">You do not have viewing rights for this tool. An administrator can grant them.</string>
+    <string name="desktop_drive_upload_paused">Paused</string>
 </resources>

@@ -101,6 +101,9 @@ sealed interface DriveEvent {
     data object CancelDrop : DriveEvent
 
     data class CancelUpload(val uploadId: String) : DriveEvent
+    data class PauseUpload(val uploadId: String) : DriveEvent
+    data class ResumeUpload(val uploadId: String) : DriveEvent
+    data class RetryUpload(val uploadId: String) : DriveEvent
     data class RemoveUpload(val uploadId: String) : DriveEvent
     data object ClearFinishedUploads : DriveEvent
     data object ToggleOperations : DriveEvent

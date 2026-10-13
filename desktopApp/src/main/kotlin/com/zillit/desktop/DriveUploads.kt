@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveRepository
+import com.zillit.desktop.feature.drive.domain.UploadCheckpoint
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
 import com.zillit.desktop.feature.drive.domain.UploadSession
@@ -36,6 +37,7 @@ import java.io.RandomAccessFile
 import java.net.URLConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -153,6 +155,18 @@ internal class AppDrivePreviewHost(private val httpClient: HttpClient) : DrivePr
  * server then assembles them. The API is never in the data path, which is what
  * makes a 10 GB upload possible at all.
  *
+ * ## A failure keeps the session
+ *
+ * A part is tried three times with backoff before the upload gives up, and
+ * giving up leaves the session open: every ETag collected so far has gone to
+ * the caller through `onCheckpoint`, and handing the last one back as `resume`
+ * sends only what is missing — the web's pause/resume, and its answer to a
+ * dropped connection at part 40 of 50. Only the caller's cancel aborts a
+ * session. A resume asks the server for fresh presigned URLs (the old ones may
+ * have expired during a long pause); if the server has forgotten the session,
+ * or the completion is refused for parts it cannot find, the upload starts
+ * again from nothing instead of failing.
+ *
  * ## Why a hand-written streaming body
  *
  * Ktor's `onUpload` progress observer **stalls the request outright** on this
@@ -180,11 +194,15 @@ internal class MultipartDriveUploader(
      * headers S3 did not sign for, and it rejects the PUT.
      */
     private val httpClient: HttpClient,
+    /** Waits between a part's attempts; a test passes one that does not sleep. */
+    private val pause: suspend (millis: Long) -> Unit = { delay(it) },
 ) : DriveUploader {
 
     override suspend fun upload(
         file: PickedFile,
         target: UploadTarget,
+        resume: UploadCheckpoint?,
+        onCheckpoint: (UploadCheckpoint) -> Unit,
         onProgress: (uploaded: Int, total: Int) -> Unit,
     ): ZillitResult<DriveItem> {
         val source = File(file.path)
@@ -193,77 +211,157 @@ internal class MultipartDriveUploader(
                 ZillitError.Validation("\"${file.name}\" is no longer on disk."),
             )
         }
+        val job = Job(source, file, target, onCheckpoint, onProgress)
+        if (resume == null) return job.startFresh()
 
-        val session = when (val opened = repository.initiateUpload(
-            UploadRequest(
+        val session = reopen(resume, file)
+        if (session == null) {
+            // The server no longer knows it (reaped, or aborted): earlier ETags are
+            // worthless, and the old session is not worth keeping either.
+            ZillitLog.i(TAG) { "upload session ${resume.uploadId} is gone; starting again" }
+            repository.abortUpload(resume.uploadId)
+            return job.startFresh()
+        }
+        return job.send(session, resume.etags.toMutableMap(), resumed = true)
+    }
+
+    /** One call to [upload]: what it is sending, and who to tell. */
+    private inner class Job(
+        val source: File,
+        val file: PickedFile,
+        val target: UploadTarget,
+        val onCheckpoint: (UploadCheckpoint) -> Unit,
+        val onProgress: (uploaded: Int, total: Int) -> Unit,
+    ) {
+
+        suspend fun startFresh(): ZillitResult<DriveItem> {
+            val session = when (val opened = repository.initiateUpload(
+                UploadRequest(
+                    fileName = file.name,
+                    sizeBytes = file.sizeBytes,
+                    mimeType = file.mimeType,
+                    folderId = target.folderId,
+                    description = target.description,
+                    fileAccess = target.fileAccess,
+                ),
+            )) {
+                is ZillitResult.Success -> opened.data
+                is ZillitResult.Failure -> return opened
+            }
+            // Told at once, before a byte moves: a pause that lands during the
+            // first part still has a session to come back to.
+            onCheckpoint(UploadCheckpoint(session.uploadId, session.plan))
+            // Which headers the server signed into the part URLs — names only, no
+            // secret: a header sent that the URL signed differently is a 403 S3
+            // answers by closing the connection, which reads as a broken pipe.
+            ZillitLog.d(TAG) {
+                val signed = session.parts.firstOrNull()?.url
+                    ?.substringAfter("X-Amz-SignedHeaders=", "")?.substringBefore('&')
+                "upload ${session.parts.size} part(s); part URLs sign: ${signed?.ifBlank { "?" } ?: "?"}"
+            }
+            return send(session, mutableMapOf(), resumed = false)
+        }
+
+        /** Sends what is missing, then completes. [etags] is every part S3 holds so far. */
+        suspend fun send(
+            session: UploadSession,
+            etags: MutableMap<Int, String>,
+            resumed: Boolean,
+        ): ZillitResult<DriveItem> {
+            val total = session.plan.totalParts
+            onProgress(etags.size, total)
+            if (!sendParts(session, etags)) {
+                // Not aborted: the parts already accepted are what Retry resumes from.
+                return ZillitResult.Failure(
+                    ZillitError.Validation(
+                        "\"${file.name}\" could not be uploaded. Retry to continue from where it stopped.",
+                    ),
+                )
+            }
+            if (!etags.keys.containsAll((1..total).toList())) {
+                // Some part is neither held nor offered — the server's list and ours disagree.
+                return if (resumed) restart(session.uploadId) else lostParts()
+            }
+            val completed = repository.completeUpload(
+                uploadId = session.uploadId,
+                parts = etags.map { (number, etag) -> UploadPart(partNumber = number, url = "", etag = etag) },
                 fileName = file.name,
-                sizeBytes = file.sizeBytes,
-                mimeType = file.mimeType,
-                folderId = target.folderId,
                 description = target.description,
-                fileAccess = target.fileAccess,
-            ),
-        )) {
-            is ZillitResult.Success -> opened.data
-            is ZillitResult.Failure -> return opened
+            )
+            if (resumed && completed is ZillitResult.Failure && completed.error.namesLostParts()) {
+                return restart(session.uploadId)
+            }
+            return completed
         }
 
-        onProgress(0, session.parts.size)
-        // Which headers the server signed into the part URLs — names only, no
-        // secret: a header sent that the URL signed differently is a 403 S3
-        // answers by closing the connection, which reads as a broken pipe.
-        ZillitLog.d(TAG) {
-            val signed = session.parts.firstOrNull()?.url
-                ?.substringAfter("X-Amz-SignedHeaders=", "")?.substringBefore('&')
-            "upload ${session.parts.size} part(s); part URLs sign: ${signed?.ifBlank { "?" } ?: "?"}"
+        private suspend fun restart(staleUploadId: String): ZillitResult<DriveItem> {
+            ZillitLog.i(TAG) { "upload session $staleUploadId cannot be completed; starting again" }
+            repository.abortUpload(staleUploadId)
+            return startFresh()
         }
-        val completed = sendParts(source, session, onProgress)
-            ?: return abort(session.uploadId, file.name)
 
-        return repository.completeUpload(
-            uploadId = session.uploadId,
-            parts = completed,
-            fileName = file.name,
-            description = target.description,
+        private fun lostParts(): ZillitResult<DriveItem> = ZillitResult.Failure(
+            ZillitError.Validation("\"${file.name}\" could not be uploaded. Nothing was saved."),
         )
+
+        /**
+         * Pushes every part not yet accepted, or gives up at the first one S3
+         * keeps refusing. True when [etags] now covers what was offered.
+         *
+         * A cancellation (a pause) propagates; the checkpoint already holds
+         * everything up to the last part that finished.
+         */
+        private suspend fun sendParts(session: UploadSession, etags: MutableMap<Int, String>): Boolean = try {
+            RandomAccessFile(source, "r").use { handle ->
+                for (part in session.parts.filter { it.partNumber !in etags }) {
+                    val bytes = handle.readPart(session.plan.rangeOf(part.partNumber))
+                    etags[part.partNumber] = putPartWithRetry(part.url, bytes) ?: return false
+                    onCheckpoint(UploadCheckpoint(session.uploadId, session.plan, etags.toMap()))
+                    onProgress(etags.size, session.plan.totalParts)
+                }
+            }
+            true
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
+            // The path is not logged: it is the user's business.
+            ZillitLog.e(TAG, throwable) { "upload failed while sending parts" }
+            false
+        }
     }
 
     /**
-     * Pushes every part to S3, or gives up at the first one it refuses.
-     *
-     * Null rather than a partial list on failure: a completion built from some
-     * of the parts assembles a truncated object that S3 accepts without
-     * complaint, so there is no useful half-success to report.
+     * The session as the server has it now, or null when it must be started
+     * again: the server has forgotten it, or it would slice the file differently
+     * from the way the ETags in hand were earned.
      */
-    private suspend fun sendParts(
-        source: File,
-        session: UploadSession,
-        onProgress: (uploaded: Int, total: Int) -> Unit,
-    ): List<UploadPart>? = try {
-        val completed = mutableListOf<UploadPart>()
-        RandomAccessFile(source, "r").use { handle ->
-            for (part in session.parts) {
-                val bytes = handle.readPart(session.plan.rangeOf(part.partNumber))
-                val etag = putPart(part.url, bytes) ?: return null
-                completed += part.copy(etag = etag)
-                onProgress(completed.size, session.parts.size)
+    private suspend fun reopen(checkpoint: UploadCheckpoint, file: PickedFile): UploadSession? {
+        val session = (repository.resumeUpload(checkpoint.uploadId, file.sizeBytes) as? ZillitResult.Success)
+            ?.data ?: return null
+        val sameSlicing = session.plan.chunkSizeBytes == checkpoint.plan.chunkSizeBytes &&
+            session.plan.totalParts == checkpoint.plan.totalParts
+        return session.takeIf { sameSlicing }
+    }
+
+    /**
+     * One part, up to three attempts with backoff — the web's
+     * `uploadChunkWithRetry` (650 ms doubling to 6 s). A network error, a 5xx, a
+     * 408 or a 429 is worth another go; any other refusal (an expired signature, a
+     * forbidden) is not, and is what Retry's fresh URLs are for.
+     */
+    private suspend fun putPartWithRetry(url: String, bytes: ByteArray): String? {
+        for (attempt in 0 until PART_ATTEMPTS) {
+            when (val outcome = putPart(url, bytes)) {
+                is PartOutcome.Stored -> return outcome.etag
+                PartOutcome.Refused -> return null
+                PartOutcome.Transient -> if (attempt < PART_ATTEMPTS - 1) pause(backoffMillis(attempt))
             }
         }
-        completed
-    } catch (cancellation: CancellationException) {
-        // The session is left for the server's 24-hour TTL to reap rather than
-        // aborted here: abort is itself a suspending call and would be
-        // cancelled too, and a resume is still possible from the parts already
-        // accepted.
-        throw cancellation
-    } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
-        // The path is not logged: it is the user's business.
-        ZillitLog.e(TAG, throwable) { "upload failed while sending parts" }
-        null
+        return null
     }
 
     /**
-     * Sends one part and returns its `ETag`, or null if S3 refused it.
+     * Sends one part and reports what S3 made of it.
      *
      * The ETag is not optional bookkeeping: the completion call sends every
      * part's back, and S3 rejects an assembly whose ETags do not match what it
@@ -279,23 +377,32 @@ internal class MultipartDriveUploader(
      * URLs sign only `host`, so the type is not in the signature, and only one
      * failure was seen — but this is the web's request, and the web's works.
      */
-    private suspend fun putPart(url: String, bytes: ByteArray): String? {
+    private suspend fun putPart(url: String, bytes: ByteArray): PartOutcome = try {
         val response: HttpResponse = httpClient.put(url) {
             header(HttpHeaders.ContentType, PART_CONTENT_TYPE)
             setBody(streamedBody(bytes, PART_CONTENT_TYPE))
         }
-        if (!response.status.isSuccess()) {
-            ZillitLog.w(TAG) { "S3 refused a part: ${response.status.value}" }
-            return null
+        val status = response.status.value
+        when {
+            response.status.isSuccess() ->
+                response.headers[HttpHeaders.ETag]?.trim('"')?.takeIf { it.isNotBlank() }
+                    ?.let { PartOutcome.Stored(it) } ?: PartOutcome.Refused
+            status == STATUS_REQUEST_TIMEOUT || status == STATUS_TOO_MANY || status >= STATUS_SERVER_ERROR ->
+                PartOutcome.Transient.also { ZillitLog.w(TAG) { "S3 failed a part ($status); will try again" } }
+            else -> PartOutcome.Refused.also { ZillitLog.w(TAG) { "S3 refused a part: $status" } }
         }
-        return response.headers[HttpHeaders.ETag]?.trim('"')?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
+        // A reset or a timeout mid-part — the network, not the file.
+        ZillitLog.w(TAG) { "a part did not arrive: ${throwable.message}" }
+        PartOutcome.Transient
     }
 
-    private suspend fun abort(uploadId: String, fileName: String): ZillitResult<DriveItem> {
-        repository.abortUpload(uploadId)
-        return ZillitResult.Failure(
-            ZillitError.Validation("\"$fileName\" could not be uploaded. Nothing was saved."),
-        )
+    private sealed interface PartOutcome {
+        data class Stored(val etag: String) : PartOutcome
+        data object Transient : PartOutcome
+        data object Refused : PartOutcome
     }
 
     private companion object {
@@ -303,8 +410,30 @@ internal class MultipartDriveUploader(
 
         /** What every part is sent as — the web's own choice; see [putPart]. */
         const val PART_CONTENT_TYPE = "application/octet-stream"
+
+        const val PART_ATTEMPTS = 3
+        const val BACKOFF_BASE_MILLIS = 650L
+        const val BACKOFF_CAP_MILLIS = 6_000L
+        const val STATUS_REQUEST_TIMEOUT = 408
+        const val STATUS_TOO_MANY = 429
+        const val STATUS_SERVER_ERROR = 500
+
+        fun backoffMillis(attempt: Int): Long =
+            minOf(BACKOFF_CAP_MILLIS, BACKOFF_BASE_MILLIS shl attempt)
     }
 }
+
+/**
+ * Whether a completion refusal says S3 no longer has the parts the ETags in
+ * hand were issued for — the web's "parts could not be found / entity tag may
+ * not match" (ZL-18280), which is the cue to start a fresh session.
+ */
+internal fun String.namesLostParts(): Boolean {
+    val text = lowercase()
+    return LOST_PART_MARKERS.any { it in text }
+}
+
+private fun ZillitError.namesLostParts(): Boolean = "${technical.orEmpty()} $userMessage".namesLostParts()
 
 /**
  * The request body for one part, written in slices.
