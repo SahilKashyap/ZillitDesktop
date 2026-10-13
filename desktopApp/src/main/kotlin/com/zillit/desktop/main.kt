@@ -3935,6 +3935,7 @@ private fun buildRegistry(
                             onJoinCall = viewModels.calls?.let { calls ->
                                 { event -> calls.onEvent(joinEventCall(event)) }
                             },
+                            onOpenLink = ::openInBrowser,
                         )
                     }
                 },
@@ -4689,21 +4690,30 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
     // so opening the form costs no request.
     invitees = {
         val context = ready.projectContext?.context?.value
-        context?.users.orEmpty()
+        crewInvitees(ready)
             // The organiser is not a guest — the form's "I will not be part
             // of this event" checkbox is how they step out, so offering them
             // in their own invite list only invites a double-booking.
             .filter { it.userId != context?.profile?.userId }
-            .filter { it.hasJoined() }
-            .map { user ->
-                EventInvitee(
-                    userId = user.userId,
-                    name = user.fullName,
-                    designation = user.designationText(),
-                )
-            }
     },
+    // Everyone, this user included: the detail popover resolves an attendee
+    // list through this, and leaving the organiser out left whoever created
+    // the event nameless in their own invitee list.
+    directory = { crewInvitees(ready) },
 )
+
+/** The production's joined crew, as the calendar's people. */
+private fun crewInvitees(ready: AppGraph.Ready): List<EventInvitee> =
+    ready.projectContext?.context?.value?.users.orEmpty()
+        .filter { it.hasJoined() }
+        .map { user ->
+            EventInvitee(
+                userId = user.userId,
+                name = user.fullName,
+                designation = user.designationText(),
+                department = user.departmentText(),
+            )
+        }
 
 /**
  * Zillit Help › Contact Us: a message to support written in Zillit's own mail

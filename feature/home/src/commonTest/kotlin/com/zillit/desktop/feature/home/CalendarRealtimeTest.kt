@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.home.calendar.CalendarRealtimeKind
 import com.zillit.desktop.feature.home.calendar.CalendarRepository
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
 import com.zillit.desktop.feature.home.calendar.EventDraft
+import com.zillit.desktop.feature.home.calendar.EventInviteeRow
 import com.zillit.desktop.feature.home.calendar.EventTimes
 import com.zillit.desktop.feature.home.calendar.InvitationPage
 import com.zillit.desktop.feature.home.calendar.InvitationStatus
@@ -81,6 +82,9 @@ class CalendarRealtimeTest {
         ) = ZillitResult.Success(Unit)
 
         override suspend fun delete(eventId: String) = ZillitResult.Success(Unit)
+        override suspend fun eventInvitees(eventId: String, occurrenceDate: String?) =
+            ZillitResult.Success(emptyList<EventInviteeRow>())
+
         override suspend fun timezones() = ZillitResult.Success(emptyList<TimezoneOption>())
     }
 

@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarReminderScheduler
 import com.zillit.desktop.feature.home.calendar.CalendarRepository
 import com.zillit.desktop.feature.home.calendar.EventDraft
+import com.zillit.desktop.feature.home.calendar.EventInviteeRow
 import com.zillit.desktop.feature.home.calendar.EventTimes
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -207,6 +208,9 @@ class ReminderSchedulerTest {
         override suspend fun decline(eventId: String, startMillis: Long, reason: String?) =
             ZillitResult.Success(Unit)
         override suspend fun delete(eventId: String) = ZillitResult.Success(Unit)
+
+        override suspend fun eventInvitees(eventId: String, occurrenceDate: String?) =
+            ZillitResult.Success(emptyList<EventInviteeRow>())
 
         override suspend fun timezones() =
             ZillitResult.Success(emptyList<com.zillit.desktop.feature.home.calendar.TimezoneOption>())

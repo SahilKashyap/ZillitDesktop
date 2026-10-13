@@ -69,6 +69,21 @@ data class CalendarEvent(
     val inviteeIds: Set<String> = emptySet(),
     /** Guests invited by address rather than by crew record. */
     val externalEmails: List<String> = emptyList(),
+    /** When it was written — the detail popover's "Created …" line. */
+    val createdAtMillis: Long = 0,
+    /**
+     * The web's `createUser_exclude`: a meeting arranged by someone who is
+     * not themselves attending it. Shown beside the organiser's name, as the
+     * web shows it, so the attendee count reads right.
+     */
+    val excludeOrganiser: Boolean = false,
+    /**
+     * The series this row belongs to — the web's `master_event_id` /
+     * `parent_event_id`, falling back to [id]. The invitation list is
+     * addressed by the series plus an occurrence date, not by the occurrence
+     * row, so a recurring event needs both.
+     */
+    val masterEventId: String? = null,
 ) {
     /** Where this user stands on it, read from whatever the server called it. */
     val inviteStatus: InviteStatus get() = inviteStatusOf(status)
@@ -184,21 +199,22 @@ fun CalendarEvent.dayAndTimeLabel(zone: TimeZone): String {
 }
 
 /** "MONDAY" → "Mon" — the three-letter shape every calendar prints. */
-private fun String.abbreviated(): String =
+/** Shared with [rangeLabel] and its neighbours in `EventDateWords`. */
+internal fun String.abbreviated(): String =
     take(DAY_ABBREVIATION).lowercase().replaceFirstChar { it.uppercase() }
 
 private const val DAY_ABBREVIATION = 3
 
 private fun LocalDateTime.hhmm(): String = "${hour.pad()}:${minute.pad()}"
 
-private fun Int.pad(): String = if (this < TEN) "0$this" else "$this"
+internal fun Int.pad(): String = if (this < TEN) "0$this" else "$this"
 
 private const val TEN = 10
 
 /** Days in a week — the modulus all the grid arithmetic turns on. */
 private const val WEEK = MonthGrid.DAYS_PER_WEEK
 
-private val DayOfWeek.isoDayNumber: Int get() = ordinal + 1
+internal val DayOfWeek.isoDayNumber: Int get() = ordinal + 1
 
 internal fun LocalDate.plusDays(days: Int): LocalDate =
     plus(days, kotlinx.datetime.DateTimeUnit.DAY)

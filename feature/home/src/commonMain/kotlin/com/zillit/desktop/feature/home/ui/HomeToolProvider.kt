@@ -126,7 +126,7 @@ class HomeToolProvider(
             crewNames = board.crewNames,
             unitBadge = { unitId -> counts.unit(unitId) },
             calendar = calendarViewModel?.let { vm ->
-                { CalendarPane(vm, board.loadAvatar, onJoinEventCall) }
+                { CalendarPane(vm, board.loadAvatar, onJoinEventCall, board.onOpenLink) }
             },
         )
     }
@@ -189,6 +189,8 @@ fun CalendarPane(
     viewModel: CalendarViewModel,
     loadAvatar: suspend (String) -> ByteArray? = { null },
     onJoinCall: ((CalendarEvent) -> Unit)? = null,
+    /** Opens an event's picked location in the browser's maps. */
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     val calendarState by viewModel.state.collectAsState()
     LaunchedEffect(viewModel) { viewModel.load() }
@@ -197,5 +199,6 @@ fun CalendarPane(
         onEvent = viewModel::onEvent,
         loadAvatar = loadAvatar,
         onJoinCall = onJoinCall,
+        onOpenLink = onOpenLink,
     )
 }

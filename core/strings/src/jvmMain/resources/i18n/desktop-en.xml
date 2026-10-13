@@ -13006,4 +13006,13 @@
     <string name="desktop_hub_swap_count">%1$s swaps on record</string>
     <string name="desktop_hub_classic_page">Classic Transportation</string>
     <string name="desktop_hub_not_ported_open_classic">Open the classic Transportation page for the flows the desktop has not ported yet.</string>
+    <string name="desktop_cal_duration_value">Duration: %1$s</string>
+    <string name="desktop_cal_click_to_view_search">Click to view and search</string>
+    <string name="desktop_cal_invitee_count_one">%1$d Invitee</string>
+    <string name="desktop_cal_invitee_count_many">%1$d Invitees</string>
+    <string name="desktop_cal_cancelled_title">Cancelled: %1$s</string>
+    <string name="desktop_cal_invitee_search">Search by name, email, or department...</string>
+    <string name="desktop_cal_no_invitees_match">No invitees match your search</string>
+    <string name="desktop_cal_n_accepted">%1$d Accepted</string>
+    <string name="desktop_cal_n_declined">%1$d Declined</string>
 </resources>

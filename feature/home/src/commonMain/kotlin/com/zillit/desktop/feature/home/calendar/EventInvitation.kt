@@ -20,6 +20,24 @@ data class EventInvitation(
     val event: CalendarEvent? = null,
 )
 
+/**
+ * One person on one event — a row of `invitationlist`.
+ *
+ * Deliberately only what the wire carries: the name, designation and face are
+ * resolved against the crew the session already holds, exactly as the web
+ * resolves them against its `usersList`. An outside guest has no crew record,
+ * so [email] is all there is to show and [isExternal] says to expect that.
+ */
+data class EventInviteeRow(
+    val id: String,
+    val userId: String? = null,
+    val email: String? = null,
+    val status: InvitationStatus = InvitationStatus.Pending,
+    /** Why they said no, when they gave a reason. */
+    val rejectionReason: String? = null,
+    val isExternal: Boolean = false,
+)
+
 /** The server's four answers to "have they replied" — the web's tab set. */
 enum class InvitationStatus(val wire: String, val label: String) {
     Pending("pending", S.pending),

@@ -8,15 +8,24 @@ import com.zillit.desktop.feature.home.calendar.CalendarRepository
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
 import com.zillit.desktop.feature.home.calendar.EventAudience
 import com.zillit.desktop.feature.home.calendar.EventDraft
+import com.zillit.desktop.feature.home.calendar.EventInviteeRow
+import com.zillit.desktop.feature.home.calendar.InviteeListState
 import com.zillit.desktop.feature.home.calendar.EventTimes
 import com.zillit.desktop.feature.home.calendar.InviteStatus
+import com.zillit.desktop.feature.home.calendar.EventInvitee
+import com.zillit.desktop.feature.home.calendar.InvitationStatus
 import com.zillit.desktop.feature.home.calendar.durationLabel
+import com.zillit.desktop.feature.home.calendar.fullDateLabel
 import com.zillit.desktop.feature.home.calendar.hasFinished
 import com.zillit.desktop.feature.home.calendar.inviteStatusOf
 import com.zillit.desktop.feature.home.calendar.isCancelled
 import com.zillit.desktop.feature.home.calendar.message
+import com.zillit.desktop.feature.home.calendar.nameOf
 import com.zillit.desktop.feature.home.calendar.permissionsFor
+import com.zillit.desktop.feature.home.calendar.rangeLabel
 import com.zillit.desktop.feature.home.calendar.reminderLabel
+import com.zillit.desktop.feature.home.calendar.visibleRows
+import com.zillit.desktop.feature.home.calendar.weekOfYear
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.datetime.LocalDate
@@ -118,6 +127,19 @@ class EventDetailTest {
             if (fails) return ZillitResult.Failure(ZillitError.Http(403, "not yours"))
             deleted += eventId
             return ZillitResult.Success(Unit)
+        }
+
+        /** What `invitationlist` answers, and what it was asked for. */
+        var invitees: List<EventInviteeRow> = emptyList()
+        val inviteeAsks = mutableListOf<Pair<String, String?>>()
+
+        override suspend fun eventInvitees(
+            eventId: String,
+            occurrenceDate: String?,
+        ): ZillitResult<List<EventInviteeRow>> {
+            inviteeAsks += eventId to occurrenceDate
+            if (fails) return ZillitResult.Failure(ZillitError.Http(500, "nope"))
+            return ZillitResult.Success(invitees)
         }
 
         override suspend fun timezones() =
@@ -489,6 +511,219 @@ class EventDetailTest {
         assertEquals("nope", form?.error)
         assertFalse(form?.isSaving == true)
     }
+
+
+    // -- the web's date wording ---------------------------------------------
+
+    @Test
+    fun `a one-day event reads as a date and two clock times`() {
+        // The web's `formatRange`, which the phones print too — matching it
+        // matters because the same event is read on three screens.
+        val event = event(start = at("2026-10-14T11:30:00Z"), end = at("2026-10-14T20:00:00Z"))
+
+        assertEquals("Wed, Oct 14 11:30 AM - 8:00 PM", event.rangeLabel(TimeZone.UTC))
+        assertEquals("Wed, Oct 14, 2026", event.fullDateLabel(TimeZone.UTC))
+    }
+
+    @Test
+    fun `a night shoot prints the date at both ends`() {
+        // "10:00 PM - 4:00 AM" on one line is the oldest way to miss a call
+        // by a day.
+        val event = event(start = at("2026-10-14T22:00:00Z"), end = at("2026-10-15T04:00:00Z"))
+
+        assertEquals("Oct 14, 10:00 PM - Oct 15, 4:00 AM", event.rangeLabel(TimeZone.UTC))
+    }
+
+    @Test
+    fun `an all-day event says so instead of a clock time`() {
+        val event = event(start = at("2026-10-14T00:00:00Z"), end = at("2026-10-14T23:59:00Z"))
+            .copy(isAllDay = true)
+
+        assertEquals("Wed, Oct 14 All Day", event.rangeLabel(TimeZone.UTC))
+    }
+
+    @Test
+    fun `midnight and noon keep the twelve-hour clock honest`() {
+        assertEquals(
+            "Thu, Jan 1 12:00 AM - 12:00 PM",
+            event(start = at("2026-01-01T00:00:00Z"), end = at("2026-01-01T12:00:00Z"))
+                .rangeLabel(TimeZone.UTC),
+        )
+    }
+
+    @Test
+    fun `weeks are counted as dayjs counts them`() {
+        // Sunday-start weeks, week 1 holding 1 January — the web prints this
+        // number beside the date, and one off by one is worse than none.
+        assertEquals(42, weekOfYear(LocalDate(2026, 10, 14)))
+        assertEquals(1, weekOfYear(LocalDate(2026, 1, 1)))
+        // The Sunday that opens week 2 of 2026 (1 January is a Thursday).
+        assertEquals(2, weekOfYear(LocalDate(2026, 1, 4)))
+        assertEquals(1, weekOfYear(LocalDate(2026, 1, 3)))
+    }
+
+    // -- the invitee list ---------------------------------------------------
+
+    @Test
+    fun `opening the invitee list asks by the event id for a one-off`() = runTest {
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo)
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(event()))
+
+        calendar.onEvent(CalendarEvent2Event.ShowInvitees)
+        advanceUntilIdle()
+
+        assertEquals(listOf<Pair<String, String?>>("e1" to null), repo.inviteeAsks)
+        assertFalse(calendar.state.value.inviteeList?.isLoading == true)
+    }
+
+    @Test
+    fun `a recurring event is asked for by series and occurrence date`() = runTest {
+        // An invitation to a repeat is answered per occurrence, so the id
+        // alone would return the series' original answers.
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo)
+        val recurring = event(start = at("2026-10-14T11:30:00Z"))
+            .copy(isRecurring = true, masterEventId = "series-1")
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(recurring))
+
+        calendar.onEvent(CalendarEvent2Event.ShowInvitees)
+        advanceUntilIdle()
+
+        val (eventId, occurrence) = repo.inviteeAsks.single()
+        assertEquals("series-1", eventId)
+        assertEquals("2026-10-14", occurrence)
+    }
+
+    @Test
+    fun `a refused fetch leaves the list open and says why`() = runTest {
+        val repo = FakeCalendar().apply { fails = true }
+        val calendar = viewModel(repo)
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(event()))
+
+        calendar.onEvent(CalendarEvent2Event.ShowInvitees)
+        advanceUntilIdle()
+
+        val list = calendar.state.value.inviteeList
+        assertEquals("nope", list?.error)
+        assertFalse(list?.isLoading == true)
+    }
+
+    @Test
+    fun `closing the popover throws the invitee list away with it`() = runTest {
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo)
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(event()))
+        calendar.onEvent(CalendarEvent2Event.ShowInvitees)
+        advanceUntilIdle()
+
+        calendar.onEvent(CalendarEvent2Event.CloseDetail)
+
+        assertNull(calendar.state.value.inviteeList)
+    }
+
+    @Test
+    fun `outside guests only the event knows are not counted twice`() = runTest {
+        // The invitation rows usually carry externals themselves; adding the
+        // event's list on top counted every guest twice.
+        val repo = FakeCalendar().apply {
+            invitees = listOf(inviteeRow("ext", email = "guest@example.com", external = true))
+        }
+        val calendar = viewModel(repo)
+        calendar.onEvent(
+            CalendarEvent2Event.OpenDetail(
+                event().copy(externalEmails = listOf("guest@example.com")),
+            ),
+        )
+
+        calendar.onEvent(CalendarEvent2Event.ShowInvitees)
+        advanceUntilIdle()
+
+        assertEquals(1, calendar.state.value.inviteeList?.rows?.size)
+    }
+
+    @Test
+    fun `an event whose rows carry no guest falls back to its own list`() = runTest {
+        val repo = FakeCalendar().apply { invitees = listOf(inviteeRow("u9")) }
+        val calendar = viewModel(repo)
+        calendar.onEvent(
+            CalendarEvent2Event.OpenDetail(
+                event().copy(externalEmails = listOf("guest@example.com")),
+            ),
+        )
+
+        calendar.onEvent(CalendarEvent2Event.ShowInvitees)
+        advanceUntilIdle()
+
+        val rows = calendar.state.value.inviteeList?.rows.orEmpty()
+        assertEquals(2, rows.size)
+        assertEquals("guest@example.com", rows.last().email)
+    }
+
+    @Test
+    fun `the list answers yes first, then waiting, then no`() {
+        // The question this list is opened to settle is "who is coming".
+        val list = InviteeListState(
+            eventTitle = "Unit call",
+            rows = listOf(
+                inviteeRow("a", status = InvitationStatus.Rejected),
+                inviteeRow("b", status = InvitationStatus.Pending),
+                inviteeRow("c", status = InvitationStatus.Accepted),
+            ),
+            isLoading = false,
+        )
+
+        assertEquals(listOf("c", "b", "a"), list.visibleRows().map { it.id })
+    }
+
+    @Test
+    fun `searching covers the name, the address, the job and the department`() {
+        val list = InviteeListState(
+            eventTitle = "Unit call",
+            rows = listOf(
+                inviteeRow("a", userId = "u1"),
+                inviteeRow("b", userId = "u2"),
+                inviteeRow("c", email = "guest@example.com", external = true),
+            ),
+            directory = listOf(
+                EventInvitee("u1", "Peach Android", designation = "Gaffer", department = "Electrical"),
+                EventInvitee("u2", "Sam Grip", designation = "Key Grip", department = "Grip"),
+            ),
+            isLoading = false,
+        )
+
+        assertEquals(listOf("a"), list.copy(search = "peach").visibleRows().map { it.id })
+        assertEquals(listOf("a"), list.copy(search = "gaffer").visibleRows().map { it.id })
+        assertEquals(listOf("a"), list.copy(search = "electrical").visibleRows().map { it.id })
+        assertEquals(listOf("c"), list.copy(search = "guest@").visibleRows().map { it.id })
+        assertTrue(list.copy(search = "nobody").visibleRows().isEmpty())
+    }
+
+    @Test
+    fun `somebody off the crew list still has a name`() {
+        // Better their id than a blank row: it is the honest answer for
+        // somebody since removed from the production.
+        val list = InviteeListState(eventTitle = "Unit call", rows = emptyList())
+
+        assertEquals("u404", list.nameOf(inviteeRow("row", userId = "u404")))
+        assertEquals("guest@example.com", list.nameOf(inviteeRow("row", email = "guest@example.com")))
+    }
+
+    private fun inviteeRow(
+        id: String,
+        userId: String? = null,
+        email: String? = null,
+        status: InvitationStatus = InvitationStatus.Pending,
+        external: Boolean = false,
+    ) = EventInviteeRow(
+        id = id,
+        userId = userId,
+        email = email,
+        status = status,
+        isExternal = external,
+    )
+
+    private fun at(text: String): Long = Instant.parse(text).toEpochMilliseconds()
 
     private companion object {
         const val MINUTE = 60_000L

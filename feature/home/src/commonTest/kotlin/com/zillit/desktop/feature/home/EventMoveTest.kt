@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.home.calendar.CalendarViewModel
 import com.zillit.desktop.feature.home.calendar.DragGrid
 import com.zillit.desktop.feature.home.calendar.EventDraft
 import com.zillit.desktop.feature.home.calendar.EventInvitation
+import com.zillit.desktop.feature.home.calendar.EventInviteeRow
 import com.zillit.desktop.feature.home.calendar.EventTimes
 import com.zillit.desktop.feature.home.calendar.InvitationStatus
 import com.zillit.desktop.feature.home.calendar.TimezoneOption
@@ -104,6 +105,9 @@ class EventMoveTest {
             saved += draft to times
             return success(Unit)
         }
+
+        override suspend fun eventInvitees(eventId: String, occurrenceDate: String?) =
+            success(emptyList<EventInviteeRow>())
 
         override suspend fun timezones() = success(emptyList<TimezoneOption>())
     }

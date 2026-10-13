@@ -40,6 +40,20 @@ interface CalendarRepository {
         cursor: String? = null,
     ): ZillitResult<InvitationPage>
 
+    /**
+     * Everyone on one event and where each of them stands — the web's
+     * `invitationlist`, which backs the "See invitees" list.
+     *
+     * [eventId] is the SERIES ([CalendarEvent.masterEventId]), not the
+     * occurrence row, and [occurrenceDate] ("YYYY-MM-DD") says which
+     * occurrence of it: a recurring invitation is answered per occurrence, so
+     * the id alone would return the series' original answers.
+     */
+    suspend fun eventInvitees(
+        eventId: String,
+        occurrenceDate: String? = null,
+    ): ZillitResult<List<EventInviteeRow>>
+
     /** Accepts an invitation. */
     suspend fun accept(eventId: String, startMillis: Long): ZillitResult<Unit>
 
@@ -165,6 +179,27 @@ class CalendarRepositoryImpl(
                 nextCursor = invitationCursor(body),
             )
         }
+
+    /**
+     * `GET calendar/invitationlist?event_id=…&occurrence_date=…` — the web's
+     * `getEventInvitations`, parameter for parameter. The occurrence date is
+     * omitted rather than sent empty for a one-off event: the route reads it
+     * as "which repeat", and a blank one narrows the answer to nothing.
+     */
+    override suspend fun eventInvitees(
+        eventId: String,
+        occurrenceDate: String?,
+    ): ZillitResult<List<EventInviteeRow>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${config.apiV2(ZillitService.Calendar)}calendar/invitationlist",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            queryParameters = buildMap {
+                put("event_id", eventId)
+                occurrenceDate?.takeIf { it.isNotBlank() }?.let { put("occurrence_date", it) }
+            },
+        ).map { body -> invitationRows(body).mapNotNull(::readInviteeRow) }
 
     /** `GET calendar/timezones` — iOS's `getTimezones`, row for row. */
     override suspend fun timezones(): ZillitResult<List<TimezoneOption>> =
@@ -305,6 +340,29 @@ internal fun readInvitation(row: JsonElement, listed: InvitationStatus): EventIn
 }
 
 /**
+ * Reads one row of `invitationlist`.
+ *
+ * A row naming nobody — neither a crew id nor an address — is dropped rather
+ * than rendered: it would be a blank line in the invitee list with a status
+ * beside it, which reads as a bug rather than as missing data.
+ */
+internal fun readInviteeRow(row: JsonElement): EventInviteeRow? {
+    if (row !is JsonObject) return null
+    val userId = row.str("user_id")
+    val email = row.str("email") ?: row.str("mail")
+    if (userId == null && email == null) return null
+
+    return EventInviteeRow(
+        id = row.str("_id") ?: userId ?: email.orEmpty(),
+        userId = userId,
+        email = email,
+        status = InvitationStatus.of(row.str("status")),
+        rejectionReason = row.str("rejection_reason"),
+        isExternal = row.str("type")?.equals("external", ignoreCase = true) == true,
+    )
+}
+
+/**
  * Reads one event.
  *
  * Internal and top-level so tests exercise the real reader — the same reason
@@ -340,7 +398,11 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
         hasCall = row.hasCall(),
         isRecurring = row.isRecurring(),
         recurrence = row.readRecurrence(),
-        invitedCount = (row["invited_users"] as? JsonArray)?.size ?: 0,
+        // Crew plus outside guests, deduplicated across the two spellings —
+        // the web's `invitations.length + externals`. Counting
+        // `invited_users` alone read "3 invitees" on an event with three
+        // crew and two guests, and zero on one written only under iOS's key.
+        invitedCount = row.inviteeIds().size + row.externalEmails().size,
         audience = row.readAudience(),
         callType = CallType.of(row.str("call_type")),
         cncGroupId = row.str("cnc_group_id").orEmpty(),
@@ -348,6 +410,9 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
         line = EventCallLine.of(row.str("line")),
         inviteeIds = row.inviteeIds(),
         externalEmails = row.externalEmails(),
+        createdAtMillis = row.millis("created_at"),
+        excludeOrganiser = row.bool("createUser_exclude"),
+        masterEventId = row.str("master_event_id") ?: row.str("parent_event_id") ?: id,
     )
 }
 

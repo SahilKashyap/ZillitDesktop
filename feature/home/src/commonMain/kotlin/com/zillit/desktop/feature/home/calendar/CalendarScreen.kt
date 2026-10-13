@@ -80,6 +80,8 @@ internal fun CalendarScreen(
      * is then not drawn at all.
      */
     onJoinCall: ((CalendarEvent) -> Unit)? = null,
+    /** Opens an event's picked location in the browser's maps. */
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -123,7 +125,18 @@ internal fun CalendarScreen(
 
         EventFormDialog(state.form, onEvent, loadAvatar = loadAvatar)
 
-        state.detail?.let { detail -> EventDetailPopover(detail, onEvent, onJoinCall = onJoinCall) }
+        state.detail?.let { detail ->
+            EventDetailPopover(
+                detail = detail,
+                onEvent = onEvent,
+                onJoinCall = onJoinCall,
+                onOpenLink = onOpenLink,
+            )
+        }
+
+        // Above the popover it was opened from, and composed whether or not
+        // it is up so its exit can play.
+        InviteeListDialog(state.inviteeList, onEvent)
 
         // Always composed so its exit can play; the flag drives visibility.
         DeleteEventDialog(state.detail, onEvent)

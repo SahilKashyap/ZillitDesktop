@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CalendarRepository
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
 import com.zillit.desktop.feature.home.calendar.EventDraft
+import com.zillit.desktop.feature.home.calendar.EventInviteeRow
 import com.zillit.desktop.feature.home.calendar.EventTimes
 import com.zillit.desktop.feature.home.calendar.InvitationPage
 import com.zillit.desktop.feature.home.calendar.InvitationStatus
@@ -56,6 +57,8 @@ class CalendarDateClickTest {
         override suspend fun decline(eventId: String, startMillis: Long, reason: String?) = success(Unit)
         override suspend fun delete(eventId: String) = success(Unit)
         override suspend fun save(draft: EventDraft, times: EventTimes, zone: TimeZone) = success(Unit)
+        override suspend fun eventInvitees(eventId: String, occurrenceDate: String?) =
+            success(emptyList<EventInviteeRow>())
         override suspend fun timezones() = success(emptyList<TimezoneOption>())
     }
 

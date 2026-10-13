@@ -114,7 +114,11 @@ internal fun TimeGrid(
                             .height(GRID_HEIGHT)
                             .zIndex(if (date == draggingDate) 1f else 0f)
                             .background(
-                                if (date == state.today) colors.accent.copy(alpha = TODAY_COLUMN_ALPHA) else colors.surface,
+                                if (date == state.today) {
+                                    colors.accent.copy(alpha = TODAY_COLUMN_ALPHA)
+                                } else {
+                                    colors.surface
+                                },
                             )
                             .clickable { onSelectDay(date) },
                     ) {

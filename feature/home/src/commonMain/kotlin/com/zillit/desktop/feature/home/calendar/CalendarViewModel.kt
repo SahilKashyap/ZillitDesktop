@@ -33,6 +33,8 @@ data class CalendarUiState(
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /** The event whose popover is open, if any. */
     val detail: EventDetailState? = null,
+    /** The popover's "See invitees" list, when it has been asked for. */
+    val inviteeList: InviteeListState? = null,
     /** The event being written, if any. */
     val form: EventFormState? = null,
     /** The received-invitations panel: open, which tab, and its rows. */
@@ -87,10 +89,53 @@ data class EventDetailState(
     val hasFinished: Boolean,
     /** The event's call can be joined right now. See [canJoinCall]. */
     val canJoinCall: Boolean = false,
-    val dateLabel: String,
-    val timeLabel: String,
+    /** "Wed, Oct 14 11:30 AM - 8:00 PM" — the clock row's headline. */
+    val rangeLabel: String = "",
+    /** "Wed, Oct 14, 2026" — the date row's headline. */
+    val fullDateLabel: String = "",
+    /** "Week 42 of the Year", under the date, as every client prints it. */
+    val weekLabel: String = "",
+    /** "1 hr 30 min", under the clock row. Empty for an event with no length. */
+    val durationText: String = "",
+    /** "Created Wed, Oct 14, 2026 11:30 AM", under the organiser. */
+    val createdLabel: String? = null,
+    /** Crew plus outside guests — what the invitee card counts. */
+    val inviteeCount: Int = 0,
+    /**
+     * The faces on the invitee card, crew first.
+     *
+     * Resolved against the crew the session already holds, so the stack draws
+     * with no request; a guest invited by address has no crew record and
+     * carries their address as the name, which the avatar answers with
+     * initials.
+     */
+    val inviteeFaces: List<EventInvitee> = emptyList(),
     val isBusy: Boolean = false,
     val isConfirmingDelete: Boolean = false,
+    val error: String? = null,
+) {
+    /** Struck through and prefixed, as the web titles it. */
+    val isCancelled: Boolean get() = event.isCancelled
+
+    /** Declined by THIS user — a different prefix, and no call to join. */
+    val isDeclined: Boolean
+        get() = !isCancelled && event.inviteStatus == InviteStatus.Rejected
+}
+
+/**
+ * The "See invitees" list: everyone on the event and where each stands.
+ *
+ * The rows come from the server (an invitation's status is per occurrence, so
+ * the event payload's own guest list cannot answer it); the names, designations
+ * and departments beside them are resolved from [directory], the crew the
+ * session already holds.
+ */
+data class InviteeListState(
+    val eventTitle: String,
+    val rows: List<EventInviteeRow> = emptyList(),
+    val directory: List<EventInvitee> = emptyList(),
+    val search: String = "",
+    val isLoading: Boolean = true,
     val error: String? = null,
 )
 
@@ -124,6 +169,12 @@ data class EventInvitee(
     val name: String,
     /** Shown under the name in the picker; null when the crew record has none. */
     val designation: String? = null,
+    /**
+     * Beside the designation in the invitee list, and searchable there — the
+     * web searches by department too, because "who from Camera is coming" is
+     * the question a coordinator actually has.
+     */
+    val department: String? = null,
 )
 
 sealed interface CalendarEvent2Event {
@@ -142,6 +193,11 @@ sealed interface CalendarEvent2Event {
     data object CloseDetail : Event
 
     data class RespondToInvite(val accept: Boolean) : Event
+
+    /** The popover's invitee card: open the searchable list, and close it. */
+    data object ShowInvitees : Event
+    data object HideInvitees : Event
+    data class SearchInvitees(val text: String) : Event
 
     data object AskDeleteEvent : Event
     data object ConfirmDeleteEvent : Event
@@ -225,6 +281,16 @@ class CalendarViewModel(
      */
     private val invitees: () -> List<EventInvitee> = { emptyList() },
     /**
+     * The whole crew, for putting a name and a face to an id.
+     *
+     * Separate from [invitees] because that list is the FORM's — it leaves the
+     * organiser out, since they step out of their own event with the
+     * "I will not be part of this event" checkbox rather than by not being
+     * offered. Reading a detail popover's attendee list through it left
+     * whoever created the event nameless.
+     */
+    private val directory: () -> List<EventInvitee> = invitees,
+    /**
      * The clock, for the rules about whether something has already happened —
      * a date in the past, a reminder that would have to fire before now.
      * Injected so those rules can be tested at a fixed moment rather than
@@ -267,6 +333,7 @@ class CalendarViewModel(
                         invitationsCursor = null,
                         pendingInvitations = 0,
                         detail = null,
+                        inviteeList = null,
                         form = null,
                         declining = null,
                         error = null,
@@ -364,7 +431,7 @@ class CalendarViewModel(
         val invitation = currentState.declining ?: return
         // Closes the popover as well when the decline came from one — the
         // answer is given, and the reload brings back the server's view.
-        setState { copy(declining = null, detail = null) }
+        setState { copy(declining = null, detail = null, inviteeList = null) }
         sendAnswer {
             repository.decline(
                 invitation.eventId,
@@ -406,6 +473,7 @@ class CalendarViewModel(
         setState {
             copy(
                 detail = null,
+                inviteeList = null,
                 form = EventFormState(
                     draft = draft,
                     today = state.today,
@@ -467,8 +535,13 @@ class CalendarViewModel(
     private fun onEventAction(event: CalendarEvent2Event.Event) {
         when (event) {
             is CalendarEvent2Event.OpenDetail -> openDetail(event.event)
-            CalendarEvent2Event.CloseDetail -> setState { copy(detail = null) }
+            CalendarEvent2Event.CloseDetail -> setState { copy(detail = null, inviteeList = null) }
             is CalendarEvent2Event.RespondToInvite -> respond(event.accept)
+            CalendarEvent2Event.ShowInvitees -> openInvitees()
+            CalendarEvent2Event.HideInvitees -> setState { copy(inviteeList = null) }
+            is CalendarEvent2Event.SearchInvitees -> setState {
+                copy(inviteeList = inviteeList?.copy(search = event.text))
+            }
             CalendarEvent2Event.AskDeleteEvent -> setState {
                 copy(detail = detail?.copy(isConfirmingDelete = true))
             }
@@ -506,6 +579,9 @@ class CalendarViewModel(
         // not drift while the popover is open.
         val now = state.today.startOfDayMillis(state.zone)
 
+        val startDate = Instant.fromEpochMilliseconds(event.startMillis)
+            .toLocalDateTime(state.zone).date
+
         setState {
             copy(
                 detail = EventDetailState(
@@ -513,10 +589,102 @@ class CalendarViewModel(
                     permissions = permissionsFor(event, isCreator(event), now),
                     hasFinished = event.hasFinished(now),
                     canJoinCall = event.canJoinCall(now),
-                    dateLabel = event.dateLabel(state.zone),
-                    timeLabel = event.timeLabel(state.zone),
+                    rangeLabel = event.rangeLabel(state.zone),
+                    fullDateLabel = event.fullDateLabel(state.zone),
+                    weekLabel = str(S.week_of_year, weekOfYear(startDate)),
+                    durationText = durationLabel(event.startMillis, event.endMillis),
+                    createdLabel = event.createdAtMillis
+                        .takeIf { it > 0 }
+                        ?.let { str(S.docusign_created_on, dateTimeLabel(it, state.zone)) },
+                    inviteeCount = event.invitedCount,
+                    inviteeFaces = facesFor(event),
+                ),
+                // A list left over from the previous event is the wrong list.
+                inviteeList = null,
+            )
+        }
+    }
+
+    /**
+     * Everyone on the event, crew first, for the invitee card's avatar stack.
+     *
+     * Crew keep the directory's order so the stack is stable between opens;
+     * outside guests follow under their address, with no id, which leaves the
+     * avatar on initials rather than fetching a face that cannot exist.
+     */
+    private fun facesFor(event: CalendarEvent): List<EventInvitee> {
+        val crew = directory().filter { it.userId in event.inviteeIds }
+        val named = crew.map { it.userId }.toSet()
+        // Invited ids the crew list does not know — someone since removed from
+        // the production. Counted, as the web counts them, under their id.
+        val unknown = event.inviteeIds.filterNot { it in named }.map { EventInvitee(it, it) }
+        return crew + unknown + event.externalEmails.map { EventInvitee(userId = "", name = it) }
+    }
+
+    /**
+     * Opens the invitee list and fetches it.
+     *
+     * Addressed by the SERIES plus the occurrence's date, as the web addresses
+     * it: an invitation to a repeating event is answered per occurrence, so
+     * asking by the occurrence row's own id returns the series' first answers.
+     * The guest list already on the event is not enough — it says who was
+     * invited, never who said yes.
+     */
+    private fun openInvitees() {
+        val detail = currentState.detail ?: return
+        val event = detail.event
+        val occurrence = if (event.isRecurring) {
+            Instant.fromEpochMilliseconds(event.startMillis)
+                .toLocalDateTime(currentState.zone).date.isoText()
+        } else {
+            null
+        }
+
+        setState {
+            copy(
+                inviteeList = InviteeListState(
+                    eventTitle = event.title,
+                    directory = directory(),
                 ),
             )
+        }
+
+        launchResult(
+            block = {
+                repository.eventInvitees(event.masterEventId ?: event.id, occurrence)
+            },
+            onSuccess = { rows ->
+                setState {
+                    // Only if this is still the list being looked at — a
+                    // popover closed mid-fetch must not reopen it.
+                    val open = inviteeList ?: return@setState this
+                    copy(inviteeList = open.copy(rows = withGuests(rows, event), isLoading = false))
+                }
+            },
+            onError = { error ->
+                setState {
+                    val open = inviteeList ?: return@setState this
+                    copy(inviteeList = open.copy(isLoading = false, error = error.localised()))
+                }
+            },
+        )
+    }
+
+    /**
+     * The server's rows, plus any outside guest only the event itself knows.
+     *
+     * The invitation rows usually carry externals under `type: external`; the
+     * fallback is for events written before they did, and it is a fallback
+     * rather than an addition because adding both counted every guest twice —
+     * the same rule the web's `extraExternals` applies.
+     */
+    private fun withGuests(
+        rows: List<EventInviteeRow>,
+        event: CalendarEvent,
+    ): List<EventInviteeRow> {
+        if (rows.any { it.isExternal } || event.externalEmails.isEmpty()) return rows
+        return rows + event.externalEmails.map { email ->
+            EventInviteeRow(id = email, email = email, isExternal = true)
         }
     }
 
@@ -553,7 +721,7 @@ class CalendarViewModel(
             onSuccess = {
                 // Closed rather than left showing the old status: the answer is
                 // given, and the reload brings back what the server now thinks.
-                setState { copy(detail = null) }
+                setState { copy(detail = null, inviteeList = null) }
                 load()
             },
             onError = { error ->
@@ -658,7 +826,7 @@ class CalendarViewModel(
             block = { repository.delete(detail.event.id) },
             onSuccess = {
                 markSelfAction()
-                setState { copy(detail = null) }
+                setState { copy(detail = null, inviteeList = null) }
                 load()
             },
             onError = { error ->
