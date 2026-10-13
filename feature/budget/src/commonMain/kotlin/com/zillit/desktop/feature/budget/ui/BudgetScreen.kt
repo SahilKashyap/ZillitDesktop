@@ -128,7 +128,7 @@ private fun Rail(
                 }
             }
         }
-        RailFloatingActions(state, onEvent, Modifier.align(Alignment.BottomEnd))
+        if (!state.readOnly) RailFloatingActions(state, onEvent, Modifier.align(Alignment.BottomEnd))
     }
 }
 
@@ -144,7 +144,8 @@ private fun RailHeader(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
         ),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        Row(
+        // The cabinet's window already carries the title (`FilmHeader` is hidden on `/settings`).
+        if (!state.readOnly) Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {

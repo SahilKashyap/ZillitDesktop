@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.purchaseorder.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -66,7 +67,6 @@ internal fun PoDialogs(state: PoUiState, onEvent: (PoEvent) -> Unit) {
  * process, send to the vendor, view the PDF. Each is gated by the same
  * predicate the server uses, so a button that appears is one that will work.
  */
-@Suppress("LongMethod") // One order top to bottom; the order is the reading order.
 @Composable
 private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val order = state.detail ?: return
@@ -85,59 +85,72 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         width = DETAIL_WIDTH,
         actions = { DetailActions(state, order, onEvent) },
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(
-                text = Money.format(order.gross, order.currency),
-                style = ZillitTheme.typography.displayLarge,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatusPill(label = state.statusLabel(order), tone = order.status.tone())
-        }
-        if (state.isLocked(order)) {
-            ZillitNotice(
-                text = str(S.desktop_po_period_locked_banner, state.periodLock.lockedThrough),
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Lock,
-            )
-        }
-        if (order.isLocalOnly) {
-            ZillitNotice(
-                text = if (order.local?.failed == true) {
-                    str(
-                        S.desktop_po_local_send_failed,
-                        order.local.error ?: str(S.desktop_the_server_refused_it),
-                    )
-                } else {
-                    str(S.desktop_po_queued_offline_row)
-                },
-                tone = if (order.local?.failed == true) StatusTone.Rejected else StatusTone.Pending,
-                icon = ZillitIcons.Warning,
-            )
-        }
-        NoApproverWarning(state, order, onEvent)
-        DetailTiles(state, order)
-        if (order.description.isNotBlank()) {
-            ZillitSectionLabel(str(S.description))
-            ZillitText(text = order.description, style = ZillitTheme.typography.bodyMedium)
-        }
-        if (order.rejectionReason?.isNotBlank() == true) {
-            ZillitSectionLabel(str(S.ah_float_rejection_reason))
-            ZillitText(
-                text = order.rejectionReason,
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.danger,
-            )
-            Tile(str(S.ah_lbl_rejected_by), state.personLabel(order.rejectedBy))
-        }
-        if (order.closureReason?.isNotBlank() == true) {
-            ZillitSectionLabel(str(S.desktop_po_closure_reason))
-            ZillitText(text = order.closureReason, style = ZillitTheme.typography.bodyMedium)
-        }
-        LineItems(order)
-        Approvals(state, order)
-        Attachments(state, order, onEvent)
-        History(state)
+        PoDetailBody(state, order, onEvent)
     }
+}
+
+/**
+ * The order top to bottom, without a frame around it.
+ *
+ * Split from the dialog so the File Cabinet can lay the same facts into its own
+ * window instead of stacking a second shell inside the first — [PoDialogs] adds
+ * the frame and the action row, the cabinet adds a back bar.
+ */
+@Suppress("LongMethod") // One order top to bottom; the order is the reading order.
+@Composable
+internal fun ColumnScope.PoDetailBody(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ZillitText(
+            text = Money.format(order.gross, order.currency),
+            style = ZillitTheme.typography.displayLarge,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitStatusPill(label = state.statusLabel(order), tone = order.status.tone())
+    }
+    if (state.isLocked(order)) {
+        ZillitNotice(
+            text = str(S.desktop_po_period_locked_banner, state.periodLock.lockedThrough),
+            tone = StatusTone.Pending,
+            icon = ZillitIcons.Lock,
+        )
+    }
+    if (order.isLocalOnly) {
+        ZillitNotice(
+            text = if (order.local?.failed == true) {
+                str(
+                    S.desktop_po_local_send_failed,
+                    order.local.error ?: str(S.desktop_the_server_refused_it),
+                )
+            } else {
+                str(S.desktop_po_queued_offline_row)
+            },
+            tone = if (order.local?.failed == true) StatusTone.Rejected else StatusTone.Pending,
+            icon = ZillitIcons.Warning,
+        )
+    }
+    if (!state.readOnly) NoApproverWarning(state, order, onEvent)
+    DetailTiles(state, order)
+    if (order.description.isNotBlank()) {
+        ZillitSectionLabel(str(S.description))
+        ZillitText(text = order.description, style = ZillitTheme.typography.bodyMedium)
+    }
+    if (order.rejectionReason?.isNotBlank() == true) {
+        ZillitSectionLabel(str(S.ah_float_rejection_reason))
+        ZillitText(
+            text = order.rejectionReason,
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.danger,
+        )
+        Tile(str(S.ah_lbl_rejected_by), state.personLabel(order.rejectedBy))
+    }
+    if (order.closureReason?.isNotBlank() == true) {
+        ZillitSectionLabel(str(S.desktop_po_closure_reason))
+        ZillitText(text = order.closureReason, style = ZillitTheme.typography.bodyMedium)
+    }
+    LineItems(order)
+    Approvals(state, order)
+    Attachments(state, order, onEvent)
+    History(state)
 }
 
 /** The grid of facts: company, episode, dates, coding, the vendor email stamp. */
@@ -339,8 +352,14 @@ private fun History(state: PoUiState) {
 
 @Suppress("LongMethod") // A rights table; flattening it is what makes it readable.
 @Composable
-private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
+internal fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
     if (order.isLocalOnly) return
+    // The File Cabinet keeps the PDF and nothing else: every other button on
+    // this row writes, and an archive is read.
+    if (state.readOnly) {
+        ViewPdfButton(state, order, onEvent)
+        return
+    }
     val viewer = state.viewer
     // Nothing that writes is offered on an order in the locked cost-report
     // period — the web hides Edit, Delete, Process and the decision there.
@@ -432,14 +451,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
             enabled = !state.busy,
         )
     }
-    ZillitButton(
-        text = str(S.ah_view_pdf),
-        onClick = { onEvent(PoEvent.ViewPdf(order.id)) },
-        variant = ButtonVariant.Tertiary,
-        size = ButtonSize.Small,
-        leadingIcon = ZillitIcons.Download,
-        enabled = !state.busy,
-    )
+    ViewPdfButton(state, order, onEvent)
     if (!locked && PoAccess.canDelete(order, viewer)) {
         ZillitButton(
             text = str(S.desktop_po_delete_po),
@@ -464,6 +476,18 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
             enabled = !state.busy,
         )
     }
+}
+
+@Composable
+private fun ViewPdfButton(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
+    ZillitButton(
+        text = str(S.ah_view_pdf),
+        onClick = { onEvent(PoEvent.ViewPdf(order.id)) },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Download,
+        enabled = !state.busy,
+    )
 }
 
 /** The Reassign dialog — one order, or a whole selection; an unassigned order is an Assign with no reason. */

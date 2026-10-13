@@ -12,6 +12,7 @@ kotlin {
             implementation(project(":core:designsystem"))
             implementation(project(":core:socket"))
             implementation(project(":core:mvvm"))
+            implementation(project(":core:cabinet"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))
             implementation(project(":core:permissions"))

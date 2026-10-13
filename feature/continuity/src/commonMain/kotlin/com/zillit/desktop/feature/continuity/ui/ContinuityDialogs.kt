@@ -206,7 +206,7 @@ private fun CardsDialog(
                     variant = ButtonVariant.Tertiary,
                 )
             } else {
-                if (open.tab == ContinuityTab.MyDepartment) {
+                if (open.tab == ContinuityTab.MyDepartment && !state.readOnly) {
                     UploadMenu(onEvent, text = str(S.desktop_location_upload_here), variant = ButtonVariant.Secondary)
                 }
                 ZillitButton(
@@ -232,7 +232,7 @@ private fun CardsDialog(
                     } else {
                         str(S.desktop_continuity_no_card_matches)
                     },
-                    message = if (open.query.isBlank() && open.tab == ContinuityTab.MyDepartment) {
+                    message = if (open.query.isBlank() && open.tab == ContinuityTab.MyDepartment && !state.readOnly) {
                         str(S.desktop_continuity_upload_into_scene)
                     } else {
                         null
@@ -366,7 +366,9 @@ private fun SceneTile(
                             )
                         }
                     }
-                    if (!open.selecting) TileMenu(state, open, scene, onEvent)
+                    if (!open.selecting && (!state.readOnly || scene.attachment != null)) {
+                        TileMenu(state, open, scene, onEvent)
+                    }
                 }
                 if (scene.notes.isNotBlank()) {
                     ZillitText(
@@ -426,21 +428,25 @@ private fun TileMenu(
             contentDescription = str(S.desktop_card_actions),
             onClick = { expanded = true },
         )
+        // A cabinet look keeps the web's read-only action here: download.
+        val writable = !state.readOnly
         val entries = buildList {
-            if (open.tab == ContinuityTab.MyDepartment && owned) {
+            if (writable && open.tab == ContinuityTab.MyDepartment && owned) {
                 add(ZillitMenuEntry.Action(str(S.txt_edit_details), ZillitIcons.Edit, ZillitMenuTone.Primary) {
                     onEvent(ContinuityEvent.Edit(scene))
                 })
             }
-            add(ZillitMenuEntry.Action(str(S.forward), ZillitIcons.Forward, ZillitMenuTone.Info) {
-                onEvent(ContinuityEvent.RequestForward)
-            })
+            if (writable) {
+                add(ZillitMenuEntry.Action(str(S.forward), ZillitIcons.Forward, ZillitMenuTone.Info) {
+                    onEvent(ContinuityEvent.RequestForward)
+                })
+            }
             if (scene.attachment != null) {
                 add(ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download, ZillitMenuTone.Neutral) {
                     onEvent(ContinuityEvent.Download(scene))
                 })
             }
-            if (owned) {
+            if (writable && owned) {
                 add(ZillitMenuEntry.Divider)
                 add(ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                     onEvent(ContinuityEvent.RequestDelete(scene))

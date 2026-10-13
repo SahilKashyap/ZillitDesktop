@@ -73,6 +73,12 @@ fun CastingScreen(
     board: BoardTool = BoardTool.Casting,
     /** Fetches a candidate's photo; null draws initials instead. */
     loadPhoto: (suspend (CastingMedia) -> ImageBitmap?)? = null,
+    /**
+     * The File Cabinet's view of the board: no stage moves and no way to post
+     * to a thread, the page header left to the window that hosts it. What the
+     * web hides behind `mainCastingIsFileCabinet`.
+     */
+    readOnly: Boolean = false,
 ) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         when {
@@ -84,40 +90,42 @@ fun CastingScreen(
             )
 
             else -> Column(Modifier.fillMaxSize()) {
-                Header(state, onEvent, board)
+                Header(state, onEvent, board, readOnly)
                 ZillitDivider()
-                Board(state, onEvent, loadPhoto, board)
+                Board(state, onEvent, loadPhoto, board, readOnly)
             }
         }
-        DiscussionDialog(state, onEvent)
+        DiscussionDialog(state, onEvent, readOnly)
     }
 }
 
 @Composable
-private fun Header(state: CastingUiState, onEvent: (CastingEvent) -> Unit, board: BoardTool) {
+private fun Header(state: CastingUiState, onEvent: (CastingEvent) -> Unit, board: BoardTool, readOnly: Boolean) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
-            title = state.title(board.title),
-            eyebrow = str(S.desktop_film_tools),
-            description = state.unit?.label
-                ?: if (board.showsScenes) {
-                    str(S.desktop_cast_wardrobe_description)
-                } else {
-                    str(S.desktop_cast_casting_description)
+        if (!readOnly) {
+            ZillitPageHeader(
+                title = state.title(board.title),
+                eyebrow = str(S.desktop_film_tools),
+                description = state.unit?.label
+                    ?: if (board.showsScenes) {
+                        str(S.desktop_cast_wardrobe_description)
+                    } else {
+                        str(S.desktop_cast_casting_description)
+                    },
+                actions = {
+                    ZillitButton(
+                        text = str(S.refresh_text),
+                        onClick = { onEvent(CastingEvent.Refresh) },
+                        variant = ButtonVariant.Secondary,
+                        leadingIcon = ZillitIcons.Reload,
+                        loading = state.loading,
+                    )
                 },
-            actions = {
-                ZillitButton(
-                    text = str(S.refresh_text),
-                    onClick = { onEvent(CastingEvent.Refresh) },
-                    variant = ButtonVariant.Secondary,
-                    leadingIcon = ZillitIcons.Reload,
-                    loading = state.loading,
-                )
-            },
-        )
+            )
+        }
         // Only the lists this viewer has; one list needs no switch.
         if (state.viewer.units.size > 1) ListTabs(state, onEvent)
         Row(
@@ -152,6 +160,7 @@ private fun Board(
     onEvent: (CastingEvent) -> Unit,
     loadPhoto: (suspend (CastingMedia) -> ImageBitmap?)?,
     board: BoardTool,
+    readOnly: Boolean,
 ) {
     Column(Modifier.fillMaxSize()) {
         state.error?.let { message ->
@@ -201,7 +210,7 @@ private fun Board(
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 items(state.visible, key = { it.id }) { entry ->
-                    EntryCard(state, entry, loadPhoto, board, onEvent)
+                    EntryCard(state, entry, loadPhoto, board, onEvent, readOnly)
                 }
             }
         }
@@ -235,6 +244,7 @@ private fun EntryCard(
     loadPhoto: (suspend (CastingMedia) -> ImageBitmap?)?,
     board: BoardTool,
     onEvent: (CastingEvent) -> Unit,
+    readOnly: Boolean,
 ) {
     ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
         Photo(entry, loadPhoto)
@@ -260,18 +270,20 @@ private fun EntryCard(
         // Where this one can go next: the stages it is not already at. Shown
         // whatever the rights — CastingViewModel.move answers a press without
         // them by offering to ask an admin, which is more use than no button.
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            CastingViewModel.STATUSES
-                .filter { it != state.status }
-                .forEach { target ->
-                    ZillitButton(
-                        text = "→ ${target.label}",
-                        onClick = { onEvent(CastingEvent.MoveTo(entry.id, target)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                }
+        if (!readOnly) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                CastingViewModel.STATUSES
+                    .filter { it != state.status }
+                    .forEach { target ->
+                        ZillitButton(
+                            text = "→ ${target.label}",
+                            onClick = { onEvent(CastingEvent.MoveTo(entry.id, target)) },
+                            variant = ButtonVariant.Tertiary,
+                            size = ButtonSize.Small,
+                            enabled = !state.busy,
+                        )
+                    }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             entry.episode.takeIf { it.isNotBlank() }?.let {
@@ -350,7 +362,7 @@ private val SEARCH_WIDTH = 260.dp
  * this client the conversation had nowhere to live.
  */
 @Composable
-private fun DiscussionDialog(state: CastingUiState, onEvent: (CastingEvent) -> Unit) {
+private fun DiscussionDialog(state: CastingUiState, onEvent: (CastingEvent) -> Unit, readOnly: Boolean) {
     val entry = state.openEntry ?: return
     ZillitDialogShell(
         title = entry.characterName.ifBlank { str(S.discussion_text) },
@@ -393,24 +405,30 @@ private fun DiscussionDialog(state: CastingUiState, onEvent: (CastingEvent) -> U
                 }
             }
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            ZillitTextField(
-                value = state.discussionDraft,
-                onValueChange = { onEvent(CastingEvent.DiscussionDraftChanged(it)) },
-                placeholder = str(S.desktop_cast_discussion_placeholder),
-                modifier = Modifier.weight(1f),
-            )
-            ZillitButton(
-                text = str(S.send),
-                onClick = { onEvent(CastingEvent.SendDiscussion) },
-                enabled = state.discussionDraft.isNotBlank() && !state.discussionSending,
-                loading = state.discussionSending,
-            )
-        }
+        if (!readOnly) DiscussionComposer(state, onEvent)
+    }
+}
+
+/** The draft and its Send — absent from the File Cabinet, which only reads the thread. */
+@Composable
+private fun DiscussionComposer(state: CastingUiState, onEvent: (CastingEvent) -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ZillitTextField(
+            value = state.discussionDraft,
+            onValueChange = { onEvent(CastingEvent.DiscussionDraftChanged(it)) },
+            placeholder = str(S.desktop_cast_discussion_placeholder),
+            modifier = Modifier.weight(1f),
+        )
+        ZillitButton(
+            text = str(S.send),
+            onClick = { onEvent(CastingEvent.SendDiscussion) },
+            enabled = state.discussionDraft.isNotBlank() && !state.discussionSending,
+            loading = state.discussionSending,
+        )
     }
 }
 

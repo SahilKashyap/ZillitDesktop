@@ -97,7 +97,8 @@ fun DodScreen(
             ),
     ) {
         Column(Modifier.fillMaxSize()) {
-            DodHeader(state, onEvent)
+            // The cabinet window has its own title and Close; the web hides this header there too.
+            if (!state.isCabinet) DodHeader(state, onEvent)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -121,7 +122,7 @@ fun DodScreen(
                     )
                 }
                 // ZL-17014 — the web's history alert.
-                if (!live) {
+                if (state.isHistory) {
                     ZillitNotice(
                         text = str(S.desktop_dist_history_deleted_note),
                         tone = StatusTone.Progress,
@@ -219,11 +220,11 @@ private fun DodFolderGrid(state: DistributionUiState, onEvent: (DistributionEven
     when {
         state.loading && state.folders.isEmpty() -> SkeletonGrid()
         state.folders.isEmpty() -> ZillitEmptyState(
-            title = if (live) str(S.drive_empty_no_folders) else str(S.desktop_dist_nothing_in_history),
-            message = if (live) {
-                str(S.desktop_dod_empty_message)
-            } else {
-                str(S.desktop_dist_deleted_documents_listed)
+            title = if (state.isHistory) str(S.desktop_dist_nothing_in_history) else str(S.drive_empty_no_folders),
+            message = when {
+                state.isCabinet -> null
+                live -> str(S.desktop_dod_empty_message)
+                else -> str(S.desktop_dist_deleted_documents_listed)
             },
             icon = ZillitIcons.Folder,
             action = if (live) {

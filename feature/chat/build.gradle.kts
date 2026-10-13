@@ -8,6 +8,9 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            // The File Cabinet window's viewer contract, implemented by the
+            // Group Chat row's viewer.
+            implementation(project(":core:cabinet"))
             implementation(project(":core:common"))
             implementation(project(":core:config"))
             implementation(project(":core:database"))
@@ -30,6 +33,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
         }
         jvmTest.dependencies {
             implementation(compose.desktop.currentOs)

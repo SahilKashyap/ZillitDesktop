@@ -120,7 +120,8 @@ fun ScheduleScreen(
             ),
     ) {
         Column(Modifier.fillMaxSize()) {
-            ScheduleHeader(state, onEvent)
+            // The cabinet window has its own title and Close, and one tab chosen from its menu.
+            if (!state.isCabinet) ScheduleHeader(state, onEvent)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -144,7 +145,7 @@ fun ScheduleScreen(
                     )
                 }
                 // ZL-17014 — the web's history alert.
-                if (!live) {
+                if (state.isHistory) {
                     ZillitNotice(
                         text = str(S.desktop_sched_history_note),
                         tone = StatusTone.Progress,
@@ -152,7 +153,8 @@ fun ScheduleScreen(
                     )
                 }
                 if (state.isFolderTab) {
-                    PagesSearchBar(state, onEvent)
+                    // The web hides the scene search on `/settings`, where the cabinet lives.
+                    if (!state.isCabinet) PagesSearchBar(state, onEvent)
                     PagesFolderGrid(state, onEvent)
                 } else {
                     ScheduleDocumentList(state, onEvent, resolveUser)
@@ -283,8 +285,9 @@ private fun ScheduleDocumentList(
     when {
         state.loading && rows.isEmpty() -> SkeletonList()
         rows.isEmpty() -> ZillitEmptyState(
-            title = if (live) str(S.no_data_found) else str(S.desktop_dist_nothing_in_history),
+            title = if (state.isHistory) str(S.desktop_dist_nothing_in_history) else str(S.no_data_found),
             message = when {
+                state.isCabinet -> null
                 !live -> str(S.desktop_sched_replaced_listed)
                 oneLine -> str(S.desktop_sched_empty_oneline)
                 else -> str(S.desktop_sched_empty_full)
@@ -602,11 +605,11 @@ private fun PagesFolderGrid(state: DistributionUiState, onEvent: (DistributionEv
     when {
         state.loading && state.folders.isEmpty() && state.searchResults == null -> SkeletonGrid()
         state.folders.isEmpty() -> ZillitEmptyState(
-            title = if (live) str(S.no_data_found) else str(S.desktop_dist_nothing_in_history),
-            message = if (live) {
-                str(S.desktop_sched_pages_empty_message)
-            } else {
-                str(S.desktop_dist_deleted_pages_listed)
+            title = if (state.isHistory) str(S.desktop_dist_nothing_in_history) else str(S.no_data_found),
+            message = when {
+                state.isCabinet -> null
+                live -> str(S.desktop_sched_pages_empty_message)
+                else -> str(S.desktop_dist_deleted_pages_listed)
             },
             icon = ZillitIcons.Folder,
             action = if (live) {

@@ -100,6 +100,14 @@ class HomeFeedRepositoryImpl(
      * to the room as every other board does.
      */
     private val receiver: () -> String? = { null },
+    /**
+     * Reads the board the way the web's File Cabinet viewer does: every page
+     * asks for `isFileCabinet=true`, which makes the server answer the records
+     * that were moved into the cabinet instead of the live board. A read-only
+     * view — nothing here ever writes — and it must not touch the live
+     * board's offline copy, so no page is filed under a cache name.
+     */
+    private val fileCabinet: Boolean = false,
 ) : HomeFeedRepository {
 
     private val home get() = "${config.apiV2(service)}$board/"
@@ -140,15 +148,17 @@ class HomeFeedRepositoryImpl(
     ): ZillitResult<List<Notice>> =
         apiClient.request(
             verb = HttpVerb.Get,
-            url = "${chat}$unitId/$beforeMillis/previous",
+            url = "${chat}$unitId/$beforeMillis/previous$cabinetQuery",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
             // The only page ever asked for is the newest one, from "now" — a
             // URL that differs on every load. Kept under one name so the board
-            // still shows offline what it showed last time.
-            options = CallOptions(cacheAs = "${chat}$unitId/newest"),
+            // still shows offline what it showed last time. The cabinet's
+            // records are not that board: filing them there would replace the
+            // live copy with archived posts.
+            options = if (fileCabinet) CallOptions() else CallOptions(cacheAs = "${chat}$unitId/newest"),
         ).map { rows ->
-            rows.mapNotNull { readNotice(it, ::decryptBody) }.forDisplay()
+            rows.mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, ::decryptBody) }.forDisplay()
         }
 
     /** Scrolling back: the same route, kept out of the newest-page cache. */
@@ -158,13 +168,24 @@ class HomeFeedRepositoryImpl(
     ): ZillitResult<List<Notice>> =
         apiClient.request(
             verb = HttpVerb.Get,
-            url = "${chat}$unitId/$beforeMillis/previous",
+            url = "${chat}$unitId/$beforeMillis/previous$cabinetQuery",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
         ).map { rows ->
-            rows.mapNotNull { readNotice(it, ::decryptBody) }.forDisplay()
+            rows.mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, ::decryptBody) }.forDisplay()
         }
 
+    /**
+     * What the web adds to a chat read in cabinet mode (`fileCabinateDataFetch`,
+     * `fetchReportsChatMessageData`, `fetchPRChatMessageData`): `page=0` and the
+     * flag. Script Notes' own fetch sends the flag alone.
+     */
+    private val cabinetQuery: String
+        get() = when {
+            !fileCabinet -> ""
+            board == SCRIPT_NOTES_BOARD -> "?isFileCabinet=true"
+            else -> "?page=0&isFileCabinet=true"
+        }
 
     /**
      * Decrypts one notice body.
@@ -516,6 +537,7 @@ class HomeFeedRepositoryImpl(
     private companion object {
         const val TAG = "Home"
         const val UNREADABLE = "[This message could not be decrypted]"
+        const val SCRIPT_NOTES_BOARD = "script-notes"
     }
 }
 
@@ -739,7 +761,18 @@ internal data class HomeUnitDto(
  *
  * Top-level and internal so tests exercise the real reader rather than a copy.
  */
-internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Notice? {
+internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Notice? =
+    readNotice(row, keepDeletedReplies = false, decryptBody)
+
+/**
+ * [readNotice], optionally keeping the replies the server stamped `deleted`.
+ *
+ * The File Cabinet's records are the ones moved out of the live board, and
+ * their replies carry that stamp with them; the web's viewer shows every reply
+ * there (`UnitChatMessage` `filteredComments`, ZL-16952) where the live board
+ * hides them.
+ */
+internal fun readNotice(row: JsonElement, keepDeletedReplies: Boolean, decryptBody: (String) -> String): Notice? {
     if (row !is JsonObject) return null
     if (row.bool("deleted")) return null
 
@@ -768,7 +801,7 @@ internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Noti
         // neither puts a string inside `location` — so it is the fallback
         // label. See [GeoPoint].
         location = (row["location"] as? JsonObject)?.toGeoPoint()?.labelledWith(body),
-        comments = row.readComments(decryptBody),
+        comments = row.readComments(decryptBody, keepDeleted = keepDeletedReplies),
     )
 }
 
@@ -800,10 +833,13 @@ private fun JsonObject.number(key: String): Double? =
  * `Number(comment.deleted) > 0` the same way. A reply that will not decode
  * costs itself, not its siblings.
  */
-internal fun JsonObject.readComments(decryptBody: (String) -> String): List<NoticeComment> =
+internal fun JsonObject.readComments(
+    decryptBody: (String) -> String,
+    keepDeleted: Boolean = false,
+): List<NoticeComment> =
     (this["comments"] as? JsonArray).orEmpty()
         .mapNotNull { it as? JsonObject }
-        .filterNot { it.epochMillis("deleted") > 0 }
+        .filterNot { !keepDeleted && it.epochMillis("deleted") > 0 }
         .mapNotNull { row -> row.readComment(decryptBody) }
 
 private fun JsonObject.readComment(decryptBody: (String) -> String): NoticeComment? {

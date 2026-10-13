@@ -189,7 +189,8 @@ class LocationDiscussionTest {
             return ZillitResult.Success(Unit)
         }
 
-        override suspend fun info(status: LocationStatus) = ZillitResult.Success(emptyList<LocationInfo>())
+        override suspend fun info(status: LocationStatus, fileCabinet: Boolean) =
+            ZillitResult.Success(emptyList<LocationInfo>())
         override suspend fun media(
             status: LocationStatus,
             location: String?,
@@ -197,6 +198,7 @@ class LocationDiscussionTest {
             episode: String?,
             beforeMs: Long,
             next: Boolean,
+            fileCabinet: Boolean,
         ) = ZillitResult.Success(emptyList<LocationMedia>())
         override suspend fun create(
             draft: LocationDraft,

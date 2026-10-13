@@ -147,6 +147,17 @@ data class PoUiState(
     val query: PoQueryState? = null,
     /** The module's assignment rules as the settings read answered them; null until that read lands. */
     val assignmentRules: List<PoAssignmentRule>? = null,
+    /**
+     * True for the File Cabinet's archive view.
+     *
+     * The web mounts the same list and detail with every mutating callback
+     * left off; here the shared rows and detail read this instead. It lifts the
+     * All POs row gate (the archive is not scoped to an assistant's own
+     * orders), narrows the chips to the cabinet's, and takes the decision,
+     * edit, query and delete buttons off the detail — so a rights table that
+     * would offer one to this viewer cannot.
+     */
+    val readOnly: Boolean = false,
 ) {
     /**
      * The next approval decision on [order] and whether this viewer may take it
@@ -182,7 +193,7 @@ data class PoUiState(
      * tier that is out.
      */
     fun canOpen(order: PurchaseOrder): Boolean {
-        if (!destination.gatesRows(queueScope)) return true
+        if (readOnly || !destination.gatesRows(queueScope)) return true
         if (viewer.hasFullAccess) return true
         if (order.assignedTo != null && order.assignedTo == viewer.userId) return true
         return tiers.isApprover(order, viewer.userId)
@@ -217,9 +228,11 @@ data class PoUiState(
 
     /** Which chips this page offers — see [PoQuickFilter]. */
     val quickFilters: List<PoQuickFilter>
-        get() = when (destination) {
-            PoDestination.AllPos, PoDestination.DepartmentAllPos -> PoQuickFilter.WITH_HISTORY
-            PoDestination.Posted -> PoQuickFilter.RELIEF
+        get() = when {
+            readOnly -> PoQuickFilter.CABINET
+            destination == PoDestination.AllPos || destination == PoDestination.DepartmentAllPos ->
+                PoQuickFilter.WITH_HISTORY
+            destination == PoDestination.Posted -> PoQuickFilter.RELIEF
             else -> PoQuickFilter.DEFAULT
         }
 

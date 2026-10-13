@@ -41,6 +41,13 @@ class CastingRepositoryImpl(
     private val encrypt: (String) -> String? = { it },
     private val decrypt: (String) -> String? = { it },
     private val myUserId: () -> String? = { null },
+    /**
+     * The File Cabinet's reading of the list. The web sends nothing extra —
+     * `casting-info` already carries the deleted rows — and instead stops
+     * filtering them out (`CommonCasting.jsx:642`, `CommonWardrobe.jsx:583`),
+     * so the cabinet is the list with its tombstones kept.
+     */
+    private val fileCabinet: Boolean = false,
 ) : CastingRepository {
 
     private val base = config.apiV2(board.service).trimEnd('/')
@@ -66,7 +73,7 @@ class CastingRepositoryImpl(
             runCatching {
                 json.decodeFromJsonElement(ListSerializer(CastingEntryDto.serializer()), it)
             }.getOrNull()
-        }.orEmpty().mapNotNull { it.toEntry() }
+        }.orEmpty().mapNotNull { it.toEntry(keepDeleted = fileCabinet) }
     }
 
     /**

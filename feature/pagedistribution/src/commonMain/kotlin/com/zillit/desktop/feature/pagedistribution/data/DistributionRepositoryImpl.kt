@@ -75,7 +75,7 @@ class DistributionRepositoryImpl(
     override suspend fun documents(tab: DistributionTab, mode: ListMode): ZillitResult<List<DistDocument>> {
         val kind = tab.kind as? TabKind.Single
             ?: return ZillitResult.Failure(ZillitError.Unknown("${tab.key} is not a single-document list"))
-        return get(url(tab, kind.route), historyFlag(tab, mode)).mapData { data ->
+        return get(url(tab, kind.route), modeFlag(tab, mode)).mapData { data ->
             (data as? JsonArray).items().mapNotNull { parseDocument(it as? JsonObject) }
                 .filter { mode == ListMode.History || (!it.deleted && !it.replaced) }
         }
@@ -84,9 +84,10 @@ class DistributionRepositoryImpl(
     override suspend fun folders(tab: DistributionTab, mode: ListMode): ZillitResult<List<DistFolder>> {
         val kind = tab.kind as? TabKind.Folders
             ?: return ZillitResult.Failure(ZillitError.Unknown("${tab.key} has no folders"))
-        return get(url(tab, kind.folderRoute), historyFlag(tab, mode)).mapData { data ->
+        return get(url(tab, kind.folderRoute), modeFlag(tab, mode)).mapData { data ->
+            // The web's `filterList` keeps every row in history AND in the cabinet.
             (data as? JsonArray).items().mapNotNull { parseFolder(it as? JsonObject, kind.folderKey) }
-                .filter { mode == ListMode.History || !it.deleted }
+                .filter { mode != ListMode.Live || !it.deleted }
         }
     }
 
@@ -103,10 +104,10 @@ class DistributionRepositoryImpl(
             kind.folderKey.query to folderKey,
             "timestamp" to beforeMs,
             "nextPrevious" to if (next) "next" else "previous",
-        ) + historyFlag(tab, mode)
+        ) + modeFlag(tab, mode)
         return get(url(tab, kind.folderRoute), query).mapData { data ->
             (data as? JsonArray).items().mapNotNull { parseDocument(it as? JsonObject) }
-                .filter { mode == ListMode.History || !it.deleted }
+                .filter { mode != ListMode.Live || !it.deleted }
         }
     }
 
@@ -126,7 +127,7 @@ class DistributionRepositoryImpl(
             if (hex == null && scene != null) put("sceneNumber", scene)
             if (scene == null && hex != null) put("pageColourCode", hex)
             episode?.trim()?.takeIf { it.isNotEmpty() }?.let { put("episode", it) }
-            putAll(historyFlag(tab, mode))
+            putAll(modeFlag(tab, mode))
         }
         return get(url(tab, kind.folderRoute), query).mapData { data ->
             (data as? JsonArray).items().mapNotNull { parseDocument(it as? JsonObject) }
@@ -143,7 +144,7 @@ class DistributionRepositoryImpl(
             is TabKind.Single -> kind.idQuery
             is TabKind.Folders -> "pageId"
         }
-        val query = mapOf(idQuery to id, "action" to action.wire) + historyFlag(tab, mode)
+        val query = mapOf(idQuery to id, "action" to action.wire) + modeFlag(tab, mode, singleRead = true)
         return get(url(tab, tab.kind.itemRoute), query).flatMapData { data ->
             parseDocument(data as? JsonObject)
                 ?.let { ZillitResult.Success(it) }
@@ -197,13 +198,24 @@ class DistributionRepositoryImpl(
 
     private fun url(tab: DistributionTab, route: String) = "${base(tab.tool())}/$route"
 
-    /** The history switch — named for how the list's rows leave: replaced or deleted. */
-    private fun historyFlag(tab: DistributionTab, mode: ListMode): Map<String, Any?> =
-        if (mode != ListMode.History) {
-            emptyMap()
-        } else {
-            val name = if (tab.kind is TabKind.Single) "replaced" else "deleted"
-            mapOf(name to nowMillis())
+    /**
+     * What [mode] adds to a request. History is a flag named for how the
+     * list's rows leave — replaced or deleted; the cabinet is
+     * `isFileCabinet=true`, on every read the web's api files give it.
+     *
+     * The one read the web does NOT flag is a single script's: `RenderScript`
+     * calls `getFullScriptList(param, isUserHistory)` for View/Download and
+     * drops the cabinet argument, where the schedule and D.O.D equivalents
+     * pass it. [singleRead] marks that call so the same omission is kept.
+     */
+    private fun modeFlag(tab: DistributionTab, mode: ListMode, singleRead: Boolean = false): Map<String, Any?> =
+        when (mode) {
+            ListMode.Live -> emptyMap()
+            ListMode.History -> mapOf((if (tab.kind is TabKind.Single) "replaced" else "deleted") to nowMillis())
+            ListMode.Cabinet -> {
+                val scriptSingle = tab.kind is TabKind.Single && tab.tool().service == ZillitService.ScriptDistribution
+                if (singleRead && scriptSingle) emptyMap() else mapOf(CABINET_FLAG to "true")
+            }
         }
 
     private suspend fun get(url: String, query: Map<String, Any?> = emptyMap()): ZillitResult<ApiEnvelope> =
@@ -229,6 +241,7 @@ class DistributionRepositoryImpl(
 
     private companion object {
         const val HTTP_OK = 200
+        const val CABINET_FLAG = "isFileCabinet"
     }
 }
 

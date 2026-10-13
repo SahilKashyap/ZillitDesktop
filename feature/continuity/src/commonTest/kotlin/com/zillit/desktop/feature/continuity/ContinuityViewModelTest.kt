@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.continuity.ui.ContinuityEffect
 import com.zillit.desktop.feature.continuity.ui.ContinuityEvent
 import com.zillit.desktop.feature.continuity.ui.ContinuityViewModel
 import com.zillit.desktop.feature.continuity.ui.ForwardSheet
+import com.zillit.desktop.feature.continuity.ui.PickKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -528,6 +529,56 @@ class ContinuityViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("v.mp4"), transfer.opened)
         assertNull(vm.state.value.error)
+    }
+
+    /** The File Cabinet view: the boards load and open, and every write is refused without a word. */
+    @Test
+    fun `read-only start loads and opens but never writes, forwards or marks read`() = runTest(dispatcher) {
+        val repo = FakeRepo().apply { cards += scene("a", "12") }
+        val badges = FakeBadges()
+        val forwarder = FakeForwarder()
+        val vm = viewModel(repo, badges = badges, forwarder = forwarder)
+        vm.startReadOnly()
+        badges.counts.value = ContinuityUnread(tabs = mapOf("continuity_intra_label" to 3))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.readOnly)
+        assertEquals(listOf("12"), vm.state.value.shownFolders)
+        assertEquals(0, vm.state.value.unread.tab(ContinuityTab.MyDepartment))
+
+        vm.onEvent(ContinuityEvent.OpenFolder("12"))
+        advanceUntilIdle()
+        assertEquals(listOf("a"), assertNotNull(vm.state.value.open).shown.map { it.id })
+        assertTrue(badges.reads.isEmpty())
+
+        val card = vm.state.value.open!!.shown.single()
+        vm.onEvent(ContinuityEvent.RequestForward)
+        vm.onEvent(ContinuityEvent.Edit(card))
+        vm.onEvent(ContinuityEvent.RequestDelete(card))
+        vm.onEvent(ContinuityEvent.PickFiles(PickKind.Photos))
+        vm.onEvent(ContinuityEvent.ConfirmDelete)
+        advanceUntilIdle()
+        val state = vm.state.value
+        assertFalse(state.forwardIntent)
+        assertNull(state.editor)
+        assertNull(state.confirmDelete)
+        assertNull(state.error)
+        assertTrue(repo.deleted.isEmpty() && repo.updated.isEmpty() && repo.created.isEmpty() && repo.shared.isEmpty())
+    }
+
+    @Test
+    fun `read-only start begins afresh each time it opens`() = runTest(dispatcher) {
+        val repo = FakeRepo().apply { cards += scene("a", "12") }
+        val vm = viewModel(repo)
+        vm.startReadOnly()
+        advanceUntilIdle()
+        vm.onEvent(ContinuityEvent.OpenFolder("12"))
+        advanceUntilIdle()
+        assertNotNull(vm.state.value.open)
+
+        vm.startReadOnly()
+        advanceUntilIdle()
+        assertNull(vm.state.value.open)
+        assertEquals(ContinuityTab.MyDepartment, vm.state.value.tab)
     }
 }
 

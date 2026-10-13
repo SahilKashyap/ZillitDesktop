@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.cabinet.CabinetViewer
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
@@ -20,6 +21,7 @@ import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.continuity.domain.ContinuityAttachment
+import com.zillit.desktop.feature.continuity.cabinet.ContinuityCabinetViewer
 import com.zillit.desktop.feature.continuity.domain.PickedContinuityFile
 
 /** Continuity as a workspace tool, at the web's path (`/film-tools/continuity`). */
@@ -73,6 +75,15 @@ class ContinuityToolProvider(
             tone = if (notice?.success == false) ZillitToastTone.Danger else ZillitToastTone.Success,
         )
     }
+
+    /**
+     * The File Cabinet's read-only view of the same boards, on its own
+     * [cabinetModel] so the cabinet's open folder and tab are not the tool's.
+     * It borrows this provider's image, PDF, user and date seams — the host
+     * builds them once, for both doors.
+     */
+    fun cabinetViewer(cabinetModel: ContinuityViewModel): CabinetViewer =
+        ContinuityCabinetViewer(cabinetModel, loadImage, resolveUser, formatDate, loadPdfPages)
 
     companion object {
         const val CONTINUITY_PATH = "/film-tools/continuity"

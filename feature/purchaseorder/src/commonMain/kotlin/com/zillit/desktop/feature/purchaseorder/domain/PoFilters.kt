@@ -61,6 +61,12 @@ enum class PoQuickFilter(private val labelKey: String) {
         /** The two tabs whose endpoint also returns posted and closed rows. */
         val WITH_HISTORY = listOf(All, Pending, Approved, Rejected, Posted, Closed)
 
+        /**
+         * The File Cabinet's chips: All POs' minus Pending, since a pending
+         * order never reaches the archive (`FileCabinetPOList.jsx`).
+         */
+        val CABINET = listOf(All, Approved, Rejected, Posted, Closed)
+
         /** The Posted tab's relief chips. */
         val RELIEF = listOf(All, Open, FullyRelieved, PartiallyRelieved, Closed, Invoice)
     }

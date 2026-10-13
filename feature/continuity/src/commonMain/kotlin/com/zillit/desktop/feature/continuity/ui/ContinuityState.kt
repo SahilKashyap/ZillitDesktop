@@ -118,6 +118,12 @@ data class ContinuityUiState(
     /** The web's popconfirm before selection mode: "doing this will make your material visible to all". */
     val forwardIntent: Boolean = false,
     val forward: ForwardSheet? = null,
+    /**
+     * The File Cabinet's view of the boards: look, open, download — nothing
+     * that writes, and no unread (the web hides the header, the search card
+     * and the paperclip, and shows no badges off the tool's own route).
+     */
+    val readOnly: Boolean = false,
 ) {
     /** The web's `item.toString().includes(inputValue)`, numerically ordered. */
     val shownFolders: List<String>

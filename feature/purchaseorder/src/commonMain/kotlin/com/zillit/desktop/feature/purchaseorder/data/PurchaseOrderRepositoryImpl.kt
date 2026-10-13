@@ -105,6 +105,9 @@ class PurchaseOrderRepositoryImpl(
         },
     )
 
+    override suspend fun cabinetOrders(): ZillitResult<List<PurchaseOrder>> =
+        list(base, mapOf(FILE_CABINET_FLAG to "true"))
+
     override suspend fun approvalQueue(): ZillitResult<List<PurchaseOrder>> = list("$base/approval")
 
     override suspend fun myOrders(): ZillitResult<List<PurchaseOrder>> = list("$base/my")
@@ -368,6 +371,9 @@ class PurchaseOrderRepositoryImpl(
 
     private companion object {
         const val VENDOR_LIMIT = 500
+
+        /** The query flag the web's File Cabinet adds to the list call. */
+        const val FILE_CABINET_FLAG = "isFileCabinet"
 
         /** The server's own bulk cap, from its `bulkUpdateSchema`. */
         const val BULK_LIMIT = 100

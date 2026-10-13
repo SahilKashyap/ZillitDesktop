@@ -735,6 +735,16 @@ interface PurchaseOrderRepository {
      */
     suspend fun orders(status: PoStatus?, departmentId: String? = null): ZillitResult<List<PurchaseOrder>>
 
+    /**
+     * The production's orders as the File Cabinet reads them — the same list
+     * call with `isFileCabinet=true`, which makes the server answer the archive
+     * (`purchaseOrdersApi.list({ isFileCabinet: true })`). Defaulted to a refusal
+     * so a repository that has not wired it cannot pass a live list off as the
+     * archive.
+     */
+    suspend fun cabinetOrders(): ZillitResult<List<PurchaseOrder>> =
+        ZillitResult.Failure(ZillitError.Unknown("the file cabinet is not wired"))
+
     /** Orders routed to this viewer for a decision. */
     suspend fun approvalQueue(): ZillitResult<List<PurchaseOrder>>
 

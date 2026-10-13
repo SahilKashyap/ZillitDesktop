@@ -884,6 +884,138 @@ private fun Messages(
 }
 
 /**
+ * True inside the File Cabinet's reading copy of a thread. The web hands its
+ * message components a `filecabinet` flag that hides the reaction strip and the
+ * delivery tick and, with `showdropDown={false}`, the menu; a local keeps that
+ * one flag out of the six signatures between [ReadOnlyThread] and the bubble.
+ */
+internal val LocalReadOnlyThread = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * A room's archived lines for reading — the File Cabinet's `CncGroupModal`.
+ *
+ * The same bubbles, runs, day chips, quotes, attachments, lightbox and voice
+ * player as [ThreadPane], with nothing that acts on a record: no header, no
+ * composer, no menu, no reactions, no dialogs. [messages] ascend by time.
+ * Looking at a file stays free and saving one stays behind the host's
+ * download right, exactly as in the live thread.
+ */
+@Composable
+@Suppress("LongParameterList", "LongMethod") // The thread's seams, handed down once; one list, one viewer.
+internal fun ReadOnlyThread(
+    messages: List<ChatMessage>,
+    modifier: Modifier = Modifier,
+    resolveName: (String) -> String? = { null },
+    /** Strict crew lookup for tags — null keeps an unknown id as raw text. */
+    resolveMention: (String) -> String? = { null },
+    loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
+    loadThumbnail: suspend (ChatAttachment) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
+    onOpenAttachment: (ChatAttachment) -> Unit = {},
+    player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
+    loadAudio: suspend (ChatAttachment) -> ByteArray? = { null },
+    /** The next page back is on offer; the list's top row asks for it. */
+    hasOlder: Boolean = false,
+    loadingOlder: Boolean = false,
+    onShowOlder: () -> Unit = {},
+    /** Name the writer above an incoming run — a room's lines, not a DM's. */
+    showSenders: Boolean = true,
+) {
+    val seams = LocalChatSeams.current
+    var viewing by remember { mutableStateOf<ChatAttachment?>(null) }
+    var refused by remember { mutableStateOf(false) }
+    val posters = remember { PosterMemory() }
+    val shared = remember(messages) { sharedContent(messages) }
+    val now = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
+    val rows = remember(messages, now) { threadRows(messages, now) }
+    val listState = rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val media = BubbleMedia(
+        onOpen = { file -> if (seams.canDownload()) onOpenAttachment(file) else refused = true },
+        loadThumbnail = loadThumbnail,
+        player = player,
+        loadAudio = loadAudio,
+        onView = { viewing = it },
+        posters = posters,
+    )
+    val mentions = MentionHooks(resolveMention)
+    // Nothing here acts on a record; the slots exist because the bubble asks for them.
+    val actions = remember { BubbleActions(onReact = {}, onReply = {}) }
+
+    androidx.compose.runtime.CompositionLocalProvider(LocalReadOnlyThread provides true) {
+        Box(modifier.background(ZillitTheme.colors.chatWallpaper)) {
+            ChatWallpaper()
+            Column(Modifier.fillMaxSize()) {
+                ZillitLazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg),
+                    // Newest at the foot, as the live thread opens; the older page hangs off the top.
+                    reverseLayout = true,
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        vertical = ZillitTheme.spacing.md,
+                    ),
+                ) {
+                    items(rows, key = ThreadRow::key) { row ->
+                        when (row) {
+                            is ThreadRow.DayMark -> DayChip(row.label)
+                            is ThreadRow.Message -> row.message.notice?.let { DayChip(it.text) } ?: IncomingAware(
+                                message = row.message,
+                                senderName = row.message.senderId
+                                    .takeIf { showSenders && !row.message.isMine }?.let(resolveName),
+                                run = row.run,
+                                loadAvatar = loadAvatar,
+                                media = media,
+                                actions = actions,
+                                onJumpTo = { id ->
+                                    val index = rows.indexOfFirst { (it as? ThreadRow.Message)?.message?.id == id }
+                                    if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                                },
+                                resolveName = resolveName,
+                                mentions = mentions,
+                            )
+                        }
+                    }
+                    if (hasOlder) {
+                        item(key = "show-older") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !loadingOlder, onClick = onShowOlder)
+                                    .padding(ZillitTheme.spacing.md),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ZillitText(
+                                    text = if (loadingOlder) str(S.ah_loading) else str(S.desktop_show_older),
+                                    style = ZillitTheme.typography.labelSmall,
+                                    color = ZillitTheme.colors.accentText,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (refused) {
+                    DownloadRefusedNotice(seams.requestDownloadRights) { refused = false }
+                }
+            }
+            viewing?.let { file ->
+                val around = shared.neighboursOf(file.media)
+                ChatMediaViewer(
+                    file = file,
+                    onPrevious = stepTo(around.older) { viewing = it },
+                    onNext = stepTo(around.newer) { viewing = it },
+                    loadImage = { seams.loadFullImage?.invoke(it) ?: loadThumbnail(it) },
+                    videoUrl = seams.videoUrl,
+                    canDownload = seams.canDownload,
+                    onDownload = onOpenAttachment,
+                    onOpenOutside = onOpenAttachment,
+                    onClose = { viewing = null },
+                )
+            }
+        }
+    }
+}
+
+/**
  * One message row. Incoming rows in a room carry the writer's face and
  * name; in a DM both would say the obvious, so the bubble stands alone.
  */
@@ -1485,6 +1617,19 @@ private fun Bubble(
 ) {
     val mine = message.isMine
     val onReact = actions.onReact
+    // The File Cabinet's reading copy: the bubble alone, with none of the
+    // gestures, chevron or reactions that would act on a record.
+    if (LocalReadOnlyThread.current) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
+            BubbleBody(
+                message, senderName, media, onReact, mine,
+                uploadPercent, resolveName, mentions, onJumpTo, translation,
+                tail = run.first,
+                selection = rememberTextSelectionProbe(),
+            )
+        }
+        return
+    }
     val hover = androidx.compose.runtime.remember {
         androidx.compose.foundation.interaction.MutableInteractionSource()
     }
@@ -1863,7 +2008,8 @@ private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
     onReact: (String) -> Unit,
     resolveName: (String) -> String? = { null },
 ) {
-    if (message.reactions.isEmpty()) return
+    // The web's cabinet pages hide the reaction strip (`!filecabinet`).
+    if (message.reactions.isEmpty() || LocalReadOnlyThread.current) return
     Row(
         modifier = Modifier.padding(top = ZillitTheme.spacing.xxs),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
@@ -2523,7 +2669,7 @@ private fun FooterLine(message: ChatMessage, modifier: Modifier = Modifier) {
         )
         // Only our own messages carry a state: the other end's progress is
         // theirs to know, and a tick on their bubble would say nothing.
-        if (message.isMine) {
+        if (message.isMine && !LocalReadOnlyThread.current) {
             ZillitIcon(
                 icon = message.sendState.icon(),
                 contentDescription = message.sendState.describe(),

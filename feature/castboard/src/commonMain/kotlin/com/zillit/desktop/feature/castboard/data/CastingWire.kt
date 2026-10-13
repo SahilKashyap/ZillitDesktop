@@ -54,10 +54,11 @@ internal fun namesOf(element: JsonElement?): List<String> = when (element) {
 /** The same tolerance for a field that may be a number, a string, or a list. */
 internal fun textOf(element: JsonElement?): String = namesOf(element).joinToString(", ")
 
-internal fun CastingEntryDto.toEntry(): CastingEntry? {
+/** [keepDeleted] is the File Cabinet, which is the one place a deleted row is meant to be seen. */
+internal fun CastingEntryDto.toEntry(keepDeleted: Boolean = false): CastingEntry? {
     val identifier = id?.takeIf { it.isNotBlank() } ?: return null
     // A deleted row is filtered out by every client (`castingFunction.js:65`).
-    if (deleted == 1) return null
+    if (deleted == 1 && !keepDeleted) return null
     return CastingEntry(
         id = identifier,
         characterName = characterName.orEmpty(),

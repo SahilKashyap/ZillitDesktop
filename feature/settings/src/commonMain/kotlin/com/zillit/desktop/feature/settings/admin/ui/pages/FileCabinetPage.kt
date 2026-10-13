@@ -285,6 +285,8 @@ private fun BrowseRow(
     onOpen: (CabinetViewer, CabinetEntry?) -> Unit,
 ) {
     val interactive = viewer != null && !module.rowClickDisabled
+    // The viewer, when this row may use it at all.
+    val live = viewer?.takeIf { interactive }
     var expanded by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth()) {
@@ -306,16 +308,16 @@ private fun BrowseRow(
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
-            if (viewer != null && interactive) {
+            if (live != null) {
                 ZillitIcon(
-                    icon = if (viewer.expands && expanded) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight,
+                    icon = if (live.expands && expanded) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight,
                     contentDescription = null,
                     tint = ZillitTheme.colors.textMuted,
                     size = CHEVRON,
                 )
             }
         }
-        if (viewer != null && interactive && viewer.expands && expanded) EntryRows(viewer, onOpen)
+        if (live != null && live.expands && expanded) EntryRows(live, onOpen)
     }
 }
 

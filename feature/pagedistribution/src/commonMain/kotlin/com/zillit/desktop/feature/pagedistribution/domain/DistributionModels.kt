@@ -57,8 +57,13 @@ data class DistFolder(
 /** One row of `{type}/count/{id}` — a viewer's tallies. */
 data class CountRow(val userId: String, val viewCount: Int, val downloadCount: Int)
 
-/** Live, or the deleted-and-replaced history the web shows under `/history`. */
-enum class ListMode { Live, History }
+/**
+ * Live, the deleted-and-replaced history the web shows under `/history`, or
+ * the File Cabinet's archived records — the same pages with `isFileCabinet`
+ * on, read-only. Cabinet is "not live" to every management gate, which is
+ * what keeps upload, delete, move and publish off it.
+ */
+enum class ListMode { Live, History, Cabinet }
 
 /** What a single read is for — the server counts views and downloads per user. */
 enum class ReadAction(val wire: String) { None(""), View("view"), Download("download") }

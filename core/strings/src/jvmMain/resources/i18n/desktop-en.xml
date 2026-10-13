@@ -12861,4 +12861,8 @@
     <string name="desktop_fc_steps_mac_5">Double-click the downloaded ZIP file to extract the files. Once the extraction begins you will see a progress bar. When extraction is complete you will see the folder open up again, this time with \'Index\' above \'Assets\'. Under \'Details\' the folder will no longer be zipped.</string>
     <string name="desktop_fc_steps_note_folder">Note: You can also access the download you made through your download folder at any time.</string>
     <string name="desktop_fc_steps_note_keep">Note: This data is now always available to you on your computer. You can now delete the project if you want.</string>
+    <string name="desktop_cabinet_chat_no_messages">No messages to show.</string>
+    <string name="desktop_fc_all_pos_in_project">All Po\'s In The Project</string>
+    <string name="desktop_fc_no_purchase_orders">No purchase orders</string>
+    <string name="desktop_cabinet_no_view_rights">You do not have viewing rights for this tool. An administrator can grant them.</string>
 </resources>

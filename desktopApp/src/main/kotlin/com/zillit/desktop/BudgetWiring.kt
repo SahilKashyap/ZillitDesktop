@@ -19,6 +19,8 @@ import com.zillit.desktop.feature.budget.domain.BudgetMode
 import com.zillit.desktop.feature.budget.domain.BudgetViewer
 import com.zillit.desktop.feature.budget.ui.BudgetBadges
 import com.zillit.desktop.feature.budget.ui.BudgetContext
+import com.zillit.desktop.core.cabinet.CabinetViewer
+import com.zillit.desktop.feature.budget.cabinet.BudgetCabinetViewer
 import com.zillit.desktop.feature.budget.ui.BudgetHost
 import com.zillit.desktop.feature.budget.ui.BudgetPerson
 import com.zillit.desktop.feature.budget.ui.BudgetScreenSeams
@@ -125,6 +127,32 @@ internal fun AppGraph.Ready.budgetProvider(
         conversation = { state -> BudgetConversationPane(this, state, player) },
     ),
 )
+
+/**
+ * The File Cabinet's two budget rows: the live budget lists and chats, read-only.
+ *
+ * Built here because the helpers they share with the tool (the department map,
+ * the host, the file opener) are private to this file.
+ */
+internal fun AppGraph.Ready.budgetCabinetViewers(scope: CoroutineScope): List<CabinetViewer> {
+    val host = budgetHost(BudgetDepartments(this, scope))
+    return BudgetMode.entries.map { mode ->
+        BudgetCabinetViewer(
+            mode = mode,
+            repository = budgetRepository(),
+            isAdmin = { projectContext?.context?.value?.isAdmin == true },
+            host = host,
+            seams = BudgetScreenSeams(
+                nameOf = { id -> crewNameOf(this, id) },
+                loadAvatar = crewFaceLoader(this),
+                conversation = { state -> BudgetConversationPane(this, state, readOnly = true) },
+            ),
+            onOpenFile = { document, _ -> openBudgetFile(this, scope, document) },
+            events = socketEvents,
+            rights = rightsRequests,
+        )
+    }
+}
 
 /** The OS picker, the production's storage, the crew list, and the admins' inbox. */
 private fun AppGraph.Ready.budgetHost(departments: BudgetDepartments): BudgetHost = object : BudgetHost {

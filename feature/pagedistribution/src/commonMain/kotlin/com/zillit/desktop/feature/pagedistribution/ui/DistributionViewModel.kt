@@ -25,6 +25,8 @@ import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
 import com.zillit.desktop.feature.pagedistribution.domain.ReadAction
 import com.zillit.desktop.feature.pagedistribution.domain.TabKind
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.datetime.TimeZone
@@ -70,7 +72,19 @@ class DistributionViewModel(
      * private chat message. Given the file's name and size; the host sends.
      */
     private val onOversizeUpload: suspend (fileName: String, sizeBytes: Long) -> Unit = { _, _ -> },
-) : ZillitViewModel<DistributionUiState, DistributionEvent, DistributionEffect>(DistributionUiState(tool)) {
+    /**
+     * [ListMode.Cabinet] opens the File Cabinet's read-only view of one tab
+     * ([openTabKey]); the default is the live tool on its first tab.
+     */
+    initialMode: ListMode = ListMode.Live,
+    openTabKey: String? = null,
+) : ZillitViewModel<DistributionUiState, DistributionEvent, DistributionEffect>(
+    DistributionUiState(
+        tool = tool,
+        mode = initialMode,
+        activeTabKey = tool.tabs.firstOrNull { it.key == openTabKey }?.key ?: tool.tabs.first().key,
+    ),
+) {
 
     fun start() {
         setState { copy(viewer = resolveViewer()) }
@@ -127,8 +141,13 @@ class DistributionViewModel(
         }
     }
 
+    /** Stops the in-flight work of a view model nobody holds any more (the cabinet builds one per window). */
+    fun close() = viewModelScope.cancel()
+
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: DistributionEvent) {
+        // The cabinet never writes: the screen offers no way in, and this is the backstop.
+        if (state.value.mode == ListMode.Cabinet && event.writes()) return
         when (event) {
             is DistributionEvent.SelectTab -> {
                 setState {
@@ -143,7 +162,7 @@ class DistributionViewModel(
                 }
                 loadTab()
             }
-            DistributionEvent.ToggleHistory -> {
+            DistributionEvent.ToggleHistory -> if (state.value.mode != ListMode.Cabinet) {
                 setState {
                     val flipped = if (mode == ListMode.Live) ListMode.History else ListMode.Live
                     copy(mode = flipped, openFolder = null, searchResults = null)
@@ -615,6 +634,17 @@ class DistributionViewModel(
         /** The web's `checkFileLength` ceiling: past this, mail does not carry the file. */
         const val AUTO_DISTRIBUTION_LIMIT_BYTES = 25L * 1024 * 1024
     }
+}
+
+/** True for the events that change the production's records (or start to). */
+private fun DistributionEvent.writes(): Boolean = when (this) {
+    is DistributionEvent.PickPdf, is DistributionEvent.PdfPicked, is DistributionEvent.FilesDropped,
+    is DistributionEvent.UploadChanged, DistributionEvent.SubmitUpload,
+    is DistributionEvent.Delete, DistributionEvent.ConfirmDelete,
+    is DistributionEvent.Move, is DistributionEvent.MoveTarget, DistributionEvent.ConfirmMove,
+    is DistributionEvent.Publish, DistributionEvent.ConfirmPublish,
+    -> true
+    else -> false
 }
 
 /** The folder a document files under — its scene number, or its D.O.D name. */

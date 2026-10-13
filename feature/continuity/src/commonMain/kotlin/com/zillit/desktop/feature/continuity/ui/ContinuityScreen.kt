@@ -74,7 +74,7 @@ fun ContinuityScreen(
     loadPdfPages: suspend (ContinuityAttachment) -> List<ImageBitmap>? = { null },
 ) {
     val colors = ZillitTheme.colors
-    val mine = state.tab == ContinuityTab.MyDepartment
+    val mine = state.tab == ContinuityTab.MyDepartment && !state.readOnly
     var dropHover by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -87,7 +87,8 @@ fun ContinuityScreen(
             ),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Header(state, onEvent)
+            // The cabinet's window already carries the title; the web hides this header there too.
+            if (!state.readOnly) Header(state, onEvent)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -236,7 +237,8 @@ private fun BoardCard(state: ContinuityUiState, onEvent: (ContinuityEvent) -> Un
             .background(colors.surface)
             .border(1.dp, colors.border, ZillitTheme.shapes.large),
     ) {
-        Column(
+        // The web's `isContintuityFileCabinet` drops the card's title: heading, search and note.
+        if (!state.readOnly) Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
@@ -268,7 +270,7 @@ private fun BoardCard(state: ContinuityUiState, onEvent: (ContinuityEvent) -> Un
                 ZillitText(text = state.tab.note, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+        if (!state.readOnly) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
         Box(Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg)) { FolderGrid(state, onEvent) }
     }
 }
@@ -286,11 +288,12 @@ private fun FolderGrid(state: ContinuityUiState, onEvent: (ContinuityEvent) -> U
             },
             message = when {
                 state.folderQuery.isNotBlank() -> str(S.desktop_continuity_try_another_scene)
+                state.readOnly -> null
                 state.tab == ContinuityTab.MyDepartment -> str(S.desktop_continuity_upload_to_start)
                 else -> str(S.desktop_continuity_forwarded_appear_here)
             },
             icon = ZillitIcons.Folder,
-            action = if (state.tab == ContinuityTab.MyDepartment && state.folderQuery.isBlank()) {
+            action = if (!state.readOnly && state.tab == ContinuityTab.MyDepartment && state.folderQuery.isBlank()) {
                 {
                     ZillitButton(
                         text = str(S.upload),

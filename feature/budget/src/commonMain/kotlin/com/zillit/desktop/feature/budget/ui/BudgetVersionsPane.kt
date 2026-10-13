@@ -309,10 +309,10 @@ private fun ChatList(
         state.chats.isEmpty() -> Box(modifier) {
             RailEmpty(
                 title = str(S.empty_conversations),
-                message = if (state.canChat) {
-                    str(S.desktop_budget_no_conversations_hint)
-                } else {
-                    str(S.desktop_budget_conversations_latest)
+                message = when {
+                    state.readOnly -> null
+                    state.canChat -> str(S.desktop_budget_no_conversations_hint)
+                    else -> str(S.desktop_budget_conversations_latest)
                 },
                 icon = ZillitIcons.Users,
             )

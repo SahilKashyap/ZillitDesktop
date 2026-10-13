@@ -141,6 +141,12 @@ data class HomeFeedUiState(
     val hasOlder: Boolean = false,
     /** An older page is on its way. */
     val loadingOlder: Boolean = false,
+    /**
+     * A record to look through, never to add to: the File Cabinet's viewer.
+     * No composer, no replying, editing, pinning or deleting, no call sheet
+     * history switch — see [readsOnly] for the events that still go through.
+     */
+    val readOnly: Boolean = false,
 ) {
     val tabs: List<HomeUnit> get() = units.visibleTabs()
 
@@ -154,19 +160,26 @@ data class HomeFeedUiState(
      * keeping them in state would mean recomputing on every socket arrival.
      */
     val rows: List<BoardRow>
-        get() = notices.forDisplay(history = isHistory)
-            .withDateSeparators(nowMillis, history = isHistory)
+        get() = notices.forDisplay(history = byCreated)
+            .withDateSeparators(nowMillis, history = byCreated)
+
+    /**
+     * Ordered by when a post was written, not when it last changed: the call
+     * sheet's history, and an archive — the web sorts the File Cabinet's
+     * records on `created` too.
+     */
+    private val byCreated: Boolean get() = isHistory || readOnly
 
     /**
      * What the banner over the board shows — the pinned posts, newest first.
      * Empty in history: a record has no "keep this in view".
      */
     val pinnedBanner: List<Notice>
-        get() = if (isHistory) emptyList() else notices.pinnedForBanner()
+        get() = if (isHistory || readOnly) emptyList() else notices.pinnedForBanner()
 
     /** Matching post ids, in board order. Empty until two characters. */
     val searchMatches: List<String>
-        get() = searchQuery?.let { notices.forDisplay(history = isHistory).searchMatches(it) }
+        get() = searchQuery?.let { notices.forDisplay(history = byCreated).searchMatches(it) }
             .orEmpty()
 
     /** The post the find bar is pointed at right now; null when nothing matches. */
@@ -186,13 +199,13 @@ data class HomeFeedUiState(
      * with a sentence saying why (the phones' toast), rather than by an item
      * that silently vanishes at minute thirty-one.
      */
-    fun canAct(comment: NoticeComment): Boolean = comment.isActionableBy(currentUserId, isAdmin)
+    fun canAct(comment: NoticeComment): Boolean = !readOnly && comment.isActionableBy(currentUserId, isAdmin)
 
     /** The same, for a post. */
-    fun canAct(notice: Notice): Boolean = notice.isActionableBy(currentUserId, isAdmin)
+    fun canAct(notice: Notice): Boolean = !readOnly && notice.isActionableBy(currentUserId, isAdmin)
 
     /** Whether Edit and Pin belong in this post's menu — the author's, as the server has it. */
-    fun canEdit(notice: Notice): Boolean = notice.isEditableBy(currentUserId)
+    fun canEdit(notice: Notice): Boolean = !readOnly && notice.isEditableBy(currentUserId)
 
     /**
      * Whether Download is offered on this unit — `download_access`, admins
@@ -219,7 +232,7 @@ data class HomeFeedUiState(
      * arrived yet saw no bar at all, which read as a missing feature.
      */
     val showsComposer: Boolean
-        get() = !isHistory && selectedUnit != null && selectedUnit?.kind != HomeUnitKind.Calendar
+        get() = !isHistory && !readOnly && selectedUnit != null && selectedUnit?.kind != HomeUnitKind.Calendar
 
     /** Whether a post from this user would actually be accepted. */
     val canCompose: Boolean
@@ -570,7 +583,14 @@ class HomeFeedViewModel(
      * to the wrong half of the grid finds nothing to switch on.
      */
     private val rights: RightsRequestBus? = null,
-) : ZillitViewModel<HomeFeedUiState, HomeFeedEvent, Nothing>(HomeFeedUiState()) {
+    /**
+     * The File Cabinet's viewer: the board with its write side switched off.
+     * The model refuses every event that is not a read ([readsOnly]) as well
+     * as the screen not offering it — a stray key or a stale menu changes
+     * nothing in an archive.
+     */
+    private val readOnly: Boolean = false,
+) : ZillitViewModel<HomeFeedUiState, HomeFeedEvent, Nothing>(HomeFeedUiState(readOnly = readOnly)) {
 
     /**
      * Uploads that succeeded for posts that then failed, by local id.
@@ -628,6 +648,7 @@ class HomeFeedViewModel(
     // point of the pattern, not a complexity problem (see WorkspaceViewModel).
     @Suppress("CyclomaticComplexMethod")
     override fun onEvent(event: HomeFeedEvent) {
+        if (readOnly && !event.readsOnly()) return
         when (event) {
             HomeFeedEvent.Load -> loadUnits()
             HomeFeedEvent.ProjectChanged -> forgetProject()
@@ -830,7 +851,7 @@ class HomeFeedViewModel(
             map.keys.retainAll(carried)
         }
         pendingPosts.keys.retainAll(carried)
-        setState { HomeFeedUiState(nowMillis = nowMillis()) }
+        setState { HomeFeedUiState(readOnly = readOnly, nowMillis = nowMillis()) }
     }
 
     private fun selectUnit(unitId: String) {
@@ -1864,9 +1885,12 @@ class HomeFeedViewModel(
     private fun loadOlder() {
         val unit = currentState.selectedUnit ?: return
         if (currentState.loadingOlder || !currentState.hasOlder) return
+        // An archive pages from `created`, as the web's viewer does (the first
+        // row's `created`); the live board pages from `updated`, as Android does.
+        val stamp: (Notice) -> Long = if (readOnly) Notice::createdAtMillis else Notice::pageStamp
         val oldest = currentState.notices
-            .filter { it.sendState == NoticeSendState.Sent && it.pageStamp > 0 }
-            .minOfOrNull { it.pageStamp } ?: return
+            .filter { it.sendState == NoticeSendState.Sent && stamp(it) > 0 }
+            .minOfOrNull(stamp) ?: return
         setState { copy(loadingOlder = true) }
         launchResult(
             block = { repository.loadOlderNotices(unit.id, oldest) },

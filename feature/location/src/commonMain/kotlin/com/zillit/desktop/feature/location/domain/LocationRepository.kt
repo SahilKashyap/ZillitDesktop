@@ -25,14 +25,25 @@ interface LocationRepository {
      */
     val discussionRefreshes: Flow<Unit> get() = emptyFlow()
 
-    /** The folder source for one shortlist — flat, grouped client-side. */
-    suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>>
+    /**
+     * The folder source for one shortlist — flat, grouped client-side.
+     *
+     * [fileCabinet]: the File Cabinet's viewer. The web sends nothing extra
+     * on this call there; it only stops dropping the rows flagged `delete`
+     * (`LocationPage.jsx:394`), which is what a cabinet is made of.
+     */
+    suspend fun info(status: LocationStatus, fileCabinet: Boolean = false): ZillitResult<List<LocationInfo>>
 
     /**
      * One page of records under a folder. Blank filters are OMITTED (the
      * "Not Assigned" folder sends no filter for that dimension, as the web
      * does); [beforeMs] + `previous` first, then the last row's `created` +
      * `next`.
+     *
+     * [fileCabinet] adds `isFileCabinet=true`, which makes the server answer
+     * the records moved to the cabinet. The web then keeps the first page
+     * whole and drops `deleted` rows only from later pages
+     * (`LocationPage.jsx:1535`), and so does this.
      */
     suspend fun media(
         status: LocationStatus,
@@ -41,6 +52,7 @@ interface LocationRepository {
         episode: String?,
         beforeMs: Long,
         next: Boolean,
+        fileCabinet: Boolean = false,
     ): ZillitResult<List<LocationMedia>>
 
     /** Creates one record; the stored file rides in `attachment`, a URL in `link`. */

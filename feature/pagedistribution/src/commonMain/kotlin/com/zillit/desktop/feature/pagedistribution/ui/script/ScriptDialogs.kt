@@ -146,7 +146,7 @@ private fun PagesDialog(
     ZillitDialogShell(
         title = str(S.pages),
         subtitle = str(S.desktop_script_scene_no_value, open.folder.key.ifBlank { "—" }) + when {
-            !live -> "  ·  " + str(S.desktop_dist_deleted_pages)
+            state.isHistory -> "  ·  " + str(S.desktop_dist_deleted_pages)
             count == 0 -> ""
             else -> "  ·  " + plural(S.docusign_template_detail_doc_pages, count)
         },

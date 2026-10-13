@@ -8,6 +8,7 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:cabinet"))
             implementation(project(":core:socket"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
@@ -20,6 +21,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
+            implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {

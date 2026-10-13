@@ -195,6 +195,8 @@ private data class BoardUi(
     val loadAvatar: suspend (String) -> ByteArray?,
     /** Upload percent for an in-flight post's local id — see [HomeFeedUiState.uploadProgress]. */
     val uploadProgress: (String) -> Int? = { null },
+    /** An archive: no read receipts to ask for, on top of nothing to write. See [HomeFeedUiState.readOnly]. */
+    val readOnly: Boolean = false,
 )
 
 /**
@@ -326,7 +328,7 @@ private fun BoardHeader(
     // Call sheets are published documents, so "what went out and when" is a
     // question people actually ask. The web puts this behind a floating
     // button; a toggle in the header says what it does.
-    if (state.selectedUnit?.kind == HomeUnitKind.CallSheet) {
+    if (state.selectedUnit?.kind == HomeUnitKind.CallSheet && !state.readOnly) {
         HistoryToggle(state.isHistory, onEvent)
     }
 
@@ -2321,11 +2323,13 @@ private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buil
             },
         )
     }
-    add(
-        NoticeMenuItem(str(S.desktop_read_by_ellipsis), ZillitIcons.Eye) {
-            ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id))
-        },
-    )
+    if (!ui.readOnly) {
+        add(
+            NoticeMenuItem(str(S.desktop_read_by_ellipsis), ZillitIcons.Eye) {
+                ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id))
+            },
+        )
+    }
     add(NoticeMenuItem(str(S.gallery), ZillitIcons.Grid) { ui.onEvent(HomeFeedEvent.ShowLibrary) })
     if (ui.canPin(notice)) {
         add(
@@ -2643,6 +2647,24 @@ private fun rowKey(row: BoardRow): String = when (row) {
     is BoardRow.Post -> row.notice.id
 }
 
+/** A board with nothing on it. An archive has no "be the first to post"; the web says "No Data found". */
+@Composable
+private fun EmptyBoard(unit: HomeUnit, readOnly: Boolean) {
+    if (readOnly) {
+        Empty(title = str(S.no_data_found), message = unit.label, icon = ZillitIcons.Chat)
+        return
+    }
+    Empty(
+        title = str(S.desktop_board_nothing_posted_yet),
+        message = if (unit.canPost) {
+            str(S.desktop_board_be_first_to_post, unit.label)
+        } else {
+            str(S.desktop_board_nothing_posted_to_yet, unit.label)
+        },
+        icon = ZillitIcons.Chat,
+    )
+}
+
 /**
  * What fills the space between the tabs and the composer: a loading line, an
  * explanation, the calendar, or the board itself.
@@ -2684,15 +2706,7 @@ private fun BoardArea(
 
         state.isLoadingNotices && state.notices.isEmpty() -> Loading(str(S.desktop_board_loading_posts))
 
-        state.notices.isEmpty() -> Empty(
-            title = str(S.desktop_board_nothing_posted_yet),
-            message = if (unit.canPost) {
-                str(S.desktop_board_be_first_to_post, unit.label)
-            } else {
-                str(S.desktop_board_nothing_posted_to_yet, unit.label)
-            },
-            icon = ZillitIcons.Chat,
-        )
+        state.notices.isEmpty() -> EmptyBoard(unit, state.readOnly)
 
         else -> NoticeBoard(
             rows = state.rows,
@@ -2720,6 +2734,7 @@ private fun BoardArea(
                 crewNames = crewNames,
                 loadAvatar = loadAvatar,
                 uploadProgress = { localId -> state.uploadProgress[localId] },
+                readOnly = state.readOnly,
             ),
             currentMatch = state.currentSearchMatch,
             paging = BoardPaging(state.hasOlder, state.loadingOlder),
@@ -2834,7 +2849,9 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
     var selectedAtOpen by remember(comment.id) { mutableStateOf("") }
 
     NoticeContextMenu(
-        items = commentMenuItems(parentId, comment, canAct, ui.onEvent, { selectedAtOpen.ifEmpty { comment.body } }) {
+        items = commentMenuItems(
+            parentId, comment, canAct, ui.onEvent, { selectedAtOpen.ifEmpty { comment.body } }, ui.readOnly,
+        ) {
             confirmingDelete = true
         },
         onOpen = { selectedAtOpen = selection.selectedText },
@@ -2899,6 +2916,7 @@ private fun commentMenuItems(
     onEvent: (HomeFeedEvent) -> Unit,
     /** What Copy puts on the clipboard — the highlighted words, else the whole reply. */
     copyText: () -> String,
+    readOnly: Boolean,
     onArmDelete: () -> Unit,
 ): () -> List<NoticeMenuItem> = {
     buildList {
@@ -2907,11 +2925,13 @@ private fun commentMenuItems(
         }
         // A reply has its own receipts — Android's `Read By User` on the
         // comment menu, the same route with the reply's id.
-        add(
-            NoticeMenuItem(str(S.desktop_read_by_ellipsis), ZillitIcons.Eye) {
-                onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id))
-            },
-        )
+        if (!readOnly) {
+            add(
+                NoticeMenuItem(str(S.desktop_read_by_ellipsis), ZillitIcons.Eye) {
+                    onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id))
+                },
+            )
+        }
         if (canAct) {
             if (comment.kind == NoticeKind.Text) {
                 add(
@@ -3092,7 +3112,7 @@ private fun Centred(text: String) {
 
 /** A spinner over a line — the board is on its way, not empty. */
 @Composable
-private fun Loading(text: String) {
+internal fun Loading(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -3110,7 +3130,7 @@ private fun Loading(text: String) {
 
 /** The design system's empty state, centred in the board's space. */
 @Composable
-private fun Empty(title: String, message: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+internal fun Empty(title: String, message: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         ZillitEmptyState(
             title = title,

@@ -117,7 +117,8 @@ fun ScriptScreen(
             ),
     ) {
         Column(Modifier.fillMaxSize()) {
-            ScriptHeader(state, onEvent)
+            // The cabinet window has its own title and Close, and one tab chosen from its menu.
+            if (!state.isCabinet) ScriptHeader(state, onEvent)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -141,7 +142,7 @@ fun ScriptScreen(
                     )
                 }
                 // ZL-17014 — the web's history alert.
-                if (!live) {
+                if (state.isHistory) {
                     ZillitNotice(
                         text = str(S.desktop_script_history_note),
                         tone = StatusTone.Progress,
@@ -149,13 +150,15 @@ fun ScriptScreen(
                     )
                 }
                 // The tab chips are the web's `badges` prop — live only (`routePathname != history`).
-                ZillitTabStrip(
-                    tabs = state.tool.tabs.map { tab ->
-                        ZillitTab(tab.key, tab.label, count = if (live) state.tabUnread[tab.key] ?: 0 else 0)
-                    },
-                    activeId = state.activeTabKey,
-                    onSelect = { onEvent(DistributionEvent.SelectTab(it)) },
-                )
+                if (!state.isCabinet) {
+                    ZillitTabStrip(
+                        tabs = state.tool.tabs.map { tab ->
+                            ZillitTab(tab.key, tab.label, count = if (live) state.tabUnread[tab.key] ?: 0 else 0)
+                        },
+                        activeId = state.activeTabKey,
+                        onSelect = { onEvent(DistributionEvent.SelectTab(it)) },
+                    )
+                }
                 if (state.isFolderTab) {
                     // The web's search strip sits above the grid on the live Pages tab only.
                     if (live) ScriptSearchBar(state, onEvent, inDrawer = false)
@@ -268,10 +271,10 @@ private fun ScriptList(
         state.loading && rows.isEmpty() -> SkeletonList()
         rows.isEmpty() -> ZillitEmptyState(
             title = str(S.no_data_found),
-            message = if (live) {
-                str(S.desktop_script_empty_message)
-            } else {
-                str(S.desktop_script_replaced_listed)
+            message = when {
+                state.isCabinet -> null
+                live -> str(S.desktop_script_empty_message)
+                else -> str(S.desktop_script_replaced_listed)
             },
             icon = ZillitIcons.File,
             action = if (live) {
@@ -391,11 +394,11 @@ private fun ScriptFolderGrid(state: DistributionUiState, onEvent: (DistributionE
     when {
         state.loading && state.folders.isEmpty() -> SkeletonGrid()
         state.folders.isEmpty() -> ZillitEmptyState(
-            title = if (live) str(S.no_data_found) else str(S.desktop_dist_nothing_in_history),
-            message = if (live) {
-                str(S.desktop_script_pages_empty_message)
-            } else {
-                str(S.desktop_dist_deleted_pages_listed)
+            title = if (state.isHistory) str(S.desktop_dist_nothing_in_history) else str(S.no_data_found),
+            message = when {
+                state.isCabinet -> null
+                live -> str(S.desktop_script_pages_empty_message)
+                else -> str(S.desktop_dist_deleted_pages_listed)
             },
             icon = ZillitIcons.Folder,
             action = if (live) {

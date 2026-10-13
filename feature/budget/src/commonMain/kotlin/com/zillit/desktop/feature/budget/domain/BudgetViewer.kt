@@ -85,6 +85,21 @@ data class BudgetViewer(
     }
 
     companion object {
+        /**
+         * The reader in the File Cabinet: Admin Settings is an administrators'
+         * door, so both budgets are theirs to read and, as everywhere else for
+         * an admin, to download — but nothing is theirs to post, because the
+         * cabinet's budgets are a record, not a board.
+         */
+        fun forCabinet(isAdmin: Boolean) = BudgetViewer(
+            canViewMain = true,
+            canViewDepartment = true,
+            canDownloadMain = isAdmin,
+            canDownloadDepartment = isAdmin,
+            isAdmin = isAdmin,
+            resolved = true,
+        )
+
         const val MAIN_TOOL = "main_budget_tool"
         const val DEPARTMENT_TOOL = "department_budget_tool"
 

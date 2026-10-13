@@ -3971,7 +3971,9 @@ private fun buildRegistry(
         approvals = viewModels.approvals,
         admin = viewModels.admin,
     )
-        cabinetViewers = (graph as? AppGraph.Ready)?.cabinetViewers() ?: CabinetViewers.None,
+        cabinetViewers = (graph as? AppGraph.Ready)
+            ?.cabinetViewers { viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty }
+            ?: CabinetViewers.None,
     // The mail drawer's other two windows — Settings and Contacts.
     val mailSettings = (graph as? AppGraph.Ready)?.let { ready ->
         EmailSettingsToolProvider(

@@ -1,8 +1,16 @@
 package com.zillit.desktop.feature.chat.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.designsystem.component.AudioPlayer
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -38,7 +46,24 @@ fun ChatConversation(
     /** The one shared speaker; null renders voice notes as plain chips. */
     player: AudioPlayer? = null,
     loadAudio: suspend (ChatAttachment) -> ByteArray? = { null },
+    /**
+     * Look, don't touch — the File Cabinet's live conversation. The same
+     * bubbles, quotes, pictures and voice notes, but no header actions, no
+     * composer, no menu or reactions, no group-info panel and no dialogs.
+     * Pair it with a `ChatViewModel(readOnly = true)`: this only draws, and
+     * it is the model that refrains from sending read receipts.
+     */
+    readOnly: Boolean = false,
 ) {
+    if (readOnly) {
+        CompositionLocalProvider(LocalChatSeams provides seams) {
+            ReadOnlyConversation(
+                state, onEvent, resolveName, resolveContact, onOpenAttachment,
+                loadAvatar, loadThumbnail, player, loadAudio,
+            )
+        }
+        return
+    }
     CompositionLocalProvider(LocalChatSeams provides seams) {
         ThreadPane(
             state = state,
@@ -55,4 +80,56 @@ fun ChatConversation(
             loadAudio = loadAudio,
         )
     }
+}
+
+/** [ReadOnlyThread] fed from the live model's state, with its loading and empty words. */
+@Composable
+@Suppress("LongParameterList") // Straight pass-throughs, as above.
+private fun ReadOnlyConversation(
+    state: ChatUiState,
+    onEvent: (ChatEvent) -> Unit,
+    resolveName: (String) -> String?,
+    resolveContact: (String) -> CrewContact?,
+    onOpenAttachment: (ChatAttachment) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadThumbnail: suspend (ChatAttachment) -> ImageBitmap?,
+    player: AudioPlayer?,
+    loadAudio: suspend (ChatAttachment) -> ByteArray?,
+) {
+    if (state.peer == null) return
+    if (state.isLoading && state.messages.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            ZillitText(
+                text = str(S.desktop_chat_loading_conversation),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        return
+    }
+    if (state.messages.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            ZillitText(
+                text = str(S.desktop_cabinet_chat_no_messages),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        return
+    }
+    ReadOnlyThread(
+        messages = state.messages,
+        modifier = Modifier.fillMaxSize(),
+        resolveName = resolveName,
+        resolveMention = { id -> resolveContact(id)?.fullName },
+        loadAvatar = loadAvatar,
+        loadThumbnail = loadThumbnail,
+        onOpenAttachment = onOpenAttachment,
+        player = player,
+        loadAudio = loadAudio,
+        hasOlder = state.hasOlder,
+        loadingOlder = state.loadingOlder,
+        onShowOlder = { onEvent(ChatEvent.ShowOlder) },
+        showSenders = state.peerIsGroup,
+    )
 }

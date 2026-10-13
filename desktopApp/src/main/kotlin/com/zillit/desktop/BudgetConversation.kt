@@ -55,6 +55,8 @@ internal fun BudgetConversationPane(
     state: BudgetUiState,
     player: AudioPlayer? = null,
     modifier: Modifier = Modifier,
+    /** The File Cabinet's view: the thread as it stands, with no composer, menus or read receipts. */
+    readOnly: Boolean = false,
 ) {
     val document = state.selected ?: return
     val open = state.selectedChat ?: return
@@ -74,7 +76,7 @@ internal fun BudgetConversationPane(
             eventPrefix = "budget:",
         )
     }
-    val model = remember(ready, scope) { ready.budgetChat(scope) }
+    val model = remember(ready, scope, readOnly) { ready.budgetChat(scope, readOnly) }
     val chatState by model.state.collectAsState()
     val crew = remember(ready) { ready.crewContacts() }
     val selfId = ready.projectContext?.context?.value?.profile?.userId
@@ -113,7 +115,7 @@ internal fun BudgetConversationPane(
         // The web's `chatNotAllowedForDepartmentRevokedUser`: someone who has
         // lost access to the budget can be read but no longer written to —
         // the server answers a send `budget_cnc_user_not_valid`.
-        if (state.selectedChatRevoked) {
+        if (state.selectedChatRevoked && !readOnly) {
             ZillitNotice(
                 text = str(S.desktop_budget_chat_revoked),
                 tone = StatusTone.Pending,
@@ -153,6 +155,7 @@ internal fun BudgetConversationPane(
                 loadThumbnail = { file -> fetchBudgetChatImage(ready, file, preview = true) },
                 player = player,
                 loadAudio = { file -> fetchChatAudio(ready, file) },
+                readOnly = readOnly,
             )
         }
     }
@@ -207,7 +210,7 @@ private suspend fun fetchBudgetChatImage(
  * is the same repository, so messages, receipts and attachments behave
  * identically.
  */
-internal fun AppGraph.Ready.budgetChat(scope: ChatScope) = ChatViewModel(
+internal fun AppGraph.Ready.budgetChat(scope: ChatScope, readOnly: Boolean = false) = ChatViewModel(
     repository = chatRepositoryFor(scope),
     nowMillis = System::currentTimeMillis,
     newUniqueId = { java.util.UUID.randomUUID().toString() },
@@ -215,4 +218,5 @@ internal fun AppGraph.Ready.budgetChat(scope: ChatScope) = ChatViewModel(
     uploadMedia = { name, type, bytes, onProgress -> uploadChatMedia(this, name, type, bytes, onProgress) },
     thumbnailOf = ::chatThumbnail,
     staticMap = { lat, lng -> fetchStaticMapBytes(this, lat, lng) },
+    readOnly = readOnly,
 )

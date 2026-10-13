@@ -146,7 +146,7 @@ private fun DodFolderDialog(
     ZillitDialogShell(
         title = open.folder.key.ifBlank { str(S.drive_untitled_folder) },
         subtitle = when {
-            !live -> str(S.desktop_dist_deleted_documents)
+            state.isHistory -> str(S.desktop_dist_deleted_documents)
             open.documents.isEmpty() -> str(S.dd_pub_dest_dod_card)
             open.documents.size == 1 -> str(S.desktop_dist_document_count_one, open.documents.size)
             else -> str(S.dd_publish_n_documents, open.documents.size)

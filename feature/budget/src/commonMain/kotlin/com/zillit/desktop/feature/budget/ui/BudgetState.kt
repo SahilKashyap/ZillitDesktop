@@ -152,6 +152,12 @@ data class BudgetUiState(
     val busy: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
+    /**
+     * The File Cabinet's view of this tile: the same lists and conversations,
+     * with every way of writing, every badge and every private thread gone —
+     * what the web's `/settings` route hides.
+     */
+    val readOnly: Boolean = false,
 
     // -- the department directory (department mode) ------------------------
     /** True while the directory is what the rail shows — the web's `ShowStatus == false`. */
@@ -203,9 +209,9 @@ data class BudgetUiState(
      * `currentBudgetId == latestBudgetDocId` (`CommonBudget.jsx:2135`). Older
      * versions can be read and their threads reopened, not added to.
      */
-    val canChat: Boolean get() = hasDocuments && selected?.id == latest?.id
+    val canChat: Boolean get() = !readOnly && hasDocuments && selected?.id == latest?.id
 
-    val canPost: Boolean get() = viewer.canPost(mode)
+    val canPost: Boolean get() = !readOnly && viewer.canPost(mode)
 
     /** What the rail is showing right now. */
     val stage: BudgetStage

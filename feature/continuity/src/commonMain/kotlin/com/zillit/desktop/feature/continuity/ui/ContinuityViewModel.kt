@@ -52,6 +52,18 @@ class ContinuityViewModel(
     private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<ContinuityUiState, ContinuityEvent, ContinuityEffect>(ContinuityUiState()) {
 
+    /**
+     * Starts the board for the File Cabinet window: the same folders and
+     * cards, never a write and never a read receipt. Each opening begins
+     * afresh on My Department, as the web's modal mounts the page anew.
+     */
+    fun startReadOnly() {
+        setState {
+            ContinuityUiState(readOnly = true, departmentNames = departmentNames)
+        }
+        start()
+    }
+
     fun start() {
         val viewer = resolveViewer()
         // My own department's name is known up front; the others arrive with the All-board picks.
@@ -84,7 +96,10 @@ class ContinuityViewModel(
                 state.value.open?.let { reloadOpen(quiet = true) }
             }
         }
-        launch { badges.unread.collect { counts -> setState { copy(unread = counts) } } }
+        // A cabinet look shows no unread and flips none (a read receipt is a write).
+        launch {
+            badges.unread.collect { counts -> if (!state.value.readOnly) setState { copy(unread = counts) } }
+        }
     }
 
     private var listening = false
@@ -234,14 +249,14 @@ class ContinuityViewModel(
                 }
             }
         } else {
-            badges.markRead(tab, sceneFolder)
+            if (!state.value.readOnly) badges.markRead(tab, sceneFolder)
             load(OpenFolder(tab, sceneFolder))
         }
     }
 
     private fun openDepartment(department: ContinuityDepartment) {
         val pick = state.value.pick ?: return
-        badges.markRead(ContinuityTab.AllDepartments, pick.sceneFolder, department.id)
+        if (!state.value.readOnly) badges.markRead(ContinuityTab.AllDepartments, pick.sceneFolder, department.id)
         setState { copy(pick = null) }
         load(OpenFolder(ContinuityTab.AllDepartments, pick.sceneFolder, department))
     }
@@ -553,6 +568,8 @@ class ContinuityViewModel(
     }
 
     private inline fun guardPost(block: () -> Unit) {
+        // The cabinet is a window onto the boards, not a way to change them: no rights ask, no banner.
+        if (state.value.readOnly) return
         if (state.value.viewer.mayPost) {
             block()
         } else {

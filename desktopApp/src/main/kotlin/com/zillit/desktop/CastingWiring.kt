@@ -122,7 +122,7 @@ internal fun AppGraph.Ready.castBoardProvider(viewModel: CastingViewModel, path:
 )
 
 /** One candidate's still, as a bitmap — null when it cannot be fetched. */
-private suspend fun castingPhoto(ready: AppGraph.Ready, media: CastingMedia): ImageBitmap? {
+internal suspend fun castingPhoto(ready: AppGraph.Ready, media: CastingMedia): ImageBitmap? {
     val fetched = ready.noticeMedia.fetch(
         NoticeAttachment(
             media = media.media,

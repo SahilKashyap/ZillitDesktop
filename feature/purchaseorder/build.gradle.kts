@@ -18,6 +18,7 @@ kotlin {
             implementation(project(":core:workspace"))
             implementation(project(":core:sync"))
             implementation(project(":core:forms"))
+            implementation(project(":core:cabinet"))
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {

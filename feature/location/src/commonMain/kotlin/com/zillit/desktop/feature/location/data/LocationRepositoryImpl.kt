@@ -77,9 +77,10 @@ class LocationRepositoryImpl(
             ?.map { }
             ?: emptyFlow()
 
-    override suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>> =
+    override suspend fun info(status: LocationStatus, fileCabinet: Boolean): ZillitResult<List<LocationInfo>> =
         get("$base/location-info", mapOf("status" to status.wire)).mapData { data ->
-            (data as? JsonArray).items().mapNotNull { parseInfo(it as? JsonObject) }.filter { !it.deleted }
+            (data as? JsonArray).items().mapNotNull { parseInfo(it as? JsonObject) }
+                .filter { fileCabinet || !it.deleted }
         }
 
     override suspend fun media(
@@ -89,6 +90,7 @@ class LocationRepositoryImpl(
         episode: String?,
         beforeMs: Long,
         next: Boolean,
+        fileCabinet: Boolean,
     ): ZillitResult<List<LocationMedia>> {
         val query = buildMap<String, Any?> {
             put("page", "0")
@@ -99,9 +101,12 @@ class LocationRepositoryImpl(
             location?.takeIf { it.isNotBlank() }?.let { put("file_name", it) }
             sceneNumber?.takeIf { it.isNotBlank() }?.let { put("scene_number", it) }
             episode?.takeIf { it.isNotBlank() }?.let { put("episode", it) }
+            if (fileCabinet) put("isFileCabinet", "true")
         }
         return get(base, query).mapData { data ->
-            (data as? JsonArray).items().mapNotNull { parseMedia(it as? JsonObject) }.filter { !it.deleted }
+            val rows = (data as? JsonArray).items().mapNotNull { parseMedia(it as? JsonObject) }
+            // The cabinet's first page is the archive as the server sent it.
+            if (fileCabinet && !next) rows else rows.filter { !it.deleted }
         }
     }
 

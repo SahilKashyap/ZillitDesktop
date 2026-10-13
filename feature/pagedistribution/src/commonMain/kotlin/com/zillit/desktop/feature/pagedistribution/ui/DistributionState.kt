@@ -119,6 +119,12 @@ data class DistributionUiState(
     val isSchedule: Boolean get() = tool.toolIdentifier == DistributionTool.ScheduleDistribution.toolIdentifier
     val isScript: Boolean get() = tool.toolIdentifier == DistributionTool.ScriptDistribution.toolIdentifier
 
+    /** The deleted-and-replaced list — what "History" shows, as opposed to the File Cabinet's archive. */
+    val isHistory: Boolean get() = mode == ListMode.History
+
+    /** The File Cabinet's read-only window onto the tool: no header, no tabs, no posting. */
+    val isCabinet: Boolean get() = mode == ListMode.Cabinet
+
     /** Single-list documents, oldest first — the web's `a.created - b.created`. */
     val sortedDocuments: List<DistDocument> get() = documents.sortedBy { it.createdMs }
 

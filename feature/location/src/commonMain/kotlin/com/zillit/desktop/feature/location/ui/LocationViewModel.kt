@@ -26,6 +26,11 @@ import com.zillit.desktop.core.strings.str
 /**
  * The location library: three shortlists of folders, a gallery per folder,
  * uploads with the place's details, moves, deletes, and a PDF of a pick.
+ *
+ * [fileCabinet] makes it the File Cabinet's read-only viewer of the same
+ * library: every read asks for the cabinet's records, no socket or badge
+ * seam is listened to or written, and every event that would change a
+ * record is ignored here as well as hidden by the screen.
  */
 class LocationViewModel(
     private val repository: LocationRepository,
@@ -33,14 +38,25 @@ class LocationViewModel(
     private val resolveViewer: () -> LocationViewer,
     private val nowMillis: () -> Long,
     private val badges: LocationBadges = LocationBadges.None,
+    private val fileCabinet: Boolean = false,
 ) : ZillitViewModel<LocationUiState, LocationEvent, LocationEffect>(LocationUiState()) {
 
     fun start() {
         val viewer = resolveViewer()
         // Television productions group by episode by default, as the web does.
-        setState { copy(viewer = viewer, groupBy = if (viewer.isTelevision) GroupBy.EpisodeNo else groupBy) }
+        setState {
+            copy(
+                viewer = viewer,
+                groupBy = if (viewer.isTelevision) GroupBy.EpisodeNo else groupBy,
+                // A cabinet window reopens on the folders, not on the last gallery.
+                gallery = if (fileCabinet) null else gallery,
+                browsing = if (fileCabinet) null else browsing,
+                viewing = if (fileCabinet) null else viewing,
+                error = if (fileCabinet) null else error,
+            )
+        }
         refresh()
-        listenOnce()
+        if (!fileCabinet) listenOnce()
     }
 
     /**
@@ -95,6 +111,7 @@ class LocationViewModel(
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: LocationEvent) {
+        if (fileCabinet && event.writes()) return
         when (event) {
             is LocationEvent.SelectStatus -> {
                 setState { copy(status = event.status, gallery = null, browsing = null) }
@@ -176,7 +193,7 @@ class LocationViewModel(
     private fun refresh() {
         setState { copy(loading = true) }
         launch {
-            val rows = repository.info(state.value.status).orError()
+            val rows = repository.info(state.value.status, fileCabinet).orError()
             setState { copy(loading = false, info = rows ?: info) }
             if (rows != null) sweepOrphans(rows)
         }
@@ -235,6 +252,7 @@ class LocationViewModel(
                 episode = pick.episode,
                 beforeMs = nowMillis(),
                 next = false,
+                fileCabinet = fileCabinet,
             ).orError()
             setState {
                 val fetched = rows.orEmpty()
@@ -303,6 +321,7 @@ class LocationViewModel(
                 episode = open.pick.episode,
                 beforeMs = last,
                 next = true,
+                fileCabinet = fileCabinet,
             ).orError()
             setState {
                 val known = gallery?.records.orEmpty()
@@ -466,6 +485,16 @@ class LocationViewModel(
     private fun <T> ZillitResult<T>.map(transform: (T) -> Unit): ZillitResult<Unit> = when (this) {
         is ZillitResult.Success -> ZillitResult.Success(transform(data))
         is ZillitResult.Failure -> ZillitResult.Failure(error as ZillitError)
+    }
+
+    /** The acts that create, change, move, delete or post — none of which a cabinet viewer does. */
+    private fun LocationEvent.writes(): Boolean = when (this) {
+        is LocationEvent.MoveSelected, LocationEvent.DeleteSelected, LocationEvent.ConfirmDelete,
+        LocationEvent.PdfSelected, LocationEvent.ToggleSelecting, is LocationEvent.ToggleSelect,
+        is LocationEvent.DiscussionDraftChanged, LocationEvent.SendDiscussion,
+        LocationEvent.PickFile, is LocationEvent.FilePicked, LocationEvent.NewLink, is LocationEvent.Edit,
+        is LocationEvent.EditorChanged, LocationEvent.Save -> true
+        else -> false
     }
 
     private companion object {

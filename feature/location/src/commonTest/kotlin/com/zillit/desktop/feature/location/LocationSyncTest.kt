@@ -47,13 +47,13 @@ class LocationSyncTest {
     private class FakeRepository(override val refreshes: Flow<Unit>) : LocationRepository {
         var infoCalls = 0
 
-        override suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>> {
+        override suspend fun info(status: LocationStatus, fileCabinet: Boolean): ZillitResult<List<LocationInfo>> {
             infoCalls++
             return ZillitResult.Success(emptyList())
         }
         override suspend fun media(
             status: LocationStatus, location: String?, sceneNumber: String?,
-            episode: String?, beforeMs: Long, next: Boolean,
+            episode: String?, beforeMs: Long, next: Boolean, fileCabinet: Boolean,
         ) = ZillitResult.Success(emptyList<LocationMedia>())
         override suspend fun create(
             draft: LocationDraft, attachment: MediaAttachment?, linkPreview: MediaAttachment?,

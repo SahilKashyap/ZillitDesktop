@@ -226,6 +226,23 @@ interface ChatRepository {
         isGroup: Boolean = false,
     ): ZillitResult<List<ChatMessage>> = history(otherUserId, beforeMillis, isGroup)
 
+    /**
+     * One page of a room's File Cabinet lines, ascending by time — the web's
+     * `getArchivedMessage({filecabinet: true})`: `GET group-chat/archive/
+     * {room}/{beforeMillis}/previous?isFileCabinet=true`. Read-only and never
+     * cached: these are not the thread's live window, and nothing here may
+     * reach the thread caches the Chats tab opens from.
+     */
+    suspend fun cabinetHistory(roomId: String, beforeMillis: Long): ZillitResult<List<ChatMessage>> =
+        ZillitResult.Failure(ZillitError.Unknown("the file cabinet is not available"))
+
+    /**
+     * Every group room, disabled ones included — what the File Cabinet's Group
+     * Chat row expands into (the web lists the whole `chat_rooms` answer).
+     */
+    suspend fun cabinetRooms(): ZillitResult<List<com.zillit.desktop.feature.chat.domain.GroupRoom>> =
+        ZillitResult.Failure(ZillitError.Unknown("the file cabinet is not available"))
+
     @Suppress("LongParameterList")
     suspend fun send(
         receiverId: String,
@@ -968,6 +985,21 @@ class ChatRepositoryImpl(
                 .mapNotNull { readChatMessage(it, myUserId(), decrypt, isGroup) }
                 .sortedBy(ChatMessage::timestampMillis)
         }
+
+    // The File Cabinet's reads live in their own file; see CabinetChatSource.
+    private val cabinet by lazy {
+        CabinetChatSource(
+            apiClient, config, myUserId, decrypt,
+            options = { scoped() },
+            listingParameters = { scope.messageParameters() },
+        )
+    }
+
+    override suspend fun cabinetHistory(roomId: String, beforeMillis: Long): ZillitResult<List<ChatMessage>> =
+        cabinet.history(roomId, beforeMillis)
+
+    override suspend fun cabinetRooms(): ZillitResult<List<com.zillit.desktop.feature.chat.domain.GroupRoom>> =
+        cabinet.rooms()
 
     @Suppress("LongParameterList")
     override fun selfId(): String? = myUserId()

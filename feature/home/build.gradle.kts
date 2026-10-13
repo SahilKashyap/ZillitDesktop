@@ -14,6 +14,8 @@ kotlin {
             implementation(project(":core:permissions"))
             implementation(project(":core:sync"))
             implementation(project(":core:badges"))
+            // The File Cabinet's viewer seam — see cabinet/NoticeCabinetViewer.
+            implementation(project(":core:cabinet"))
             implementation(project(":core:datastore"))
             implementation(project(":core:localization"))
             implementation(project(":core:notifications"))

@@ -261,6 +261,8 @@ internal fun PoOrderTable(
     rows: List<PurchaseOrder>,
     onEvent: (PoEvent) -> Unit,
     selectable: Boolean = true,
+    /** Replaces the page's empty-state sentence — the File Cabinet's archive has its own. */
+    emptyMessage: String? = null,
 ) {
     ZillitDataTable(
         rows = rows,
@@ -275,7 +277,7 @@ internal fun PoOrderTable(
         // virtualising inside a box of its own.
         virtualised = false,
         emptyTitle = if (state.search.isBlank()) str(S.desktop_nothing_here) else str(S.dm_nda_empty_search),
-        emptyMessage = when (state.destination) {
+        emptyMessage = emptyMessage ?: when (state.destination) {
             PoDestination.ApprovalQueue -> str(S.desktop_po_empty_approval_queue)
             PoDestination.MyPos -> str(S.desktop_po_empty_my_pos)
             PoDestination.DepartmentPos -> str(S.desktop_po_empty_department_pos)
@@ -450,7 +452,7 @@ internal fun poColumns(
             width = ColumnWidth.Fixed(ASSIGNED_WIDTH),
             cell = { order ->
                 val name = state.assigneeName(order)
-                if (PoAccess.canReassign(order, state.viewer)) {
+                if (!state.readOnly && PoAccess.canReassign(order, state.viewer)) {
                     ZillitButton(
                         text = name,
                         onClick = { onEvent(PoEvent.AskReassign(order.id)) },

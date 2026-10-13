@@ -198,14 +198,21 @@ fun typingFrom(payload: JsonElement, isGroup: Boolean = false, myUserId: String?
  * rooms are dropped here, as every Android tab drops them before showing a
  * list (`GroupsVM.searchList`, `GroupsVM.kt:171-172`). Absent flags read as
  * Android's defaults: enabled true, random-call false.
+ *
+ * [includeDisabled] is the File Cabinet's: the web lists every `chat_room`
+ * there, and a room taken out of service is exactly the kind whose archived
+ * lines the cabinet exists to read.
  */
-fun roomsFrom(body: JsonElement): List<com.zillit.desktop.feature.chat.domain.GroupRoom> {
+fun roomsFrom(
+    body: JsonElement,
+    includeDisabled: Boolean = false,
+): List<com.zillit.desktop.feature.chat.domain.GroupRoom> {
     val obj = body as? JsonObject ?: return emptyList()
     val rows = ((obj["data"] as? JsonObject)?.get("chat_rooms") ?: obj["chat_rooms"])
         as? kotlinx.serialization.json.JsonArray ?: return emptyList()
     return rows.mapNotNull { row ->
         (row as? JsonObject)
-            ?.takeIf { (it["enabled"] as? JsonPrimitive)?.booleanOrNull != false }
+            ?.takeIf { includeDisabled || (it["enabled"] as? JsonPrimitive)?.booleanOrNull != false }
             ?.takeIf { (it["is_random_call_group"] as? JsonPrimitive)?.booleanOrNull != true }
             ?.let(::roomFrom)
     }

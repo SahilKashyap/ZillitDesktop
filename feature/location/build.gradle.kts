@@ -8,6 +8,7 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:cabinet"))
             implementation(project(":core:socket"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
@@ -24,6 +25,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
         }
         jvmTest.dependencies {
             implementation(compose.desktop.currentOs)

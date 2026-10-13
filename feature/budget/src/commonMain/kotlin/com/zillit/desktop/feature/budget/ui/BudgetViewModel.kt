@@ -35,6 +35,13 @@ import kotlinx.coroutines.flow.collectLatest
  * The viewer and the context arrive as lambdas because view models are built
  * once per graph, before any production is open, and both come with the
  * production.
+ *
+ * [cabinet] is the File Cabinet's copy of the tile. The web mounts the very
+ * same page in a modal on the `/settings` route and sends the very same
+ * requests — there is no cabinet flag on any budget call — but that route
+ * hides everything that writes or counts: the upload and chat buttons, the
+ * composer, the unread badges, and the private threads. The flag here makes
+ * the same cut: reads are untouched, and nothing is posted, visited or read.
  */
 @Suppress("TooManyFunctions", "LargeClass") // One handler per user verb, as the web has one per button.
 class BudgetViewModel(
@@ -46,12 +53,14 @@ class BudgetViewModel(
     private val events: SocketEventBus? = null,
     private val rights: RightsRequestBus? = null,
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
-) : ZillitViewModel<BudgetUiState, BudgetEvent, BudgetEffect>(BudgetUiState(mode = mode)) {
+    private val cabinet: Boolean = false,
+) : ZillitViewModel<BudgetUiState, BudgetEvent, BudgetEffect>(BudgetUiState(mode = mode, readOnly = cabinet)) {
 
     private var chatsJob: Job? = null
 
     init {
-        launch { badges.unread(mode).collectLatest { counts -> setState { copy(unread = counts) } } }
+        // The cabinet wears no badges (`routePathname != '/settings'` on every one).
+        if (!cabinet) launch { badges.unread(mode).collectLatest { counts -> setState { copy(unread = counts) } } }
         events?.let { bus ->
             // Reload rather than patch: a save can add a version or a whole
             // department, and which list it lands in depends on the mode.
@@ -62,6 +71,7 @@ class BudgetViewModel(
 
     @Suppress("CyclomaticComplexMethod") // A flat dispatch table, one line per event.
     override fun onEvent(event: BudgetEvent) {
+        if (cabinet && event.writes()) return
         when (event) {
             BudgetEvent.Load -> load()
             BudgetEvent.Refresh -> refresh()
@@ -131,7 +141,14 @@ class BudgetViewModel(
         // tab, so the last visit's department, version and thread are dropped
         // here — only the rights, the context and the ledger's counts carry.
         setState {
-            BudgetUiState(mode = mode, viewer = rights, context = context, unread = unread, loading = true)
+            BudgetUiState(
+                mode = mode,
+                viewer = rights,
+                context = context,
+                unread = unread,
+                loading = true,
+                readOnly = cabinet,
+            )
         }
         if (rights.resolved && !rights.canView(mode)) {
             setState { copy(loading = false) }
@@ -400,10 +417,12 @@ class BudgetViewModel(
         markDocumentRead(documentId)
         loadChats()
         // Only the full budget remembers the last-visited version (`:1530`).
-        if (mode == BudgetMode.Main) launch { repository.markVisited(documentId) }
+        if (mode == BudgetMode.Main && !cabinet) launch { repository.markVisited(documentId) }
     }
 
     private fun markDocumentRead(documentId: String) {
+        // Looking at the cabinet's copy is not reading the budget.
+        if (cabinet) return
         badges.markDocumentRead(mode, documentId, currentState.scopeDepartmentId)
     }
 
@@ -608,6 +627,9 @@ class BudgetViewModel(
                     val entries = answer.data
                         // Oneself is never a row (`getUsersDetails` skips `user_id == me`).
                         .filterNot { it is BudgetChatEntry.Person && it.userId == me }
+                        // The cabinet lists rooms only: `ChatUserAndGroupList` skips
+                        // every row with a `user_id` on the `/settings` route.
+                        .filterNot { cabinet && it is BudgetChatEntry.Person }
                         .map { entry ->
                             if (entry is BudgetChatEntry.Person) entry.named(crew[entry.userId]) else entry
                         }
@@ -665,7 +687,7 @@ class BudgetViewModel(
     private fun openChat(entry: BudgetChatEntry) {
         val document = currentState.selected ?: return
         setState { copy(selectedChat = entry, chatMenuOpen = false) }
-        badges.markChatRead(mode, document.id, entry.key)
+        if (!cabinet) badges.markChatRead(mode, document.id, entry.key)
     }
 
     // -- members dialog --------------------------------------------------------
@@ -776,6 +798,27 @@ class BudgetViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * What the cabinet's copy never does: start an upload, start a
+     * conversation, or reach for the "+" and the chat bubble that open them.
+     */
+    private fun BudgetEvent.writes(): Boolean = when (this) {
+        is BudgetEvent.UploadRequested,
+        is BudgetEvent.UploadDateChanged,
+        is BudgetEvent.UploadEpisodeChanged,
+        BudgetEvent.UploadConfirm,
+        is BudgetEvent.ChatMenu,
+        is BudgetEvent.ShowMembers,
+        is BudgetEvent.TogglePick,
+        BudgetEvent.PickAll,
+        is BudgetEvent.GroupNameChanged,
+        BudgetEvent.ConfirmMembers,
+        BudgetEvent.OpenDrawer,
+        -> true
+
+        else -> false
     }
 
     private companion object {

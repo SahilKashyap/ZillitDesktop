@@ -43,6 +43,8 @@ class CastingViewModel(
     private val events: SocketEventBus? = null,
     /** The ledger's rows for this board, and its reads. */
     private val badges: CastingBadges = CastingBadges.None,
+    /** The one list to show, by tool identifier — the File Cabinet opens a row, not a board. */
+    private val onlyUnit: String? = null,
 ) : ZillitViewModel<CastingUiState, CastingEvent, Nothing>(CastingUiState()) {
 
     init {
@@ -99,7 +101,7 @@ class CastingViewModel(
     }
 
     private fun load() {
-        val viewer = CastingViewer.from(permissions(), board)
+        val viewer = CastingViewer.from(permissions(), board).let { all -> onlyUnit?.let(all::onlyUnit) ?: all }
         setState { copy(viewer = viewer, unit = unit ?: viewer.units.firstOrNull()) }
         if (currentState.unit != null) fetch()
     }

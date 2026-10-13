@@ -475,6 +475,13 @@ class ChatViewModel(
     private val isAdmin: () -> Boolean = { false },
     /** Machine translation for the menu's Translate; null leaves the item out. */
     private val translator: ChatTranslator? = null,
+    /**
+     * A model that only looks — the File Cabinet's live conversation. Opening
+     * or receiving into a thread then writes nothing the other end or the
+     * server could see: no read receipt, no delivered ack, no `read_untill`,
+     * no local read mark and no badge refresh. It still loads and shows.
+     */
+    private val readOnly: Boolean = false,
 ) : ZillitViewModel<ChatUiState, ChatEvent, Nothing>(ChatUiState()) {
 
     /**
@@ -529,6 +536,7 @@ class ChatViewModel(
         // count here too, and let the badge store re-ask the server.
         launch {
             repository.selfReads.collect { conversationId ->
+                if (readOnly) return@collect
                 repository.markThreadRead(conversationId, nowMillis())
                 serverUnread.remove(conversationId)
                 setState { copy(unread = unread - conversationId) }
@@ -605,7 +613,7 @@ class ChatViewModel(
             ChatEvent.CallsViewed -> if (currentState.callsBadge > 0) {
                 launch {
                     onCallsViewed()
-                    applySplit(sectionBadges())
+                    applySplit(badgeSplit())
                 }
             }
             ChatEvent.AttachFile -> launch { pickForPreview() }
@@ -913,8 +921,11 @@ class ChatViewModel(
 
     /** Re-asks the badge service for this area's split — after anything moves. */
     private fun refreshSectionBadges() {
-        launch { applySplit(sectionBadges()) }
+        launch { applySplit(badgeSplit()) }
     }
+
+    /** The badge service's split; a read-only model never asks, and so keeps the last one. */
+    private suspend fun badgeSplit(): Map<String, Int>? = if (readOnly) null else sectionBadges()
 
     /** A null answer is a failed ask — the last split stands, as the rail's does. */
     private fun applySplit(split: Map<String, Int>?) {
@@ -1058,21 +1069,7 @@ class ChatViewModel(
                 // it is what clears the room's badge server-side, and a
                 // client that keeps only a local mark leaves the count
                 // standing forever on every device.
-                rows.lastOrNull { !it.isMine }?.let { newest ->
-                    launch { repository.markRead(contact.userId, newest.id, isGroup) }
-                }
-                // Opening reads everything the thread holds.
-                rows.maxOfOrNull(ChatMessage::timestampMillis)?.let {
-                    repository.markThreadRead(contact.userId, it)
-                }
-                serverUnread.remove(contact.userId)
-                setState { copy(unread = unread - contact.userId) }
-                launch {
-                    onThreadRead(contact.userId)
-                    // The host's refetch waited for the server; the tab split
-                    // asks now for the same reason.
-                    applySplit(sectionBadges())
-                }
+                if (!readOnly) markOpenedThreadRead(contact.userId, rows, isGroup)
             },
             onError = { error ->
                 setState { copy(isLoading = false, error = error.localised()) }
@@ -2128,6 +2125,24 @@ class ChatViewModel(
      * "synced" means to someone looking at the list rather than a thread.
      * Only the open thread also appends the bubble.
      */
+    /** Opening a thread reads everything it holds, here and on the server. */
+    private fun markOpenedThreadRead(peerId: String, rows: List<ChatMessage>, isGroup: Boolean) {
+        rows.lastOrNull { !it.isMine }?.let { newest ->
+            launch { repository.markRead(peerId, newest.id, isGroup) }
+        }
+        rows.maxOfOrNull(ChatMessage::timestampMillis)?.let {
+            repository.markThreadRead(peerId, it)
+        }
+        serverUnread.remove(peerId)
+        setState { copy(unread = unread - peerId) }
+        launch {
+            onThreadRead(peerId)
+            // The host's refetch waited for the server; the tab split
+            // asks now for the same reason.
+            applySplit(badgeSplit())
+        }
+    }
+
     /**
      * The second tick, for a message that arrived with no thread on screen.
      *
@@ -2141,7 +2156,7 @@ class ChatViewModel(
      * sender's ticks backwards.
      */
     private fun ackDelivered(message: ChatMessage) {
-        if (message.isMine || message.sendState != ChatSendState.Sent) return
+        if (readOnly || message.isMine || message.sendState != ChatSendState.Sent) return
         val conversation = message.conversationId()
         if (conversation.isBlank()) return
         launch { repository.markDelivered(conversation, message.id, message.isGroup) }
@@ -2167,7 +2182,9 @@ class ChatViewModel(
         val isOpen = peer != null &&
             (message.senderId == peer.userId || message.receiverId == peer.userId)
 
-        if (isOpen && !message.isMine && peer != null) {
+        // A read-only model sees the line arrive and says nothing about it.
+        val readsIt = isOpen && !message.isMine && !readOnly
+        if (readsIt && peer != null) {
             // Reading it here is what tells the sender it was seen — and,
             // for a room, what clears its badge server-side: the group emit
             // is a different event with a different envelope, and a live
@@ -2178,7 +2195,7 @@ class ChatViewModel(
             launch {
                 repository.markRead(peer.userId, message.id, isGroup)
                 onThreadRead(peer.userId)
-                applySplit(sectionBadges())
+                applySplit(badgeSplit())
             }
         }
 
@@ -2209,7 +2226,7 @@ class ChatViewModel(
         // (a beat later, so a read of the open thread has landed first).
         launch {
             kotlinx.coroutines.delay(SECTION_BADGE_SETTLE_MILLIS)
-            applySplit(sectionBadges())
+            applySplit(badgeSplit())
         }
     }
 

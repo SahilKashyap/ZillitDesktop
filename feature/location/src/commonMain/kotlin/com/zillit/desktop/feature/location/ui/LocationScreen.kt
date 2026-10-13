@@ -64,7 +64,14 @@ import com.zillit.desktop.feature.location.domain.MediaAttachment
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
-/** The location library: shortlist tabs, grouping, the folder grid, and the dialogs. */
+/**
+ * The location library: shortlist tabs, grouping, the folder grid, and the dialogs.
+ *
+ * [readOnly] is the File Cabinet's view of it: the tabs, folders, galleries
+ * and record details the web keeps there, without the header's actions, the
+ * grouping and search row (the web hides both in the cabinet), upload, select,
+ * edit or the discussion's compose box.
+ */
 @Composable
 fun LocationScreen(
     state: LocationUiState,
@@ -72,6 +79,7 @@ fun LocationScreen(
     /** A record's thumbnail (or full image), decoded; null shows a placeholder. */
     loadImage: suspend (MediaAttachment, preview: Boolean) -> ImageBitmap?,
     resolveUser: (String) -> String?,
+    readOnly: Boolean = false,
 ) {
     val colors = ZillitTheme.colors
     Box(Modifier.fillMaxSize()) {
@@ -81,7 +89,7 @@ fun LocationScreen(
                 .padding(ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitPageHeader(
+            if (!readOnly) ZillitPageHeader(
                 title = str(S.location),
                 description = str(S.desktop_location_page_description),
                 actions = {
@@ -93,7 +101,7 @@ fun LocationScreen(
                         onClick = { onEvent(LocationEvent.PickFile) }, leadingIcon = ZillitIcons.Upload)
                 },
             )
-            if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_location_no_access))
+            if (state.viewer.isBlocked && !readOnly) ZillitNotice(text = str(S.desktop_location_no_access))
             state.error?.let { message ->
                 ZillitNotice(
                     text = message,
@@ -110,7 +118,7 @@ fun LocationScreen(
                 activeId = state.status.wire,
                 onSelect = { id -> onEvent(LocationEvent.SelectStatus(LocationStatus.fromWire(id))) },
             )
-            Row(verticalAlignment = Alignment.CenterVertically,
+            if (!readOnly) Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitText(text = str(S.group_by), style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
                 GroupBy.entries.forEach { by ->
@@ -142,11 +150,11 @@ fun LocationScreen(
             }
         }
         when {
-            state.gallery != null -> GalleryDialog(state, onEvent, loadImage, resolveUser)
-            state.browsing != null -> PicksDialog(state.browsing, state.unread, state.status, onEvent)
+            state.gallery != null -> GalleryDialog(state, onEvent, loadImage, resolveUser, readOnly)
+            state.browsing != null -> PicksDialog(state.browsing, state.unread, state.status, onEvent, readOnly)
         }
         state.editor?.let { EditorDialog(state, onEvent) }
-        state.viewing?.let { ViewDialog(state, it, onEvent, loadImage, resolveUser) }
+        state.viewing?.let { ViewDialog(state, it, onEvent, loadImage, resolveUser, readOnly) }
         state.confirmDelete?.let { ids ->
             ZillitDialogShell(
                 title = str(S.desktop_location_delete_records),
@@ -240,6 +248,7 @@ private fun GalleryDialog(
     onEvent: (LocationEvent) -> Unit,
     loadImage: suspend (MediaAttachment, Boolean) -> ImageBitmap?,
     resolveUser: (String) -> String?,
+    readOnly: Boolean,
 ) {
     val open = state.gallery ?: return
     val colors = ZillitTheme.colors
@@ -252,7 +261,7 @@ private fun GalleryDialog(
         scrollable = false,
         width = GALLERY_WIDTH,
         actions = {
-            if (open.selecting) {
+            if (!readOnly && open.selecting) {
                 val n = open.selected.size
                 moves.forEach { to ->
                     ZillitButton(text = str(S.drive_move_to_destination, to.label),
@@ -265,11 +274,14 @@ private fun GalleryDialog(
                 ZillitButton(text = str(S.delete), onClick = { onEvent(LocationEvent.DeleteSelected) },
                     variant = ButtonVariant.Danger, size = ButtonSize.Small, enabled = n > 0)
             }
-            ZillitButton(text = str(if (open.selecting) S.ah_done else S.select),
-                onClick = { onEvent(LocationEvent.ToggleSelecting) }, variant = ButtonVariant
-                    .Tertiary, size = ButtonSize.Small)
-            ZillitButton(text = str(S.desktop_location_upload_here), onClick = { onEvent(LocationEvent.PickFile) },
-                variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            if (!readOnly) {
+                ZillitButton(text = str(if (open.selecting) S.ah_done else S.select),
+                    onClick = { onEvent(LocationEvent.ToggleSelecting) }, variant = ButtonVariant
+                        .Tertiary, size = ButtonSize.Small)
+                ZillitButton(text = str(S.desktop_location_upload_here),
+                    onClick = { onEvent(LocationEvent.PickFile) },
+                    variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            }
             if (state.browsing != null) {
                 ZillitButton(text = str(S.back), onClick = { onEvent(LocationEvent.Back) },
                     variant = ButtonVariant.Tertiary)
@@ -316,7 +328,7 @@ private fun GalleryDialog(
  */
 @Composable
 private fun PicksDialog(open: OpenFolder, unread: LocationUnread, status: LocationStatus,
-    onEvent: (LocationEvent) -> Unit) {
+    onEvent: (LocationEvent) -> Unit, readOnly: Boolean) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
         title = open.title,
@@ -329,8 +341,11 @@ private fun PicksDialog(open: OpenFolder, unread: LocationUnread, status: Locati
         visible = true,
         width = GALLERY_WIDTH,
         actions = {
-            ZillitButton(text = str(S.desktop_location_upload_here), onClick = { onEvent(LocationEvent.PickFile) },
-                variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            if (!readOnly) {
+                ZillitButton(text = str(S.desktop_location_upload_here),
+                    onClick = { onEvent(LocationEvent.PickFile) },
+                    variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            }
             ZillitButton(text = str(S.close), onClick = { onEvent(LocationEvent.CloseFolder) },
                 variant = ButtonVariant.Tertiary)
         },
@@ -469,6 +484,7 @@ private fun ViewDialog(
     onEvent: (LocationEvent) -> Unit,
     loadImage: suspend (MediaAttachment, Boolean) -> ImageBitmap?,
     resolveUser: (String) -> String?,
+    readOnly: Boolean,
 ) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
@@ -480,8 +496,10 @@ private fun ViewDialog(
         visible = true,
         width = GALLERY_WIDTH,
         actions = {
-            ZillitButton(text = str(S.edit), onClick = { onEvent(LocationEvent.Edit(record)) },
-                variant = ButtonVariant.Secondary)
+            if (!readOnly) {
+                ZillitButton(text = str(S.edit), onClick = { onEvent(LocationEvent.Edit(record)) },
+                    variant = ButtonVariant.Secondary)
+            }
             if (record.attachment != null) {
                 ZillitButton(text = str(S.download), onClick = { onEvent(LocationEvent.Download(record)) },
                     variant = ButtonVariant.Secondary)
@@ -513,7 +531,7 @@ private fun ViewDialog(
                 }
             }
             ZillitDivider()
-            Discussion(state, onEvent, resolveUser)
+            Discussion(state, onEvent, resolveUser, readOnly)
         }
     }
 }
@@ -531,6 +549,7 @@ private fun Discussion(
     state: LocationUiState,
     onEvent: (LocationEvent) -> Unit,
     resolveUser: (String) -> String?,
+    readOnly: Boolean,
 ) {
     val colors = ZillitTheme.colors
     ZillitSectionLabel(text = str(S.discussion_text), modifier = Modifier.fillMaxWidth())
@@ -564,7 +583,7 @@ private fun Discussion(
             }
         }
     }
-    Row(
+    if (!readOnly) Row(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),

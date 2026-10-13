@@ -171,7 +171,7 @@ private fun PagesFolderDialog(
         subtitle = listOfNotNull(
             open.folder.scheduleType?.scheduleLabel(),
             when {
-                !live -> str(S.desktop_dist_deleted_pages)
+                state.isHistory -> str(S.desktop_dist_deleted_pages)
                 count == 0 -> null
                 else -> plural(S.docusign_template_detail_doc_pages, count)
             },

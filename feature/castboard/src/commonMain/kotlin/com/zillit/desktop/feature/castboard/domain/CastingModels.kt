@@ -85,6 +85,10 @@ data class CastingViewer(
 
     val hasNoAccess: Boolean get() = resolved && units.isEmpty()
 
+    /** Only the list a File Cabinet row names — each row there is one unit, not the board. */
+    fun onlyUnit(identifier: String): CastingViewer =
+        copy(units = units.filter { it.kind.identifier == identifier })
+
     companion object {
 
         /**
