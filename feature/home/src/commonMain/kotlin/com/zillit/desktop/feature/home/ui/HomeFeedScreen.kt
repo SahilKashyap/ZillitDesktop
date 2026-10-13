@@ -2819,7 +2819,14 @@ private fun BoardArea(
 ) {
     val unit = state.selectedUnit
     when {
-        state.isLoadingUnits -> Loading(str(S.ah_loading))
+        // Guarded on having no tabs yet, for the same reason the notices
+        // spinner below is guarded on having no posts: a *refetch* of the tab
+        // strip must not take the board off screen. Socket events refetch the
+        // units routinely, and unguarded this replaced a loaded board with a
+        // spinner every time — the strip is re-read behind what is showing.
+        // `tabs`, not `units`: it is what the `unit == null` branch tests, so
+        // the two agree on when there is nothing to draw.
+        state.isLoadingUnits && state.tabs.isEmpty() -> Loading(str(S.ah_loading))
 
         // Full-screen only when there is nothing else to show — an action
         // error over a loaded board is the popup's job, and replacing the

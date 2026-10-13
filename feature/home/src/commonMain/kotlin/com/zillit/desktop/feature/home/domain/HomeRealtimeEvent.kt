@@ -16,6 +16,19 @@ sealed interface HomeRealtimeEvent {
     data object UnitsChanged : HomeRealtimeEvent
 
     /**
+     * Something on a board changed in a way no payload can patch — a comment,
+     * a multi-delete — so that board has to be read again. The tab strip has
+     * not moved, which is the whole difference from [UnitsChanged]: refetching
+     * the units sets `isLoadingUnits`, and that used to replace the board with
+     * a full-screen spinner every time anybody commented anywhere.
+     *
+     * [unitId] is null when the payload does not name one; the board on screen
+     * is then the one re-read, on the same "not scoped" reading as the notice
+     * events below.
+     */
+    data class BoardChanged(val unitId: String?) : HomeRealtimeEvent
+
+    /**
      * Somebody read [messageId], so its read-by list has grown.
      *
      * Only the open read-by panel cares. The board itself shows no receipt,
@@ -77,15 +90,26 @@ fun List<Notice>.applyRealtime(
 
     HomeRealtimeEvent.UnitsChanged -> this
 
+    // Both of these are handled by refetching, not by merging — there is
+    // nothing in either payload to apply to a post.
+    is HomeRealtimeEvent.BoardChanged -> this
+
     // A receipt is not a post. The panel reads it; the board does not.
     is HomeRealtimeEvent.ReadByChanged -> this
 }
 
-/** Null unit id means "not scoped" — the server omits it on some events. */
-private fun HomeRealtimeEvent.matchesUnit(selectedUnitId: String?): Boolean = when (this) {
+/**
+ * Null unit id means "not scoped" — the server omits it on some events.
+ *
+ * Internal rather than private: the view model asks the same question of a
+ * [HomeRealtimeEvent.BoardChanged] before it refetches, and two copies of this
+ * rule would be one too many.
+ */
+internal fun HomeRealtimeEvent.matchesUnit(selectedUnitId: String?): Boolean = when (this) {
     is HomeRealtimeEvent.NoticeAdded -> unitId == null || unitId == selectedUnitId
     is HomeRealtimeEvent.NoticeEdited -> unitId == null || unitId == selectedUnitId
     is HomeRealtimeEvent.NoticeDeleted -> unitId == null || unitId == selectedUnitId
+    is HomeRealtimeEvent.BoardChanged -> unitId == null || unitId == selectedUnitId
     HomeRealtimeEvent.UnitsChanged -> true
     is HomeRealtimeEvent.ReadByChanged -> true
 }

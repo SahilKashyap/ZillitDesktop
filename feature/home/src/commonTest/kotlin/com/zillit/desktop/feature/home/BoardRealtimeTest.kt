@@ -37,8 +37,9 @@ import kotlin.test.assertTrue
  * pages appear to listen on are internal re-emits that exist on no wire;
  * subscribing to one is a silent no-op, which is precisely the failure this
  * file exists to catch. Second, the mapping: posts patch in place, and
- * everything whose payload cannot patch a row coarsens to [UnitsChanged],
- * which reloads the tab strip and the open board.
+ * everything whose payload cannot patch a row coarsens — to
+ * [HomeRealtimeEvent.BoardChanged] when only the posts are stale, and to
+ * [HomeRealtimeEvent.UnitsChanged] when the tab strip itself has moved.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class BoardRealtimeTest {
@@ -184,11 +185,27 @@ class BoardRealtimeTest {
         assertEquals(HomeRealtimeEvent.NoticeDeleted("u1", "n1"), deleted)
     }
 
+    /**
+     * Multi-deletes and comments carry no post, so they coarsen — but only to
+     * the *board*. Refetching the tab strip for one sets `isLoadingUnits`,
+     * which takes the board off screen, and a comment moves no tab.
+     */
     @Test
-    fun `multi-deletes, comments, units, rights and archives all coarsen to a reload`() {
-        val reloads = listOf(
+    fun `multi-deletes and comments coarsen to a board reload, with the unit when named`() {
+        assertEquals(
+            HomeRealtimeEvent.BoardChanged(null),
             event("script-notes", "script_notes:message:deleted:multiple", """{"_id":"n1"}"""),
-            event("reports", "reports:message:comment:added", """{"_id":"n1","comments":[{}]}"""),
+        )
+        assertEquals(
+            HomeRealtimeEvent.BoardChanged("u1"),
+            event("reports", "reports:message:comment:added", """{"_id":"n1","unit_id":"u1"}"""),
+        )
+    }
+
+    /** Units, rights and archives really do reshape the strip. */
+    @Test
+    fun `units, rights and archives refetch the tab strip`() {
+        val reloads = listOf(
             event("catering", "catering:unit:created", """{"unit_name":"Dinner"}"""),
             event("account", "account:posting-rights:update", """{"enabled":false}"""),
             event("confidentialinfo", "confidential_info:chat:archived", """{"unit_id":"u1"}"""),
@@ -263,7 +280,7 @@ class BoardRealtimeTest {
         runCurrent()
 
         assertEquals(3, seen.size, "each comment event reloads once")
-        seen.forEach { assertEquals(HomeRealtimeEvent.UnitsChanged, it) }
+        seen.forEach { assertEquals(HomeRealtimeEvent.BoardChanged("u1"), it) }
     }
 
     /** A post still patches in place — coarsening everything would be a regression. */

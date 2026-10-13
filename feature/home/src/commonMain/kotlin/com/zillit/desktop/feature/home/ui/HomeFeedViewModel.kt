@@ -31,6 +31,7 @@ import com.zillit.desktop.feature.home.domain.withDateSeparators
 import com.zillit.desktop.feature.home.domain.pinnedForBanner
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.applyRealtime
+import com.zillit.desktop.feature.home.domain.matchesUnit
 import com.zillit.desktop.feature.home.domain.forDisplay
 import com.zillit.desktop.feature.home.domain.NoticeDraft
 import com.zillit.desktop.feature.home.domain.AudioRecorder
@@ -823,24 +824,45 @@ class HomeFeedViewModel(
             }
             is HomeFeedEvent.ShowHistory -> setState { withHistory(event.history) }
             // A units change refetches the tab strip — rights may have moved,
-            // and a tab the user can no longer see must go. Everything else is
-            // a pure merge; `applyRealtime` handles our own post arriving back.
-            is HomeFeedEvent.Realtime ->
-                if (event.event == HomeRealtimeEvent.UnitsChanged) {
-                    loadUnits()
-                } else if (event.event is HomeRealtimeEvent.ReadByChanged) {
-                    refreshReadBy(event.event.messageId)
-                } else {
-                    setState { copy(notices = notices.applyRealtime(event.event, selectedUnitId)) }
-                    // A post landing on the open board is read as it lands —
-                    // the web emits on `home_message_added` while visible.
-                    val added = event.event as? HomeRealtimeEvent.NoticeAdded
-                    if (added?.unitId != null && added.unitId == currentState.selectedUnitId) {
-                        launch { onBoardViewed(added.unitId) }
-                    }
-                }
+            // and a tab the user can no longer see must go. A board change
+            // re-reads only the open board. Everything else is a pure merge;
+            // `applyRealtime` handles our own post arriving back.
+            is HomeFeedEvent.Realtime -> onRealtime(event.event)
             is HomeFeedEvent.SelectUnit -> selectUnit(event.unitId)
             else -> onFileEvent(event)
+        }
+    }
+
+    /**
+     * One socket event, applied.
+     *
+     * Three costs, deliberately distinguished. A units change is the dear one
+     * — it refetches the tab strip *and* the board — and is reserved for the
+     * events that really move the strip. A board change re-reads one board,
+     * and only when it is the one on screen: a comment on a unit nobody is
+     * looking at is the badge's business, and the board is read afresh when
+     * that tab is opened anyway. Everything else merges in place.
+     */
+    private fun onRealtime(event: HomeRealtimeEvent) {
+        when (event) {
+            HomeRealtimeEvent.UnitsChanged -> loadUnits()
+
+            is HomeRealtimeEvent.ReadByChanged -> refreshReadBy(event.messageId)
+
+            is HomeRealtimeEvent.BoardChanged -> {
+                val open = currentState.selectedUnit
+                if (open != null && event.matchesUnit(open.id)) loadNotices(open)
+            }
+
+            else -> {
+                setState { copy(notices = notices.applyRealtime(event, selectedUnitId)) }
+                // A post landing on the open board is read as it lands —
+                // the web emits on `home_message_added` while visible.
+                val added = event as? HomeRealtimeEvent.NoticeAdded
+                if (added?.unitId != null && added.unitId == currentState.selectedUnitId) {
+                    launch { onBoardViewed(added.unitId) }
+                }
+            }
         }
     }
 
