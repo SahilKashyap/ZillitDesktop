@@ -8387,4 +8387,6 @@
     <string name="desktop_um_change_unit">เปลี่ยนหน่วยถ่ายทำ</string>
     <string name="desktop_um_edit_user_info">แก้ไขข้อมูลผู้ใช้</string>
     <string name="desktop_call_line_unavailable">%1$s ไม่พร้อมใช้งานที่นี่</string>
+    <string name="desktop_pr_no_report_sections">คุณไม่มีสิทธิ์เข้าถึงส่วนใดของรายงานการผลิต</string>
+    <string name="desktop_pr_publish_no_chat_rights">คุณไม่มีสิทธิ์โพสต์ในแชทรายงานการผลิต จึงจะไม่มีการโพสต์ PDF ลงในแชท</string>
 </resources>

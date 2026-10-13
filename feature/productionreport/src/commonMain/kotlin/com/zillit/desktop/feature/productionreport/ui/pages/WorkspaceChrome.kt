@@ -228,7 +228,9 @@ private fun CreateTemplateButton(onClick: () -> Unit) {
 internal fun NothingToManage(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
         Text(
-            str(S.desktop_pr_published_arrive_in_chat),
+            // Named by neither project list and no posting rights: nothing here is
+            // theirs. The chat they used to land on is its own tool now.
+            str(S.desktop_pr_no_report_sections),
             style = reportText(14.sp),
             color = ReportTheme.colors.textTertiary,
         )

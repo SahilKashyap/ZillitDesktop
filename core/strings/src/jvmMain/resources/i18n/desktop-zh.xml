@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">更改摄制组</string>
     <string name="desktop_um_edit_user_info">编辑用户信息</string>
     <string name="desktop_call_line_unavailable">%1$s 在此不可用</string>
+    <string name="desktop_pr_no_report_sections">您无权访问制作报告的任何部分。</string>
+    <string name="desktop_pr_publish_no_chat_rights">您没有在制作报告聊天中发帖的权限，因此 PDF 不会发布到聊天中。</string>
 </resources>

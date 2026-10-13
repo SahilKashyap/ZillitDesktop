@@ -126,13 +126,16 @@ private fun HeroCard(state: ReportUiState, report: ReportSummary, nowMillis: Lon
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
             )
-            ReportButton(
-                str(S.ah_attach_document),
-                { onEvent(ListEvent.AttachDocument) },
-                kind = ButtonKind.Secondary,
-                icon = ZillitIcons.Paperclip,
-                fontSize = 12.sp,
-            )
+            // Attach posts into Production Report Chat: hidden without its posting rights.
+            if (state.viewer.canPostChat) {
+                ReportButton(
+                    str(S.ah_attach_document),
+                    { onEvent(ListEvent.AttachDocument) },
+                    kind = ButtonKind.Secondary,
+                    icon = ZillitIcons.Paperclip,
+                    fontSize = 12.sp,
+                )
+            }
             if (state.canDistribute) {
                 ReportButton(
                     str(S.dd_publish_to_distribution),

@@ -8387,4 +8387,6 @@
     <string name="desktop_um_change_unit">ユニットを変更</string>
     <string name="desktop_um_edit_user_info">ユーザー情報を編集</string>
     <string name="desktop_call_line_unavailable">%1$s はここでは利用できません</string>
+    <string name="desktop_pr_no_report_sections">制作レポートのどのセクションにもアクセスできません。</string>
+    <string name="desktop_pr_publish_no_chat_rights">制作レポートチャットへの投稿権限がないため、PDFはチャットに投稿されません。</string>
 </resources>

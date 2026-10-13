@@ -84,7 +84,9 @@ data class PublishTarget(
         val ProductionReport = PublishTarget(
             category = "production_report",
             labelKey = S.dd_cat_report_label,
-            toolIdentifier = "production_report_tool",
+            // It publishes into Production Report Chat, its own tool since Oct
+            // 2026, so it needs that tool's rights (web `PublishModal` CATEGORIES).
+            toolIdentifier = "production_report_chat_tool",
             pdfOnly = true,
             republishable = true,
         )

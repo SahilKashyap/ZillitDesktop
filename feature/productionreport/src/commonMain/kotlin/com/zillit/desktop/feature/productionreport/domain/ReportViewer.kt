@@ -16,12 +16,12 @@ data class ReportViewer(
     val canView: Boolean = true,
     val canPost: Boolean = false,
     /**
-     * Viewing rights on the unit chat, which the backend made a tool of its
-     * own (`production_report_chat_tool`, Oct 2026): its routes refuse a
-     * viewer without them, whatever their report rights say. True until the
-     * tools call answers, like [canView].
+     * Posting rights in Production Report Chat, its own tool since Oct 2026
+     * (`production_report_chat_tool`). Publishing and Attach to Published
+     * post into that chat, and its routes refuse a writer without them,
+     * whatever their report rights say — the web's `usePrChatRights().canPost`.
      */
-    val canViewChat: Boolean = true,
+    val canPostChat: Boolean = false,
     val isAdmin: Boolean = false,
     /** False until the tools call has answered. */
     val ready: Boolean = false,
@@ -33,8 +33,17 @@ data class ReportViewer(
     val canAuthor: Boolean get() = isAdmin || canPost
 
     companion object {
+        /**
+         * `resolvePrChatRights`: the chat tool's rights (admins pass them, not
+         * the production's switch — a chat tool off or not yet issued is no
+         * chat), and a report row whose `unit_id` addresses the chat at all.
+         */
+        fun chatPostingRight(permissions: ProjectPermissions, chatTool: String, reportTool: String): Boolean =
+            !permissions.access(reportTool).unitId.isNullOrBlank() && permissions.canPost(chatTool)
+
         const val TOOL_IDENTIFIER = "production_report_tool"
         const val CHAT_TOOL_IDENTIFIER = "production_report_chat_tool"
+        const val CHAT_TOOL_LABEL = "production_report_tool_chat_label"
 
         /**
          * [ProjectPermissions.Empty] — before the tools call returns — answers
@@ -47,7 +56,7 @@ data class ReportViewer(
             displayName: String,
             designation: String,
             toolIdentifier: String = TOOL_IDENTIFIER,
-            /** The tool whose rights open the unit chat; null for a report with no chat. */
+            /** The tool whose rights let a report post into its chat; null for a report with no chat. */
             chatToolIdentifier: String? = null,
         ): ReportViewer {
             val access = permissions.access(toolIdentifier)
@@ -65,9 +74,7 @@ data class ReportViewer(
                 designation = designation,
                 canView = permissions.canView(toolIdentifier),
                 canPost = permissions.canPost(toolIdentifier),
-                // Admins pass the rights but not the production's switch: a
-                // chat tool that is off, or not yet issued, is no chat.
-                canViewChat = chatToolIdentifier?.let(permissions::canView) == true,
+                canPostChat = chatToolIdentifier?.let { chatPostingRight(permissions, it, toolIdentifier) } == true,
                 isAdmin = permissions.isAdmin,
                 ready = true,
             )

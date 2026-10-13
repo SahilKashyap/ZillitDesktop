@@ -56,6 +56,7 @@ internal object Samples {
         displayName = "Author",
         designation = "2nd AD",
         canPost = true,
+        canPostChat = true,
         ready = true,
     )
 

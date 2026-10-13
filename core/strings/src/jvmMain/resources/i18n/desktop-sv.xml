@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Ändra enhet</string>
     <string name="desktop_um_edit_user_info">Redigera användarinfo</string>
     <string name="desktop_call_line_unavailable">%1$s är inte tillgänglig här</string>
+    <string name="desktop_pr_no_report_sections">Du har inte åtkomst till någon del av produktionsrapporten.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Du har inte behörighet att skriva i produktionsrapportens chatt, så PDF:en publiceras inte i chatten.</string>
 </resources>

@@ -10,9 +10,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * The unit chat's rights since the backend split it into
- * `production_report_chat_tool` (Oct 2026): read off that tool, never the
- * report's, with the admin bypass on rights but not on the production's switch.
+ * A report's right to post into Production Report Chat, its own tool since
+ * the backend split (Oct 2026) — the web's `resolvePrChatRights().canPost`:
+ * read off the chat tool, never the report's, with the admin bypass on rights
+ * but not on the production's switch, and only while the report row carries
+ * the `unit_id` that addresses the chat.
  */
 class ReportChatAccessTest {
 
@@ -30,26 +32,29 @@ class ReportChatAccessTest {
         )
 
     @Test
-    fun `chat rights come from the chat tool, not the report`() {
-        assertTrue(viewer(report, chat).canViewChat)
-        assertFalse(viewer(report, chat.copy(canView = false)).canViewChat, "report rights do not open the chat")
-        val chatOnly = viewer(report.copy(canView = false, canPost = false), chat)
-        assertTrue(chatOnly.canViewChat)
-        assertFalse(chatOnly.canView)
+    fun `chat posting comes from the chat tool, not the report`() {
+        assertTrue(viewer(report, chat).canPostChat)
+        assertFalse(viewer(report, chat.copy(canPost = false)).canPostChat, "report posting does not post in the chat")
+        assertFalse(viewer(report, chat.copy(canView = false)).canPostChat, "posting implies viewing")
     }
 
     @Test
     fun `a chat tool that is off or not issued is no chat, for admins too`() {
-        assertFalse(viewer(report, chat.copy(enabled = false)).canViewChat)
-        assertFalse(viewer(report).canViewChat, "missing until the project is backfilled")
-        assertFalse(viewer(report, chat.copy(enabled = false), admin = true).canViewChat)
-        assertTrue(viewer(report, chat.copy(canView = false), admin = true).canViewChat, "admins pass the rights")
+        assertFalse(viewer(report, chat.copy(enabled = false)).canPostChat)
+        assertFalse(viewer(report).canPostChat, "missing until the project is backfilled")
+        assertFalse(viewer(report, chat.copy(enabled = false), admin = true).canPostChat)
+        assertTrue(viewer(report, chat.copy(canPost = false), admin = true).canPostChat, "admins pass the rights")
+    }
+
+    @Test
+    fun `without the report row's unit nothing addresses the chat`() {
+        assertFalse(viewer(report.copy(unitId = null), chat).canPostChat)
     }
 
     @Test
     fun `only the production report has a chat`() {
         assertEquals("production_report_chat_tool", ReportKind.Production.chatToolIdentifier)
         assertEquals(null, ReportKind.Ad.chatToolIdentifier)
-        assertFalse(viewer(ToolAccess("ad_report_tool", canView = true), chat, kind = ReportKind.Ad).canViewChat)
+        assertFalse(viewer(ToolAccess("ad_report_tool", canView = true), chat, kind = ReportKind.Ad).canPostChat)
     }
 }

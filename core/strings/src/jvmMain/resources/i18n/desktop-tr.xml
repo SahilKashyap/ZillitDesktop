@@ -8382,4 +8382,6 @@
     <string name="desktop_um_change_unit">Birimi Değiştir</string>
     <string name="desktop_um_edit_user_info">Kullanıcı Bilgilerini Düzenle</string>
     <string name="desktop_call_line_unavailable">%1$s burada kullanılamıyor</string>
+    <string name="desktop_pr_no_report_sections">Prodüksiyon raporunun hiçbir bölümüne erişiminiz yok.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Prodüksiyon Raporu Sohbeti\'nde gönderme yetkiniz olmadığından PDF sohbete gönderilmeyecek.</string>
 </resources>

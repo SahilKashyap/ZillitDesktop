@@ -68,7 +68,7 @@ data class HomeUiState(
     val toast: HomeToast? = null,
 ) {
     val gridTools: List<ToolPresentation>
-        get() = ToolCatalogue.grid(permissions.gridTools).map(ToolCatalogue::present)
+        get() = ToolCatalogue.grid(permissions).map(ToolCatalogue::present)
 
     /**
      * The grid as the production arranged it — the web's `groupedTools`:
@@ -84,7 +84,7 @@ data class HomeUiState(
     val sections: List<ToolSection>
         get() {
             val live = groups.map { it.identifier }.toSet()
-            val keyed = ToolCatalogue.grid(permissions.gridTools).groupBy { tool ->
+            val keyed = ToolCatalogue.grid(permissions).groupBy { tool ->
                 val served = tool.groupIdentifier?.takeIf(String::isNotBlank)
                 val settled = when {
                     served == null -> UNGROUPED_KEY

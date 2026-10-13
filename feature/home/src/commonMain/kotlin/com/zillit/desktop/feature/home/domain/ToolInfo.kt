@@ -133,6 +133,8 @@ private val WEB: List<WebEntry> = listOf(
             else -> S.production_report_info_admin
         }
     },
+    // Its own tool since Oct 2026; the web reuses the text that always described this chat.
+    WebEntry("production_report_chat_tool", always(S.production_report_info_user)),
     WebEntry("dod_tool", always(S.desktop_tool_info_dod_tooltip)),
     WebEntry("external_users_tool", always(S.external_user_info)),
     WebEntry("box_schedule_tool", always(S.box_production_module_title)),

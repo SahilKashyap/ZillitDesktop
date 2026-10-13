@@ -48,11 +48,4 @@ class ToolWireNamesTest {
             assertEquals(label, identifierToWireTool(wireToolToIdentifier(label)), "round trip of $label")
         }
     }
-
-    @Test
-    fun `only the production report chat is hosted in another tool's window`() {
-        assertEquals("production_report_tool", hostToolOf("production_report_chat_tool"))
-        assertEquals(null, hostToolOf("production_report_tool"))
-        assertEquals(null, hostToolOf("callsheet_tool"))
-    }
 }

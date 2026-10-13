@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Palitan ang Unit</string>
     <string name="desktop_um_edit_user_info">I-edit ang Impormasyon ng User</string>
     <string name="desktop_call_line_unavailable">Hindi available dito ang %1$s</string>
+    <string name="desktop_pr_no_report_sections">Wala kang access sa anumang seksyon ng production report.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Wala kang karapatang mag-post sa Production Report Chat, kaya hindi ipo-post ang PDF sa chat.</string>
 </resources>

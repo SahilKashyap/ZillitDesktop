@@ -106,7 +106,8 @@ private val FALLBACK_GROUPS: Map<String, String> = buildMap {
     ).forEach { put(it, "group_accounts_payroll") }
     listOf(
         "ad_dashboard_tool", "callsheet_tool", "casting_background_tool", "casting_main_tool", "catering_tool",
-        "dod_tool", "production_report_tool", "schedule_distribution_tool", "script_notes_tool",
+        "dod_tool", "production_report_tool", "production_report_chat_tool", "schedule_distribution_tool",
+        "script_notes_tool",
         "supporting_artistes_extras_tool",
     ).forEach { put(it, "group_ads") }
     listOf("continuity_tool", "reports_tool", "wardrobe_background_tool", "wardrobe_main_tool")

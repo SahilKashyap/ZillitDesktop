@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Skift enhed</string>
     <string name="desktop_um_edit_user_info">Rediger brugerinfo</string>
     <string name="desktop_call_line_unavailable">%1$s er ikke tilgængelig her</string>
+    <string name="desktop_pr_no_report_sections">Du har ikke adgang til nogen sektioner af produktionsrapporten.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Du har ikke ret til at skrive i chatten for produktionsrapporten, så PDF\'en bliver ikke sendt til chatten.</string>
 </resources>

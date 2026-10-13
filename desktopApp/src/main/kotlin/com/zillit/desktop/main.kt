@@ -1203,7 +1203,7 @@ private fun ToolReadOnFocus(ready: AppGraph.Ready, viewModels: AppViewModels, wo
 private val SELF_READING_TOOLS: Set<String> = setOf(
     // Boards: the visible unit is read when it loads (HomeFeedViewModel.selectUnit).
     "info_tool", "confidential_info_tool", "catering_tool", "accounting_tool", "reports_tool", "script_notes_tool",
-    // The report window's chat board, on the tile it has when the report has none.
+    // Production Report Chat: a board on the report service, its one unit read on load.
     "production_report_chat_tool",
     // Tabbed tools reading per unit/level.
     "callsheet_tool", "production_report_tool", "continuity_tool", "deal_memo_tool", "account_hub_tool",
@@ -4240,8 +4240,9 @@ private fun buildRegistry(
             onOpenListingOrder = permissionGridListingOrder(viewModels),
         )
     }
-    val productionReport = viewModels.productionReport?.let {
-        reportToolProvider(it, graph, viewModels.productionReportChat, boardContext)
+    val productionReport = viewModels.productionReport?.let { reportToolProvider(it, graph) }
+    val productionReportChat = viewModels.productionReportChat?.let {
+        productionReportChatProvider(it, graph, boardContext)
     }
     val adReport = viewModels.adReport?.let { reportToolProvider(it, graph) }
     val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph) }
@@ -4251,7 +4252,7 @@ private fun buildRegistry(
         cash, cards, orders, timecards, payroll, deals, talentDeals, distribution, drive,
         accountHub, productionCompanies, dealMemoApprovers, taxFiling, bankRec, budgetBuilder, formSignature,
         esignature,
-        callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
+        callSheet, productionReport, productionReportChat, adReport, wrapReport, sides, permissionGrid,
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,

@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Unit ändern</string>
     <string name="desktop_um_edit_user_info">Benutzerinfo bearbeiten</string>
     <string name="desktop_call_line_unavailable">%1$s ist hier nicht verfügbar</string>
+    <string name="desktop_pr_no_report_sections">Sie haben keinen Zugriff auf Bereiche des Produktionsberichts.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Sie haben keine Schreibrechte im Produktionsbericht-Chat, daher wird das PDF nicht im Chat gepostet.</string>
 </resources>

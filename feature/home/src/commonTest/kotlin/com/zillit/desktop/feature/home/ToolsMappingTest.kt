@@ -217,20 +217,28 @@ class ToolSectionsTest {
     }
 
     @Test
-    fun `the production report chat folds into the report's tile, and keeps its own only when alone`() {
-        val report = ToolAccess("production_report_tool", canView = true)
+    fun `production report chat has its own tile, shown only beside an issued production report row`() {
+        val report = ToolAccess("production_report_tool", unitId = "pr-unit", canView = true)
         val chat = ToolAccess("production_report_chat_tool", canView = true)
         val callSheet = ToolAccess("callsheet_tool", canView = true)
 
         val both = HomeUiState(permissions = ProjectPermissions(listOf(report, chat, callSheet))).gridTools
-        assertEquals(listOf("production_report_tool", "callsheet_tool"), both.map { it.identifier })
-
-        val alone = HomeUiState(permissions = ProjectPermissions(listOf(chat, callSheet))).gridTools
-        assertEquals(listOf("production_report_chat_tool", "callsheet_tool"), alone.map { it.identifier })
         assertEquals(
-            WorkspaceRoute.Tool("/film-tools/production-report"),
-            alone.first().route,
-            "the chat lives in the report window",
+            listOf("production_report_tool", "production_report_chat_tool", "callsheet_tool"),
+            both.map { it.identifier },
         )
+        assertEquals(WorkspaceRoute.Tool("/film-tools/production-report-chat"), both[1].route)
+        assertEquals(WorkspaceRoute.Tool("/film-tools/production-report"), both[0].route)
+
+        // Rights on the chat alone: the report row still addresses it, so the tile stays.
+        val chatOnly = ProjectPermissions(listOf(report.copy(canView = false), chat, callSheet))
+        assertEquals(
+            listOf("production_report_chat_tool", "callsheet_tool"),
+            HomeUiState(permissions = chatOnly).gridTools.map { it.identifier },
+        )
+
+        // No report row at all: nothing addresses the chat, so no tile.
+        val noReport = HomeUiState(permissions = ProjectPermissions(listOf(chat, callSheet))).gridTools
+        assertEquals(listOf("callsheet_tool"), noReport.map { it.identifier })
     }
 }

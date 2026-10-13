@@ -1,14 +1,14 @@
 package com.zillit.desktop
 
-import androidx.compose.runtime.Composable
 import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.badges.identifierToWireTool
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
-import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.headersFor
@@ -17,8 +17,6 @@ import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.core.workspace.WindowNavigator
-import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.documentdistribution.data.FromToolFile
 import com.zillit.desktop.feature.documentdistribution.data.FromToolPublisher
@@ -29,6 +27,7 @@ import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.email.domain.StoredFile
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.home.domain.HomeUnit
+import com.zillit.desktop.feature.home.domain.ToolCatalogue
 import com.zillit.desktop.feature.home.ui.BoardToolProvider
 import com.zillit.desktop.feature.home.ui.HomeBoardContext
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
@@ -105,8 +104,6 @@ internal fun AppGraph.Ready.buildReport(
     projectIdProvider = { projectContext?.context?.value?.project?.projectId },
     membersProvider = { reportMembers() },
     nowMillis = System::currentTimeMillis,
-    // Only the production report has a unit chat; AD and Wrap open on the manager.
-    hasChat = kind == ReportKind.Production,
 )
 
 /**
@@ -164,35 +161,35 @@ internal fun AppGraph.Ready.productionReportChatFeed(permissions: () -> ProjectP
 internal const val PRODUCTION_REPORT_BOARD = "production-report"
 
 /**
- * The tool window: crew photos on every face and — for the production
- * report — the unit chat in the Chat workspace, drawn by the same board every
- * notice board uses. "Send for Chat" goes through the chat REPOSITORY (see
- * [productionReportPublishing]), so the window needs no chat view model.
+ * The report window: crew photos on every face. Manage Reports only — the
+ * chat it used to open on is Production Report Chat, its own tool and window
+ * since Oct 2026 ([productionReportChatProvider]). "Send for Chat" goes
+ * through the chat REPOSITORY (see [productionReportPublishing]), so the
+ * window needs no chat view model.
  */
-internal fun reportToolProvider(
-    viewModel: ReportViewModel,
-    graph: AppGraph,
-    unitChat: HomeFeedViewModel? = null,
-    boardContext: HomeBoardContext = HomeBoardContext(),
-): ProductionReportToolProvider {
-    val board = unitChat?.let { feed ->
-        BoardToolProvider(
-            path = "${viewModel.kind.path}/chat",
-            title = viewModel.kind.title,
-            icon = ZillitToolIcons.ProductionReport,
-            feedViewModel = feed,
-            board = boardContext,
-            badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
-        )
-    }
-    return ProductionReportToolProvider(
+internal fun reportToolProvider(viewModel: ReportViewModel, graph: AppGraph): ProductionReportToolProvider =
+    ProductionReportToolProvider(
         viewModel,
         loadAvatar = { userId -> (graph as? AppGraph.Ready)?.let { crewFaceLoader(it)(userId) } },
-        chat = board?.let { host ->
-            @Composable { route: WorkspaceRoute, navigator: WindowNavigator -> host.Content(route, navigator) }
-        },
     )
-}
+
+/**
+ * Production Report Chat's window — the web's `/film-tools/production-report-chat`,
+ * which mounts the chat that used to be the report window's Chat view.
+ */
+internal fun productionReportChatProvider(
+    feed: HomeFeedViewModel,
+    graph: AppGraph,
+    boardContext: HomeBoardContext,
+): BoardToolProvider =
+    BoardToolProvider(
+        path = ToolCatalogue.PRODUCTION_REPORT_CHAT_PATH,
+        title = ReportViewer.CHAT_TOOL_LABEL.localised(),
+        icon = ZillitIcons.Chat,
+        feedViewModel = feed,
+        board = boardContext,
+        badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
+    )
 
 private fun AppGraph.Ready.productionReportViewer(permissions: ProjectPermissions, kind: ReportKind): ReportViewer {
     val context = projectContext?.context?.value

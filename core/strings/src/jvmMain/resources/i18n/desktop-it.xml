@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Cambia unità</string>
     <string name="desktop_um_edit_user_info">Modifica le info dell\'utente</string>
     <string name="desktop_call_line_unavailable">%1$s non è disponibile qui</string>
+    <string name="desktop_pr_no_report_sections">Non hai accesso a nessuna sezione dei report di produzione.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Non hai i permessi di pubblicazione nella chat del report di produzione, quindi il PDF non verrà pubblicato nella chat.</string>
 </resources>

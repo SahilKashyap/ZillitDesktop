@@ -190,6 +190,7 @@ internal class RowActionsController(private val ctx: ReportContext) {
 
     /** "Attach Document": PDFs posted into the unit chat alongside the live report. */
     private fun attach() {
+        if (!ctx.state.viewer.canPostChat) return
         ctx.launchWork {
             when (val result = ctx.services.publishing.attachDocuments(replacePrevious = false)) {
                 is ZillitResult.Success -> if (result.data > 0) {

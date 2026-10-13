@@ -8387,4 +8387,6 @@
     <string name="desktop_um_change_unit">Ubah Unit</string>
     <string name="desktop_um_edit_user_info">Ubah Info Pengguna</string>
     <string name="desktop_call_line_unavailable">%1$s tidak tersedia di sini</string>
+    <string name="desktop_pr_no_report_sections">Anda tidak memiliki akses ke bagian mana pun dari laporan produksi.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Anda tidak memiliki hak posting di Chat Laporan Produksi, jadi PDF tidak akan diposting ke chat.</string>
 </resources>

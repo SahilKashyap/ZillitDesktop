@@ -366,6 +366,17 @@ private fun DestinationStep(state: ReportUiState, dialog: ReportDialog.Publish, 
             OptionRow(option.label, option.hint, selected, blocked) { onEvent(WorkflowEvent.PickDestination(option)) }
         }
     }
+    // Publishing never needs chat rights, but posting the PDF into
+    // Production Report Chat does: said up front, as the web does.
+    if (!state.viewer.canPostChat) {
+        Text(
+            str(S.desktop_pr_publish_no_chat_rights),
+            style = reportText(12.sp),
+            color = colors.textTertiary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+    }
     ReportButton(
         text = if (dialog.destination == PublishDestination.DocDist) {
             str(S.dd_publish_confirm_title)

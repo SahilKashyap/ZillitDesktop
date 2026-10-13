@@ -2,12 +2,12 @@ package com.zillit.desktop.feature.home.domain
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.badges.PRODUCTION_REPORT_CHAT_TOOL
-import com.zillit.desktop.core.badges.hostToolOf
 import com.zillit.desktop.core.localization.LabelKind
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 
@@ -161,10 +161,11 @@ object ToolCatalogue {
             (ZillitToolIcons.PreProduction to WorkspaceRoute.Tool("/film-tools/pre-production")),
         "production_report_tool" to
             (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/production-report")),
-        // The report's unit chat, a tool of its own since the backend split
-        // (Oct 2026) but drawn in the report window's Chat workspace — see [grid].
+        // Production Report Chat — its own tool, tile and window since the
+        // backend split (Oct 2026); it was the report window's Chat view. The
+        // web mounts it at `/film-tools/production-report-chat`.
         PRODUCTION_REPORT_CHAT_TOOL to
-            (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/production-report")),
+            (ZillitIcons.Chat to WorkspaceRoute.Tool(PRODUCTION_REPORT_CHAT_PATH)),
         // The end-of-day wrap report — same engine as the production report.
         "wrap_report_tool" to
             (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/wrap-report")),
@@ -220,16 +221,21 @@ object ToolCatalogue {
             (ZillitToolIcons.IcWeather to WorkspaceRoute.Tool("/film-tools/weather")),
     )
 
+    /** Where Production Report Chat opens — its own window, as on the web. */
+    const val PRODUCTION_REPORT_CHAT_PATH = "/film-tools/production-report-chat"
+
     /**
-     * The tiles to draw from the tools a user may open: [tools] in order,
-     * less any tool hosted in another's window ([hostToolOf]) while that
-     * window has a tile of its own — two tiles would open the same window.
-     * Alone, the hosted tool keeps its tile, so a crew member with rights on
-     * the Production Report Chat but not the report can still reach the chat.
+     * Tiles that need another tool issued beside them — the web's `isShow`.
+     * Production Report Chat is addressed by the Production Report row's
+     * `unit_id`, so without that row there is no chat to open
+     * (`isShow: !!findTool('production_report_tool')`).
      */
-    fun grid(tools: List<ToolAccess>): List<ToolAccess> {
-        val shown = tools.mapTo(mutableSetOf()) { it.identifier }
-        return tools.filterNot { tool -> hostToolOf(tool.identifier)?.let { it in shown } == true }
+    private val REQUIRES: Map<String, String> = mapOf(PRODUCTION_REPORT_CHAT_TOOL to "production_report_tool")
+
+    /** The tiles to draw: the tools a user may open, less any whose required tool was not issued. */
+    fun grid(permissions: ProjectPermissions): List<ToolAccess> {
+        val issued = permissions.tools.mapTo(mutableSetOf()) { it.identifier }
+        return permissions.gridTools.filter { tool -> REQUIRES[tool.identifier]?.let { it in issued } != false }
     }
 
     fun present(access: ToolAccess): ToolPresentation {

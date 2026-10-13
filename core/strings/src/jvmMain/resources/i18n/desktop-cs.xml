@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Změnit jednotku</string>
     <string name="desktop_um_edit_user_info">Upravit informace o uživateli</string>
     <string name="desktop_call_line_unavailable">%1$s zde není k dispozici</string>
+    <string name="desktop_pr_no_report_sections">Nemáte přístup k žádné sekci výrobních zpráv.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Nemáte oprávnění přispívat do chatu výrobní zprávy, proto PDF nebude do chatu odesláno.</string>
 </resources>

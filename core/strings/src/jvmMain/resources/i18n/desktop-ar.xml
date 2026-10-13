@@ -8387,4 +8387,6 @@
     <string name="desktop_um_change_unit">تغيير الوحدة</string>
     <string name="desktop_um_edit_user_info">تعديل معلومات المستخدم</string>
     <string name="desktop_call_line_unavailable">%1$s غير متاح هنا</string>
+    <string name="desktop_pr_no_report_sections">ليست لديك صلاحية الوصول إلى أي قسم من أقسام تقارير الإنتاج.</string>
+    <string name="desktop_pr_publish_no_chat_rights">ليست لديك صلاحية النشر في دردشة تقرير الإنتاج، لذا لن يُنشر ملف PDF في الدردشة.</string>
 </resources>

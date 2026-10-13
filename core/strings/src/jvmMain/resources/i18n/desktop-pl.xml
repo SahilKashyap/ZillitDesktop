@@ -8388,4 +8388,6 @@
     <string name="desktop_um_change_unit">Zmień ekipę zdjęciową</string>
     <string name="desktop_um_edit_user_info">Edytuj informacje o użytkowniku</string>
     <string name="desktop_call_line_unavailable">%1$s nie jest tutaj dostępna</string>
+    <string name="desktop_pr_no_report_sections">Nie masz dostępu do żadnej sekcji raportów produkcyjnych.</string>
+    <string name="desktop_pr_publish_no_chat_rights">Nie masz uprawnień do publikowania na czacie raportu produkcyjnego, więc plik PDF nie zostanie opublikowany na czacie.</string>
 </resources>

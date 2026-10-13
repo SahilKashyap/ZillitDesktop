@@ -13015,4 +13015,6 @@
     <string name="desktop_cal_no_invitees_match">No invitees match your search</string>
     <string name="desktop_cal_n_accepted">%1$d Accepted</string>
     <string name="desktop_cal_n_declined">%1$d Declined</string>
+    <string name="desktop_pr_no_report_sections">You do not have access to any production report sections.</string>
+    <string name="desktop_pr_publish_no_chat_rights">You don\'t have posting rights in Production Report Chat, so the PDF won\'t be posted to the chat.</string>
 </resources>

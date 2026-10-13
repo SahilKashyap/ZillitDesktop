@@ -46,11 +46,7 @@ internal class ListsController(private val ctx: ReportContext) {
                 viewer = viewer,
                 members = ctx.members(),
                 canDistribute = ctx.services.publishing.canDistribute(),
-                workspace = if (!(hasChat && viewer.canViewChat) && workspace == Workspace.Chat) {
-                    Workspace.Manage
-                } else {
-                    workspace
-                },
+                workspace = if (!hasChat && workspace == Workspace.Chat) Workspace.Manage else workspace,
             )
         }
         if (!listening) {
@@ -114,12 +110,7 @@ internal class ListsController(private val ctx: ReportContext) {
     private fun clampWorkspace() {
         ctx.update {
             val tabs = manageTabs
-            val nextWorkspace = when {
-                tabs.isEmpty() && showsChat -> Workspace.Chat
-                // Chat rights withdrawn (or never granted) while the window sat on it.
-                !showsChat && workspace == Workspace.Chat -> Workspace.Manage
-                else -> workspace
-            }
+            val nextWorkspace = if (tabs.isEmpty() && hasChat) Workspace.Chat else workspace
             copy(
                 workspace = nextWorkspace,
                 tab = if (tab in tabs || tabs.isEmpty()) tab else tabs.first(),

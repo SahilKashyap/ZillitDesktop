@@ -135,25 +135,6 @@ class ReportWorkflowViewModelTest {
     }
 
     @Test
-    fun `without rights on the chat tool the window opens on Manage and offers no chat`() = runTest(dispatcher) {
-        repository.rows = drafts("r1")
-        val vm = harness.start(this, Samples.author.copy(canViewChat = false), hasChat = true)
-        assertFalse(vm.currentState.showsChat)
-        assertEquals(Workspace.Manage, vm.currentState.workspace)
-        assertEquals(listOf("r1"), vm.currentState.lists.drafts.rows.map { it.id }, "Manage loads at once")
-    }
-
-    @Test
-    fun `chat rights without report rights leave the chat and nothing to manage`() = runTest(dispatcher) {
-        repository.metadata = SheetMetadata(internalReceiverIds = listOf("me"))
-        val vm = harness.start(this, Samples.viewer.copy(canView = false), hasChat = true)
-        assertTrue(vm.currentState.viewer.isBlocked, "no report rights")
-        assertTrue(vm.currentState.showsChat, "the chat's own rights still open it")
-        assertTrue(vm.currentState.manageTabs.isEmpty(), "a receiver listing does not reopen the report")
-        assertEquals(Workspace.Chat, vm.currentState.workspace)
-    }
-
-    @Test
     fun `a viewer's tabs come from the two project lists, and a failed metadata read fails open`() =
         runTest(dispatcher) {
             val nobody = harness.start(this, Samples.viewer, hasChat = true)
@@ -492,6 +473,25 @@ class ReportWorkflowViewModelTest {
         )
         assertNull(vm.currentState.dialog)
     }
+
+    @Test
+    fun `without chat posting rights a report still publishes, but nothing is posted to the chat`() =
+        runTest(dispatcher) {
+            val report = Samples.row("r1", "Day 1", ReportStatus.ApprovedForPublish)
+            harness.publishing.replaceable = listOf(ReplaceTarget("c9", "Day0.pdf"))
+            val vm = harness.start(this, Samples.author.copy(canPostChat = false))
+
+            vm.onEvent(WorkflowEvent.OpenPublish(report))
+            settle()
+            val dialog = assertIs<ReportDialog.Publish>(vm.currentState.dialog)
+            assertTrue(dialog.replaceOptions.isEmpty(), "the chat's documents are not read")
+            vm.onEvent(WorkflowEvent.ContinuePublish)
+            vm.onEvent(WorkflowEvent.PickPublishType(PublishType.New))
+            vm.onEvent(WorkflowEvent.ConfirmPublish)
+            settle()
+            assertEquals(listOf("r1" to false), repository.publishes)
+            assertTrue(harness.publishing.chatPosts.isEmpty())
+        }
 
     @Test
     fun `Replace swaps one live document, travels as NEW without wiping, and reports a vanished target`() =

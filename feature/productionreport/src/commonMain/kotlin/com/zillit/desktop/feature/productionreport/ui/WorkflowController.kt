@@ -431,6 +431,8 @@ internal class WorkflowController(private val ctx: ReportContext) {
      * is chosen. A failure is swallowed — no Replace card is a fine outcome.
      */
     private fun loadReplaceOptions(reportId: String) {
+        // Replace swaps a document in the chat, so it needs chat posting rights.
+        if (!ctx.state.viewer.canPostChat) return
         ctx.launchWork {
             val options = (ctx.services.publishing.replaceableDocuments() as? ZillitResult.Success)?.data.orEmpty()
             ctx.update {
@@ -486,33 +488,24 @@ internal class WorkflowController(private val ctx: ReportContext) {
     }
 
     /**
-     * Best-effort, like the web: a failed chat post never unpublishes. Two
-     * refusals are reported. A Replace target deleted or archived since the
-     * dialog opened — swallowing it would leave the user believing a document
-     * had been replaced when the PDF was never posted at all. And no posting
-     * rights on the chat, which since the backend split is its own tool: a
-     * report poster need not be a chat poster, and the PDF silently missing
-     * from the chat would read as a fault.
+     * Best-effort, like the web: a failed chat post never unpublishes. Skipped
+     * without posting rights in Production Report Chat, its own tool since Oct
+     * 2026 (the dialog said so). The one refusal that is reported is a Replace
+     * target deleted or archived since the dialog opened — swallowing it would
+     * leave the user believing a document had been replaced when the PDF was
+     * never posted at all.
      */
     private suspend fun postToChat(report: ReportSummary, replacePrevious: Boolean, replaceChatId: String?) {
+        if (!ctx.state.viewer.canPostChat) return
         val pdf = (ctx.services.delivery.pdf(report.id) as? ZillitResult.Success)?.data ?: return
         val fileName = "ProductionReport_${report.name.ifBlank { report.id }}.pdf"
         val posted = ctx.services.publishing.postToChat(pdf, fileName, replacePrevious, replaceChatId)
-        if (posted !is ZillitResult.Failure) return
-        when {
-            posted.error.isReplaceTargetGone() -> ctx.toast(str(S.desktop_pr_replace_target_gone), isError = true)
-            posted.error.isChatPostingRefused() -> ctx.toast(
-                str(S.desktop_board_no_posting_rights_ask_admin, CHAT_TOOL_LABEL.localised()),
+        if (posted is ZillitResult.Failure && posted.error.isReplaceTargetGone()) {
+            ctx.toast(
+                str(S.desktop_pr_replace_target_gone),
                 isError = true,
             )
         }
-    }
-
-    /** A 403 reaches here as [ZillitError.Forbidden] (the server's message in `technical`); a 200 refusal as Http. */
-    private fun ZillitError.isChatPostingRefused(): Boolean = when (this) {
-        is ZillitError.Forbidden -> true
-        is ZillitError.Http -> serverMessage == NO_POSTING_RIGHTS
-        else -> false
     }
 
     private fun ZillitError.isReplaceTargetGone(): Boolean =
@@ -587,7 +580,5 @@ internal class WorkflowController(private val ctx: ReportContext) {
     private companion object {
         val DEFAULT_REMINDER: String get() = str(S.desktop_pr_default_reminder)
         const val REPLACE_TARGET_NOT_FOUND = "unit_chat_replace_target_not_found"
-        const val NO_POSTING_RIGHTS = "libs_no_posting_rights"
-        const val CHAT_TOOL_LABEL = "production_report_tool_chat_label"
     }
 }

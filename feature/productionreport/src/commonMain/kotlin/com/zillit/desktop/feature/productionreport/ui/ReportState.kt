@@ -85,7 +85,7 @@ data class ReportUiState(
     val pdf: PdfOverlay? = null,
     /** A workflow call in flight: dialog buttons disable, the second click does nothing. */
     val busy: Boolean = false,
-    /** The host has a chat to show in the Chat workspace — [showsChat] adds the viewer's rights to it. */
+    /** The host has a chat to show in the Chat workspace. */
     val hasChat: Boolean = true,
     /** Document Distribution posting rights (or admin), read when the lists open. */
     val canDistribute: Boolean = false,
@@ -107,21 +107,13 @@ data class ReportUiState(
      * from that wait. Visibility is additive — nothing is retracted.
      */
     val manageTabs: List<ManageTab>
-        get() = if (viewer.isBlocked || (!isPoster && !metadataSettled)) {
-            // No report rights leaves only the chat, when its own rights allow it.
+        get() = if (!isPoster && !metadataSettled) {
             emptyList()
         } else {
             manageTabs(isPoster, isFinalApprover, isInternalReceiver, metadataFailed)
         }
 
     val canManage: Boolean get() = manageTabs.isNotEmpty()
-
-    /**
-     * The Chat workspace is offered: the host has a chat and the viewer has
-     * rights on the chat's own tool, which since the backend split are not
-     * the report's — a viewer may have either without the other.
-     */
-    val showsChat: Boolean get() = hasChat && viewer.canViewChat
 
     val sections: List<ApprovalSection> get() = approvalSections(isPoster, isFinalApprover)
 

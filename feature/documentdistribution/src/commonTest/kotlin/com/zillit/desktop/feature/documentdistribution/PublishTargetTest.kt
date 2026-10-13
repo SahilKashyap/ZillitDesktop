@@ -174,6 +174,15 @@ class PublishTargetTest {
         assertFalse("schedule_full" in viewer.publishable)
     }
 
+    @Test
+    fun `the production report destination follows the chat tool's rights, not the report's`() {
+        val reportOnly = DocDistViewer.from(permissions("production_report_tool"), "u1", "u@x", isTelevision = false)
+        assertFalse("production_report" in reportOnly.publishable)
+
+        val chat = DocDistViewer.from(permissions("production_report_chat_tool"), "u1", "u@x", isTelevision = false)
+        assertTrue("production_report" in chat.publishable)
+    }
+
     /**
      * The Call Sheet unit is gated by the home unit list, which this module
      * does not hold — so it is offered and the server has the final say.

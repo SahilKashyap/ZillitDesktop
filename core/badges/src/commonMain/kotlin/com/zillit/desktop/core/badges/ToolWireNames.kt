@@ -78,14 +78,3 @@ fun identifierToWireTool(identifier: String): String =
 
 /** The Production Report's unit chat, a tool of its own since the backend split (Oct 2026). */
 const val PRODUCTION_REPORT_CHAT_TOOL = "production_report_chat_tool"
-
-/**
- * Tools with no window of their own, counted on the tool whose window hosts
- * them as well as on their own key. The Production Report's chat is the Chat
- * workspace of the Production Report window, so its unread stays on that
- * tile and tab, as it did while both filed under `production_report_label`.
- */
-private val HOSTED_TOOLS = mapOf(PRODUCTION_REPORT_CHAT_TOOL to "production_report_tool")
-
-/** The grid identifier whose window hosts [identifier], or null for a tool with its own window. */
-fun hostToolOf(identifier: String): String? = HOSTED_TOOLS[identifier]
