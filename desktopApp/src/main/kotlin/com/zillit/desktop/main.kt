@@ -3658,6 +3658,7 @@ private fun rememberAppViewModels(
                     newUploadId = { UUID.randomUUID().toString() },
                     rights = graph.rightsRequests,
                     now = System::currentTimeMillis,
+                    badges = graph.driveBadges(),
                 ).also(driveHolder::set)
             },
         )

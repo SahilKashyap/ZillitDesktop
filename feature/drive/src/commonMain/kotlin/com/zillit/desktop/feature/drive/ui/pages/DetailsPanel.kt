@@ -97,7 +97,7 @@ private fun DetailsHeader(item: DriveItem, state: DriveUiState, onEvent: (DriveE
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ItemGlyph(item, state, onEvent, size = HEADER_GLYPH)
+        ItemGlyph(item, state, onEvent, size = HEADER_GLYPH, showUnread = false)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(text = item.name, style = ZillitTheme.typography.titleSmall, maxLines = 2)
             ZillitText(

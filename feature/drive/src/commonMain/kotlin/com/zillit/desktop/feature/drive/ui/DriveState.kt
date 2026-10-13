@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.drive.domain.DriveSection
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.DriveSortSpec
 import com.zillit.desktop.feature.drive.domain.DriveTag
+import com.zillit.desktop.feature.drive.domain.DriveUnread
 import com.zillit.desktop.feature.drive.domain.DriveVersion
 import com.zillit.desktop.feature.drive.domain.DriveView
 import com.zillit.desktop.feature.drive.domain.DriveViewer
@@ -332,6 +333,8 @@ data class DriveUiState(
      * the list and the grid.
      */
     val favouriteIds: Set<String> = emptySet(),
+    /** The unread dots, rolled up from the ledger over the current listing. */
+    val unread: DriveUnread = DriveUnread(),
     /** Small image previews by file id, fetched lazily for the grid and the name cell. */
     val thumbnails: Map<String, ByteArray> = emptyMap(),
 

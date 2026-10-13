@@ -6,6 +6,7 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.drive.data.DriveRepositoryImpl
+import com.zillit.desktop.feature.drive.domain.DriveBadges
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import com.zillit.desktop.feature.home.data.ToolsRepositoryImpl
@@ -124,6 +125,9 @@ internal class DriveWidgetHost(
             crew = { if (isOpen) context?.users.orEmpty().map { it.toDrivePerson() } else emptyList() },
             newUploadId = { UUID.randomUUID().toString() },
             now = System::currentTimeMillis,
+            // The ledger holds the open production's rows only; another
+            // production's widget shows no dots rather than the wrong ones.
+            badges = if (isOpen) ready.driveBadges() else DriveBadges.None,
         )
         viewModel.start()
         _session.update { current ->

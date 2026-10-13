@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
@@ -146,6 +147,11 @@ private fun GridCard(
             contentAlignment = Alignment.Center,
         ) {
             CardPreview(item, state, onEvent)
+            // The web's corner bubble: a folder's counts what is unread inside it.
+            ZillitBadge(
+                count = state.unread.of(item),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(ZillitTheme.spacing.xs),
+            )
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)

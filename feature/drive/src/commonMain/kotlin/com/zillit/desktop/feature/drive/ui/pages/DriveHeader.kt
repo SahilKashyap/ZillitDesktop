@@ -41,6 +41,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
@@ -129,6 +130,7 @@ private fun SectionTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit, onOp
                 label = section.label,
                 icon = if (section == DriveSection.SharedWithMe) ZillitIcons.Users else null,
                 active = state.section == section,
+                unread = state.unread.of(section),
                 onClick = { onEvent(DriveEvent.OpenSection(section)) },
             )
         }
@@ -154,7 +156,7 @@ private fun SectionTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit, onOp
 }
 
 @Composable
-private fun SectionTab(label: String, icon: ImageVector?, active: Boolean, onClick: () -> Unit) {
+private fun SectionTab(label: String, icon: ImageVector?, active: Boolean, unread: Int, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -190,6 +192,7 @@ private fun SectionTab(label: String, icon: ImageVector?, active: Boolean, onCli
                 ),
                 color = if (active) colors.accentText else colors.textSecondary,
             )
+            ZillitBadge(count = unread)
         }
     }
 }
@@ -614,6 +617,7 @@ internal fun InnerTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             DriveInnerTab.entries.forEach { tab ->
                 val active = tab == state.innerTab
                 val total = if (tab == DriveInnerTab.Folders) folders else files
+                val unread = state.unread.tab(state.section, tab)
                 // Intrinsic width: the indicator fills its tab, and a plain
                 // fillMaxWidth there would let the first tab swallow the row.
                 Column(
@@ -656,6 +660,7 @@ internal fun InnerTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                                 )
                             }
                         }
+                        ZillitBadge(count = unread)
                     }
                     Box(
                         modifier = Modifier

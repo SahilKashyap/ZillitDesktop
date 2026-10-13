@@ -8,6 +8,7 @@ import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.feature.drive.domain.DriveAction
+import com.zillit.desktop.feature.drive.domain.DriveBadges
 import com.zillit.desktop.feature.drive.domain.DriveInnerTab
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveListQuery
@@ -17,10 +18,12 @@ import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveScope
 import com.zillit.desktop.feature.drive.domain.DriveSection
+import com.zillit.desktop.feature.drive.domain.DriveUnreadRow
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.domain.MyDriveFilter
 import com.zillit.desktop.feature.drive.domain.PreviewKind
 import com.zillit.desktop.feature.drive.domain.breadcrumbTo
+import com.zillit.desktop.feature.drive.domain.driveUnread
 import com.zillit.desktop.feature.drive.domain.eligible
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -76,6 +79,8 @@ class DriveViewModel(
     private val rights: RightsRequestBus? = null,
     /** The clock, for "expired" and relative stamps. */
     internal val now: () -> Long = { 0L },
+    /** The unread dots: the ledger's Drive rows in, folder and file opens out. */
+    private val badges: DriveBadges = DriveBadges.None,
 ) : ZillitViewModel<DriveUiState, DriveEvent, DriveEffect>(DriveUiState(viewer = viewer())) {
 
     private var loadJob: Job? = null
@@ -85,6 +90,13 @@ class DriveViewModel(
 
     /** The "Shared with me" landing falls back to My Drive once, if it is empty (ZL-21229). */
     private var landing = true
+
+    /**
+     * The ledger's Drive rows as last announced. Held here, not in the state:
+     * a production switch resets the state, and the rows must outlive it until
+     * the ledger announces the new production's.
+     */
+    private var unreadRows: List<DriveUnreadRow> = emptyList()
 
     private val details = DriveDetails(this)
     private val uploads = UploadQueue(this, uploader, newUploadId)
@@ -123,6 +135,12 @@ class DriveViewModel(
     private fun listenOnce() {
         if (listening) return
         listening = true
+        launch {
+            badges.rows.collect { rows ->
+                unreadRows = rows
+                setState { copy(unread = listing.driveUnread(rows)) }
+            }
+        }
         launch {
             repository.refreshes.collect {
                 if (started && !currentState.viewer.isBlocked) {
@@ -473,6 +491,9 @@ class DriveViewModel(
      */
     private fun openFolder(folderId: String?) {
         val state = currentState
+        // Standing in a folder reads the folder's own unread, not what is
+        // inside it (the web's folder-open effect, `skipChildFiles`).
+        folderId?.let(badges::readItem)
         setState {
             copy(
                 folderId = folderId,
@@ -549,6 +570,9 @@ class DriveViewModel(
             copy(
                 loading = false,
                 listing = listing,
+                // The dots roll up through the listing's own tree, so a new
+                // listing (a moved folder) re-homes them.
+                unread = listing.driveUnread(unreadRows),
                 // A folder that vanished under the user (deleted elsewhere,
                 // or access withdrawn) sends them back to the root, and says so.
                 folderId = if (folderGone) null else folderId,
@@ -728,6 +752,7 @@ class DriveViewModel(
                 str(S.desktop_drive_items_moved_to_trash, refs.size)
             },
         ) {
+            badges.forget(refs.map { it.id })
             setState {
                 copy(
                     selected = selected - refs.map { it.id }.toSet(),
@@ -777,8 +802,18 @@ class DriveViewModel(
 
     // -- opening files -----------------------------------------------------
 
+    /**
+     * Opening a file reads it — however it was opened, in the viewer or in the
+     * editor (the web's `markDriveFileRead`). Download does not: the dot is
+     * about having seen the file, and a download is not a look.
+     */
+    internal fun markRead(item: DriveItem) {
+        if (!item.isFolder) badges.readItem(item.id)
+    }
+
     internal fun openEditor(item: DriveItem, editable: Boolean) {
         setState { copy(menu = null) }
+        markRead(item)
         launch {
             when (val url = repository.editorUrl(item.id, editable)) {
                 is ZillitResult.Success -> {

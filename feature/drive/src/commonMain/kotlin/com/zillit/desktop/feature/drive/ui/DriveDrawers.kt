@@ -411,6 +411,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             vm.openEditor(item, editable = false)
             return
         }
+        vm.markRead(item)
         if (!state.viewer.may(DriveAction.View, item)) {
             vm.reportFailure(str(S.desktop_drive_no_open_permission))
             return

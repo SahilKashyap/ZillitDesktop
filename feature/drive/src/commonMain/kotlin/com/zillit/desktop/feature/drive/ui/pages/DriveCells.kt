@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -31,6 +32,7 @@ import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -108,9 +110,10 @@ internal fun folderColour(item: DriveItem): Color =
     parseHex(item.folderColor) ?: ZillitTheme.colors.accent
 
 /**
- * The name cell's leading picture: a folder glyph, the image's own
- * thumbnail once fetched, or the extension badge. Asks for the thumbnail
- * on first sight — the view model fetches at most a few at once.
+ * The name cell's leading picture, wearing the item's unread count on its
+ * corner — the web's red bubble on the folder icon and the file's badge. A
+ * folder's count includes everything unread inside it; a file's is its own.
+ * The details panel passes [showUnread] false: it is already looking.
  */
 @Composable
 internal fun ItemGlyph(
@@ -119,6 +122,32 @@ internal fun ItemGlyph(
     onEvent: (DriveEvent) -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = BADGE_SIZE,
+    showUnread: Boolean = true,
+) {
+    val unread = if (showUnread) state.unread.of(item) else 0
+    Box(modifier = modifier) {
+        GlyphPicture(item, state, onEvent, Modifier, size)
+        if (unread > 0) {
+            ZillitBadge(
+                count = unread,
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = UNREAD_INSET, y = -UNREAD_INSET),
+            )
+        }
+    }
+}
+
+/**
+ * A folder glyph, the image's own thumbnail once fetched, or the extension
+ * badge. Asks for the thumbnail on first sight — the view model fetches at
+ * most a few at once.
+ */
+@Composable
+private fun GlyphPicture(
+    item: DriveItem,
+    state: DriveUiState,
+    onEvent: (DriveEvent) -> Unit,
+    modifier: Modifier,
+    size: Dp,
 ) {
     if (item.isFolder) {
         Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
@@ -347,6 +376,9 @@ private const val MAX_STACKED = 3
 private const val MAX_BADGE_CHARS = 4
 private const val SHORT_BADGE = 3
 private const val FOLDER_GLYPH_RATIO = 0.7f
+
+/** How far the unread bubble hangs off the picture's top-right corner. */
+private val UNREAD_INSET = 4.dp
 private const val BADGE_BORDER_ALPHA = 0.35f
 private const val HEX_LENGTH = 6
 private const val HEX_RADIX = 16
