@@ -4623,7 +4623,12 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
             // of this event" checkbox is how they step out, so offering them
             // in their own invite list only invites a double-booking.
             .filter { it.userId != context?.profile?.userId }
-            .filter { it.hasJoined() }
+            // The same cut the Contacts tab and the call picker make
+            // (`callableCrew`): on the crew now, named, and not hiding their
+            // name. `hasJoined` alone kept crew who had left or been removed,
+            // so the invite list offered people who cannot attend.
+            .filter { !it.keepNamePrivate }
+            .filter { it.fullName.isNotBlank() && it.isActiveMember() }
             .map { user ->
                 EventInvitee(
                     userId = user.userId,
