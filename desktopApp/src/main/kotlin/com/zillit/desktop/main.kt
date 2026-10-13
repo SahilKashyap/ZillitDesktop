@@ -4706,7 +4706,8 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
 /** The production's joined crew, as the calendar's people. */
 private fun crewInvitees(ready: AppGraph.Ready): List<EventInvitee> =
     ready.projectContext?.context?.value?.users.orEmpty()
-        .filter { it.hasJoined() }
+        .filter { !it.keepNamePrivate }
+        .filter { it.fullName.isNotBlank() && it.isActiveMember() }
         .map { user ->
             EventInvitee(
                 userId = user.userId,
