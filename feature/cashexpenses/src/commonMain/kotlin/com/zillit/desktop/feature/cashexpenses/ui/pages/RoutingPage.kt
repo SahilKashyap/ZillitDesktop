@@ -68,7 +68,9 @@ fun PaymentRoutingPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 icon = ZillitIcons.Bank,
                 meta = str(S.desktop_ce_claims_count, routing?.bacsBatches?.size ?: 0),
                 padded = false,
-                modifier = Modifier.weight(1f),
+                // Wider than the payroll card: its table carries the payee's name and account
+                // number, which were clipped when the two cards shared the row equally.
+                modifier = Modifier.weight(BACS_CARD_WEIGHT),
             ) {
                 ZillitDataTable(
                     rows = routing?.bacsBatches.orEmpty(),
@@ -170,4 +172,5 @@ private fun payeeColumn(): TableColumn<ClaimBatch> = TableColumn(
     },
 )
 
-private const val PAYEE_WEIGHT = 1.4f
+private const val PAYEE_WEIGHT = 1.8f
+private const val BACS_CARD_WEIGHT = 1.7f
