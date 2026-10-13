@@ -88,6 +88,12 @@ class SocketIoClient(
         val active = socket?.takeIf { it.connected() }
             ?: return ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
 
+        // The counterpart of the `<-` line below. Only inbound frames were
+        // traced, so an emit that the server silently dropped — or one a
+        // feature never actually made — left no record at all, and a wire
+        // contract could only be checked by reading the code that sends it.
+        // The NAME only: these frames carry chat bodies and financials.
+        ZillitLog.d(TAG) { "-> ${event.value}" }
         return runCatching {
             // Argument shape matched to Android's emit(event, payload, null,
             // Ack): the CNC handlers read their callback positionally after
@@ -114,6 +120,7 @@ class SocketIoClient(
         val active = socket?.takeIf { it.connected() }
             ?: return ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
 
+        ZillitLog.d(TAG) { "-> ${event.value} (awaiting ack)" }
         return runCatching {
             val answer = CompletableDeferred<JsonElement>()
             active.emit(
@@ -127,6 +134,11 @@ class SocketIoClient(
         }.fold(
             onSuccess = { ZillitResult.Success(it) },
             onFailure = {
+                // A dropped ack is indistinguishable from a refusal to every
+                // caller, and both used to be silent. Named here so the one
+                // that needs a server-side answer can be told apart from the
+                // one that needs a retry.
+                ZillitLog.w(TAG) { "no ack for ${event.value}: ${it::class.simpleName}" }
                 ZillitResult.Failure(ZillitError.Unknown("ack failed: ${it::class.simpleName}"))
             },
         )
@@ -135,6 +147,7 @@ class SocketIoClient(
     override suspend fun emit(event: SocketEventName): ZillitResult<Unit> {
         val active = socket?.takeIf { it.connected() }
             ?: return ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
+        ZillitLog.d(TAG) { "-> ${event.value}" }
         active.emit(event.value)
         return ZillitResult.Success(Unit)
     }

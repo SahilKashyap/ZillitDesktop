@@ -857,9 +857,13 @@ class ChatRepositoryImpl(
         conversationId: String,
         isGroup: Boolean,
     ): ZillitResult<ChatMessage?> {
-        val me = myUserId() ?: return ZillitResult.Success(null)
-        val project = projectId() ?: return ZillitResult.Success(null)
-        return bus.emitForAck(
+        // One exit for "there is nobody to ask for, or nowhere to ask about":
+        // two `?:` returns plus the three below put this over detekt's
+        // ReturnCount of 4, and the pair says one thing, not two.
+        val me = myUserId()
+        val project = projectId()
+        if (me == null || project == null) return ZillitResult.Success(null)
+        val answer = bus.emitForAck(
             if (isGroup) groupGetMessages else privateGetMessages,
             lastMessagesEnvelope(
                 projectId = project,
@@ -871,16 +875,36 @@ class ChatRepositoryImpl(
                 budgetDocumentId = scope.budgetDocumentId,
             ),
             JsonElement.serializer(),
-        ).flatMap { ack ->
-            ackComplaint(ack)?.let { complaint ->
-                ZillitLog.w(TAG) { "the server refused a last-message ask: $complaint" }
-                return@flatMap ZillitResult.Failure(ZillitError.Unknown(complaint))
+        )
+        // Every outcome says so. This ask IS a wire contract taken from
+        // another client, and it was silent on success and silent on a lost
+        // ack — `flatMap` passes a failure straight through — so the only
+        // trace it ever left was an outright refusal. That left no way to
+        // tell "the server answered and the thread was already current" from
+        // "the emit never happened", which is exactly the question a live
+        // check has to answer. Ids and counts, never bodies.
+        val ack = when (answer) {
+            is ZillitResult.Success -> answer.data
+            is ZillitResult.Failure -> {
+                ZillitLog.w(TAG) {
+                    "last-message ask for $conversationId got no answer: ${answer.error::class.simpleName}"
+                }
+                return answer
             }
-            val newest = chatRows(ack)
-                .mapNotNull { readChatMessage(it, me, decrypt, isGroup) }
-                .maxByOrNull(ChatMessage::timestampMillis)
-            ZillitResult.Success(newest?.also(::remember))
         }
+        ackComplaint(ack)?.let { complaint ->
+            ZillitLog.w(TAG) { "the server refused a last-message ask for $conversationId: $complaint" }
+            return ZillitResult.Failure(ZillitError.Unknown(complaint))
+        }
+        val rows = chatRows(ack)
+        val newest = rows
+            .mapNotNull { readChatMessage(it, me, decrypt, isGroup) }
+            .maxByOrNull(ChatMessage::timestampMillis)
+        ZillitLog.i(TAG) {
+            "last-message ask for $conversationId answered rows=${rows.size} " +
+                "newest=${newest?.id ?: "none"} group=$isGroup"
+        }
+        return ZillitResult.Success(newest?.also(::remember))
     }
 
     /**

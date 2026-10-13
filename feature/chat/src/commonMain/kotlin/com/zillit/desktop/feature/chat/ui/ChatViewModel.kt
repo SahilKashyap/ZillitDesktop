@@ -1857,7 +1857,19 @@ class ChatViewModel(
             }
             .sortedByDescending { (_, at) -> at }
             .take(WARM_PREVIEW_LIMIT)
-        if (stale.isEmpty()) return
+        if (stale.isEmpty()) {
+            // Says why nothing was asked. Reading a live run, "no ask went
+            // out" and "the ask went out and answered nothing" look identical
+            // from outside, and telling them apart meant inferring it from
+            // the backlog line — on a production with no chat at all, this
+            // pass is correctly a no-op and that is worth stating plainly.
+            ZillitLog.d(TAG) {
+                "warm pass: nothing stale (rows=${(currentState.recents + rooms.keys).distinct().size} " +
+                    "stamped=${stamps.count { it.value > 0L }} warmed=${warmedTo.size})"
+            }
+            return
+        }
+        ZillitLog.i(TAG) { "warm pass: asking ${stale.size} of ${stamps.size} conversations" }
         warming = true
         launch {
             var answered = false
@@ -1881,6 +1893,7 @@ class ChatViewModel(
             } finally {
                 warming = false
             }
+            ZillitLog.i(TAG) { "warm pass: done, answered=$answered" }
             // The stamps moved with the lines, so the order is re-read once.
             if (answered) showRecents(currentState.recents)
         }
