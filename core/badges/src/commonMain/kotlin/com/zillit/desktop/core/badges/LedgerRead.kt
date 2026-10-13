@@ -45,6 +45,30 @@ sealed interface LedgerRead {
             row.chatRoomId == key || row.senderId == key || row.referenceId == key
     }
 
+    /**
+     * How far each conversation was already read **on this device** — the
+     * chat listing's own read marks, which outlive the rows the server still
+     * calls unread.
+     *
+     * The listing has always applied these to what it draws
+     * (`BacklogTally.countsAsUnread`), but only to its own fold: the row
+     * stayed unread in the ledger, so the picker's card went on counting a
+     * thread this computer had read. The mark is a read made here, so it is
+     * applied as one — it persists, and it converges every surface rather
+     * than one view.
+     *
+     * The only cutoff-bearing read beside [CalendarExpired]: a mark says
+     * "up to here", and flipping a conversation's newer rows with it would
+     * read messages nobody has seen. A row with no `created` is never swept
+     * — there is nothing to compare.
+     */
+    data class ConversationsRead(val upTo: Map<String, Long>) : LedgerRead {
+        override fun matches(row: NotificationRecord): Boolean {
+            val mark = row.conversationKey?.let { upTo[it] } ?: return false
+            return row.created > 0L && row.created <= mark
+        }
+    }
+
     /** A tool's tab — `markReadCommon(isLCW = true)`: every level given is an equality (1442-1474). */
     data class Levels(
         val tool: String,
@@ -199,6 +223,32 @@ fun NotificationRecord.isOfMailboxes(mailboxes: Set<String>?): Boolean =
         level1.isBlank() ||
         mailboxes.isNullOrEmpty() ||
         mailboxes.any { level1.sameAddress(it) }
+
+/**
+ * Whether a row may be counted for a production whose group rooms are
+ * [rooms] — the rooms `chat-room` last listed, which are the rooms this
+ * person can still open.
+ *
+ * The notification service never retires a row for a room somebody left, was
+ * removed from, or whose group was deleted: 40 of 45 unread on one production
+ * sat in rooms the room list no longer returns (2026-08-19). The phones hide
+ * those against their own ledgers and so does the C&C rail
+ * (`liveChatUnread`) — but the picker's card counted them, and a card is the
+ * one place a badge cannot be opened and cleared.
+ *
+ * Held back, not read: losing a room is a visibility fact, not something
+ * anyone read, and it reverses the moment the room comes back. [rooms] null
+ * — a production whose list has not answered here yet — counts every row,
+ * the way an unnamed mailbox does: a count that is late beats one that is
+ * wrong. Only a room row is judged; a DM names no room.
+ */
+fun NotificationRecord.isOfChatRooms(rooms: Set<String>?): Boolean =
+    rooms == null ||
+        section != BadgeSections.CNC ||
+        tool != NotificationRecord.CHAT_TOOL ||
+        unit != NotificationRecord.CHAT_GROUP_UNIT ||
+        chatRoomId.isBlank() ||
+        chatRoomId in rooms
 
 internal fun String.sameAddress(other: String): Boolean = trim().equals(other.trim(), ignoreCase = true)
 

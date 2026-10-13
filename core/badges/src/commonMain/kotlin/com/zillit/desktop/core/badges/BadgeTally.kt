@@ -24,6 +24,21 @@ fun tallyBadges(rows: Collection<NotificationRecord>): BadgeCounts {
     return tally.counts()
 }
 
+/**
+ * The same composition, production by production — the production picker's
+ * cards.
+ *
+ * One rule for a card and for the rail inside it. The card used to be a raw
+ * unread-row count, so it wore rows no screen inside could ever badge: an
+ * `ad_dashboard_label` row, a calendar invite with no end time, a chat row
+ * that names no conversation, an approval row filed under a unit nobody
+ * sums. The number then had nothing behind it and nothing that could clear
+ * it — "badges on the card, nothing badged inside", which is exactly how it
+ * was reported.
+ */
+fun tallyByProject(rows: Collection<NotificationRecord>): Map<String, BadgeCounts> =
+    rows.groupBy { it.projectId }.mapValues { (_, own) -> tallyBadges(own) }
+
 /** The three maps, filled one row at a time by the section's own rule. */
 private class Tally {
     private val sections = mutableMapOf<String, Int>()

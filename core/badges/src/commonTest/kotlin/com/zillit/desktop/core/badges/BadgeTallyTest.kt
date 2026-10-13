@@ -172,4 +172,21 @@ class BadgeTallyTest {
             splitBadges(rows, BadgeDrilldownQuery(groupBy = "tool", section = BadgeSections.TOOLS)),
         )
     }
+
+    /** The picker's cards: the same composition, production by production. */
+    @Test
+    fun `the per-production tally is the same rule, split by production`() {
+        val rows = listOf(
+            row("a", BadgeSections.TOOLS, tool = "sides_label"),
+            row("b", BadgeSections.TOOLS, tool = "sides_label").copy(projectId = "p2"),
+            row("c", BadgeSections.TOOLS, tool = "ad_dashboard_label").copy(projectId = "p2"),
+            row("d", BadgeSections.SOS),
+        )
+
+        val byProject = tallyByProject(rows)
+
+        assertEquals(2, byProject.getValue("p").total)
+        assertEquals(1, byProject.getValue("p2").total, "the dashboard row counts nowhere, here either")
+        assertEquals(tallyBadges(rows.filter { it.projectId == "p" }), byProject.getValue("p"))
+    }
 }

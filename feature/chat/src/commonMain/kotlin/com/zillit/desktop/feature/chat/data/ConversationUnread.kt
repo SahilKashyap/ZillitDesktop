@@ -53,17 +53,19 @@ fun conversationBacklogFrom(
     return tally.backlog()
 }
 
-/** The four maps a backlog folds into, filled one row at a time. */
+/** The maps a backlog folds into, filled one row at a time. */
 private class BacklogTally(private val readMarks: Map<String, Long>, private val silencedIds: Set<String>) {
     private val counts = mutableMapOf<String, Int>()
     private val newest = mutableMapOf<String, Long>()
     private val rooms = mutableSetOf<String>()
     private val messageKeys = mutableMapOf<String, String>()
     private var windowStart: Long? = null
+    private val readUpTo = mutableMapOf<String, Long>()
 
     fun add(row: JsonObject) {
         val key = row.conversationKey() ?: return
         if (row.text("unit") == GROUP_UNIT) rooms += key
+        readMarks[key]?.takeIf { it > 0L }?.let { readUpTo[key] = it }
         val created = row.createdMillis()
         created?.let { at ->
             newest[key] = maxOf(newest[key] ?: 0L, at)
@@ -83,6 +85,7 @@ private class BacklogTally(private val readMarks: Map<String, Long>, private val
         rooms = rooms,
         messageKeys = messageKeys,
         windowStart = windowStart,
+        readUpTo = readUpTo,
     )
 }
 

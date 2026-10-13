@@ -61,11 +61,16 @@ SELECT MAX(updated) FROM notificationLedger WHERE (:projectId = '' OR projectId 
 
 -- The production picker's rows: every unread row of every production
 -- (Android `calculateAllProjectsBadges`: this device's unread rows grouped
--- by project — the grouping is done in Kotlin, where each production's
--- mailbox scope is known). An empty device id takes every device's rows.
+-- by project — the grouping and the composition are done in Kotlin, by the
+-- same `tallyByProject` the open production's rail uses, where each
+-- production's mailbox and room scopes are known). An empty device id takes
+-- every device's rows. The flags here are `NotificationRecord.counts`, which
+-- the Kotlin side applies again: a silent push and an echo of this person's
+-- own action are not badges on any client.
 selectUnread:
 SELECT * FROM notificationLedger
-WHERE messageRead = 0 AND ignored = 0 AND deleted = 0 AND (:deviceId = '' OR deviceId = :deviceId);
+WHERE messageRead = 0 AND ignored = 0 AND deleted = 0 AND silent = 0 AND isSelf = 0
+  AND (:deviceId = '' OR deviceId = :deviceId);
 
 deleteProject:
 DELETE FROM notificationLedger WHERE projectId = ?;

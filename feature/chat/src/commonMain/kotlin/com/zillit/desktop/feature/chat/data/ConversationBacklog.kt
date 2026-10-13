@@ -35,4 +35,13 @@ data class ConversationBacklog(
      * older is history it no longer reports.
      */
     val windowStart: Long? = null,
+    /**
+     * How far this device had already read each conversation the fold saw —
+     * the marks it applied, carried out so the ledger can apply them too.
+     *
+     * Hiding a read row in this fold alone left it unread in the ledger, and
+     * the production picker's card went on counting a thread this very
+     * computer had read; see `LedgerRead.ConversationsRead`.
+     */
+    val readUpTo: Map<String, Long> = emptyMap(),
 )

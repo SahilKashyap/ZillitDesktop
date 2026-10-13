@@ -533,6 +533,19 @@ class ChatViewModel(
      */
     private val onThreadRead: suspend (String) -> Unit = {},
     /**
+     * The two facts about chat that only this listing holds, for whoever keeps
+     * the badge ledger: the group rooms the room list still returns — null
+     * until it has answered here — and how far each conversation was read on
+     * this computer.
+     *
+     * Both were applied to this listing's own numbers and nowhere else, which
+     * is why the production picker's card could wear unread for a room the
+     * user had left or a thread they had read: the card counts the ledger, and
+     * the ledger was never told. Hosts wire it; unwired, nothing is published
+     * and the ledger counts every row, as it did.
+     */
+    private val onChatLedgerFacts: suspend (rooms: Set<String>?, readUpTo: Map<String, Long>) -> Unit = { _, _ -> },
+    /**
      * This area's counts by tool (`chat_label`, `call_label`) — the badge
      * service's answer to `?section=cnc_label&group=tool`. Hosts wire it;
      * empty leaves the tabs bare.
@@ -789,6 +802,10 @@ class ChatViewModel(
                     block = { repository.rooms() },
                     onSuccess = { rooms ->
                         setState { copy(groups = rooms) }
+                        // The list answered, so the ledger can be told which
+                        // rooms are still open — see [onChatLedgerFacts].
+                        roomsKnown = true
+                        publishLedgerFacts()
                         // The rooms' own newest lines, now that their ids are known.
                         setState { copy(previews = previews + previewsFor(emptyList())) }
                         // And the ones this computer has never downloaded. The
@@ -1811,6 +1828,16 @@ class ChatViewModel(
     private var backlogWindowStart: Long = 0L
 
     /**
+     * Whether the room list has answered for this production.
+     *
+     * Until it has, `groups` being empty means "not asked yet", not "no
+     * rooms", and publishing it as the live set would hold back every room's
+     * badge — so [publishLedgerFacts] publishes null instead and the ledger
+     * counts everything.
+     */
+    private var roomsKnown: Boolean = false
+
+    /**
      * The stamp each conversation's last-message line was already fetched for.
      *
      * One ask per new stamp: [warmPreviews] runs on every listing repaint, and
@@ -1900,6 +1927,19 @@ class ChatViewModel(
     }
 
     /**
+     * Hands the ledger what only this listing knows — see [onChatLedgerFacts].
+     *
+     * A read-only model (the File Cabinet's conversation) publishes nothing:
+     * it writes no read mark and may hold a subset of the rooms, and either
+     * would move badges for a pane that is only looking.
+     */
+    private fun publishLedgerFacts(readUpTo: Map<String, Long> = emptyMap()) {
+        if (readOnly) return
+        val rooms = if (roomsKnown) currentState.groups.mapTo(mutableSetOf(), GroupRoom::id) else null
+        launch { onChatLedgerFacts(rooms, readUpTo) }
+    }
+
+    /**
      * Seeds the server's word on unread per conversation, and the listing's
      * order, from the notification backlog. Runs on every listing refresh and
      * after a silence, whose prunes the repository applies to the seed.
@@ -1922,6 +1962,7 @@ class ChatViewModel(
                         "rooms=${backlog.rooms.size} " +
                         "local=${localSummary()}"
                 }
+                publishLedgerFacts(backlog.readUpTo)
                 learnActivity(backlog.activity)
                 // The order follows the stamps as much as the counts:
                 // a row that just grew a badge from this answer moves
@@ -1950,6 +1991,9 @@ class ChatViewModel(
         stopPresence()
         serverUnread.clear()
         serverActivity.clear()
+        // Another production's rooms say nothing about this one's, and
+        // publishing them would hold back its badges.
+        roomsKnown = false
         // Stamps and ids are another production's; so is anything they were
         // already warmed for.
         warmedTo.clear()

@@ -1006,7 +1006,12 @@ private fun railItemsWith(
 ): List<RailItem> = railItemsFor(isAdmin).map { item ->
     item.copy(
         badge = when (item.id) {
-            "settings" -> if (isAdmin) pendingApprovals else 0
+            // Whichever says more is waiting — the same rule the two queue
+            // rows already use. The queues are what an admin acts on, but a
+            // settings row the ledger counts and no queue holds (a deal memo,
+            // or any row at all for someone who is not an admin) showed
+            // nowhere inside while the picker's card went on counting it.
+            "settings" -> maxOf(if (isAdmin) pendingApprovals else 0, badges.section(BadgeSections.SETTINGS))
             "cnc" -> cncBadge
             else -> badges.section(item.badgeKey())
         },
@@ -1023,10 +1028,10 @@ private fun RailItem.badgeKey(): String = when (id) {
     "cnc" -> "cnc_label"
     "email" -> "email_label"
     "home" -> "home_label"
-    // The settings section's server rows are the admin approval queues and
-    // nothing else (web `getSettingsBadges`, `badgeUtils.js:413-437`). The
-    // queues count themselves (see railItemsWith), so counting the section
-    // here too would show the same event twice.
+    // Settings is the one entry with two sources — the approval queues' own
+    // length and the section's unread — and `railItemsWith` takes the larger
+    // of the two rather than a key from here, so the same event is never
+    // shown twice (web `getSettingsBadges`, `badgeUtils.js:413-437`).
     "settings" -> ""
     // The SOS feed counts its own segment, as the web's side menu does
     // (`SideMenu.jsx`'s `sosBadges`). Help has nothing to count and must not
@@ -3376,6 +3381,21 @@ private fun rememberAppViewModels(
                     // told by conversation, as Android's `markReadyByChatRoomIdSenderId`.
                     onThreadRead = { conversationId ->
                         it.badgeStore.markRead(LedgerRead.Conversation(conversationId))
+                    },
+                    // What the listing knows and the ledger cannot: which
+                    // rooms are still open, and how far this computer had
+                    // already read each thread. Without them the production
+                    // picker's card counted rooms the user had left and
+                    // threads they had read — a badge the card cannot open.
+                    onChatLedgerFacts = { rooms, readUpTo ->
+                        // The store's own open production, so a list that
+                        // lands during a switch cannot scope the new one by
+                        // the old one's rooms.
+                        val project = it.badgeStore.openProjectId
+                        if (rooms != null && project != null) it.badgeStore.showChatRooms(project, rooms)
+                        if (readUpTo.isNotEmpty()) {
+                            it.badgeStore.markRead(LedgerRead.ConversationsRead(readUpTo))
+                        }
                     },
                     // The area's split by tool: chat_label / call_label —
                     // what the Chats and Calls tabs wear.

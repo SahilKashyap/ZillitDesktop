@@ -309,4 +309,113 @@ class BadgeStoreTest {
         assertEquals(0, store.wireRows(BadgeSections.CNC).size)
         assertEquals(Json.parseToJsonElement("[]"), store.wireRows("x"))
     }
+
+    /**
+     * The reported bug: a production card wearing badges with nothing badged
+     * inside it, and nothing on the web or either phone.
+     *
+     * Each row here is one the composition inside drops — so the card must
+     * drop it too. The card was a raw row count and showed 5.
+     */
+    @Test
+    fun `the card counts only what something inside could show`() = runTest {
+        val store = BadgeStore()
+        store.open(project)
+        store.seed(
+            listOf(
+                row("real"),
+                row("dashboard", tool = NotificationRecord.AD_DASHBOARD_TOOL),
+                row("invite", section = BadgeSections.HOME, tool = NotificationRecord.CALENDAR_TOOL),
+                row("orphan-chat", section = BadgeSections.CNC, tool = NotificationRecord.CHAT_TOOL),
+                row("stray-approval", section = BadgeSections.SETTINGS, tool = "", unit = "something_else"),
+                row("sectionless", section = "", tool = ""),
+            ),
+        )
+
+        assertEquals(1, store.counts.value.total, "only the tool row is a badge inside")
+        assertEquals(mapOf(project to 1), store.projectCounts(null), "and the card says the same")
+    }
+
+    /** One rule for both delivery paths: the socket dropped these, the backlog page did not. */
+    @Test
+    fun `a silent push and an echo of one's own action badge nothing`() = runTest {
+        val store = BadgeStore()
+        store.open(project)
+        store.seed(
+            listOf(
+                row("real"),
+                row("silent").copy(silent = true),
+                row("own-echo").copy(self = true),
+            ),
+        )
+
+        assertEquals(1, store.counts.value.section(BadgeSections.TOOLS))
+        assertEquals(mapOf(project to 1), store.projectCounts(null))
+    }
+
+    /**
+     * Verified live 2026-08-19: 40 of 45 `cnc_label` unread sat in rooms
+     * `chat-room` no longer returns. The C&C rail hid them; the card counted
+     * them, and a card has nothing to open and clear.
+     */
+    @Test
+    fun `rooms the chat can no longer open are held out of both counts`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(groupChat("live", room = "r1"), groupChat("lost", room = "r-gone"), dm("peer-line")))
+        assertEquals(3, store.counts.value.section(BadgeSections.CNC), "rooms unknown: every row counts")
+
+        store.showChatRooms(project, setOf("r1"))
+
+        assertEquals(2, store.counts.value.section(BadgeSections.CNC), "the DM is nobody's room")
+        assertEquals(mapOf(project to 2), store.projectCounts(null))
+        assertTrue(storage.rows(project).none { it.messageRead }, "held back, not read: a room can come back")
+
+        store.showChatRooms(project, setOf("r1", "r-gone"))
+        assertEquals(3, store.counts.value.section(BadgeSections.CNC), "and it does")
+    }
+
+    /** The listing's read marks, applied to the ledger rather than to its own fold alone. */
+    @Test
+    fun `a conversation read on this computer stops counting, up to the mark only`() = runTest {
+        val store = BadgeStore()
+        store.open(project)
+        store.seed(
+            listOf(
+                dm("before", created = 50L),
+                dm("after", created = 500L),
+                groupChat("other-thread", room = "r1", created = 50L),
+            ),
+        )
+
+        assertEquals(2, store.markRead(LedgerRead.ConversationsRead(mapOf("peer" to 100L, "r1" to 100L))))
+
+        assertEquals(1, store.counts.value.section(BadgeSections.CNC), "the line nobody has seen stays")
+        assertEquals(mapOf(project to 1), store.projectCounts(null))
+    }
+
+    /**
+     * The listing replays its marks after every refresh and refreshes on
+     * [BadgeStore.changes] — a read that moved nothing must not signal, or
+     * the two answer each other for ever.
+     */
+    @Test
+    fun `a read that turns no row signals nothing`() = runTest {
+        val store = BadgeStore()
+        store.open(project)
+        store.seed(listOf(dm("line", created = 500L)))
+
+        assertEquals(0, store.markRead(LedgerRead.ConversationsRead(mapOf("peer" to 100L))))
+        assertEquals(0, store.markRead(LedgerRead.Tool("nothing_label")))
+        assertEquals(1, store.counts.value.section(BadgeSections.CNC))
+    }
+
+    private fun dm(id: String, created: Long = 100L) =
+        row(id, section = BadgeSections.CNC, tool = NotificationRecord.CHAT_TOOL, unit = "chat_member_label")
+            .copy(senderId = "peer", created = created)
+
+    private fun groupChat(id: String, room: String, created: Long = 100L) =
+        row(id, section = BadgeSections.CNC, tool = NotificationRecord.CHAT_TOOL, unit = "chat_group_label")
+            .copy(chatRoomId = room, created = created)
 }

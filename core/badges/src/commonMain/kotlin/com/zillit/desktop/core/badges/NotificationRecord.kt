@@ -57,8 +57,18 @@ data class NotificationRecord(
     val fromApi: Boolean = false,
     val raw: String = "",
 ) {
-    /** Whether this row is a badge right now. */
-    val counts: Boolean get() = !messageRead && !ignored && !deleted
+    /**
+     * Whether this row is a badge right now.
+     *
+     * `silent` and `self` are news to nobody: a silent push carries no badge,
+     * and an echo of this person's own action badges them for something they
+     * did (web `AllBadges.jsx:338-341`). The socket seam dropped both
+     * ([ledgerArrivalsFrom]) but the API's backlog pages carry the same rows
+     * and nothing filtered those — so the very same event badged this desktop
+     * or not depending on whether the app happened to be open when it fired.
+     * The test belongs here, where every path passes.
+     */
+    val counts: Boolean get() = !messageRead && !ignored && !deleted && !silent && !self
 
     /**
      * The conversation a C&C chat row belongs to: the room for a group,

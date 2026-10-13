@@ -39,6 +39,13 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
      */
     private val mailboxes = mutableMapOf<String, Set<String>>()
 
+    /**
+     * Per production, the group rooms its chat can still open — see
+     * [showChatRooms]. A production whose room list has not answered here
+     * counts every row.
+     */
+    private val chatRooms = mutableMapOf<String, Set<String>>()
+
     private val state = MutableStateFlow(BadgeCounts.Empty)
     val counts: StateFlow<BadgeCounts> = state.asStateFlow()
 
@@ -74,9 +81,16 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         state.value = BadgeCounts.Empty
     }
 
-    /** Sign-out — the next person's mailboxes are their own to name. */
+    /**
+     * Sign-out — the next person's mailboxes and rooms are their own to name.
+     *
+     * Not a production switch: the picker's cards are counted under the
+     * scopes learnt for each production, so they outlive the production that
+     * taught them.
+     */
     fun forgetMailboxes() {
         mailboxes.clear()
+        chatRooms.clear()
     }
 
     /**
@@ -101,17 +115,39 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     }
 
     /** The mailboxes learnt so far, production by production — for a host that remembers them. */
-    fun mailboxes(): Map<String, Set<String>> = mailboxes.toMap()
+    val mailboxesShown: Map<String, Set<String>> get() = mailboxes.toMap()
 
     /**
-     * The production picker's numbers: unread per production over every row
-     * on disk, as Android's `calculateAllProjectsBadges` groups its own
-     * device's rows. Rows for this device when the ledger has any, else every
-     * row — a listing that never names devices must not read as empty.
+     * The group rooms whose chat rows may count on one production — every
+     * room `chat-room` listed, as the chat listing last loaded it. See
+     * [isOfChatRooms] for why the ledger needs telling.
+     *
+     * Published by whoever holds the room list, on a load that succeeded: an
+     * empty set is "this person is in no rooms", which is a real answer, so
+     * the fail-open case is a production never published at all.
+     */
+    suspend fun showChatRooms(projectId: String, rooms: Set<String>) = lock.withLock {
+        if (chatRooms.put(projectId, rooms) == rooms) return@withLock
+        if (projectId == this.projectId) publish()
+    }
+
+    /**
+     * The production picker's numbers — one per production, composed exactly
+     * as the rail inside that production composes its own
+     * ([tallyByProject]), under the same mailbox and room scopes.
+     *
+     * This was a raw count of unread rows, and that is what made a card wear
+     * a number nothing inside could show or clear. Android groups its own
+     * device's rows the same way (`calculateAllProjectsBadges`): rows for
+     * this device when the ledger has any, else every row — a listing that
+     * never names devices must not read as empty.
      */
     fun projectCounts(deviceId: String? = null): Map<String, Int> {
-        val own = deviceId?.takeIf { it.isNotBlank() }?.let { storage.unreadByProject(it, mailboxes) }.orEmpty()
-        return own.ifEmpty { storage.unreadByProject("", mailboxes) }
+        val own = deviceId?.takeIf { it.isNotBlank() }?.let { storage.unreadAcrossProductions(it) }.orEmpty()
+        val rows = own.ifEmpty { storage.unreadAcrossProductions("") }
+        return tallyByProject(rows.filter { it.isShown(mailboxes, chatRooms) })
+            .mapValues { (_, counts) -> counts.total }
+            .filterValues { it > 0 }
     }
 
     /** The seed watermark for [projectId] — see [NotificationLedgerStore.watermark]. */
@@ -170,9 +206,15 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     /**
      * A read made here, or relayed from another of this person's devices.
      * Answers how many rows it turned — the line that says a badge moved.
+     *
+     * A read that turned nothing announces nothing. The chat listing replays
+     * its read marks after every refresh ([LedgerRead.ConversationsRead]),
+     * and [changes] is what makes it refresh: publishing a read that moved no
+     * row would answer its own signal for ever.
      */
     suspend fun markRead(read: LedgerRead): Int = lock.withLock {
         val ids = rows.values.filter { !it.messageRead && read.matches(it) }.map { it.id }
+        if (ids.isEmpty()) return@withLock 0
         flip(ids)
         publish()
         ids.size
@@ -213,8 +255,8 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     fun wireRows(section: String): JsonArray =
         JsonArray(shown().filter { it.section == section }.mapNotNull { it.asWireRow() })
 
-    /** The open production's rows this desktop may count — see [showMailboxes]. */
-    private fun shown(): List<NotificationRecord> = rows.values.filter { it.isOfMailboxes(mailboxes[it.projectId]) }
+    /** The open production's rows this desktop may count — see [isShown]. */
+    private fun shown(): List<NotificationRecord> = rows.values.filter { it.isShown(mailboxes, chatRooms) }
 
     private fun flip(ids: List<String>) {
         if (ids.isEmpty()) return
@@ -239,3 +281,17 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         const val DOCUMENT_DISTRIBUTION = "document_distribution_label"
     }
 }
+
+/**
+ * Whether this desktop may count one row at all: the mail it can open
+ * ([BadgeStore.showMailboxes]) and the rooms it can still enter
+ * ([BadgeStore.showChatRooms]).
+ *
+ * The one scope, run by the open production's counts and by the picker's
+ * cards alike — two filters over the same rows is how the card and the rail
+ * came to disagree.
+ */
+private fun NotificationRecord.isShown(
+    mailboxes: Map<String, Set<String>>,
+    chatRooms: Map<String, Set<String>>,
+): Boolean = isOfMailboxes(mailboxes[projectId]) && isOfChatRooms(chatRooms[projectId])

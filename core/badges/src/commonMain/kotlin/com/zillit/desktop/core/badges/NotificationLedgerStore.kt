@@ -20,12 +20,15 @@ interface NotificationLedgerStore {
     fun watermark(projectId: String): Long
 
     /**
-     * Unread per production across the whole ledger; [deviceId] blank counts
-     * every device's rows. [mailboxes] names the mailboxes each production's
-     * mail rows may count for (`BadgeStore.showMailboxes`); a production it
-     * does not name counts every mail row.
+     * Every row that still counts, across the whole ledger; [deviceId] blank
+     * takes every device's.
+     *
+     * Rows, not counts: the picker composes them with [tallyByProject], the
+     * same rule the open production's rail runs, under the same scopes. A
+     * store that answered counts had to carry a second, simpler rule, and
+     * the two drifted.
      */
-    fun unreadByProject(deviceId: String = "", mailboxes: Map<String, Set<String>> = emptyMap()): Map<String, Int>
+    fun unreadAcrossProductions(deviceId: String = ""): List<NotificationRecord>
     fun deleteProject(projectId: String)
     fun deleteAll()
 }
@@ -43,9 +46,8 @@ class InMemoryNotificationLedgerStore : NotificationLedgerStore {
     override fun watermark(projectId: String): Long =
         rows.values.filter { (projectId.isBlank() || it.projectId == projectId) && it.fromApi }
             .maxOfOrNull { it.updated } ?: 0L
-    override fun unreadByProject(deviceId: String, mailboxes: Map<String, Set<String>>): Map<String, Int> =
+    override fun unreadAcrossProductions(deviceId: String): List<NotificationRecord> =
         rows.values.filter { it.counts && (deviceId.isBlank() || it.deviceId == deviceId) }
-            .countByProject(mailboxes)
     override fun deleteProject(projectId: String) {
         rows.values.removeAll { it.projectId == projectId }
     }
@@ -77,8 +79,8 @@ class SqlNotificationLedgerStore(database: ZillitDatabase) : NotificationLedgerS
     override fun watermark(projectId: String): Long =
         queries.selectWatermark(projectId).executeAsOneOrNull()?.MAX ?: 0L
 
-    override fun unreadByProject(deviceId: String, mailboxes: Map<String, Set<String>>): Map<String, Int> =
-        queries.selectUnread(deviceId).executeAsList().map(::toRecord).countByProject(mailboxes)
+    override fun unreadAcrossProductions(deviceId: String): List<NotificationRecord> =
+        queries.selectUnread(deviceId).executeAsList().map(::toRecord)
 
     override fun deleteProject(projectId: String) {
         queries.deleteProject(projectId)
@@ -156,7 +158,3 @@ class SqlNotificationLedgerStore(database: ZillitDatabase) : NotificationLedgerS
         const val CHUNK = 500
     }
 }
-
-/** Android's picker grouping, each production's mail rows scoped to its own mailboxes. */
-internal fun Collection<NotificationRecord>.countByProject(mailboxes: Map<String, Set<String>>): Map<String, Int> =
-    filter { it.isOfMailboxes(mailboxes[it.projectId]) }.groupingBy { it.projectId }.eachCount()

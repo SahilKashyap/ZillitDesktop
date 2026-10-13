@@ -74,39 +74,26 @@ class SqlNotificationLedgerStoreTest {
     }
 
     @Test
-    fun `the picker's counts group this device's unread by production`() {
+    fun `the picker's rows are this device's, and only the ones that count`() {
         store.upsert(
             listOf(
                 row("a"), row("b"), row("c", project = "p2"),
                 row("read").copy(messageRead = true),
+                row("ignored").copy(ignored = true),
+                row("deleted").copy(deleted = true),
+                row("silent").copy(silent = true),
+                row("own-echo").copy(self = true),
                 row("other-device").copy(deviceId = "dev-2"),
             ),
         )
 
-        assertEquals(mapOf("p1" to 2, "p2" to 1), store.unreadByProject("dev-1"))
-        assertEquals(mapOf("p1" to 3, "p2" to 1), store.unreadByProject(""))
-        assertTrue(store.unreadByProject("dev-9").isEmpty())
-    }
-
-    /** Mail rows carry their mailbox in `level1`; the picker counts only the one this desktop opens. */
-    @Test
-    fun `the picker's counts leave out mail for another mailbox`() {
-        store.upsert(
-            listOf(
-                row("mine").copy(section = BadgeSections.EMAIL, level1 = " Me@Zillit.net "),
-                row("untagged").copy(section = BadgeSections.EMAIL, level1 = ""),
-                row("accounts").copy(section = BadgeSections.EMAIL, level1 = "invoices@zillit.net"),
-                row("tool").copy(level1 = "invoices@zillit.net"),
-            ),
+        assertEquals(setOf("a", "b", "c"), store.unreadAcrossProductions("dev-1").map { it.id }.toSet())
+        assertEquals(
+            setOf("a", "b", "c", "other-device"),
+            store.unreadAcrossProductions("").map { it.id }.toSet(),
+            "a blank device takes every device's rows",
         )
-
-        assertEquals(mapOf("p1" to 4), store.unreadByProject("dev-1"), "no mailbox named: everything counts")
-        assertEquals(mapOf("p1" to 3), store.unreadByProject("dev-1", mapOf("p1" to setOf("me@zillit.net"))))
-        assertEquals(mapOf("p1" to 3), store.unreadByProject("", mapOf("p1" to setOf("ME@ZILLIT.NET"))), "loose")
-        val both = store.unreadByProject("", mapOf("p1" to setOf("me@zillit.net", "invoices@zillit.net")))
-        assertEquals(mapOf("p1" to 4), both, "both mailboxes openable: both count")
-        val scopedElsewhere = store.unreadByProject("", mapOf("p2" to setOf("me@zillit.net")))
-        assertEquals(mapOf("p1" to 4), scopedElsewhere, "another production's mailbox scopes nothing here")
+        assertTrue(store.unreadAcrossProductions("dev-9").isEmpty())
     }
 
     @Test
