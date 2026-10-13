@@ -2363,6 +2363,11 @@ class HomeFeedViewModel(
             return
         }
 
+        // Whether this read refreshes the board already on screen or opens a
+        // different one. A refresh inherits the reader's scrollback; an
+        // arrival computes it afresh.
+        val rereading = currentState.selectedUnitId == unit.id
+
         setState {
             // What stays on screen while the read is out. A refetch of the
             // open board keeps what it is showing; arriving at a tab this
@@ -2373,13 +2378,19 @@ class HomeFeedViewModel(
             // The spinner is not conditional on any of this: `isLoadingNotices`
             // means "a read is out", and the screen draws it only when there is
             // nothing else to show. One flag, one meaning.
-            val shown = if (selectedUnitId == unit.id) notices else boards[unit.id].orEmpty()
+            val shown = if (rereading) notices else boards[unit.id].orEmpty()
             copy(
                 selectedUnitId = unit.id,
                 notices = shown,
                 isLoadingNotices = true,
                 error = null,
-                hasOlder = shown.size > 1,
+                // Left alone when this is a re-read of the board already open:
+                // `hasOlder` is the reader's own knowledge of what lies behind
+                // the oldest post they have scrolled to, and only `loadOlder`
+                // is entitled to retire it. Recomputing it here is what used
+                // to throw away a scrolled-back board every time a comment
+                // arrived.
+                hasOlder = if (rereading) hasOlder else shown.size > 1,
                 loadingOlder = false,
             )
         }
@@ -2394,7 +2405,7 @@ class HomeFeedViewModel(
             val result = repository.loadNotices(unit.id, nowMillis())
             if (boardReadInFlight == unit.id) boardReadInFlight = null
             when (result) {
-                is ZillitResult.Success -> onNoticesLoaded(unit.id, result.data)
+                is ZillitResult.Success -> onNoticesLoaded(unit.id, result.data, rereading)
                 is ZillitResult.Failure ->
                     // Guard against a slow response for a tab the user has left.
                     if (currentState.selectedUnitId == unit.id) {
@@ -2419,7 +2430,7 @@ class HomeFeedViewModel(
         setState { copy(notices = kept, hasOlder = kept.size > 1) }
     }
 
-    private fun onNoticesLoaded(unitId: String, fetched: List<Notice>) {
+    private fun onNoticesLoaded(unitId: String, fetched: List<Notice>, rereading: Boolean) {
         if (currentState.selectedUnitId != unitId) {
             // Still worth keeping: the tab was left mid-read, and this is the
             // page it will show when it is opened again.
@@ -2435,18 +2446,54 @@ class HomeFeedViewModel(
             val inFlight = notices.filter { local ->
                 local.sendState != NoticeSendState.Sent && fetched.none { it.sameAs(local) }
             }
-            // Anything past a lone post may have history behind it;
-            // the older-page fetch retires the cue itself.
+            val behind = if (rereading) pagesBehind(notices, fetched) else emptyList()
             copy(
                 isLoadingNotices = false,
-                notices = fetched + inFlight,
-                hasOlder = fetched.size > 1,
+                notices = behind + fetched + inFlight,
+                // Anything past a lone post may have history behind it; the
+                // older-page fetch retires the cue itself. A refresh leaves it
+                // as it was — the oldest post shown has not moved, so what
+                // lies behind it has not changed either.
+                hasOlder = if (rereading) hasOlder else fetched.size > 1,
             )
         }
         boards[unitId] = currentState.notices
         // The board is on screen — that is what "read" means on
         // this API, as when the web's Notices tab is visible.
         launch { onBoardViewed(unitId) }
+    }
+
+    /**
+     * The scrolled-back pages a refreshed newest page must not take away.
+     *
+     * The read only ever asks for the newest window, so a reader who has
+     * pressed "show older" four times holds four pages the answer knows
+     * nothing about. Replacing the list with the answer collapsed all of them
+     * — which a comment arriving on the board was enough to do.
+     *
+     * The oldest post in the answer is the boundary. Behind it, a post the
+     * answer does not mention is simply a page that was not asked for, and is
+     * kept. Inside it, a post the answer does not mention is one the server no
+     * longer has — deleted, or moved to the call sheet's history — and keeping
+     * that would be a deleted post that will not go away. Which side of the
+     * boundary a post falls on is the whole distinction, and `pageStamp` is the
+     * same `updated` the endpoint windows by, so the two agree by construction.
+     *
+     * Pending posts are not considered: they are nobody's page, and
+     * [onNoticesLoaded] carries them separately.
+     */
+    private fun pagesBehind(shown: List<Notice>, fetched: List<Notice>): List<Notice> {
+        val boundary = fetched
+            .filter { it.sendState == NoticeSendState.Sent && it.pageStamp > 0 }
+            .minOfOrNull { it.pageStamp }
+        // An empty answer names no boundary. It may mean the board was
+        // emptied, so nothing is assumed and the answer stands as given.
+        if (boundary == null) return emptyList()
+        return shown.filter { post ->
+            post.sendState == NoticeSendState.Sent &&
+                post.pageStamp in 1 until boundary &&
+                fetched.none { it.sameAs(post) }
+        }
     }
 
     /**
