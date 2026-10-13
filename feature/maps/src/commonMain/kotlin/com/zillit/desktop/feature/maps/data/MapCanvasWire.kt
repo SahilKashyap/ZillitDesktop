@@ -106,6 +106,22 @@ object MapCanvasWire {
     )
 
     /** Pans and zooms to a saved pin and opens its card — a search result chosen. */
+    /**
+     * "You are here": the camera moves AND a dot is left behind.
+     *
+     * Its own op rather than [panScript] plus a pin, because the dot is not a
+     * pin: it is drawn as Google's blue locator circle, it lives outside the
+     * scene's `markers` map, and a scene redraw must not sweep it away.
+     */
+    fun meScript(point: LatLng, zoom: Int): String = call(
+        "camera",
+        buildJsonObject {
+            put("op", "me")
+            putPoint(point)
+            put("zoom", zoom)
+        },
+    )
+
     fun focusScript(markerId: String, zoom: Int): String = call(
         "camera",
         buildJsonObject {

@@ -200,6 +200,20 @@ internal class FakeCanvasHost(
             else -> buildJsonObject { put("type", "reply"); put("id", id); put("ok", false) }
         }
 
+    /**
+     * Every camera command's `op`, in order — `pan`, `fit`, `me`, `focus`.
+     *
+     * Decoded rather than matched as text: the payload travels as a quoted JS
+     * string literal, so a test looking for `"op":"me"` would be matching
+     * backslashes, and would keep passing if the quoting ever changed.
+     */
+    fun cameraOps(): List<String> = scripts.filter { it.startsWith("zillitMap.camera(") }.mapNotNull { script ->
+        val payload = Json.parseToJsonElement(
+            script.removePrefix("zillitMap.camera(").removeSuffix(")"),
+        ).jsonPrimitive.content
+        Json.parseToJsonElement(payload).jsonObject["op"]?.jsonPrimitive?.content
+    }
+
     /** The last camera command's coordinates, when it had any. */
     fun lastCameraLat(): Double? = scripts.lastOrNull { it.startsWith("zillitMap.camera(") }?.let { script ->
         val payload = Json.parseToJsonElement(

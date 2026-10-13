@@ -243,6 +243,9 @@ var zoneCircle = null, zoneKey = null;
 var draft = { circle: null, centre: null, pin: null };
 var preview = { marker: null, info: null };
 var place = { marker: null, data: null };
+/* "You are here". Kept out of `markers` on purpose: that map is the scene's,
+   rebuilt whenever the tool sends a new one, and this dot must survive it. */
+var me = { marker: null };
 var route = { renderer: null };
 var cards = { selected: null, hover: null, zone: null, preview: null, place: null };
 var hover = { inTimer: null, outTimer: null, id: null };
@@ -853,6 +856,40 @@ function showPlaceCard() {
   ));
 }
 
+/*
+ * Google's own locator dot, not one of our pins: a filled blue circle with a
+ * white ring, which every map user already reads as "me". A teardrop pin here
+ * would be mistaken for one of the production's locations — they are the only
+ * other thing on this map.
+ *
+ * One marker, moved on each use, so pressing the control twice does not leave
+ * a trail. It is not clickable and opens no card: there is nothing to say
+ * about it that the dot does not already say.
+ */
+function showMe(lat, lng, zoom) {
+  var at = { lat: lat, lng: lng };
+  if (!me.marker) {
+    me.marker = new google.maps.Marker({
+      map: map,
+      zIndex: 9800,
+      clickable: false,
+      title: 'Your current location',
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: '#1A73E8',
+        fillOpacity: 1,
+        strokeColor: '#FFFFFF',
+        strokeWeight: 3
+      }
+    });
+  }
+  me.marker.setPosition(at);
+  me.marker.setMap(map);
+  if (zoom !== undefined && zoom !== null) map.setZoom(zoom);
+  map.panTo(at);
+}
+
 function clearPlace() {
   closeCard('place');
   if (place.marker) { place.marker.setMap(null); place.marker = null; }
@@ -963,6 +1000,9 @@ function camera(command) {
       map.fitBounds(circle.getBounds());
       break;
     }
+    case 'me':
+      showMe(command.lat, command.lng, command.zoom);
+      break;
     case 'focus': {
       var p = positionOf(command.id);
       if (!p) {

@@ -111,6 +111,9 @@ class MapCanvasClient(
 
     fun panTo(point: LatLng, zoom: Int? = null) = camera(MapCanvasWire.panScript(point, zoom))
 
+    /** The camera on this machine's position, with a locator dot left there. */
+    fun showMe(point: LatLng, zoom: Int) = camera(MapCanvasWire.meScript(point, zoom))
+
     fun fitPoints(points: List<LatLng>) = camera(MapCanvasWire.fitPointsScript(points, SINGLE_POINT_ZOOM))
 
     fun fitCircle(circle: SceneCircle) = camera(MapCanvasWire.fitCircleScript(circle))

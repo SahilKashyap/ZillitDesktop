@@ -245,9 +245,11 @@ class MapViewModel(
     /**
      * The crosshair: put the camera where this machine is.
      *
-     * Camera only — no pin is dropped and nothing is selected. The map tool's
-     * pins are the production's locations, and a marker for the person looking
-     * at the screen would read as one more of those.
+     * The camera moves and a dot stays behind (asked for on 2026-10-13, after
+     * the camera-only first cut). It is deliberately not one of the map's pins:
+     * those are the production's locations, so this is Google's blue locator
+     * circle, drawn outside the scene and left alone by a scene redraw.
+     * Nothing is selected and no location is created.
      *
      * The web's map has no such control (its only "use my current location" is
      * the Directions pickup field, `MapView.jsx:1898`); it is here because a
@@ -262,7 +264,7 @@ class MapViewModel(
             }
             // The zoom CityController starts an un-citied map at: close enough
             // to place a town, honest about a fix that came off the network.
-            canvasClient.panTo(here, MY_LOCATION_ZOOM)
+            canvasClient.showMe(here, MY_LOCATION_ZOOM)
         }
     }
 

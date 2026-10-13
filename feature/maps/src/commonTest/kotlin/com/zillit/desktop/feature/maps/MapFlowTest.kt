@@ -639,8 +639,14 @@ class MapFlowTest {
             send(tool, MapEvent.Toolbar.MyLocation)
             assertEquals(51.5, tool.canvas.lastCameraLat())
 
-            // Nothing is picked and no pin is dropped: the camera moved, that is all.
+            // The dot goes with the camera, through the op that draws it
+            // outside the scene — not as one of the production's pins.
+            assertEquals(1, tool.canvas.cameraOps().count { it == "me" })
             assertEquals(0, tool.canvas.scripts.count { "setPin" in it })
+
+            // Pressing it again moves the one dot rather than leaving a trail.
+            send(tool, MapEvent.Toolbar.MyLocation)
+            assertEquals(2, tool.canvas.cameraOps().count { it == "me" })
         }
 
     @Test
