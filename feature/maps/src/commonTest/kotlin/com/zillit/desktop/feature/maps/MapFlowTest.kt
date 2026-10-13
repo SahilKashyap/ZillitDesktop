@@ -43,6 +43,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -639,14 +640,18 @@ class MapFlowTest {
             send(tool, MapEvent.Toolbar.MyLocation)
             assertEquals(51.5, tool.canvas.lastCameraLat())
 
-            // The dot goes with the camera, through the op that draws it
-            // outside the scene — not as one of the production's pins.
-            assertEquals(1, tool.canvas.cameraOps().count { it == "me" })
+            // Two `me` ops for one press: the dot and the camera first, then
+            // the name once the point has been reverse-geocoded. Neither is a
+            // pin — the production's locations are the only pins on this map.
+            assertEquals(2, tool.canvas.cameraOps().count { it == "me" })
             assertEquals(0, tool.canvas.scripts.count { "setPin" in it })
 
-            // Pressing it again moves the one dot rather than leaving a trail.
-            send(tool, MapEvent.Toolbar.MyLocation)
-            assertEquals(2, tool.canvas.cameraOps().count { it == "me" })
+            val named = tool.canvas.cameraPayloads().last { it["op"]?.jsonPrimitive?.content == "me" }
+            assertEquals("Andheri West", named["name"]?.jsonPrimitive?.content)
+            assertEquals("Somewhere Rd, Andheri West, Mumbai", named["address"]?.jsonPrimitive?.content)
+            // The naming call must not move the map a second time, under
+            // someone who may have started panning already.
+            assertEquals(null, named["zoom"])
         }
 
     @Test

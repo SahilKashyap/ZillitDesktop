@@ -247,7 +247,7 @@ var place = { marker: null, data: null };
    rebuilt whenever the tool sends a new one, and this dot must survive it. */
 var me = { marker: null };
 var route = { renderer: null };
-var cards = { selected: null, hover: null, zone: null, preview: null, place: null };
+var cards = { selected: null, hover: null, zone: null, preview: null, place: null, me: null };
 var hover = { inTimer: null, outTimer: null, id: null };
 var draggingId = null;
 var guideState = { visible: true, collapsed: false };
@@ -866,7 +866,7 @@ function showPlaceCard() {
  * a trail. It is not clickable and opens no card: there is nothing to say
  * about it that the dot does not already say.
  */
-function showMe(lat, lng, zoom) {
+function showMe(lat, lng, zoom, name, address) {
   var at = { lat: lat, lng: lng };
   if (!me.marker) {
     me.marker = new google.maps.Marker({
@@ -888,6 +888,28 @@ function showMe(lat, lng, zoom) {
   me.marker.setMap(map);
   if (zoom !== undefined && zoom !== null) map.setZoom(zoom);
   map.panTo(at);
+  /* The name arrives in a second call, once Kotlin has reverse-geocoded the
+     point: title it for the hover, and say it out loud on a card. */
+  if (name) {
+    me.marker.setTitle(name);
+    openCard('me', at, meCard(name, address, lat, lng));
+    panToFitCard(at);
+  }
+}
+
+/*
+ * What the dot is standing on. The same three rows the place card shows —
+ * name, address, coordinates — and none of its actions: "Pin Location" here
+ * would create one of the production's locations out of wherever the person
+ * happens to be sitting, which is never what the control was pressed for.
+ */
+function meCard(name, address, lat, lng) {
+  var shell = cardShell('#1A73E8', false, function () { closeCard('me'); });
+  var body = shell.body;
+  body.appendChild(el('h3', null, name));
+  if (address && address !== name) body.appendChild(infoRow('pin', 'var(--soft)', '#F99300', address));
+  body.appendChild(infoRow('globe', 'var(--info-soft)', '#3B82F6', fixed6(lat) + ', ' + fixed6(lng), true, true));
+  return shell.finish();
 }
 
 function clearPlace() {
@@ -1001,7 +1023,7 @@ function camera(command) {
       break;
     }
     case 'me':
-      showMe(command.lat, command.lng, command.zoom);
+      showMe(command.lat, command.lng, command.zoom, command.name, command.address);
       break;
     case 'focus': {
       var p = positionOf(command.id);

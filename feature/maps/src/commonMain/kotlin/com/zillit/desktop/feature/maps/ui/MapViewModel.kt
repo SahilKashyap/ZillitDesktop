@@ -245,8 +245,9 @@ class MapViewModel(
     /**
      * The crosshair: put the camera where this machine is.
      *
-     * The camera moves and a dot stays behind (asked for on 2026-10-13, after
-     * the camera-only first cut). It is deliberately not one of the map's pins:
+     * The camera moves, a dot stays behind, and the dot is named (both asked
+     * for on 2026-10-13, after a camera-only first cut). It is deliberately
+     * not one of the map's pins:
      * those are the production's locations, so this is Google's blue locator
      * circle, drawn outside the scene and left alone by a scene redraw.
      * Nothing is selected and no location is created.
@@ -265,6 +266,11 @@ class MapViewModel(
             // The zoom CityController starts an un-citied map at: close enough
             // to place a town, honest about a fix that came off the network.
             canvasClient.showMe(here, MY_LOCATION_ZOOM)
+            // The name is a second round trip to the page and back; the dot
+            // does not wait for it, and a geocode that finds nothing leaves a
+            // dot with no card rather than an empty one.
+            val place = canvasClient.reverseGeocode(here) ?: return@launch
+            canvasClient.nameMe(here, place.pinName, place.address)
         }
     }
 

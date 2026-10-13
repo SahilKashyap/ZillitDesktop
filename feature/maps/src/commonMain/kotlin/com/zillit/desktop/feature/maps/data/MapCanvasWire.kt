@@ -112,13 +112,22 @@ object MapCanvasWire {
      * Its own op rather than [panScript] plus a pin, because the dot is not a
      * pin: it is drawn as Google's blue locator circle, it lives outside the
      * scene's `markers` map, and a scene redraw must not sweep it away.
+     *
+     * Sent twice for one press. The first carries [zoom] and no name, so the
+     * dot and the camera land the moment the position is known; the second
+     * carries the reverse-geocoded [name]/[address] and no zoom, which names
+     * the dot without moving the map a second time under someone who has
+     * started panning. A page that never hears the second simply keeps a dot
+     * with no card, which is what the control did before names existed.
      */
-    fun meScript(point: LatLng, zoom: Int): String = call(
+    fun meScript(point: LatLng, zoom: Int? = null, name: String? = null, address: String? = null): String = call(
         "camera",
         buildJsonObject {
             put("op", "me")
             putPoint(point)
-            put("zoom", zoom)
+            zoom?.let { put("zoom", it) }
+            name?.let { put("name", it) }
+            address?.let { put("address", it) }
         },
     )
 

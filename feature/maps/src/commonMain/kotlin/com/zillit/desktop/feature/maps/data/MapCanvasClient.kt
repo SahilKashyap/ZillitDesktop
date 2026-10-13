@@ -114,6 +114,10 @@ class MapCanvasClient(
     /** The camera on this machine's position, with a locator dot left there. */
     fun showMe(point: LatLng, zoom: Int) = camera(MapCanvasWire.meScript(point, zoom))
 
+    /** Names the dot already on the map, without touching the camera. */
+    fun nameMe(point: LatLng, name: String, address: String) =
+        run(MapCanvasWire.meScript(point, name = name, address = address))
+
     fun fitPoints(points: List<LatLng>) = camera(MapCanvasWire.fitPointsScript(points, SINGLE_POINT_ZOOM))
 
     fun fitCircle(circle: SceneCircle) = camera(MapCanvasWire.fitCircleScript(circle))

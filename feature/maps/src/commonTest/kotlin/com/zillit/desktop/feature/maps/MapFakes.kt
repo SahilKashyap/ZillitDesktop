@@ -207,11 +207,14 @@ internal class FakeCanvasHost(
      * string literal, so a test looking for `"op":"me"` would be matching
      * backslashes, and would keep passing if the quoting ever changed.
      */
-    fun cameraOps(): List<String> = scripts.filter { it.startsWith("zillitMap.camera(") }.mapNotNull { script ->
+    fun cameraOps(): List<String> = cameraPayloads().mapNotNull { it["op"]?.jsonPrimitive?.content }
+
+    /** Every camera command, decoded — the same unwrapping [cameraOps] does. */
+    fun cameraPayloads(): List<JsonObject> = scripts.filter { it.startsWith("zillitMap.camera(") }.map { script ->
         val payload = Json.parseToJsonElement(
             script.removePrefix("zillitMap.camera(").removeSuffix(")"),
         ).jsonPrimitive.content
-        Json.parseToJsonElement(payload).jsonObject["op"]?.jsonPrimitive?.content
+        Json.parseToJsonElement(payload).jsonObject
     }
 
     /** The last camera command's coordinates, when it had any. */
