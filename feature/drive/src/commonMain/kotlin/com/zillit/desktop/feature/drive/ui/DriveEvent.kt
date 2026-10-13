@@ -105,6 +105,13 @@ sealed interface DriveEvent {
     data class ResumeUpload(val uploadId: String) : DriveEvent
     data class RetryUpload(val uploadId: String) : DriveEvent
     data class RemoveUpload(val uploadId: String) : DriveEvent
+
+    // The Resolve duplicates dialog: uploads the server refused for their name.
+    data object OpenRenameUploads : DriveEvent
+    data object CloseRenameUploads : DriveEvent
+    data class RenameUploadName(val uploadId: String, val text: String) : DriveEvent
+    data object SubmitRenames : DriveEvent
+    data object CancelRenames : DriveEvent
     data object ClearFinishedUploads : DriveEvent
     data object ToggleOperations : DriveEvent
 

@@ -49,6 +49,9 @@ class MultipartDriveUploaderTest {
     private val initiated = mutableListOf<String>()
     private val aborted = CopyOnWriteArrayList<String>()
     private val completions = CopyOnWriteArrayList<Pair<String, Map<Int, String?>>>()
+
+    /** The `file_name` each completion carried, in order. */
+    private val completedAs = CopyOnWriteArrayList<String>()
     private val sessionsToOpen = ArrayDeque<UploadSession>()
     private var resumeAnswer: (String) -> ZillitResult<UploadSession> =
         { ZillitResult.Failure(ZillitError.Unknown("gone")) }
@@ -104,6 +107,7 @@ class MultipartDriveUploaderTest {
                 @Suppress("UNCHECKED_CAST")
                 val parts = args[1] as List<UploadPart>
                 completions += (args[0] as String) to parts.associate { it.partNumber to it.etag }
+                completedAs += args[2] as String
                 completeAnswer(completions.size)
             }
             else -> error("unexpected call: ${method.name}")
@@ -112,14 +116,16 @@ class MultipartDriveUploaderTest {
 
     private fun uploader() = MultipartDriveUploader(repository, HttpClient(), pause = { naps += it })
 
-    private val pick get() = PickedFile(file.absolutePath, "a.bin", 30, "application/octet-stream")
-
     private fun upload(
         resume: UploadCheckpoint? = null,
         checkpoints: MutableList<UploadCheckpoint> = mutableListOf(),
+        named: String = "a.bin",
     ): ZillitResult<DriveItem> = runBlocking {
+        val pick = PickedFile(file.absolutePath, named, 30, "application/octet-stream")
         uploader().upload(pick, UploadTarget(null), resume, { checkpoints += it }, { _, _ -> })
     }
+
+    private val nameTaken = ZillitResult.Failure(ZillitError.Http(status = 200, serverMessage = "duplicate_file_name"))
 
     // -- a fresh upload ------------------------------------------------------
 
@@ -279,5 +285,72 @@ class MultipartDriveUploaderTest {
         assertTrue("One or more of the specified parts could not be found".namesLostParts())
         assertTrue("entity tag may not match".namesLostParts())
         assertTrue(!"Request timed out".namesLostParts())
+    }
+
+    // -- renaming after a duplicate -----------------------------------------------
+
+    @Test
+    fun `a session remembers the name it was opened under`() {
+        sessionsToOpen += session("s1")
+        val checkpoints = mutableListOf<UploadCheckpoint>()
+
+        upload(checkpoints = checkpoints, named = "first.bin")
+
+        assertTrue(checkpoints.all { it.fileName == "first.bin" })
+    }
+
+    @Test
+    fun `a refused name is returned as it came, with the session left open for the rename`() {
+        sessionsToOpen += session("s1")
+        completeAnswer = { nameTaken }
+
+        val result = upload(named = "a.bin")
+
+        assertIs<ZillitResult.Failure>(result)
+        assertTrue((result.error as ZillitError.Http).serverMessage == "duplicate_file_name")
+        assertTrue(aborted.isEmpty(), "the session stays")
+        assertEquals(1, initiated.size, "and no second one is opened behind the user's back")
+    }
+
+    @Test
+    fun `a renamed resume completes under the new name without sending a byte`() {
+        resumeAnswer = { ZillitResult.Success(session(it, parts = emptyList())) }
+        val checkpoint = UploadCheckpoint("s1", plan, mapOf(1 to "etag1", 2 to "etag2", 3 to "etag3"), "old.bin")
+
+        val result = upload(resume = checkpoint, named = "new.bin")
+
+        assertIs<ZillitResult.Success<DriveItem>>(result)
+        assertEquals(listOf("new.bin"), completedAs.toList())
+        assertTrue(puts.isEmpty(), "the bytes were already there")
+        assertTrue(initiated.isEmpty() && aborted.isEmpty())
+    }
+
+    @Test
+    fun `a renamed resume the server still calls a duplicate opens a session under the new name`() {
+        resumeAnswer = { ZillitResult.Success(session(it, parts = emptyList())) }
+        sessionsToOpen += session("s2")
+        var calls = 0
+        completeAnswer = { if (++calls == 1) nameTaken else done }
+        val checkpoint = UploadCheckpoint("s1", plan, mapOf(1 to "etag1", 2 to "etag2", 3 to "etag3"), "old.bin")
+
+        val result = upload(resume = checkpoint, named = "new.bin")
+
+        assertIs<ZillitResult.Success<DriveItem>>(result)
+        assertEquals(listOf("s1"), aborted.toList(), "the session holding the old name is dropped")
+        assertEquals(listOf("new.bin"), initiated.toList())
+        assertEquals(listOf(1, 2, 3), puts.map { it.first }, "uploaded again, this time under the new name")
+        assertEquals(listOf("new.bin", "new.bin"), completedAs.toList())
+    }
+
+    @Test
+    fun `a duplicate on a resume that kept its name is not retried as a fresh session`() {
+        resumeAnswer = { ZillitResult.Success(session(it, parts = emptyList())) }
+        completeAnswer = { nameTaken }
+        val checkpoint = UploadCheckpoint("s1", plan, mapOf(1 to "etag1", 2 to "etag2", 3 to "etag3"), "a.bin")
+
+        val result = upload(resume = checkpoint, named = "a.bin")
+
+        assertIs<ZillitResult.Failure>(result)
+        assertTrue(initiated.isEmpty() && aborted.isEmpty())
     }
 }

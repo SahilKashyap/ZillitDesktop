@@ -320,4 +320,145 @@ class UploadControlsTest {
         assertEquals("Done", vm.rows().last().stateName())
         assertEquals(4, uploader.calls.size)
     }
+
+    // -- duplicate names ---------------------------------------------------------
+
+    private fun taken() =
+        ZillitResult.Failure(ZillitError.Http(status = 200, serverMessage = "duplicate_file_name"))
+
+    @Test
+    fun `a refused name opens the dialog and waits for a rename instead of a retry`() = runTest(dispatcher) {
+        step { _, checkpointed, _ ->
+            checkpointed(checkpoint(1, 2, 3))
+            taken()
+        }
+        val vm = start(file())
+
+        val row = vm.rows().single()
+        assertTrue(row.needsRename)
+        assertFalse(row.canRetry, "trying the same name again cannot work")
+        assertTrue(vm.state.value.renameUploads.open, "it opens by itself")
+
+        vm.onEvent(DriveEvent.RetryUpload(row.id))
+        runCurrent()
+        assertEquals(1, uploader.calls.size)
+    }
+
+    @Test
+    fun `submitting the suggested name sends the file again from its checkpoint`() = runTest(dispatcher) {
+        step { _, checkpointed, _ ->
+            checkpointed(checkpoint(1, 2, 3))
+            taken()
+        }
+        step { call, _, _ ->
+            assertEquals(checkpoint(1, 2, 3), call.resume, "every part is already up")
+            assertEquals("a (1).txt", call.file.name)
+            done
+        }
+        val vm = start(file("a.txt"))
+
+        vm.onEvent(DriveEvent.SubmitRenames)
+        runCurrent()
+
+        val row = vm.rows().single()
+        assertEquals("Done", row.stateName())
+        assertEquals("a (1).txt", row.fileName)
+        assertFalse(vm.state.value.renameUploads.open)
+    }
+
+    @Test
+    fun `a typed name is used and keeps the extension`() = runTest(dispatcher) {
+        step { _, _, _ -> taken() }
+        step { call, _, _ ->
+            assertEquals("final cut.txt", call.file.name)
+            done
+        }
+        val vm = start(file("a.txt"))
+
+        vm.onEvent(DriveEvent.RenameUploadName(vm.rows().single().id, "final cut"))
+        vm.onEvent(DriveEvent.SubmitRenames)
+        runCurrent()
+
+        assertEquals("Done", vm.rows().single().stateName())
+    }
+
+    @Test
+    fun `a blank or unchanged name stays in the dialog with a note`() = runTest(dispatcher) {
+        step { _, _, _ -> taken() }
+        val vm = start(file("a.txt"))
+        val id = vm.rows().single().id
+
+        vm.onEvent(DriveEvent.RenameUploadName(id, "   "))
+        vm.onEvent(DriveEvent.SubmitRenames)
+        runCurrent()
+        assertTrue(id in vm.state.value.renameUploads.errors)
+
+        vm.onEvent(DriveEvent.RenameUploadName(id, "A.TXT"))
+        assertFalse(id in vm.state.value.renameUploads.errors, "typing clears the note")
+        vm.onEvent(DriveEvent.SubmitRenames)
+        runCurrent()
+
+        assertTrue(id in vm.state.value.renameUploads.errors, "the same name again, whatever the case")
+        assertEquals(1, uploader.calls.size, "nothing was sent")
+        assertTrue(vm.state.value.renameUploads.open)
+    }
+
+    @Test
+    fun `two files given the same new name in one folder - the second is held back`() = runTest(dispatcher) {
+        step { _, _, _ -> taken() }
+        step { _, _, _ -> taken() }
+        step { _, _, _ -> done }
+        val vm = start(file("a.txt"), file("b.txt"))
+        vm.rows().forEach { vm.onEvent(DriveEvent.RenameUploadName(it.id, "same")) }
+
+        vm.onEvent(DriveEvent.SubmitRenames)
+        runCurrent()
+
+        assertEquals(1, vm.state.value.renameUploads.errors.size, "the second to claim it")
+        assertEquals(3, uploader.calls.size, "the first one went")
+        assertEquals("Done", vm.rows().first().stateName())
+        assertTrue(vm.rows().last().needsRename)
+        assertTrue(vm.state.value.renameUploads.open, "the held-back one is still on the dialog")
+    }
+
+    @Test
+    fun `cancel all gives up every upload waiting on a name and drops their sessions`() = runTest(dispatcher) {
+        step { _, checkpointed, _ -> checkpointed(checkpoint(1, 2, 3, id = "s1")); taken() }
+        step { _, checkpointed, _ -> checkpointed(checkpoint(1, 2, 3, id = "s2")); taken() }
+        val vm = start(file("a.txt"), file("b.txt"))
+
+        vm.onEvent(DriveEvent.CancelRenames)
+        runCurrent()
+
+        assertTrue(vm.rows().all { it.state == UploadState.Failed(CANCELLED) })
+        assertEquals(setOf("s1", "s2"), repo.aborted.toSet())
+        assertFalse(vm.state.value.renameUploads.open)
+    }
+
+    @Test
+    fun `a name refused again brings the dialog back`() = runTest(dispatcher) {
+        step { _, _, _ -> taken() }
+        step { _, _, _ -> taken() }
+        val vm = start(file("a.txt"))
+
+        vm.onEvent(DriveEvent.SubmitRenames)
+        runCurrent()
+
+        assertTrue(vm.rows().single().needsRename)
+        assertTrue(vm.state.value.renameUploads.open)
+    }
+
+    @Test
+    fun `closing the dialog leaves the rows to be renamed later`() = runTest(dispatcher) {
+        step { _, _, _ -> taken() }
+        val vm = start(file("a.txt"))
+
+        vm.onEvent(DriveEvent.CloseRenameUploads)
+        runCurrent()
+        assertTrue(vm.rows().single().needsRename)
+        assertFalse(vm.state.value.renameUploads.open)
+
+        vm.onEvent(DriveEvent.OpenRenameUploads)
+        assertTrue(vm.state.value.renameUploads.open)
+    }
 }

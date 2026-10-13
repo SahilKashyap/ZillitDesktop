@@ -44,6 +44,7 @@ import com.zillit.desktop.feature.drive.ui.pages.DrivePromptDialog
 import com.zillit.desktop.feature.drive.ui.pages.DriveTable
 import com.zillit.desktop.feature.drive.ui.pages.DropPermissionsDialog
 import com.zillit.desktop.feature.drive.ui.pages.EditItemSheet
+import com.zillit.desktop.feature.drive.ui.pages.DuplicatesDialog
 import com.zillit.desktop.feature.drive.ui.pages.FileRequestDialog
 import com.zillit.desktop.feature.drive.ui.pages.InnerTabs
 import com.zillit.desktop.feature.drive.ui.pages.ItemMenuHost
@@ -185,6 +186,7 @@ private fun DriveScreenBody(
         DropPermissionsDialog(state, onEvent)
         PreviewDialog(state, onEvent)
         FileRequestDialog(state, onEvent)
+        DuplicatesDialog(state, onEvent)
         DrivePromptDialog(state.prompt, onEvent)
 
         ZillitToast(

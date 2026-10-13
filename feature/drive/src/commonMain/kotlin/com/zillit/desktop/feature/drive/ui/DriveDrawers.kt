@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.drive.ui
 
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.drive.domain.isDuplicateName
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.drive.domain.DriveAction
 import com.zillit.desktop.feature.drive.domain.DriveActivityPage
@@ -171,8 +173,10 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
                 }
 
                 is ZillitResult.Failure -> {
-                    updateNewFolder { copy(submitting = false) }
-                    vm.reportError(made.error)
+                    // A taken name is the name field's problem, said where the user is looking.
+                    val taken = made.error.isDuplicateName()
+                    updateNewFolder { copy(submitting = false, nameError = made.error.localised().takeIf { taken }) }
+                    if (!taken) vm.reportError(made.error)
                 }
             }
         }
@@ -226,8 +230,9 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
                 }
 
                 is ZillitResult.Failure -> {
-                    updateEdit { copy(submitting = false) }
-                    vm.reportError(done.error)
+                    val taken = done.error.isDuplicateName()
+                    updateEdit { copy(submitting = false, nameError = done.error.localised().takeIf { taken }) }
+                    if (!taken) vm.reportError(done.error)
                 }
             }
         }

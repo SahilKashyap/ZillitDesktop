@@ -294,6 +294,18 @@ class DriveViewModel(
             is DriveEvent.PauseUpload -> uploads.pause(event.uploadId)
             is DriveEvent.ResumeUpload -> uploads.resume(event.uploadId)
             is DriveEvent.RetryUpload -> uploads.retry(event.uploadId)
+            DriveEvent.OpenRenameUploads -> setState { copy(renameUploads = renameUploads.copy(open = true)) }
+            DriveEvent.CloseRenameUploads -> setState { copy(renameUploads = renameUploads.copy(open = false)) }
+            is DriveEvent.RenameUploadName -> setState {
+                copy(
+                    renameUploads = renameUploads.copy(
+                        names = renameUploads.names + (event.uploadId to event.text),
+                        errors = renameUploads.errors - event.uploadId,
+                    ),
+                )
+            }
+            DriveEvent.SubmitRenames -> uploads.submitRenames()
+            DriveEvent.CancelRenames -> uploads.cancelRenames()
             is DriveEvent.RemoveUpload -> {
                 uploads.discard(listOf(event.uploadId))
                 setState { copy(uploads = this.uploads.filterNot { it.id == event.uploadId }) }
@@ -308,7 +320,7 @@ class DriveViewModel(
 
             DriveEvent.OpenNewFolder -> drawers.openNewFolder()
             DriveEvent.CloseNewFolder -> setState { copy(newFolder = null) }
-            is DriveEvent.NewFolderName -> drawers.updateNewFolder { copy(name = event.text) }
+            is DriveEvent.NewFolderName -> drawers.updateNewFolder { copy(name = event.text, nameError = null) }
             is DriveEvent.NewFolderDescription -> drawers.updateNewFolder { copy(description = event.text) }
             is DriveEvent.NewFolderDestination -> drawers.updateNewFolder {
                 copy(pickExisting = event.pickExisting, destinationFolderId = event.folderId)
@@ -321,7 +333,7 @@ class DriveViewModel(
 
             is DriveEvent.OpenEdit -> drawers.openEdit(event.item)
             DriveEvent.CloseEdit -> setState { copy(edit = null) }
-            is DriveEvent.EditName -> drawers.updateEdit { copy(name = event.text) }
+            is DriveEvent.EditName -> drawers.updateEdit { copy(name = event.text, nameError = null) }
             is DriveEvent.EditDescription -> drawers.updateEdit { copy(description = event.text) }
             DriveEvent.SubmitEdit -> drawers.submitEdit()
 

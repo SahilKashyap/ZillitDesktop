@@ -28,6 +28,7 @@ import com.zillit.desktop.feature.drive.domain.PreviewKind
 import com.zillit.desktop.feature.drive.domain.QueuedUpload
 import com.zillit.desktop.feature.drive.domain.combinedRows
 import com.zillit.desktop.feature.drive.domain.eligible
+import com.zillit.desktop.feature.drive.domain.suggestFreeName
 import com.zillit.desktop.feature.drive.domain.innerTabTotals
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -195,6 +196,8 @@ data class NewFolderDraft(
     val pickExisting: Boolean = false,
     val access: AccessDraft = AccessDraft(),
     val submitting: Boolean = false,
+    /** The server's refusal of the name (a sibling has it), shown on the field until it is edited. */
+    val nameError: String? = null,
 ) {
     val canSubmit: Boolean
         get() = name.isNotBlank() && name.length <= MAX_FOLDER_NAME &&
@@ -209,9 +212,26 @@ data class EditDraft(
     val name: String,
     val description: String,
     val submitting: Boolean = false,
+    /** As [NewFolderDraft.nameError]. */
+    val nameError: String? = null,
 ) {
     val canSubmit: Boolean get() = name.isNotBlank() && !submitting
 }
+
+/**
+ * The Resolve duplicates dialog — `ResolveDuplicatesBottomSheet` on Android.
+ *
+ * Which rows it lists is not stored: it is every upload the server refused for
+ * its name ([QueuedUpload.needsRename]), so a row that is renamed or cancelled
+ * leaves it by itself.
+ */
+data class RenameUploadsState(
+    val open: Boolean = false,
+    /** Upload id → what the user has typed. A row not here shows its suggestion. */
+    val names: Map<String, String> = emptyMap(),
+    /** Upload id → what is wrong with the name last submitted for it. */
+    val errors: Map<String, String> = emptyMap(),
+)
 
 /** Which of the share drawer's two tabs is open — a file has both, a folder only People. */
 enum class ShareTab(private val labelKey: String) {
@@ -348,6 +368,7 @@ data class DriveUiState(
     val activityLog: ActivityLogState = ActivityLogState(),
     val uploads: List<QueuedUpload> = emptyList(),
     val operationsExpanded: Boolean = true,
+    val renameUploads: RenameUploadsState = RenameUploadsState(),
     val details: DetailsState = DetailsState(),
     val fileRequests: FileRequestState = FileRequestState(),
     val prompt: DrivePrompt? = null,
@@ -412,6 +433,17 @@ data class DriveUiState(
     val downloadableCount: Int
         get() = viewer.eligible(DriveAction.Download, selectedItems).count { !it.isFolder }
 
+    /**
+     * What the rename box holds for [row]: what the user typed, else a free
+     * name close to the original — never one an upload or an item in the same
+     * folder already has.
+     */
+    fun renameValue(row: QueuedUpload): String = renameUploads.names[row.id] ?: run {
+        val taken = uploads.filter { it.destinationFolderId == row.destinationFolderId }.map { it.fileName } +
+            listing.files.filter { it.parentFolderId == row.destinationFolderId }.map { it.name }
+        suggestFreeName(row.fileName, taken.toSet())
+    }
+
     /** Uploads still running, for the operations panel's badge. */
     val activeUploads: List<QueuedUpload> get() = uploads.filterNot { it.isSettled }
 
@@ -442,5 +474,5 @@ data class DriveUiState(
     val hasOverlay: Boolean
         get() = prompt != null || upload != null || newFolder != null || edit != null ||
             share != null || moveTo != null || preview != null || dropUpload != null ||
-            activityLog.open || fileRequests.open
+            activityLog.open || fileRequests.open || renameUploads.open
 }

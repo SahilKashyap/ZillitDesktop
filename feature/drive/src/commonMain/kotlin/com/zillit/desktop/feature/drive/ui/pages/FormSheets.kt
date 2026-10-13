@@ -449,7 +449,7 @@ private fun NewFolderForm(draft: NewFolderDraft, onEvent: (DriveEvent) -> Unit) 
             label = str(S.folder_name),
             placeholder = str(S.drive_enter_folder_name),
             leadingIcon = ZillitIcons.Folder,
-            errorText = str(S.desktop_drive_folder_name_too_long, MAX_FOLDER_NAME)
+            errorText = draft.nameError ?: str(S.desktop_drive_folder_name_too_long, MAX_FOLDER_NAME)
                 .takeIf { draft.name.length > MAX_FOLDER_NAME },
             enabled = !draft.submitting,
         )
@@ -496,6 +496,7 @@ internal fun EditItemSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             onValueChange = { onEvent(DriveEvent.EditName(it)) },
             label = str(S.name),
             placeholder = str(S.cs_enter_name),
+            errorText = draft.nameError,
             helperText = if (!draft.item.isFolder && draft.item.extension.isNotBlank()) {
                 str(S.desktop_drive_extension_kept, draft.item.extension)
             } else {

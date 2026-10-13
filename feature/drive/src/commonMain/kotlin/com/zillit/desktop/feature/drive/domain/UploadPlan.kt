@@ -158,6 +158,8 @@ data class UploadCheckpoint(
     val plan: UploadPlan,
     /** Part number → ETag, for the parts S3 has accepted. */
     val etags: Map<Int, String> = emptyMap(),
+    /** The name the session was opened under; blank from a checkpoint that predates it. */
+    val fileName: String = "",
 ) {
     val uploadedParts: Int get() = etags.size
 }
@@ -181,7 +183,11 @@ sealed interface UploadState {
 
     data object Completing : UploadState
     data class Done(val fileId: String) : UploadState
-    data class Failed(val reason: String) : UploadState
+    /**
+     * [duplicateName]: the server refused because a sibling already has this
+     * name — the one failure a retry cannot fix and a rename can.
+     */
+    data class Failed(val reason: String, val duplicateName: Boolean = false) : UploadState
 }
 
 /** One file the user asked to upload, and how far it has got. */
@@ -207,7 +213,10 @@ data class QueuedUpload(
 
     /** A failure the user did not cause; a cancelled upload is gone, not stalled. */
     val canRetry: Boolean
-        get() = (state as? UploadState.Failed)?.let { it.reason != CANCELLED } ?: false
+        get() = (state as? UploadState.Failed)?.let { it.reason != CANCELLED && !it.duplicateName } ?: false
+
+    /** Refused for its name: waits for a new one rather than another try. */
+    val needsRename: Boolean get() = (state as? UploadState.Failed)?.duplicateName == true
 
     val fraction: Float
         get() = when (val current = state) {

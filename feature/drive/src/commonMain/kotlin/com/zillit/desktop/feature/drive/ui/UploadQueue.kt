@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.drive.domain.CANCELLED
 import com.zillit.desktop.feature.drive.domain.NewFolder
+import com.zillit.desktop.feature.drive.domain.isDuplicateName
+import com.zillit.desktop.feature.drive.domain.keepExtension
 import com.zillit.desktop.feature.drive.domain.QueuedUpload
 import com.zillit.desktop.feature.drive.domain.UploadCheckpoint
 import com.zillit.desktop.feature.drive.domain.UploadPlan
@@ -140,7 +142,7 @@ internal class UploadQueue(
     }
 
     /** What a row needs to be sent again: the file, where it goes, and how far it got. */
-    private class Entry(val file: PickedFile, val target: UploadTarget) {
+    private class Entry(var file: PickedFile, val target: UploadTarget) {
         var checkpoint: UploadCheckpoint? = null
     }
 
@@ -171,7 +173,8 @@ internal class UploadQueue(
                 )
                 val settled = when (result) {
                     is ZillitResult.Success -> UploadState.Done(result.data.id)
-                    is ZillitResult.Failure -> UploadState.Failed(result.error.localised())
+                    is ZillitResult.Failure ->
+                        UploadState.Failed(result.error.localised(), duplicateName = result.error.isDuplicateName())
                 }
                 patchLive(id) { copy(state = settled) }
                 jobs.remove(id)
@@ -183,7 +186,10 @@ internal class UploadQueue(
                 // background upload must not yank the listing out from
                 // under someone browsing elsewhere.
                 if (settled is UploadState.Done && !vm.state.value.showTrash) vm.loadListing()
-                if (settled is UploadState.Failed) {
+                if (settled is UploadState.Failed && settled.duplicateName) {
+                    // The name is the only thing wrong, and the dialog says so and fixes it.
+                    vm.update { copy(renameUploads = renameUploads.copy(open = true)) }
+                } else if (settled is UploadState.Failed) {
                     vm.reportFailure(str(S.desktop_drive_upload_failed, entry.file.name, settled.reason))
                 }
             }
@@ -225,6 +231,59 @@ internal class UploadQueue(
         if (!row.canRetry || uploadId !in entries) return
         patch(uploadId) { copy(state = UploadState.Queued) }
         launch(uploadId)
+    }
+
+    /**
+     * Sends the uploads the server refused for their names again, each under
+     * the name chosen for it — from its checkpoint when it has one, so a file
+     * whose bytes are all up costs a completion call, not an upload.
+     */
+    fun rename(renames: Map<String, String>) {
+        renames.forEach { (uploadId, name) ->
+            val entry = entries[uploadId] ?: return@forEach
+            val row = vm.state.value.uploads.firstOrNull { it.id == uploadId } ?: return@forEach
+            if (!row.needsRename) return@forEach
+            entry.file = entry.file.copy(name = name)
+            patch(uploadId) { copy(fileName = name, state = UploadState.Queued) }
+            launch(uploadId)
+        }
+    }
+
+    /**
+     * Takes the dialog's names. Anything blank, unchanged or chosen twice for the
+     * same folder stays in the dialog with a note against it; the rest go.
+     */
+    fun submitRenames() {
+        val state = vm.state.value
+        val rows = state.uploads.filter { it.needsRename }
+        val chosen = rows.associate { it.id to keepExtension(state.renameValue(it), it.fileName) }
+        val seen = mutableSetOf<Pair<String?, String>>()
+        val errors = mutableMapOf<String, String>()
+        rows.forEach { row ->
+            val name = chosen.getValue(row.id)
+            val repeated = !seen.add(row.destinationFolderId to name.lowercase())
+            when {
+                name.isBlank() -> errors[row.id] = str(S.drive_name_is_required)
+                name.equals(row.fileName, ignoreCase = true) || repeated -> errors[row.id] = str(S.drive_duplicate_name)
+            }
+        }
+        // The good names go; the others stay, with a note, for another try.
+        vm.update {
+            copy(
+                renameUploads = if (errors.isEmpty()) {
+                    RenameUploadsState()
+                } else {
+                    renameUploads.copy(errors = errors, names = renameUploads.names.filterKeys { it in errors })
+                },
+            )
+        }
+        rename(chosen - errors.keys)
+    }
+
+    /** "Cancel all": the uploads waiting on a name are given up, and their sessions dropped. */
+    fun cancelRenames() {
+        vm.state.value.uploads.filter { it.needsRename }.forEach { cancel(it.id) }
+        vm.update { copy(renameUploads = RenameUploadsState()) }
     }
 
     /** Stops one upload and tells the server to drop its session. */

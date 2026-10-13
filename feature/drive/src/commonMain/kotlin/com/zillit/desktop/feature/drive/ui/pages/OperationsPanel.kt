@@ -165,6 +165,13 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
                     onClick = { onEvent(DriveEvent.ResumeUpload(upload.id)) },
                 )
             }
+            if (upload.needsRename) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Edit,
+                    contentDescription = str(S.rename),
+                    onClick = { onEvent(DriveEvent.OpenRenameUploads) },
+                )
+            }
             if (upload.canRetry) {
                 ZillitIconButton(
                     icon = ZillitIcons.Reload,
@@ -205,7 +212,11 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
                     is UploadState.Paused ->
                         str(S.desktop_drive_part_of, s.uploadedParts, s.totalParts) +
                             " · " + formatBytes(upload.sizeBytes)
-                    is UploadState.Failed -> if (s.reason == CANCELLED) str(S.cancelled) else s.reason
+                    is UploadState.Failed -> when {
+                        s.duplicateName -> str(S.drive_uploads_status_failed_duplicate)
+                        s.reason == CANCELLED -> str(S.cancelled)
+                        else -> s.reason
+                    }
                     else -> formatBytes(upload.sizeBytes)
                 },
                 style = ZillitTheme.typography.labelSmall,
