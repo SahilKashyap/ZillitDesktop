@@ -8,8 +8,11 @@ import com.zillit.desktop.core.designsystem.component.DroppedFile
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.workspace.forward.ForwardForm
+import com.zillit.desktop.core.workspace.forward.ForwardItem
 import com.zillit.desktop.core.workspace.forward.ForwardReach
 import com.zillit.desktop.core.workspace.forward.ForwardSection
+import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
@@ -173,6 +176,15 @@ data class ChatUiState(
      * answers, and on a host that wired none.
      */
     val forwardSections: List<ForwardSection> = emptyList(),
+    /**
+     * The questions a film tool asked before it will take this line — a
+     * document's name and colour, a scene, a date. Null when nothing is
+     * being asked; [forwardingItem] is what the answers will be sent with.
+     */
+    val forwardForm: ForwardForm? = null,
+    val forwardingItem: ForwardItem? = null,
+    /** True while the form's answers are on the wire. */
+    val forwardSending: Boolean = false,
     /** The readers panel — which message, and its answer as it arrives. */
     val readBy: ReadByView? = null,
     /**
@@ -388,6 +400,12 @@ sealed interface ChatEvent {
      * composer. The host takes over; the picker closes.
      */
     data class ForwardStepPicked(val targetId: String) : ChatEvent
+
+    /** The tool form's Send, answers by field key. */
+    data class SubmitForwardForm(val answers: Map<String, String>) : ChatEvent
+
+    /** The tool form's Cancel. */
+    data object CancelForwardForm : ChatEvent
     data object CancelForward : ChatEvent
 
     /** The menu's Read by, on a room's line. */
@@ -727,6 +745,10 @@ class ChatViewModel(
             is ChatEvent.ForwardTo -> forward(event.targets)
             is ChatEvent.ForwardPicked -> forwardPicked(event.targetIds)
             is ChatEvent.ForwardStepPicked -> forwardStep(event.targetId)
+            is ChatEvent.SubmitForwardForm -> submitForwardForm(event.answers)
+            ChatEvent.CancelForwardForm -> setState {
+                copy(forwardForm = null, forwardingItem = null, forwardSending = false)
+            }
             ChatEvent.CancelForward -> setState { copy(forwarding = null) }
             is ChatEvent.ShowReadBy -> showReadBy(event.messageId)
             ChatEvent.DismissReadBy -> setState { copy(readBy = null) }
@@ -1110,6 +1132,9 @@ class ChatViewModel(
         editDraft = "",
         forwarding = null,
         forwardSections = emptyList(),
+        forwardForm = null,
+        forwardingItem = null,
+        forwardSending = false,
         readBy = null,
     )
 
@@ -2189,12 +2214,50 @@ class ChatViewModel(
         }
     }
 
-    /** A destination that asks something first; the host owns the rest of it. */
+    /**
+     * A destination that asks something first.
+     *
+     * The host either takes over (the mailbox), refuses, or answers with the
+     * form that tool needs — which the thread then draws, with the line held
+     * as [ChatUiState.forwardingItem] for the Send.
+     */
     private fun forwardStep(targetId: String) {
         val source = currentState.forwarding ?: return
+        val item = source.asForwardItem()
         setState { copy(forwarding = null) }
-        val refusal = reach?.open(targetId, source.asForwardItem())
-        if (refusal != null) setState { copy(error = refusal) }
+        val host = reach ?: return
+        launch {
+            when (val outcome = host.open(targetId, item)) {
+                ForwardStepOutcome.Handled -> Unit
+                is ForwardStepOutcome.Refused -> setState { copy(error = outcome.message) }
+                is ForwardStepOutcome.Asks -> setState {
+                    copy(forwardForm = outcome.form, forwardingItem = item)
+                }
+            }
+        }
+    }
+
+    /** The tool form's Send: the answers go out with the line they were asked for. */
+    private fun submitForwardForm(answers: Map<String, String>) {
+        val form = currentState.forwardForm ?: return
+        val item = currentState.forwardingItem ?: return
+        val host = reach ?: return
+        setState { copy(forwardSending = true) }
+        launch {
+            when (val answer = host.submit(form.targetId, item, answers)) {
+                is ZillitResult.Success -> setState {
+                    copy(
+                        forwardForm = null,
+                        forwardingItem = null,
+                        forwardSending = false,
+                        info = FORWARDED,
+                    )
+                }
+                is ZillitResult.Failure -> setState {
+                    copy(forwardSending = false, error = answer.error.localised())
+                }
+            }
+        }
     }
 
     private fun forward(targets: List<ForwardTarget>) {

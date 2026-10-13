@@ -3,6 +3,9 @@ package com.zillit.desktop.feature.home.domain
 import com.zillit.desktop.core.common.ZillitResult
 
 /** Home's tab strip and the notice board behind each tab. */
+// One function per route the board serves, plus the two overloads that carry
+// an extra wire flag; splitting the interface would split the board.
+@Suppress("TooManyFunctions")
 interface HomeFeedRepository {
     suspend fun loadUnits(): ZillitResult<List<HomeUnit>>
 
@@ -88,6 +91,22 @@ interface HomeFeedRepository {
         notice: Notice,
         localId: String,
     ): ZillitResult<Unit>
+
+    /**
+     * The same, answering the call sheet's question on the way in.
+     *
+     * The notes boards — Script Notes, Camera & Sound Report, Production
+     * Report — ask "continuation or new?" before they take a document, and
+     * *New* retires what is on the board (`replacePreviousChats`, the web's
+     * `showNewOrContinuationPopup`). Defaulted to the plain forward so a
+     * board that never asks, and every test fake, is unaffected.
+     */
+    suspend fun forwardNotice(
+        unitId: String,
+        notice: Notice,
+        localId: String,
+        replacePrevious: Boolean,
+    ): ZillitResult<Unit> = forwardNotice(unitId, notice, localId)
 
     /** Who has and hasn't read a post — the web's `chat/readby/{id}`. */
     suspend fun readBy(noticeId: String): ZillitResult<ReadBy>

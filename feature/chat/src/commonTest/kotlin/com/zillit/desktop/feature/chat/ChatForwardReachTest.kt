@@ -7,6 +7,7 @@ import com.zillit.desktop.core.workspace.forward.ForwardPick
 import com.zillit.desktop.core.workspace.forward.ForwardReach
 import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.core.workspace.forward.ForwardStep
+import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatMessage
@@ -66,6 +67,7 @@ class ChatForwardReachTest {
         val asked = mutableListOf<Pair<ForwardKind, String?>>()
         val delivered = mutableListOf<List<String>>()
         val opened = mutableListOf<String>()
+        val submitted = mutableListOf<Pair<String, Map<String, String>>>()
 
         override suspend fun sections(item: ForwardItem, from: String?): List<ForwardSection> {
             asked += item.kind to from
@@ -80,9 +82,18 @@ class ChatForwardReachTest {
             return ZillitResult.Success(Unit)
         }
 
-        override fun open(targetId: String, item: ForwardItem): String? {
+        override suspend fun open(targetId: String, item: ForwardItem): ForwardStepOutcome {
             opened += targetId
-            return null
+            return ForwardStepOutcome.Handled
+        }
+
+        override suspend fun submit(
+            targetId: String,
+            item: ForwardItem,
+            answers: Map<String, String>,
+        ): ZillitResult<Unit> {
+            submitted += targetId to answers
+            return ZillitResult.Success(Unit)
         }
     }
 

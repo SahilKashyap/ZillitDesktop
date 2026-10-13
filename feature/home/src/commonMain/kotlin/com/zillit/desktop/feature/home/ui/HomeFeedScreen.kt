@@ -60,6 +60,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.workspace.forward.ForwardFormDialog
 import com.zillit.desktop.core.workspace.forward.ForwardPickerDialog
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.DroppedFile
@@ -431,6 +432,13 @@ private fun BoardDialogs(
     onOpenLink: (String) -> Unit,
 ) {
     ForwardPicker(state, onEvent)
+    // What a film tool asks for before it takes the post — see ForwardFormDialog.
+    ForwardFormDialog(
+        form = state.forwardForm,
+        busy = state.forwardSending,
+        onSubmit = { answers -> onEvent(HomeFeedEvent.SubmitForwardForm(answers)) },
+        onDismiss = { onEvent(HomeFeedEvent.CancelForwardForm) },
+    )
     DeletePromptDialog(state, onEvent)
     ReadByPanel(state.readBy, canNotify = state.canCompose, resolveAuthor, loadAvatar, onEvent)
     NoticeLibraryPanel(

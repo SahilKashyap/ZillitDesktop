@@ -2,19 +2,23 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.workspace.forward.ForwardChoice
+import com.zillit.desktop.core.workspace.forward.ForwardGroup
 import com.zillit.desktop.core.workspace.forward.ForwardItem
 import com.zillit.desktop.core.workspace.forward.ForwardKind
-import com.zillit.desktop.core.workspace.forward.ForwardGroup
 import com.zillit.desktop.core.workspace.forward.ForwardPick
 import com.zillit.desktop.core.workspace.forward.ForwardReach
 import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.core.workspace.forward.ForwardStep
+import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -57,6 +61,10 @@ import java.util.UUID
  */
 internal class AppForwardReach(
     private val boards: List<ForwardBoard>,
+    /** The film tools, each with the form it asks for and the wire it posts to. */
+    private val tools: List<ForwardTool> = emptyList(),
+    /** The viewer's rights, read live — a tool switched off mid-session stops being offered. */
+    private val permissions: () -> ProjectPermissions = { ProjectPermissions.Empty },
     private val crew: () -> List<CrewContact>,
     private val rooms: suspend () -> List<GroupRoom>,
     private val chat: () -> ChatRepository?,
@@ -84,6 +92,7 @@ internal class AppForwardReach(
         }
         if (boardEntries.isNotEmpty()) add(ForwardSection(str(S.desktop_forward_boards), boardEntries))
         if (from != CHAT_SURFACE_KEY) chatSections().forEach(::add)
+        toolSection(item)?.let(::add)
         email?.let {
             add(
                 ForwardSection(
@@ -98,6 +107,42 @@ internal class AppForwardReach(
                 ),
             )
         }
+    }
+
+    /**
+     * The film tools this message may go into, rights and kind applied — the
+     * web's `addToolsForForward`.
+     *
+     * A tool with several destinations inside it (a distribution's tabs)
+     * becomes a list that opens, which is what the web's `isSubMenu` tools
+     * do; a tool with one becomes a single row.
+     */
+    private fun toolSection(item: ForwardItem): ForwardSection? {
+        val offered = tools.filter { it.takes(item) && canPost(it.identifier) }
+        if (offered.isEmpty()) return null
+        val entries = buildList {
+            offered.groupBy { it.group }.forEach { (group, inGroup) ->
+                if (group == null) {
+                    inGroup.forEach { add(it.entry()) }
+                } else {
+                    add(
+                        ForwardGroup(
+                            id = "toolgroup:$group",
+                            label = group,
+                            icon = ZillitIcons.Tools,
+                            children = inGroup.map { it.entry() },
+                        ),
+                    )
+                }
+            }
+        }
+        return ForwardSection(str(S.tools), entries)
+    }
+
+    /** The web's gate on every tool entry: enabled, viewable and postable. */
+    private fun canPost(identifier: String): Boolean {
+        val access = permissions().access(identifier)
+        return access.enabled && access.canView && access.canPost
     }
 
     /**
@@ -199,9 +244,24 @@ internal class AppForwardReach(
         )
     }
 
-    override fun open(targetId: String, item: ForwardItem): String? = when (targetId) {
-        EMAIL_TARGET -> email?.invoke(item) ?: str(S.desktop_email_id_not_available)
-        else -> str(S.desktop_forward_destination_unavailable)
+    override suspend fun open(targetId: String, item: ForwardItem): ForwardStepOutcome {
+        if (targetId == EMAIL_TARGET) {
+            val refusal = email?.invoke(item) ?: str(S.desktop_email_id_not_available)
+            return refusal?.let(ForwardStepOutcome::Refused) ?: ForwardStepOutcome.Handled
+        }
+        val tool = tools.firstOrNull { it.id == targetId }
+            ?: return ForwardStepOutcome.Refused(str(S.desktop_forward_destination_unavailable))
+        return tool.ask(item)
+    }
+
+    override suspend fun submit(
+        targetId: String,
+        item: ForwardItem,
+        answers: Map<String, String>,
+    ): ZillitResult<Unit> {
+        val tool = tools.firstOrNull { it.id == targetId }
+            ?: return ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_forward_destination_unavailable)))
+        return tool.send(item, answers)
     }
 }
 
@@ -218,6 +278,8 @@ internal class ForwardBoard(
     val units: suspend () -> List<HomeUnit>,
     val repository: HomeFeedRepository,
     val kinds: Set<ForwardKind>? = null,
+    /** The tool identifier its rights are read from; blank for a board every production has. */
+    val identifier: String = "",
 ) {
     fun takes(item: ForwardItem): Boolean = kinds == null || item.kind in kinds
 
@@ -301,6 +363,8 @@ internal fun AppGraph.Ready.forwardReach(
     }
     return AppForwardReach(
         boards = boards,
+        tools = forwardTools(boards),
+        permissions = permissions,
         crew = { forwardCrew() },
         rooms = { forwardRooms() },
         chat = { chatRepository },
@@ -335,6 +399,63 @@ private suspend fun AppGraph.Ready.forwardRooms(): List<GroupRoom> =
         is ZillitResult.Success -> answer.data
         is ZillitResult.Failure -> emptyList()
     }
+
+/**
+ * The film tools a message can be forwarded into — the distributions today;
+ * see [ForwardTool] for what each one asks and where it posts.
+ */
+private fun AppGraph.Ready.forwardTools(boards: List<ForwardBoard>): List<ForwardTool> =
+    distributionForwardTools(
+        repository = com.zillit.desktop.feature.pagedistribution.data.DistributionRepositoryImpl(
+            apiClient = apiClient,
+            config = config,
+            newUniqueId = { UUID.randomUUID().toString() },
+            nowMillis = System::currentTimeMillis,
+        ),
+        isTelevision = { isTelevisionProduction() },
+        nowMillis = System::currentTimeMillis,
+    ) +
+        notesBoardForwardTools(boards) { UUID.randomUUID().toString() } +
+        budgetForwardTools(
+            post = { upload -> budgetRepository().post(upload).map { } },
+            departments = { forwardDepartments() },
+            isTelevision = { isTelevisionProduction() },
+        ) +
+        continuityForwardTool(
+            create = { draft, attachment, uniqueId ->
+                com.zillit.desktop.feature.continuity.data.ContinuityRepositoryImpl(
+                    apiClient,
+                    config,
+                    localise = { it.localised() },
+                    bus = socketEvents,
+                ).create(draft, attachment, uniqueId)
+            },
+            newUniqueId = { UUID.randomUUID().toString() },
+        ) +
+        locationForwardTools(
+            create = { draft, attachment ->
+                com.zillit.desktop.feature.location.data.LocationRepositoryImpl(
+                    apiClient,
+                    config,
+                    newUniqueId = { UUID.randomUUID().toString() },
+                    bus = socketEvents,
+                    currentProjectId = { projectContext?.context?.value?.project?.projectId },
+                ).create(draft, attachment, linkPreview = null).map { }
+            },
+        )
+
+/** The production's departments, as the department budget's picker lists them. */
+private suspend fun AppGraph.Ready.forwardDepartments(): List<ForwardChoice> {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return emptyList()
+    return when (val answer = projectRepository.departments(projectId)) {
+        is ZillitResult.Success -> answer.data.map { ForwardChoice(it.id, Labels.translate(it.name)) }
+        is ZillitResult.Failure -> emptyList()
+    }
+}
+
+/** A television production asks for an episode on every document it files. */
+private fun AppGraph.Ready.isTelevisionProduction(): Boolean =
+    projectContext?.context?.value?.project?.subType?.contains("television", ignoreCase = true) == true
 
 /** Home's own tab strip, read the way its board reads it. */
 private suspend fun AppGraph.Ready.homeBoardUnits(): List<HomeUnit> =
@@ -394,6 +515,7 @@ private fun AppGraph.Ready.productionReportChatBoard(
             chatSegment = "",
         ),
         kinds = setOf(ForwardKind.Text),
+        identifier = PRODUCTION_REPORT_CHAT_TOOL,
     )
 }
 
@@ -481,6 +603,7 @@ private fun AppGraph.Ready.serviceBoard(
         units = units,
         repository = boardRepository(board, ZillitService.ScriptNotes),
         kinds = setOf(ForwardKind.Text),
+        identifier = identifier,
     )
 }
 

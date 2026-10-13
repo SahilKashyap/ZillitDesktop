@@ -315,6 +315,13 @@ class HomeFeedRepositoryImpl(
         unitId: String,
         notice: Notice,
         localId: String,
+    ): ZillitResult<Unit> = forwardNotice(unitId, notice, localId, replacePrevious = false)
+
+    override suspend fun forwardNotice(
+        unitId: String,
+        notice: Notice,
+        localId: String,
+        replacePrevious: Boolean,
     ): ZillitResult<Unit> {
         val encrypted = when (val result = decrypt.encryptToHex(notice.body)) {
             is ZillitResult.Success -> result.data
@@ -336,6 +343,7 @@ class HomeFeedRepositoryImpl(
                     messageGroup = nowMillis(),
                     attachment = notice.attachment?.toForwardDto(notice.kind),
                     location = notice.location?.toDto(),
+                    replacePreviousChats = replacePrevious.takeIf { it },
                 ),
             ),
         ).map { }

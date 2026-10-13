@@ -8,6 +8,7 @@ import com.zillit.desktop.core.workspace.forward.ForwardPick
 import com.zillit.desktop.core.workspace.forward.ForwardReach
 import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.core.workspace.forward.ForwardStep
+import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
 import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.HomeUnit
@@ -116,6 +117,7 @@ class ForwardPickerTest {
         val asked = mutableListOf<Pair<ForwardKind, String?>>()
         val delivered = mutableListOf<List<String>>()
         val opened = mutableListOf<String>()
+        val submitted = mutableListOf<Pair<String, Map<String, String>>>()
 
         override suspend fun sections(item: ForwardItem, from: String?): List<ForwardSection> {
             asked += item.kind to from
@@ -134,9 +136,18 @@ class ForwardPickerTest {
             }
         }
 
-        override fun open(targetId: String, item: ForwardItem): String? {
+        override suspend fun open(targetId: String, item: ForwardItem): ForwardStepOutcome {
             opened += targetId
-            return null
+            return ForwardStepOutcome.Handled
+        }
+
+        override suspend fun submit(
+            targetId: String,
+            item: ForwardItem,
+            answers: Map<String, String>,
+        ): ZillitResult<Unit> {
+            submitted += targetId to answers
+            return ZillitResult.Success(Unit)
         }
     }
 

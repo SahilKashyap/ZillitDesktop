@@ -315,6 +315,13 @@ internal fun ThreadPane(
         EditMessageDialog(state, onEvent)
         DeleteMessageDialog(state, onEvent)
         ForwardDialog(state, forwardPeople, onEvent)
+        // What a film tool asks for before it takes the line.
+        com.zillit.desktop.core.workspace.forward.ForwardFormDialog(
+            form = state.forwardForm,
+            busy = state.forwardSending,
+            onSubmit = { answers -> onEvent(ChatEvent.SubmitForwardForm(answers)) },
+            onDismiss = { onEvent(ChatEvent.CancelForwardForm) },
+        )
         ReadByDialog(state, selfId, resolveContact, onEvent)
         if (state.peerIsGroup) {
             GroupInfoDialogs(

@@ -12,9 +12,12 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.workspace.forward.ForwardForm
+import com.zillit.desktop.core.workspace.forward.ForwardItem
 import com.zillit.desktop.core.workspace.forward.ForwardPick
 import com.zillit.desktop.core.workspace.forward.ForwardReach
 import com.zillit.desktop.core.workspace.forward.ForwardSection
+import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
 import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -92,6 +95,15 @@ data class HomeFeedUiState(
      * the picker opens and the reach has answered.
      */
     val forwardSections: List<ForwardSection> = emptyList(),
+    /**
+     * The questions a film tool asked before it will take this post — a
+     * document's name and colour, a scene, a date. Null when nothing is
+     * being asked; [forwardingItem] is what the answers will be sent with.
+     */
+    val forwardForm: ForwardForm? = null,
+    val forwardingItem: ForwardItem? = null,
+    /** True while the form's answers are on the wire. */
+    val forwardSending: Boolean = false,
     /**
      * The web's selection mode, armed from a post's menu: a batch of posts
      * ticked for one action, with the composer replaced by a bar saying how
@@ -547,6 +559,12 @@ sealed interface HomeFeedEvent {
      * composer. The host takes over; the picker closes.
      */
     data class ForwardStepPicked(val targetId: String) : HomeFeedEvent
+
+    /** The tool form's Send, answers by field key. */
+    data class SubmitForwardForm(val answers: Map<String, String>) : HomeFeedEvent
+
+    /** The tool form's Cancel. */
+    data object CancelForwardForm : HomeFeedEvent
     data object CancelForward : HomeFeedEvent
 
     /** Who has read this post — or one reply of it — opens the receipts panel. */
@@ -780,6 +798,10 @@ class HomeFeedViewModel(
             is HomeFeedEvent.ForwardTo -> forwardTo(event.unitId)
             is HomeFeedEvent.ForwardToAll -> forwardToAll(event.targetIds)
             is HomeFeedEvent.ForwardStepPicked -> forwardStep(event.targetId)
+            is HomeFeedEvent.SubmitForwardForm -> submitForwardForm(event.answers)
+            HomeFeedEvent.CancelForwardForm -> setState {
+                copy(forwardForm = null, forwardingItem = null, forwardSending = false)
+            }
             HomeFeedEvent.CancelForward -> setState { copy(forwarding = null) }
             is HomeFeedEvent.ShowReadBy -> showReadBy(event.noticeId, event.commentId)
             HomeFeedEvent.ShowLibrary -> setState { copy(libraryOpen = true) }
@@ -1907,12 +1929,50 @@ class HomeFeedViewModel(
         else -> str(S.desktop_forwarded_to_n, sent)
     }
 
-    /** A destination that asks something first; the host owns the rest of it. */
+    /**
+     * A destination that asks something first.
+     *
+     * The host either takes over (the mailbox), refuses, or answers with the
+     * form that tool needs — which the board then draws, with the post held
+     * as [HomeFeedUiState.forwardingItem] for the Send.
+     */
     private fun forwardStep(targetId: String) {
         val notice = currentState.forwarding ?: return
+        val item = notice.asForwardItem()
         setState { copy(forwarding = null) }
-        val refusal = reach?.open(targetId, notice.asForwardItem())
-        if (refusal != null) setState { copy(error = refusal) }
+        val host = reach ?: return
+        launch {
+            when (val outcome = host.open(targetId, item)) {
+                ForwardStepOutcome.Handled -> Unit
+                is ForwardStepOutcome.Refused -> setState { copy(error = outcome.message) }
+                is ForwardStepOutcome.Asks -> setState {
+                    copy(forwardForm = outcome.form, forwardingItem = item)
+                }
+            }
+        }
+    }
+
+    /** The tool form's Send: the answers go out with the post they were asked for. */
+    private fun submitForwardForm(answers: Map<String, String>) {
+        val form = currentState.forwardForm ?: return
+        val item = currentState.forwardingItem ?: return
+        val host = reach ?: return
+        setState { copy(forwardSending = true) }
+        launch {
+            when (val answer = host.submit(form.targetId, item, answers)) {
+                is ZillitResult.Success -> setState {
+                    copy(
+                        forwardForm = null,
+                        forwardingItem = null,
+                        forwardSending = false,
+                        info = str(S.desktop_message_forwarded_success),
+                    )
+                }
+                is ZillitResult.Failure -> setState {
+                    copy(forwardSending = false, error = answer.error.localised())
+                }
+            }
+        }
     }
 
     /** Lists a post's file in the app-wide Uploads tray, with what its Cancel and Retry do. */

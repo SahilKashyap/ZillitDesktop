@@ -133,6 +133,71 @@ data class ForwardGroup(
 data class ForwardSection(val title: String, val entries: List<ForwardEntry>)
 
 /**
+ * What a destination wants to know before it will take the item.
+ *
+ * The web asks with a modal per tool — a document name and a colour for a
+ * D.O.D page, a scene and a page number for a script page, a date for a
+ * budget, "continuation or new?" before a report. They are all the same
+ * handful of questions, so they are described here and drawn once
+ * ([ForwardFormDialog]) rather than ported one dialog at a time.
+ */
+data class ForwardForm(
+    val targetId: String,
+    val title: String,
+    val fields: List<ForwardField>,
+    /** A line above the fields — what the tool will do with the answers. */
+    val note: String? = null,
+)
+
+/** One question on a [ForwardForm]. Answers come back as strings, keyed by [key]. */
+sealed interface ForwardField {
+    val key: String
+    val label: String
+    val required: Boolean
+
+    /** A line of words — a document's name, a scene or page number, an episode. */
+    data class Text(
+        override val key: String,
+        override val label: String,
+        override val required: Boolean = false,
+        val initial: String = "",
+        val hint: String? = null,
+    ) : ForwardField
+
+    /** A day, `yyyy-MM-dd` — a script's date, a budget's. */
+    data class Day(
+        override val key: String,
+        override val label: String,
+        override val required: Boolean = false,
+        val initial: String = "",
+    ) : ForwardField
+
+    /** One of a list — a page colour, a department, a folder that already exists. */
+    data class Choice(
+        override val key: String,
+        override val label: String,
+        val options: List<ForwardChoice>,
+        override val required: Boolean = false,
+        val initial: String = "",
+    ) : ForwardField
+}
+
+/** One option of a [ForwardField.Choice]; [swatch] is a `#RRGGBB` for a colour. */
+data class ForwardChoice(val value: String, val label: String, val swatch: String? = null)
+
+/** What a [ForwardStep]'s click led to. */
+sealed interface ForwardStepOutcome {
+    /** The host took it from here — the mailbox composer opened. */
+    data object Handled : ForwardStepOutcome
+
+    /** It cannot go there, and this is what to say. */
+    data class Refused(val message: String) : ForwardStepOutcome
+
+    /** It can go there once these are answered. */
+    data class Asks(val form: ForwardForm) : ForwardStepOutcome
+}
+
+/**
  * Everything a surface cannot reach on its own: other boards, the chat
  * halves, the mailbox, the film tools.
  *
@@ -154,8 +219,18 @@ interface ForwardReach {
     suspend fun deliver(targetIds: List<String>, item: ForwardItem): ZillitResult<Unit>
 
     /**
-     * A [ForwardStep] was clicked: the host opens that destination's own
-     * flow. Returns a refusal to show, or null when it took over.
+     * A [ForwardStep] was clicked. The host either takes over, refuses, or
+     * answers with the form that destination needs filled in.
+     *
+     * Suspending because some forms are built from the server's own lists —
+     * the D.O.D folders a page can join, the production's departments.
      */
-    fun open(targetId: String, item: ForwardItem): String?
+    suspend fun open(targetId: String, item: ForwardItem): ForwardStepOutcome
+
+    /** The form's Send: the answers, by field key. */
+    suspend fun submit(
+        targetId: String,
+        item: ForwardItem,
+        answers: Map<String, String>,
+    ): ZillitResult<Unit>
 }
