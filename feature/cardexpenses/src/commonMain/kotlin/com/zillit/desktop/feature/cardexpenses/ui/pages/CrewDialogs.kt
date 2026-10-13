@@ -28,24 +28,20 @@ import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CrewRules
 import com.zillit.desktop.feature.cardexpenses.domain.UploadHeadroom
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CrewEvent
-import com.zillit.desktop.feature.cardexpenses.ui.CrewOrigin
-import com.zillit.desktop.feature.cardexpenses.ui.CrewReceiptView
+import com.zillit.desktop.feature.cardexpenses.ui.ReceiptDetailSource
+import com.zillit.desktop.feature.cardexpenses.ui.ReceiptDetailState
 import com.zillit.desktop.feature.cardexpenses.ui.ReceiptEditDraft
-import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 
@@ -55,7 +51,6 @@ import com.zillit.desktop.feature.cardexpenses.ui.money
  */
 @Composable
 fun CrewDialogs(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    ReceiptDetailDialog(state, onEvent)
     ReceiptEditDialog(state, onEvent)
     DeleteReceiptDialog(state, onEvent)
     CrewRejectDialog(state, onEvent)
@@ -64,195 +59,42 @@ fun CrewDialogs(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     TopUpTrailDialog(state, onEvent)
 }
 
-// -- the read-only detail ------------------------------------------------------
+// -- the shared detail's footer -------------------------------------------------
 
 /**
- * Receipt Details (`ReceiptDetailModal.jsx`): the document, the figures, the
- * coding, the chain so far — History and Query in the footer, and Edit
- * Receipt (My Transactions) or Reject / Approve (the Approval Queue).
+ * What the shared receipt detail adds to its footer for a cardholder: Edit
+ * Receipt on My Transactions, Reject and Approve in the Approval Queue
+ * (`ReceiptDetailModal`'s `onEdit` / `actions` props). Query is the view's.
  */
-@Suppress("LongMethod") // One dialog, read top to bottom.
 @Composable
-private fun ReceiptDetailDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    val view = state.crew.detail
-    ZillitDialogShell(
-        title = str(S.ah_receipt_details_title),
-        visible = view != null,
-        onDismiss = { onEvent(CrewEvent.CloseDetail) },
-        icon = ZillitIcons.Receipt,
-        width = DETAIL_WIDTH,
-        actions = if (view != null) {
-            { DetailActions(state, view, onEvent) }
-        } else {
-            null
-        },
-    ) {
-        val open = view ?: return@ZillitDialogShell
-        val receipt = open.receipt
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            CrewStatusPill(receipt, unreconciled = open.origin == CrewOrigin.MyTransactions)
-            if (receipt.urgent) UrgentPill()
-        }
-        if (open.loading) {
-            CenteredNote(str(S.desktop_ce_inbox_loading_details))
-            return@ZillitDialogShell
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            ReceiptFilePane(receipt, onEvent, Modifier.width(MEDIA_PANE).heightIn(min = MEDIA_HEIGHT))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-            ) {
-                ReceiptFacts(state, receipt)
-                if (open.historyOpen) {
-                    ZillitDivider()
-                    CrewField(str(S.history), "")
-                    val trail = open.history
-                    if (trail == null) {
-                        CenteredNote(str(S.ah_loading))
-                    } else {
-                        CardHistoryTrail(entries = trail)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Suppress("LongMethod", "CyclomaticComplexMethod") // The detail's sections in the web's order.
-@Composable
-private fun ReceiptFacts(state: CardUiState, receipt: CardReceipt) {
-    val holder = state.people.firstOrNull { it.id == receipt.holderId }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        CrewField(str(S.ah_merchant), receipt.description.ifBlank { "—" }, Modifier.weight(1f))
-        CrewField(
-            str(S.amount),
-            if (receipt.amount != 0.0) money(receipt.amount, receipt.currency) else "—",
-            Modifier.weight(1f),
-            emphasised = true,
-        )
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        CrewField(str(S.date), date(receipt.date), Modifier.weight(1f))
-        CrewField(
-            str(S.desktop_card_card_holder),
-            listOfNotNull(holder?.name ?: "—", holder?.designation?.takeIf { it.isNotBlank() }).joinToString(" · "),
-            Modifier.weight(1f),
-        )
-    }
-    ZillitDivider()
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        CrewField(str(S.description), receipt.codeDescription?.ifBlank { null } ?: "—", Modifier.weight(1f))
-        CrewField(str(S.desktop_card_cost_code), receipt.nominalCode?.ifBlank { null } ?: "—", Modifier.weight(1f))
-        if (state.crew.isTelevision) {
-            CrewField(str(S.episode), receipt.episode?.ifBlank { null } ?: "—", Modifier.weight(1f))
-        }
-    }
-    if (!receipt.transactionId.isNullOrBlank()) {
-        ZillitDivider()
-        CrewField(
-            str(S.desktop_ce_inbox_linked_transaction),
-            listOfNotNull(
-                receipt.transactionMerchant ?: receipt.description,
-                receipt.transactionAmount?.let { money(it, receipt.currency) },
-                receipt.transactionCardLastFour?.let { "···· $it" },
-                receipt.transactionDate?.let { date(it) },
-            ).joinToString("  "),
-        )
-    }
-    if (receipt.approvals.isNotEmpty()) {
-        ZillitDivider()
-        CrewField(str(S.desktop_po_approval_progress), "")
-        receipt.approvals.forEach { approval ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitIcon(ZillitIcons.Check, tint = ZillitTheme.colors.success)
-                ZillitText(text = state.personName(approval.userId), style = ZillitTheme.typography.bodyMedium)
-                if (approval.tierNumber == 0) {
-                    ZillitStatusPill(str(S.dm_nom_table_override), tone = StatusTone.Escalated)
-                } else {
-                    ZillitText(
-                        text = str(S.desktop_level_n, approval.tierNumber),
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textSecondary,
-                    )
-                }
-            }
-        }
-    }
-    CrewField(str(S.txt_submitted), date(receipt.createdAt))
-    val lines = receipt.processing.lines.filterNot { it.blank }
-    if (lines.isNotEmpty()) {
-        ZillitDivider()
-        CrewField(str(S.ah_line_items), "")
-        lines.forEach { line ->
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitText(text = line.account.ifBlank { "—" }, style = ZillitTheme.typography.numeric)
-                ZillitText(
-                    text = line.description.ifBlank { "—" },
-                    style = ZillitTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitText(text = money(line.net, receipt.currency), style = ZillitTheme.typography.numeric)
-                ZillitText(text = money(line.tax, receipt.currency), style = ZillitTheme.typography.numeric)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailActions(state: CardUiState, view: CrewReceiptView, onEvent: (CardEvent) -> Unit) {
-    val receipt = view.receipt
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitButton(
-            text = str(S.history),
-            onClick = { onEvent(CrewEvent.ToggleDetailHistory) },
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Clock,
-        )
-        // Query is off on the Approval Queue (ZL-20913): an approver opens a
-        // receipt to approve or reject it.
-        if (view.origin == CrewOrigin.MyTransactions) {
+internal fun CrewReceiptActions(state: CardUiState, open: ReceiptDetailState, onEvent: (CardEvent) -> Unit) {
+    val receipt = open.detail.receipt
+    when (open.source) {
+        ReceiptDetailSource.CrewApproval -> {
             ZillitButton(
-                text = str(S.ah_query_label),
-                onClick = { onEvent(CardEvent.OpenQuery(receipt.id)) },
-                variant = ButtonVariant.Secondary,
+                text = str(S.reject),
+                onClick = { onEvent(CrewEvent.AskReject(receipt.id, receipt = true)) },
+                variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Chat,
+            )
+            ZillitButton(
+                text = str(if (state.crew.actionId == receipt.id) S.ah_run_detail_btn_approving else S.approve),
+                onClick = { onEvent(CrewEvent.ApproveReceipt(receipt.id)) },
+                size = ButtonSize.Small,
+                enabled = state.crew.actionId != receipt.id,
             )
         }
-        Spacer(Modifier.weight(1f))
-        when (view.origin) {
-            CrewOrigin.ApprovalQueue -> {
-                ZillitButton(
-                    text = str(S.reject),
-                    onClick = { onEvent(CrewEvent.AskReject(receipt.id, receipt = true)) },
-                    variant = ButtonVariant.Danger,
-                    size = ButtonSize.Small,
-                )
-                ZillitButton(
-                    text = str(if (state.crew.actionId == receipt.id) S.ah_run_detail_btn_approving else S.approve),
-                    onClick = { onEvent(CrewEvent.ApproveReceipt(receipt.id)) },
-                    size = ButtonSize.Small,
-                    enabled = state.crew.actionId != receipt.id,
-                )
-            }
 
-            CrewOrigin.MyTransactions -> if (!view.loading && CrewRules.canEdit(receipt)) {
-                ZillitButton(
-                    text = str(S.ah_edit_receipt),
-                    onClick = { onEvent(CrewEvent.OpenEdit(receipt.id)) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Edit,
-                )
-            }
+        ReceiptDetailSource.MyTransactions -> if (!open.loading && CrewRules.canEdit(receipt)) {
+            ZillitButton(
+                text = str(S.ah_edit_receipt),
+                onClick = { onEvent(CrewEvent.OpenEdit(receipt.id)) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Edit,
+            )
         }
+
+        else -> Unit
     }
 }
 
@@ -536,8 +378,6 @@ private fun DeleteReceiptDialog(state: CardUiState, onEvent: (CardEvent) -> Unit
     }
 }
 
-private val DETAIL_WIDTH = 1080.dp
 private val EDIT_WIDTH = 900.dp
-private val MEDIA_PANE = 320.dp
 private val EDIT_PANE = 260.dp
 private val MEDIA_HEIGHT = 320.dp

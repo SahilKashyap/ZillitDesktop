@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.bankrec.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.strings.S
@@ -69,6 +70,7 @@ class BankRecViewModel(
     internal val importActions = ImportActions(this, statements)
     internal val workspaceActions = WorkspaceActions(this)
     internal val matchActions = MatchActions(this)
+    internal val unmatchActions = UnmatchActions(this)
     internal val quickEntryActions = QuickEntryActions(this)
     internal val exceptionActions = ExceptionActions(this)
     internal val fraudActions = FraudActions(this)
@@ -123,6 +125,7 @@ class BankRecViewModel(
             importActions.onEvent(event) ||
             workspaceActions.onEvent(event) ||
             matchActions.onEvent(event) ||
+            unmatchActions.onEvent(event) ||
             quickEntryActions.onEvent(event) ||
             exceptionActions.onEvent(event) ||
             fraudActions.onEvent(event) ||
@@ -347,3 +350,6 @@ class BankRecViewModel(
         }
     }
 }
+
+/** A write's own message, translated, or null when the server named none and the local words stand. */
+internal fun String?.serverText(): String? = this?.takeIf { it.isNotBlank() }?.localisedMessage()

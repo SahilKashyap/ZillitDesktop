@@ -209,7 +209,25 @@ data class TimecardMeal(val start: Long?, val end: Long?)
  * View only away from the owner's card: an approver should not be one stray
  * click from removing the document their sign-off rests on.
  */
-data class TimecardAttachment(val name: String?, val url: String?)
+data class TimecardAttachment(
+    val name: String?,
+    val url: String?,
+    /**
+     * The stored shape — the web's `AttachmentModel` `{media, bucket, region}`,
+     * which the owner's card writes. The file is an S3 object that has to be
+     * presigned before anything can open it; [url] is the older shape, a link
+     * that opens as it is.
+     */
+    val media: String? = null,
+    val bucket: String? = null,
+    val region: String? = null,
+) {
+    /** The attachment names a stored file, so it can be presigned. */
+    val isStored: Boolean get() = !media.isNullOrBlank() && !bucket.isNullOrBlank() && !region.isNullOrBlank()
+
+    /** Something can be opened: a link as it stands, or a stored file to presign. */
+    val isOpenable: Boolean get() = !url.isNullOrBlank() || isStored
+}
 
 /**
  * A note left on the week. Written by the crew member on their own card and
@@ -237,6 +255,8 @@ data class PayLine(
     val currency: String? = null,
     val nominalCode: String? = null,
     val isRental: Boolean = false,
+    /** An extra line's kind — `upgrade` or `extra`; null on anything else. */
+    val kind: String? = null,
 ) {
     val isBasic: Boolean get() = identifier.equals(BASIC, ignoreCase = true)
 

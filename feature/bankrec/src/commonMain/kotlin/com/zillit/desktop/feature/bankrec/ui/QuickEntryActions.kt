@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.bankrec.ui
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
+import com.zillit.desktop.feature.bankrec.domain.BankTransaction
+import com.zillit.desktop.feature.bankrec.domain.FraudStatus
 import com.zillit.desktop.feature.bankrec.domain.FxPosting
 import com.zillit.desktop.feature.bankrec.domain.QuickAddForm
 import com.zillit.desktop.feature.bankrec.domain.QuickEntryType
@@ -14,9 +16,11 @@ import kotlin.math.abs
  * The drawer beside the workspace: add a line to the ledger and match it in
  * one step, or post a line's FX variance.
  *
- * "Add & Match" posts through the line's **exception** — a bank line the engine
- * could not place carries one, and the quick add is how it is cleared — so a
- * line with no exception cannot be added from here, as on the web.
+ * "Add & Match" posts the line through its **exception** when it has one, else
+ * by its own transaction id (a Suggested line has no exception): the service
+ * resolves either on the same route, accepts the fraud alert on a fraud line,
+ * and refuses a line that is already matched. So it needs only a line picked
+ * with Quick Add, and an amount.
  */
 internal class QuickEntryActions(private val vm: BankRecViewModel) {
 
@@ -98,20 +102,17 @@ internal class QuickEntryActions(private val vm: BankRecViewModel) {
         val txn = workspace.transactions.firstOrNull { it.id == entry.transactionId } ?: return
         val form = entry.form
         if (entry.adding) return
-        val exceptionId = txn.exceptionId
-        val refusal = when {
-            exceptionId.isBlank() -> str(S.desktop_br_no_exception_to_post)
-            else -> lockProblem(form.effectiveDate, vm.ui.lookups.lockedThrough)
-                ?: str(S.desktop_br_enter_amount).takeIf { form.amountValue == null }
-        }
+        val postId = txn.exceptionId.ifBlank { txn.id }
+        val refusal = lockProblem(form.effectiveDate, vm.ui.lookups.lockedThrough)
+            ?: str(S.desktop_br_enter_amount).takeIf { form.amountValue == null }
         if (refusal != null) return vm.refuse(refusal)
         edit { copy(adding = true) }
-        vm.runResult({ vm.repo.quickAddException(exceptionId, form, fromWorkspace = true) }, {
+        vm.runResult({ vm.repo.quickAddException(postId, form, fromWorkspace = true) }, {
             vm.update {
                 copy(
                     workspace = workspace.copy(
                         transactions = workspace.transactions.map {
-                            if (it.id == txn.id) it.copy(status = TxnStatus.Matched) else it
+                            if (it.id == txn.id) it.matchedByQuickAdd() else it
                         },
                         quickEntry = workspace.quickEntry.copy(
                             adding = false,
@@ -171,6 +172,16 @@ internal class QuickEntryActions(private val vm: BankRecViewModel) {
         const val POSTED_MILLIS = 1_500L
     }
 }
+
+/**
+ * The line as it reads once a quick add has matched it. The service accepts a
+ * fraud alert on the line too, so the red bar goes with the suggestion.
+ */
+private fun BankTransaction.matchedByQuickAdd(): BankTransaction = copy(
+    status = TxnStatus.Matched,
+    matchConfidence = null,
+    fraudStatus = if (fraudType != null) FraudStatus.Accepted else fraudStatus,
+)
 
 /** An amount as a form field holds it: `1234.5`, never `1.2345E3`. */
 internal fun amountText(value: Double): String {

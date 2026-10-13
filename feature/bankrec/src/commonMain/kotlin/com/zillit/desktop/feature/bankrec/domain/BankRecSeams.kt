@@ -23,8 +23,6 @@ interface StatementFiles {
     companion object {
         /** The web's `accept` list, by extension — an OS reports `.ofx` and `.qif` as anything. */
         val EXTENSIONS: Set<String> = setOf("csv", "ofx", "qfx", "qif", "mt940", "sta", "940", "pdf")
-
-        const val MAX_BYTES: Long = 20L * 1024 * 1024
     }
 }
 

@@ -27,6 +27,7 @@ import com.zillit.desktop.feature.bankrec.domain.ProjectRates
 import com.zillit.desktop.feature.bankrec.domain.QuickAddForm
 import com.zillit.desktop.feature.bankrec.domain.QuickEntryType
 import com.zillit.desktop.feature.bankrec.domain.RulesSettings
+import com.zillit.desktop.feature.bankrec.domain.ServerCounts
 import com.zillit.desktop.feature.bankrec.domain.TaxOption
 import com.zillit.desktop.feature.bankrec.domain.WorkspaceFilter
 
@@ -118,6 +119,12 @@ enum class ImportStep(private val labelKey: String) {
 /** A suggested match waiting for its confirmation. */
 data class MatchProposal(val transactionId: String, val invoiceId: String)
 
+/**
+ * Bank lines waiting on the Unreconcile confirmation — by id, because the rows
+ * are re-read underneath it and the dialog resolves them afresh each time.
+ */
+data class UnmatchRequest(val ids: List<String>, val submitting: Boolean = false)
+
 /** The sign-off dialog. */
 data class SignOffState(val note: String = "", val submitting: Boolean = false)
 
@@ -153,6 +160,8 @@ data class WorkspaceState(
     val ledger: List<LedgerEntry> = emptyList(),
     /** The ledger balance from the latest workspace read, which is fresher than the period's. */
     val closingZillit: Double? = null,
+    /** The tab counts as the backend computed them; null tallies the rows instead. */
+    val counts: ServerCounts? = null,
     val filter: WorkspaceFilter = WorkspaceFilter.All,
     val selectedId: String? = null,
     /** A ledger row lit for a moment after "View" — scrolled to and highlighted. */
@@ -167,6 +176,17 @@ data class WorkspaceState(
     val manualMatchId: String? = null,
     val manualMatchEntryId: String? = null,
     val manualMatching: Boolean = false,
+    /** The Manual Match list's search. Set on open only, so Back from the confirm step keeps it. */
+    val manualMatchQuery: String = "",
+    /**
+     * Unreconcile mode: a view over the panels, not a filter — both show matched
+     * rows only, the pills are off, and Done lands back on the user's own filter.
+     * It stays on after each unreconcile until Done.
+     */
+    val unreconcile: Boolean = false,
+    /** The matched lines ticked for a bulk Unreconcile. */
+    val unmatchTicked: Set<String> = emptySet(),
+    val unmatch: UnmatchRequest? = null,
     val signOff: SignOffState? = null,
 )
 
@@ -378,8 +398,8 @@ data class BankRecUiState(
     val dialogOpen: Boolean
         get() = deleting != null || periodDetail != null || exportPdf != null || import.open ||
             workspace.proposal != null || workspace.manualMatchId != null || workspace.signOff != null ||
-            exceptionsPage.quickAdd != null || fraudPage.audit != null || fxPage.post != null ||
-            portal.draft != null
+            workspace.unmatch != null || exceptionsPage.quickAdd != null || fraudPage.audit != null ||
+            fxPage.post != null || portal.draft != null
 }
 
 /**

@@ -130,7 +130,8 @@ private fun AuditFilters.accepts(entry: FraudAuditEntry): Boolean =
 private val AuditSort.comparator: Comparator<FraudAuditEntry>
     get() = when (this) {
         AuditSort.CreatedAt -> compareBy { it.createdAtMillis ?: 0L }
-        AuditSort.Action -> compareBy { AuditAction.labelFor(it.action) }
+        // By the raw action, as the web does — not the label, whose order is the language's.
+        AuditSort.Action -> compareBy { it.action }
         AuditSort.Risk -> compareBy { it.riskScore ?: 0 }
         AuditSort.Amount -> compareBy { it.transaction?.debit ?: 0.0 }
         AuditSort.Vendor -> compareBy { it.transaction?.vendorName.orEmpty().lowercase() }

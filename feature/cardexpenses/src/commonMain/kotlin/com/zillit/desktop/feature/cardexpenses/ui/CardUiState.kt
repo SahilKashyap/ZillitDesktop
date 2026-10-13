@@ -129,6 +129,11 @@ data class CardUiState(
     val insights: InsightsState = InsightsState(),
     /** The cardholder pages' own state; see [CrewState]. */
     val crew: CrewState = CrewState(),
+    /**
+     * Each card's currency by id — the web's `CardsProvider` catalogue, kept for the
+     * whole module so a row that names its card but no currency still prints one.
+     */
+    val cardCurrencies: Map<String, String> = emptyMap(),
 ) {
     /** This viewer's own card, for the cardholder screens. */
     val myCard: ExpenseCard?
@@ -301,7 +306,7 @@ data class NewCardDraft(
     val bsControlCode: String = "",
     val justification: String = "",
 ) {
-    val limitValue: Double get() = proposedLimit.trim().toDoubleOrNull() ?: 0.0
+    val limitValue: Double get() = proposedLimit.replace(",", "").trim().toDoubleOrNull() ?: 0.0
 
     /**
      * Why this cannot be submitted yet, or null.
@@ -346,7 +351,7 @@ data class CardEditDraft(
     val bsControlCode: String,
     val justification: String,
 ) {
-    val limitValue: Double get() = limit.trim().toDoubleOrNull() ?: 0.0
+    val limitValue: Double get() = limit.replace(",", "").trim().toDoubleOrNull() ?: 0.0
 
     /** The balance the server will be told to hold, after the limit change. */
     val newBalance: Double get() = (currentBalance + (limitValue - currentLimit)).coerceAtLeast(0.0)

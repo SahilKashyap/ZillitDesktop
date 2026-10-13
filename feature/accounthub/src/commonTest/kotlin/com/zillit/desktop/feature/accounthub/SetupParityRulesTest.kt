@@ -12,11 +12,15 @@ import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.data.settingsDocument
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankAccounts
+import com.zillit.desktop.feature.accounthub.domain.CoaCostType
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.Company
+import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
+import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
+import com.zillit.desktop.feature.accounthub.domain.JournalDescriptionFormat
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.domain.LocalIds
 import com.zillit.desktop.feature.accounthub.domain.PayDayKind
@@ -26,6 +30,7 @@ import com.zillit.desktop.feature.accounthub.domain.PayRuleTemplate
 import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccounts
+import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.RunAuthorisationTier
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.SchedulePhase
@@ -34,6 +39,7 @@ import com.zillit.desktop.feature.accounthub.ui.DateRangeText
 import com.zillit.desktop.feature.accounthub.ui.PayRuleEditor
 import com.zillit.desktop.feature.accounthub.ui.ScheduleForm
 import com.zillit.desktop.feature.accounthub.ui.SetupModal
+import com.zillit.desktop.feature.accounthub.ui.SetupModalSection
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
 import com.zillit.desktop.feature.accounthub.ui.SetupState
 import com.zillit.desktop.feature.accounthub.ui.SectionEdit
@@ -308,6 +314,111 @@ class SetupParityRulesTest {
         )
 
         assertEquals(listOf(renamed, created), sent)
+    }
+
+    @Test
+    fun `a saved payroll account taken off the grid or unticked is deactivated first`() {
+        val kept = PayrollAccountRow(id = "coa-1", code = "6000", name = "Wages")
+        val dropped = PayrollAccountRow(id = "coa-2", code = "6010", name = "NI")
+        val unticked = PayrollAccountRow(id = "coa-3", code = "6020", name = "Pension")
+        val created = PayrollAccountRow(code = "6030", name = "Bonus")
+
+        val sent = PayrollAccounts.outgoing(
+            rows = listOf(kept, unticked.copy(active = false), created),
+            seeds = mapOf("coa-1" to kept, "coa-2" to dropped, "coa-3" to unticked),
+        )
+
+        assertEquals(
+            listOf(
+                PayrollAccountRow(id = "coa-2", delete = true),
+                PayrollAccountRow(id = "coa-3", delete = true),
+                created,
+            ),
+            sent,
+            "deletes lead; the unticked row is a delete, not an update with active=false",
+        )
+    }
+
+    @Test
+    fun `a changed cost type or posting flag on a saved payroll account is sent`() {
+        val seeded = PayrollAccountRow(id = "coa-1", code = "6000", name = "Wages")
+
+        val sent = PayrollAccounts.outgoing(
+            rows = listOf(seeded.copy(costType = CoaCostType.Liability, posting = false)),
+            seeds = mapOf("coa-1" to seeded),
+        )
+
+        assertEquals(listOf(seeded.copy(costType = CoaCostType.Liability, posting = false)), sent)
+    }
+
+    // -- tax rates, currencies, modal chips -------------------------------------------------
+
+    @Test
+    fun `a tax rate keeps its digits as the web's toTaxFloat does`() {
+        assertEquals(20.0, TaxType.toFloat("20abc"))
+        assertEquals(20.0, TaxType.toFloat("20%"))
+        assertEquals(17.5, TaxType.toFloat(" 17.5 "))
+        assertEquals(20.0, TaxType.toFloat("20-5"), "the longest leading number, as parseFloat reads it")
+        assertNull(TaxType.toFloat(""))
+        assertNull(TaxType.toFloat("abc"))
+        assertFalse(TaxType.isRateOutOfRange("20abc"), "stripped to 20, in range")
+        assertTrue(TaxType.isRateOutOfRange("120abc"), "the 0-100 guard still holds")
+        assertTrue(TaxType.isRateOutOfRange("-1"))
+        assertFalse(TaxType.isRateOutOfRange("abc"), "no number is null on the wire, not a refusal")
+    }
+
+    @Test
+    fun `catalogue tax rows are re-read from the live catalogue at save, custom rows are not`() {
+        val live = TaxType(type = "VAT", identifier = "GB_standard", label = "Standard rate", value = "20")
+        val catalogue = listOf(CountryTaxes(country = "United Kingdom", countryCode = "GB", taxes = listOf(live)))
+        val stored = TaxType(
+            type = "vat", identifier = "GB_standard", label = "Standard", value = "17.5", country = "United Kingdom",
+            isRecoverable = true, nominal = "2200",
+        )
+        val custom = TaxType(type = "WHT", identifier = "custom_1", label = "Levy", value = "5")
+
+        val sent = TaxType.refreshed(listOf(stored, custom), catalogue)
+
+        assertEquals("VAT", sent[0].type)
+        assertEquals("Standard rate", sent[0].label)
+        assertEquals("20", sent[0].value)
+        assertTrue(sent[0].isRecoverable && sent[0].nominal == "2200", "the production's own choices are kept")
+        assertEquals(custom, sent[1])
+        assertEquals(listOf(stored, custom), TaxType.refreshed(listOf(stored, custom), emptyList()), "not loaded")
+    }
+
+    @Test
+    fun `code-only currencies are filled from the catalogue, stored text is kept`() {
+        val catalogue = listOf(
+            ProjectCurrency(code = "GBP", name = "Pound Sterling", symbol = "£"),
+            ProjectCurrency(code = "USD", name = "US Dollar", symbol = "$"),
+        )
+        val settings = CurrencySettings(
+            currencies = listOf(
+                ProjectCurrency(code = "GBP"),
+                ProjectCurrency(code = "USD", name = "Dollar (mine)", symbol = "US$", rate = 1.27),
+                ProjectCurrency(code = "XXX"),
+            ),
+            defaultCode = "GBP",
+        )
+
+        val sent = settings.enrichedFrom(catalogue).currencies
+
+        assertEquals("Pound Sterling" to "£", sent[0].name to sent[0].symbol)
+        assertEquals("Dollar (mine)" to "US$", sent[1].name to sent[1].symbol)
+        assertEquals("" to "", sent[2].name to sent[2].symbol, "not in the catalogue: nothing to fill")
+    }
+
+    @Test
+    fun `a modal nav chip is the count, a letter, or a dash`() {
+        assertEquals("3", SetupModalSection("a", "A", count = 3).chip)
+        assertEquals("B", SetupModalSection("a", "A", letter = "B").chip)
+        assertEquals("—", SetupModalSection("a", "A").chip)
+    }
+
+    @Test
+    fun `the title journal sample is cased as the web shows it`() {
+        assertEquals("Week 22-28 Jun 2026 Jane Smith Ot 1.5x", JournalDescriptionFormat.Title.sample)
     }
 
     // -- load tracking, routes and live refresh ------------------------------------------

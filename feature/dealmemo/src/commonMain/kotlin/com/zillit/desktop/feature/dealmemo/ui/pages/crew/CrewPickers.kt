@@ -20,6 +20,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.dealmemo.domain.preview.CrewMissing
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealAddress
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealCountry
 import com.zillit.desktop.feature.dealmemo.ui.components.DmSelectField
@@ -102,7 +103,8 @@ private fun Monogram(code: String) {
  * `AddressFields`: line 1 and line 2 across, city beside county, postcode
  * beside the country picker, each under its own label. An emptied box stores
  * null, never `""`, so a typed-then-deleted line still equals an untouched
- * one; the country is stored as its name.
+ * one; the country is stored as its name. [missing] reds whichever of line 1,
+ * city and postcode is empty — the three a marked address needs, no others.
  */
 @Composable
 internal fun AddressBlock(
@@ -111,6 +113,7 @@ internal fun AddressBlock(
     countries: List<DealCountry>,
     onChange: (DealAddress) -> Unit,
     required: Boolean = false,
+    missing: Boolean = false,
 ) {
     Column {
         RowLabel(label, required)
@@ -120,6 +123,7 @@ internal fun AddressBlock(
                     str(S.dm_step2_address_line1),
                     "12 Baker Street",
                     address.line1,
+                    missing = missing && address.line1.isNullOrBlank(),
                 ) { onChange(address.copy(line1 = it)) }
             }
             wide {
@@ -127,7 +131,14 @@ internal fun AddressBlock(
                     onChange(address.copy(line2 = it))
                 }
             }
-            half { AddressLine(str(S.city), "London", address.city) { onChange(address.copy(city = it)) } }
+            half {
+                AddressLine(
+                    str(S.city),
+                    "London",
+                    address.city,
+                    missing = missing && address.city.isNullOrBlank(),
+                ) { onChange(address.copy(city = it)) }
+            }
             half {
                 AddressLine(
                     str(S.dm_step2_address_state),
@@ -136,9 +147,13 @@ internal fun AddressBlock(
                 ) { onChange(address.copy(state = it)) }
             }
             half {
-                AddressLine(str(S.desktop_dm_postal_code_zip), "NW1 6XE", address.postalCode, mono = true) {
-                    onChange(address.copy(postalCode = it))
-                }
+                AddressLine(
+                    str(S.desktop_dm_postal_code_zip),
+                    "NW1 6XE",
+                    address.postalCode,
+                    mono = true,
+                    missing = missing && address.postalCode.isNullOrBlank(),
+                ) { onChange(address.copy(postalCode = it)) }
             }
             half {
                 Column {
@@ -164,6 +179,7 @@ private fun AddressLine(
     placeholder: String,
     value: String?,
     mono: Boolean = false,
+    missing: Boolean = false,
     onChange: (String?) -> Unit,
 ) {
     Column {
@@ -173,7 +189,9 @@ private fun AddressLine(
             onValueChange = { onChange(it.ifEmpty { null }) },
             placeholder = placeholder,
             mono = mono,
+            missing = missing,
         )
+        if (missing) InlineError(CrewMissing.REQUIRED)
     }
 }
 
@@ -199,6 +217,7 @@ internal fun PhoneRow(
     onBlur: () -> Unit,
     error: String?,
     required: Boolean = false,
+    missing: String? = null,
 ) {
     val iso = isoFromStoredCode(countries, storedCode)
     val trigger = when (mode) {
@@ -232,10 +251,11 @@ internal fun PhoneRow(
                 placeholder = "7700 900000",
                 modifier = Modifier.weight(1f),
                 error = error != null,
+                missing = error == null && missing != null,
                 onBlur = onBlur,
             )
         }
-        InlineError(error)
+        InlineError(error ?: missing)
     }
 }
 

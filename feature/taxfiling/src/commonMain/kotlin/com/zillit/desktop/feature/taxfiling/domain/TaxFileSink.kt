@@ -38,9 +38,20 @@ fun ledgerFileName(periodKey: String, stamp: String): String {
     return if (suffix.isBlank()) "vat-ledger_$key.xlsx" else "vat-ledger_${key}_$suffix.xlsx"
 }
 
-/** `tax-filing-zillit-films-ltd-123456789.json` — the data-portability export's name. */
+/**
+ * `tax-filing-zillit-films-ltd-123456789.json` — the data-portability export's name.
+ *
+ * The number is used as the web uses it, as stored; only what a file name
+ * cannot hold (path separators, `: * ? " < > |` and control characters) is
+ * dropped, so a number from the server cannot become a path.
+ */
 fun exportFileName(registration: TaxRegistration): String {
     val company = TaxFormat.slug(registration.companyName.ifBlank { "company" })
-    val number = registration.registrationNumber.ifBlank { registration.id }.filter { it.isLetterOrDigit() }
+    val number = fileNameSafe(registration.registrationNumber.ifBlank { registration.id }).ifBlank { "registration" }
     return "tax-filing-$company-$number.json"
 }
+
+private val UNSAFE_IN_FILE_NAMES = setOf('/', '\\', ':', '*', '?', '"', '<', '>', '|')
+
+private fun fileNameSafe(text: String): String =
+    text.filterNot { it in UNSAFE_IN_FILE_NAMES || it.isISOControl() }.trim().trimEnd('.')

@@ -13,6 +13,8 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
+import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
+import com.zillit.desktop.feature.cashexpenses.domain.CashCurrency
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
@@ -140,6 +142,25 @@ class BatchWorkRenderTest {
             // The pipeline switcher above says the same; the page's own filter is the last.
             onAllNodesWithText("Out of Pocket").onLast().performClick()
             onAllNodesWithText("PC").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun `the post and ledger and history totals convert into the default currency`() {
+        val dollars = batch(BatchStatus.Posted, id = "batch-2").copy(currency = "USD")
+        val currencies = CashCurrencies(
+            currencies = listOf(CashCurrency("GBP", "£"), CashCurrency("USD", "$")),
+            defaultCode = "GBP",
+            rates = mapOf("USD" to 1.25),
+        )
+        // 120 GBP + 120 USD at 1.25 USD to the pound is 216.00 GBP, not 240.00.
+        for (destination in listOf(CashDestination.PostLedger, CashDestination.History)) {
+            val state = state(destination, batch(BatchStatus.Posted), dollars).copy(currencies = currencies)
+            render(state) {
+                // History repeats it on its petty cash tile, so more than one tile may say it.
+                assertTrue(onAllNodesWithText(state.formatMoney(216.0, "GBP")).fetchSemanticsNodes().isNotEmpty())
+                onAllNodesWithText(state.formatMoney(240.0, "GBP")).assertCountEquals(0)
+            }
         }
     }
 

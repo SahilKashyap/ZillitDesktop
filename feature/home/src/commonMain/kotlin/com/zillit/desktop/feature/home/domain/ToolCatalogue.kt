@@ -195,6 +195,11 @@ object ToolCatalogue {
             (ZillitToolIcons.Wardrobe to WorkspaceRoute.Tool("/film-tools/costume-set-sync")),
         "tasks_tool" to
             (ZillitToolIcons.Tasks to WorkspaceRoute.Tool("/film-tools/tasks")),
+        // Talent Deals — executed talent contracts; its own tool since 2026-10-08, before
+        // that a Deal Memo tab (web `/film-tools/talent-deals`). The Deal Memo artwork is
+        // the nearest family: there is no talent glyph of its own on either phone.
+        "talent_deals_tool" to
+            (ZillitToolIcons.DealMemo to WorkspaceRoute.Tool("/film-tools/talent-deals")),
         // Select Stills — stills approval. Its own icon is the designsystem's
         // picture frame: there is no still-camera tool glyph, and the
         // camcorder one means video everywhere else in the app.

@@ -10,11 +10,14 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.feature.payroll.ui.components.AdjustmentsDialog
 import com.zillit.desktop.feature.payroll.ui.components.OverrideDialog
+import com.zillit.desktop.feature.payroll.ui.components.TimecardNotesDialog
+import com.zillit.desktop.feature.payroll.ui.components.TimecardViewDialog
 import com.zillit.desktop.feature.payroll.ui.history.HistoryPage
 import com.zillit.desktop.feature.payroll.ui.landing.PayrollLandingPage
 import com.zillit.desktop.feature.payroll.ui.processing.OutstandingDetailDialog
 import com.zillit.desktop.feature.payroll.ui.processing.ProcessingExportDialog
 import com.zillit.desktop.feature.payroll.ui.processing.ProcessingPage
+import com.zillit.desktop.feature.payroll.ui.processing.SendToRunDialog
 import com.zillit.desktop.feature.payroll.ui.producer.ProducerBoardPage
 import com.zillit.desktop.feature.payroll.ui.producer.ProductionReportPage
 import com.zillit.desktop.feature.payroll.ui.run.JournalAlertDialog
@@ -46,8 +49,13 @@ fun PayrollScreen(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, modifi
         JournalPostDialog(state, onEvent)
         ProcessingExportDialog(state, onEvent)
         OutstandingDetailDialog(state, onEvent)
+        SendToRunDialog(state, onEvent)
         OverrideDialog(state, onEvent)
         AdjustmentsDialog(state, onEvent)
+        // After the dialogs they are opened from: the week lands over the
+        // outstanding weeks, and its Notes over the week.
+        TimecardViewDialog(state, onEvent)
+        TimecardNotesDialog(state, onEvent)
         ZillitToast(
             message = state.notice,
             onDismiss = { onEvent(PayrollEvent.ClearNotice) },

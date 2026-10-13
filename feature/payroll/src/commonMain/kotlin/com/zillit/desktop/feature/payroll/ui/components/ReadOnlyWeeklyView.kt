@@ -26,24 +26,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.SummaryCard
 import com.zillit.desktop.feature.payroll.domain.SummaryTone
+import com.zillit.desktop.feature.payroll.domain.TimecardAttachment
 import com.zillit.desktop.feature.payroll.domain.WeekRow
 import com.zillit.desktop.feature.payroll.domain.WeekView
 
@@ -56,13 +53,15 @@ import com.zillit.desktop.feature.payroll.domain.WeekView
  *
  * [dayCellExtra] is the one seam a host may fill — Production Report Payroll
  * puts its per-day fill control under the date there. [holidayPay] is the
- * accrual the host resolved, if it could; zero omits the card.
+ * accrual the host resolved, if it could; zero omits the card. [onOpenInvoice]
+ * opens the attached invoice — the host presigns a stored one.
  */
 @Composable
 fun ReadOnlyWeeklyView(
     timecard: PayrollTimecard?,
     loading: Boolean,
     emptyMessage: String,
+    onOpenInvoice: (TimecardAttachment) -> Unit,
     modifier: Modifier = Modifier,
     holidayPay: Double = 0.0,
     dayCellExtra: (@Composable (WeekRow) -> Unit)? = null,
@@ -79,7 +78,7 @@ fun ReadOnlyWeeklyView(
 
         else -> Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             WeekSummaryStrip(WeekView.summary(timecard, holidayPay))
-            InvoiceButton(timecard)
+            InvoiceButton(timecard, onOpenInvoice)
             WeekTableCard(timecard, dayCellExtra, Modifier.weight(1f))
         }
     }
@@ -209,17 +208,9 @@ private fun WeekTableCard(
  * rests on.
  */
 @Composable
-private fun InvoiceButton(timecard: PayrollTimecard) {
+private fun InvoiceButton(timecard: PayrollTimecard, onOpen: (TimecardAttachment) -> Unit) {
     val attachment = timecard.attachment ?: return
-    val url = attachment.url ?: return
-    val uriHandler = LocalUriHandler.current
-    ZillitButton(
-        text = attachment.name?.takeIf { it.isNotBlank() } ?: str(S.desktop_payroll_view_invoice),
-        onClick = { runCatching { uriHandler.openUri(url) } },
-        variant = ButtonVariant.Tertiary,
-        size = ButtonSize.Small,
-        leadingIcon = ZillitIcons.Paperclip,
-    )
+    InvoiceViewButton(attachment, onOpen, variant = ButtonVariant.Tertiary)
 }
 
 @Composable

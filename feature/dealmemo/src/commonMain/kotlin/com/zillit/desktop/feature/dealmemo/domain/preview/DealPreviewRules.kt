@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
 import com.zillit.desktop.feature.dealmemo.domain.AmendmentAck
+import com.zillit.desktop.feature.dealmemo.domain.ApprovalLevelPrompt
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealMemoMetadata
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
@@ -76,6 +77,14 @@ data class DealPreviewRules(
         get() = !embedded && chain.nodes.isNotEmpty() && status == DealStatus.AwaitingApproval.wire
 
     val showApproverActions: Boolean get() = canApproverSign
+
+    /**
+     * No level-1 approver on this deal's chain: posting users get "No approver
+     * configured for this department" and Set Approval Level. The shared test
+     * lives in [ApprovalLevelPrompt]; it waits on the metadata having answered.
+     */
+    val showSetApprovalLevel: Boolean
+        get() = ApprovalLevelPrompt.shouldShow(status, embedded, viewer.canPost, metadata, deal.departmentId)
 
     val showEditCluster: Boolean get() = !embedded && (viewer.canPost || isCreator)
 

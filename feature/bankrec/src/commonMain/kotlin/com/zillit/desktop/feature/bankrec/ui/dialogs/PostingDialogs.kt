@@ -58,7 +58,7 @@ import com.zillit.desktop.feature.bankrec.ui.pages.icon
  * Posting a bank line the ledger has no entry for — the web's Quick Add.
  *
  * Seeded from the line: its date, its reference as the invoice number, the
- * type's own guidance as the description and the amount it moved. The
+ * type's fixed English hint as the description and the amount it moved. The
  * effective date may not fall on or before the cost report's lock.
  */
 @Suppress("LongMethod") // A form: the web's Quick Add fields, in its order.

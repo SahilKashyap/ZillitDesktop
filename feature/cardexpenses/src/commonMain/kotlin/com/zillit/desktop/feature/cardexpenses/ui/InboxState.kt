@@ -38,7 +38,9 @@ data class InboxState(
 )
 
 /**
- * The receipt detail over the inbox (`ReceiptInboxPage.jsx:324-336, 733-746`).
+ * The shared receipt detail (`ReceiptDetailModal.jsx`), open over whichever
+ * page raised it — the inbox (`ReceiptInboxPage.jsx:324-336, 733-746`), a
+ * card's receipts, either approval queue or My Transactions.
  *
  * Opened on the slim row with [loading] while `/receipts/:id/detail` is in
  * flight; the answer replaces it only if this receipt is still the one open,
@@ -52,7 +54,26 @@ data class ReceiptDetailState(
     val media: MediaState = MediaState(),
     /** The trail, read only when History is pressed. */
     val history: HistoryState? = null,
+    /** The page that opened it: the title badge, Query and the footer's buttons follow it. */
+    val source: ReceiptDetailSource = ReceiptDetailSource.Inbox,
 )
+
+/**
+ * Who opened the shared receipt detail. The view is read-only for everyone;
+ * what differs is the title badge (`reconciliationStatus`), whether Query is
+ * offered (`allowQuery`) and which action buttons the opener hands in.
+ */
+enum class ReceiptDetailSource(val allowQuery: Boolean = true) {
+    Inbox,
+
+    /** A receipt row inside a card's detail page, for any viewer. */
+    Card,
+    MyTransactions,
+
+    /** Query is an accountant's console action, not an approver's (ZL-20913). */
+    ApprovalQueue(allowQuery = false),
+    CrewApproval(allowQuery = false),
+}
 
 /** A document being fetched for the inline preview. */
 data class MediaState(
@@ -104,6 +125,19 @@ data class ImportState(
     val importedCurrency: String = "",
     val projectCurrencies: CardCurrencies = CardCurrencies(),
 ) {
+    /**
+     * What leaving the page drops: the statement in hand and its review, which are the web page's
+     * component state (`ImportStatementPage.jsx:44-47`). The catalogue of currencies stays.
+     */
+    fun leaving(): ImportState = copy(
+        pendingFile = null,
+        currency = currencies.resolve(""),
+        result = null,
+        selected = emptySet(),
+        submission = null,
+        importedCurrency = "",
+    )
+
     /** Hidden when there is nothing to choose — the server's project default is right then. */
     val showCurrency: Boolean get() = currenciesLoading || currencies.codes.isNotEmpty()
 

@@ -134,6 +134,7 @@ private fun SplitPanels(state: BankRecUiState, view: WorkspaceView, onEvent: (Ba
                         view.period?.let(BankRecFormat::periodLabel).orEmpty(),
                     total = view.bankTotal,
                     caption = str(S.desktop_br_bank_statement_caption),
+                    trailing = { UnreconcileControls(view, onEvent) },
                 )
                 PanelList(bankList, Modifier.weight(1f)) {
                     items(view.visibleBank, key = { it.id }) { row ->
@@ -146,6 +147,15 @@ private fun SplitPanels(state: BankRecUiState, view: WorkspaceView, onEvent: (Ba
                             },
                             fallbackCurrency = view.statementCurrency,
                             actions = rowActions(row.id, onEvent),
+                            unreconcile = if (view.unreconcileMode) {
+                                UnreconcileRow(
+                                    ticked = row.id in ws.unmatchTicked,
+                                    onToggle = { onEvent(BankRecEvent.ToggleUnmatchTick(row.id)) },
+                                    onUnreconcile = { onEvent(BankRecEvent.AskUnmatch(listOf(row.id))) },
+                                )
+                            } else {
+                                null
+                            },
                         )
                     }
                     if (view.visibleBank.isEmpty()) {

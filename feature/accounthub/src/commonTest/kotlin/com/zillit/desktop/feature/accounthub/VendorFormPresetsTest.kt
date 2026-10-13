@@ -274,7 +274,8 @@ class VendorFormPresetsTest {
         val model = AccountHubViewModel(
             repository = repository(),
             viewer = { accountant() },
-            users = { listOf(HubUser(id = "acc", name = "Sahil Kashyap", department = "Accounts")) },
+            users = { listOf(HubUser(id = "acc", name = "Sahil Kashyap", department = "Accounts",
+                departmentIdentifier = "department_accounts")) },
             departmentList = {
                 listOf(
                     HubDepartment(id = "d-art", name = "Art"),

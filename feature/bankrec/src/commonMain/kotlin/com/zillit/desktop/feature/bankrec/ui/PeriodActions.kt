@@ -86,7 +86,9 @@ internal class PeriodActions(private val vm: BankRecViewModel) {
      * Drops ids that are gone or no longer deletable, so a period signed off or
      * deleted in another window cannot linger in a selection — and closes a
      * detail whose period has been deleted, rather than leaving it open over a
-     * period that no longer exists.
+     * period that no longer exists. A detail that is still open re-reads quietly,
+     * as the web's does on its per-period refresh key, so a sign-off or an edit
+     * made elsewhere shows without a close and reopen.
      */
     fun onPeriodsChanged() {
         val state = vm.ui
@@ -104,6 +106,8 @@ internal class PeriodActions(private val vm: BankRecViewModel) {
         if (state.periods.none { it.id == detail.periodId }) {
             vm.update { copy(periodDetail = null) }
             vm.refuse(str(S.desktop_br_period_deleted_elsewhere))
+        } else if (!detail.loading) {
+            readDetail(detail.periodId, silent = true)
         }
     }
 
@@ -145,23 +149,34 @@ internal class PeriodActions(private val vm: BankRecViewModel) {
      * failing leaves its half empty rather than the whole dialog in an error.
      */
     private fun openDetail(periodId: String) {
-        val period = vm.ui.period(periodId) ?: return
+        if (vm.ui.period(periodId) == null) return
         vm.update { copy(periodDetail = PeriodDetailState(periodId = periodId)) }
+        readDetail(periodId, silent = false)
+    }
+
+    /**
+     * The two reads behind the detail. A silent re-read keeps what is on screen
+     * and replaces only a half that answered, so a blip does not blank the dialog.
+     */
+    private fun readDetail(periodId: String, silent: Boolean) {
+        val period = vm.ui.period(periodId) ?: return
         vm.launchWork {
             val preview = async { vm.repo.portalPreview(periodId, period.bankAccountId) }
             val workspace = async { vm.repo.workspace(periodId) }
             val previewData = (preview.await() as? ZillitResult.Success)?.data
             val workspaceData = (workspace.await() as? ZillitResult.Success)?.data
             vm.update {
-                if (periodDetail?.periodId != periodId) {
+                val current = periodDetail
+                if (current == null || current.periodId != periodId) {
                     this
                 } else {
                     copy(
-                        periodDetail = periodDetail.copy(
+                        periodDetail = current.copy(
                             loading = false,
-                            preview = previewData,
-                            transactions = workspaceData?.transactions.orEmpty(),
-                            ledger = workspaceData?.ledger.orEmpty(),
+                            preview = previewData ?: current.preview.takeIf { silent },
+                            transactions = workspaceData?.transactions
+                                ?: current.transactions.takeIf { silent }.orEmpty(),
+                            ledger = workspaceData?.ledger ?: current.ledger.takeIf { silent }.orEmpty(),
                         ),
                     )
                 }

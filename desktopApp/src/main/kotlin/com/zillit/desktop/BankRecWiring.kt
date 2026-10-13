@@ -83,10 +83,11 @@ private fun AppGraph.Ready.statementFiles(): StatementFiles {
             val chosen = picker.pick(
                 kind = PreviewKind.Document,
                 multiple = false,
-                maxBytes = StatementFiles.MAX_BYTES,
+                // The web caps nothing; this is only the most one byte array can hold.
+                maxBytes = Int.MAX_VALUE.toLong(),
                 onRefused = { why ->
                     refusal = when (why) {
-                        is PickRefusal.TooLarge -> "${why.name} is over the 20 MB limit."
+                        is PickRefusal.TooLarge -> "${why.name} is too large to read."
                         is PickRefusal.WrongKind -> "${why.name} is not a statement file."
                     }
                 },
@@ -187,6 +188,8 @@ private fun AppGraph.Ready.bankRecLookups(): BankRecLookups = object : BankRecLo
         return CompanyDetails(
             projectName = project?.name.orEmpty(),
             companyName = project?.companyName.orEmpty(),
+            companyAddress = project?.companyAddress.orEmpty(),
+            companyEmail = project?.companyEmail.orEmpty(),
         )
     }
 }

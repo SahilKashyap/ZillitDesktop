@@ -63,9 +63,13 @@ data class FloatSettlement(
             newBatchTotal: Double = 0.0,
             pendingBatchesTotal: Double = 0.0,
         ): FloatSettlement {
-            val issued = activeFloat?.issuedAmount?.takeIf { it > 0 }
-                ?: activeFloat?.requestedAmount
-                ?: 0.0
+            // `issued_float ?? req_amount`: only an absent figure falls back, so
+            // a float issued at 0 is issued at 0 and has no headroom.
+            val issued = when {
+                activeFloat == null -> 0.0
+                activeFloat.issuedReported -> activeFloat.issuedAmount
+                else -> activeFloat.requestedAmount
+            }
             val balance = activeFloat?.balance ?: 0.0
 
             // Defensive clamps. Both are sums of positive amounts in the UI,

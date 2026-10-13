@@ -176,17 +176,24 @@ class TaxFilingWireTest {
         assertFalse(row.isOpen)
     }
 
-    /** A row that predates the status field falls back to the received date. */
+    private fun obligation(status: String) =
+        json.decodeFromString(ObligationDto.serializer(), """{"periodKey":"18A1","status":"$status"}""").toDomain()
+
+    /** The web's `status === 'O'`: nothing else is open, a blank or lower-case status included. */
     @Test
-    fun `an obligation with no status reads the received date instead`() {
-        val open = json.decodeFromString(ObligationDto.serializer(), """{"periodKey":"18A1"}""").toDomain()
-        val done = json.decodeFromString(
+    fun `only the status O is open`() {
+        val blank = json.decodeFromString(ObligationDto.serializer(), """{"periodKey":"18A1"}""").toDomain()
+        val dated = json.decodeFromString(
             ObligationDto.serializer(),
             """{"periodKey":"18A1","received":"2026-05-01"}""",
         ).toDomain()
+        val lower = obligation("o")
+        val open = obligation("O")
 
+        assertFalse(blank.isOpen)
+        assertFalse(dated.isOpen)
+        assertFalse(lower.isOpen)
         assertTrue(open.isOpen)
-        assertFalse(done.isOpen)
     }
 
     /**

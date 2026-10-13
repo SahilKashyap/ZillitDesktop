@@ -110,6 +110,8 @@ class PurchaseOrderToolProvider(
                     // with the first the moment one changed.
                     PoEffect.OpenVendors -> navigator.navigate(WorkspaceRoute.Tool(HUB_VENDORS_ROUTE))
                     PoEffect.OpenInvoices -> navigator.navigate(WorkspaceRoute.Tool(INVOICES_ROUTE))
+                    // The console's "Set Approver →" on a pending order nobody can approve.
+                    PoEffect.OpenApprovers -> navigator.navigate(WorkspaceRoute.Tool(HUB_APPROVERS_ROUTE))
                 }
             }
         }
@@ -164,6 +166,9 @@ const val PO_FORM_CONFIG_ROUTE = "/film-tools/account-hub/form-config/purchase_o
  * the page is theirs when PO is the one asking. This says PO is asking.
  */
 const val HUB_VENDORS_ROUTE = "/film-tools/account-hub/vendors?from=purchase-orders"
+
+/** The Account Hub's Approvers area — the web's `/film-tools/account-hub/approvers`. */
+const val HUB_APPROVERS_ROUTE = "/film-tools/account-hub/approvers"
 
 /** The Invoices tool — the department view's Invoices tab. */
 const val INVOICES_ROUTE = "/film-tools/invoices"

@@ -53,8 +53,13 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
             is JournalEvent.HeaderDate -> headerDate(event.date)
             is JournalEvent.AddTax -> addTax(event.timecardId)
             is JournalEvent.RemoveTax -> removeTax(event.timecardId)
-            is JournalEvent.TaxType -> editRow(event.rowId) { _, edit -> tax(edit, type = event.type) }
-            is JournalEvent.TaxRate -> editRow(event.rowId) { _, edit -> tax(edit, rate = event.rate) }
+            is JournalEvent.TaxType -> editRow(event.rowId) { row, edit ->
+                if (!row.isTax) return@editRow edit
+                Journal.pickTaxType(row, edit, event.type, Journal.taxOptions(journal.reference.taxTypes))
+            }
+            is JournalEvent.TaxRate -> editRow(event.rowId) { row, edit ->
+                if (row.isTax) Journal.typeTaxRate(edit, event.rate) else edit
+            }
             is JournalEvent.Layers -> editRow(event.rowId) { _, edit -> edit.copy(trackingCodes = event.codes) }
             is JournalEvent.Tags -> editRow(event.rowId) { _, edit -> edit.copy(tags = event.tags) }
             is JournalEvent.SplitLayers ->
@@ -90,11 +95,17 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         }
     }
 
-    /** A typed credit, on an account row only; a cleared field is no amount rather than zero. */
+    /**
+     * A typed figure, on an account row or a tax line only; a cleared field is
+     * no amount rather than zero. On a tax line a figure also becomes the
+     * rate's answer — see [Journal.typeTaxAmount].
+     */
     private fun credit(row: JournalRow, edit: JournalEdit, typed: String): JournalEdit {
         if (!row.amountEditable) return edit
         val text = typed.trim()
-        return edit.copy(amount = text.toDoubleOrNull(), amountCleared = text.isEmpty())
+        val amount = text.toDoubleOrNull()
+        if (row.isTax && amount != null) return Journal.typeTaxAmount(row, edit, amount)
+        return edit.copy(amount = amount, amountCleared = text.isEmpty())
     }
 
     /**
@@ -120,18 +131,6 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
             )
         }
     }
-
-    /**
-     * The picked tax, and the money it derives. Choosing a type or a rate
-     * drops any typed figure, because the figure now follows the rate again —
-     * leaving it would show 20% against an amount that is not 20% of the base.
-     */
-    private fun tax(edit: JournalEdit, type: String? = null, rate: String? = null): JournalEdit = edit.copy(
-        taxType = type ?: edit.taxType,
-        taxRate = rate?.trim()?.toDoubleOrNull()?.coerceIn(0.0, TAX_RATE_MAX) ?: edit.taxRate.takeIf { rate == null },
-        amount = null,
-        amountCleared = false,
-    )
 
     /** One allocation's field, leaving its siblings' amounts alone. */
     private fun editSplit(rowId: String, childId: String, change: (JournalSplit) -> JournalSplit) {
@@ -187,16 +186,22 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
     private fun save() {
         val ui = vm.ui
         val week = ui.run.weekStarting ?: return
-        if (!ui.viewer.seesAccountantViews || journal.saving || journal.edits.isEmpty()) return
+        if (!ui.viewer.seesAccountantViews || journal.saving) return
         val rows = ui.journalRows()
+        // A removed tax line has no edit of its own: its omission is the delete.
+        if (journal.pendingCount(rows) == 0) return
         val submission = submission(rows, post = false, week = week, effectiveDate = null)
         if (submission.timecards.isEmpty() && submission.runLines.isEmpty()) return
         editJournal { copy(saving = true) }
+        // What this save carries; anything added or removed while it is away stays pending.
+        val settling = TaxSettling(added = journal.taxAdded, removed = journal.taxRemoved)
         vm.launchWork {
             when (val result = vm.repository.journal.submit(submission)) {
                 is ZillitResult.Success -> {
                     val sent = rows.map { it.id }.toSet()
-                    editJournal { copy(saving = false, edits = edits.filterKeys { it !in sent }) }
+                    editJournal {
+                        copy(saving = false, edits = edits.filterKeys { it !in sent }, taxSettling = settling)
+                    }
                     vm.notify(result.data.message?.localisedMessage() ?: JOURNAL_SAVED_KEY.localisedMessage())
                     run.reload(silent = true)
                 }
@@ -239,25 +244,30 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
                 (row.timecardId == null || row.timecardId in postable) &&
                     (
                         Journal.codeOf(row, journal.edits[row.id]).isBlank() ||
-                            Journal.dateOf(row, journal.edits[row.id]).isNullOrBlank()
+                            !Journal.hasDate(row, journal.edits[row.id])
                     )
             }.map { it.id }.toSet()
             editJournal {
                 copy(
                     alert = JournalAlert(str(S.desktop_payroll_cannot_post_yet), describe(incomplete)),
                     flagged = flagged,
+                    // A red cell must not sit inside a collapsed group with no hint it is there.
+                    expandSignal = expandSignal + 1,
                 )
             }
             return
         }
-        val inScope = rows.filter { it.timecardId in postable }
+        // The run's account lines post with the timecards' (`PayrollRunModule.jsx:6926`), so they count; the
+        // gross is the debit side alone, since the account rows are the same money seen from the credit side.
+        val lineCount = rows.count { it.timecardId == null || it.timecardId in postable }
+        val debits = rows.filter { !it.isCredit && it.timecardId in postable }.sumOf { it.amount ?: 0.0 }
         val earliest = ui.earliestEffectiveDate
         editJournal {
             copy(
                 post = JournalPostDialog(
                     timecardIds = postable.toList(),
-                    lineCount = inScope.size,
-                    gross = ui.run.timecards.filter { it.id in postable }.sumOf { it.gross },
+                    lineCount = lineCount,
+                    gross = debits,
                     currency = ui.run.timecards.firstOrNull { it.id in postable }?.currency,
                     effectiveDate = if (earliest != null && ui.todayIso < earliest) earliest else ui.todayIso,
                 ),
@@ -274,8 +284,11 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         val dialog = journal.post ?: return
         val week = ui.run.weekStarting ?: return
         if (dialog.saving || !ui.viewer.seesAccountantViews) return
-        val date = openDate(dialog.effectiveDate)
-        if (date == null) {
+        // Optional, as on the web: each line carries its own date and this is only the default, so a blank
+        // one posts with none. A date that is typed must still fall after the cost-report lock.
+        val typed = dialog.effectiveDate.trim()
+        val date = if (typed.isEmpty()) null else openDate(typed)
+        if (typed.isNotEmpty() && date == null) {
             val refusal = ui.earliestEffectiveDate?.let { str(S.desktop_payroll_date_in_locked_period, it) }
                 ?: str(S.desktop_payroll_choose_effective_date)
             editJournal { copy(post = dialog.copy(error = refusal)) }
@@ -376,9 +389,6 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         /** The server message keys the web falls back to (`showApiSuccess(res, t, key)`). */
         const val JOURNAL_SAVED_KEY = "journal_saved"
         const val TIMECARDS_POSTED_KEY = "timecards_posted"
-
-        /** The highest rate the percentage field will hold — the web's `TAX_RATE_MAX`. */
-        const val TAX_RATE_MAX = 100.0
     }
 }
 

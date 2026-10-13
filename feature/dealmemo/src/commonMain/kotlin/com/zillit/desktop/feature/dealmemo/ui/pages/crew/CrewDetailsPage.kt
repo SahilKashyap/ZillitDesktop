@@ -25,9 +25,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -46,6 +49,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +71,7 @@ import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewField
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormRules
+import com.zillit.desktop.feature.dealmemo.domain.preview.CrewMissing
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewRequirements
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewStep
 import com.zillit.desktop.feature.dealmemo.domain.preview.isDirtyAgainst
@@ -156,7 +162,8 @@ private fun CrewForm(
     val required = remember(deal, draft) { CrewFormRules.requiredPaths(deal, draft) }
     val anyMarked = remember(deal) { CrewRequirements.markedPaths(deal).isNotEmpty() }
     val dirty = remember(deal, draft) { draft.isDirtyAgainst(deal) }
-    val stillEmpty = remember(deal, draft) { CrewFormRules.markedGateableMissing(deal, draft) }
+    // What the Send for Approval / Sign pop-up is waiting on, shown red; it gates nothing.
+    val missing = remember(deal, draft) { CrewMissing.of(deal, draft) }
     val context = DealPreviewActions.memoContext(state)
     val model = CrewFormModel(
         gate = gate,
@@ -164,12 +171,15 @@ private fun CrewForm(
         context = context,
         countries = state.production.countries,
         required = required,
+        missing = missing,
         shownErrors = shown,
         uploading = form.uploading,
         onEvent = onEvent,
     )
     val scroll = rememberScrollState()
     LaunchedEffect(index) { scroll.scrollTo(0) }
+    // The form opens with its first red field in view, once; the step it opens on is chosen when the form is made.
+    var openTarget by remember { mutableStateOf(missing.firstOn(step)) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
@@ -190,7 +200,13 @@ private fun CrewForm(
             modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            StepRail(steps, index, onEvent, Modifier.width(252.dp).fillMaxHeight().padding(vertical = 20.dp))
+            StepRail(
+                steps = steps,
+                index = index,
+                red = missing.steps,
+                onEvent = onEvent,
+                modifier = Modifier.width(252.dp).fillMaxHeight().padding(vertical = 20.dp),
+            )
             ZillitScrollColumn(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 state = scroll,
@@ -198,10 +214,12 @@ private fun CrewForm(
                 contentPadding = PaddingValues(start = 8.dp, end = 18.dp, top = 20.dp, bottom = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(Modifier.widthIn(max = 1200.dp).fillMaxWidth()) {
-                    StepHeader(position = index + 1, count = steps.size, step = step)
-                    if (anyMarked) InfoLine()
-                    CrewStepContent(step, model)
+                CompositionLocalProvider(LocalOpenScroll provides OpenScroll(openTarget) { openTarget = null }) {
+                    Column(Modifier.widthIn(max = 1200.dp).fillMaxWidth()) {
+                        StepHeader(position = index + 1, count = steps.size, step = step)
+                        if (anyMarked) InfoLine()
+                        CrewStepContent(step, model)
+                    }
                 }
             }
         }
@@ -210,7 +228,7 @@ private fun CrewForm(
             count = steps.size,
             saving = form.saving,
             blockedLabels = if (form.submitAttempted) errors.map { it.field.label } else emptyList(),
-            stillEmpty = stillEmpty,
+            stillEmpty = missing.any,
             onEvent = onEvent,
         )
     }
@@ -304,7 +322,13 @@ private fun BackButton(enabled: Boolean, onClick: () -> Unit) {
 
 /** The step rail: positional bullets — done before, active here, upcoming after — every item clickable. */
 @Composable
-private fun StepRail(steps: List<CrewStep>, index: Int, onEvent: (DealMemoEvent) -> Unit, modifier: Modifier) {
+private fun StepRail(
+    steps: List<CrewStep>,
+    index: Int,
+    red: Set<CrewStep>,
+    onEvent: (DealMemoEvent) -> Unit,
+    modifier: Modifier,
+) {
     val p = cp
     val shape = RoundedCornerShape(16.dp)
     Box(modifier) {
@@ -332,7 +356,7 @@ private fun StepRail(steps: List<CrewStep>, index: Int, onEvent: (DealMemoEvent)
                 },
             ) {
                 steps.forEachIndexed { i, step ->
-                    RailItem(step, i, index) { onEvent(CrewFormEvent.GoToStep(i)) }
+                    RailItem(step, i, index, hasMissing = step in red) { onEvent(CrewFormEvent.GoToStep(i)) }
                 }
             }
         }
@@ -340,11 +364,12 @@ private fun StepRail(steps: List<CrewStep>, index: Int, onEvent: (DealMemoEvent)
 }
 
 @Composable
-private fun RailItem(step: CrewStep, position: Int, current: Int, onClick: () -> Unit) {
+private fun RailItem(step: CrewStep, position: Int, current: Int, hasMissing: Boolean, onClick: () -> Unit) {
     val p = cp
     val (source, hovered) = rememberHover()
     val active = position == current
-    val done = position < current
+    // The dot withholds the tick: a step is never both done and missing.
+    val done = position < current && !hasMissing
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -365,17 +390,21 @@ private fun RailItem(step: CrewStep, position: Int, current: Int, onClick: () ->
     ) {
         Bullet(number = position + 1, active = active, done = done)
         Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = step.label,
-                style = DmType.sans(12.5.sp, if (active || done) FontWeight.Bold else FontWeight.SemiBold),
-                color = when {
-                    active -> Color(0xFFE8861A)
-                    done -> p.ink
-                    else -> p.label
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ZillitText(
+                    text = step.label,
+                    style = DmType.sans(12.5.sp, if (active || done) FontWeight.Bold else FontWeight.SemiBold),
+                    color = when {
+                        active -> Color(0xFFE8861A)
+                        done -> p.ink
+                        else -> p.label
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (hasMissing) MissingDot()
+            }
             ZillitText(
                 text = step.sub,
                 style = DmType.sans(10.5.sp),
@@ -386,6 +415,19 @@ private fun RailItem(step: CrewStep, position: Int, current: Int, onClick: () ->
             )
         }
     }
+}
+
+/** A step with something still red. */
+@Composable
+private fun MissingDot() {
+    val description = str(S.desktop_dm_step_has_required_fields)
+    Box(
+        Modifier
+            .size(7.dp)
+            .clip(CircleShape)
+            .background(cp.missing)
+            .semantics { contentDescription = description },
+    )
 }
 
 @Composable

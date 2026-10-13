@@ -319,8 +319,12 @@ data class LiveKitInvite(
             livekitUrl = url,
             livekitToken = token,
             livekitPreconnectToken = preconnectToken,
+            addedByName = addedByName.ifBlank { if (grewFromPrivate) fromName else "" },
         )
     }
+
+    /** A 1:1 that someone grew by adding us: it started private and rings us as a group. */
+    private val grewFromPrivate: Boolean get() = startedAs == CallMode.Private && callMode == CallMode.Group
 }
 
 /** Reads one frame; null when it is not a JSON object at all. */

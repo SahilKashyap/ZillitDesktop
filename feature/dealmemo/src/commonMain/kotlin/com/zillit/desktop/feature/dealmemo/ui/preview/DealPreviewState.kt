@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.dealmemo.domain.rates.EmpStatus
 import com.zillit.desktop.feature.dealmemo.ui.DealBadgeUnit
 import com.zillit.desktop.feature.dealmemo.ui.DealProjectInfo
 import com.zillit.desktop.feature.dealmemo.ui.documents.DealPdfPage
+import com.zillit.desktop.feature.dealmemo.ui.documents.DealPlacement
 
 /** The deal page's in-flight action; one at a time, as the web's `actionBusy`. */
 enum class PreviewAction { Activate, Approve, Send, Reject }
@@ -115,3 +116,6 @@ data class CrewFormUi(
 
 /** A signature image ready to place: its PNG, and height over width. */
 class CapturedSignature(val png: ByteArray, val image: ImageBitmap, val aspect: Float)
+
+/** A signature already placed, with the image it was placed with — changing the live one never repaints it. */
+class PlacedStamp(val placement: DealPlacement, val signature: CapturedSignature)

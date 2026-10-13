@@ -465,6 +465,49 @@ class WorksheetViewModelTest {
     }
 
     @Test
+    fun `the server's words on a lock and its snapshot reach the screen`() = runTest(dispatcher) {
+        val repository = WorksheetRepository().apply {
+            lockResult = ZillitResult.Success(CrWrite(Unit, "Period locked"))
+            postResult = ZillitResult.Success(CrWrite(SnapshotHeader("new", reference = "CR"), "Snapshot posted"))
+        }
+        val vm = started(repository)
+        val heard = notices(vm)
+
+        vm.onEvent(WorksheetEvent.OpenLock)
+        vm.onEvent(WorksheetEvent.ConfirmLock)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Period locked Snapshot posted"), heard.map { it.text })
+    }
+
+    @Test
+    fun `a post with no message from the server adds none of its own`() = runTest(dispatcher) {
+        val vm = started(WorksheetRepository())
+        val heard = notices(vm)
+
+        vm.onEvent(WorksheetEvent.OpenPublish)
+        vm.onEvent(WorksheetEvent.ConfirmPublish)
+        advanceUntilIdle()
+
+        assertTrue(heard.isEmpty())
+    }
+
+    @Test
+    fun `a post's own message is shown beside the progress card`() = runTest(dispatcher) {
+        val repository = WorksheetRepository().apply {
+            postResult = ZillitResult.Success(CrWrite(SnapshotHeader("new", reference = "CR"), "Posted to history"))
+        }
+        val vm = started(repository)
+        val heard = notices(vm)
+
+        vm.onEvent(WorksheetEvent.OpenPublish)
+        vm.onEvent(WorksheetEvent.ConfirmPublish)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Posted to history"), heard.map { it.text })
+    }
+
+    @Test
     fun `export sends the week with every override and saves the file`() = runTest(dispatcher) {
         val repository = WorksheetRepository()
         val exporter = RecordingExporter()

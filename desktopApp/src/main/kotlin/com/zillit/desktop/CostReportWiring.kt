@@ -1,5 +1,8 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeDrilldownQuery
+import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.permissions.ProjectPermissions
@@ -20,6 +23,13 @@ import com.zillit.desktop.feature.costreport.ui.CostReportViewModel
 import com.zillit.desktop.feature.costreport.ui.worksheet.WorksheetToolProvider
 import com.zillit.desktop.feature.costreport.ui.worksheet.WorksheetViewModel
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -72,7 +82,40 @@ internal fun AppGraph.Ready.buildCostReport(permissions: () -> ProjectPermission
     projectName = { projectContext?.context?.value?.project?.name.orEmpty() },
     resolveUser = ::costReportUser,
     nowMillis = System::currentTimeMillis,
+    badges = costReportBadges(),
 )
+
+/**
+ * Posted CRs' unread (`useCostReportBadges`): under `cost_report_label` → `posted_cr_label`, the unit's total
+ * for the tab chip and every leaf summed by `level_3` (the snapshot id) for the timeline rows; level_1 and
+ * level_2 (the cadence) are ignored, as the web's. Opening a snapshot reads its `level_3`
+ * (`readCostReportBadge`), after which the totals fall by that snapshot's share.
+ */
+internal fun AppGraph.Ready.costReportBadges(): TabBadgeSource = object : TabBadgeSource {
+    private val reads = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private fun query(groupBy: String) = BadgeDrilldownQuery(
+        groupBy = groupBy,
+        section = BadgeSections.TOOLS,
+        tool = COST_REPORT_TOOL,
+        unit = POSTED_CR_UNIT,
+    )
+
+    override val counts: Flow<Map<String, Int>> = badgeStore.counts
+        .map { mapOf(POSTED_CR_UNIT to badgeStore.split(query("level_3")).values.sum()) }
+        .distinctUntilChanged()
+
+    override val entityCounts: Flow<Map<String, Map<String, Int>>> = badgeStore.counts
+        .map { mapOf(POSTED_CR_UNIT to badgeStore.split(query("level_3")).filterKeys { it.isNotBlank() }) }
+        .distinctUntilChanged()
+
+    override fun readEntity(key: String, entityId: String, kind: String?) {
+        reads.launch { emitLevelRead(tool = COST_REPORT_TOOL, unit = POSTED_CR_UNIT, level3 = entityId) }
+    }
+}
+
+private const val COST_REPORT_TOOL = "cost_report_label"
+private const val POSTED_CR_UNIT = "posted_cr_label"
 
 internal fun AppGraph.Ready.costReportProvider(viewModel: CostReportViewModel) =
     CostReportToolProvider(viewModel = viewModel, resolveUser = ::costReportUser)

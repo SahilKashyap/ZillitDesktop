@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewField
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormValues
+import com.zillit.desktop.feature.dealmemo.domain.preview.CrewMissing
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewNames
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewStep
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealCountry
@@ -43,6 +44,7 @@ internal class CrewFormModel(
     val context: MemoContext,
     val countries: List<DealCountry>,
     val required: Set<String>,
+    val missing: CrewMissing,
     val shownErrors: Map<CrewField, String>,
     val uploading: Boolean,
     val onEvent: (DealMemoEvent) -> Unit,
@@ -50,6 +52,9 @@ internal class CrewFormModel(
     val details: JsonObject get() = draft.crewDetails
 
     fun req(path: String): Boolean = path in required
+
+    /** The red "still to fill" hint under a field, or null. */
+    fun miss(path: String): String? = missing.hint(path)
 
     fun text(key: String): String = DocRead.text(details, key).orEmpty()
 
@@ -94,19 +99,20 @@ private fun CrewDetailsStep(m: CrewFormModel) {
     SectionCard(title = str(S.dm_crew_step_crew), tag = str(S.dm_nda_fill_title)) {
         FormGrid {
             half { ReadOnlyRow(str(S.dm_step2_crew_name), DocRead.text(cd, "crew_name")) }
-            half {
+            half("full_legal_name") {
                 LabelledInput(
                     label = str(S.dm_req_full_legal_name),
                     value = m.text("full_legal_name"),
                     onValueChange = { m.crew("full_legal_name", it) },
                     placeholder = DocRead.text(cd, "crew_name") ?: str(S.desktop_dm_name_as_it_appears_on_id),
                     required = m.req("full_legal_name"),
+                    missing = m.miss("full_legal_name"),
                 )
             }
-            half {
+            half("preferred_name") {
                 CrewText(m, str(S.dm_step2_preferred_name), "preferred_name", str(S.desktop_dm_name_shown_on_credits))
             }
-            half {
+            half("screen_credit_designation") {
                 CrewText(
                     m,
                     str(S.dm_step2_screen_credit_designation),
@@ -129,16 +135,18 @@ private fun CrewDetailsStep(m: CrewFormModel) {
                 half { ReadOnlyRow(str(S.desktop_dm_agency), names.agency) }
             }
             half { ReadOnlyRow(str(S.dm_step2_unit), MemoCard.unitName(cd, m.context)) }
-            half {
+            half("gender") {
                 LabelledSelect(
                     str(S.dm_step2_gender),
                     m.text("gender"),
                     CrewFormValues.GENDERS,
                     { m.crew("gender", it) },
                     m.req("gender"),
+                    m.miss("gender"),
                 )
             }
-            half {
+            half("dob") {
+                val dobMissing = m.miss("dob")
                 Column {
                     RowLabel(str(S.dm_req_dob), m.req("dob"))
                     DateInput(
@@ -147,10 +155,12 @@ private fun CrewDetailsStep(m: CrewFormModel) {
                         onChange = { m.crew("dob", JsonPrimitive(it)) },
                         zone = TimeZone.currentSystemDefault(),
                         max = today,
+                        missing = dobMissing != null,
                     )
+                    InlineError(dobMissing)
                 }
             }
-            half {
+            half("email") {
                 LabelledInput(
                     label = str(S.dm_req_email),
                     value = m.text("email"),
@@ -159,9 +169,10 @@ private fun CrewDetailsStep(m: CrewFormModel) {
                     required = m.req("email"),
                     error = m.error(CrewField.Email),
                     onBlur = { m.touch(CrewField.Email) },
+                    missing = m.miss("email"),
                 )
             }
-            half {
+            half("mobile") {
                 LabelledInput(
                     label = str(S.dm_req_mobile),
                     value = CrewFormRules.sanitizePhone(m.text("mobile"), allowPlus = true),
@@ -170,20 +181,24 @@ private fun CrewDetailsStep(m: CrewFormModel) {
                     required = m.req("mobile"),
                     error = m.error(CrewField.Mobile),
                     onBlur = { m.touch(CrewField.Mobile) },
+                    missing = m.miss("mobile"),
                 )
             }
-            half { CrewText(m, str(S.dm_edit_personal_insurance), "insurance_no", str(S.dm_step2_ni_number_hint)) }
-            half { CrewText(m, str(S.dm_crew_tax_code), "tax_code", str(S.dm_step2_tax_code_hint)) }
-            half {
+            half("insurance_no") {
+                CrewText(m, str(S.dm_edit_personal_insurance), "insurance_no", str(S.dm_step2_ni_number_hint))
+            }
+            half("tax_code") { CrewText(m, str(S.dm_crew_tax_code), "tax_code", str(S.dm_step2_tax_code_hint)) }
+            half("right_to_work") {
                 LabelledSelect(
                     label = str(S.dm_req_rtw),
                     value = m.text("right_to_work"),
                     options = CrewFormValues.RIGHT_TO_WORK.map { it to it },
                     onPick = { m.crew("right_to_work", it) },
                     required = m.req("right_to_work"),
+                    missing = m.miss("right_to_work"),
                 )
             }
-            wide {
+            wide("passport_attachment") {
                 Column {
                     RowLabel(str(S.dm_step2_passport), m.req("passport_attachment"))
                     PassportUploader(
@@ -192,16 +207,18 @@ private fun CrewDetailsStep(m: CrewFormModel) {
                         onAdd = { m.onEvent(CrewFormEvent.AddPassport) },
                         onView = { m.onEvent(PreviewEvent.ViewPassport(it)) },
                         onRemove = { m.onEvent(CrewFormEvent.RemovePassport(it)) },
+                        missing = m.miss("passport_attachment"),
                     )
                 }
             }
-            wide {
+            wide("home_address") {
                 AddressBlock(
                     label = str(S.dm_address_label),
                     address = CrewFormValues.address(m.details["home_address"]),
                     countries = m.countries,
                     onChange = { m.crew("home_address", CrewFormValues.addressJson(it)) },
                     required = m.req("home_address"),
+                    missing = m.miss("home_address") != null,
                 )
             }
         }
@@ -209,11 +226,14 @@ private fun CrewDetailsStep(m: CrewFormModel) {
     if (UkPayroll.appliesTo(m.gate)) {
         Spacer(Modifier.height(16.dp))
         // The fieldset's first question is the card's heading, so the card has no title of its own.
-        SectionCard(title = null, accent = CardAccent.Teal) {
-            UkPayrollFieldset(
-                block = CrewDraft.ukFromWire(DocRead.obj(m.details, UkPayroll.KEY)),
-                onPatch = { m.onEvent(CrewFormEvent.UkPatch(it)) },
-            )
+        OpenAnchor(CrewMissing.PAYROLL) {
+            SectionCard(title = null, accent = CardAccent.Teal) {
+                UkPayrollFieldset(
+                    block = CrewDraft.ukFromWire(DocRead.obj(m.details, UkPayroll.KEY)),
+                    onPatch = { m.onEvent(CrewFormEvent.UkPatch(it)) },
+                    missing = m.missing.payroll,
+                )
+            }
         }
     }
 }
@@ -226,10 +246,12 @@ private fun CrewText(m: CrewFormModel, label: String, key: String, placeholder: 
         onValueChange = { m.crew(key, it) },
         placeholder = placeholder,
         required = m.req(key),
+        missing = m.miss(key),
     )
 }
 
 /** Step 2: the name and number are written flat and nested together. */
+@Suppress("LongMethod")
 @Composable
 private fun EmergencyStep(m: CrewFormModel) {
     val emergency = m.section("emergency_details")
@@ -240,16 +262,17 @@ private fun EmergencyStep(m: CrewFormModel) {
         accent = CardAccent.Red,
     ) {
         FormGrid {
-            half {
+            half("emergency_contact_name") {
                 LabelledInput(
                     label = str(S.contact_name),
                     value = m.text("emergency_contact_name"),
                     onValueChange = { m.onEvent(CrewFormEvent.EmergencyName(it)) },
                     placeholder = str(S.dm_step2_agency_name_hint),
                     required = m.req("emergency_contact_name"),
+                    missing = m.miss("emergency_contact_name"),
                 )
             }
-            wide {
+            wide("emergency_contact_number") {
                 PhoneRow(
                     label = str(S.contact_number),
                     countries = m.countries,
@@ -263,9 +286,10 @@ private fun EmergencyStep(m: CrewFormModel) {
                     onBlur = { m.touch(CrewField.EmergencyPhone) },
                     error = m.error(CrewField.EmergencyPhone),
                     required = m.req("emergency_contact_number"),
+                    missing = m.miss("emergency_contact_number"),
                 )
             }
-            half {
+            half("emergency_details.email") {
                 LabelledInput(
                     label = str(S.dm_req_email),
                     value = DocRead.text(emergency, "email").orEmpty(),
@@ -274,15 +298,17 @@ private fun EmergencyStep(m: CrewFormModel) {
                     required = m.req("emergency_details.email"),
                     error = m.error(CrewField.EmergencyEmail),
                     onBlur = { m.touch(CrewField.EmergencyEmail) },
+                    missing = m.miss("emergency_details.email"),
                 )
             }
-            wide {
+            wide("emergency_details.address") {
                 AddressBlock(
                     label = str(S.dm_address_label),
                     address = CrewFormValues.address(emergency?.get("address")),
                     countries = m.countries,
                     onChange = { m.section("emergency_details", "address", CrewFormValues.addressJson(it)) },
                     required = m.req("emergency_details.address"),
+                    missing = m.miss("emergency_details.address") != null,
                 )
             }
         }
@@ -302,16 +328,17 @@ private fun RepresentativeStep(m: CrewFormModel) {
         accent = CardAccent.Blue,
     ) {
         FormGrid {
-            half {
+            half("$section.name") {
                 LabelledInput(
                     label = str(S.desktop_representative_name),
                     value = DocRead.text(rep, "name").orEmpty(),
                     onValueChange = { m.section(section, "name", it) },
                     placeholder = str(S.dm_step2_agency_name_hint),
                     required = m.req("$section.name"),
+                    missing = m.miss("$section.name"),
                 )
             }
-            wide {
+            wide("$section.phone_number") {
                 PhoneRow(
                     label = str(S.dm_step2_representative_phone),
                     countries = m.countries,
@@ -328,9 +355,10 @@ private fun RepresentativeStep(m: CrewFormModel) {
                     onBlur = { m.touch(CrewField.RepresentativePhone) },
                     error = m.error(CrewField.RepresentativePhone),
                     required = m.req("$section.phone_number"),
+                    missing = m.miss("$section.phone_number"),
                 )
             }
-            half {
+            half("$section.email") {
                 LabelledInput(
                     label = str(S.dm_req_email),
                     value = DocRead.text(rep, "email").orEmpty(),
@@ -339,15 +367,17 @@ private fun RepresentativeStep(m: CrewFormModel) {
                     required = m.req("$section.email"),
                     error = m.error(CrewField.RepresentativeEmail),
                     onBlur = { m.touch(CrewField.RepresentativeEmail) },
+                    missing = m.miss("$section.email"),
                 )
             }
-            wide {
+            wide("$section.address") {
                 AddressBlock(
                     label = str(S.dm_address_label),
                     address = CrewFormValues.address(rep?.get("address")),
                     countries = m.countries,
                     onChange = { m.section(section, "address", CrewFormValues.addressJson(it)) },
                     required = m.req("$section.address"),
+                    missing = m.miss("$section.address") != null,
                 )
             }
         }
@@ -366,7 +396,7 @@ private fun BankStep(m: CrewFormModel) {
         accent = CardAccent.Teal,
     ) {
         FormGrid {
-            half {
+            half("bank.account_holder_name") {
                 BankText(
                     m,
                     str(S.dm_req_account_holder),
@@ -374,33 +404,37 @@ private fun BankStep(m: CrewFormModel) {
                     str(S.desktop_dm_as_it_appears_on_the_account),
                 )
             }
-            half { BankText(m, str(S.dm_step2_bank_name), "name", str(S.dm_step2_bank_name_hint)) }
-            half {
+            half("bank.name") { BankText(m, str(S.dm_step2_bank_name), "name", str(S.dm_step2_bank_name_hint)) }
+            half("bank.account_number") {
                 LabelledInput(
                     label = str(S.dm_step2_bank_account_number),
                     value = bankText("account_number"),
                     onValueChange = { m.bank("account_number", CrewFormValues.accountNumber(it)) },
                     placeholder = "12345678",
                     required = m.req("bank.account_number"),
+                    missing = m.miss("bank.account_number"),
                 )
             }
-            half {
+            half("bank.sort_code") {
                 val stored = bankText("sort_code")
                 val digits = stored.filter { it.isDigit() }
                 // Stored as up to six digits and drawn as XX-XX-XX; a longer legacy value shows as it was stored.
                 val legacy = digits.length > SORT_CODE_DIGITS
+                val sortMissing = m.miss("bank.sort_code")
                 Column {
                     RowLabel(str(S.dm_step2_bank_sort_code), m.req("bank.sort_code"))
                     FormInput(
                         value = if (legacy) stored else digits,
                         onValueChange = { m.bank("sort_code", CrewFormRules.stripSortCode(it)) },
                         placeholder = "20-48-91",
+                        missing = sortMissing != null,
                         visualTransformation = if (legacy) VisualTransformation.None else SortCodeDashes,
                     )
+                    InlineError(sortMissing)
                 }
             }
-            half { BankText(m, "IBAN", "iban_number", "GB29 NWBK 6016 1331 9268 19") }
-            half { BankText(m, str(S.dm_step2_bank_swift), "swift_code", "BARCGB22") }
+            half("bank.iban_number") { BankText(m, "IBAN", "iban_number", "GB29 NWBK 6016 1331 9268 19") }
+            half("bank.swift_code") { BankText(m, str(S.dm_step2_bank_swift), "swift_code", "BARCGB22") }
         }
         AdditionalDetails(
             rows = DocRead.objects(bank["additional_details"]),
@@ -420,6 +454,7 @@ private fun BankText(m: CrewFormModel, label: String, key: String, placeholder: 
         onValueChange = { m.bank(key, it) },
         placeholder = placeholder,
         required = m.req("bank.$key"),
+        missing = m.miss("bank.$key"),
     )
 }
 

@@ -17,6 +17,8 @@ sealed interface PoPrompt {
         val message: String,
         /** Set when the confirm is about an amendment, which re-opens the approval chain. */
         val destructive: Boolean = false,
+        /** The confirming button's words where "Confirm" would say less than the action does. */
+        val confirmLabel: String? = null,
     ) : PoPrompt
 
     data class WithReason(
@@ -36,6 +38,12 @@ enum class PoConfirmAction {
 
     /** Editing a fully-approved order discards its approvals — asked first. */
     AmendOrder,
+
+    /** Emailing the vendor after a warning: lines not coded, or a second copy of the PO. */
+    SendToVendor,
+
+    /** Leaving the order form with changes the person has not saved. */
+    DiscardForm,
 }
 
 enum class PoReasonAction {
@@ -49,6 +57,9 @@ enum class PoReasonAction {
      * next month.
      */
     NameTemplate,
+
+    /** Naming the copy an edited template is saved as — the web's "Save As", which leaves the original alone. */
+    SaveTemplateAs,
 }
 
 sealed interface PoEvent {
@@ -90,6 +101,10 @@ sealed interface PoEvent {
 
     /** Opens one of the order's files through the host's store. */
     data class OpenAttachment(val attachment: PoAttachment) : PoEvent
+
+    /** The Posted tab's per-row History — the order's audit trail, without opening the order. */
+    data class OpenHistory(val orderId: String) : PoEvent
+    data object CloseHistory : PoEvent
 
     /** Renders the order's PDF and hands it to the OS. */
     data class ViewPdf(val id: String) : PoEvent
@@ -159,6 +174,9 @@ sealed interface PoEvent {
     /** Asks what to call the template first — the web's own name prompt. */
     data object NameTemplate : PoEvent
 
+    /** An edited template's "Save As": asks for a name, then writes a new template beside the original. */
+    data object SaveTemplateAs : PoEvent
+
     // -- the PO Entry page ----------------------------------------------------
 
     /** Opens the processing page on an order, loading it fresh. */
@@ -216,6 +234,9 @@ sealed interface PoEvent {
     data object OpenVendors : PoEvent
     data object OpenInvoices : PoEvent
 
+    /** The detail's "Set Approver" — the hub's Approvers screen, which closes the dialog behind it. */
+    data object OpenApprovers : PoEvent
+
     // -- the Settings tab -----------------------------------------------------
 
     /** The edited copy of the document; nothing reaches the server until a card's Save. */
@@ -253,4 +274,7 @@ sealed interface PoEffect {
 
     /** The Invoices tool — the department view's Invoices tab. */
     data object OpenInvoices : PoEffect
+
+    /** The account hub's Approvers area — where a department's tier 1 is set. */
+    data object OpenApprovers : PoEffect
 }

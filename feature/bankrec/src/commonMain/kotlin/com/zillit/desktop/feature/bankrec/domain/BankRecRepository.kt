@@ -64,12 +64,30 @@ interface BankRecRepository {
      *
      * One target, not a list: the service matches a transaction to a single
      * record, and the type has to travel with the id because an invoice, a
-     * quick-added transaction and an FX posting are different tables.
+     * quick-added transaction and an FX posting are different tables. Answers
+     * the server's own message when it names one, which the toast shows.
      */
-    suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit>
+    suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<String?>
 
-    /** Runs the matching rules over a period again. */
-    suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit>
+    /**
+     * Reverses a match: the line and its invoice go back to unmatched, and a
+     * fraud line returns to review with its alert re-opened. No body; the
+     * service refuses a line that is not matched.
+     *
+     * The server's own message key, null when it says none — the toast is that
+     * message and nothing else.
+     */
+    suspend fun unmatchTransaction(id: String): ZillitResult<String?>
+
+    /**
+     * [unmatchTransaction] for 1–50 lines at once. A line that is not matched
+     * is skipped, an unknown id fails the whole batch, and no message is named
+     * yet.
+     */
+    suspend fun bulkUnmatchTransactions(transactionIds: List<String>): ZillitResult<String?>
+
+    /** Runs the matching rules over a period again; answers the server's message, null when it names none. */
+    suspend fun rerunAutoMatch(periodId: String): ZillitResult<String?>
 
     /**
      * Ingests a statement already uploaded to storage.
@@ -87,7 +105,12 @@ interface BankRecRepository {
     suspend fun setExceptionStatus(id: String, status: ExceptionStatus): ZillitResult<Unit>
 
     /**
-     * Posts an exception to the ledger and clears it.
+     * Posts a bank line to the ledger, matches it, and clears its exception.
+     *
+     * [id] is the exception's, or the bank transaction's own id for a line with
+     * no exception (a Suggested one) — the service resolves either on this
+     * route, accepts the fraud alert on a fraud line, and refuses a line that
+     * is already matched.
      *
      * [fromWorkspace] shapes the body the way that surface's form does: the
      * workspace drawer sends no statement date or invoice number, and a blank

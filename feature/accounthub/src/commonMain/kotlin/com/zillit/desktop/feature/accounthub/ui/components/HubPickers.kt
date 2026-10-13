@@ -223,6 +223,13 @@ fun CoaCodeField(
     enabled: Boolean = true,
     costType: CoaCostType = CoaCostType.Expense,
     onCreate: ((code: String, name: String, costType: CoaCostType) -> Unit)? = null,
+    /**
+     * Whether text with letters is itself a code. The vendor's Default Code is a
+     * plain box on the web, so "A100" is a valid entry there: letters still
+     * filter the suggestions, but what is typed commits as the code and is kept
+     * when the field is left. Everywhere else a name typed here is only a search.
+     */
+    allowFreeText: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     var displayText by remember(value) { mutableStateOf(value) }
@@ -253,13 +260,17 @@ fun CoaCodeField(
             onValueChange = { text ->
                 val cleaned = text.filter { it.isDigit() || it == '-' || it == '.' || it.isLetter() || it == ' ' }
                 displayText = cleaned
-                if (cleaned.none { it.isLetter() }) onValueChange(cleaned)
+                if (allowFreeText || cleaned.none { it.isLetter() }) onValueChange(cleaned)
             },
             label = label,
             placeholder = placeholder,
             enabled = enabled,
             helperText = when {
-                isSearch -> if (suggestions.isEmpty()) str(S.desktop_hub_no_results_for_x, displayText) else null
+                isSearch -> when {
+                    suggestions.isNotEmpty() -> null
+                    allowFreeText -> str(S.desktop_hub_not_in_the_chart_stored_as_typed)
+                    else -> str(S.desktop_hub_no_results_for_x, displayText)
+                }
                 displayText.isBlank() -> null
                 known -> accounts.firstOrNull { it.code.equals(displayText.trim(), true) }?.name
                 accounts.isEmpty() -> str(S.desktop_hub_the_chart_is_empty_the_code_will_be_stored_as)
@@ -269,7 +280,7 @@ fun CoaCodeField(
             onImeAction = { if (isSearch) suggestions.firstOrNull()?.let { commit(it.code) } },
             modifier = Modifier.fillMaxWidth().onFocusChanged { state ->
                 if (state.isFocused && !focused) startingValue = value
-                if (!state.isFocused && focused && everSearched) {
+                if (!state.isFocused && focused && everSearched && !allowFreeText) {
                     if (value != startingValue) onValueChange(startingValue)
                     displayText = startingValue
                     everSearched = false

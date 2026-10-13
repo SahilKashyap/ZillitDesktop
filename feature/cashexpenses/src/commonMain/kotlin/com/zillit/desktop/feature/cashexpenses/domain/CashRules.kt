@@ -117,24 +117,28 @@ object CashRules {
      * What one receipt's coding comes to.
      *
      * Lines when it has any; a single cost code counts the receipt at its
-     * gross; nothing counts nothing.
+     * gross; nothing counts nothing. [recoverable] is the production's
+     * recoverable tax-type identifiers, which the reclaimable-tax line stands
+     * in for — see [LineItemEditor.total].
      */
-    fun codedAmount(claim: Claim): Double = when {
-        claim.lineItems.isNotEmpty() -> LineItemEditor.total(LineItemEditor.fromWire(claim.lineItems))
+    fun codedAmount(claim: Claim, recoverable: Set<String> = emptySet()): Double = when {
+        claim.lineItems.isNotEmpty() ->
+            LineItemEditor.total(LineItemEditor.fromWire(claim.lineItems), recoverable)
         !claim.costCode.isNullOrBlank() -> claim.grossAmount
         else -> 0.0
     }
 
-    fun codedTotal(claims: List<Claim>): Double = round2(claims.sumOf(::codedAmount))
+    fun codedTotal(claims: List<Claim>, recoverable: Set<String> = emptySet()): Double =
+        round2(claims.sumOf { codedAmount(it, recoverable) })
 
     /**
      * The coded total differs from the batch gross by more than a penny.
      *
      * A zero or missing gross never blocks — the web's `isAmountMismatch`.
      */
-    fun amountMismatch(claims: List<Claim>, batchGross: Double): Boolean {
+    fun amountMismatch(claims: List<Claim>, batchGross: Double, recoverable: Set<String> = emptySet()): Boolean {
         if (batchGross <= 0) return false
-        return abs(round((codedTotal(claims) - batchGross) * HUNDRED) / HUNDRED) > PENNY_TOLERANCE
+        return abs(round((codedTotal(claims, recoverable) - batchGross) * HUNDRED) / HUNDRED) > PENNY_TOLERANCE
     }
 
     /** Lines that would reach the ledger with no nominal code. */
@@ -145,13 +149,14 @@ object CashRules {
     }
 
     /** Coded in full: every line has a code and the lines reach the receipt, or a cost code on its own. */
-    fun isCoded(claim: Claim): Boolean {
+    fun isCoded(claim: Claim, recoverable: Set<String> = emptySet()): Boolean {
         if (claim.lineItems.isEmpty()) return !claim.costCode.isNullOrBlank()
         val coded = claim.lineItems.filterNot { it.autoDeduction }.all { !it.account.isNullOrBlank() }
-        return coded && abs(codedAmount(claim) - claim.grossAmount) < LINE_TOLERANCE
+        return coded && abs(codedAmount(claim, recoverable) - claim.grossAmount) < LINE_TOLERANCE
     }
 
-    fun allCoded(claims: List<Claim>): Boolean = claims.isNotEmpty() && claims.all(::isCoded)
+    fun allCoded(claims: List<Claim>, recoverable: Set<String> = emptySet()): Boolean =
+        claims.isNotEmpty() && claims.all { isCoded(it, recoverable) }
 
     fun allVerified(claims: List<Claim>): Boolean = claims.isNotEmpty() && claims.all { it.isVerified }
 

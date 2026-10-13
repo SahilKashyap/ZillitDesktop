@@ -34,6 +34,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.QueryThread
 import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
 import com.zillit.desktop.feature.cashexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cashexpenses.domain.RequesterDeal
 import com.zillit.desktop.feature.cashexpenses.domain.TierStep
 
 /**
@@ -49,6 +50,10 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
     var floatCloses = 0
 
     var metadata = CashMetadata()
+
+    /** The requester's active deal, and how many times it was read. */
+    var activeDeal: RequesterDeal? = null
+    var dealReads = 0
     var queueRows: List<ClaimBatch> = listOf(queuedBatch())
     var activeFloatRows: List<CashFloat>? = null
     var topUpRows: List<CashTopUp>? = null
@@ -76,6 +81,11 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
         metadataReads++
         return ZillitResult.Success(metadata)
     }
+    override suspend fun myActiveDeal(): ZillitResult<RequesterDeal?> {
+        dealReads++
+        return ZillitResult.Success(activeDeal)
+    }
+
     var myFloatRows: List<CashFloat> = emptyList()
     var myOverviewDoc: MyCashOverview? = null
 
@@ -285,7 +295,11 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
     override suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule> = fail()
     override suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit> = write("deleteRule:$id")
     override suspend fun lockedThrough(): ZillitResult<String?> = ZillitResult.Success(lock)
-    override suspend fun companies(): ZillitResult<List<CashCompany>> = ZillitResult.Success(emptyList())
+    var companyRows: List<CashCompany> = emptyList()
+    override suspend fun companies(): ZillitResult<List<CashCompany>> {
+        calls += "companies"
+        return ZillitResult.Success(companyRows)
+    }
     override suspend fun fundRequests(): ZillitResult<List<FundRequest>> = ZillitResult.Success(emptyList())
     override suspend fun createFundRequest(fundAccount: String, currency: String?, amount: Double): ZillitResult<Unit> =
         write("createFunds")

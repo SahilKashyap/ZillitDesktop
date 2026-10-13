@@ -95,11 +95,12 @@ internal class SpendSetupActions(
         val section = state.spendSetup
         // The document held is the other module's: a read for this one has not landed.
         if (section.saved.kind != kind) return
-        if (section.dirty && !section.saving) saveDocument(section)
-        saveRules(kind.moduleKey, { spendRules }, { copy(setup = setup.copy(spendRules = it)) })
+        val rules = { saveRules(kind.moduleKey, { spendRules }, { copy(setup = setup.copy(spendRules = it)) }) }
+        // The web diffs the rules only once `updateSettings` has answered: a refused document saves nothing.
+        if (section.dirty && !section.saving) saveDocument(section, then = rules) else rules()
     }
 
-    private fun saveDocument(section: SectionEdit<SpendSettings>) {
+    private fun saveDocument(section: SectionEdit<SpendSettings>, then: () -> Unit) {
         val unnamed = section.edited.providers.any { !it.isBlank && it.name.isBlank() }
         if (unnamed) {
             vm.fail(str(S.desktop_card_provider_needs_name))
@@ -110,6 +111,7 @@ internal class SpendSetupActions(
         vm.update { copy(setup = setup.copy(spendSetup = section.copy(saving = true))) }
         vm.runResult({ vm.repo.saveSpendSetup(section.saved, section.edited) }, { saved ->
             vm.update { copy(setup = setup.copy(spendSetup = SectionEdit(saved)), notice = str(done)) }
+            then()
         }, { error: ZillitError ->
             vm.update { copy(setup = setup.copy(spendSetup = setup.spendSetup.copy(saving = false))) }
             vm.report(error)

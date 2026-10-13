@@ -121,20 +121,95 @@ object CrewDates {
 }
 
 /**
- * The first reason a request for [amount] breaks the project cap, or null —
- * the web's `useRequestCapGuard.check`, for the cases this client can judge.
+ * The request cap, applied — the web's `useRequestCapGuard` over `requestCap.js`.
  *
- * Only the flat `max_amount` basis, and only in the project default currency:
- * the weekly-salary basis needs the requester's active deal, and another
- * currency needs an exchange rate, and the web itself stands down (lets the
- * server decide) when it cannot convert.
+ * Never blocks on uncertainty: no cap, a currency with no exchange rate on
+ * either side, or a request raised on someone else's behalf all resolve to "not
+ * enforceable" and let the request through; the server owns those cases, and a
+ * wrong block stops a legitimate float. The flat `max_amount` is defined as the
+ * project default currency, so only a weekly-sourced cap carries a currency of
+ * its own; the request may be in any project currency and is converted too.
  */
 object CrewRequestCap {
 
-    fun enforceable(cap: RequestCap?, requestCurrency: String, defaultCurrency: String): Boolean =
-        cap != null && cap.enabled && !cap.isWeekly && cap.maxAmount > 0 &&
-            requestCurrency.equals(defaultCurrency, ignoreCase = true)
+    /** Where a resolved cap came from (`resolveRequestCap`'s `source`). */
+    enum class Source { Max, Weekly, Fallback }
 
-    fun exceeds(cap: RequestCap?, amount: Double, requestCurrency: String, defaultCurrency: String): Boolean =
-        enforceable(cap, requestCurrency, defaultCurrency) && amount > (cap?.maxAmount ?: 0.0)
+    /**
+     * The cap for one requester and one request currency.
+     *
+     * [amount] is in the cap's own [currency] (null currency = the default);
+     * null means no cap. [unrated] names the currency whose missing rate makes
+     * the cap unenforceable, if that is why it is.
+     */
+    data class Verdict(
+        val amount: Double?,
+        val currency: String?,
+        val source: Source,
+        val capInDefault: Double?,
+        val enforceable: Boolean,
+        val unrated: String?,
+    )
+
+    /**
+     * THE RULE (`resolveRequestCap`): a weekly basis multiplies the requester's
+     * weekly rate; no usable rate falls back to the flat ceiling. A rate of 0
+     * must not become a 0 cap, which would block every request.
+     */
+    private fun resolve(cap: RequestCap, deal: RequesterDeal?): Verdict {
+        val rate = deal?.weeklyRate ?: 0.0
+        if (cap.isWeekly && rate > 0 && cap.salaryMultiplier > 0) {
+            return Verdict(
+                amount = rate * cap.salaryMultiplier,
+                currency = deal?.currency?.takeIf { it.isNotBlank() },
+                source = Source.Weekly,
+                capInDefault = null,
+                enforceable = false,
+                unrated = null,
+            )
+        }
+        return Verdict(
+            amount = cap.maxAmount.takeIf { it > 0 },
+            currency = null,
+            source = if (cap.isWeekly) Source.Fallback else Source.Max,
+            capInDefault = null,
+            enforceable = false,
+            unrated = null,
+        )
+    }
+
+    /** The cap for one requester raising [requestCurrency]; [applies] is false on someone else's behalf. */
+    fun verdict(
+        cap: RequestCap?,
+        deal: RequesterDeal?,
+        requestCurrency: String,
+        currencies: CashCurrencies,
+        applies: Boolean = true,
+    ): Verdict {
+        if (cap == null || !cap.enabled) return NO_CAP
+        val resolved = resolve(cap, deal)
+        val amount = resolved.amount ?: return resolved
+        val capUnrated = resolved.currency?.takeIf { rateMissing(it, currencies) }
+        val requestUnrated = requestCurrency.takeIf { rateMissing(it, currencies) }
+        return resolved.copy(
+            capInDefault = resolved.currency?.let { currencies.toDefault(amount, it) } ?: amount,
+            enforceable = applies && capUnrated == null && requestUnrated == null,
+            unrated = capUnrated ?: requestUnrated,
+        )
+    }
+
+    /** Whether [amount], raised in [requestCurrency], is over an enforceable cap (`check`). */
+    fun exceeds(verdict: Verdict, amount: Double, requestCurrency: String, currencies: CashCurrencies): Boolean {
+        val limit = verdict.capInDefault ?: return false
+        if (!verdict.enforceable) return false
+        return (currencies.toDefault(amount, requestCurrency) ?: amount) > limit
+    }
+
+    private val NO_CAP = Verdict(null, null, Source.Max, null, enforceable = false, unrated = null)
+
+    /** A code other than the default with no usable rate (`rateMissing`). */
+    private fun rateMissing(code: String, currencies: CashCurrencies): Boolean {
+        val upper = code.trim().uppercase()
+        return upper.isNotEmpty() && upper != currencies.default.uppercase() && currencies.rates[upper] == null
+    }
 }

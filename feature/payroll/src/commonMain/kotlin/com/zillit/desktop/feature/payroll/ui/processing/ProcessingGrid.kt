@@ -3,8 +3,10 @@ package com.zillit.desktop.feature.payroll.ui.processing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,6 +32,7 @@ import com.zillit.desktop.feature.payroll.domain.OutstandingRow
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.ProcessingRow
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
+import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
 import com.zillit.desktop.feature.payroll.ui.ProcessingEvent
@@ -65,6 +68,27 @@ internal fun PayrollUiState.processingShownRows(): List<ProcessingRow> {
 
 private fun navMatches(nav: ProcessingNav, bucket: ProcessingNav?): Boolean = nav == ProcessingNav.All || bucket == nav
 
+/**
+ * Outstanding's crew: one row per person with unsettled weeks, heaviest gross
+ * first, through the same status, department and search the other views use —
+ * search matching the department's name too, as the web's does.
+ */
+internal fun PayrollUiState.outstandingShownRows(): List<OutstandingRow> {
+    val week = processing.weekStarting ?: currentWeek
+    val query = processing.search.trim().lowercase()
+    val department = processing.department
+    return OutstandingRow.of(processing.outstanding, week).filter { row ->
+        row.status != TimecardStatus.Paid &&
+            navMatches(processing.nav, row.weeks.firstOrNull()?.timecard?.processingBucket) &&
+            (department == null || people[row.userId]?.department.orEmpty() == department) &&
+            (
+                query.isEmpty() ||
+                    "${nameOf(row.userId)} ${roleOf(row.userId)} ${departmentOf(row.userId)}".lowercase()
+                        .contains(query)
+            )
+    }
+}
+
 /** The nav's three counts — always the whole week's crew, working that day in Day View. */
 internal data class ProcessingCounts(val all: Int, val pending: Int, val approved: Int)
 
@@ -85,36 +109,47 @@ internal fun PayrollUiState.processingDepartments(): List<Pair<String, Int>> =
 
 @Composable
 internal fun ProcessingGrid(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
-    val columns = when (state.processing.view) {
+    val view = state.processing.view
+    val columns = when (view) {
         ProcessingView.Daily -> dayColumns(state, onEvent)
         ProcessingView.WeekToDate -> weekToDateColumns(state, onEvent)
         else -> weeklyColumns(state, onEvent)
     }
-    ZillitDataTable(
-        rows = state.processingShownRows(),
+    val rows = state.processingShownRows()
+    // The department header's money, per the view: Day View the day's gross,
+    // the weekly total the week's net, and Week to Date none — as the web's.
+    val money: ((List<ProcessingRow>) -> String)? = when (view) {
+        ProcessingView.Daily -> { group ->
+            moneyLabel(group.map { it.days[state.processing.day].total to it.timecard.currency }, state)
+        }
+        ProcessingView.WeekToDate -> null
+        else -> { group -> moneyLabel(group.map { it.totalPay to it.timecard.currency }, state) }
+    }
+    GroupedTable(
+        items = state.groupedUnderDepartments(
+            rows = rows,
+            key = { it.timecard.id },
+            department = { state.people[it.timecard.userId]?.department.orEmpty() },
+            money = money,
+        ),
         columns = columns,
-        key = { it.timecard.id },
-        onRowClick = { onEvent(ProcessingEvent.OpenDrawer(it.timecard.id)) },
+        onOpen = { onEvent(ProcessingEvent.OpenDrawer(it.timecard.id)) },
         isSelected = { it.timecard.id == state.processing.drawerId },
         loading = state.processing.loading || !state.metadataLoaded,
         emptyTitle = str(S.desktop_payroll_no_approved_this_week),
-        modifier = Modifier.fillMaxSize(),
     )
 }
 
 @Composable
 internal fun OutstandingGrid(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
-    val week = state.processing.weekStarting ?: state.currentWeek
-    val query = state.processing.search.trim().lowercase()
-    val department = state.processing.department
-    val rows = OutstandingRow.of(state.processing.outstanding, week).filter { row ->
-        row.status != TimecardStatus.Paid &&
-            navMatches(state.processing.nav, row.weeks.firstOrNull()?.timecard?.processingBucket) &&
-            (department == null || state.people[row.userId]?.department.orEmpty() == department) &&
-            (query.isEmpty() || "${state.nameOf(row.userId)} ${state.roleOf(row.userId)}".lowercase().contains(query))
-    }
-    ZillitDataTable(
-        rows = rows,
+    GroupedTable(
+        items = state.groupedUnderDepartments(
+            rows = state.outstandingShownRows(),
+            key = { it.id },
+            department = { state.people[it.userId]?.department.orEmpty() },
+            // Outstanding rows aggregate several weeks, each in its own currency.
+            money = { group -> moneyLabel(group.map { it.totalMoney }, state) },
+        ),
         columns = listOf(
             crewColumn(state) { it.userId },
             textColumn(str(S.dm_ds_unit_days), ColumnWidth.Fixed(DAYS_COLUMN), numeric = true) { "${it.days}d" },
@@ -123,13 +158,165 @@ internal fun OutstandingGrid(state: PayrollUiState, onEvent: (PayrollEvent) -> U
             moneyColumn(str(S.desktop_payroll_allowances_rental)) { it.allowancesMoney },
             moneyColumn(str(S.desktop_payroll_total_pay), bold = true) { it.totalMoney },
         ),
-        key = { it.id },
-        onRowClick = { onEvent(ProcessingEvent.OpenOutstanding(it.userId)) },
+        onOpen = { onEvent(ProcessingEvent.OpenOutstanding(it.userId)) },
+        isSelected = { false },
         loading = state.processing.outstandingLoading,
         emptyTitle = str(S.desktop_payroll_no_outstanding),
-        modifier = Modifier.fillMaxSize(),
     )
 }
+
+/** A sum across crew rows, in the production's default where they differ — the tiles' own rule. */
+private fun moneyLabel(entries: List<Pair<Double, String?>>, state: PayrollUiState): String =
+    payrollMoneyTotal(entries, state.currencyRates).let { Money.format(it.first, it.second) }
+
+/**
+ * The rows under their department headers, or bare when one department is
+ * chosen — the web draws a header only on "All".
+ */
+private fun <T> PayrollUiState.groupedUnderDepartments(
+    rows: List<T>,
+    key: (T) -> String,
+    department: (T) -> String,
+    money: ((List<T>) -> String)?,
+): List<GridItem<T>> = if (processing.department == null) {
+    groupedByDepartment(rows, key, department, { labelOfDepartment(it) }, money)
+} else {
+    ungrouped(rows, key)
+}
+
+/** [ZillitDataTable] over [GridItem]s: the columns draw crew rows only, a header spans the width. */
+@Composable
+private fun <T> GroupedTable(
+    items: List<GridItem<T>>,
+    columns: List<TableColumn<T>>,
+    onOpen: (T) -> Unit,
+    isSelected: (T) -> Boolean,
+    loading: Boolean,
+    emptyTitle: String,
+) {
+    val headerTint = ZillitTheme.colors.surfaceSunken
+    ZillitDataTable(
+        rows = items,
+        columns = columns.map { column ->
+            TableColumn<GridItem<T>>(column.header, column.width, column.numeric, column.headerContent) { item ->
+                if (item is GridItem.Entry) column.cell(item.row)
+            }
+        },
+        key = { it.key },
+        onRowClick = { item -> if (item is GridItem.Entry) onOpen(item.row) },
+        isSelected = { item -> item is GridItem.Entry && isSelected(item.row) },
+        loading = loading,
+        emptyTitle = emptyTitle,
+        modifier = Modifier.fillMaxSize(),
+        rowTint = { item -> if (item is GridItem.Header) headerTint else null },
+        rowContent = { item -> (item as? GridItem.Header)?.let { header -> { DepartmentHeader(header) } } },
+    )
+}
+
+/** `Camera  (12 crew)  ·  £14,200.00` across the row. */
+@Composable
+private fun RowScope.DepartmentHeader(header: GridItem.Header) {
+    Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(
+            text = header.label,
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+        )
+        ZillitText(
+            text = "(${str(S.desktop_payroll_crew_count, header.crew)})",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+        header.money?.let {
+            ZillitText(
+                text = it,
+                style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
+                color = ZillitTheme.colors.accentText,
+            )
+        }
+    }
+}
+
+// -- the sidebar's Week Summary -----------------------------------------------------------------
+
+/** What a summary figure is, for the colour it is drawn in. */
+internal enum class SummaryEmphasis { Plain, Gross, Approved, Overtime }
+
+internal data class SummaryLine(
+    val label: String,
+    val value: String,
+    val emphasis: SummaryEmphasis = SummaryEmphasis.Plain,
+)
+
+/** The sidebar's summary card: a title and four figures over the rows the view shows. */
+internal data class ProcessingSummary(val title: String, val lines: List<SummaryLine>)
+
+/**
+ * The web's `sideCard` (`PayrollGridModule.jsx` 1363-1410). Day View sums the
+ * crew working the open day; every other view the crew it lists. The web's
+ * Camera / Non-Camera OT lines read zero on the processing projection, which
+ * carries one OT figure per day, so overtime is the one OTs / Premiums line.
+ */
+internal fun PayrollUiState.processingSummary(): ProcessingSummary {
+    val week = processing.weekStarting ?: currentWeek
+    return when (processing.view) {
+        ProcessingView.Daily -> {
+            val rows = processingShownRows()
+            val day = processing.day
+            ProcessingSummary(
+                title = str(S.desktop_payroll_day_summary, PayPeriod.dayLabel(week + day * PayPeriod.DAY_MILLIS)),
+                lines = listOf(
+                    SummaryLine(str(S.desktop_payroll_crew_working), rows.size.toString()),
+                    SummaryLine(
+                        str(S.desktop_payroll_day_gross),
+                        moneyLabel(rows.map { it.days[day].total to it.timecard.currency }, this),
+                        SummaryEmphasis.Gross,
+                    ),
+                    SummaryLine(
+                        str(S.desktop_payroll_ots_premiums),
+                        moneyLabel(rows.map { it.days[day].ots to it.timecard.currency }, this),
+                        SummaryEmphasis.Overtime,
+                    ),
+                ),
+            )
+        }
+
+        ProcessingView.Outstanding -> {
+            val rows = outstandingShownRows()
+            weekSummary(
+                crew = rows.size,
+                payroll = moneyLabel(rows.map { it.totalMoney }, this),
+                approved = rows.count { it.weeks.firstOrNull()?.timecard?.processingBucket == ProcessingNav.Approved },
+                overtime = moneyLabel(rows.map { it.otsMoney }, this),
+            )
+        }
+
+        else -> {
+            val rows = processingShownRows()
+            weekSummary(
+                crew = rows.size,
+                // Net of deductions — "the timecard amount" everywhere in payroll.
+                payroll = moneyLabel(rows.map { it.totalPay to it.timecard.currency }, this),
+                approved = rows.count { it.timecard.processingBucket == ProcessingNav.Approved },
+                overtime = moneyLabel(rows.map { it.otTotal to it.timecard.currency }, this),
+            )
+        }
+    }
+}
+
+private fun weekSummary(crew: Int, payroll: String, approved: Int, overtime: String) = ProcessingSummary(
+    title = str(S.desktop_payroll_week_summary),
+    lines = listOf(
+        SummaryLine(str(S.desktop_payroll_total_crew), crew.toString()),
+        SummaryLine(str(S.desktop_payroll_total_payroll), payroll, SummaryEmphasis.Gross),
+        SummaryLine(str(S.approved), approved.toString(), SummaryEmphasis.Approved),
+        SummaryLine(str(S.desktop_payroll_ots_premiums), overtime, SummaryEmphasis.Overtime),
+    ),
+)
 
 private fun dayColumns(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit): List<TableColumn<ProcessingRow>> {
     val day = state.processing.day

@@ -116,6 +116,14 @@ fun CallRingCard(
                 color = CallPalette.muted,
                 maxLines = 1,
             )
+            if (incoming && session.addedByName.isNotBlank()) {
+                ZillitText(
+                    text = str(S.desktop_call_added_you, session.addedByName),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = CallPalette.muted,
+                    maxLines = 1,
+                )
+            }
             RingActions(incoming, session.hasVideo, onEvent)
         }
     }

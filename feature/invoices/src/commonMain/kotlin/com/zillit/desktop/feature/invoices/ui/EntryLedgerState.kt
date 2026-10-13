@@ -40,8 +40,14 @@ data class EntryLedger(
     val history: List<HistoryEntry>? = null,
     val historyOpen: Boolean = false,
     val historyLoading: Boolean = false,
-    /** Opened from Posted: nothing on it may change. */
+    /** Nothing on it may change. */
     val readOnly: Boolean = false,
+    /**
+     * Opened from Posted (`EntryDetailModal`'s `posted`): editable like any other until the
+     * cost-report lock reaches its effective date, but Save only — no review, assign,
+     * return or post.
+     */
+    val posted: Boolean = false,
     /** The linked orders are still being read — the grid's "Loading PO line items...". */
     val ordersLoading: Boolean = false,
     /** Which linked order the PO details card shows (`selectedPoIdx`). */
@@ -131,7 +137,7 @@ data class QuickEntryDraft(
 
 /** The coding screen's own events, routed to [InvoiceEntryActions]. */
 sealed interface EntryEvent : InvoicesEvent {
-    data class Open(val invoice: Invoice, val readOnly: Boolean = false) : EntryEvent
+    data class Open(val invoice: Invoice, val readOnly: Boolean = false, val posted: Boolean = false) : EntryEvent
     data object Close : EntryEvent
     data class EditHeader(val header: EntryHeader) : EntryEvent
 
@@ -183,7 +189,8 @@ sealed interface EntryEvent : InvoicesEvent {
 
 /** A record's query thread: opened, typed in, sent, closed. */
 sealed interface QueryEvent : InvoicesEvent {
-    data class Open(val invoice: Invoice) : QueryEvent
+    /** [readKey]: the `level_1` the thread's unread is read under as it opens, null where the web reads none. */
+    data class Open(val invoice: Invoice, val readKey: String? = null) : QueryEvent
     data class Draft(val text: String) : QueryEvent
     data object Send : QueryEvent
     data object Close : QueryEvent

@@ -4,6 +4,7 @@ import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.dealmemo.domain.DealRefresh
 import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey
 import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Approval
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.ApprovalTiers
 import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Detail
 import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Mine
 import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Registry
@@ -38,6 +39,12 @@ internal val DEAL_EVENT_KEYS: Map<SocketEventName, Set<DealRefreshKey>> = mapOf(
     "deal:template:created" to setOf(Templates),
     "deal:template:updated" to setOf(Templates),
     "deal:template:deleted" to setOf(Templates),
+    // Account Hub's approval-tier events: the web folds all three into one
+    // `ah:approval_tier:list` refetch, and Deal Memo listens to it for the
+    // approval card, Approve & Sign and the Set Approval Level prompt.
+    "approval_tier:configured" to setOf(ApprovalTiers),
+    "approval_tier:updated" to setOf(ApprovalTiers),
+    "approval_tier:deleted" to setOf(ApprovalTiers),
 ).mapKeys { (name, _) -> SocketEventName(name) }
 
 /**

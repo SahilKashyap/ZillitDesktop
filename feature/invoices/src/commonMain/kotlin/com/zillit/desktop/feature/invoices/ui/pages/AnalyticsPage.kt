@@ -68,6 +68,7 @@ internal fun ColumnScope.AnalyticsPage(state: InvoicesUiState) {
                 rows = data.vendors,
                 empty = str(S.desktop_inv_no_vendor_data),
                 nameOf = { it.ifBlank { str(S.desktop_unknown) } },
+                tones = VENDOR_TONES,
                 modifier = Modifier.weight(1f),
             )
             SharePanel(
@@ -76,6 +77,7 @@ internal fun ColumnScope.AnalyticsPage(state: InvoicesUiState) {
                 rows = data.departmentSpend,
                 empty = str(S.desktop_inv_no_department_data),
                 nameOf = { state.departmentName(it) },
+                tones = DEPARTMENT_TONES,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -232,8 +234,11 @@ private fun ColumnScope.DepartmentRows(state: InvoicesUiState, data: InvoiceAnal
         ZillitDivider()
         Row(
             // The web gives each cell `py-3`; rows with no breathing room
-            // read as one block of figures rather than a table.
-            modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+            // read as one block of figures rather than a table. A flagged row is tinted red.
+            modifier = Modifier
+                .fillMaxWidth()
+                .let { if (row.highlight) it.background(ZillitTheme.colors.danger.copy(HIGHLIGHT_ALPHA)) else it }
+                .padding(vertical = ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
@@ -241,7 +246,7 @@ private fun ColumnScope.DepartmentRows(state: InvoicesUiState, data: InvoiceAnal
             Cell(row.posted, Modifier.weight(1f))
             Cell(row.pending, Modifier.weight(1f))
             Cell(row.unknown, Modifier.weight(1f))
-            Cell(row.projected, Modifier.weight(1f))
+            Cell(row.projected, Modifier.weight(1f), bold = row.projectedBold)
             Box(Modifier.weight(1f)) {
                 if (row.isOver) {
                     ZillitStatusPill(label = row.variance.ifBlank { "over" }, tone = StatusTone.Rejected)
@@ -285,6 +290,7 @@ private fun SharePanel(
     rows: List<VendorSpend>,
     empty: String,
     nameOf: (String) -> String,
+    tones: List<BarTone>,
     modifier: Modifier = Modifier,
 ) {
     ZillitSectionCard(title = title, icon = icon, modifier = modifier) {
@@ -327,7 +333,7 @@ private fun SharePanel(
                             .fillMaxWidth(share.toFloat())
                             .height(BAR)
                             .clip(ZillitTheme.shapes.pill)
-                            .background(barColour(index)),
+                            .background(tones[index % tones.size].colour()),
                     )
                 }
             }
@@ -335,11 +341,23 @@ private fun SharePanel(
     }
 }
 
-/** The web's five rotating bar colours — amber, teal, violet, blue, green. */
+/** The web's `BAR_TONES` (`AnalyticsPage.jsx:19-25`). */
+private enum class BarTone { Amber, Teal, Violet, Blue, Green }
+
+/** The vendors' rotation (`:287`) and the departments' (`:318`) differ: the departments lead with violet. */
+private val VENDOR_TONES = listOf(BarTone.Amber, BarTone.Teal, BarTone.Violet, BarTone.Blue, BarTone.Green)
+private val DEPARTMENT_TONES = listOf(BarTone.Violet, BarTone.Teal, BarTone.Amber, BarTone.Blue, BarTone.Green)
+
 @Composable
-private fun barColour(index: Int): Color {
+private fun BarTone.colour(): Color {
     val colors = ZillitTheme.colors
-    return listOf(colors.accent, colors.teal, colors.violet, colors.info, colors.success)[index % BAR_TONES]
+    return when (this) {
+        BarTone.Amber -> colors.accent
+        BarTone.Teal -> colors.teal
+        BarTone.Violet -> colors.violet
+        BarTone.Blue -> colors.info
+        BarTone.Green -> colors.success
+    }
 }
 
 @Composable
@@ -354,8 +372,14 @@ private fun Caption(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Cell(text: String, modifier: Modifier = Modifier) {
-    ZillitText(text = text.ifBlank { "—" }, style = ZillitTheme.typography.bodySmall, modifier = modifier, maxLines = 1)
+private fun Cell(text: String, modifier: Modifier = Modifier, bold: Boolean = false) {
+    val style = ZillitTheme.typography.bodySmall
+    ZillitText(
+        text = text.ifBlank { "—" },
+        style = if (bold) style.copy(fontWeight = FontWeight.Bold) else style,
+        modifier = modifier,
+        maxLines = 1,
+    )
 }
 
 @Composable
@@ -368,5 +392,5 @@ private val BAR = 8.dp
 private val LOADING_PAD = 96.dp
 private const val MIN_BAR = 3.0
 private const val WHOLE_SHARE = 100.0
-private const val BAR_TONES = 5
+private const val HIGHLIGHT_ALPHA = 0.03f
 private val DOT = 8.dp

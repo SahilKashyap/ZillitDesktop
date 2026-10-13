@@ -27,9 +27,9 @@ data class HubUser(
 ) {
     val isAccepted: Boolean get() = status.equals(ACCEPTED, ignoreCase = true)
 
+    /** The web's exact `department_identifier === 'department_accounts'`; a department's name decides nothing. */
     val isAccountsTeam: Boolean
-        get() = departmentIdentifier.equals(ACCOUNTS_DEPARTMENT, ignoreCase = true) ||
-            department.contains("account", ignoreCase = true)
+        get() = departmentIdentifier.equals(ACCOUNTS_DEPARTMENT, ignoreCase = true)
 
     /** "Name (Role)" — what the assign-to pickers print. */
     val roleLabel: String get() = designation.ifBlank { department }
@@ -129,6 +129,16 @@ object HubBadges {
         "bank-reconciliation" -> if (isAccountant) counts.hubUnit(BANK_RECON_UNIT) else 0
         else -> 0
     }
+
+    /**
+     * Cash Expenses' level_1 areas that only ping — no chip ever renders for them, so the web's
+     * `getCashUnitTotalUnread` leaves them out of the tile total.
+     */
+    val CASH_NOTIFICATION_ONLY: Set<String> = setOf("oop_payment_routing", "cash_history", "cash_settings")
+
+    /** The Cash Expenses row's count from the unit's unread split by level_1; the quiet areas add nothing. */
+    fun cashUnitTotal(byLevel1: Map<String, Int>): Int =
+        byLevel1.filterKeys { it !in CASH_NOTIFICATION_ONLY }.values.sum()
 
     /** The web's antd `overflowCount`. */
     const val OVERFLOW = 99

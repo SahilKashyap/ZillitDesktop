@@ -43,6 +43,7 @@ import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRules
 import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
+import com.zillit.desktop.feature.accounthub.domain.CoaCostType
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
 import com.zillit.desktop.feature.accounthub.domain.HubUsers
 import com.zillit.desktop.feature.accounthub.domain.InvoiceAlert
@@ -50,6 +51,7 @@ import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.JournalDescriptionFormat
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
+import com.zillit.desktop.feature.accounthub.domain.PayrollAccounts
 import com.zillit.desktop.feature.accounthub.domain.PayrollSettings
 import com.zillit.desktop.feature.accounthub.domain.PoDescriptionFormat
 import com.zillit.desktop.feature.accounthub.domain.PoSplitType
@@ -77,18 +79,20 @@ import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
 import com.zillit.desktop.feature.accounthub.ui.components.GhostAddButton
 import com.zillit.desktop.feature.accounthub.ui.components.HairLine
 import com.zillit.desktop.feature.accounthub.ui.components.HoverRow
+import com.zillit.desktop.feature.accounthub.ui.components.HubConfirmDialog
 import com.zillit.desktop.feature.accounthub.ui.components.HubMultiSelect
 import com.zillit.desktop.feature.accounthub.ui.components.HubSelect
+import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.PersonChip
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
 import com.zillit.desktop.feature.accounthub.ui.components.RadioCard
+import com.zillit.desktop.feature.accounthub.ui.components.SetupFooter
 import com.zillit.desktop.feature.accounthub.ui.components.SetupModalShell
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
 import com.zillit.desktop.feature.accounthub.ui.components.ToggleRow
 import com.zillit.desktop.feature.accounthub.ui.components.UserPickerDialog
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.ui.text.input.KeyboardType
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.feature.accounthub.domain.AssetExpenditureType
 import com.zillit.desktop.feature.accounthub.domain.AssetFilters
@@ -121,6 +125,11 @@ internal fun SetupModals(
             onSave = { onEvent(AccountHubEvent.SaveSetupModal) },
             onClose = { onEvent(AccountHubEvent.CloseSetupModal) },
             onRetry = { onEvent(AccountHubEvent.RetrySetupModal) },
+            footer = when (modal.modal) {
+                SetupModal.TimeCards -> SetupFooter.SavedOnly
+                SetupModal.Payroll -> SetupFooter.PlainText
+                else -> SetupFooter.LoadAware
+            },
         ) { sectionId ->
             when (modal.modal) {
                 SetupModal.PurchaseOrders -> PoModalBody(sectionId, state, onEvent, canAttach, canOpen)
@@ -168,15 +177,17 @@ private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<Setup
         // One pane since the web's 03f047d47: the pay period, then the two
         // journal choices under dashed dividers.
         SetupModalSection("pay_period", str(S.desktop_pay_period_journal)),
-        SetupModalSection(
-            "payroll_accounts",
-            str(S.desktop_payroll_accounts),
-            state.setup.payrollSettings.edited.payrollAccounts.size,
-        ),
-        SetupModalSection("payroll_groups", str(S.desktop_payroll_groups), state.setup.payrollGroups.size),
+        // The web gives both lists no count — their bodies load their own rows — so these chips stay a dash.
+        SetupModalSection("payroll_accounts", str(S.desktop_payroll_accounts)),
+        SetupModalSection("payroll_groups", str(S.desktop_payroll_groups)),
     )
     SetupModal.TimeCards -> listOf(
-        SetupModalSection(SECTION_CONTROL, str(S.desktop_hub_tc_sec_control), null),
+        // The chip is the chosen model's letter (A-D), as on the web.
+        SetupModalSection(
+            SECTION_CONTROL,
+            str(S.desktop_hub_tc_sec_control),
+            letter = state.setup.timecardSetup.edited.model.letter,
+        ),
         SetupModalSection(
             SECTION_DEPARTMENTS,
             str(S.desktop_hub_tc_sec_departments),
@@ -330,20 +341,19 @@ private fun ColumnScope.AssetRegisterRulesSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitTextField(
+            // The web's CalcInput: a bound can be typed as a sum (`100+20`) and settles to its result on blur.
+            CalcField(
                 value = filters.priceLow,
                 onValueChange = { patch(filters.copy(priceLow = it)) },
                 placeholder = "${symbol}0",
-                keyboardType = KeyboardType.Number,
                 enabled = editable,
                 modifier = Modifier.weight(1f),
             )
             FieldHint("to")
-            ZillitTextField(
+            CalcField(
                 value = filters.priceHigh,
                 onValueChange = { patch(filters.copy(priceHigh = it)) },
                 placeholder = str(S.desktop_no_max),
-                keyboardType = KeyboardType.Number,
                 enabled = editable,
                 modifier = Modifier.weight(1f),
             )
@@ -1175,6 +1185,9 @@ private fun GroupRouting(group: com.zillit.desktop.feature.accounthub.domain.Pay
 private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val draft = state.setup.payrollGroupDraft
     val team = HubUsers.available(state.users)
+    // The web's `AVAILABLE_USERS`: a group's accountant is on the accounts team;
+    // only "Specific crew" draws on everyone.
+    val accountants = HubUsers.accountsTeam(state.users)
     val departments = state.departmentList
     val designations = departments.flatMap { d -> d.designations.map { it to d } }
     ZillitDialogShell(
@@ -1201,8 +1214,8 @@ private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEve
         fun update(next: com.zillit.desktop.feature.accounthub.domain.PayrollGroup) =
             onEvent(AccountHubEvent.EditPayrollGroup(next))
         HubSelect(
-            value = team.firstOrNull { it.id == draft.assigneeId },
-            options = team,
+            value = accountants.firstOrNull { it.id == draft.assigneeId },
+            options = accountants,
             label = { it.name },
             onSelect = { update(draft.copy(assigneeId = it?.id.orEmpty())) },
             placeholder = str(S.desktop_select_accountant),
@@ -1241,7 +1254,11 @@ private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEve
     }
 }
 
-/** The payroll-accounts grid — the web's `PayrollAccountsPage`: code, name, level, per row. */
+/**
+ * The payroll-accounts grid — the web's `PayrollAccountsPage`: level, code, cost type, name, Active and Posting per
+ * row. Nothing is saved until Save; a saved row taken off the grid, or left unticked, is deactivated in the chart
+ * behind a confirm.
+ */
 @Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
@@ -1252,7 +1269,7 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
         icon = ZillitIcons.Ledger,
         visible = draft != null,
         onDismiss = { onEvent(AccountHubEvent.DismissPayrollAccounts) },
-        width = DIALOG_WIDTH,
+        width = ACCOUNTS_DIALOG_WIDTH,
         actions = {
             ZillitButton(
                 text = str(S.cancel),
@@ -1269,6 +1286,8 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
     ) {
         if (draft == null) return@ZillitDialogShell
         fun update(rows: List<PayrollAccountRow>) = onEvent(AccountHubEvent.EditPayrollAccounts(rows))
+        fun patch(index: Int, next: (PayrollAccountRow) -> PayrollAccountRow) =
+            update(draft.rows.mapIndexed { i, r -> if (i == index) next(r) else r })
         if (draft.unmatched.isNotEmpty()) {
             ZillitNotice(
                 text = str(S.desktop_hub_payroll_codes_not_in_chart, draft.unmatched.joinToString(", ")),
@@ -1276,38 +1295,63 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
                 icon = ZillitIcons.Warning,
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            MonoLabel(str(S.desktop_line_type), modifier = Modifier.width(LEVEL_WIDTH))
+            MonoLabel(str(S.code), modifier = Modifier.width(CODE_WIDTH))
+            MonoLabel(str(S.desktop_cost_type), modifier = Modifier.width(COST_WIDTH))
+            MonoLabel(str(S.av_display_name), modifier = Modifier.weight(1f))
+            MonoLabel(str(S.active), modifier = Modifier.width(FLAG_WIDTH))
+            MonoLabel(str(S.txt_posting), modifier = Modifier.width(FLAG_WIDTH))
+            Box(Modifier.size(TRASH_WIDTH))
+        }
         draft.rows.forEachIndexed { index, row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitTextField(
-                    value = row.code,
-                    onValueChange = { text ->
-                        update(draft.rows.mapIndexed { i, r -> if (i == index) r.copy(code = text) else r })
-                    },
-                    placeholder = str(S.code),
-                    modifier = Modifier.width(CODE_WIDTH),
-                )
-                ZillitTextField(
-                    value = row.name,
-                    onValueChange = { text ->
-                        update(draft.rows.mapIndexed { i, r -> if (i == index) r.copy(name = text) else r })
-                    },
-                    placeholder = str(S.av_display_name),
-                    modifier = Modifier.weight(1f),
-                )
                 ZillitSelect(
                     value = row.lineType,
                     options = CoaLineType.entries,
-                    onSelect = { type ->
-                        update(draft.rows.mapIndexed { i, r -> if (i == index) r.copy(lineType = type) else r })
-                    },
+                    onSelect = { type -> patch(index) { it.copy(lineType = type) } },
                     label = { it.tagLabel },
-                    enabled = row.id == null,
+                    modifier = Modifier.width(LEVEL_WIDTH),
+                )
+                ZillitTextField(
+                    value = row.code,
+                    onValueChange = { text -> patch(index) { it.copy(code = text) } },
+                    placeholder = str(S.code),
                     modifier = Modifier.width(CODE_WIDTH),
                 )
+                // Balance-sheet classes only: an expense code would never reach the BS Code page.
+                ZillitSelect(
+                    value = row.costType,
+                    options = CoaCostType.entries.filter { it.isBalanceSheet },
+                    onSelect = { type -> patch(index) { it.copy(costType = type) } },
+                    label = { it.label },
+                    modifier = Modifier.width(COST_WIDTH),
+                )
+                ZillitTextField(
+                    value = row.name,
+                    onValueChange = { text -> patch(index) { it.copy(name = text) } },
+                    placeholder = str(S.av_display_name),
+                    modifier = Modifier.weight(1f),
+                )
+                Box(Modifier.width(FLAG_WIDTH)) {
+                    ZillitCheckbox(
+                        checked = row.active,
+                        onCheckedChange = { on -> patch(index) { it.copy(active = on) } },
+                    )
+                }
+                Box(Modifier.width(FLAG_WIDTH)) {
+                    ZillitCheckbox(
+                        checked = row.posting,
+                        onCheckedChange = { on -> patch(index) { it.copy(posting = on) } },
+                    )
+                }
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
                     contentDescription = str(S.desktop_remove_row),
@@ -1316,8 +1360,26 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
             }
         }
         GhostAddButton(str(S.cs_add_row), onClick = { update(draft.rows + PayrollAccountRow()) })
-        FieldHint(str(S.desktop_hub_removing_a_saved_code_here_only_drops_it_from_the))
+        FieldHint(str(S.desktop_hub_pa_removal_hint))
     }
+    // Deactivations touch real chart rows, so the batch is confirmed before it goes (the web's ConfirmModal).
+    val batch = draft?.takeIf { it.confirming }?.let { PayrollAccounts.outgoing(it.rows, it.seeds) }.orEmpty()
+    val removed = batch.count { it.delete }
+    val others = batch.size - removed
+    HubConfirmDialog(
+        visible = draft?.confirming == true,
+        title = str(if (removed == 1) S.desktop_remove_payroll_account else S.desktop_hub_pa_remove_title_many),
+        message = (if (removed == 1) str(S.desktop_hub_pa_remove_one) else str(S.desktop_hub_pa_remove_many, removed)) +
+            when (others) {
+                0 -> ""
+                1 -> " " + str(S.desktop_hub_pa_and_one_other)
+                else -> " " + str(S.desktop_hub_pa_and_n_other, others)
+            },
+        confirmLabel = str(S.save),
+        onConfirm = { onEvent(AccountHubEvent.SavePayrollAccounts) },
+        onDismiss = { onEvent(AccountHubEvent.DismissPayrollAccountsConfirm) },
+        loading = draft?.saving == true,
+    )
 }
 
 /** The one user picker every user field on this page opens. */
@@ -1361,4 +1423,9 @@ private fun SharedUserPicker(state: AccountHubUiState, onEvent: (AccountHubEvent
 private val DIALOG_WIDTH = 620.dp
 private val PREFIX_WIDTH = 140.dp
 private val FILE_BLOCK = 32.dp
-private val CODE_WIDTH = 140.dp
+private val ACCOUNTS_DIALOG_WIDTH = 880.dp
+private val LEVEL_WIDTH = 130.dp
+private val CODE_WIDTH = 110.dp
+private val COST_WIDTH = 120.dp
+private val FLAG_WIDTH = 60.dp
+private val TRASH_WIDTH = 32.dp

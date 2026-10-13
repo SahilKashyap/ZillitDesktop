@@ -33,6 +33,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
+import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.ui.PoConfirmAction
@@ -48,6 +49,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
 internal fun PoDialogs(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     PoDetailDialog(state, onEvent)
     PoReassignDialog(state, onEvent)
+    PoHistoryDialog(state, onEvent)
     PoCloseDialog(state, onEvent)
     PoCloseOffDialog(state, onEvent)
     PoBulkDateDialog(state, onEvent)
@@ -112,6 +114,7 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 icon = ZillitIcons.Warning,
             )
         }
+        NoApproverWarning(state, order, onEvent)
         DetailTiles(state, order)
         if (order.description.isNotBlank()) {
             ZillitSectionLabel(str(S.description))
@@ -124,6 +127,7 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.danger,
             )
+            Tile(str(S.ah_lbl_rejected_by), state.personLabel(order.rejectedBy))
         }
         if (order.closureReason?.isNotBlank() == true) {
             ZillitSectionLabel(str(S.desktop_po_closure_reason))
@@ -139,15 +143,35 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 /** The grid of facts: company, episode, dates, coding, the vendor email stamp. */
 @Composable
 private fun DetailTiles(state: PoUiState, order: PurchaseOrder) {
+    // The production's own form decides which of these it shows and what it
+    // calls them — a field Forms Configuration hides, or renames, reads the
+    // same here as on the form (`PODetailModal`'s `isFieldHidden`/`getFieldName`).
+    val layout = state.formLayout
+    val shown = { field: String -> layout.shows(PoFormFields.DETAILS, field) }
+    val named = { field: String, fallback: String -> layout.label(PoFormFields.DETAILS, field, fallback) }
     ZillitDivider()
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         Tile(str(S.ah_lbl_created_by), state.personName(order.raisedBy))
-        Tile(str(S.ah_row_eff_date_upper), EpochDate.date(order.effectiveDate))
-        Tile(str(S.delivery_date), EpochDate.date(order.deliveryDate))
+        if (shown(PoFormFields.CURRENCY)) {
+            Tile(named(PoFormFields.CURRENCY, str(S.ah_lbl_currency)), order.currency.orEmpty())
+        }
+        if (shown(PoFormFields.EFFECTIVE_DATE)) {
+            Tile(named(PoFormFields.EFFECTIVE_DATE, str(S.ah_row_eff_date_upper)), EpochDate.date(order.effectiveDate))
+        }
+        if (shown(PoFormFields.DELIVERY_DATE)) {
+            Tile(named(PoFormFields.DELIVERY_DATE, str(S.delivery_date)), EpochDate.date(order.deliveryDate))
+        }
         Tile(str(S.ah_account_label), order.nominalCode.orEmpty())
-        Tile(str(S.episode), order.episode.orEmpty())
-        Tile(str(S.company), state.companies.firstOrNull { it.id == order.companyId }?.name.orEmpty())
+        // Episode is a television production's, as on the form.
+        if (state.viewer.isTelevision) Tile(str(S.episode), order.episode.orEmpty())
+        if (shown(PoFormFields.COMPANY)) {
+            val company = state.companies.firstOrNull { it.id == order.companyId }?.name.orEmpty()
+            Tile(named(PoFormFields.COMPANY, str(S.company)), company)
+        }
         Tile(str(S.delivery_address), order.deliveryAddress.orEmpty())
+        if (shown(PoFormFields.NOTES)) Tile(named(PoFormFields.NOTES, str(S.notes)), order.notes.orEmpty())
+        // What this production added to the form, under the name it gave each.
+        customFieldRows(state, order).forEach { (name, value) -> Tile(name, value) }
         Tile(str(S.ah_lbl_gross_total), Money.format(order.gross, order.currency))
         Tile(str(S.ah_lbl_vat_tax), Money.format(order.vatAmount, order.currency))
         Tile(str(S.ah_lbl_relieved), if (order.paidAmount > 0) Money.format(order.paidAmount, order.currency) else "")
@@ -162,7 +186,15 @@ private fun DetailTiles(state: PoUiState, order: PurchaseOrder) {
                 ""
             },
         )
-        Tile(str(S.desktop_po_last_updated_by), state.personName(order.updatedBy))
+        // Who, in which role, and when — the web's block needs the stamp as well as the person.
+        if (order.updatedAt != null) {
+            Tile(
+                str(S.desktop_po_last_updated_by),
+                state.personLabel(order.updatedBy).let { who ->
+                    if (who.isBlank()) "" else who + " · " + EpochDate.dateTime(order.updatedAt)
+                },
+            )
+        }
     }
 }
 
@@ -302,32 +334,7 @@ private fun History(state: PoUiState) {
     if (state.history.isEmpty()) return
     ZillitDivider()
     ZillitSectionLabel(str(S.history))
-    state.history.forEach { entry ->
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                ZillitText(
-                    text = entry.action.replaceFirstChar { it.uppercase() },
-                    style = ZillitTheme.typography.bodyMedium,
-                    maxLines = 1,
-                )
-                entry.note?.takeIf { it.isNotBlank() }?.let { note ->
-                    ZillitText(
-                        text = note,
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                }
-            }
-            ZillitText(
-                text = EpochDate.dateTime(entry.at),
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
-    }
+    HistoryEntries(state, state.history)
 }
 
 @Suppress("LongMethod") // A rights table; flattening it is what makes it readable.
@@ -384,7 +391,9 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
     }
     if (!locked && PoAccess.canEdit(order, viewer, state.projectSettings.allowAmendAfterApproval)) {
         ZillitButton(
-            text = str(S.edit),
+            // An edit throws the approvals away and runs the chain again; say so
+            // before the click, as the web's Edit does for any order that has one.
+            text = str(S.edit) + if (order.approvals.isEmpty()) "" else " " + str(S.desktop_po_resets_approvals),
             onClick = { onEvent(PoEvent.EditOrder(order.id)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -457,13 +466,15 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
     }
 }
 
-/** The Reassign dialog — one order, or a whole selection. */
+/** The Reassign dialog — one order, or a whole selection; an unassigned order is an Assign with no reason. */
+@Suppress("LongMethod") // A title, a picker, a reason and two buttons.
 @Composable
 private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val dialog = state.reassign ?: return
+    val firstAssignment = dialog.isUnassigned
     ZillitDialogShell(
-        title = str(S.desktop_po_reassign_target, dialog.label),
-        subtitle = str(S.desktop_po_reassign_reason_note),
+        title = str(if (firstAssignment) S.desktop_po_assign_target else S.desktop_po_reassign_target, dialog.label),
+        subtitle = if (firstAssignment) null else str(S.desktop_po_reassign_reason_note),
         onDismiss = { onEvent(PoEvent.DismissReassign) },
         visible = true,
         icon = ZillitIcons.UserPlus,
@@ -475,24 +486,35 @@ private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = str(S.desktop_po_reassign),
+                text = str(if (firstAssignment) S.assign else S.desktop_po_reassign),
                 onClick = { onEvent(PoEvent.ConfirmReassign) },
                 size = ButtonSize.Small,
                 loading = dialog.saving,
-                enabled = !dialog.saving,
+                enabled = dialog.canSubmit && !dialog.saving,
             )
         },
     ) {
+        if (!firstAssignment) {
+            val holder = state.personName(dialog.assignedTo).ifBlank { dialog.assignedTo.orEmpty() }
+            ZillitText(
+                text = str(S.desktop_po_currently_assigned_to) + " " + holder,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        // Not the current holder: handing an order to whoever has it is no hand-off.
+        val eligible = state.team.filter { it.id != dialog.assignedTo }
         ZillitSelect(
             value = dialog.userId,
-            options = listOf(null) + state.team.map { it.id },
+            options = listOf(null) + eligible.map { it.id },
             onSelect = { onEvent(PoEvent.EditReassign(dialog.copy(userId = it))) },
             label = { id ->
-                id?.let { key -> state.team.firstOrNull { it.id == key }?.let(state::memberLabel) ?: "" }
+                id?.let { key -> eligible.firstOrNull { it.id == key }?.let(state::memberLabel) ?: "" }
                     ?: str(S.desktop_select_team_member)
             },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (firstAssignment) return@ZillitDialogShell
         ZillitSelect(
             value = dialog.reason.ifBlank { null },
             options = listOf(null) + PoReassignState.REASONS,
@@ -506,6 +528,7 @@ private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 onValueChange = { onEvent(PoEvent.EditReassign(dialog.copy(customReason = it))) },
                 placeholder = str(S.desktop_po_enter_reassignment_reason),
                 singleLine = false,
+                maxLength = PoReassignState.CUSTOM_REASON_MAX,
             )
         }
     }
@@ -581,7 +604,7 @@ private fun PoCloseOffDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 loading = dialog.saving,
-                enabled = dialog.confirmed && !dialog.saving,
+                enabled = dialog.confirmed && dialog.date != null && !dialog.saving,
             )
         },
     ) {
@@ -842,7 +865,7 @@ internal fun PoPromptDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    text = str(S.confirm),
+                    text = prompt.confirmLabel ?: str(S.confirm),
                     onClick = { onEvent(PoEvent.ConfirmPrompt) },
                     variant = if (prompt.destructive) ButtonVariant.Danger else ButtonVariant.Primary,
                     size = ButtonSize.Small,

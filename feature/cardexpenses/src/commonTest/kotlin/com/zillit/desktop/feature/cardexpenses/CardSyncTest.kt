@@ -53,10 +53,19 @@ class CardSyncTest {
         ).forEach { assertTrue(it in names, "$it must be subscribed") }
     }
 
+    /** The web's card bulk verbs carry no `card:` prefix (`accountHubListeners.js:1479-1495`). */
+    @Test
+    fun `the bulk verbs the web listens to are here`() {
+        listOf("batch:submitted", "batch:approved", "batch:posted").forEach {
+            assertTrue(it in names, "$it must be subscribed")
+        }
+    }
+
     @Test
     fun `every name is a card event, spelt once`() {
+        val bulk = setOf("batch:submitted", "batch:approved", "batch:posted")
         assertEquals(names.size, names.toSet().size, "no duplicate subscriptions")
-        assertTrue(names.all { it.startsWith("card:") })
+        assertTrue(names.all { it.startsWith("card:") || it in bulk })
         assertTrue(names.none { it.contains(' ') })
     }
 }

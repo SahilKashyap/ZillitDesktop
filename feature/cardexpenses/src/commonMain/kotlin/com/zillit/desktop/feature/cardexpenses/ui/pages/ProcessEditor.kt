@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -41,7 +42,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
@@ -60,6 +60,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ProcessRules
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessingFlag
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptProcessing
 import com.zillit.desktop.feature.cardexpenses.domain.TopUpMethod
+import com.zillit.desktop.feature.cardexpenses.domain.storedMedia
 import com.zillit.desktop.feature.cardexpenses.ui.AssignDraft
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
@@ -68,6 +69,8 @@ import com.zillit.desktop.feature.cardexpenses.ui.ProcessMode
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
+import com.zillit.desktop.feature.cardexpenses.ui.components.ReceiptMediaPanel
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.localDay
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -89,7 +92,9 @@ import kotlin.time.Clock
  */
 @Composable
 fun ProcessEditorPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    val draft = state.process ?: return
+    val open = state.process ?: return
+    // Amounts print in the cascade's code (`ProcessReceiptModal.jsx:307`); the draft the events act on is untouched.
+    val draft = open.copy(receipt = open.receipt.copy(currency = state.currencyOf(open.receipt)))
     val refs = state.processPages.refs
     val figures = draft.figures(refs)
     val locked = draft.periodLocked(refs.lock)
@@ -319,14 +324,14 @@ private fun HeaderButtons(
 
 /** A white card on the page's grey, as every block on the web's surface is. */
 @Composable
-private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun Card(modifier: Modifier = Modifier, padded: Boolean = true, content: @Composable () -> Unit) {
     val colors = ZillitTheme.colors
     Box(
         modifier = modifier
             .clip(ZillitTheme.shapes.large)
             .background(colors.surface)
             .border(1.dp, colors.border, ZillitTheme.shapes.large)
-            .padding(ZillitTheme.spacing.lg),
+            .padding(if (padded) ZillitTheme.spacing.lg else 0.dp),
     ) { content() }
 }
 
@@ -355,7 +360,7 @@ private fun DetailsCard(
             FieldGroupLabel(str(S.ah_receipt_details))
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
                 Fact(str(S.amount), money(receipt.amount, receipt.currency), Modifier.weight(1f), accent = true)
-                Fact(str(S.date), date(receipt.date), Modifier.weight(1f))
+                Fact(str(S.date), date(receipt.ownDate), Modifier.weight(1f))
                 Fact(
                     str(S.desktop_card_card_holder),
                     state.personName(receipt.holderId, receipt.holderName),
@@ -423,42 +428,18 @@ private fun Fact(label: String, value: String, modifier: Modifier = Modifier, ac
 }
 
 /**
- * The receipt itself, in its own 220-wide card beside the details: the file
- * and a way to open it, or "No receipt uploaded". The desktop opens the file
- * through the host rather than drawing it inline.
+ * The receipt itself, in its own card beside the details (`ReceiptPreviewPane`):
+ * the document drawn inline with its file bar and Open, or "No receipt uploaded".
  */
 @Composable
 private fun PreviewCard(draft: ProcessDraft, onEvent: (CardEvent) -> Unit) {
-    val key = draft.receipt.attachmentKey?.takeIf { it.isNotBlank() }
-    Card(Modifier.width(PREVIEW_WIDTH).heightIn(min = DETAILS_MIN)) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.CenterVertically),
-        ) {
-            ZillitIcon(ZillitIcons.File, tint = ZillitTheme.colors.textMuted, size = PREVIEW_ICON)
-            if (key == null) {
-                ZillitText(
-                    text = str(S.desktop_ce_process_no_receipt),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            } else {
-                ZillitText(
-                    text = key.substringAfterLast('/'),
-                    style = ZillitTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                ZillitButton(
-                    text = str(S.drive_btn_open),
-                    onClick = { onEvent(CardEvent.ViewReceipt(key)) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Eye,
-                )
-            }
-        }
+    Card(Modifier.width(PREVIEW_WIDTH).height(PREVIEW_HEIGHT), padded = false) {
+        ReceiptMediaPanel(
+            stored = draft.receipt.storedMedia,
+            media = draft.media,
+            onOpen = { onEvent(CardEvent.ViewReceipt(it.key)) },
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
@@ -835,8 +816,8 @@ private const val ID_PREFIX = 8
 private const val MAX_REASON = 500
 private val CRUMB_MAX = 220.dp
 private val DETAILS_MIN = 240.dp
-private val PREVIEW_WIDTH = 220.dp
-private val PREVIEW_ICON = 36.dp
+private val PREVIEW_WIDTH = 260.dp
+private val PREVIEW_HEIGHT = 360.dp
 private val SMALL_DIALOG = 480.dp
 private val OPTION_WIDTH = 220.dp
 private val OPTION_BORDER = 1.5.dp

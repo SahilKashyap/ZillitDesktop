@@ -2,10 +2,12 @@ package com.zillit.desktop.feature.bankrec.data
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.strings.S
@@ -145,10 +147,11 @@ class BankRecRepositoryImpl(
             // entries and posted FX variances.
             ledger = data.invoices.orEmpty().map { it.toDomain() }.filter { it.id.isNotBlank() },
             closingZillit = data.closingZillit.asDouble(),
+            counts = data.counts.asServerCounts(),
         )
     }
 
-    override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit> =
+    override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<String?> =
         apiClient.envelope(
             verb = HttpVerb.Post,
             url = "$base/$id/match",
@@ -159,13 +162,27 @@ class BankRecRepositoryImpl(
                 // invoice, which is what the web sends when it has no type.
                 put("matched_to_type", JsonPrimitive(if (kind == LedgerEntryKind.Other) "invoice" else kind.wire))
             },
-        ).map { }
+        ).flatMap { it.refusedOrMessage() }
 
-    override suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit> = apiClient.envelope(
+    override suspend fun unmatchTransaction(id: String): ZillitResult<String?> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/$id/unmatch",
+        module = RequestModule.ProjectUser,
+    ).flatMap { it.refusedOrMessage() }
+
+    override suspend fun bulkUnmatchTransactions(transactionIds: List<String>): ZillitResult<String?> =
+        apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "$base/bulk-unmatch",
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject { put("transaction_ids", transactionIds.toJsonArray()) },
+        ).flatMap { it.refusedOrMessage() }
+
+    override suspend fun rerunAutoMatch(periodId: String): ZillitResult<String?> = apiClient.envelope(
         verb = HttpVerb.Post,
         url = "$base/rerun-match/$periodId",
         module = RequestModule.ProjectUser,
-    ).map { }
+    ).flatMap { it.refusedOrMessage() }
 
     override suspend fun importStatement(
         attachment: StatementUpload,
@@ -397,6 +414,23 @@ class BankRecRepositoryImpl(
         const val LINKS_PER_PAGE = 100
     }
 }
+
+/**
+ * The server's own message for a write that was accepted, null when it says none.
+ *
+ * A 200 that states `status: 0` is a refusal — `envelope()` leaves it as a
+ * success — and reads as one here, so a toast never congratulates it.
+ */
+private fun ApiEnvelope.refusedOrMessage(): ZillitResult<String?> =
+    if (status == 0) {
+        ZillitResult.Failure(
+            ZillitError.Http(status = HTTP_OK, serverMessage = message, messageElements = messageElements.orEmpty()),
+        )
+    } else {
+        ZillitResult.Success(message)
+    }
+
+private const val HTTP_OK = 200
 
 private inline fun String.ifNotBlank(block: (String) -> Unit) {
     if (isNotBlank()) block(this)

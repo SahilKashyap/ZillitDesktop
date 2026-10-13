@@ -56,6 +56,11 @@ internal val HUB_REFRESH_BY_EVENT: Map<SocketEventName, HubArea> = buildMap {
     // it a company created elsewhere stayed missing until the page reopened,
     // and the next whole-list company save deleted it.
     put(SocketEventName("production_setup:updated"), HubArea.ProductionSetup)
+    // Another accountant's bank account: the web refetches the Bank Accounts
+    // section on all three (`BankAccountsSection`), which the setup slices do
+    // not cover — banks are read on their own route.
+    listOf("bank_account:added", "bank_account:default_changed", "bank_account:deleted")
+        .forEach { put(SocketEventName(it), HubArea.ProductionSetup) }
 }
 
 /**

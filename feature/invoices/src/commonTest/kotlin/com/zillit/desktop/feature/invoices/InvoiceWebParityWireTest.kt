@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.invoices.data.InvoicesRepositoryImpl
 import com.zillit.desktop.feature.invoices.domain.EntryHeader
 import com.zillit.desktop.feature.invoices.domain.EntryWrite
 import com.zillit.desktop.feature.invoices.domain.HoldReason
+import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.mock.MockEngine
@@ -77,6 +78,17 @@ class InvoiceWebParityWireTest {
             ),
             HoldReason.entries.map { it.wire },
         )
+    }
+
+    @Test
+    fun `editing a saved assignment rule patches that rule's own id`() = runTest {
+        val (repo, sent) = repository()
+
+        repo.updateRule(InvoiceAssignmentRule(id = "rule42", assignTo = "u1", persisted = true))
+
+        val call = sent.single()
+        assertEquals(HttpMethod.Patch, call.method)
+        assertTrue(call.path.endsWith("/account-hub/assignment-rules/rule42"), call.path)
     }
 
     @Test

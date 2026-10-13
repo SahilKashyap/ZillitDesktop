@@ -461,6 +461,7 @@ internal data class ProjectUserDto(
     // left every designation blank across the chat and contact lists.
     @SerialName("department") val department: String? = null,
     @SerialName("department_name") val departmentName: String? = null,
+    @SerialName("department_identifier") val departmentIdentifier: String? = null,
     @SerialName("designation") val designation: String? = null,
     @SerialName("designation_name") val designationName: String? = null,
     @SerialName("profile_picture") val avatar: JsonElement? = null,
@@ -501,6 +502,7 @@ internal data class ProjectUserDto(
             lastActiveMillis = lastActivity?.takeIf { it > 0 } ?: lastVisitedOn?.takeIf { it > 0 },
             status = status?.takeIf { it.isNotBlank() },
             mailboxAddress = mailBoxDetail?.emailAddress?.trim()?.takeIf { it.isNotBlank() },
+            departmentIdentifier = departmentIdentifier?.takeIf { it.isNotBlank() },
             signingRequired = signingRequired == true,
             sortingActivity = (sortingActivity as? JsonPrimitive)
                 ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }

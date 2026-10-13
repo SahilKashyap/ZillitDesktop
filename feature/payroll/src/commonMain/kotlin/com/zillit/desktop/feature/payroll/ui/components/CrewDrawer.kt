@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -40,6 +41,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.payroll.domain.DrawerBreakdown
 import com.zillit.desktop.feature.payroll.domain.Employment
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
@@ -50,8 +52,9 @@ import com.zillit.desktop.feature.payroll.ui.PayrollUiState
 
 /**
  * One crew member's week, opened beside the grid — the web's `CrewDrawer`,
- * shared by the Run and Processing. The footer is the host's: each screen
- * passes the actions its own rules allow.
+ * shared by the Run and Processing. The footer opens with View Time Card and
+ * the crew member's invoice; the actions after them are the host's — each
+ * screen passes the ones its own rules allow.
  */
 @Composable
 fun CrewDrawer(
@@ -63,14 +66,17 @@ fun CrewDrawer(
     modifier: Modifier = Modifier,
     footer: @Composable RowScope.(PayrollTimecard) -> Unit,
 ) {
-    // Which day is open, and the week it belongs to. Reset per timecard: a
-    // day index means nothing once the drawer is showing someone else.
-    var selectedDay by remember(timecard?.id) { mutableStateOf(0) }
+    // Which day is open. Reset per timecard — a day index means nothing once
+    // the drawer is showing someone else — and opened on today when today is in
+    // the week, else the first day with anything on it, as the web does.
+    var selectedDay by remember(timecard?.id) {
+        mutableStateOf(timecard?.let { DrawerBreakdown.defaultDay(it.weekStarting, it.days, state.now) } ?: 0)
+    }
     val rows = remember(timecard) {
         timecard?.weekStarting?.let { WeekView.rows(it, timecard.days) }.orEmpty()
     }
     Column(modifier.background(ZillitTheme.colors.surface)) {
-        DrawerHeader(state, timecard, onClose)
+        DrawerHeader(state, timecard, onClose, onEvent)
         ZillitDivider()
         if (timecard == null) {
             Column(
@@ -96,20 +102,32 @@ fun CrewDrawer(
                 now = state.now,
                 onSelect = { selectedDay = it },
             )
-            ClaimsAndDeductions(timecard)
+            DrawerBreakdownSections(timecard)
         }
         ZillitDivider()
         Row(
             Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-        ) { footer(timecard) }
+        ) {
+            // The web's footer: the read-only week and the crew member's invoice
+            // on the left, the screen's own actions on the right.
+            ViewTimecardButton(timecard, onEvent)
+            InvoiceViewButton(timecard.attachment, onOpen = { onEvent(PayrollEvent.OpenInvoice(it)) })
+            Spacer(Modifier.weight(1f))
+            footer(timecard)
+        }
     }
 }
 
 /** Face, name and status, role · department · week — or a skeleton while the week loads. */
 @Composable
-private fun DrawerHeader(state: PayrollUiState, timecard: PayrollTimecard?, onClose: () -> Unit) {
+private fun DrawerHeader(
+    state: PayrollUiState,
+    timecard: PayrollTimecard?,
+    onClose: () -> Unit,
+    onEvent: (PayrollEvent) -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -141,29 +159,11 @@ private fun DrawerHeader(state: PayrollUiState, timecard: PayrollTimecard?, onCl
                     color = ZillitTheme.colors.textMuted,
                 )
             }
+            TimecardNotesButton(state.viewer, timecard, state.nameOf(timecard.userId), onEvent)
         } else {
             ZillitSkeletonBar(Modifier.weight(1f))
         }
         ZillitIconButton(icon = ZillitIcons.Close, contentDescription = str(S.close), onClick = onClose)
-    }
-}
-
-/** The week's claims and deductions, each with its amount. */
-@Composable
-private fun ClaimsAndDeductions(timecard: PayrollTimecard) {
-    if (timecard.claims.isNotEmpty()) {
-        SectionHead(str(S.desktop_ce_claims))
-        timecard.claims.forEach { claim ->
-            val amount = Money.format(claim.amount, claim.currency ?: timecard.currency)
-            FigureRow(claim.name, amount, ZillitTheme.colors.success)
-        }
-    }
-    if (timecard.deductions.isNotEmpty()) {
-        SectionHead(str(S.desktop_deductions))
-        timecard.deductions.forEach { deduction ->
-            val amount = "−" + Money.format(deduction.amount, timecard.currency)
-            FigureRow(deduction.label, amount, ZillitTheme.colors.danger)
-        }
     }
 }
 

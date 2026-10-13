@@ -66,6 +66,12 @@ data class CashFloat(
     val companyName: String? = null,
     val episode: String? = null,
     val createdBy: String? = null,
+    /**
+     * Whether the server sent `issued_float` at all. The web's base is
+     * `issued_float ?? req_amount` (`floatHeadroom.js`): an absent figure falls
+     * back to what was requested, a stated 0 stays 0.
+     */
+    val issuedReported: Boolean = true,
 ) {
     /**
      * Whether anything has been charged against the float — the web's
@@ -143,8 +149,26 @@ data class ClaimBatch(
     val followUp: String? = null,
     /** The whole `settlement_details` object, for what the fields above do not name. */
     val settlementDetails: JsonObject? = null,
+    /** The BACS account the reimbursement is paid into — `bank_details`, else `settlement_details.bank_details`. */
+    val payee: BankPayee? = null,
+    /** `total_net` — zero or absent on a batch nobody has coded tax on. */
+    val totalNet: Double? = null,
+    val totalVat: Double = 0.0,
 ) {
     val lifecycle: Lifecycle get() = Lifecycle.of(status)
+
+    /** The batch's net: `total_net` when it is there, else gross less VAT — the OOP table's Net column. */
+    val netAmount: Double get() = totalNet?.takeIf { it > 0 } ?: (totalGross - totalVat)
+}
+
+/** A BACS payee's account as the crew member entered it; any of the three may be blank. */
+data class BankPayee(
+    val accountName: String = "",
+    val sortCode: String = "",
+    val accountNumber: String = "",
+) {
+    /** "12-34-56 · 12345678" — the web's `BankIdentity` second line. */
+    val sortAndAccount: String get() = listOf(sortCode, accountNumber).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
 /** One receipt inside a [ClaimBatch]. */
@@ -170,8 +194,8 @@ data class Claim(
     val lineItems: List<ClaimLineItem> = emptyList(),
     /** Ticked by the auditor, receipt by receipt; Send for Approval needs them all. */
     val isVerified: Boolean = false,
-    /** `review` / `query` marks the processing rules left on this receipt. */
-    val processingFlags: List<String> = emptyList(),
+    /** The processing rules that matched this receipt — a `deduct`, `review` or `query` flag and its rule. */
+    val processingRules: List<ProcessingRule> = emptyList(),
     /**
      * The stored lines exactly as the server sent them, engine rows removed.
      *
@@ -194,9 +218,41 @@ data class Claim(
     val receiptKey: String?
         get() = attachment?.media?.takeIf { it.isNotBlank() } ?: receiptUrl?.takeIf { it.isNotBlank() }
 
+    /** Just the flags of [processingRules] — `review` / `query` stop a non-senior posting. */
+    val processingFlags: List<String> get() = processingRules.map { it.flag }
+
     /** Whether the attachment should be shown as a document rather than an image. */
     val receiptIsPdf: Boolean
         get() = attachment?.isPdf ?: (receiptUrl?.endsWith(".pdf", ignoreCase = true) == true)
+}
+
+/**
+ * One processing rule that matched a receipt (`processing_flags`).
+ *
+ * The wire sends either a bare flag string or the whole match — the rule's
+ * title, the amount it fired at and its description — and the card banners
+ * (`ClaimCard.jsx` `buildBannerHeadline`) need all of it, so none is dropped.
+ */
+data class ProcessingRule(
+    /** `deduct`, `review` or `query`; anything else draws no banner. */
+    val flag: String,
+    val title: String = "",
+    val thresholdValue: Double? = null,
+    /** `percentage` or an amount. */
+    val thresholdType: String? = null,
+    val description: String = "",
+) {
+    val isPercentage: Boolean get() = thresholdType == PERCENTAGE
+
+    /** The rule as the banner names it: "Petty cash rule", always ending in "rule"; null when untitled. */
+    val ruleName: String?
+        get() = title.trim().takeIf { it.isNotEmpty() }?.let { name ->
+            if (name.endsWith("rule", ignoreCase = true)) name else "$name rule"
+        }
+
+    private companion object {
+        const val PERCENTAGE = "percentage"
+    }
 }
 
 /**
@@ -353,6 +409,8 @@ data class CashTeamMember(
     val isSenior: Boolean,
     val canOverride: Boolean,
     val postingLimit: Double?,
+    /** Every stored key this client does not model, written back on a save as the web's `...m` does. */
+    val extras: Map<String, JsonElement> = emptyMap(),
 )
 
 /** A saved cost code, offered on the coding screens. */
@@ -370,6 +428,8 @@ data class QuickCode(
     val keywords: List<String> = emptyList(),
     /** Per cent, as configured; null when the category carries no default. */
     val vat: Double? = null,
+    /** Stored keys this client does not model, written back on a save. */
+    val extras: Map<String, JsonElement> = emptyMap(),
 ) {
     /** "Fuel · 2400", or just the name where no code is set. */
     val label: String get() = if (nominalCode.isBlank()) name else "$name · $nominalCode"
@@ -397,6 +457,8 @@ data class DeductionRule(
     val systemDefault: Boolean = false,
     /** The stored `type`, round-tripped so a save cannot rename a system rule. */
     val type: String = "",
+    /** Stored keys this client does not model, written back on a save. */
+    val extras: Map<String, JsonElement> = emptyMap(),
 )
 
 /** What a [DeductionRule] does when it fires. */

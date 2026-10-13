@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costreport
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
@@ -32,6 +33,8 @@ import com.zillit.desktop.feature.costreport.ui.CostReportViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -160,6 +163,7 @@ class CostReportViewModelTest {
         repository: FakeRepository = FakeRepository(),
         exporter: FakeExporter = FakeExporter(),
         files: FakeFiles = FakeFiles(),
+        badges: TabBadgeSource = TabBadgeSource.None,
     ) = CostReportViewModel(
         repository = repository,
         exporter = exporter,
@@ -168,7 +172,53 @@ class CostReportViewModelTest {
         projectName = { "Sunset Boulevard" },
         resolveUser = { id -> if (id == "u1") "Ada Lovelace · Accountant" else null },
         nowMillis = { NOW_MS },
+        badges = badges,
     )
+
+    /** The ledger's Posted CRs rows, as the host serves them, and what was read. */
+    private class PostedBadges(
+        val total: MutableStateFlow<Map<String, Int>> = MutableStateFlow(emptyMap()),
+        val rows: MutableStateFlow<Map<String, Map<String, Int>>> = MutableStateFlow(emptyMap()),
+    ) : TabBadgeSource {
+        override val counts: Flow<Map<String, Int>> get() = total
+        override val entityCounts: Flow<Map<String, Map<String, Int>>> get() = rows
+        val reads = mutableListOf<Pair<String, String>>()
+        override fun readEntity(key: String, entityId: String, kind: String?) {
+            reads += key to entityId
+        }
+    }
+
+    @Test
+    fun `the posted tab carries the unit's unread and each snapshot its own count`() = runTest(dispatcher) {
+        val badges = PostedBadges()
+        val model = viewModel(badges = badges)
+        model.start()
+        advanceUntilIdle()
+        badges.total.value = mapOf("posted_cr_label" to 3)
+        badges.rows.value = mapOf("posted_cr_label" to mapOf("prev" to 2, "older" to 1))
+        advanceUntilIdle()
+
+        assertEquals(3, model.state.value.postedTotal)
+        assertEquals(mapOf("prev" to 2, "older" to 1), model.state.value.postedUnread)
+    }
+
+    @Test
+    fun `opening a snapshot with unread reads it, and one without sends nothing`() = runTest(dispatcher) {
+        val badges = PostedBadges()
+        val model = viewModel(badges = badges)
+        model.start()
+        advanceUntilIdle()
+        badges.rows.value = mapOf("posted_cr_label" to mapOf("prev" to 2))
+        advanceUntilIdle()
+
+        model.onEvent(CostReportEvent.OpenSnapshot(header("older")))
+        model.onEvent(CostReportEvent.OpenSnapshot(header("prev")))
+        advanceUntilIdle()
+
+        assertEquals(listOf("posted_cr_label" to "prev"), badges.reads)
+    }
+
+    private fun header(id: String) = SnapshotHeader(id, cadence = SnapshotCadence.Weekly, name = id)
 
     @Test
     fun startLoadsReferenceThenLiveForTheCurrentWeekWithTheLiveBudget() = runTest(dispatcher) {

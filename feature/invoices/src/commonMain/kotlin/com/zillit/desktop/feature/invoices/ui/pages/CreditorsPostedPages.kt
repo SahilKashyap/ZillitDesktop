@@ -51,6 +51,7 @@ import com.zillit.desktop.feature.invoices.domain.CreditorRow
 import com.zillit.desktop.feature.invoices.domain.CreditorSort
 import com.zillit.desktop.feature.invoices.domain.Creditors
 import com.zillit.desktop.feature.invoices.domain.Invoice
+import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.MoneyTotal
 import com.zillit.desktop.feature.invoices.ui.EntryEvent
@@ -58,9 +59,6 @@ import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.PaymentsEvent
 import com.zillit.desktop.feature.invoices.ui.PostedFilter
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 // Creditors -----------------------------------------------------------------
 
@@ -354,7 +352,8 @@ private fun AmountCell(text: String, color: Color = ZillitTheme.colors.textPrima
  * Invoices that have reached the ledger — the web's `PostedPage`, in its
  * order: the four split tiles, the search, the status chips beside the
  * department select, then the "Posted Ledger" panel, newest posting first.
- * A row opens the coding screen frozen, as `/posted/:id` does on the web.
+ * A row opens the coding screen in `posted` mode — correctable (Save only) until the
+ * cost-report lock reaches the invoice, as `/posted/:id` does on the web.
  */
 @Composable
 internal fun ColumnScope.PostedPage(
@@ -406,7 +405,7 @@ internal fun ColumnScope.PostedPage(
             rows = rows,
             columns = postedColumns(state),
             key = { it.id },
-            onRowClick = { onEvent(EntryEvent.Open(it, readOnly = true)) },
+            onRowClick = { onEvent(EntryEvent.Open(it, posted = true)) },
             emptyTitle = str(S.desktop_inv_no_posted_yet),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
@@ -428,7 +427,7 @@ private fun postedDepartments(state: InvoicesUiState): List<String> {
 /** The posted ledger's columns — a plain status pill and a plain due date, no urgency or overdue colour. */
 private fun postedColumns(state: InvoicesUiState): List<TableColumn<Invoice>> = listOf(
     TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
-    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(postedSupplier(state, it)) },
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.pageVendorName(it)) },
     TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) { CellText(it.description, muted = true) },
     TableColumn(str(S.desktop_po), ColumnWidth.Fixed(PO_WIDTH)) { invoice ->
         if (invoice.hasMatchedPo) {
@@ -447,22 +446,9 @@ private fun postedColumns(state: InvoicesUiState): List<TableColumn<Invoice>> = 
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
     TableColumn(str(S.desktop_due), ColumnWidth.Fixed(DUE_WIDTH), numeric = true) {
-        AmountCell(postedDate(it.dueDateMs), color = ZillitTheme.colors.textMuted)
+        AmountCell(InvoiceFormat.date(it.dueDateMs), color = ZillitTheme.colors.textMuted)
     },
 )
-
-/** `vendorMap[vendor_id] || description.split("–")[0].trim() || "Unknown"` (`PostedPage.jsx:142`). */
-private fun postedSupplier(state: InvoicesUiState, invoice: Invoice): String =
-    state.vendors[invoice.vendorId]?.name?.ifBlank { null }
-        ?: invoice.description.substringBefore('–').trim().ifBlank { null }
-        ?: str(S.desktop_unknown)
-
-/** `DD Mon YYYY`, day padded — the web's `fmtDateOnly`; "—" without a date. */
-private fun postedDate(ms: Long?): String {
-    if (ms == null || ms <= 0) return "—"
-    val d = Instant.fromEpochMilliseconds(ms).toLocalDateTime(TimeZone.UTC).date
-    return "${d.day.toString().padStart(2, '0')} ${str(SHORT_MONTHS[d.month.ordinal])} ${d.year}"
-}
 
 /**
  * The Posted page's four cards — Awaiting Payment, Paid, and the Net / Tax
@@ -514,13 +500,6 @@ private fun PostedTiles(state: InvoicesUiState) {
         ),
     )
 }
-
-private val SHORT_MONTHS = listOf(
-    S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar,
-    S.desktop_month_short_apr, S.desktop_month_short_may, S.desktop_month_short_jun,
-    S.desktop_month_short_jul, S.desktop_month_short_aug, S.desktop_month_short_sep,
-    S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
-)
 
 private const val CREDITOR_TILES = 4
 private const val POSTED_TILES = 4

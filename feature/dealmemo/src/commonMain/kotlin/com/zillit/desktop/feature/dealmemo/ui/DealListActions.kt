@@ -19,6 +19,7 @@ import kotlinx.datetime.toLocalDateTime
 internal class DealListActions(private val vm: DealMemoViewModel) {
 
     private var loadJob: Job? = null
+    private var tiersJob: Job? = null
 
     @Suppress("CyclomaticComplexMethod") // One branch per list action.
     fun onEvent(event: DealsEvent) {
@@ -52,14 +53,34 @@ internal class DealListActions(private val vm: DealMemoViewModel) {
         if (!silent) edit { copy(loading = true) }
         loadJob = vm.work {
             when (val result = vm.repository.deals()) {
-                is ZillitResult.Success -> edit {
-                    copy(rows = result.data, loading = false, loaded = true, loadedAt = vm.clock())
+                is ZillitResult.Success -> {
+                    edit { copy(rows = result.data, loading = false, loaded = true, loadedAt = vm.clock()) }
+                    loadTiers()
                 }
                 // A failed first load is an empty table, as on the web; a failed
                 // background refresh keeps what is on screen rather than wiping it.
                 is ZillitResult.Failure -> edit {
                     copy(rows = if (silent) rows else emptyList(), loading = false, loaded = true)
                 }
+            }
+        }
+    }
+
+    /** A tier change while All Deals is open — the banner must clear the moment approvers are saved. */
+    fun reloadTiers() = loadTiers()
+
+    /**
+     * The "Approvers not configured" banner's read: the deal_memo tier configs,
+     * fresh after every deals load and on every tier change, never a cached copy.
+     * A failed read is silent — the banner falls back to the metadata's flag.
+     * Read whoever the viewer is: rights can land after the deals.
+     */
+    private fun loadTiers() {
+        tiersJob?.cancel()
+        tiersJob = vm.work {
+            when (val result = vm.repository.approvalTierConfigs()) {
+                is ZillitResult.Success -> edit { copy(tierConfigs = result.data, tiersFailed = false) }
+                is ZillitResult.Failure -> edit { copy(tiersFailed = true) }
             }
         }
     }

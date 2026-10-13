@@ -358,8 +358,19 @@ internal suspend fun AppGraph.Ready.hubDepartments(): List<HubDepartment> =
 internal fun AppGraph.Ready.hubBadges(scope: CoroutineScope): StateFlow<HubBadgeCounts> =
     badgeStore.counts
         .map { counts ->
+            val units = badgeStore.split(BadgeDrilldownQuery(groupBy = "unit", tool = HubBadges.HUB_TOOL))
+            // Cash Expenses counts only its working areas: payment routing, history and
+            // settings carry notification-only rows the web's `getCashUnitTotalUnread`
+            // leaves out of the tile, so the unit is re-split by its first level.
+            val cashByArea = badgeStore.split(
+                BadgeDrilldownQuery(groupBy = "level_1", tool = HubBadges.HUB_TOOL, unit = HubBadges.CASH_UNIT),
+            )
             HubBadgeCounts(
-                hubUnits = badgeStore.split(BadgeDrilldownQuery(groupBy = "unit", tool = HubBadges.HUB_TOOL)),
+                hubUnits = if (HubBadges.CASH_UNIT in units) {
+                    units + (HubBadges.CASH_UNIT to HubBadges.cashUnitTotal(cashByArea))
+                } else {
+                    units
+                },
                 tools = HUB_TOOL_WIRES.associateWith { counts[it] },
             )
         }

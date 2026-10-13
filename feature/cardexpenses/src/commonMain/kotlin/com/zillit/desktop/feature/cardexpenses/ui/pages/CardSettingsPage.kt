@@ -36,6 +36,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
+import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -46,11 +47,13 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CARD_RULE_NOMINALS
 import com.zillit.desktop.feature.cardexpenses.domain.CardAssignmentRule
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
+import com.zillit.desktop.feature.cardexpenses.domain.CardCode
 import com.zillit.desktop.feature.cardexpenses.domain.CardCompany
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.DepartmentCoordinator
+import com.zillit.desktop.feature.cardexpenses.domain.ProviderIds
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapProblem
@@ -126,7 +129,7 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
             )
             ZillitButton(
                 text = str(S.desktop_ce_insights_add_card_provider),
-                onClick = { edit(providers + CardProvider(id = newProviderId(providers), name = "")) },
+                onClick = { edit(providers + CardProvider(id = ProviderIds.mint(), name = "")) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
@@ -140,6 +143,7 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
         providers.forEachIndexed { index, provider ->
             if (index > 0) ZillitDivider()
             ProviderRow(
+                codes = state.insights.nominals,
                 provider = provider,
                 banks = state.banks,
                 companies = state.insights.companies,
@@ -158,6 +162,7 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
 @Suppress("LongMethod") // Two rows of three fields, as the web lays them out.
 @Composable
 private fun ProviderRow(
+    codes: List<CardCode>,
     provider: CardProvider,
     banks: List<CardBank>,
     companies: List<CardCompany>,
@@ -230,16 +235,18 @@ private fun ProviderRow(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             verticalAlignment = Alignment.Bottom,
         ) {
-            ZillitTextField(
+            ProviderCodeField(
+                codes = codes,
                 value = provider.custodianAccount,
-                onValueChange = { onChange(provider.copy(custodianAccount = it)) },
+                onChange = { onChange(provider.copy(custodianAccount = it)) },
                 label = str(S.desktop_ce_insights_custodian_account),
                 placeholder = str(S.desktop_pc_enter_account_code),
                 modifier = Modifier.weight(1f),
             )
-            ZillitTextField(
+            ProviderCodeField(
+                codes = codes,
                 value = provider.floatMin,
-                onValueChange = { onChange(provider.copy(floatMin = it)) },
+                onChange = { onChange(provider.copy(floatMin = it)) },
                 label = str(S.desktop_ce_insights_float_from),
                 placeholder = str(S.desktop_pc_eg_1000),
                 modifier = Modifier.weight(1f),
@@ -249,9 +256,10 @@ private fun ProviderRow(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ZillitTextField(
+                ProviderCodeField(
+                    codes = codes,
                     value = provider.floatMax,
-                    onValueChange = { onChange(provider.copy(floatMax = it)) },
+                    onChange = { onChange(provider.copy(floatMax = it)) },
                     label = str(S.desktop_ce_insights_float_to),
                     placeholder = str(S.desktop_pc_eg_1999),
                     modifier = Modifier.weight(1f),
@@ -1036,20 +1044,6 @@ private fun ErrorLine(text: String) {
     ZillitText(text = text, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.danger)
 }
 
-/**
- * An id for a provider the server has not seen.
- *
- * The card forms pin a provider by id and the settings row is the only place
- * one is minted, so it has to be stable and unique within the list — the
- * highest existing number plus one, rather than a timestamp, so a list saved
- * twice in the same second does not collide.
- */
-private fun newProviderId(existing: List<CardProvider>): String {
-    val highest = existing.mapNotNull { it.id.removePrefix(PROVIDER_PREFIX).toIntOrNull() }.maxOrNull() ?: 0
-    return "$PROVIDER_PREFIX${highest + 1}"
-}
-
-private const val PROVIDER_PREFIX = "provider-"
 private val ACTIONS_WIDTH = 110.dp
 private val CODING_WIDTH = 120.dp
 private val REMOVE_WIDTH = 100.dp
@@ -1058,3 +1052,46 @@ private val PICKER_WIDTH = 480.dp
 private val CAP_LABEL = 130.dp
 private val MULTIPLIER_WIDTH = 90.dp
 private val AMOUNT_WIDTH = 150.dp
+
+/**
+ * A provider's custodian or float code — the web's `BsCodeInput` over balance-sheet
+ * nominals. The chart's codes are searchable by number or name; a code typed that the
+ * chart does not list is kept as typed, and with no chart read it stays a plain field.
+ */
+@Composable
+private fun ProviderCodeField(
+    codes: List<CardCode>,
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    if (codes.isEmpty()) {
+        ZillitTextField(
+            value = value,
+            onValueChange = onChange,
+            label = label,
+            placeholder = placeholder,
+            modifier = modifier,
+        )
+        return
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        InsightEyebrow(label)
+        // A saved code the chart no longer lists is still shown, so history is never hidden.
+        val current = value.takeIf { it.isNotBlank() }
+            ?.let { code -> codes.firstOrNull { it.code == code } ?: CardCode(code, "") }
+        ZillitSearchSelect(
+            value = current,
+            options = codes,
+            onSelect = { onChange(it.code) },
+            label = { it.display },
+            searchText = { it.display },
+            placeholder = placeholder,
+            onCreate = { typed -> onChange(typed.trim()) },
+            onClear = { onChange("") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}

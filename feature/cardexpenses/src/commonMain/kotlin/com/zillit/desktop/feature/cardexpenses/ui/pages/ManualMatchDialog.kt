@@ -33,13 +33,16 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.MatchCandidate
+import com.zillit.desktop.feature.cardexpenses.domain.ScoreBands
 import com.zillit.desktop.feature.cardexpenses.domain.inboxBadge
+import com.zillit.desktop.feature.cardexpenses.domain.matchRaw
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.InboxEvent
 import com.zillit.desktop.feature.cardexpenses.ui.WorkflowStatusPill
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReconciliationBadgePill
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 
@@ -106,20 +109,20 @@ internal fun ManualMatchDialog(state: CardUiState, onEvent: (CardEvent) -> Unit)
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         ZillitText(receipt.description.ifBlank { EM_DASH }, style = ZillitTheme.typography.bodySmall)
-                        receipt.matchScore?.let { ScorePill(it) }
+                        receipt.matchScore?.let { ScorePill(it, receipt.matchRaw) }
                     }
                 }
                 Column(Modifier.weight(1f)) {
                     FieldGroupLabel(str(S.amount))
                     ZillitText(
-                        text = money(receipt.amount, receipt.currency),
+                        text = if (receipt.amount != 0.0) money(receipt.amount, state.currencyOf(receipt)) else EM_DASH,
                         style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                         color = ZillitTheme.colors.accent,
                     )
                 }
                 Column(Modifier.weight(1f)) {
                     FieldGroupLabel(str(S.date))
-                    ZillitText(date(receipt.date), style = ZillitTheme.typography.bodySmall)
+                    ZillitText(date(receipt.ownDate), style = ZillitTheme.typography.bodySmall)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
@@ -152,7 +155,7 @@ internal fun ManualMatchDialog(state: CardUiState, onEvent: (CardEvent) -> Unit)
                         val parts = listOfNotNull(
                             receipt.transactionMerchant?.takeIf { it.isNotBlank() } ?: receipt.description,
                             holder?.name,
-                            receipt.transactionAmount?.let { money(it, receipt.currency) },
+                            receipt.transactionAmount?.let { money(it, state.currencyOf(receipt)) },
                             receipt.transactionCardLastFour?.takeIf { it.isNotBlank() }?.let { "···· $it" },
                             receipt.transactionDate?.let { date(it) },
                         )
@@ -186,7 +189,7 @@ internal fun ManualMatchDialog(state: CardUiState, onEvent: (CardEvent) -> Unit)
                     CandidateHeader()
                     ZillitScrollColumn(modifier = Modifier.fillMaxSize()) {
                         match.candidates.forEach { candidate ->
-                            CandidateRow(candidate, candidate.id == match.selectedId) {
+                            CandidateRow(candidate, state.currencyOf(candidate), candidate.id == match.selectedId) {
                                 onEvent(InboxEvent.SelectCandidate(candidate.id))
                             }
                             ZillitDivider()
@@ -216,7 +219,7 @@ private fun CandidateHeader() {
 }
 
 @Composable
-private fun CandidateRow(candidate: MatchCandidate, selected: Boolean, onClick: () -> Unit) {
+private fun CandidateRow(candidate: MatchCandidate, currency: String, selected: Boolean, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     Row(
         modifier = Modifier
@@ -245,7 +248,7 @@ private fun CandidateRow(candidate: MatchCandidate, selected: Boolean, onClick: 
             modifier = Modifier.width(CARD_COLUMN),
         )
         ZillitText(
-            money(candidate.amount, candidate.currency),
+            money(candidate.amount, currency),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
             color = colors.accent,
             textAlign = TextAlign.End,
@@ -266,15 +269,21 @@ private fun CandidateRow(candidate: MatchCandidate, selected: Boolean, onClick: 
     }
 }
 
-/** A match score, green from 80, amber from 50, grey below (`ManualMatchModal.jsx:90, 167-168`). */
+/**
+ * A match score, green from 0.8, amber from 0.5, grey below (`ManualMatchModal.jsx:90, 167-168`).
+ *
+ * A receipt's pill shows for any score above zero and tones on the raw [fraction], so 0.003 reads
+ * "0%" and 0.795 stays amber; a candidate's is the rounded percentage the web tones on, shown always.
+ */
 @Composable
-internal fun ScorePill(percent: Int, showZero: Boolean = false) {
-    if (percent <= 0 && !showZero) return
+internal fun ScorePill(percent: Int, fraction: Double? = null, showZero: Boolean = false) {
+    val raw = fraction ?: (percent / WHOLE)
+    if (raw <= 0.0 && !showZero) return
     ZillitStatusPill(
         label = "$percent%",
         tone = when {
-            percent >= STRONG -> StatusTone.Ready
-            percent >= FAIR -> StatusTone.Pending
+            ScoreBands.isStrong(raw) -> StatusTone.Ready
+            ScoreBands.isFair(raw) -> StatusTone.Pending
             else -> StatusTone.Neutral
         },
     )
@@ -298,8 +307,7 @@ private fun MatchNote(text: String) {
     }
 }
 
-private const val STRONG = 80
-private const val FAIR = 50
+private const val WHOLE = 100.0
 private val DIALOG_WIDTH = 720.dp
 private val CANDIDATES_HEIGHT = 320.dp
 private val EMPTY_GLYPH = 26.dp

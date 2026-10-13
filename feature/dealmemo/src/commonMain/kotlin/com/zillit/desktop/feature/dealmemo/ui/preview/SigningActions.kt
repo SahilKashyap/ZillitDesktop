@@ -19,6 +19,7 @@ import com.zillit.desktop.feature.dealmemo.ui.DealToastTone
 import com.zillit.desktop.feature.dealmemo.ui.SignerEvent
 import com.zillit.desktop.feature.dealmemo.ui.documents.DealPdfPage
 import com.zillit.desktop.feature.dealmemo.ui.documents.DealPlacement
+import com.zillit.desktop.feature.dealmemo.ui.documents.SignedPlacement
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -60,15 +61,19 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
                 copy(zoom = (zoom + event.delta).coerceIn(SignerState.ZOOM_MIN, SignerState.ZOOM_MAX))
             }
             SignerEvent.Retry -> loadSource()
-            is SignerEvent.AddAnother -> updateSigner {
-                if (busy || !ready) this else copy(stamps = stamps + event.placement)
-            }
+            is SignerEvent.AddAnother -> addStamp(event.placement)
             is SignerEvent.RemoveStamp -> updateSigner {
                 if (busy) this else copy(stamps = stamps.filterIndexed { index, _ -> index != event.index })
             }
             is SignerEvent.Sign -> sign(event.placement)
             SignerEvent.Cancel -> cancel()
         }
+    }
+
+    /** Sets the live signature down where it is, as it looks now (`measurePlacement` snapshots its `dataUrl`). */
+    private fun addStamp(placement: DealPlacement) {
+        val signature = vm.ui.preview?.signature ?: return
+        updateSigner { if (busy || !ready) this else copy(stamps = stamps + PlacedStamp(placement, signature)) }
     }
 
     /** Opens the signer on exactly one document; a signature chosen earlier this visit is reused. */
@@ -313,7 +318,9 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
         if (signer.busy || !signer.ready) return
         updateSigner { copy(busy = true) }
         vm.work {
-            val outcome = runSign(preview.dealId, signer, source, signature, signer.stamps + last)
+            val placed = signer.stamps + PlacedStamp(last, signature)
+            val marks = placed.map { SignedPlacement(it.placement, it.signature.png) }
+            val outcome = runSign(preview.dealId, signer, source, marks)
             when (outcome) {
                 SignOutcome.Stale -> {
                     vm.toast(
@@ -337,14 +344,13 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
         dealId: String,
         signer: SignerState,
         source: SignSource,
-        signature: CapturedSignature,
-        placements: List<DealPlacement>,
+        marks: List<SignedPlacement>,
     ): SignOutcome {
         if (source.fromStored) {
             val fresh = vm.repository.deal(dealId).getOrNull()
             if (fresh != null && currentMedia(fresh, signer.surface) != source.media) return SignOutcome.Stale
         }
-        val stamped = withContext(vm.workDispatcher) { vm.pdf.stamp(source.bytes, signature.png, placements) }
+        val stamped = withContext(vm.workDispatcher) { vm.pdf.stamp(source.bytes, marks) }
         val flattened = when (stamped) {
             is ZillitResult.Success -> stamped.data
             is ZillitResult.Failure -> return SignOutcome.Failed(stamped.error)

@@ -156,6 +156,13 @@ data class UserSnapshot(
      */
     val mailboxAddress: String? = null,
     /**
+     * The department's stable identifier (`department_identifier`, such as
+     * `department_accounts`) — what the web's `ACCOUNTS_TEAM_USERS` is filtered on,
+     * where [department] is a display name that is translated. Not cached, like
+     * [mailboxAddress]: offline, callers fall back to the name.
+     */
+    val departmentIdentifier: String? = null,
+    /**
      * This crew member is on a deal — the production requires them to sign a
      * deal memo (`signing_required`).
      *

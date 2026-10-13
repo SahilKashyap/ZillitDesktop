@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -20,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitMeter
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
+import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -27,6 +33,10 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
+import com.zillit.desktop.feature.cashexpenses.domain.ExpenseCategory
+import com.zillit.desktop.feature.cashexpenses.domain.OopRoutingFilter
+import com.zillit.desktop.feature.cashexpenses.domain.OopStatusFilter
+import com.zillit.desktop.feature.cashexpenses.domain.filterOop
 import com.zillit.desktop.feature.cashexpenses.ui.BatchStatusPill
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
@@ -41,7 +51,11 @@ import com.zillit.desktop.feature.cashexpenses.ui.money
 @Composable
 fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val overview = state.outOfPocketOverview
-    val currency = overview?.batches?.firstOrNull()?.currency
+    // The tiles and bars total across claims in any currency, so they read in
+    // the project default; each row of the table below keeps its own claim's.
+    val aggregate = { amount: Double? -> if (amount == null) "—" else state.formatAggregate(amount) }
+    var statusFilter by remember { mutableStateOf(OopStatusFilter.All) }
+    var routingFilter by remember { mutableStateOf(OopRoutingFilter.All) }
 
     ScrollingPage {
         ZillitNotice(
@@ -61,13 +75,13 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 ),
                 StatTileSpec(
                     label = str(S.desktop_ce_total_claimed),
-                    value = money(overview?.totalClaimed, currency),
+                    value = aggregate(overview?.totalClaimed),
                     sub = str(S.desktop_ce_across_open_claims),
                     icon = ZillitIcons.BarChart,
                 ),
                 StatTileSpec(
                     label = str(S.desktop_ce_bacs_ready),
-                    value = money(overview?.bacsReady, currency),
+                    value = aggregate(overview?.bacsReady),
                     sub = str(S.desktop_ce_approved_awaiting_file),
                     tone = StatusTone.Ready,
                     icon = ZillitIcons.Bank,
@@ -75,7 +89,7 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 ),
                 StatTileSpec(
                     label = str(S.desktop_ce_payroll_additions),
-                    value = money(overview?.payrollAuto, currency),
+                    value = aggregate(overview?.payrollAuto),
                     sub = str(S.desktop_ce_routed_to_next_run),
                     tone = StatusTone.Done,
                     icon = ZillitIcons.Users,
@@ -94,8 +108,8 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             ) {
                 val routing = overview?.routing
                 val total = routing?.total?.takeIf { it > 0 } ?: 1.0
-                RoutingBar("BACS", routing?.bacs ?: 0.0, total, currency, StatusTone.Progress)
-                RoutingBar(str(S.dm_step9_title), routing?.payroll ?: 0.0, total, currency, StatusTone.Done)
+                RoutingBar("BACS", routing?.bacs ?: 0.0, total, aggregate, StatusTone.Progress)
+                RoutingBar(str(S.dm_step9_title), routing?.payroll ?: 0.0, total, aggregate, StatusTone.Done)
             }
 
             ZillitSectionCard(
@@ -110,22 +124,41 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                         message = str(S.desktop_ce_categories_appear),
                     )
                 } else {
-                    val max = rows.maxOf { it.amount }.takeIf { it > 0 } ?: 1.0
+                    // A share of what was claimed in all, not of the largest bar.
+                    val sum = rows.sumOf { it.amount }.takeIf { it > 0 } ?: 1.0
                     rows.forEach { row ->
-                        RoutingBar(row.category, row.amount, max, currency, StatusTone.Escalated)
+                        val label = ExpenseCategory.label(row.category)
+                        RoutingBar(label, row.amount, sum, aggregate, StatusTone.Escalated)
                     }
                 }
             }
         }
 
-        ZillitSectionCard(title = str(S.desktop_ce_claims), icon = ZillitIcons.Receipt, padded = false) {
+        val batches = overview?.batches.orEmpty()
+        ZillitSectionCard(
+            title = str(S.desktop_ce_claims),
+            icon = ZillitIcons.Receipt,
+            padded = false,
+            action = {
+                OopFilters(
+                    status = statusFilter,
+                    routing = routingFilter,
+                    onStatus = { statusFilter = it },
+                    onRouting = { routingFilter = it },
+                )
+            },
+        ) {
             ZillitDataTable(
-                rows = overview?.batches.orEmpty(),
-                columns = batchColumns(state.viewer.isAccountant),
+                rows = batches.filterOop(statusFilter, routingFilter),
+                columns = oopColumns(state.viewer.isAccountant),
                 key = { it.id },
                 loading = state.loading,
                 emptyTitle = str(S.desktop_ce_no_oop_claims),
-                emptyMessage = str(S.desktop_ce_claims_empty),
+                emptyMessage = if (batches.isEmpty()) {
+                    str(S.desktop_ce_claims_empty)
+                } else {
+                    str(S.desktop_ce_no_claims_match_filter)
+                },
                 onRowClick = { onEvent(CashEvent.SelectBatch(it.id)) },
                 isSelected = { it.id == state.selectedBatchId },
                 virtualised = false,
@@ -136,12 +169,92 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
 // -- shared pieces -----------------------------------------------------------
 
+/** The Status and Routing selects over the claims table (`OOPOverviewPage.jsx:402-427`). */
+@Composable
+private fun OopFilters(
+    status: OopStatusFilter,
+    routing: OopRoutingFilter,
+    onStatus: (OopStatusFilter) -> Unit,
+    onRouting: (OopRoutingFilter) -> Unit,
+) {
+    ZillitSelect(
+        value = status,
+        options = OopStatusFilter.entries,
+        onSelect = onStatus,
+        label = { filter ->
+            when (filter) {
+                OopStatusFilter.All -> str(S.desktop_ce_cards_all_status)
+                OopStatusFilter.Pending -> str(S.pending)
+                OopStatusFilter.Approved -> str(S.approved)
+                OopStatusFilter.Paid -> str(S.desktop_paid)
+            }
+        },
+        modifier = Modifier.width(FILTER_WIDTH),
+    )
+    ZillitSelect(
+        value = routing,
+        options = OopRoutingFilter.entries,
+        onSelect = onRouting,
+        label = { filter ->
+            when (filter) {
+                OopRoutingFilter.All -> str(S.desktop_ce_all_routing)
+                OopRoutingFilter.Bacs -> "BACS"
+                OopRoutingFilter.Payroll -> str(S.dm_step9_title)
+            }
+        },
+        modifier = Modifier.width(FILTER_WIDTH),
+    )
+}
+
+/**
+ * The out-of-pocket claims table: who, which batch, how many receipts, what
+ * was claimed gross and net, the rail it is paid by and where it stands.
+ */
+@Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
+private fun oopColumns(accountant: Boolean): List<TableColumn<ClaimBatch>> = listOf(
+    personColumn(str(S.crew_member), ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName },
+    textColumn(str(S.desktop_reference), ColumnWidth.Weight(1f), muted = true) {
+        "#${it.reference.ifBlank { it.id.take(REF_FALLBACK) }}"
+    },
+    textColumn(str(S.description), ColumnWidth.Weight(1f), muted = true) { receiptCount(it.claimCount) },
+    textColumn(str(S.desktop_gross), ColumnWidth.Weight(1f), numeric = true) { money(it.totalGross, it.currency) },
+    textColumn(str(S.desktop_net), ColumnWidth.Weight(1f), numeric = true, muted = true) {
+        money(it.netAmount, it.currency)
+    },
+    TableColumn(
+        header = str(S.desktop_pc_routing),
+        width = ColumnWidth.Weight(1f),
+        cell = { RoutingPill(it.paymentMethod) },
+    ),
+    TableColumn(
+        header = str(S.status),
+        width = ColumnWidth.Fixed(STATUS_COLUMN),
+        cell = { BatchStatusPill(it.status, accountant) },
+    ),
+)
+
+private fun receiptCount(count: Int): String =
+    if (count == 1) str(S.desktop_card_receipt_count_one, count) else str(S.ah_receipts_count, count)
+
+/** BACS green, payroll violet, anything else as it was written — an em dash for a batch not yet routed. */
+@Composable
+private fun RoutingPill(method: String?) {
+    when (method) {
+        "BACS" -> ZillitStatusPill(label = "BACS", tone = StatusTone.Ready, dot = true)
+        "PAYROLL" -> ZillitStatusPill(label = str(S.dm_step9_title), tone = StatusTone.Escalated, dot = true)
+        else -> {
+            val label = method?.takeIf { it.isNotBlank() } ?: "—"
+            ZillitStatusPill(label = label, tone = StatusTone.Neutral, dot = true)
+        }
+    }
+}
+
 @Composable
 private fun RoutingBar(
     label: String,
     amount: Double,
     total: Double,
-    currency: String?,
+    format: (Double) -> String,
     tone: StatusTone,
 ) {
     Column(
@@ -155,9 +268,9 @@ private fun RoutingBar(
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
-            ZillitText(text = money(amount, currency), style = ZillitTheme.typography.numeric, maxLines = 1)
+            ZillitText(text = format(amount), style = ZillitTheme.typography.numeric, maxLines = 1)
         }
-        ZillitMeter(fraction = (amount / total).toFloat(), tone = tone)
+        ZillitMeter(fraction = (amount / total).toFloat().coerceIn(0f, 1f), tone = tone)
     }
 }
 
@@ -211,13 +324,16 @@ fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = build
  * The batch table's columns. Identical everywhere a batch is listed, except
  * the total column: [amount] defaults to the claim's own gross, but Payment
  * Routing reads `reimbursement_amount` instead — what is actually owed back,
- * which is not always the claim's full receipt total.
+ * which is not always the claim's full receipt total. [extra] columns sit
+ * just before Status.
  */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 fun batchColumns(
     accountant: Boolean,
     compact: Boolean = false,
     amount: (ClaimBatch) -> Double = { it.totalGross },
+    /** Columns a page adds ahead of Status — Payment Routing's payee. */
+    extra: List<TableColumn<ClaimBatch>> = emptyList(),
 ): List<TableColumn<ClaimBatch>> = buildList {
     add(
         textColumn(str(S.desktop_reference), ColumnWidth.Weight(1.2f)) {
@@ -240,6 +356,7 @@ fun batchColumns(
     if (!compact) {
         add(textColumn(str(S.txt_submitted), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
     }
+    addAll(extra)
     add(
         TableColumn(
             header = str(S.status),
@@ -257,4 +374,5 @@ private const val REF_FALLBACK = 8
 private val METER_COLUMN = 110.dp
 private val METER_WIDTH = 90.dp
 private val STATUS_COLUMN = 150.dp
+private val FILTER_WIDTH = 150.dp
 private val COUNT_COLUMN = 70.dp

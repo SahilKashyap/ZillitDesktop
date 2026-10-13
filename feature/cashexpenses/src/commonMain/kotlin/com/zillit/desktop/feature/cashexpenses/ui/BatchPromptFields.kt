@@ -160,7 +160,9 @@ internal fun EscalateFields(prompt: CashPrompt.WithReason, onEvent: (CashEvent) 
 /** Whether the prompt's confirm may be pressed — the web disables it until the form is whole. */
 internal fun CashPrompt?.canConfirm(batch: ClaimBatch?): Boolean = when (this) {
     is CashPrompt.Assign -> BatchAssignment.canSubmit(batch, selectedUserId, reason)
-    is CashPrompt.WithReason -> action != ReasonedAction.EscalateBatch || reason.isNotBlank()
+    // Every reasoned action waits on its reason — a rejection or an escalation
+    // goes to the person it concerns and says why.
+    is CashPrompt.WithReason -> reason.isNotBlank()
     else -> true
 }
 

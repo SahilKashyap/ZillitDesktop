@@ -172,6 +172,25 @@ class TaxFilingRulesTest {
         )
     }
 
+    /** The number goes in as the web puts it — spaces and letters kept — minus what a file name cannot hold. */
+    @Test
+    fun `the export file name keeps the registration number raw but safe`() {
+        assertEquals(
+            "tax-filing-zillit-GB 416 706 164.json",
+            exportFileName(
+                TaxRegistration(id = "r1", companyName = "Zillit", registrationNumber = "GB 416 706 164"),
+            ),
+        )
+        assertEquals(
+            "tax-filing-zillit-123456789.json",
+            exportFileName(TaxRegistration(id = "r1", companyName = "Zillit", registrationNumber = "12/34:56*78?9")),
+        )
+        assertEquals(
+            "tax-filing-zillit-registration.json",
+            exportFileName(TaxRegistration(id = "r1", companyName = "Zillit", registrationNumber = "///")),
+        )
+    }
+
     // -- pickers ----------------------------------------------------------------------
 
     /** The web's `rankRows`: an exact code, then code prefixes, name prefixes, and the rest. */
@@ -196,6 +215,34 @@ class TaxFilingRulesTest {
     fun `a typed code keeps digits and hyphens, never a leading hyphen`() {
         assertEquals("1100-10", CoaCodes.sanitise("-1100-10a"))
         assertEquals("4000", CoaCodes.sanitise(" 4 0 0 0 "))
+    }
+
+    /** A letter turns the text into a search, kept as typed; letter-free text is cleaned as a code. */
+    @Test
+    fun `text with a letter is a search and keeps what was typed`() {
+        assertEquals("Fuel", CoaCodes.typedText("Fuel"))
+        assertEquals("5120 fuel", CoaCodes.typedText("5120 fuel"))
+        assertEquals("1100-10", CoaCodes.typedText("-1,100-10"))
+        assertEquals("11 00", CoaCodes.typedText("11 00"))
+        assertTrue(CoaCodes.isCodeQuery("1,100"))
+        assertFalse(CoaCodes.isCodeQuery("5120 fuel"))
+    }
+
+    /** The web's search: every word in the code or name, in any order, below a contiguous match. */
+    @Test
+    fun `a search finds an account by name in any word order`() {
+        val chart = listOf(
+            CoaCode("5120", "Fuel - Diesel"),
+            CoaCode("5125", "Fuel Petrol"),
+            CoaCode("6000", "Diesel generator hire"),
+            CoaCode("7000", "Travel"),
+        )
+
+        assertEquals(listOf("6000", "5120"), CoaCodes.rank(chart, "diesel").map { it.code })
+        assertEquals(listOf("5120"), CoaCodes.rank(chart, "diesel fuel").map { it.code })
+        assertEquals(listOf("5120"), CoaCodes.rank(chart, "5120 fuel").map { it.code })
+        // A code is never a word search: "5120-9" must not fall back to account 5120.
+        assertEquals(emptyList(), CoaCodes.rank(chart, "5120-9").map { it.code })
     }
 
     /** Only both groups labelled; one group is a plain grid. */

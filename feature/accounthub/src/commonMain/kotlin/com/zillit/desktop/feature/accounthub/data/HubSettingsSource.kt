@@ -9,6 +9,7 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
@@ -99,7 +100,12 @@ internal class HubSettingsSource(private val apiClient: ApiClient, config: AppCo
             put("auto_split_rentals", JsonPrimitive(setup.autoSplitRentals))
             put("default_split_type", JsonPrimitive(setup.splitType.wire))
             put("po_number_prefix", JsonPrimitive(setup.numberPrefix))
-            put("terms_attachment", setup.termsDocument?.toJson() ?: JsonNull)
+            put("terms_attachment", setup.termsDocument?.toTermsJson() ?: JsonNull)
+            // The web PATCHes its whole settings object: the two always-on switches go as true (the modal shows
+            // a static "Always"), and amendments - paused in the UI - ride unchanged so the choice survives a save.
+            put("require_effective_date", JsonPrimitive(true))
+            put("enforce_period_close", JsonPrimitive(true))
+            put("allow_amend_after_approval", JsonPrimitive(setup.allowAmendAfterApproval))
             // Null clears the rule — the web's `mapAssetFiltersToDb`, and what
             // the server normalises an all-empty rule to anyway.
             put("asset_filters", setup.assetFilters.toJson())
@@ -159,9 +165,14 @@ internal class HubSettingsSource(private val apiClient: ApiClient, config: AppCo
                                 if (row.delete) {
                                     put("status", JsonPrimitive("delete"))
                                 } else {
-                                    put("code", JsonPrimitive(row.code.trim()))
+                                    // The web's `buildCustomAccountRows`: codes go upper-case, and the
+                                    // grid's cost type, Active and Posting columns ride along.
+                                    put("code", JsonPrimitive(row.code.trim().uppercase()))
                                     put("name", JsonPrimitive(row.name.trim()))
                                     put("line_type", JsonPrimitive(row.lineType.wire))
+                                    put("cost_type", JsonPrimitive(row.costType.wire))
+                                    put("active", JsonPrimitive(row.active))
+                                    put("posting_box", JsonPrimitive(row.posting))
                                 }
                             },
                         )
@@ -230,6 +241,23 @@ internal fun JsonElement?.settingsDocument(): JsonObject? {
     val body = this as? JsonObject ?: return null
     (body["value"] as? JsonObject)?.let { return it }
     return body.takeUnless { it.isEmpty() || it.keys == setOf("value") }
+}
+
+/**
+ * The terms document as the web's `uploadAttachmentModel` stores it: the six attachment keys and the caption, with
+ * `content_type` the upload kind (`document`) rather than a MIME type and `content_subtype` the file extension.
+ */
+private fun AgreementDocument.toTermsJson(): JsonElement = buildJsonObject {
+    put("media", JsonPrimitive(media))
+    put("bucket", JsonPrimitive(bucket))
+    put("region", JsonPrimitive(region))
+    put("name", JsonPrimitive(name))
+    put("content_type", JsonPrimitive("document"))
+    put(
+        "content_subtype",
+        JsonPrimitive(contentSubtype.ifBlank { name.substringAfterLast('.', "") }.lowercase()),
+    )
+    put("caption", JsonPrimitive(description))
 }
 
 /**

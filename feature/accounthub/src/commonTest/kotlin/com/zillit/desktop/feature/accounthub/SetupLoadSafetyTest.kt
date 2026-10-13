@@ -9,6 +9,7 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.feature.accounthub.data.AccountHubRepositoryImpl
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
+import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HybridDefault
@@ -251,6 +252,107 @@ class SetupLoadSafetyTest {
     }
 
     @Test
+    fun `a payroll account row goes with its cost type, flags and an upper-case code`() = runTest(dispatcher) {
+        val model = openSetup {
+            it.setup.slices.isLoaded(SetupSection.PayrollSettings) && it.chart.accounts.isNotEmpty()
+        }
+        model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.Payroll))
+        settle { model.state.value.setup.modal?.loading == false }
+        model.onEvent(AccountHubEvent.OpenPayrollAccounts)
+        advanceUntilIdle()
+        val grid = model.state.value.setup.payrollAccounts!!
+
+        model.onEvent(
+            AccountHubEvent.EditPayrollAccounts(
+                grid.rows + PayrollAccountRow(code = " pr7 ", name = "Pension", posting = false),
+            ),
+        )
+        model.onEvent(AccountHubEvent.SavePayrollAccounts)
+        settle { writes.value.any { it.first.endsWith("/custom-accounts") } }
+
+        val rows = customAccountRows()
+        assertEquals(1, rows.size, "the seeded rows did not change")
+        val row = rows.single()
+        assertEquals("PR7", row["code"]?.jsonPrimitive?.content)
+        assertEquals("category", row["line_type"]?.jsonPrimitive?.content)
+        assertEquals("asset", row["cost_type"]?.jsonPrimitive?.content)
+        assertEquals("true", row["active"]?.jsonPrimitive?.content)
+        assertEquals("false", row["posting_box"]?.jsonPrimitive?.content)
+        assertNull(row["id"], "a new row is a create")
+    }
+
+    @Test
+    fun `removing a saved payroll account is confirmed, then sent as a delete before the writes`() =
+        runTest(dispatcher) {
+            val model = openSetup {
+                it.setup.slices.isLoaded(SetupSection.PayrollSettings) && it.chart.accounts.isNotEmpty()
+            }
+            model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.Payroll))
+            settle { model.state.value.setup.modal?.loading == false }
+            model.onEvent(AccountHubEvent.OpenPayrollAccounts)
+            advanceUntilIdle()
+            val grid = model.state.value.setup.payrollAccounts!!
+            val kept = grid.rows.first { it.code == "6010" }
+            model.onEvent(
+                AccountHubEvent.EditPayrollAccounts(listOf(kept, PayrollAccountRow(code = "6020", name = "Pension"))),
+            )
+
+            model.onEvent(AccountHubEvent.SavePayrollAccounts)
+            settle { false }
+            assertTrue(model.state.value.setup.payrollAccounts!!.confirming, "a deactivation asks first")
+            assertTrue(writes.value.none { it.first.endsWith("/custom-accounts") }, "nothing sent yet")
+
+            model.onEvent(AccountHubEvent.DismissPayrollAccountsConfirm)
+            assertFalse(model.state.value.setup.payrollAccounts!!.confirming)
+            model.onEvent(AccountHubEvent.SavePayrollAccounts)
+            model.onEvent(AccountHubEvent.SavePayrollAccounts)
+            settle { writes.value.any { it.first.endsWith("/custom-accounts") } }
+
+            val rows = customAccountRows()
+            assertEquals(listOf("coa-6000", null), rows.map { it["id"]?.jsonPrimitive?.content })
+            assertEquals("delete", rows[0]["status"]?.jsonPrimitive?.content)
+            assertNull(rows[0]["code"], "a delete carries only its id")
+            assertEquals("6020", rows[1]["code"]?.jsonPrimitive?.content)
+        }
+
+    @Test
+    fun `the purchase order save sends the always-on switches, amendments and the web's terms shape`() =
+        runTest(dispatcher) {
+            val model = openSetup { it.setup.slices.isLoaded(SetupSection.PoSetup) }
+            model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.PurchaseOrders))
+            settle { model.state.value.setup.modal?.loading == false }
+            val po = model.state.value.setup.poSetup.saved
+            assertTrue(po.allowAmendAfterApproval, "read from the document, so a save can send it back")
+
+            val terms = AgreementDocument(
+                title = "Terms", description = "Standard", name = "Terms 2026.PDF", media = "k/t.pdf",
+                bucket = "b", region = "eu", contentType = "application/pdf", contentSubtype = "pdf", fileSize = 10,
+            )
+            model.onEvent(AccountHubEvent.EditPoSetup(po.copy(termsDocument = terms)))
+            model.onEvent(AccountHubEvent.SaveSetupModal)
+            settle { writes.value.any { it.first == "PATCH /api/v2/purchase-orders/settings" } }
+
+            val body = Json.parseToJsonElement(
+                writes.value.single { it.first == "PATCH /api/v2/purchase-orders/settings" }.second,
+            ).jsonObject
+            assertEquals("true", body["require_effective_date"]?.jsonPrimitive?.content)
+            assertEquals("true", body["enforce_period_close"]?.jsonPrimitive?.content)
+            assertEquals("true", body["allow_amend_after_approval"]?.jsonPrimitive?.content)
+            val attachment = body["terms_attachment"]!!.jsonObject
+            assertEquals(
+                setOf("media", "bucket", "region", "name", "content_type", "content_subtype", "caption"),
+                attachment.keys,
+            )
+            assertEquals("document", attachment["content_type"]?.jsonPrimitive?.content)
+            assertEquals("pdf", attachment["content_subtype"]?.jsonPrimitive?.content)
+        }
+
+    private fun customAccountRows(): List<JsonObject> {
+        val body = writes.value.single { it.first.endsWith("/custom-accounts") }.second
+        return Json.parseToJsonElement(body).jsonObject["rows"]!!.jsonArray.map { it.jsonObject }
+    }
+
+    @Test
     fun `a team member is added once, and a senior saves as unlimited`() = runTest(dispatcher) {
         val model = openSetup { it.setup.slices.isLoaded(SetupSection.InvoicesSetup) }
         model.onEvent(AccountHubEvent.OpenSetupModal(SetupModal.Invoices))
@@ -447,7 +549,8 @@ class SetupLoadSafetyTest {
             path.endsWith("/account-hub/bank-accounts") && method == HttpMethod.Get -> ok to BANKS
             path.startsWith("/api/v2/account-hub/bank-accounts/") -> ok to """{"status":1,"data":$body}"""
             path.endsWith("/purchase-orders/settings") && method == HttpMethod.Get ->
-                ok to """{"status":1,"data":{"description_format":"ITEM_DDMON","po_number_prefix":"QW"}}"""
+                ok to """{"status":1,"data":{"description_format":"ITEM_DDMON","po_number_prefix":"QW",
+                    "allow_amend_after_approval":true}}"""
             path.endsWith("/purchase-orders/settings") ->
                 ok to if (poWriteRefused) """{"status":0,"message":"refused"}""" else """{"status":1,"data":$body}"""
             path.endsWith("/invoices/settings") && method == HttpMethod.Get ->

@@ -21,6 +21,9 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     fun onEvent(event: TaxFilingEvent): Boolean {
         when (event) {
             is TaxFilingEvent.EditMapping -> edit(event.mapping)
+            is TaxFilingEvent.AddCode -> addCode(event.box, event.code)
+            TaxFilingEvent.ConfirmUnknownCode -> confirmUnknownCode()
+            TaxFilingEvent.DismissUnknownCode -> vm.update { copy(returnState = returnState.copy(unknownCode = null)) }
             is TaxFilingEvent.ToggleBox -> vm.update {
                 val open = returnState.expanded
                 val next = if (event.box in open) open - event.box else open + event.box
@@ -43,7 +46,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
         vm.request({ vm.repository.boxMap(registration.companyId) }, { rows ->
             if (!isOpen(registration.id)) return@request
             val byBox = rows.mapNotNull { row -> VatBox.bySlot(row.box)?.let { it to row } }.toMap()
-            vm.update { copy(returnState = returnState.copy(mappings = byBox, mappingLoading = false)) }
+            vm.update { copy(returnState = returnState.copy(mappings = byBox, mappingLoading = false, mappingLoaded = true)) }
         }, { error ->
             if (isOpen(registration.id)) vm.update { copy(returnState = returnState.copy(mappingLoading = false)) }
             vm.fail(error)
@@ -97,6 +100,36 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
         }
     }
 
+    /**
+     * Adds a ledger code to a box.
+     *
+     * A code the chart does not have is asked about first, as the web parks it
+     * behind its add-to-chart prompt: a typo here is a box that quietly selects
+     * nothing. Until the chart has been read nothing is known to be missing, so
+     * nothing is asked.
+     */
+    private fun addCode(box: VatBox, code: String) {
+        val state = vm.current
+        val typed = code.trim()
+        if (typed.isEmpty() || typed in state.returnState.mappingFor(box).codes) return
+        if (state.lookups.coaReady && !state.lookups.inChart(typed)) {
+            vm.update { copy(returnState = returnState.copy(unknownCode = UnknownCode(box, typed))) }
+        } else {
+            append(box, typed)
+        }
+    }
+
+    private fun confirmUnknownCode() {
+        val pending = vm.current.returnState.unknownCode ?: return
+        vm.update { copy(returnState = returnState.copy(unknownCode = null)) }
+        append(pending.box, pending.code)
+    }
+
+    private fun append(box: VatBox, code: String) {
+        val mapping = vm.current.returnState.mappingFor(box)
+        if (code !in mapping.codes) edit(mapping.copy(codes = mapping.codes + code))
+    }
+
     /** A date typed but not a date would be saved as no date at all — so it is not saved. */
     private fun refuseInvalidDates(state: ReturnState): Boolean {
         val box = state.invalidDateBox ?: return false
@@ -107,7 +140,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     private fun save() {
         val state = vm.current.returnState
         val registration = state.registration ?: return
-        if (state.savingMapping || state.calculating || refuseInvalidDates(state)) return
+        if (state.savingMapping || state.calculating || !state.mappingLoaded || refuseInvalidDates(state)) return
         vm.update { copy(returnState = returnState.copy(savingMapping = true)) }
         vm.request({ vm.repository.saveBoxMap(registration.companyId, state.mappingRows) }, {
             if (isOpen(registration.id)) vm.update { copy(returnState = returnState.copy(savingMapping = false)) }
@@ -127,7 +160,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     private fun calculate() {
         val state = vm.current.returnState
         val registration = state.registration ?: return
-        if (state.calculating || state.savingMapping) return
+        if (state.calculating || state.savingMapping || !state.mappingLoaded) return
         if (state.periodKey.isBlank()) return vm.info(str(S.desktop_tax_select_period_first))
         if (refuseInvalidDates(state)) return
         val rows = state.mappingRows

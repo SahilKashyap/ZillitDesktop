@@ -51,8 +51,13 @@ object PoAccess {
      * Senior accountants always; otherwise only the accountant it is assigned
      * to. An approver who is not the assignee may open an order to approve or
      * reject it, and must not be able to process it.
+     *
+     * Console only: the department module hands its detail modal no `onProcess`
+     * (`DepartmentPOModule.jsx:1636`), so an accountant who opened the tool from
+     * the Film Tools tile has no Process anywhere, whatever they hold.
      */
     fun canProcess(order: PurchaseOrder, viewer: PoViewer): Boolean {
+        if (!viewer.isAccountant) return false
         if (order.status in NON_PROCESSABLE) return false
         if (viewer.isSeniorAccountant) return true
         return order.assignedTo != null && order.assignedTo == viewer.userId
@@ -70,10 +75,10 @@ object PoAccess {
      * from there could only ever duplicate the same document.
      */
     fun canSendVendorEmail(order: PurchaseOrder, viewer: PoViewer, allowResend: Boolean = false): Boolean {
-        if (order.status !in EMAILABLE) return false
+        // Console only, for the reason given at [canProcess]: no `onSendVendorEmail` either.
+        if (!viewer.isAccountant || order.status !in EMAILABLE) return false
         if (order.emailed && !allowResend) return false
-        if (viewer.isSeniorAccountant) return true
-        return order.assignedTo != null && order.assignedTo == viewer.userId
+        return viewer.isSeniorAccountant || (order.assignedTo != null && order.assignedTo == viewer.userId)
     }
 
     /**
@@ -81,9 +86,13 @@ object PoAccess {
      *
      * Not while it is pre-approval (`pending`) or dead (`rejected`). Posted and
      * closed orders stay reassignable, which is the web's own decision.
+     *
+     * By the senior designation in the console only (`canReassignPO(po,
+     * isAccountant)` with the module's `isAccountant`, [PoViewer.isConsoleSenior]):
+     * an accounts assistant sees the assignee, and cannot click it.
      */
     fun canReassign(order: PurchaseOrder, viewer: PoViewer): Boolean {
-        if (!viewer.isAccountant && !viewer.hasFullAccess) return false
+        if (!viewer.isConsoleSenior) return false
         return order.status != PoStatus.AwaitingApproval && order.status != PoStatus.Rejected
     }
 

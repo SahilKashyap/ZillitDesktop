@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -94,13 +95,25 @@ import com.zillit.desktop.feature.accounthub.ui.components.rememberHubFace
  * Editing opens a full view, rail and all out of the way, as on the web:
  * level cards holding rules and their approvers, an insert rail between them,
  * and two confirmations before a save — see [ApprovalBuilderView].
+ *
+ * ## Locked to one module
+ *
+ * A host that shows the page on its own passes [onBack] (Deal Memo's, where the
+ * web mounts `ApproversModule` with `fixedModule` and a back header): the rail
+ * is gone, the module is whatever the state was opened on, and the page leads
+ * with a way back instead.
  */
 @Composable
-fun ApproversPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+fun ApproversPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit, onBack: (() -> Unit)? = null) {
     // A chain opened from Forms Configuration is shown there, not here.
     val builder = state.approvals.builder?.takeIf { it.origin == BuilderOrigin.Approvers }
     if (builder != null) {
         ApprovalBuilderView(state, builder, onEvent)
+    } else if (onBack != null) {
+        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+            HostedHeader(state.approvals.module, onBack)
+            Box(Modifier.weight(1f)) { ModuleView(state, onEvent) }
+        }
     } else {
         Row(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
             ModuleRail(state, onEvent)
@@ -109,6 +122,34 @@ fun ApproversPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) 
         }
     }
     ApprovalBuilderDialogs(state, onEvent)
+}
+
+/** The back arrow and "DEAL MEMO / Approvers" — the host's page, whose way back is the arrow and the first crumb. */
+@Composable
+private fun HostedHeader(module: ApprovalModule, onBack: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        BackButton(label = str(S.back), onClick = onBack)
+        ZillitText(
+            text = module.label.uppercase(),
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.08.em),
+            color = colors.accentText,
+            maxLines = 1,
+            modifier = Modifier.clickable(onClick = onBack),
+        )
+        ZillitText(text = "/", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+        ZillitText(
+            text = str(S.desktop_approvers),
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+        )
+    }
 }
 
 /** The module sidebar — a title, search, two sections, Configured / Not started with a dot. */
@@ -216,7 +257,7 @@ private fun ModuleView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
             TipBanner(
                 str(S.desktop_hub_tip_configure_default_levels_first_to_set_a_baseline_then),
             )
-            if (!state.viewer.canActAsAccountant) {
+            if (!state.viewer.canEditApprovals) {
                 ZillitNotice(
                     text = str(S.desktop_hub_approval_chains_are_read_only_for_you_the_service_restricts),
                     tone = StatusTone.Neutral,
@@ -459,7 +500,7 @@ private fun DefaultLevelsCard(state: AccountHubUiState, onEvent: (AccountHubEven
                 }
             }
         }
-        if (state.viewer.canActAsAccountant) {
+        if (state.viewer.canEditApprovals) {
             ZillitButton(
                 text = if (configured) str(S.edit) else str(S.desktop_configure),
                 onClick = { onEvent(AccountHubEvent.EditDefaultApprovals) },
@@ -715,8 +756,10 @@ private fun NoDepartmentsLine(text: String) {
 private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val approvals = state.approvals
-    val own = approvals.configFor(dept.id)?.takeIf { it.isConfigured }
-    val inherited = approvals.defaultConfig?.takeIf { it.isConfigured }
+    // Any saved row is the department's own ("custom" on the web), as the Custom
+    // filter counts it; an empty chain still reads Custom rather than Not configured.
+    val own = approvals.configFor(dept.id)
+    val inherited = approvals.defaultConfig
     val effective = own ?: inherited
     val expanded = dept.id in approvals.expanded
     val (status, tone) = when {
@@ -767,7 +810,7 @@ private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent
                 val people = cfg.tiers.flatMap { it.userIds }.distinct()
                 if (people.isNotEmpty()) FaceStack(people, state)
             }
-            if (expanded && state.viewer.canActAsAccountant) {
+            if (expanded && state.viewer.canEditApprovals) {
                 ZillitButton(
                     text = str(S.edit),
                     onClick = { onEvent(AccountHubEvent.EditDepartmentConfig(dept.id)) },

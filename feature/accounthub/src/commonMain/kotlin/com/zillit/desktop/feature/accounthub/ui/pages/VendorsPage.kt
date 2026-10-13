@@ -581,7 +581,7 @@ private fun HistoryPanel(state: AccountHubUiState, onEvent: (AccountHubEvent) ->
                             style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                             maxLines = 2,
                         )
-                        FieldHint(historyActor(state, change))
+                        historyActor(state, change)?.let { FieldHint(it) }
                         EpochDate.dateTime(change.at).takeIf { it.isNotBlank() }?.let { FieldHint(it) }
                         if (change.note.isNotBlank()) FieldHint(change.note)
                     }
@@ -593,9 +593,11 @@ private fun HistoryPanel(state: AccountHubUiState, onEvent: (AccountHubEvent) ->
 
 /**
  * "by Name (Designation)" — or "by System" for the server's own transitions,
- * which the web humanises from the `system` sentinel instead of leaking it.
+ * which the web humanises from the `system` sentinel instead of leaking it. Null
+ * when the row names no actor at all, where the web prints no "by" line.
  */
-private fun historyActor(state: AccountHubUiState, change: VendorChange): String {
+internal fun historyActor(state: AccountHubUiState, change: VendorChange): String? {
+    if (change.byId.isBlank() && change.byName.isBlank()) return null
     val system = change.byId.isBlank() || change.byId.equals(SYSTEM_ACTOR, ignoreCase = true)
     val actor = change.byName.ifBlank {
         if (system) str(S.tm_system) else state.userName(change.byId)
@@ -819,6 +821,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                                 accounts = state.chart.accounts,
                                 placeholder = "e.g. 5001",
                                 onCreate = quickCreateHandler(state, onEvent),
+                                allowFreeText = true,
                             )
                         }
                     }

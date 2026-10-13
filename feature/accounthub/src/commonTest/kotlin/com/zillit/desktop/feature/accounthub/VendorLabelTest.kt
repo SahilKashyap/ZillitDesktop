@@ -2,9 +2,11 @@ package com.zillit.desktop.feature.accounthub
 
 import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.domain.Vendor
+import com.zillit.desktop.feature.accounthub.domain.VendorChange
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupState
 import com.zillit.desktop.feature.accounthub.ui.VendorsState
+import com.zillit.desktop.feature.accounthub.ui.pages.historyActor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -46,5 +48,14 @@ class VendorLabelTest {
         assertEquals("", state.departmentName("d-1"))
         assertEquals("", state.departmentName("d-missing"))
         assertEquals("", state.departmentName(null))
+    }
+
+    /** The web prints the "by" line only when the row names an actor. */
+    @Test
+    fun `a history row with no actor prints no by line`() {
+        val state = AccountHubUiState()
+
+        assertEquals(null, historyActor(state, VendorChange(id = "c1")))
+        assertEquals("by Ada", historyActor(state, VendorChange(id = "c2", byName = "Ada")))
     }
 }

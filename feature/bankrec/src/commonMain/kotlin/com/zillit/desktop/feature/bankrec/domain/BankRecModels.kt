@@ -380,6 +380,8 @@ data class WorkspaceData(
     val ledger: List<LedgerEntry> = emptyList(),
     /** The ledger's closing balance as of this read, when the server sends it. */
     val closingZillit: Double? = null,
+    /** The tab counts as the backend computed them; null when the response carries none. */
+    val counts: ServerCounts? = null,
 )
 
 /**

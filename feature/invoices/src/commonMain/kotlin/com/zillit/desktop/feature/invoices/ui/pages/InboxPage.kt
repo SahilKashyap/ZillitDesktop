@@ -181,7 +181,7 @@ private fun inboxColumns(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Uni
         }
     },
     TableColumn(str(S.status), ColumnWidth.Fixed(PO_WIDTH)) { invoice ->
-        if (invoice.ocrConfidence != null) {
+        if (invoice.isOcrExtracted) {
             ZillitStatusPill(label = str(S.desktop_ocr), tone = StatusTone.Escalated)
         } else {
             ZillitStatusPill(label = str(S.continue_new), tone = StatusTone.Pending)

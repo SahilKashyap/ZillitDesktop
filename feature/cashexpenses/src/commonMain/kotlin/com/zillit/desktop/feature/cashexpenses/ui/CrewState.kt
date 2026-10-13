@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ExtraBankField
 import com.zillit.desktop.feature.cashexpenses.domain.ReimbursementMethod
+import com.zillit.desktop.feature.cashexpenses.domain.RequesterDeal
 
 /**
  * The crew pages' own state — Submit Receipts' settlement choices, Receipts
@@ -42,6 +43,13 @@ data class CrewState(
     /** Float Request: per-field refusals, keyed by the field's label; `currency` for the picker. */
     val floatErrors: Map<String, String> = emptyMap(),
     val floatSubmitError: String? = null,
+    /**
+     * The requester's own active deal, for a weekly-salary request cap; null
+     * until read, or when they have none — the cap then falls back to its flat ceiling.
+     */
+    val deal: RequesterDeal? = null,
+    /** A crew member's float request just sent — the page then confirms it rather than going back to the list. */
+    val sentFloat: SentFloatRequest? = null,
 ) {
     val payrollAllowed: Boolean get() = cashSettings?.reimburseToPayroll == true
 
@@ -49,6 +57,18 @@ data class CrewState(
     val effectiveMethod: ReimbursementMethod
         get() = if (payrollAllowed) reimbursementMethod else ReimbursementMethod.Bacs
 }
+
+/**
+ * What a crew member just asked for: the form as sent, and the floats they had
+ * before it — so the new one, once the list reloads, is the one not in
+ * [knownFloatIds]. The web keeps the created row from the response; this
+ * client's write answers with nothing to keep.
+ */
+data class SentFloatRequest(
+    val draft: FloatRequestDraft,
+    val currency: String,
+    val knownFloatIds: Set<String>,
+)
 
 /** The crew's own events, handled by [CrewDesk]. */
 sealed interface CrewEvent : CashEvent {

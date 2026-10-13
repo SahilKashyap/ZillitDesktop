@@ -7,8 +7,11 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
+import com.zillit.desktop.feature.purchaseorder.domain.PoVendorEmailWarning
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
+import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
+import com.zillit.desktop.feature.purchaseorder.domain.vendorEmailWarning
 
 /**
  * The accountant's side of an order: opening one, emailing it, and the four
@@ -29,6 +32,8 @@ internal class PoEntryActions(
             is PoEvent.OpenOrder -> openDetail(event.id)
             PoEvent.CloseOrder -> vm.update { copy(detail = null, history = emptyList()) }
             is PoEvent.OpenAttachment -> vm.emit(PoEffect.OpenAttachment(event.attachment))
+            is PoEvent.OpenHistory -> openHistory(event.orderId)
+            PoEvent.CloseHistory -> vm.update { copy(historyPanel = null) }
             is PoEvent.ViewPdf -> viewPdf(event.id)
             is PoEvent.SendVendorEmail -> sendVendorEmail(event.id, event.allowResend)
 
@@ -44,14 +49,16 @@ internal class PoEntryActions(
             PoEvent.DismissClose -> vm.update { copy(closePo = null) }
 
             is PoEvent.AskCloseOff -> vm.update {
-                copy(closeOff = PoCloseOffState(period = event.period, ids = event.ids))
+                copy(closeOff = PoCloseOffState(period = event.period, ids = event.ids, date = firstSelectableDay()))
             }
 
             is PoEvent.EditCloseOff -> vm.update { copy(closeOff = event.closeOff) }
             PoEvent.ConfirmCloseOff -> closeOffPeriod()
             PoEvent.DismissCloseOff -> vm.update { copy(closeOff = null) }
 
-            is PoEvent.AskBulkDate -> vm.update { copy(bulkDate = PoBulkDateState(ids = event.ids)) }
+            is PoEvent.AskBulkDate -> vm.update {
+                copy(bulkDate = PoBulkDateState(ids = event.ids, date = firstSelectableDay()))
+            }
             is PoEvent.EditBulkDate -> vm.update { copy(bulkDate = event.bulk) }
             PoEvent.ConfirmBulkDate -> applyBulkDate()
             PoEvent.DismissBulkDate -> vm.update { copy(bulkDate = null) }
@@ -102,6 +109,18 @@ internal class PoEntryActions(
         }
     }
 
+    /** Opens the audit trail on its own, over whatever page is showing. */
+    private fun openHistory(id: String) {
+        val order = vm.ui.orderById(id) ?: return
+        val title = order.number.ifBlank { id.take(HISTORY_ID_CHARS) }
+        vm.update { copy(historyPanel = PoHistoryPanel(orderId = id, title = title)) }
+        vm.launchWork {
+            val entries = repository.history(id).getOrNull().orEmpty()
+            if (vm.ui.historyPanel?.orderId != id) return@launchWork
+            vm.update { copy(historyPanel = historyPanel?.copy(entries = entries)) }
+        }
+    }
+
     /**
      * Renders the order's PDF and hands it to the OS.
      *
@@ -141,10 +160,45 @@ internal class PoEntryActions(
         // From the processing page the page is saved first (the web's "Saves
         // FIRST" decision): the vendor must receive what the accountant is
         // looking at, and a refused save — unbalanced lines — sends nothing.
+        // The warning is then asked of the order read back from that save.
         if (vm.ui.entry?.orderId == id) {
-            vm.processActions.save { saved -> deliver(saved.id) }
+            vm.processActions.save { saved -> confirmOrDeliver(saved) }
             return
         }
+        // A list row is slim — no lines — and an order with none reads as fully
+        // coded, which would silence the warning; the open detail has them, and
+        // anything else is re-read.
+        vm.launchWork {
+            val saved = order.takeIf { vm.ui.detail?.id == id } ?: repository.order(id).getOrNull() ?: order
+            confirmOrDeliver(saved)
+        }
+    }
+
+    /**
+     * Raises the web's `vendorEmailConfirm` when the order gives it something
+     * to say, and sends straight away when it does not. The prompt's confirm
+     * comes back through [sendConfirmed], which sends without saving again.
+     */
+    private suspend fun confirmOrDeliver(order: PurchaseOrder) {
+        val warning = order.vendorEmailWarning()
+        if (warning == null) {
+            deliver(order.id)
+            return
+        }
+        val uncoded = warning == PoVendorEmailWarning.Uncoded
+        vm.ask(
+            PoPrompt.Confirm(
+                action = PoConfirmAction.SendToVendor,
+                targetId = order.id,
+                title = str(if (uncoded) S.desktop_po_uncoded_send_title else S.desktop_po_resend_title),
+                message = str(if (uncoded) S.desktop_po_uncoded_send_message else S.desktop_po_resend_message),
+                confirmLabel = str(if (uncoded) S.dm_nda_send_anyway else S.desktop_po_resend_confirm),
+            ),
+        )
+    }
+
+    /** The send behind a confirmed warning. */
+    fun sendConfirmed(id: String) {
         vm.launchWork { deliver(id) }
     }
 
@@ -206,6 +260,7 @@ internal class PoEntryActions(
                 reassign = PoReassignState(
                     orderId = eligible.first().id,
                     ids = eligible.map { it.id },
+                    assignedTo = eligible.first().assignedTo,
                     label = if (eligible.size == 1) {
                         eligible.first().number.ifBlank { str(S.desktop_po_this_order) }
                     } else {
@@ -223,8 +278,9 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_po_choose_who_it_goes_to))
             return
         }
-        val reason = dialog.resolvedReason
-        if (reason.isBlank()) {
+        // A first assignment carries no reason (the web sends null); a hand-off must.
+        val reason = if (dialog.isUnassigned) null else dialog.resolvedReason
+        if (reason != null && reason.isBlank()) {
             vm.fail(str(S.desktop_a_reason_is_required))
             return
         }
@@ -277,7 +333,20 @@ internal class PoEntryActions(
             return
         }
         val number = order.number.ifBlank { str(S.desktop_po_this_order) }
-        vm.update { copy(closePo = PoCloseState(orderId = id, number = number)) }
+        // The order's own effective date is pre-filled, as the web's Close PO does.
+        vm.update { copy(closePo = PoCloseState(orderId = id, number = number, date = order.effectiveDate)) }
+    }
+
+    /**
+     * The first day an effective date may be set to — `max(today, lock + 1)`,
+     * as every effective-date picker on the web opens, so a field never starts
+     * blank or on a locked day. UTC midnight, the form the server stores.
+     */
+    private fun firstSelectableDay(): Long {
+        val now = vm.nowMillis()
+        val today = now - now % MILLIS_PER_DAY
+        val afterLock = vm.ui.periodLock.lockedThrough.isoDayToUtcMidnight()?.plus(MILLIS_PER_DAY)
+        return maxOf(today, afterLock ?: today)
     }
 
     /**
@@ -331,6 +400,11 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_po_tick_confirmation_close_off))
             return
         }
+        // The web's Close Off cannot be confirmed without a date.
+        if (dialog.date == null) {
+            vm.fail(str(S.desktop_po_pick_an_effective_date))
+            return
+        }
         // The web's closeable set, re-derived here: not already closed, and not
         // in the locked cost-report period. A senior's act, as the button is.
         val ids = dialog.ids.filter { id ->
@@ -371,9 +445,9 @@ internal class PoEntryActions(
     private fun applyBulkDate() {
         val dialog = vm.ui.bulkDate ?: return
         // Re-checked here too: the bulk bar that opens this dialog is gated on
-        // isAccountant (PoBulkBar), same as reassign()'s own re-check above —
+        // isConsoleSenior (PoBulkBar), same as reassign()'s own re-check above —
         // the dialog has no auto-dismiss, so the handler must not trust it.
-        if (!vm.ui.viewer.isAccountant) {
+        if (!vm.ui.viewer.isConsoleSenior) {
             vm.update { copy(bulkDate = null) }
             vm.fail(str(S.desktop_po_no_rights_on_project))
             return
@@ -423,3 +497,6 @@ internal fun PurchaseOrder.withVendorName(state: PoUiState): PurchaseOrder =
 
 /** The ledger lines a fresh order starts with. */
 internal fun PurchaseOrder.ledgerLines(): List<PoLine> = lines.filterNot { it.isTax }
+
+private const val MILLIS_PER_DAY = 86_400_000L
+private const val HISTORY_ID_CHARS = 8

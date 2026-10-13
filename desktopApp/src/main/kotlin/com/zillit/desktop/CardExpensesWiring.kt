@@ -30,6 +30,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardBank
 import com.zillit.desktop.feature.cardexpenses.domain.CardCompany
 import com.zillit.desktop.feature.cardexpenses.domain.CardCurrency
 import com.zillit.desktop.feature.cardexpenses.domain.CardReference
+import com.zillit.desktop.feature.accounthub.domain.CoaLineType
+import com.zillit.desktop.feature.cardexpenses.domain.CardCode
 import com.zillit.desktop.feature.cardexpenses.domain.CardDepartment
 import com.zillit.desktop.feature.cardexpenses.domain.CardHubSource
 import com.zillit.desktop.feature.cardexpenses.domain.CardCurrencies
@@ -40,6 +42,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.StatementFile
 import com.zillit.desktop.feature.cardexpenses.domain.StoredStatement
 import com.zillit.desktop.feature.cardexpenses.domain.CardRepository
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The crew, for the card module's holder picker.
@@ -88,8 +91,11 @@ internal fun cardFiles() = CardFiles { fileName, bytes ->
  * The production's bank accounts, for a fund request's "pay into" — the hub's
  * Production Setup banks, which the card service does not list itself.
  */
-internal suspend fun AppGraph.Ready.cardBanks(): List<CardBank> =
-    accountHubRepository.bankAccounts().getOrNull().orEmpty().map { bank ->
+internal suspend fun AppGraph.Ready.cardBanks(failed: AtomicBoolean? = null): List<CardBank> {
+    val read = accountHubRepository.bankAccounts()
+    // A failed read and "no banks" both answer an empty list; the flag tells them apart.
+    failed?.set(read.getOrNull() == null)
+    return read.getOrNull().orEmpty().map { bank ->
         CardBank(
             id = bank.id,
             name = bank.name,
@@ -97,6 +103,7 @@ internal suspend fun AppGraph.Ready.cardBanks(): List<CardBank> =
             symbol = bank.currencySymbol.takeIf { it.isNotBlank() },
         )
     }
+}
 
 /**
  * The production's money reference for the card forms and the dashboard: its
@@ -130,6 +137,27 @@ internal fun AppGraph.Ready.cardHub(): CardHubSource = object : CardHubSource {
 
     override suspend fun departments(): List<CardDepartment> =
         hubDepartments().map { CardDepartment(id = it.id, name = it.name) }
+
+    override suspend fun nominalCodes(): List<CardCode> {
+        // `computeNominalRows` over the balance-sheet rows: a section is a nominal pick only
+        // while no category sits under it, a category only while no code does.
+        val rows = accountHubRepository.accounts().getOrNull().orEmpty().filter { it.costType.isBalanceSheet }
+        val sectionsWithCategories = rows.filter { it.lineType == CoaLineType.Category }
+            .mapNotNullTo(mutableSetOf()) { it.sectionId }
+        val categoriesWithCodes = rows.filter { it.lineType == CoaLineType.SubCategory }
+            .mapNotNullTo(mutableSetOf()) { it.categoryId }
+        return rows.filter { it.code.isNotBlank() && it.isActive }
+            .filter { row ->
+                when (row.lineType) {
+                    CoaLineType.SubCategory -> true
+                    CoaLineType.Category -> row.id !in categoriesWithCodes
+                    CoaLineType.Section -> row.id !in sectionsWithCategories
+                    CoaLineType.Header -> false
+                }
+            }
+            .sortedBy { it.code }
+            .map { CardCode(code = it.code, name = it.name) }
+    }
 
     override suspend fun saveAssignmentRule(rule: CardAssignmentRule): ZillitResult<CardAssignmentRule> {
         val hubRule = AssignmentRule(

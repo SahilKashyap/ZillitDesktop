@@ -102,7 +102,7 @@ private val FALLBACK_GROUPS: Map<String, String> = buildMap {
     listOf(
         "account_hub_tool", "accounting_tool", "asset_report_tool", "card_expenses_tool", "cash_expenses_tool",
         "cost_report_tool", "deal_memo_tool", "department_budget_tool", "main_budget_tool", "payroll_tool",
-        "purchase_order_tool", "timecard_tool",
+        "purchase_order_tool", "talent_deals_tool", "timecard_tool",
     ).forEach { put(it, "group_accounts_payroll") }
     listOf(
         "ad_dashboard_tool", "callsheet_tool", "casting_background_tool", "casting_main_tool", "catering_tool",

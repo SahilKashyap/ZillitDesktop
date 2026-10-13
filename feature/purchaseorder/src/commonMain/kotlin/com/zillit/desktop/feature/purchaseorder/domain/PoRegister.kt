@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
+import com.zillit.desktop.core.forms.CustomFieldGroup
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.Serializable
@@ -10,6 +11,10 @@ import kotlinx.serialization.Serializable
  * A template is a whole order minus its number and its status: the vendor, the
  * coding, the lines. Productions raise the same order every week (a camera
  * package, a stage hire) and re-typing it is where the coding drifts.
+ *
+ * Everything from [companyId] down is what the web's template save also keeps
+ * (`handleSaveTemplate`): the editor opens with the header the template was
+ * written with, not only its vendor and lines.
  */
 @Serializable
 data class PoTemplate(
@@ -25,6 +30,17 @@ data class PoTemplate(
     val lines: List<PoLine> = emptyList(),
     val createdAt: Long? = null,
     val createdBy: String? = null,
+    val companyId: String? = null,
+    val episode: String? = null,
+    /** The saved address this one was picked from, so the editor re-selects it. */
+    val deliveryAddressId: String? = null,
+    val deliveryAddress: PoAddress? = null,
+    val deliveryDate: Long? = null,
+    val effectiveDate: Long? = null,
+    /** Kept as read: the form has no control for it, and the web resets it to pending on every save. */
+    val vatTreatment: String? = null,
+    val customFields: List<CustomFieldGroup> = emptyList(),
+    val attachments: List<PoAttachment> = emptyList(),
 ) {
     /** What the template commits, for the list's Amount column. */
     val total: Double get() = PoTotals.of(lines).gross

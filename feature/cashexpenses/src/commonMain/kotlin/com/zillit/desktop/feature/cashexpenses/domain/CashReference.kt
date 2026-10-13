@@ -2,6 +2,11 @@ package com.zillit.desktop.feature.cashexpenses.domain
 
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 // The production's reference data this module reads but does not own — its
 // currencies, departments and chart of accounts, all Account Hub documents —
@@ -71,6 +76,66 @@ data class CashCurrencies(
     }
 }
 
+/**
+ * A Production Setup tax type — what a line's Tax select offers
+ * (`useProjectTaxTypes`).
+ *
+ * [rate] is the whole percent (20.0), null for a type that carries none;
+ * [recoverable] is the web's `is_recoverable`, the flag that sends a line's
+ * tax to the reclaimable-tax line.
+ */
+data class CashTaxType(
+    /** What a line's `tax_type` stores — the posting key. */
+    val identifier: String,
+    val label: String,
+    val rate: Double? = null,
+    val recoverable: Boolean = false,
+    val country: String = "",
+) {
+    /** "VAT · 20%", the web's option label. */
+    val optionLabel: String
+        get() = rate?.let { "$label · ${if (it == it.toLong().toDouble()) it.toLong() else it}%" } ?: label
+}
+
+/** A vendor a float request's Vendor field can name — the id is what the field stores. */
+data class CashVendor(val id: String, val name: String)
+
+/** A country of the ISD list a float request's Country field offers; the ISO [code] is what it stores. */
+data class CashCountry(val code: String, val name: String)
+
+/** One code in a [CashTrackingSet]. */
+data class CashTrackingNode(val id: String, val code: String)
+
+/**
+ * A Production Setup tracking set — a "layer" a line can be coded to, such as
+ * a location or an episode. The Layers column shows only the active sets, and
+ * only on a production that has some (`ClaimCard.jsx` `showTracking`).
+ */
+data class CashTrackingSet(val id: String, val active: Boolean = true, val nodes: List<CashTrackingNode> = emptyList())
+
+/**
+ * The codes a line carries in the production's sets, in set order.
+ *
+ * `tracking_codes` is `{set_id: code}` — an object or a string holding one.
+ * Rows written before the switch to codes hold the node's id instead, so a
+ * pick resolves by code or id (the picker's `resolvePicked`); a pick that
+ * matches no node of its set is dropped, and so is a set that is gone.
+ */
+fun List<CashTrackingSet>.layersOf(trackingCodes: JsonElement?): List<String> {
+    val picks = when (trackingCodes) {
+        is JsonObject -> trackingCodes
+        is JsonPrimitive -> runCatching { Json.parseToJsonElement(trackingCodes.content) as? JsonObject }.getOrNull()
+        else -> null
+    } ?: return emptyList()
+    return filter { it.active }.mapNotNull { set ->
+        val picked = (picks[set.id] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.trim().orEmpty()
+        if (picked.isEmpty()) null else set.nodes.firstOrNull { it.code == picked || it.id == picked }?.code
+    }
+}
+
+/** The identifiers whose tax is recoverable — `makeRecoverablePredicate`. */
+fun List<CashTaxType>.recoverableIds(): Set<String> = filter { it.recoverable }.mapTo(mutableSetOf()) { it.identifier }
+
 /** A department of the production — the Account Hub's department list. */
 data class CashDepartment(val id: String, val name: String)
 
@@ -87,6 +152,11 @@ data class CashAccount(
     val balanceSheet: Boolean = false,
     val postable: Boolean = true,
     val leaf: Boolean = true,
+    /**
+     * Whether `pickableLevels="nominals"` offers the row (`computeNominalRows`): a code always, a nominal or
+     * section only when nothing sits below it, a header never. True when the host does not say.
+     */
+    val nominal: Boolean = true,
 ) {
     /** "5010 — Materials", or the bare code — the web's `coaLabel`. */
     val label: String get() = if (name.isNotBlank()) "$code — $name" else code
@@ -203,7 +273,7 @@ object CashFloatOrder {
 
 /**
  * The host seams for the production's reference data, bundled — one
- * constructor argument on the view model rather than four.
+ * constructor argument on the view model rather than five.
  *
  * Each answers the empty value on a failed read rather than throwing: money
  * then shows in [CashCurrencies.LEGACY_DEFAULT], pickers are empty, and
@@ -219,6 +289,14 @@ class CashReferenceSources(
     val departments: suspend () -> List<CashDepartment> = { emptyList() },
     /** The chart of accounts, read on first need. */
     val chartAccounts: suspend () -> List<CashAccount> = { emptyList() },
+    /** Production Setup's tax types, for the coding editor's Tax select. */
+    val taxTypes: suspend () -> List<CashTaxType> = { emptyList() },
+    /** The vendor list, for a float request's Vendor field (`vendorsApi.list`). */
+    val vendors: suspend () -> List<CashVendor> = { emptyList() },
+    /** The ISD country list, for a float request's Country field (`useIsdCodes`). */
+    val countries: suspend () -> List<CashCountry> = { emptyList() },
     /** Picks and stores a receipt; null refuses the attach. */
     val uploader: CashAttachmentUploader? = null,
+    /** Production Setup's tracking sets with their codes, for the receipt lines' Layers column. */
+    val trackingSets: suspend () -> List<CashTrackingSet> = { emptyList() },
 )

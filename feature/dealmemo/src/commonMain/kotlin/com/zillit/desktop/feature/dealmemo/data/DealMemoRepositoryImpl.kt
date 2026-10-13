@@ -66,6 +66,7 @@ class DealMemoRepositoryImpl(
     private val base = "${config.baseUrl(ZillitService.DealMemo)}/api/v2/deal-memo"
     private val projectSettingsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/account-hub/project-settings"
     private val noticeTemplateUrl = "$projectSettingsUrl/notice-template"
+    private val approvalTiersUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/account-hub/approval-tiers"
     private val bankAccountsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/account-hub/bank-accounts"
 
     /** Frames that name another production are dropped — the web's cross-project gate. */
@@ -114,9 +115,19 @@ class DealMemoRepositoryImpl(
                     .mapNotNull { (it as? JsonPrimitive)?.content },
                 approvalTierConfigs = DocRead.objects(body["approval_tier_configs"]).map(::tierConfigOf),
                 loaded = true,
+                approversConfigured = DocRead.bool(body, "approvers_configured"),
             ),
         )
     }
+
+    /**
+     * The tier configs fresh, the way Account Hub's Approvers page reads them
+     * (`approvalTiersApi.list("deal_memo")`) — never the metadata's copy, which
+     * is as old as the last `/metadata` read. The list is the data itself.
+     */
+    override suspend fun approvalTierConfigs(): ZillitResult<List<ApprovalTierConfig>> =
+        read(approvalTiersUrl, mapOf("module" to DEAL_MEMO_MODULE))
+            .map { data -> DocRead.objects(data).map(::tierConfigOf) }
 
     override suspend fun myDeal(): ZillitResult<DealDoc?> =
         read("$base/deal").map { data -> (data as? JsonObject)?.let(::DealDoc) }
@@ -347,8 +358,8 @@ class DealMemoRepositoryImpl(
 
     // -- plumbing ---------------------------------------------------------------------
 
-    private suspend fun read(url: String): ZillitResult<JsonElement?> =
-        apiClient.envelope(verb = HttpVerb.Get, url = url, module = RequestModule.ProjectUser)
+    private suspend fun read(url: String, query: Map<String, Any?> = emptyMap()): ZillitResult<JsonElement?> =
+        apiClient.envelope(verb = HttpVerb.Get, url = url, module = RequestModule.ProjectUser, queryParameters = query)
             .flatMap { it.refusedOrOk() }
             .map(ApiEnvelope::data)
 
@@ -360,12 +371,13 @@ class DealMemoRepositoryImpl(
 }
 
 private const val HTTP_OK = 200
+private const val DEAL_MEMO_MODULE = "deal_memo"
 private val ATTACHMENT_KEYS = listOf("media", "bucket", "region")
 
 private fun tierConfigOf(json: JsonObject): ApprovalTierConfig = ApprovalTierConfig(
     scope = DocRead.text(json, "scope").orEmpty(),
     departmentId = DocRead.text(json, "department_id"),
-    tiers = DocRead.objects(json["tiers"]).map { tier ->
+    tiers = DocRead.objects(tiersElement(json["tiers"])).map { tier ->
         ApprovalTier(
             order = DocRead.number(tier, "order")?.toInt() ?: 0,
             rules = DocRead.objects(tier["rules"]).map { rule ->
@@ -374,6 +386,17 @@ private fun tierConfigOf(json: JsonObject): ApprovalTierConfig = ApprovalTierCon
         )
     },
 )
+
+/**
+ * A config's `tiers`: an array, or a JSON string of one — the shape the web's
+ * shared resolver parses before reading. Unreadable is no tiers at all.
+ */
+private fun tiersElement(element: JsonElement?): JsonElement? =
+    if (element is JsonPrimitive && element.isString) {
+        runCatching { HttpClientFactory.json.parseToJsonElement(element.content) }.getOrNull()
+    } else {
+        element
+    }
 
 /** `template_data ?? form ?? row` — an object, or a JSON string of one. */
 internal fun templateForm(row: JsonObject): JsonObject? {

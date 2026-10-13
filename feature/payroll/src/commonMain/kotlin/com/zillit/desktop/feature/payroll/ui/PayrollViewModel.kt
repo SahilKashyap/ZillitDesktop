@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.payroll.domain.ActiveDealSource
+import com.zillit.desktop.feature.payroll.domain.PayrollAttachmentLinks
 import com.zillit.desktop.feature.payroll.domain.PayrollDocuments
 import com.zillit.desktop.feature.payroll.domain.PayrollEstimator
 import com.zillit.desktop.feature.payroll.domain.PayrollProducerSeams
@@ -52,6 +53,8 @@ class PayrollViewModel(
      * say so rather than showing a figure nobody computed.
      */
     private val seams: PayrollProducerSeams = PayrollProducerSeams(),
+    /** Presigns a stored invoice for the OS to open; null leaves a stored invoice unopenable. */
+    internal val attachmentLinks: PayrollAttachmentLinks? = null,
 ) : ZillitViewModel<PayrollUiState, PayrollEvent, PayrollEffect>(PayrollUiState(viewer = viewer())) {
 
     internal val reports: ProductionReportSource? get() = seams.reports
@@ -81,6 +84,7 @@ class PayrollViewModel(
     private var started = false
     private var listening = false
     private var syncJob: Job? = null
+    private var settingsJob: Job? = null
 
     /** Resolves the viewer and the production's payroll settings. Idempotent. */
     fun start() {
@@ -114,6 +118,7 @@ class PayrollViewModel(
 
     /** The rights and the crew land after the production opens; only those change here. */
     fun onRightsChanged() {
+        refreshClock()
         val resolved = viewer()
         val crew = people()
         setState {
@@ -129,7 +134,7 @@ class PayrollViewModel(
      * web's `metaLoading` gate, without which a Wednesday-start production
      * asks for a Monday week and gets an empty queue.
      */
-    private fun loadSettings() {
+    private fun loadSettings(silent: Boolean = false) {
         val settings = repository.settings
         launch {
             val metadata = settings.metadata()
@@ -138,11 +143,13 @@ class PayrollViewModel(
                     metadata = (metadata as? ZillitResult.Success)?.data ?: this.metadata,
                     metadataLoaded = true,
                     viewer = viewer.copy(
-                        onApproverList = (metadata as? ZillitResult.Success)?.data?.isFinalApprover == true,
+                        onApproverList = (metadata as? ZillitResult.Success)?.data?.isFinalApprover
+                            ?: viewer.onApproverList,
                     ),
                 )
             }
-            if (metadata is ZillitResult.Failure) fail(metadata.error.localised())
+            // A background re-read that fails keeps what was already shown, quietly.
+            if (metadata is ZillitResult.Failure && !silent) fail(metadata.error.localised())
             ensureLoaded()
         }
         launch {
@@ -171,6 +178,18 @@ class PayrollViewModel(
     private fun listenOnce() {
         if (listening) return
         listening = true
+        // Production Setup edited elsewhere: re-read the settings the screens
+        // derive their week boundary and approvers from, coalesced as the web's
+        // `scheduleRefetch` coalesces a burst.
+        launch {
+            repository.settingsChanged.collect {
+                settingsJob?.cancel()
+                settingsJob = launch {
+                    delay(SYNC_DEBOUNCE_MILLIS)
+                    loadSettings(silent = true)
+                }
+            }
+        }
         launch {
             repository.refreshes.collect {
                 syncJob?.cancel()
@@ -224,7 +243,18 @@ class PayrollViewModel(
         }
     }
 
+    /**
+     * Today and the current week come from [PayrollUiState.now], which `start` read once; a window left open
+     * past midnight would otherwise keep offering yesterday. Read again on each event, once a minute has
+     * passed, so the state is not rewritten by every click.
+     */
+    private fun refreshClock() {
+        val clock = now()
+        if (clock - currentState.now >= CLOCK_STEP_MILLIS) setState { copy(now = clock) }
+    }
+
     override fun onEvent(event: PayrollEvent) {
+        refreshClock()
         when (event) {
             is HistoryEvent -> history.onEvent(event)
             is RunEvent -> run.onEvent(event)
@@ -279,5 +309,7 @@ class PayrollViewModel(
     companion object {
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+
+        private const val CLOCK_STEP_MILLIS = 60_000L
     }
 }

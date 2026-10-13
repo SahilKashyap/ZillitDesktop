@@ -23,6 +23,12 @@ class DealPdfPage(val image: ImageBitmap, val widthPt: Float, val heightPt: Floa
 data class DealPlacement(val pageIndex: Int, val fx: Double, val fy: Double, val fw: Double)
 
 /**
+ * One mark to draw: where it goes and the PNG it was placed with. A stamp keeps its own image (ZL-21732), so
+ * changing the signature while placing the next one never repaints the ones already down.
+ */
+class SignedPlacement(val placement: DealPlacement, val png: ByteArray)
+
+/**
  * The typed-signature styles (`signatureStyles.js`). The web draws Google
  * script faces; the desktop draws whichever of each style's faces the
  * machine has, falling back to an italic serif, so what the signer picks is
@@ -52,11 +58,12 @@ interface DealPdfWork {
     fun pages(pdf: ByteArray, widthPx: Int, maxPages: Int = MAX_PAGES): ZillitResult<List<DealPdfPage>>
 
     /**
-     * Draws [png] at each placement and answers the new document — the act of
-     * signing: the mark becomes part of the page, and only the finished file
-     * travels. Width `fw × page width`, height from the image's own aspect.
+     * Draws each mark at its placement and answers the new document — the act of
+     * signing: the marks become part of the page, and only the finished file
+     * travels. Width `fw × page width`, height from the mark's own image aspect;
+     * each distinct image is embedded once.
      */
-    fun stamp(pdf: ByteArray, png: ByteArray, placements: List<DealPlacement>): ZillitResult<ByteArray>
+    fun stamp(pdf: ByteArray, marks: List<SignedPlacement>): ZillitResult<ByteArray>
 
     fun image(bytes: ByteArray): ImageBitmap?
 

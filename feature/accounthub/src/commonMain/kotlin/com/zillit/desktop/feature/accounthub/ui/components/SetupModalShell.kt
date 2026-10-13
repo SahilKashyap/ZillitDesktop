@@ -77,6 +77,7 @@ fun SetupModalShell(
     modifier: Modifier = Modifier,
     /** Reads the document again after [loadError]; null hides the button. */
     onRetry: (() -> Unit)? = null,
+    footer: SetupFooter = SetupFooter.LoadAware,
     content: @Composable ColumnScope.(sectionId: String) -> Unit,
 ) {
     val colors = ZillitTheme.colors
@@ -174,7 +175,7 @@ fun SetupModalShell(
                                 maxLines = 1,
                                 modifier = Modifier.weight(1f),
                             )
-                            MonoChip(section.count?.toString() ?: "—", active = isActive)
+                            MonoChip(section.chip, active = isActive)
                         }
                     }
                 }
@@ -184,13 +185,18 @@ fun SetupModalShell(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
+                    // Each web modal words its own footer: PO, Invoices and the two spend modals follow the
+                    // load; Time Card shows only dirty/Saved; Payroll is a bare string with no dot.
                     val (dot, text) = when {
-                        loading -> colors.textMuted to str(S.loading_)
-                        loadError != null -> colors.danger to str(S.desktop_load_error)
+                        footer == SetupFooter.PlainText ->
+                            null to str(if (dirty) S.cs_exit_title else S.dm_notice_template_status_saved)
+                        footer == SetupFooter.LoadAware && loading -> colors.textMuted to str(S.loading_)
+                        footer == SetupFooter.LoadAware && loadError != null ->
+                            colors.danger to str(S.desktop_load_error)
                         dirty -> colors.warning to str(S.cs_exit_title)
                         else -> colors.success to str(S.saved)
                     }
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
+                    if (dot != null) Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
                     FieldHint(text)
                 }
             }
@@ -287,6 +293,18 @@ private fun LoadErrorBody(message: String, onRetry: (() -> Unit)?) {
             )
         }
     }
+}
+
+/** How the left-pane footer words the modal's state — each web modal writes its own. */
+enum class SetupFooter {
+    /** Loading… / Load error / Unsaved changes / Saved — PO, Invoices, Cards, Petty Cash. */
+    LoadAware,
+
+    /** Unsaved changes / Saved only, dot kept — Time Card. */
+    SavedOnly,
+
+    /** Unsaved changes / All changes saved, no dot — Payroll. */
+    PlainText,
 }
 
 private const val SCRIM = 0.55f

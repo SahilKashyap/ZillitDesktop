@@ -65,6 +65,14 @@ class PayrollRepositoryImpl(
             }
             ?: emptyFlow()
 
+    /** See [PayrollRepository.settingsChanged]; gated on the project the same way. */
+    override val settingsChanged: Flow<Unit> =
+        bus?.onAny(PAYROLL_SETTINGS_EVENTS, PayrollSyncEnvelope.serializer())
+            ?.mapNotNull { (_, envelope) ->
+                Unit.takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
+
     private val http = PayrollHttp(apiClient)
     private val payroll = "${config.baseUrl(ZillitService.Payroll)}/api/v2/payroll"
     private val weekly = "$payroll/weekly"
@@ -138,6 +146,10 @@ class PayrollRepositoryImpl(
     // The reason travels only when there is one — `{}` otherwise, as the web sends it.
     override suspend fun override(timecardId: String, reason: String): ZillitResult<String?> =
         http.write("$timecards/$timecardId/override", overrideBody(reason))
+
+    // The same optional-reason body as the override; a different server permission rule.
+    override suspend fun sendToPayrollRun(timecardId: String, reason: String): ZillitResult<String?> =
+        http.write("$timecards/$timecardId/send-to-payroll-run", overrideBody(reason))
 
     override suspend fun markPaid(timecardId: String): ZillitResult<String?> =
         http.write("$timecards/$timecardId/mark-paid", body = null)

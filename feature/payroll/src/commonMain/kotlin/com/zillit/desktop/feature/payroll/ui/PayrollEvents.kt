@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.payroll.domain.ExportFormat
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.RowAction
 import com.zillit.desktop.feature.payroll.domain.RunAction
+import com.zillit.desktop.feature.payroll.domain.TimecardAttachment
 
 /** Everything the payroll screens can ask for. */
 sealed interface PayrollEvent {
@@ -31,6 +32,13 @@ sealed interface PayrollEvent {
     data class RemoveDeduction(val deductionId: String) : PayrollEvent
     data object UnlockAdjusted : PayrollEvent
     data object DismissAdjustments : PayrollEvent
+
+    // -- the notes, the read-only week and its invoice, from any screen --
+    data class OpenNotes(val timecard: PayrollTimecard, val crewName: String) : PayrollEvent
+    data object CloseNotes : PayrollEvent
+    data class OpenTimecardView(val timecard: PayrollTimecard) : PayrollEvent
+    data object CloseTimecardView : PayrollEvent
+    data class OpenInvoice(val attachment: TimecardAttachment) : PayrollEvent
 }
 
 /** Payroll History. */
@@ -63,6 +71,9 @@ sealed interface RunEvent : PayrollEvent {
     data class OpenDrawer(val timecardId: String?) : RunEvent
     data class Unlock(val timecardId: String) : RunEvent
     data class Export(val format: ExportFormat) : RunEvent
+
+    /** The Export CSV confirm's "Export Only": download without changing any status. */
+    data object ExportOnly : RunEvent
     data object GoToProcessing : RunEvent
     data class Journal(val open: Boolean) : RunEvent
 }
@@ -118,6 +129,16 @@ sealed interface ProcessingEvent : PayrollEvent {
     data class DrawerMarkPaid(val timecardId: String) : ProcessingEvent
     data class OpenDrawer(val timecardId: String?) : ProcessingEvent
     data class OpenOutstanding(val userId: String?) : ProcessingEvent
+
+    // -- Send to Payroll Run, from the Outstanding detail --
+    data class PickWeek(val timecardId: String) : ProcessingEvent
+
+    /** Ticks every sendable week, or clears the ticks when they are all ticked already. */
+    data object PickAllWeeks : ProcessingEvent
+    data object AskSendToRun : ProcessingEvent
+    data class EditSendReason(val reason: String) : ProcessingEvent
+    data object ConfirmSendToRun : ProcessingEvent
+    data object DismissSendToRun : ProcessingEvent
     data class Export(val open: Boolean) : ProcessingEvent
     data class ExportScope(val outstanding: Boolean) : ProcessingEvent
 }
@@ -152,4 +173,7 @@ sealed interface PayrollEffect {
 
     /** Take the window — or the embedding hub — to a route. */
     data class Navigate(val path: String) : PayrollEffect
+
+    /** Open a link in the OS — a crew member's invoice, presigned. */
+    data class OpenUrl(val url: String) : PayrollEffect
 }

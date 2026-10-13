@@ -51,7 +51,9 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.money
+import com.zillit.desktop.feature.cardexpenses.ui.projectCurrency
 import kotlin.time.Clock
 
 /**
@@ -354,7 +356,7 @@ private fun HolderGroup(
             }
             ZillitStatusPill(label = str(S.desktop_card_pending_count, rows.size), tone = StatusTone.Pending)
             ZillitText(
-                text = money(rows.sumOf { it.amount }, rows.firstNotNullOfOrNull { it.currency }),
+                text = money(rows.sumOf { it.amount }, state.projectCurrency),
                 style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
                 color = colors.accentText,
             )
@@ -377,7 +379,7 @@ private fun HolderGroup(
 
 @Suppress("MagicNumber") // Column proportions.
 private fun pendingColumns(state: CardUiState, now: Long): List<TableColumn<CardReceipt>> = listOf(
-    TableColumn(str(S.date), ColumnWidth.Fixed(130.dp)) { DateCell(it) },
+    TableColumn(str(S.date), ColumnWidth.Fixed(130.dp)) { DateCell(it, ownOnly = true) },
     TableColumn(str(S.ah_merchant), ColumnWidth.Weight(1.8f)) { row ->
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -397,7 +399,7 @@ private fun pendingColumns(state: CardUiState, now: Long): List<TableColumn<Card
     },
     TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { row ->
         ZillitText(
-            text = money(row.amount, row.currency),
+            text = money(row.amount, state.currencyOf(row)),
             style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
             maxLines = 1,
         )

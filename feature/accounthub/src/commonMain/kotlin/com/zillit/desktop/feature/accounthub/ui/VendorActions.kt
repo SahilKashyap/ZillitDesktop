@@ -30,7 +30,10 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
     private var postcodeJob: Job? = null
 
     fun load() {
-        vm.update { copy(vendors = vendors.copy(loading = true)) }
+        // A refresh over rows already on screen is silent, as the web's
+        // `fetchVendors({silent:true})`: skeleton rows while another user edits
+        // would blank a table the reader is working in.
+        vm.update { copy(vendors = vendors.copy(loading = vendors.rows.isEmpty())) }
         // The whole register, once. Search is applied locally, as the web does:
         // it matches the department's *name*, which the server does not hold,
         // and it keeps the tab counts about the register rather than about
@@ -429,7 +432,10 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
         if (!vm.mayActAsAccountant()) return
         vm.update { copy(vendors = vendors.copy(verifyingId = id)) }
         vm.runResult({ vm.repo.verifyVendor(id) }, {
-            vm.update { copy(vendors = vendors.copy(verifyingId = null), notice = str(S.desktop_vendor_verified)) }
+            // The web closes the detail on verify, then refetches.
+            vm.update {
+                copy(vendors = vendors.copy(verifyingId = null, detailId = null), notice = str(S.desktop_vendor_verified))
+            }
             load()
         }, { error ->
             vm.update { copy(vendors = vendors.copy(verifyingId = null)) }

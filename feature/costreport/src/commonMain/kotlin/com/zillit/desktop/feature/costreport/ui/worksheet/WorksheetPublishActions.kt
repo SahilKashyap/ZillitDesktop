@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.costreport.ui.worksheet
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrDates
@@ -132,7 +133,8 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
             )
         }
         vm.launchWork {
-            val progress = when (val result = vm.repository.postSnapshot(post)) {
+            val result = vm.repository.postSnapshot(post)
+            val progress = when (result) {
                 is ZillitResult.Failure ->
                     CrProgress(ProgressStatus.Error, str(S.ah_post_failed_toast), result.error.localised())
                 is ZillitResult.Success -> {
@@ -145,6 +147,8 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
                 }
             }
             vm.update { copy(posting = null, progress = progress) }
+            // The server's own words too, when it sent any (`CostReportWorksheetModule.jsx:6586`).
+            (result as? ZillitResult.Success)?.data?.message?.localisedMessage()?.let { vm.notice(it) }
             if (progress.status == ProgressStatus.Success) vm.silentRefresh()
         }
     }
@@ -219,6 +223,12 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
                     )
             }
             vm.update { copy(locking = false, progress = progress) }
+            // Whatever the server said about the lock and the snapshot (`:6462`, `:6480`).
+            val said = listOfNotNull(
+                (locked as? ZillitResult.Success)?.data?.message,
+                (posted as? ZillitResult.Success)?.data?.message,
+            ).map { it.localisedMessage() }
+            if (said.isNotEmpty()) vm.notice(said.joinToString(" "))
             vm.silentRefresh()
         }
     }

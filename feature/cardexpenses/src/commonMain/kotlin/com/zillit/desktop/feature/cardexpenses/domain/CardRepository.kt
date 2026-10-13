@@ -24,6 +24,14 @@ interface CardRepository : CardInboxApi {
 
     suspend fun cardHistory(cardId: String): ZillitResult<List<CardHistoryEntry>>
 
+    /**
+     * The requester's own active deal, reduced to what a salary-basis request
+     * cap needs (`dealMemoApi.getMyDeal("active")`, `useRequestCapGuard.js`).
+     * Null when they have none; a repository that cannot ask answers null, and
+     * the cap falls back to its flat ceiling, as the web's does.
+     */
+    suspend fun myActiveDeal(): ZillitResult<DealRate?> = ZillitResult.Success(null)
+
     suspend fun cardReceipts(cardId: String): ZillitResult<List<CardReceipt>>
 
     suspend fun requestCard(request: NewCardRequest): ZillitResult<Unit>

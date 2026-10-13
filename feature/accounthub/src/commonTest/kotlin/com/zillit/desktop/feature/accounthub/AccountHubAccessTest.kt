@@ -315,6 +315,9 @@ class AccountHubAccessTest {
         assertTrue(HubNavigation.isFullBleed(HubArea.PeriodClose, null, accountant))
         assertFalse(HubNavigation.isFullBleed(HubArea.ProductionSetup, null, accountant))
         assertTrue(HubNavigation.isFullBleed(null, "/film-tools/account-hub/cost-report", accountant))
+        assertTrue(HubNavigation.isFullBleed(null, "/film-tools/payroll/processing", accountant))
+        assertFalse(HubNavigation.isFullBleed(null, "/film-tools/payroll", accountant), "the landing keeps the shell")
+        assertFalse(HubNavigation.isFullBleed(null, "/film-tools/payroll?entry=tool", accountant))
         assertTrue(HubNavigation.isFullBleed(HubArea.Vendors, "/film-tools/invoices/register", accountant))
         assertFalse(HubNavigation.isFullBleed(HubArea.Vendors, "/film-tools/purchase-order", accountant))
         // A cardholder's Card Expenses has no sidebar to go back with.
@@ -324,16 +327,27 @@ class AccountHubAccessTest {
     /** An empty section is dropped rather than rendered as a heading with nothing under it. */
     @Test
     fun `a section whose every row is hidden does not render`() {
-        // An admin outside accounts: the per-tool gate still applies to them.
+        // An admin outside accounts is a department user to the console, as on the web.
         val viewer = AccountHubViewer.from(permissions(isAdmin = true), "u1", isAccountant = false)
 
         val titles = HubNavigation.visibleTo(viewer).map { it.title }
 
-        // Every payroll row is gated on a tool this viewer lacks; Transactions
-        // keeps its ungated Invoices row (as on the web) and stays.
-        assertFalse(titles.contains("Payroll Management"))
-        assertTrue(titles.contains("Transactions"))
-        assertTrue(titles.contains("Setup"))
+        // The accountant's sections are withheld entirely, whatever tools the
+        // admin holds; at most the department's spend rows (their own tool
+        // gates apply) leave a Transactions section.
+        val accountantOnly = listOf("Setup", "Payroll Management", "Reports", "Management", "Configuration")
+        assertTrue(titles.none { it in accountantOnly }, "$titles")
+    }
+
+    /** The web's sidebar is the accounts department's: a production admin outside it sees the department rows only. */
+    @Test
+    fun `an admin outside accounts does not get the accountant console`() {
+        val viewer = AccountHubViewer.from(permissions(isAdmin = true), "u1", isAccountant = false)
+
+        val ids = HubNavigation.visibleTo(viewer).flatMap { it.items }.map { it.id }
+
+        assertTrue(ids.none { it in listOf("vendors", "approvers", "chart-of-accounts", "budget", "form-config") }, "$ids")
+        assertFalse(HubNavigation.areasFor(viewer).contains(HubArea.Vendors))
     }
 
     /**

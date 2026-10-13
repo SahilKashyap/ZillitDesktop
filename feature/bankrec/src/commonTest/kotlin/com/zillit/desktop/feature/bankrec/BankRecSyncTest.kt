@@ -55,6 +55,19 @@ class BankRecSyncTest {
     }
 
     /**
+     * Taking a match back is the inverse of making one: a fraud line's alert
+     * re-opens, so the workspace, the alerts and the exceptions all go stale.
+     * (Bulk unmatch emits one frame per line.)
+     */
+    @Test
+    fun `unmatching a line re-opens its alert and its exception`() {
+        assertEquals(
+            setOf(BankRefresh.Workspace, BankRefresh.Fraud, BankRefresh.Exceptions),
+            slices("br:transaction:unmatched"),
+        )
+    }
+
+    /**
      * Deleting a period takes everything it produced with it.
      *
      * And it writes a fraud audit entry, which is why fraud is in the list for

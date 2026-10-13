@@ -5,6 +5,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.invoices.domain.BatchProject
 import com.zillit.desktop.feature.invoices.domain.BulkBatch
 import com.zillit.desktop.feature.invoices.domain.BulkFile
 import com.zillit.desktop.feature.invoices.domain.BulkFileStatus
@@ -493,14 +494,19 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
     private fun submitBulk() {
         val pick = vm.state.value.bulkPick ?: return
         if (!pick.canSubmit) return
-        start(pick.files.map { it.copy(paid = pick.allowPaid && it.paid) })
+        start(pick.files.map { it.copy(paid = pick.allowPaid && it.paid) }, openProject())
     }
 
-    private fun start(files: List<BulkFile>) {
+    /** The production the batch belongs to, read as it starts (`start`'s `projectId`); null if the host cannot say. */
+    private fun openProject(): BatchProject? = vm.repo.activeProjectId()?.takeIf { it.isNotBlank() }
+        ?.let { BatchProject(projectId = it, userId = vm.state.value.viewer.userId) }
+
+    private fun start(files: List<BulkFile>, project: BatchProject?) {
         val batch = BulkBatch(
             id = BulkUploads.newBatchId(vm.now(), Random.nextLong(0, Long.MAX_VALUE)),
             files = files.map { it.copy(status = BulkFileStatus.Pending, error = "", retried = false) },
             createdAtMs = vm.now(),
+            project = project,
         )
         vm.update { copy(bulkPick = null, enter = null, bulkBatches = listOf(batch) + bulkBatches) }
         watchUploads()
@@ -533,7 +539,8 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
             )
         }
         dismissJobs.remove(batchId)?.cancel()
-        start(files)
+        // A retry belongs to the source batch's production, not the one the app has moved to.
+        start(files, batch.project)
     }
 
     /** The accountant watches on the Inbox's Ongoing Uploads; the department on its own tab. */
@@ -558,7 +565,7 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
         queue.close()
         coroutineScope {
             repeat(minOf(BulkUploads.LANES, pending.size)) {
-                launch { for (file in queue) sendOne(batch.id, file) }
+                launch { for (file in queue) sendOne(batch.id, batch.project, file) }
             }
         }
         vm.update {
@@ -575,7 +582,7 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
         val done = vm.state.value.bulkBatches.firstOrNull { it.id == batch.id }
         // Completion is read from the batch leaving the server's list, and
         // that only means something once it has been seen there.
-        if (done != null && done.sentCount > 0) loadUploads()
+        if (done != null && done.sentCount > 0) vm.run { fetchUploads(done.project) }
         vm.refresh()
     }
 
@@ -585,7 +592,7 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
      * still have been queued, and sending it twice is how one invoice becomes
      * two payables.
      */
-    private suspend fun sendOne(batchId: String, file: BulkFile) {
+    private suspend fun sendOne(batchId: String, project: BatchProject?, file: BulkFile) {
         val bytes = picked[file.ref] ?: return
         patchFile(batchId, file.ref) { it.copy(status = BulkFileStatus.Uploading) }
         var uploaded: ZillitResult<InvoiceAttachment> = vm.upload(bytes)
@@ -604,7 +611,7 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
             is ZillitResult.Success -> uploaded.data
         }
         patchFile(batchId, file.ref) { it.copy(status = BulkFileStatus.Uploaded, error = "") }
-        val sent = vm.repo.bulkUpload(batchId, attachment, file.size, file.paid)
+        val sent = vm.repo.bulkUpload(batchId, attachment, file.size, file.paid, project)
         picked.remove(file.ref)
         patchFile(batchId, file.ref) {
             when (sent) {
@@ -670,17 +677,26 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
      * `fetchBatches`: the list, each of our batches marked seen with its
      * snapshot kept (a terminal one never downgraded), and every batch of
      * ours that has left the list started on its countdown to clearing.
+     *
+     * The rows belong to one production: [project] when a finished batch
+     * polls its own, else the open one. Only that production's batches may be
+     * judged by them, and the tab's list shows the open production's — a
+     * pinned poll for a production left behind replaces neither it nor
+     * expires a batch it cannot see.
      */
-    private suspend fun fetchUploads() {
-        val listed = (vm.repo.bulkBatches() as? ZillitResult.Success)?.data ?: return
+    private suspend fun fetchUploads(project: BatchProject? = null) {
+        val listed = (vm.repo.bulkBatches(project) as? ZillitResult.Success)?.data ?: return
+        val fetched = project?.projectId ?: vm.repo.activeProjectId()
+        val open = fetched == vm.repo.activeProjectId()
         vm.update {
             copy(
-                serverBatches = listed,
-                seenBatches = seenBatches + listed.map { it.batchId },
+                serverBatches = if (open) listed else serverBatches,
+                seenBatches = if (open) seenBatches + listed.map { it.batchId } else seenBatches,
                 bulkBatches = BulkUploads.applyListed(bulkBatches, listed),
             )
         }
-        BulkUploads.expired(vm.state.value.bulkBatches, listed).forEach(::expireWhenIdle)
+        val here = vm.state.value.bulkBatches.filter { it.project == null || it.project.projectId == fetched }
+        BulkUploads.expired(here, listed).forEach(::expireWhenIdle)
     }
 
     private companion object {

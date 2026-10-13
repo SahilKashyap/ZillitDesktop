@@ -308,8 +308,18 @@ enum class SetupModal(
     }
 }
 
-/** One section in a modal's left nav — `name`, and the mono count chip, or a dash. */
-data class SetupModalSection(val id: String, val name: String, val count: Int? = null)
+/**
+ * One section in a modal's left nav — `name`, and the mono chip, or a dash. The chip is [count], or [letter]
+ * where the web shows text (the Time Card control model).
+ */
+data class SetupModalSection(
+    val id: String,
+    val name: String,
+    val count: Int? = null,
+    val letter: String? = null,
+) {
+    val chip: String get() = letter ?: count?.toString() ?: "—"
+}
 
 /** A drill-down modal, and which of its sections is open. */
 data class SetupModalState(
@@ -352,6 +362,8 @@ data class PayrollAccountsDraft(
      * chart id the row would go as a create for an account that exists.
      */
     val unmatched: List<String> = emptyList(),
+    /** Save was pressed with deactivations in the batch: the confirm is up, and a second Save sends it. */
+    val confirming: Boolean = false,
 )
 
 /** A pay rule being added or edited — the web's `RateRowModal`. */
@@ -456,8 +468,26 @@ data class SliceLoads(
         if (section in loaded) this else copy(pending = pending - section, failed = failed + (section to message))
 
     companion object {
-        /** Every section the page reads on open. The project budget has no surface here. */
-        val TRACKED: Set<SetupSection> = SetupSection.entries.toSet() - SetupSection.Budget
+        private val DEAL_MEMO_ONLY = setOf(
+            SetupSection.Schedule,
+            SetupSection.PayrollDefaults,
+            SetupSection.DealConditions,
+            SetupSection.PayrollBureaus,
+            SetupSection.Allowances,
+            SetupSection.DayTypes,
+        )
+
+        /**
+         * The sections the page reads on open: the ones it draws. The project
+         * budget has no surface here, and the deal-memo sections (schedule, pay
+         * defaults, conditions, bureaus, allowances, day types) left this page
+         * for the Deal Memo builder — the web's page no longer mounts them, and
+         * reading documents nobody sees only invites a failed-slice state over a
+         * section with no screen. Non-union pay stays: the rule-import flow
+         * saves the whole breakdown, which must never be written over unread.
+         */
+        val TRACKED: Set<SetupSection> = SetupSection.entries.toSet() - SetupSection.Budget - DEAL_MEMO_ONLY
+
     }
 }
 

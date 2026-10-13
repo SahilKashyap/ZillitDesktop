@@ -293,6 +293,8 @@ private fun CustomFields(state: CashUiState, float: CashFloat) {
                                     field.selectionType == "user" -> people.nameOf(field.value)
                                     field.selectionType == "department" ->
                                         state.departmentName(field.value) ?: field.value
+                                    field.selectionType == "vendor" ->
+                                        state.vendors.firstOrNull { it.id == field.value }?.name ?: field.value
                                     else -> field.value
                                 }
                                 PcField(field.name.ifBlank { field.label }, shown, Modifier.weight(1f))

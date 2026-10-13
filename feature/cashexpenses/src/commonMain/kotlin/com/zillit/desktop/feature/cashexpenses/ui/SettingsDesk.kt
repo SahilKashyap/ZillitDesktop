@@ -184,15 +184,23 @@ internal class SettingsDesk(private val host: CashHost) {
         if (draft.userId.isBlank()) return host.refuse(str(S.desktop_ce_choose_team_member))
         // A cleared limit is Unlimited, not zero (`emptyValue={null}` on the web).
         val limit = draft.postingLimit?.trim()?.takeIf { it.isNotEmpty() }?.let { it.toDoubleOrNull() ?: 0.0 }
-        val member = CashTeamMember(
+        val members = settings.teamMembers
+        // An edit starts from the stored row, so its unmodelled keys survive (`{...m}` on the web).
+        val stored = draft.index?.let { members.getOrNull(it) }?.takeIf { it.userId == draft.userId }
+        val blank = CashTeamMember(
             userId = draft.userId,
+            name = "",
+            isSenior = false,
+            canOverride = false,
+            postingLimit = null,
+        )
+        val member = (stored ?: blank).copy(
             name = host.state.assignees.firstOrNull { it.userId == draft.userId }?.fullName.orEmpty(),
             // A senior is unlimited and may override, whatever was typed.
             isSenior = draft.isSenior,
             canOverride = draft.isSenior || draft.canOverride,
             postingLimit = if (draft.isSenior) null else limit,
         )
-        val members = settings.teamMembers
         val next = draft.index?.let { index -> members.mapIndexed { i, old -> if (i == index) member else old } }
             ?: (members + member)
         saveTeam(next, closeEditor = true)

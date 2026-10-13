@@ -93,7 +93,15 @@ data class MappingLookups(
     val coaFailed: Boolean = false,
     val layerSets: List<LayerSet> = emptyList(),
     val assetTags: List<String> = emptyList(),
-)
+) {
+    /** The chart was read, so a code missing from it is known to be missing. */
+    val coaReady: Boolean get() = loaded && !coaLoading && !coaFailed
+
+    fun inChart(code: String): Boolean = coa.any { it.code.equals(code, ignoreCase = true) }
+}
+
+/** A typed ledger code the chart does not hold, waiting to be confirmed for [box]. */
+data class UnknownCode(val box: VatBox, val code: String)
 
 /**
  * One registration's filing surface — the web's `VATReturnView`.
@@ -111,6 +119,11 @@ data class ReturnState(
     /** The company's boxes as edited on screen; a box with no entry is unmapped. */
     val mappings: Map<VatBox, BoxMapping> = emptyMap(),
     val mappingLoading: Boolean = false,
+    /**
+     * The saved boxes were read. The map is saved by replacement, so Save and
+     * Calculate on a map that never loaded would PUT an empty list and wipe it.
+     */
+    val mappingLoaded: Boolean = false,
     val savingMapping: Boolean = false,
     /** Which accordion rows are open. Box 1 starts open, as on the web. */
     val expanded: Set<VatBox> = setOf(VatBox.DueOnSales),
@@ -142,6 +155,8 @@ data class ReturnState(
      * has to interpret rather than a button that has stopped offering.
      */
     val filedPeriodKey: String = "",
+    /** A code outside the Chart of Accounts being asked about before it joins a box. */
+    val unknownCode: UnknownCode? = null,
 ) {
     val period: FilingObligation?
         get() = obligations.firstOrNull { it.periodKey == periodKey && periodKey.isNotBlank() }

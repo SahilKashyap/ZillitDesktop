@@ -11,6 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,6 +29,7 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
@@ -36,13 +42,16 @@ import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.purchaseorder.domain.OTHER_TAX_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
 import com.zillit.desktop.feature.purchaseorder.domain.customFieldsJson
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
+import com.zillit.desktop.feature.purchaseorder.domain.TrackingSet
 import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
 import com.zillit.desktop.feature.purchaseorder.domain.trackingPicks
 import com.zillit.desktop.feature.purchaseorder.ui.PoConfirmAction
@@ -54,8 +63,14 @@ import com.zillit.desktop.feature.purchaseorder.ui.PoPrompt
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
 import com.zillit.desktop.feature.purchaseorder.ui.ledger
 import com.zillit.desktop.feature.purchaseorder.ui.mayQuery
+import com.zillit.desktop.feature.purchaseorder.ui.clampTaxRate
 import com.zillit.desktop.feature.purchaseorder.ui.redistributeSplitAmount
 import com.zillit.desktop.feature.purchaseorder.ui.rescaleSplitChildren
+import com.zillit.desktop.feature.purchaseorder.ui.repriced
+import com.zillit.desktop.feature.purchaseorder.ui.withExpenditureType
+import com.zillit.desktop.feature.purchaseorder.ui.withRental
+import com.zillit.desktop.feature.purchaseorder.ui.withTaxRate
+import com.zillit.desktop.feature.purchaseorder.ui.withTaxType
 
 /**
  * PO Entry — the accountant's processing page, the web's `POEntry`.
@@ -109,7 +124,7 @@ internal fun PoEntryPage(state: PoUiState, entry: PoEntryState, onEvent: (PoEven
                 }
                 HeaderCard(state, entry, onEvent)
                 CodingCard(state, entry, onEvent)
-                TaxLineCard(entry, ledger, order.currency, onEvent)
+                TaxLineCard(entry, ledger, order.currency, state.tags, state.trackingSets, onEvent)
                 EntryTotals(
                     ledger = ledger,
                     orderGross = order.gross,
@@ -415,8 +430,8 @@ private fun CodingCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent)
 
 /**
  * The coded table's column headers — Forms Configuration's own `line_items`
- * section, not a fixed set (see [LineColumns]). No Expenditure Type column
- * exists on this page — the header's own coding, not a line-level pick.
+ * section, not a fixed set (see [LineColumns]) — plus the Tags column, which
+ * is the production's Account Tags and not a form field.
  */
 @Composable
 private fun EntryLineHeader(state: PoUiState) {
@@ -427,6 +442,9 @@ private fun EntryLineHeader(state: PoUiState) {
     ) {
         if (cols.description) {
             EntryHeaderCell(cols.reqLabel(str(S.description), PoFormFields.LINE_DESCRIPTION), Modifier.weight(1f))
+        }
+        if (cols.expType) {
+            EntryHeaderCell(cols.reqLabel(str(S.desktop_exp_type), PoFormFields.EXP_TYPE), Modifier.width(EXP_FIELD))
         }
         if (cols.quantity) {
             EntryHeaderCell(cols.reqLabel(str(S.ah_lbl_qty), PoFormFields.LINE_QUANTITY), Modifier.width(QTY_FIELD))
@@ -449,6 +467,7 @@ private fun EntryLineHeader(state: PoUiState) {
                 Modifier.width(PO_LAYERS_WIDTH),
             )
         }
+        EntryHeaderCell(str(S.drive_tags), Modifier.width(TAGS_FIELD))
         cols.custom.forEach { field ->
             EntryHeaderCell(field.name + if (field.required) " *" else "", Modifier.width(CUSTOM_FIELD_WIDTH))
         }
@@ -506,10 +525,16 @@ private fun EntryLineRow(
     }
     // The last Post named this row for want of a nominal.
     val flagged = (index + 1) in entry.missingCodes
+    // An edit that reaches the split children too: the lines are replaced as a list.
+    val setLines = { next: List<PoLine> ->
+        onEvent(PoEvent.EditEntry(entry.copy(lines = next, missingCodes = entry.missingCodes - (index + 1))))
+    }
     val cols = LineColumns(state.formLayout, isAccountant = true)
     val customPicks = line.customFields.customFieldPicks()
+    // Top-aligned: a Rent line's two date fields stand under its Exp. Type, and
+    // the other cells keep to the first row, as the web's grid does.
     Row(
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         if (cols.description) {
@@ -521,6 +546,40 @@ private fun EntryLineRow(
                 modifier = Modifier.weight(1f),
             )
         }
+        if (cols.expType) {
+            if (line.isSplitChild) {
+                // Follows the parent, which owns the type (the select is disabled on a child).
+                EntryLockedCell(expenditureTypeLabel(line.expenditureType), Modifier.width(EXP_FIELD))
+            } else {
+                Column(
+                    modifier = Modifier.width(EXP_FIELD),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                ) {
+                    ZillitSelect(
+                        value = line.expenditureType,
+                        options = listOf(null) + EXPENDITURE_TYPES,
+                        onSelect = { type -> setLines(entry.lines.withExpenditureType(index, type)) },
+                        label = { expenditureTypeLabel(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    // The rental window: what makes the line divisible by period.
+                    if (line.expenditureType == RENTAL_EXPENDITURE_TYPE) {
+                        ZillitDateField(
+                            value = line.rentalStart.orEmpty(),
+                            onValueChange = { day -> setLines(entry.lines.withRental(index, day, line.rentalEnd)) },
+                            label = str(S.fromText),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        ZillitDateField(
+                            value = line.rentalEnd.orEmpty(),
+                            onValueChange = { day -> setLines(entry.lines.withRental(index, line.rentalStart, day)) },
+                            label = str(S.toText),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
         if (line.isSplitChild) {
             // The web locks a split child's own qty/price/tax — its total
             // exists only to be redistributed from the parent's.
@@ -531,7 +590,7 @@ private fun EntryLineRow(
                 ZillitTextField(
                     value = line.quantity.trimmed(),
                     onValueChange = {
-                        setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null))
+                        setAndRescale(line.repriced(quantity = it.toDoubleOrNull() ?: 0.0))
                     },
                     placeholder = str(S.ah_lbl_qty),
                     keyboardType = KeyboardType.Decimal,
@@ -542,7 +601,7 @@ private fun EntryLineRow(
                 ZillitTextField(
                     value = line.unitPrice.trimmed(),
                     onValueChange = {
-                        setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
+                        setAndRescale(line.repriced(unitPrice = it.toDoubleOrNull() ?: 0.0))
                     },
                     placeholder = str(S.dm_step2_unit),
                     keyboardType = KeyboardType.Decimal,
@@ -562,35 +621,31 @@ private fun EntryLineRow(
         if (cols.tax) {
             if (line.isSplitChild) {
                 EntryLockedCell(
-                    state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
+                    taxTypeLabel(state, line.taxType) ?: str(S.ah_lbl_vat_tax),
                     Modifier.width(TAX_FIELD),
                 )
             } else {
-                ZillitSelect(
-                    value = line.taxType,
-                    options = listOf(null) + state.taxTypes.map { it.id },
-                    onSelect = { id ->
+                Column(
+                    modifier = Modifier.width(TAX_FIELD),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                ) {
+                    ZillitSelect(
+                        value = line.taxType,
+                        // "Other" closes the list, as the web's does: a rate typed on the line.
+                        options = listOf(null) + state.taxTypes.map { it.id } + OTHER_TAX_TYPE,
                         // Children inherit the parent's tax at split time; a later
                         // edit here has to keep reaching them or they quote a
                         // stale rate.
-                        val tax = state.taxTypes.firstOrNull { it.id == id }
-                        val parentKey = line.id ?: "line-$index"
-                        val lines = entry.lines.mapIndexed { at, row ->
-                            when {
-                                at == index -> row.copy(taxType = id, vatRate = tax?.rate)
-                                row.splitParentId == parentKey -> row.copy(taxType = id, vatRate = tax?.rate)
-                                else -> row
-                            }
-                        }
-                        val next = entry.copy(lines = lines, missingCodes = entry.missingCodes - (index + 1))
-                        onEvent(PoEvent.EditEntry(next))
-                    },
-                    label = { id ->
-                        id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
-                            ?: str(S.ah_lbl_vat_tax)
-                    },
-                    modifier = Modifier.width(TAX_FIELD),
-                )
+                        onSelect = { id ->
+                            setLines(entry.lines.withTaxType(index, id, state.taxTypes.firstOrNull { it.id == id }))
+                        },
+                        label = { id -> taxTypeLabel(state, id) ?: str(S.ah_lbl_vat_tax) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (line.taxType == OTHER_TAX_TYPE) {
+                        TaxRateField(line.vatRate) { rate -> setLines(entry.lines.withTaxRate(index, rate)) }
+                    }
+                }
             }
         }
         if (cols.layers) {
@@ -601,6 +656,17 @@ private fun EntryLineRow(
                 modifier = Modifier.width(PO_LAYERS_WIDTH),
             ) { picks -> set(line.copy(trackingCodes = picks.trackingJson())) }
         }
+        // The production's Account Tags. A tag already on the line stays offered
+        // even if Production Setup has since dropped it, so history is never hidden.
+        ZillitMultiSelect(
+            selected = line.tags,
+            options = (state.tags + line.tags).distinct(),
+            label = { it },
+            onChange = { tags -> set(line.copy(tags = tags)) },
+            placeholder = str(S.drive_tags),
+            emptyText = str(S.desktop_po_no_tags_add_in_production_setup),
+            modifier = Modifier.width(TAGS_FIELD),
+        )
         cols.custom.forEach { field ->
             ZillitTextField(
                 value = customPicks[field.label].orEmpty(),
@@ -650,6 +716,45 @@ private fun EntryLockedCell(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * The custom percent under an "Other" tax type. Keeps what was typed while it is
+ * being typed ("2." must not snap back to "2" and eat the point), and clamps to
+ * 0–100 as the web's `clampTaxRateInput` does.
+ */
+@Composable
+private fun TaxRateField(rate: Double?, onChange: (Double?) -> Unit) {
+    var text by remember { mutableStateOf(rate.asPercentText()) }
+    // A change from outside (another line removed, the order re-read) replaces
+    // the draft; the user's own typing round-trips to the same number and stays.
+    LaunchedEffect(rate) { if (clampTaxRate(text) != rate) text = rate.asPercentText() }
+    ZillitTextField(
+        value = text,
+        onValueChange = { typed ->
+            val clamped = clampTaxRate(typed)
+            // Past 100 the field shows the clamp at once, as the web's does.
+            text = if (clamped != null && clamped != typed.trim().toDoubleOrNull()) clamped.asPercentText() else typed
+            onChange(clamped)
+        },
+        placeholder = "%",
+        keyboardType = KeyboardType.Decimal,
+        trailingContent = { ZillitText(text = "%", color = ZillitTheme.colors.textMuted) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+private fun Double?.asPercentText(): String = when {
+    this == null -> ""
+    this % 1.0 == 0.0 -> toLong().toString()
+    else -> toString()
+}
+
+/** A tax type's name for the grid; "Other" for the custom-rate bucket, null for none. */
+private fun taxTypeLabel(state: PoUiState, id: String?): String? = when {
+    id.isNullOrBlank() -> null
+    id == OTHER_TAX_TYPE -> str(S.other)
+    else -> state.taxTypes.firstOrNull { it.id == id }?.name ?: id
+}
+
+/**
  * Split and Remove. The two splits are exclusive, as the web's are: a rental
  * line with a divisible window splits by period only, anything else evenly.
  */
@@ -692,6 +797,8 @@ private fun TaxLineCard(
     entry: PoEntryState,
     ledger: PoEntryLedger,
     currency: String?,
+    accountTags: List<String>,
+    trackingSets: List<TrackingSet>,
     onEvent: (PoEvent) -> Unit,
 ) {
     val set = { next: PoEntryState -> onEvent(PoEvent.EditEntry(next)) }
@@ -716,6 +823,26 @@ private fun TaxLineCard(
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.width(PRICE_FIELD),
             )
+            // The same Account Tags picker the coded lines have; a tag already on
+            // the tax line stays offered even if Production Setup dropped it.
+            ZillitMultiSelect(
+                selected = entry.taxTags,
+                options = (accountTags + entry.taxTags).distinct(),
+                label = { it },
+                onChange = { tags -> set(entry.copy(taxTags = tags)) },
+                placeholder = str(S.drive_tags),
+                emptyText = str(S.desktop_po_no_tags_add_in_production_setup),
+                modifier = Modifier.width(TAGS_FIELD),
+            )
+            // The same Layers picker the coded lines have, where the production has any.
+            if (trackingSets.isNotEmpty()) {
+                PoLineLayersField(
+                    sets = trackingSets,
+                    picked = entry.taxTrackingCodes.trackingPicks(),
+                    enabled = true,
+                    modifier = Modifier.width(PO_LAYERS_WIDTH),
+                ) { picks -> set(entry.copy(taxTrackingCodes = picks.trackingJson())) }
+            }
             ZillitText(
                 text = Money.format(ledger.reclaimable, currency),
                 style = ZillitTheme.typography.numeric,
@@ -779,5 +906,7 @@ private val CURRENCY_FIELD = 120.dp
 private val QTY_FIELD = 70.dp
 private val PRICE_FIELD = 110.dp
 private val CODE_FIELD = 110.dp
+private val EXP_FIELD = 150.dp
+private val TAGS_FIELD = 150.dp
 private val TAX_FIELD = 120.dp
 private val LINE_ACTIONS = 200.dp

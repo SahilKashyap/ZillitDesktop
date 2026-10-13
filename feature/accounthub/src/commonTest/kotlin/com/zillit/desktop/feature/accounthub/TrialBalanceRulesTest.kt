@@ -204,7 +204,7 @@ class TrialBalanceRulesTest {
         assertFalse(hub(trial).trialBalanceDirty, "nothing applied yet is nothing to refresh against")
     }
 
-    /** The web's `useCurrencyOptions`: the production's own, default first; the catalogue while it has none. */
+    /** The web's `useCurrencyOptions`: the production's own, in their order, default added only when missing; the catalogue while it has none. */
     @Test
     fun `the currency filter offers the production's currencies, and the catalogue while it has picked none`() {
         val picked = AccountHubUiState(
@@ -221,7 +221,17 @@ class TrialBalanceRulesTest {
                 currencyCatalogue = listOf(ProjectCurrency("EUR"), ProjectCurrency("INR")),
             ),
         )
-        assertEquals(listOf("GBP", "USD"), picked.trialBalanceCurrencies.map { it.code })
+        assertEquals(listOf("USD", "GBP"), picked.trialBalanceCurrencies.map { it.code })
+
+        // A default the production has not listed is added at the front.
+        val unlisted = picked.copy(
+            setup = picked.setup.copy(
+                currencies = SectionEdit(
+                    CurrencySettings(currencies = listOf(ProjectCurrency("USD", symbol = "$")), defaultCode = "GBP"),
+                ),
+            ),
+        )
+        assertEquals(listOf("GBP", "USD"), unlisted.trialBalanceCurrencies.map { it.code })
 
         val none = picked.copy(setup = picked.setup.copy(currencies = SectionEdit(CurrencySettings())))
         assertEquals(listOf("EUR", "INR"), none.trialBalanceCurrencies.map { it.code })

@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.domain.Approval
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
+import com.zillit.desktop.feature.invoices.domain.BatchProject
 import com.zillit.desktop.feature.invoices.domain.BankAccount
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
@@ -304,6 +305,7 @@ class InvoicesViewModelTest {
             attachment: InvoiceAttachment,
             size: Long,
             paid: Boolean,
+            project: BatchProject?,
         ): ZillitResult<Unit> {
             bulk += batchId to attachment.name
             return ZillitResult.Success(Unit)

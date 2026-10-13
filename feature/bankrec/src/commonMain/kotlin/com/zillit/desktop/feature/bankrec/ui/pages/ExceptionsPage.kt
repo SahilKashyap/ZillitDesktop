@@ -298,5 +298,6 @@ internal val ExceptionType.icon: ImageVector
         ExceptionType.Payroll -> ZillitIcons.Users
         ExceptionType.FxPayment -> BankRecIcons.Swap
         ExceptionType.Insurance -> ZillitIcons.Shield
+        ExceptionType.Fraud -> ZillitIcons.Warning
         ExceptionType.Unknown -> BankRecIcons.Question
     }

@@ -9,6 +9,7 @@ import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
@@ -20,6 +21,7 @@ import com.zillit.desktop.feature.invoices.domain.VendorPo
 import com.zillit.desktop.feature.invoices.domain.AccrualDetail
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
+import com.zillit.desktop.feature.invoices.domain.BatchProject
 import com.zillit.desktop.feature.invoices.domain.CatalogueCurrency
 import com.zillit.desktop.feature.invoices.domain.CreditNote
 import com.zillit.desktop.feature.invoices.domain.CreditNoteWrite
@@ -194,7 +196,7 @@ class InvoicesRepositoryImpl(
             .mapData { parseRule(it) ?: rule.copy(persisted = true) }
 
     override suspend fun updateRule(rule: InvoiceAssignmentRule): ZillitResult<InvoiceAssignmentRule> =
-        mutate(HttpVerb.Patch, "${hub}account-hub/assignment-rules/${'$'}{rule.id}", ruleBody(rule))
+        mutate(HttpVerb.Patch, "${hub}account-hub/assignment-rules/${rule.id}", ruleBody(rule))
             .mapData { parseRule(it) ?: rule }
 
     override suspend fun deleteRule(id: String): ZillitResult<Unit> =
@@ -254,15 +256,20 @@ class InvoicesRepositoryImpl(
     override suspend fun hold(id: String, reason: HoldReason, notes: String): ZillitResult<Unit> = mutate(
         HttpVerb.Post,
         "$base/$id/hold",
-        buildJsonObject {
-            // The fixed English value, never the translated label.
-            put("holdReason", JsonPrimitive(reason.wire))
-            put("notes", JsonPrimitive(notes.trim()))
-        },
+        holdBody(reason, notes),
     ).unit()
+
+    private fun holdBody(reason: HoldReason, notes: String) = buildJsonObject {
+        // The fixed English value, never the translated label.
+        put("holdReason", JsonPrimitive(reason.wire))
+        put("notes", JsonPrimitive(notes.trim()))
+    }
 
     override suspend fun release(id: String): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/$id/release", null).unit()
+
+    override suspend fun holdWithMessage(id: String, reason: HoldReason, notes: String): ZillitResult<String?> =
+        mutate(HttpVerb.Post, "$base/$id/hold", holdBody(reason, notes)).message()
 
     /** No payload: the server derives everything from the URL and the caller (`invoices.js`). */
     override suspend fun override(id: String): ZillitResult<Unit> =
@@ -607,16 +614,28 @@ class InvoicesRepositoryImpl(
     override suspend fun matchNote(id: String, poId: String, note: String): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/$id/match", matchNoteBody(poId, note)).unit()
 
+    override fun activeProjectId(): String? = currentProjectId()
+
     override suspend fun bulkUpload(
         batchId: String,
         attachment: InvoiceAttachment,
         size: Long,
         paid: Boolean,
-    ): ZillitResult<Unit> =
-        mutate(HttpVerb.Post, "$base/bulk-upload", bulkUploadBody(batchId, attachment, size, paid)).unit()
+        project: BatchProject?,
+    ): ZillitResult<Unit> = mutate(
+        HttpVerb.Post,
+        "$base/bulk-upload",
+        bulkUploadBody(batchId, attachment, size, paid),
+        pinned(project),
+    ).unit()
 
-    override suspend fun bulkBatches(): ZillitResult<List<ServerBatch>> =
-        get("$base/bulk-upload/batches").mapData(::parseBulkBatches)
+    override suspend fun bulkBatches(project: BatchProject?): ZillitResult<List<ServerBatch>> =
+        get("$base/bulk-upload/batches", options = pinned(project)).mapData(::parseBulkBatches)
+
+    /** A call under the batch's own production, not the open one (`_zProjectId`). */
+    private fun pinned(project: BatchProject?) = project?.let {
+        CallOptions(projectId = it.projectId, userId = it.userId.ifBlank { null })
+    } ?: CallOptions()
 
     /** See [InvoicesRepository.bulkProgress]; another production's frame is dropped, as [refreshes] drops it. */
     override val bulkProgress: Flow<ServerBatch> =
@@ -669,18 +688,29 @@ class InvoicesRepositoryImpl(
 
     // -- plumbing ------------------------------------------------------------
 
-    private suspend fun get(url: String, query: Map<String, Any?> = emptyMap()) = apiClient.envelope(
+    private suspend fun get(
+        url: String,
+        query: Map<String, Any?> = emptyMap(),
+        options: CallOptions = CallOptions(),
+    ) = apiClient.envelope(
         verb = HttpVerb.Get,
         url = url,
         module = RequestModule.ProjectUser,
         queryParameters = query,
+        options = options,
     )
 
-    private suspend fun mutate(verb: HttpVerb, url: String, body: JsonObject?) = apiClient.envelope(
+    private suspend fun mutate(
+        verb: HttpVerb,
+        url: String,
+        body: JsonObject?,
+        options: CallOptions = CallOptions(),
+    ) = apiClient.envelope(
         verb = verb,
         url = url,
         module = RequestModule.ProjectUser,
         body = body,
+        options = options,
     )
 
     private inline fun <T> ZillitResult<ApiEnvelope>.mapData(transform: (JsonElement?) -> T): ZillitResult<T> =

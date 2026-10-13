@@ -13,6 +13,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Whether one crew member is online right now, from Firebase Realtime Database.
@@ -34,9 +36,20 @@ import kotlinx.serialization.json.booleanOrNull
  * emit nothing — a chat with no presence dot degrades to exactly the chat the
  * desktop shipped yesterday.
  */
-/** The seam tests fake: one flow of online/offline for one device on one production. */
+/**
+ * One reading of a device's node: online now, and when the backend last
+ * flipped it. The header says "Online" for the first and, offline, prints the
+ * second as the web's last-seen stamp (`UserStatusComponent.getOfflineTime`).
+ */
+data class DevicePresence(
+    val online: Boolean,
+    /** The node's `update_time`, epoch millis; null when the node never had one. */
+    val updatedMillis: Long? = null,
+)
+
+/** The seam tests fake: one flow of presence readings for one device on one production. */
 interface PresenceSource {
-    fun watch(deviceId: String, projectId: String): Flow<Boolean>
+    fun watch(deviceId: String, projectId: String): Flow<DevicePresence>
 }
 
 class DevicePresenceSource(
@@ -46,34 +59,38 @@ class DevicePresenceSource(
     private val pollMillis: Long = POLL_MS,
 ) : PresenceSource {
 
-    /** True/false as the node reports it; unreadable polls emit nothing. */
-    override fun watch(deviceId: String, projectId: String): Flow<Boolean> = flow {
+    /** The node as it reads; unreadable polls emit nothing. */
+    override fun watch(deviceId: String, projectId: String): Flow<DevicePresence> = flow {
         var failedLastPoll = false
         while (true) {
-            when (val online = read(deviceId, projectId)) {
+            when (val reading = read(deviceId, projectId)) {
                 null -> {
                     if (!failedLastPoll) ZillitLog.d(TAG) { "presence unreadable; staying quiet" }
                     failedLastPoll = true
                 }
                 else -> {
                     failedLastPoll = false
-                    emit(online)
+                    emit(reading)
                 }
             }
             delay(pollMillis)
         }
     }
 
-    private suspend fun read(deviceId: String, projectId: String): Boolean? = try {
+    private suspend fun read(deviceId: String, projectId: String): DevicePresence? = try {
         val response = httpClient.get("$databaseUrl/devices/$deviceId/$projectId.json")
         if (!response.status.isSuccess()) {
             null
         } else {
             // `null` body = the backend has never written this device: offline.
-            val node = json.parseToJsonElement(response.bodyAsText())
-            (node as? JsonObject)?.let {
-                (it[FIELD_ONLINE] as? JsonPrimitive)?.booleanOrNull ?: false
-            } ?: false
+            val node = json.parseToJsonElement(response.bodyAsText()) as? JsonObject
+            DevicePresence(
+                online = (node?.get(FIELD_ONLINE) as? JsonPrimitive)?.booleanOrNull ?: false,
+                // Millis on the wire (`1779864035058`), as the web reads it.
+                updatedMillis = (node?.get(FIELD_UPDATED) as? JsonPrimitive)
+                    ?.let { it.longOrNull ?: it.doubleOrNull?.toLong() }
+                    ?.takeIf { it > 0 },
+            )
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -84,6 +101,7 @@ class DevicePresenceSource(
     private companion object {
         const val TAG = "Presence"
         const val FIELD_ONLINE = "is_online"
+        const val FIELD_UPDATED = "update_time"
 
         /**
          * Snappier than the roster needs, calmer than the call plane's two

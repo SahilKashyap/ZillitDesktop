@@ -50,6 +50,14 @@ data class AccountHubViewer(
      * permission grid the same question once per frame.
      */
     val viewableTools: Set<String> = emptySet(),
+    /**
+     * Whether the host vouches for this person editing approval chains although
+     * they are not in accounts — Deal Memo's own Approvers page passes its
+     * posting users (`ApproversModule`'s `canEdit`). Set only on the viewer of
+     * that page, whose locked module is the one chain it can reach; the
+     * console's viewer never carries it.
+     */
+    val approvalsHostEdit: Boolean = false,
 ) {
 
     /** Whether the console should refuse to render. Only once rights are known. */
@@ -78,14 +86,15 @@ data class AccountHubViewer(
     /**
      * Whether this particular vendor may be edited or deleted.
      *
-     * The web's own rule, per row: the accounts team may change any vendor, and
-     * the person who added one may change theirs. The blank-id check is
+     * The web's own rule, per row (`VendorsModule`): the accounts team may change
+     * any vendor, and the person who added one may change theirs — an admin
+     * outside accounts included, who has no more say than anyone else. The blank-id check is
      * load-bearing — a vendor with no recorded adder and a viewer with no id
      * would otherwise compare equal and hand every row to every viewer.
      */
     fun mayModifyVendor(vendor: Vendor): Boolean {
         if (!canPost) return false
-        if (isAccountant || isAdmin) return true
+        if (isAccountant) return true
         return userId.isNotBlank() && vendor.addedBy == userId
     }
 
@@ -107,6 +116,13 @@ data class AccountHubViewer(
      * calls verification "a Vendors-module accountant action".
      */
     val canActAsAccountant: Boolean get() = canPost && isAccountant
+
+    /**
+     * Whether approval levels may be changed: accountants everywhere, plus
+     * whoever the host vouches for ([approvalsHostEdit]). The service decides
+     * whether a non-accountant's save is allowed — see [canActAsAccountant].
+     */
+    val canEditApprovals: Boolean get() = canActAsAccountant || approvalsHostEdit
 
     /**
      * Whether someone already inside [tool] may stay there.

@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.invoices.domain.AmountField
 import com.zillit.desktop.feature.invoices.domain.AmountSplit
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
+import com.zillit.desktop.feature.invoices.domain.BatchProject
 import com.zillit.desktop.feature.invoices.domain.BulkBatch
 import com.zillit.desktop.feature.invoices.domain.BulkCounterKind
 import com.zillit.desktop.feature.invoices.domain.BulkCounts
@@ -464,6 +465,26 @@ class InboxTriageFlowTest {
     }
 
     @Test
+    fun `a batch pins the production it started in, for its sends, its poll and its retry`() = runTest(dispatcher) {
+        val repo = Repo(listOf(ROW)).also { it.openProject = "p-old" }
+        val files = Files(listOf(PickedInvoiceFile("a.jpg", "image/jpeg", ByteArray(8))), failUploads = 3)
+        val vm = inbox(repo, files)
+        vm.onEvent(InboxEvent.StartBulk(allowPaid = false))
+        advanceUntilIdle()
+        vm.onEvent(InboxEvent.SubmitBulk)
+        advanceUntilIdle()
+        val failed = vm.state.value.bulkBatches.single()
+        assertEquals(BatchProject(projectId = "p-old", userId = "me"), failed.project)
+
+        // The app moves on; the retry is still the old production's.
+        repo.openProject = "p-new"
+        vm.onEvent(InboxEvent.RetryBatch(failed.id))
+        advanceUntilIdle()
+        assertEquals(listOf<BatchProject?>(failed.project), repo.bulkProjects)
+        assertTrue(failed.project in repo.polledFor, "the finished batch is polled under its own production")
+    }
+
+    @Test
     fun `eleven files are all kept, and the batch refused until one goes`() {
         val files = (1..11).map { BulkFile(it, "f$it.jpg", it.toLong()) }
         val pick = BulkPick(files = files, allowPaid = false)
@@ -605,7 +626,16 @@ class InboxTriageFlowTest {
         val processed = mutableListOf<Pair<List<String>, InboxAccept?>>()
         val notes = mutableListOf<String>()
         val bulk = mutableListOf<Pair<String, Boolean>>()
+        val bulkProjects = mutableListOf<BatchProject?>()
+        val polledFor = mutableListOf<BatchProject?>()
+        var openProject: String? = null
         val decisions = mutableListOf<String>()
+
+        override fun activeProjectId(): String? = openProject
+        override suspend fun bulkBatches(project: BatchProject?): ZillitResult<List<ServerBatch>> {
+            polledFor += project
+            return ZillitResult.Success(emptyList())
+        }
 
         override suspend fun process(ids: List<String>, accept: InboxAccept?): ZillitResult<Unit> {
             processed += ids to accept
@@ -620,8 +650,10 @@ class InboxTriageFlowTest {
             attachment: InvoiceAttachment,
             size: Long,
             paid: Boolean,
+            project: BatchProject?,
         ): ZillitResult<Unit> {
             bulk += batchId to paid
+            bulkProjects += project
             return ZillitResult.Success(Unit)
         }
         override suspend fun override(id: String): ZillitResult<Unit> {

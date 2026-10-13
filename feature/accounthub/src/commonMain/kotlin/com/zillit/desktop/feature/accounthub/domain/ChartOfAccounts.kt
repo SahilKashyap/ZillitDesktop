@@ -725,14 +725,12 @@ object TrackingSets {
         "#84CC16", // lime   — Activity
     )
 
-    const val PREFIX_MIN = 2
     const val PREFIX_MAX = 10
 
     fun colorFor(index: Int): String = DEFAULT_COLORS[index % DEFAULT_COLORS.size]
 
-    /** Upper-cased, letters and digits, at most ten — as the web normalises it as it is typed. */
-    fun normalisePrefix(raw: String): String =
-        raw.uppercase().filter { it.isLetterOrDigit() }.take(PREFIX_MAX)
+    /** Upper-cased and cut to ten, as the web's field does as it is typed (`toUpperCase().slice(0, 10)`). */
+    fun normalisePrefix(raw: String): String = raw.uppercase().take(PREFIX_MAX)
 
     /**
      * A layer's codes in reading order — the web's `sortNodes`: by the stored
@@ -741,12 +739,12 @@ object TrackingSets {
     fun ordered(nodes: List<TrackingNode>): List<TrackingNode> =
         nodes.sortedWith(compareBy<TrackingNode> { it.sortOrder }.thenBy { it.code })
 
-    /** Why a set cannot be saved, or null. A blank prefix is allowed: the server derives one. */
-    fun setProblem(name: String, prefix: String): String? = when {
-        name.isBlank() -> str(S.desktop_hub_give_the_layer_a_name)
-        prefix.isNotBlank() && prefix.length < PREFIX_MIN -> str(S.desktop_hub_a_prefix_is_2_10_letters_or_digits)
-        else -> null
-    }
+    /**
+     * Why a set cannot be saved, or null. Only a blank name blocks it, as on the web: the
+     * prefix is the server's to judge, and a blank one is derived there.
+     */
+    fun setProblem(name: String): String? =
+        if (name.isBlank()) str(S.desktop_hub_give_the_layer_a_name) else null
 
     fun nodeProblem(code: String, label: String): String? = when {
         code.isBlank() -> str(S.desktop_hub_give_the_code_a_value)

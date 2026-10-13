@@ -120,13 +120,14 @@ class PurchaseOrderRepositoryImpl(
                 ?: ZillitResult.Failure(ZillitError.Serialization("order $id came back without an id"))
         }
 
+    /** Newest first, as the web's panel lists it; an undated row sinks. */
     override suspend fun history(id: String): ZillitResult<List<PoHistoryEntry>> =
         apiClient.request(
             verb = HttpVerb.Get,
             url = "$base/$id/history",
             serializer = ListSerializer(PoHistoryDto.serializer()),
             module = RequestModule.ProjectUser,
-        ).map { rows -> rows.map { it.toDomain() } }
+        ).map { rows -> rows.map { it.toDomain() }.sortedByDescending { it.at ?: Long.MIN_VALUE } }
 
     /**
      * Attachments are a column of the order, written by patching the record.
@@ -216,12 +217,12 @@ class PurchaseOrderRepositoryImpl(
         apiClient.envelope(HttpVerb.Patch, "$base/$id", RequestModule.ProjectUser, update.body()).map { }
 
     /** `PATCH /bulk` with the assignee and the reason in `data` — one call for the whole selection. */
-    override suspend fun bulkReassign(ids: List<String>, userId: String, reason: String): ZillitResult<Unit> =
+    override suspend fun bulkReassign(ids: List<String>, userId: String, reason: String?): ZillitResult<Unit> =
         bulkPatch(
             ids,
             buildJsonObject {
                 put("assigned_to", JsonPrimitive(userId))
-                put("reassignment_reason", JsonPrimitive(reason))
+                put("reassignment_reason", reason?.let { JsonPrimitive(it) } ?: JsonNull)
             },
         )
 
@@ -285,14 +286,14 @@ class PurchaseOrderRepositoryImpl(
      * PATCHes `assigned_to` with the reason beside it, and the reason is what
      * makes the hand-off auditable.
      */
-    override suspend fun reassign(id: String, userId: String, reason: String): ZillitResult<Unit> =
+    override suspend fun reassign(id: String, userId: String, reason: String?): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Patch,
             url = "$base/$id",
             module = RequestModule.ProjectUser,
             body = buildJsonObject {
                 put("assigned_to", JsonPrimitive(userId))
-                put("reassignment_reason", JsonPrimitive(reason))
+                put("reassignment_reason", reason?.let { JsonPrimitive(it) } ?: JsonNull)
             },
         ).map { }
 
@@ -333,6 +334,8 @@ class PurchaseOrderRepositoryImpl(
     override suspend fun deleteRule(id: String) = settingsSource.deleteRule(id)
 
     override suspend fun nominalCodes() = settingsSource.nominalCodes()
+
+    override suspend fun chartCodes() = settingsSource.chartCodes()
 
     override suspend fun assetTags() = settingsSource.assetTags()
 
@@ -398,10 +401,27 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
     if (deliveryAddress != null && !deliveryAddress.isEmpty) {
         put("delivery_address", deliveryAddress.toJson())
     }
+    saveDeliveryAddress?.let { put("save_delivery_address", JsonPrimitive(it)) }
     // The files ride the record; there is no attachment sub-resource. The array
     // is sent even when empty, because that is how the last one comes off —
     // omitting the key would leave it in place.
     put("attachments", attachments.attachmentsJson())
+    approvals?.let { signed ->
+        put(
+            "approvals",
+            buildJsonArray {
+                signed.forEach {
+                    add(
+                        buildJsonObject {
+                            put("user_id", JsonPrimitive(it.userId))
+                            put("tier_number", JsonPrimitive(it.tierNumber))
+                            put("approved_at", JsonPrimitive(it.approvedAt))
+                        },
+                    )
+                }
+            },
+        )
+    }
     // Only when the production has configured some: an empty array on every
     // order would be a column of nothing on the printed form.
     if (customFields.isNotEmpty()) put("custom_fields", customFields.customFieldsJson())
@@ -418,7 +438,7 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
 }
 
 /** The extra fields, grouped by the section a reader sees them under. */
-private fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArray {
+internal fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArray {
     forEach { group ->
         add(
             buildJsonObject {
@@ -429,7 +449,9 @@ private fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArra
                         group.fields.forEach { field ->
                             add(
                                 buildJsonObject {
-                                    put("name", JsonPrimitive(field.name))
+                                    // The form's own key, as the web's `cf.label || cf.name`:
+                                    // what an edit reads back to find the field's value.
+                                    put("name", JsonPrimitive(field.label.ifBlank { field.name }))
                                     put("value", JsonPrimitive(field.value))
                                 },
                             )
@@ -527,6 +549,7 @@ internal data class PoDto(
             reassignmentReason = reassignmentReason,
             deliveryAddress = deliveryAddressRaw.addressText()?.takeIf { it.isNotBlank() } ?: delivery,
             deliveryAddressRaw = deliveryAddressRaw?.takeUnless { it is JsonNull },
+            deliveryAddressParts = deliveryAddressRaw.asAddress(),
             lines = parsedLines,
             approvals = approvals.orEmpty().map { it.toDomain() },
             attachmentCount = attachments?.size ?: 0,
@@ -692,19 +715,26 @@ internal fun JsonElement?.toStampOrNull(): Long? {
     return text.toLongOrNull() ?: text.toDoubleOrNull()?.toLong() ?: text.toEpochMillisOrNull()
 }
 
+/**
+ * One audit-trail row. The web's `HistoryPanel` reads `action_by` / `action_at`
+ * (epoch millis); this client's first port read `user_id` / `created_at`, so
+ * both spellings are read, the web's first.
+ */
 @Serializable
 internal data class PoHistoryDto(
     @SerialName("action") val action: String? = null,
     @SerialName("status") val status: String? = null,
+    @SerialName("action_by") val actionBy: String? = null,
     @SerialName("user_id") val userId: String? = null,
     @SerialName("note") val note: String? = null,
-    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("action_at") val actionAt: JsonElement? = null,
+    @SerialName("created_at") val createdAt: JsonElement? = null,
 ) {
     fun toDomain() = PoHistoryEntry(
         action = action ?: status.orEmpty(),
-        userId = userId,
+        userId = actionBy?.takeIf { it.isNotBlank() } ?: userId?.takeIf { it.isNotBlank() },
         note = note,
-        at = createdAt.toEpochMillisOrNull(),
+        at = actionAt.toStampOrNull() ?: createdAt.toStampOrNull(),
     )
 }
 
@@ -742,6 +772,10 @@ internal data class PoAttachmentDto(
     @SerialName("content_type") val contentType: String? = null,
     @SerialName("bucket") val bucket: String? = null,
     @SerialName("region") val region: String? = null,
+    @SerialName("content_subtype") val contentSubtype: String? = null,
+    @SerialName("caption") val caption: String? = null,
+    // A number from the web, a string from older rows.
+    @SerialName("file_size") val fileSize: JsonElement? = null,
 ) {
     fun toDomain(): PoAttachment? = media?.takeIf { it.isNotBlank() }?.let { key ->
         PoAttachment(
@@ -751,6 +785,9 @@ internal data class PoAttachmentDto(
             contentType = contentType.orEmpty(),
             bucket = bucket.orEmpty(),
             region = region.orEmpty(),
+            contentSubtype = contentSubtype.orEmpty(),
+            caption = caption.orEmpty(),
+            size = (fileSize as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()?.toLong(),
         )
     }
 }
@@ -778,7 +815,12 @@ internal fun PoLine.body(): JsonObject = buildJsonObject {
     customFields?.let { put("custom_fields", it) }
 }
 
-/** The files on an order, as the record's `attachments` column. */
+/**
+ * The files on an order, as the record's `attachments` column — the web's
+ * `buildAttachmentMeta` (`POForm.jsx`): media, bucket, region, the MIME's major
+ * type, the extension, name, caption and size. The web previews a file inline
+ * from `content_subtype`, so a row without it opens as a plain download.
+ */
 internal fun List<PoAttachment>.attachmentsJson(): JsonArray = buildJsonArray {
     forEach { file ->
         add(
@@ -786,7 +828,10 @@ internal fun List<PoAttachment>.attachmentsJson(): JsonArray = buildJsonArray {
                 if (file.id.isNotBlank()) put("_id", JsonPrimitive(file.id))
                 put("media", JsonPrimitive(file.media))
                 put("name", JsonPrimitive(file.displayName))
-                put("content_type", JsonPrimitive(file.contentType))
+                put("content_type", JsonPrimitive(file.wireContentType))
+                put("content_subtype", JsonPrimitive(file.wireSubtype))
+                put("caption", JsonPrimitive(file.caption))
+                file.size?.let { put("file_size", JsonPrimitive(it)) }
                 put("bucket", JsonPrimitive(file.bucket))
                 put("region", JsonPrimitive(file.region))
             },
@@ -835,7 +880,10 @@ internal data class PoCustomFieldGroupDto(
 ) {
     fun toDomain() = CustomFieldGroup(
         section = section.orEmpty(),
-        fields = fields.orEmpty().map { CustomFieldValue(name = it.name.orEmpty(), value = it.value.orEmpty()) },
+        // The stored `name` is the form's key, so it is the label an edit looks the value up by.
+        fields = fields.orEmpty().map {
+            CustomFieldValue(name = it.name.orEmpty(), value = it.value.orEmpty(), label = it.name.orEmpty())
+        },
     )
 }
 

@@ -238,9 +238,6 @@ class MeetLobby(
     private val _state = MutableStateFlow<MeetLobbyState?>(null)
     val state: StateFlow<MeetLobbyState?> = _state.asStateFlow()
 
-    /** The window the lobby is drawn in has focus — polling stops while it does not. */
-    private val focused = MutableStateFlow(true)
-
     private var lobbyJob: Job? = null
     private var joinJob: Job? = null
 
@@ -290,10 +287,6 @@ class MeetLobby(
         val current = _state.value ?: return
         if (current.status == MeetLobbyStatus.Joining || current.handedOff) return
         dismiss("closed")
-    }
-
-    fun setFocused(on: Boolean) {
-        focused.value = on
     }
 
     fun toggleMicrophone() {
@@ -347,11 +340,29 @@ class MeetLobby(
         if (current == null || !current.mayJoin) return
         val other = busyRefusal()
         when {
-            current.micBlocked -> setStatus(current.meetId, MeetLobbyStatus.Error(MeetProblem.MicrophoneDenied))
+            current.micBlocked -> recheckMicrophone(current.meetId, switchConfirmed)
             other != null -> toast(other)
             else -> {
                 setStatus(current.meetId, MeetLobbyStatus.Joining)
                 joinJob = scope.launch { runJoin(current.meetId, switchConfirmed) }
+            }
+        }
+    }
+
+    /**
+     * The microphone was refused: asked again on Join, so a grant given in
+     * System Settings since the lobby opened goes through; still refused, the
+     * join stays blocked and says why.
+     */
+    private fun recheckMicrophone(meetId: String, switchConfirmed: Boolean) {
+        val lobby = lobbyJob ?: return
+        scope.launch(lobby) {
+            val allowed = media.access(video = false).microphone
+            update(meetId) { copy(micBlocked = !allowed) }
+            if (allowed) {
+                startJoin(switchConfirmed)
+            } else {
+                setStatus(meetId, MeetLobbyStatus.Error(MeetProblem.MicrophoneDenied))
             }
         }
     }
@@ -389,7 +400,12 @@ class MeetLobby(
                 ZillitLog.i(TAG) { "meet $meetId over REST: ${start.why}" }
                 when (val rest = backend.overRest(meetId)) {
                     is MeetRest.Creds -> deliver(meetId, rest.url, rest.token)
-                    is MeetRest.Refused -> fail(meetId, rest.problem, rest.detail, fatal = rest.problem.isFinal())
+                    // REST cannot knock; a socket that came back meanwhile can.
+                    is MeetRest.Refused -> if (rest.problem == MeetProblem.AskHost && backend.online.value) {
+                        knock(meetId)
+                    } else {
+                        fail(meetId, rest.problem, rest.detail, fatal = rest.problem.isFinal())
+                    }
                 }
             }
         }
@@ -502,14 +518,14 @@ class MeetLobby(
     }
 
     /**
-     * Who is already in, and whether we are, every [pollMillis] — only while
-     * the lobby is up, not joining, and its window has focus. ONE timer,
-     * restarted when one of those changes, never per redraw.
+     * Who is already in, and whether we are, every [pollMillis] — while the
+     * lobby is up and not joining. ONE timer, restarted when that changes,
+     * never per redraw. Not paused when the window loses focus: someone
+     * watching the lobby from beside another app is still watching it — the
+     * web pauses only for a hidden tab.
      */
     private suspend fun poll(meetId: String) {
-        combine(focused, _state.map { it?.pollable(meetId) == true }.distinctUntilChanged()) { focus, up ->
-            focus && up
-        }.distinctUntilChanged().collectLatest { live ->
+        _state.map { it?.pollable(meetId) == true }.distinctUntilChanged().collectLatest { live ->
             if (!live) return@collectLatest
             while (true) {
                 pollOnce(meetId)

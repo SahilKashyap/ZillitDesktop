@@ -8,9 +8,11 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.data.cardRefreshes
+import com.zillit.desktop.feature.cardexpenses.data.cardRightsChanges
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
 import com.zillit.desktop.feature.cardexpenses.domain.CardCrewHost
+import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.CardFiles
 import com.zillit.desktop.feature.cardexpenses.domain.CardHubSource
 import com.zillit.desktop.feature.cardexpenses.domain.CardInboxHost
@@ -59,6 +61,11 @@ class CardExpensesViewModel(
     private val today: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     /** The production's bank accounts, for fund requests; they belong to the hub, not this service. */
     banks: suspend () -> List<CardBank> = { emptyList() },
+    /**
+     * Whether the last [banks] read failed rather than found none — the web's `banksFailed`.
+     * An empty list means both, so the host says which; without it the module infers the failure.
+     */
+    bankReadFailed: () -> Boolean = { false },
     /** The production's currencies, rates, companies and banks, for the card forms and the dashboard. */
     reference: suspend () -> CardReference = { CardReference() },
     /** The hub's companies, departments and assignment-rule routes; see [CardHubSource]. */
@@ -124,7 +131,7 @@ class CardExpensesViewModel(
     private val receipts = CardReceiptActions(this, uploader)
 
     /** Import Statement, the Receipt Inbox and All Transactions; see [CardInboxActions]. */
-    internal val inboxActions = CardInboxActions(this, inboxHost, banks)
+    internal val inboxActions = CardInboxActions(this, inboxHost, banks, bankReadFailed)
 
     /** Answered confirmations and the bulk bars; see [CardPromptActions]. */
     private val prompts = CardPromptActions(this, deleteCard = register::delete)
@@ -208,8 +215,34 @@ class CardExpensesViewModel(
         if (bus != null && !listening) {
             listening = true
             launch {
-                cardRefreshes(bus).collect { currentState.destination.let(::load) }
+                cardRefreshes(bus).collect {
+                    currentState.destination.let(::load)
+                    refreshCardCurrencies()
+                }
             }
+            launch { cardRightsChanges(bus).collect { refreshRights() } }
+        }
+    }
+
+    /**
+     * Re-reads the module's metadata and settings after somebody changed who
+     * may do what — the web's `ah:card:settings`. Only the metadata and the
+     * settings document move: the viewer's identity and the door are kept, an
+     * edit in progress on the settings page is not overwritten, and a page the
+     * new rights no longer allow gives way to the landing page.
+     */
+    private suspend fun refreshRights() {
+        val metadata = repository.metadata().getOrNull()
+        val loaded = repository.settings().getOrNull()
+        setState {
+            val providers = loaded?.providers ?: viewer.metadata.cardProviders
+            val settled = viewer.copy(metadata = (metadata ?: viewer.metadata).copy(cardProviders = providers))
+            copy(
+                viewer = settled,
+                settings = loaded ?: settings,
+                settingsDraft = settingsDraft ?: loaded,
+                destination = destination.takeIf { it.visibleTo(settled) } ?: CardDestination.landing(settled),
+            )
         }
     }
 
@@ -279,8 +312,20 @@ class CardExpensesViewModel(
         // outside the reducer — `setState` takes a plain lambda.
         val crew = people()
         setState { copy(people = crew) }
+        refreshCardCurrencies()
         cardActions.start()
         load(currentState.destination)
+    }
+
+    /**
+     * Reads the card catalogue for its currencies, once per production and again on a card change.
+     * The web's `CardsProvider` does the same (`my` for a cardholder, the register for the console);
+     * a failed read keeps what was known.
+     */
+    private suspend fun refreshCardCurrencies() {
+        val catalogue = repository.cards(mineOnly = !currentState.viewer.isAccountant).getOrNull() ?: return
+        val byId = catalogue.mapNotNull { card -> card.currency?.takeIf(String::isNotBlank)?.let { card.id to it } }
+        setState { copy(cardCurrencies = byId.toMap()) }
     }
 
     override fun onEvent(event: CardEvent) {
@@ -319,7 +364,7 @@ class CardExpensesViewModel(
             is CardEvent.SetTransactionFilters -> {
                 // The selection outlives the filters, as the web's raw set does:
                 // what Delete sends is intersected with the rows on screen.
-                setState { copy(transactionFilters = event.filters) }
+                setState { copy(transactionFilters = event.filters.withDateRules(CardDates.toIso(today()))) }
                 if (currentState.destination == CardDestination.AllTransactions) reload()
             }
             is CardEvent.SelectReceipt -> receipts.select(event.receiptId)
@@ -447,10 +492,13 @@ class CardExpensesViewModel(
             val landing = CardDestination.landing(moved)
             if (started) openPage(landing) else setState { copy(destination = landing) }
         }
+        // The catalogue follows the door: a cardholder's own cards, or the whole register.
+        if (started) launch { refreshCardCurrencies() }
     }
 
     private fun openPage(destination: CardDestination) {
         setState {
+            val leavingImport = this.destination == CardDestination.ImportStatement && destination != this.destination
             copy(
                 destination = destination,
                 search = "",
@@ -468,9 +516,13 @@ class CardExpensesViewModel(
                 processTab = ProcessTab.Processing,
                 fullScreen = false,
                 cardsArea = cardsArea.copy(openCardId = null, historyOpen = false, bsDraft = null),
-                // The receipt detail and manual match belong to the inbox; the
-                // import's statement stays until New Import, as the web's page does.
-                inbox = inbox.copy(detail = null, manualMatch = null),
+                // The receipt detail and manual match belong to the inbox; the import's
+                // statement is the web page's own state and goes when the page is left.
+                inbox = inbox.copy(
+                    detail = null,
+                    manualMatch = null,
+                    import = if (leavingImport) inbox.import.leaving() else inbox.import,
+                ),
                 crew = crew.onPageChange(),
                 // All Transactions opens on the last month of spend, as the
                 // web's does; the filters say so and one press clears them.

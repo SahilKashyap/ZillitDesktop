@@ -118,21 +118,32 @@ private fun desktopUserAgent(): String {
 }
 
 /**
- * Every screen, in HMRC's spelling.
+ * The primary screen, in HMRC's spelling.
  *
- * `width=…&height=…&scaling-factor=…&colour-depth=…`, comma separated. Headless
- * or locked-down JVMs report none, and an empty string is the truthful answer
- * there.
+ * `width=…&height=…&scaling-factor=…&colour-depth=…`, as the web sends one
+ * screen. Headless or locked-down JVMs report none, and an empty string is the
+ * truthful answer there.
  */
 private fun screenDescription(): String = runCatching {
     if (GraphicsEnvironment.isHeadless()) return@runCatching ""
-    GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.joinToString(",") { device ->
-        val mode = device.displayMode
-        val scale = device.defaultConfiguration.defaultTransform.scaleX
-        "width=${mode.width}&height=${mode.height}" +
-            "&scaling-factor=${scale.toInt()}&colour-depth=${mode.bitDepth}"
-    }
+    val device = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+    val mode = device.displayMode
+    screenSignal(mode.width, mode.height, device.defaultConfiguration.defaultTransform.scaleX, mode.bitDepth)
 }.getOrDefault("")
+
+/**
+ * One screen in HMRC's spelling. The scale is sent as it is — 1.25 stays 1.25,
+ * and a whole number drops its point, as the web's `devicePixelRatio` does —
+ * and a depth the platform will not say ("multi" is -1) is the web's 24.
+ */
+internal fun screenSignal(width: Int, height: Int, scale: Double, colourDepth: Int): String {
+    val factor = if (scale > 0.0) scale else 1.0
+    val scaling = if (factor == Math.floor(factor)) factor.toInt().toString() else factor.toString()
+    val depth = colourDepth.takeIf { it > 0 } ?: DEFAULT_COLOUR_DEPTH
+    return "width=$width&height=$height&scaling-factor=$scaling&colour-depth=$depth"
+}
+
+private const val DEFAULT_COLOUR_DEPTH = 24
 
 /** The largest window this application has open — `width=…&height=…`. */
 private fun windowDescription(): String = runCatching {

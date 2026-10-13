@@ -24,6 +24,7 @@ class FloatSettlementTest {
         balance: Double = 1_000.0,
         commits: Double? = null,
         requested: Double = 1_000.0,
+        issuedReported: Boolean = true,
     ) = CashFloat(
         id = "float-1",
         requestNumber = "PC-001",
@@ -44,6 +45,7 @@ class FloatSettlementTest {
         durationType = null,
         purpose = null,
         createdAt = null,
+        issuedReported = issuedReported,
     )
 
     @Test
@@ -139,10 +141,20 @@ class FloatSettlementTest {
     }
 
     @Test
-    fun `an unissued float falls back to what was requested`() {
-        val settlement = FloatSettlement.of(float(issued = 0.0, balance = 0.0, requested = 800.0))
+    fun `a float with no issued figure falls back to what was requested`() {
+        val settlement = FloatSettlement.of(
+            float(issued = 0.0, balance = 0.0, requested = 800.0, issuedReported = false),
+        )
 
         assertEquals(800.0, settlement.issued)
+    }
+
+    @Test
+    fun `a float issued at zero stays at zero`() {
+        // The web's `issued_float ?? req_amount`: only an absent figure falls back.
+        val settlement = FloatSettlement.of(float(issued = 0.0, balance = 0.0, requested = 800.0))
+
+        assertEquals(0.0, settlement.issued)
     }
 
     @Test

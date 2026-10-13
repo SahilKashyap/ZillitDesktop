@@ -84,15 +84,17 @@ val AccountHubUiState.trialBalanceDirty: Boolean
 /**
  * The currencies the filter offers — the web's `useCurrencyOptions`.
  *
- * The production's own, default first; the whole catalogue while it has picked
- * none, so the selector is never empty.
+ * The production's own, in the order it keeps them, with the default added at
+ * the front only when it is missing from them (the web's
+ * `buildCurrencyOptions`); the whole catalogue while it has picked none, so the
+ * selector is never empty.
  */
 val AccountHubUiState.trialBalanceCurrencies: List<ProjectCurrency>
     get() {
         val settings = setup.currencies.saved
         val defaultCode = settings.defaultCode.orEmpty()
         val offered = settings.currencies.ifEmpty { setup.currencyCatalogue }
-        val default = offered.firstOrNull { it.code == defaultCode }
-            ?: defaultCode.takeIf { it.isNotBlank() }?.let { ProjectCurrency(it) }
-        return listOfNotNull(default) + offered.filterNot { it.code == default?.code }
+        val missingDefault = defaultCode.takeIf { it.isNotBlank() && offered.none { c -> c.code == defaultCode } }
+            ?.let { ProjectCurrency(it) }
+        return listOfNotNull(missingDefault) + offered
     }

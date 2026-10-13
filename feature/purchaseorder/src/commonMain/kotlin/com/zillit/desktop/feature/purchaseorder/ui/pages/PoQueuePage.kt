@@ -89,10 +89,10 @@ internal fun PoQueuePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 padded = false,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                PoOrderTable(state, rows, onEvent)
+                // The web's POQueue has no checkbox column and no bulk bar: only All POs does.
+                PoOrderTable(state, rows, onEvent, selectable = false)
             }
         }
-        PoBulkBar(state, onEvent, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -107,12 +107,12 @@ private fun QueueStats(state: PoUiState, rows: List<PurchaseOrder>) {
     val ready = rows.count {
         it.status == PoStatus.Approved || it.status == PoStatus.Queued || it.status == PoStatus.AccountsEntered
     }
-    // A senior covers every department by role — the web's "All (override)".
-    val departments = if (state.viewer.isSeniorAccountant) {
-        str(S.desktop_po_all_override)
-    } else {
-        rows.mapNotNull { state.departmentName(it.departmentId).ifBlank { null } }.distinct().joinToString(", ")
-            .ifBlank { "—" }
+    // A senior covers every department by role — the web's "All (override)";
+    // anyone else's are the departments the assignment rules aim at them.
+    val departments = when {
+        state.viewer.isSeniorAccountant -> str(S.desktop_po_all_override)
+        state.assignedDepartments == null -> "…"
+        else -> state.assignedDepartments.orEmpty().joinToString(", ").ifBlank { "—" }
     }
     // A fixed height, not each tile's own: My Committed and Ready to Process
     // carry a subtitle the others don't, and without this every other row
@@ -150,13 +150,13 @@ private fun QueueStats(state: PoUiState, rows: List<PurchaseOrder>) {
             icon = ZillitIcons.Users,
             modifier = tile,
         )
-        ZillitStatTile(
+        PoTotalTile(
             label = str(S.desktop_po_my_committed),
-            value = rows.totalValue(state),
+            total = rows.totalText(state),
+            modifier = tile,
             sub = rows.currencyNote(),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Wallet,
-            modifier = tile,
         )
     }
 }

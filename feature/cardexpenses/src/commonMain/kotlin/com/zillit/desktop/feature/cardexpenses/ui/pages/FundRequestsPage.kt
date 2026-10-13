@@ -56,6 +56,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cardexpenses.domain.FundRouting
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.GbDate
 import com.zillit.desktop.feature.cardexpenses.ui.InsightsEvent
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardCalcInput
 import com.zillit.desktop.feature.cardexpenses.ui.components.InsightEyebrow
@@ -257,7 +258,7 @@ private fun RequestRow(state: CardUiState, request: FundRequest, acting: String?
                 }
             }
             ZillitText(
-                text = EpochDate.date(request.requestedAt).ifEmpty { "—" },
+                text = GbDate.date(request.requestedAt).ifEmpty { "—" },
                 style = ZillitTheme.typography.numeric,
                 color = colors.textMuted,
             )
@@ -338,7 +339,7 @@ private fun Chain(state: CardUiState, request: FundRequest, bank: CardBank?, mod
                 else -> ChainState.Active
             },
             bank?.name ?: "—",
-            if (received || cancelled) "" else str(S.desktop_pc_since, EpochDate.date(request.requestedAt)),
+            if (received || cancelled) "" else str(S.desktop_pc_since, GbDate.date(request.requestedAt)),
         ),
         ChainStep(
             str(S.recived),

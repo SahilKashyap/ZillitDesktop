@@ -52,7 +52,10 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
         vm.update { copy(chart = chart.copy(loading = true, loadFailed = false)) }
         vm.runResult(
             { vm.repo.accounts(activeOnly = false) },
-            { rows -> updateTree { copy(accounts = rows, loading = false, loaded = true, loadFailed = false) } },
+            { rows ->
+                updateTree { copy(accounts = rows, loading = false, loaded = true, loadFailed = false) }
+                bulk.rescheduleHeld()
+            },
             { error ->
                 vm.update { copy(chart = chart.copy(loading = false, loadFailed = true)) }
                 vm.report(error)

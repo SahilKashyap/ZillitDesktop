@@ -366,6 +366,8 @@ class DealMemoToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     DealMemoEffect.LeaveTool -> navigator.navigate(WorkspaceRoute.Tool(TOOLS_GRID_PATH))
+                    // Its own provider answers that path, in this same window; its Back steps back here.
+                    DealMemoEffect.OpenApprovers -> navigator.navigate(WorkspaceRoute.Tool(DEAL_MEMO_APPROVERS_PATH))
                 }
             }
         }

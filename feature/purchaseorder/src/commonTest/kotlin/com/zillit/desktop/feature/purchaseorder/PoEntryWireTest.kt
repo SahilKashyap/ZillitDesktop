@@ -244,6 +244,45 @@ class PoEntryWireTest {
         val lock = (repository.periodLock() as ZillitResult.Success).data
         assertEquals("2026-08-30", lock.lockedThrough)
     }
+
+    /** A first assignment has no reason to give, and the web's modal sends `null` for it. */
+    @Test
+    fun `assigning an unassigned order sends a null reason`() = runTest {
+        repository().reassign("po-1", userId = "acc-2", reason = null)
+        val call = sent.single()
+        assertEquals("PATCH", call.method)
+        assertTrue(call.path.endsWith("/purchase-orders/po-1"))
+        assertEquals("acc-2", call.body!!["assigned_to"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, call.body["reassignment_reason"])
+    }
+
+    @Test
+    fun `a bulk assignment with no reason sends null in data`() = runTest {
+        repository().bulkReassign(listOf("a", "b"), userId = "acc-2", reason = null)
+        val data = sent.single().body!!["data"]!!.jsonObject
+        assertEquals(JsonNull, data["reassignment_reason"])
+    }
+
+    /**
+     * The web's `HistoryPanel` reads `action_by` and `action_at` (epoch millis)
+     * and lists newest first; this client first read `user_id` and `created_at`,
+     * so both spellings are read, the web's first.
+     */
+    @Test
+    fun `history reads the web's keys, falls back to the old ones, newest first`() = runTest {
+        val body = """{"status":1,"data":[
+            {"action":"created","action_by":"u1","action_at":1000},
+            {"action":"reassigned","user_id":"u2","created_at":"4000"},
+            {"action":"auto_coded","action_by":"system","action_at":3000,"note":"Rule 4"},
+            {"action":"both","action_by":"web","user_id":"old","action_at":2000,"created_at":"9"}
+        ]}"""
+        val entries = (repository { body }.history("po-1") as ZillitResult.Success).data
+        assertEquals(listOf("reassigned", "auto_coded", "both", "created"), entries.map { it.action })
+        assertEquals(listOf("u2", "system", "web", "u1"), entries.map { it.userId })
+        assertEquals(3000L, entries[1].at)
+        assertEquals(2000L, entries[2].at, "the web's stamp wins over the old one")
+        assertEquals("Rule 4", entries[1].note)
+    }
 }
 
 private class PoMockEngineFactory(private val engine: MockEngine) : HttpClientEngineFactory<MockEngineConfig> {

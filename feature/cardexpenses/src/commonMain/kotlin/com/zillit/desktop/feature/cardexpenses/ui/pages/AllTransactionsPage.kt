@@ -34,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -52,6 +51,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
+import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
@@ -65,9 +65,11 @@ import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 import com.zillit.desktop.feature.cardexpenses.domain.TransactionSelection
 import com.zillit.desktop.feature.cardexpenses.domain.canDelete
 import com.zillit.desktop.feature.cardexpenses.domain.matchesLedgerSearch
+import com.zillit.desktop.feature.cardexpenses.domain.otherStatusLabel
 import com.zillit.desktop.feature.cardexpenses.ui.ALL_STATUSES
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.GbDate
 import com.zillit.desktop.feature.cardexpenses.ui.InboxEvent
 import com.zillit.desktop.feature.cardexpenses.ui.WorkflowStatusPill
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -501,7 +503,7 @@ private fun LedgerRow(state: CardUiState, row: CardTransaction, selected: Boolea
             }
         }
         ZillitText(
-            text = row.date?.let(EpochDate::dateTime)?.ifBlank { null } ?: EM_DASH,
+            text = row.date?.let(GbDate::dateTime)?.ifBlank { null } ?: EM_DASH,
             style = ZillitTheme.typography.labelSmall,
             color = colors.textSecondary,
             modifier = Modifier.width(DATE_COLUMN),
@@ -550,7 +552,14 @@ private fun LedgerRow(state: CardUiState, row: CardTransaction, selected: Boolea
                 ZillitText(EM_DASH, color = colors.textMuted)
             }
         }
-        Box(Modifier.width(STATUS_COLUMN)) { WorkflowStatusPill(row.status) }
+        Box(Modifier.width(STATUS_COLUMN)) {
+            val other = row.otherStatusLabel
+            if (other != null) {
+                ZillitStatusPill(label = other, tone = StatusTone.Neutral, dot = true)
+            } else {
+                WorkflowStatusPill(row.status)
+            }
+        }
         ZillitText(
             text = row.nominalCode ?: EM_DASH,
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),

@@ -35,7 +35,9 @@ internal class MatchActions(private val vm: BankRecViewModel) {
             BankRecEvent.DismissMatch -> if (!workspace.accepting) edit { copy(proposal = null) }
             BankRecEvent.ConfirmMatch -> confirmProposal()
             is BankRecEvent.OpenManualMatch ->
-                edit { copy(manualMatchId = event.transactionId, manualMatchEntryId = null) }
+                edit { copy(manualMatchId = event.transactionId, manualMatchEntryId = null, manualMatchQuery = "") }
+
+            is BankRecEvent.SearchManualMatch -> edit { copy(manualMatchQuery = event.query) }
 
             is BankRecEvent.PickManualMatch -> edit { copy(manualMatchEntryId = event.ledgerRowId) }
             BankRecEvent.CloseManualMatch ->
@@ -66,12 +68,10 @@ internal class MatchActions(private val vm: BankRecViewModel) {
         if (workspace.accepting) return
         val view = vm.ui.workspaceView()
         val txn = view.bankRow(proposal.transactionId)?.txn ?: return edit { copy(proposal = null) }
-        val entry = view.invoice(proposal.invoiceId)
-        // The engine suggests invoices; an entry this client resolved says which
-        // table it is really in.
-        val kind = entry?.entry?.kind?.takeIf { it != LedgerEntryKind.Other } ?: LedgerEntryKind.Invoice
         edit { copy(accepting = true) }
-        vm.runResult({ vm.repo.matchTransaction(txn.id, proposal.invoiceId, kind) }, {
+        // The engine suggests invoices, and the web's Accept always says so —
+        // only a hand-picked match names the entry's own table.
+        vm.runResult({ vm.repo.matchTransaction(txn.id, proposal.invoiceId, LedgerEntryKind.Invoice) }, { message ->
             val wasFraud = txn.fraudType != null
             edit {
                 copy(
@@ -100,8 +100,10 @@ internal class MatchActions(private val vm: BankRecViewModel) {
                     },
                 )
             }
+            // The server's own words when it has some, as the web shows them.
             vm.notify(
-                if (wasFraud) str(S.desktop_br_fraud_reviewed_accepted) else str(S.desktop_card_match_confirmed),
+                message.serverText()
+                    ?: if (wasFraud) str(S.desktop_br_fraud_reviewed_accepted) else str(S.desktop_card_match_confirmed),
             )
             afterMatch()
         }, { error ->
@@ -117,7 +119,7 @@ internal class MatchActions(private val vm: BankRecViewModel) {
         val view = vm.ui.workspaceView()
         val entry = view.ledgerRow(entryId)?.entry ?: return
         edit { copy(manualMatching = true) }
-        vm.runResult({ vm.repo.matchTransaction(txnId, entry.entityId, entry.kind) }, {
+        vm.runResult({ vm.repo.matchTransaction(txnId, entry.entityId, entry.kind) }, { message ->
             edit {
                 copy(
                     manualMatching = false,
@@ -140,7 +142,7 @@ internal class MatchActions(private val vm: BankRecViewModel) {
                 )
             }
             val name = view.ledgerRow(entryId)?.title.orEmpty().ifBlank { str(S.desktop_br_the_ledger_entry) }
-            vm.notify(str(S.desktop_br_matched_to, name))
+            vm.notify(message.serverText() ?: str(S.desktop_br_matched_to, name))
             afterMatch()
         }, { error ->
             edit { copy(manualMatching = false) }

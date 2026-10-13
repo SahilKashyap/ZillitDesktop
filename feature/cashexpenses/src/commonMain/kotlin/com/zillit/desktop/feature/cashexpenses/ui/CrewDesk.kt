@@ -1,6 +1,5 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
-import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.forms.FormField
 import com.zillit.desktop.core.forms.customValues
@@ -64,7 +63,12 @@ internal class CrewDesk(
             is CrewEvent.ShowQuery -> showQuery(event.open)
             CrewEvent.SendQuery -> sendQuery()
             is CrewEvent.ShowFloatForm -> editCrew {
-                copy(floatFormOpen = event.open, floatErrors = emptyMap(), floatSubmitError = null)
+                copy(
+                    floatFormOpen = event.open,
+                    floatErrors = emptyMap(),
+                    floatSubmitError = null,
+                    sentFloat = null,
+                )
             }
         }
     }
@@ -79,6 +83,7 @@ internal class CrewDesk(
                     historyFilter = HistoryFilter.ALL,
                     floatErrors = emptyMap(),
                     floatSubmitError = null,
+                    sentFloat = null,
                     // Accountants land straight on the form; crew on their floats.
                     floatFormOpen = viewer.isAccountant,
                 ),
@@ -89,7 +94,8 @@ internal class CrewDesk(
             CashDestination.SubmitReceipts, CashDestination.OutOfPocketSubmit ->
                 host.update { copy(crew = crew.copy(cashSettings = null)) }
             // The accountant's cap is on `/settings`; crew read theirs off `/metadata`.
-            CashDestination.FloatRequest -> if (host.state.viewer.isAccountant) readSettings()
+            CashDestination.FloatRequest ->
+                if (host.state.viewer.isAccountant) readSettings(withDeal = true) else readDeal()
             else -> Unit
         }
     }
@@ -126,10 +132,26 @@ internal class CrewDesk(
     }
 
     /** `GET /settings`, quietly — a crew member is usually refused it, which leaves Payroll off. */
-    private fun readSettings() {
+    private fun readSettings(withDeal: Boolean = false) {
         host.work {
             val settings = (host.repository.settings() as? ZillitResult.Success)?.data ?: return@work
             host.update { copy(crew = crew.copy(cashSettings = settings)) }
+            if (withDeal) readDeal()
+        }
+    }
+
+    /**
+     * The requester's own active deal, for a weekly-salary cap
+     * (`useRequestCapGuard.js:57-68`). Only that basis reads one, so a
+     * max-amount production makes no request at all; a failed or empty read
+     * leaves the deal null and the cap on its flat ceiling, as the web's does.
+     */
+    private fun readDeal() {
+        val cap = host.state.floatCap
+        if (cap == null || !cap.enabled || !cap.isWeekly) return editCrew { copy(deal = null) }
+        host.work {
+            val deal = (host.repository.myActiveDeal() as? ZillitResult.Success)?.data
+            host.update { copy(crew = crew.copy(deal = deal)) }
         }
     }
 
@@ -277,10 +299,16 @@ internal class CrewDesk(
         val amount = draft.amount.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
         if (amount <= 0) return refuse(str(S.desktop_pc_amount_greater_than_zero))
         val currency = draft.currency.ifBlank { state.currencies.default }
-        val overCap = CrewRequestCap.exceeds(state.floatCap, amount, currency, state.currencies.default)
-        if (state.floatCapApplies && overCap) {
-            val cap = Money.format(state.floatCap?.maxAmount, state.currencies.default)
-            return refuse(str(S.desktop_pc_amount_exceeds_cap, cap))
+        val guard = state.floatCapGuard
+        if (CrewRequestCap.exceeds(guard, amount, currency, state.currencies)) {
+            val cap = state.formatAggregate(guard.capInDefault)
+            return refuse(
+                when (guard.source) {
+                    CrewRequestCap.Source.Weekly -> str(S.desktop_pc_amount_exceeds_cap_weekly, cap)
+                    CrewRequestCap.Source.Fallback -> str(S.desktop_pc_amount_exceeds_cap_fallback, cap)
+                    CrewRequestCap.Source.Max -> str(S.desktop_pc_amount_exceeds_cap, cap)
+                },
+            )
         }
         val days = draft.duration.trim().toIntOrNull()
         val daysShown = draft.durationType == CashFormFields.DAYS && CashFormFields.DURATION in shown
@@ -323,13 +351,21 @@ internal class CrewDesk(
             episode = shownValue(CashFormFields.EPISODE),
             collectionMethod = shownValue(CashFormFields.COLLECTION_METHOD),
         )
+        val sent = SentFloatRequest(draft, currency, state.myFloats.mapTo(mutableSetOf()) { it.id })
+            .takeUnless { onBehalf }
         host.act(
             str(S.desktop_ce_float_requested),
             onSuccess = {
                 copy(
                     floatDraft = FloatRequestDraft(),
-                    // An accountant stays on the form to raise the next; crew see their floats.
-                    crew = crew.copy(floatFormOpen = onBehalf, floatErrors = emptyMap(), floatSubmitError = null),
+                    // An accountant stays on a fresh form to raise the next; crew stay on the page, which
+                    // confirms what they sent (`PCFloatRequestPage.jsx:615-619`).
+                    crew = crew.copy(
+                        floatFormOpen = true,
+                        floatErrors = emptyMap(),
+                        floatSubmitError = null,
+                        sentFloat = sent,
+                    ),
                 )
             },
         ) { host.repository.requestFloat(request) }
@@ -408,6 +444,19 @@ private fun defaultOption(label: String): String = CashFormFields.OPTIONS[label]
  */
 internal val CashUiState.floatCap: RequestCap?
     get() = if (viewer.isAccountant) crew.cashSettings?.requestCap else viewer.metadata.requestCap
+
+/**
+ * The cap applied to the request in the form: the requester's deal (weekly basis) and the
+ * request currency converted into the project default — `useRequestCapGuard`.
+ */
+internal val CashUiState.floatCapGuard: CrewRequestCap.Verdict
+    get() = CrewRequestCap.verdict(
+        cap = floatCap,
+        deal = crew.deal,
+        requestCurrency = floatDraft.currency.ifBlank { currencies.default },
+        currencies = currencies,
+        applies = floatCapApplies,
+    )
 
 /** The cap is the requester's own: raised on someone else's behalf, the server judges it. */
 internal val CashUiState.floatCapApplies: Boolean

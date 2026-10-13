@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.accounthub.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlinx.serialization.json.JsonObject
 
 /** What an import does to the chart of accounts it lands in — the web's wording. */
 enum class CoaImportMode(val wire: String, private val labelKey: String, private val detailKey: String) {
@@ -66,6 +67,13 @@ data class ParsedBudget(
     /** Duplicate codes, orphaned parents and the like, in the server's words. */
     val warnings: List<String> = emptyList(),
     val serverTotal: Double? = null,
+    /**
+     * The `parsed` object exactly as the dry run answered it. The commit sends
+     * this back untouched, as the web's `structure: parsed` does: the model
+     * above names only the keys this screen draws, and re-serialising it would
+     * drop whatever else the parser returned.
+     */
+    val raw: JsonObject? = null,
 ) {
     /**
      * What the budget comes to.

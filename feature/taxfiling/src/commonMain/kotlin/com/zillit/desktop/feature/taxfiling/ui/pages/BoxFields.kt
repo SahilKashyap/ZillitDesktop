@@ -79,7 +79,7 @@ internal fun BoxFields(
         DirectionLine(box)
         Column(Modifier.fillMaxWidth().alpha(fade)) {
             FieldGrid(
-                codes = { CodesField(mapping, state, enabled = !zero, edit = edit) },
+                codes = { CodesField(box, mapping, state, enabled = !zero, edit = edit, onEvent = onEvent) },
                 layers = { LayersField(mapping, state, enabled = !zero, edit = edit, onOpenLayers = onOpenLayers) },
                 tags = { TagsField(mapping, state, enabled = !zero, edit = edit) },
                 dates = { DatesField(box, mapping, enabled = !zero, edit = edit) },
@@ -124,12 +124,19 @@ private fun FieldGrid(
 /** Ledger codes: picked from the chart one at a time, listed as chips under the field. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CodesField(mapping: BoxMapping, state: TaxFilingUiState, enabled: Boolean, edit: (BoxMapping) -> Unit) {
+private fun CodesField(
+    box: VatBox,
+    mapping: BoxMapping,
+    state: TaxFilingUiState,
+    enabled: Boolean,
+    edit: (BoxMapping) -> Unit,
+    onEvent: (TaxFilingEvent) -> Unit,
+) {
     val lookups = state.lookups
     MtdFieldLabel(str(S.desktop_tax_ledger_codes))
     MtdCodeInput(
         codes = lookups.coa,
-        onCommit = { code -> if (code !in mapping.codes) edit(mapping.copy(codes = mapping.codes + code)) },
+        onCommit = { code -> onEvent(TaxFilingEvent.AddCode(box, code)) },
         enabled = enabled,
         loading = lookups.coaLoading,
         failed = lookups.coaFailed,

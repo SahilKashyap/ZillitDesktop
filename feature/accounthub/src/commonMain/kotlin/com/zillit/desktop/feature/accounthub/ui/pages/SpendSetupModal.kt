@@ -156,26 +156,26 @@ private fun ColumnScope.CashAccountsPane(
                     value = value.bsCodeFrom,
                     onValueChange = { update(value.copy(bsCodeFrom = it)) },
                     accounts = accounts,
-                    label = str(S.desktop_pc_bs_code_from),
+                    label = str(S.desktop_ce_insights_float_from),
                     placeholder = str(S.desktop_pc_eg_1000),
                     enabled = editable,
                     costType = CoaCostType.Asset,
                     onCreate = create,
                 )
-                FieldHint(str(S.desktop_hub_sp_float_from_hint))
+                FieldHint(str(S.desktop_hub_sp_card_float_from_hint))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 CoaCodeField(
                     value = value.bsCodeTo,
                     onValueChange = { update(value.copy(bsCodeTo = it)) },
                     accounts = accounts,
-                    label = str(S.desktop_pc_bs_code_to),
+                    label = str(S.desktop_ce_insights_float_to),
                     placeholder = str(S.desktop_pc_eg_1999),
                     enabled = editable,
                     costType = CoaCostType.Asset,
                     onCreate = create,
                 )
-                FieldHint(str(S.desktop_hub_sp_float_to_hint))
+                FieldHint(str(S.desktop_hub_sp_card_float_to_hint))
             }
         }
     }

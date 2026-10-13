@@ -277,7 +277,8 @@ private fun ActiveFloatCard(state: CashUiState, float: CashFloat, onEvent: (Cash
             color = colors.textMuted,
         )
         CrewRule(Modifier.padding(vertical = ZillitTheme.spacing.xs))
-        val issued = float.issuedAmount.takeIf { it > 0 } ?: float.requestedAmount
+        // `issued_float ?? req_amount` (`PCSubmitClaimPage.jsx:775`): a stated 0 stays 0.
+        val issued = if (float.issuedReported) float.issuedAmount else float.requestedAmount
         LedgerLine(str(S.desktop_issued), money(issued))
         LedgerLine(str(S.ah_spent_label), "−" + money((issued - float.balance).coerceAtLeast(0.0)))
         LedgerLine(str(S.desktop_ce_float_balance), money(float.balance), strong = true, tone = colors.success)

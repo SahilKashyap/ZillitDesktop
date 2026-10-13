@@ -82,11 +82,11 @@ class TrackingLayersTest {
     }
 
     @Test
-    fun `a prefix is upper-cased letters and digits, ten at most, and optional`() {
-        assertEquals("LOCEUR1234", TrackingSets.normalisePrefix("loc-eur 12345"))
-        assertNull(TrackingSets.setProblem("Locations", ""))
-        assertEquals("A prefix is 2–10 letters or digits.", TrackingSets.setProblem("Locations", "L"))
-        assertEquals("Give the layer a name.", TrackingSets.setProblem(" ", "LOC"))
+    fun `a prefix is upper-cased and cut to ten as typed, and only a blank name blocks the save`() {
+        assertEquals("LOC-EUR 12", TrackingSets.normalisePrefix("loc-eur 12345"))
+        assertEquals("L", TrackingSets.normalisePrefix("l"))
+        assertNull(TrackingSets.setProblem("Locations"))
+        assertEquals("Give the layer a name.", TrackingSets.setProblem(" "))
     }
 
     @Test

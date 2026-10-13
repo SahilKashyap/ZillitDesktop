@@ -178,8 +178,11 @@ object SetupTour {
         }
     }
 
-    /** The hub-wide tour: production gaps, then deal gaps, as the web's "production" scope. */
-    fun gaps(snapshot: SetupSnapshot): List<SetupGap> = productionGaps(snapshot) + dealMemoGaps(snapshot)
+    /**
+     * The hub-wide tour: production gaps only. The web's shell tour reads
+     * `resolveProductionSetupGaps`; the deal gaps belong to Deal Memo's own tour.
+     */
+    fun gaps(snapshot: SetupSnapshot): List<SetupGap> = productionGaps(snapshot)
 
     /** The web shows the tour 800 ms after the shell settles. */
     const val OPEN_DELAY_MS = 800L

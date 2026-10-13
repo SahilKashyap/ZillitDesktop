@@ -104,10 +104,10 @@ data class FilingObligation(
      *
      * HMRC's `status` decides, not the received date: a period can be
      * fulfilled by a return HMRC has not yet stamped, and reading the date
-     * instead would offer to file it a second time.
+     * instead would offer to file it a second time. Exactly `O`, as the web
+     * reads it: a row with no status is not open, and reads Fulfilled.
      */
-    val isOpen: Boolean
-        get() = if (status.isNotBlank()) status.equals(OPEN, ignoreCase = true) else received.isBlank()
+    val isOpen: Boolean get() = status == OPEN
 
     /** `2026-01-01 → 2026-03-31`. */
     val range: String get() = "$start → $end"

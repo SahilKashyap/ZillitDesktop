@@ -31,6 +31,9 @@ data class MatchCandidate(
     val currency: String?,
     /** Whole percent, 0..100. */
     val scorePercent: Int,
+    /** For the currency cascade: the row's card and its `transaction_currency` ([CurrencyCascade]). */
+    val cardId: String? = null,
+    val transactionCurrency: String? = null,
 )
 
 /** The receipt's stored document, as the detail view previews it. */
@@ -51,6 +54,10 @@ data class ReceiptMedia(
         const val PDF = "pdf"
     }
 }
+
+/** The receipt's stored document as the preview fetches it, or null when it has none. */
+val CardReceipt.storedMedia: ReceiptMedia?
+    get() = attachmentKey?.takeIf { it.isNotBlank() }?.let { key -> ReceiptMedia(key = key, name = attachmentName) }
 
 /** One line of a receipt's coding, as the detail view lists it (`ReceiptDetailModal.jsx:366-388`). */
 data class ReceiptDetailLine(
@@ -82,7 +89,29 @@ data class ReceiptDetail(
     val transactionCurrency: String? = null,
 ) {
     companion object {
-        fun of(receipt: CardReceipt): ReceiptDetail = ReceiptDetail(receipt)
+        /**
+         * A row alone, with whatever it already carries: a card's receipts
+         * drilldown answers lines and approvals on every row, and the view
+         * should show them where the detail read cannot be had. A list row
+         * carries neither, which leaves both empty.
+         */
+        fun of(receipt: CardReceipt): ReceiptDetail = ReceiptDetail(
+            receipt = receipt,
+            lines = receipt.processing.lines.filterNot { it.blank }.map { line ->
+                ReceiptDetailLine(
+                    code = line.account.ifBlank { null },
+                    description = line.description.ifBlank { null },
+                    net = line.net,
+                    tax = line.tax,
+                    tags = line.tags,
+                    splitChild = line.isSplit,
+                )
+            },
+            approvals = receipt.approvals.map { approval ->
+                ReceiptDetailApproval(approval.userId, approval.tierNumber, override = approval.tierNumber == 0)
+            },
+            media = receipt.storedMedia,
+        )
     }
 }
 

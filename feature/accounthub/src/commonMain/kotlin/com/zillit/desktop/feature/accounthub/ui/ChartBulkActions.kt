@@ -38,6 +38,9 @@ internal class ChartBulkActions(
         var timer: Job? = null
         var flight: Job? = null
         var redo = false
+
+        /** Ready but refused at fire time as a duplicate; retried once the clash clears. */
+        var held = false
         var savedCode: String? = null
         var savedLineType: CoaLineType? = null
         var lastSaved: CoaBulkSnapshot? = null
@@ -107,14 +110,36 @@ internal class ChartBulkActions(
         val next = row.copy(serverId = current.serverId)
         if (next == current) return
         replaceRow(next)
-        val book = books.getOrPut(row.localId) { Book() }
+        schedule(row.localId, books.getOrPut(row.localId) { Book() })
+        // This edit may have cleared another row's clash (the web re-runs its
+        // schedule on every duplicate-set change).
+        rescheduleHeld(except = row.localId)
+    }
+
+    private fun schedule(localId: String, book: Book) {
         book.timer?.cancel()
         book.timer = vm.launchWork {
             delay(CoaBulk.SAVE_DEBOUNCE_MS)
             // Cleared before the flush, so a later edit cancels only a waiting
             // timer and never a save already on the wire.
             book.timer = null
-            flush(row.localId)
+            flush(localId)
+        }
+    }
+
+    /**
+     * Starts the timer of every row that was held back as a duplicate and is
+     * sendable now — after another row's edit or removal, or a fresh read of
+     * the chart, took the clash away. Without it such a row stayed unsaved until
+     * Done, because its only timer had already fired and bailed.
+     */
+    fun rescheduleHeld(except: String? = null) {
+        val bulk = vm.setupState.chart.bulk ?: return
+        bulk.rows.forEach { row ->
+            val book = books[row.localId] ?: return@forEach
+            if (row.localId == except || !book.held || book.timer != null || !sendable(bulk, row)) return@forEach
+            book.held = false
+            schedule(row.localId, book)
         }
     }
 
@@ -129,7 +154,12 @@ internal class ChartBulkActions(
         val book = books.getOrPut(localId) { Book() }
         val bulk = vm.setupState.chart.bulk
         val row = bulk?.rows?.firstOrNull { it.localId == localId }
-        if (bulk == null || row == null || !sendable(bulk, row)) return
+        if (bulk == null || row == null) return
+        book.held = false
+        if (!sendable(bulk, row)) {
+            book.held = CoaBulk.isReady(row)
+            return
+        }
 
         val kind = kindOf(row, book)
         if (kind == SaveKind.Unchanged) return
@@ -272,6 +302,7 @@ internal class ChartBulkActions(
                 ),
             )
         }
+        rescheduleHeld()
         val serverId = row.serverId ?: return
         vm.runResult({ vm.repo.deactivateAccount(serverId) }, { }, vm::report)
     }

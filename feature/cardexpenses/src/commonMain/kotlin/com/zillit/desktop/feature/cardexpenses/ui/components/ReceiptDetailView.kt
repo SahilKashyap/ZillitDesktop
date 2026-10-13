@@ -108,6 +108,8 @@ fun ReceiptDetailView(
     loading: Boolean = false,
     badgeRule: ReceiptBadgeRule = ReceiptBadgeRule.Workflow,
     isTelevision: Boolean = false,
+    /** The code the amounts print in — the cascade's answer; null keeps the receipt's own. */
+    currency: String? = null,
     media: MediaState = MediaState(),
     onOpenMedia: ((ReceiptMedia) -> Unit)? = null,
     history: HistoryState? = null,
@@ -170,7 +172,7 @@ fun ReceiptDetailView(
                 if (history != null) {
                     HistoryPane(history, onHideHistory)
                 } else {
-                    DetailFields(detail, people, isTelevision)
+                    DetailFields(detail, people, isTelevision, currency)
                 }
             }
         }
@@ -322,10 +324,15 @@ fun ReceiptMediaPanel(
 @Suppress("LongMethod", "CyclomaticComplexMethod") // The modal's right column, top to bottom.
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailFields(detail: ReceiptDetail, people: List<CardPerson>, isTelevision: Boolean) {
+private fun DetailFields(
+    detail: ReceiptDetail,
+    people: List<CardPerson>,
+    isTelevision: Boolean,
+    resolvedCurrency: String?,
+) {
     val receipt = detail.receipt
     val holder = people.firstOrNull { it.id == receipt.holderId }
-    val currency = receipt.currency
+    val currency = resolvedCurrency ?: receipt.currency
     ZillitScrollColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = DetailPanePadding,
@@ -337,12 +344,12 @@ private fun DetailFields(detail: ReceiptDetail, people: List<CardPerson>, isTele
                 field(str(S.ah_merchant), receipt.description.ifBlank { EM_DASH }),
                 FieldCell(str(S.amount)) {
                     ZillitText(
-                        text = money(receipt.amount, currency),
+                        text = if (receipt.amount != 0.0) money(receipt.amount, currency) else EM_DASH,
                         style = ZillitTheme.typography.titleSmall,
                         color = ZillitTheme.colors.accent,
                     )
                 },
-                field(str(S.date), date(receipt.date)),
+                field(str(S.date), date(receipt.ownDate)),
                 FieldCell(str(S.desktop_card_card_holder)) {
                     ZillitText(holder?.name ?: EM_DASH, style = ZillitTheme.typography.bodySmall)
                     holder?.designation?.takeIf { it.isNotBlank() }?.let {

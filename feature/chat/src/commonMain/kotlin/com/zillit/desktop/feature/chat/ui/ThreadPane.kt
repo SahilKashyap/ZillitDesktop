@@ -105,6 +105,7 @@ import com.zillit.desktop.feature.chat.domain.sharedContent
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.neighboursOf
 import com.zillit.desktop.feature.chat.domain.designationLabel
+import com.zillit.desktop.feature.chat.domain.lastMessageAt
 import com.zillit.desktop.feature.chat.domain.mentionSpans
 import kotlinx.datetime.toLocalDateTime
 
@@ -460,10 +461,9 @@ private fun ChatReplyBar(parent: ChatMessage, authorLabel: String, onCancel: () 
 /**
  * Who this conversation is with: the name, and one line under it.
  *
- * WhatsApp's header: the line says what is happening now when something is —
- * typing, in the accent — and otherwise who they are: online, department and
- * role, and the address that tells two Sams apart, run together and cut at
- * the edge. Someone who left gets "Disconnected", in red, instead.
+ * The web's header (`ChatScreenUsers.jsx`): someone who left reads
+ * "Name - Disconnected", the suffix in red. The line under it says what is
+ * happening now — typing, in the accent — and otherwise [peerStatusLine].
  */
 @Composable
 private fun ThreadIdentity(
@@ -473,32 +473,85 @@ private fun ThreadIdentity(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
-        ZillitText(
-            text = peer.fullName,
-            style = ZillitTheme.typography.titleSmall,
-            maxLines = 1,
-        )
-        val departed = !state.peerIsGroup && peer.hasLeft
-        val status = when {
-            typing != null -> typing
-            departed -> str(S.disconnected)
-            else -> listOfNotNull(
-                str(S.online).takeIf { state.peerOnline && !state.peerIsGroup },
-                peer.department?.takeIf { it.isNotBlank() }?.localised(),
-                peer.designationLabel()?.localised(),
-                peer.email?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // The name gives way at the edge so the red suffix stays readable.
+            ZillitText(
+                text = peer.fullName,
+                modifier = Modifier.weight(1f, fill = false),
+                style = ZillitTheme.typography.titleSmall,
+                maxLines = 1,
+            )
+            if (!state.peerIsGroup && peer.hasLeft) {
+                // The dash is the name's colour, only the word is red — the web's span.
+                ZillitText(text = " - ", style = ZillitTheme.typography.titleSmall, maxLines = 1)
+                ZillitText(
+                    text = str(S.disconnected),
+                    style = ZillitTheme.typography.titleSmall,
+                    color = ZillitTheme.colors.danger,
+                    maxLines = 1,
+                )
+            }
         }
+        val status = typing ?: peerStatusLine(state, peer)
         if (status.isNotBlank()) {
             ZillitText(
                 text = status,
                 style = ZillitTheme.typography.labelSmall,
-                color = when {
-                    typing != null -> ZillitTheme.colors.accentText
-                    departed -> ZillitTheme.colors.danger
-                    else -> ZillitTheme.colors.textSecondary
-                },
+                color = if (typing != null) ZillitTheme.colors.accentText else ZillitTheme.colors.textSecondary,
                 maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * The web's `UserStatusComponent`: "Online" while the peer's device is, and
+ * otherwise when it was last seen — the presence node's `update_time`, then
+ * the users list's last activity — as "Mar 21, 2026 at 11:30 AM". With no
+ * stamp at all, and always for a room (no single device to be online), it
+ * says who they are instead: department, role, and the address that tells
+ * two Sams apart.
+ */
+@Composable
+private fun peerStatusLine(
+    state: ChatUiState,
+    peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+): String {
+    if (!state.peerIsGroup) {
+        if (state.peerOnline) return str(S.online)
+        val seen = state.peerLastSeenMillis ?: peer.lastActiveMillis?.takeIf { it > 0 }
+        if (seen != null) return lastMessageAt(seen)
+    }
+    return listOfNotNull(
+        peer.department?.takeIf { it.isNotBlank() }?.localised(),
+        peer.designationLabel()?.localised(),
+        peer.email?.takeIf { it.isNotBlank() },
+    ).joinToString(" · ")
+}
+
+/**
+ * The web's dot (`UserStatusComponent dotOnly`): green at the face's
+ * bottom-right, ringed in the bar's own colour so it reads cut out of the
+ * photo. Only while the peer's device is online.
+ */
+@Composable
+private fun HeaderFace(
+    peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+    face: androidx.compose.ui.graphics.ImageBitmap?,
+    online: Boolean,
+) {
+    Box {
+        ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
+        if (online) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(ONLINE_DOT)
+                    .clip(CircleShape)
+                    .background(ZillitTheme.colors.chatPanel)
+                    .padding(ONLINE_DOT_RING)
+                    .clip(CircleShape)
+                    .background(ZillitTheme.colors.success),
             )
         }
     }
@@ -544,7 +597,7 @@ private fun ThreadHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
+            HeaderFace(peer = peer, face = face, online = state.peerOnline && !state.peerIsGroup)
             ThreadIdentity(state = state, peer = peer, typing = typing, modifier = Modifier.weight(1f))
         }
         // [onCall] arrives null when the conversation cannot be rung: the peer
@@ -2556,6 +2609,8 @@ private val HEADER_ACTION = 36.dp
 /** Lines from one writer this close together read as one turn of speech. */
 internal const val RUN_GAP_MILLIS = 5 * 60 * 1000L
 private val HEADER_AVATAR = 40.dp
+private val ONLINE_DOT = 13.dp
+private val ONLINE_DOT_RING = 2.dp
 private val EMPTY_GLYPH = 28.dp
 private const val DAY_ROOM = 8
 private val STATUS_ICON = 14.dp

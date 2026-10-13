@@ -4,29 +4,90 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
 /** What kind of thing an exception is, and what an accountant does about it. */
-enum class ExceptionType(val wire: String, private val labelKey: String, private val guidanceKey: String) {
-    BankCharge("bank_charge", S.desktop_br_exc_bank_charges, S.desktop_br_exc_bank_charge_guidance),
-    VatReturn("vat_return", S.desktop_br_exc_tax_return, S.desktop_br_exc_tax_return_guidance),
+enum class ExceptionType(
+    val wire: String,
+    private val labelKey: String,
+    private val guidanceKey: String,
+    /**
+     * The hint a quick add posts as its description. Fixed English, as the web's
+     * `TYPE_CONFIG.desc` is: it is written into the ledger, which is not the
+     * reader's language, whereas [guidance] is the on-screen copy.
+     */
+    val seedText: String,
+) {
+    BankCharge(
+        "bank_charge",
+        S.desktop_br_exc_bank_charges,
+        S.desktop_br_exc_bank_charge_guidance,
+        "Monthly service charge. No matching entry in Zillit.",
+    ),
+    VatReturn(
+        "vat_return",
+        S.desktop_br_exc_tax_return,
+        S.desktop_br_exc_tax_return_guidance,
+        "HMRC payment. No Tax control entry in Zillit for this period.",
+    ),
     CardSettlement(
         "card_settlement",
         S.desktop_br_exc_card_settlement,
         S.desktop_br_exc_card_settlement_guidance,
+        "Corporate card settlement. Post to Card Control account.",
     ),
-    Payroll("payroll", S.dm_section_payroll, S.desktop_br_exc_payroll_guidance),
+    Payroll(
+        "payroll",
+        S.dm_section_payroll,
+        S.desktop_br_exc_payroll_guidance,
+        "Payroll payment. No matching payroll journal in Zillit.",
+    ),
     FxPayment(
         "fx_payment",
         S.desktop_br_exc_fx_payment,
         S.desktop_br_exc_fx_payment_guidance,
+        "Foreign currency payment. Check FX variance and post accordingly.",
     ),
-    Interest("interest", S.desktop_interest, S.desktop_br_exc_interest_guidance),
-    PettyCash("petty_cash", S.desktop_petty_cash, S.desktop_br_exc_petty_cash_guidance),
-    Insurance("insurance", S.av_insurance, S.desktop_br_exc_insurance_guidance),
-    Unknown("unknown", S.desktop_unknown, S.desktop_br_exc_unknown_guidance),
+    Interest(
+        "interest",
+        S.desktop_interest,
+        S.desktop_br_exc_interest_guidance,
+        "Interest payment or receipt. Post to interest nominal.",
+    ),
+    PettyCash(
+        "petty_cash",
+        S.desktop_petty_cash,
+        S.desktop_br_exc_petty_cash_guidance,
+        "Petty cash replenishment. Post to petty cash control.",
+    ),
+    Insurance(
+        "insurance",
+        S.av_insurance,
+        S.desktop_br_exc_insurance_guidance,
+        "Insurance premium. Post to prepayments or insurance nominal.",
+    ),
+
+    /** Raised beside every fraud alert, so the line can be quick-added. */
+    Fraud(
+        "fraud",
+        S.desktop_fraud,
+        S.desktop_br_exc_fraud_guidance,
+        "Flagged for fraud review. Quick Add also accepts the fraud alert.",
+    ),
+    Unknown(
+        "unknown",
+        S.desktop_unknown,
+        S.desktop_br_exc_unknown_guidance,
+        "No matching entry found. Investigate and post manually.",
+    ),
     ;
 
     val label: String get() = str(labelKey)
 
     val guidance: String get() = str(guidanceKey)
+
+    /**
+     * What a quick add seeds its description with: the hint, except for a fraud
+     * exception, whose hint is about the alert and so never seeds the entry.
+     */
+    val seedsDescription: Boolean get() = this != Fraud
 
     companion object {
         fun from(wire: String?): ExceptionType =

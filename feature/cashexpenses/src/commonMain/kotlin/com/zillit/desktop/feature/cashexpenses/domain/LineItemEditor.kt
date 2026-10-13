@@ -47,6 +47,30 @@ data class EditorLine(
     val isSplitChild: Boolean get() = splitParentId != null
 }
 
+/** The web's `OTHER_TAX_OPTION`: a rate typed in rather than a Production Setup tax type. */
+const val OTHER_TAX = "other"
+
+/**
+ * What the line's Tax select shows: its tax type when the production has it,
+ * [OTHER_TAX] for a type or rate it does not (display only — the line keeps
+ * what it holds until somebody picks), blank for no tax.
+ */
+fun EditorLine.taxChoice(types: List<CashTaxType>): String = when {
+    types.any { it.identifier == taxType } -> taxType
+    taxType.isNotBlank() || taxRatePercent > 0 -> OTHER_TAX
+    else -> ""
+}
+
+/** The line after [picked] is chosen in its Tax select: the type brings its rate with it. */
+fun EditorLine.withTaxChoice(picked: String, types: List<CashTaxType>): EditorLine {
+    val type = types.firstOrNull { it.identifier == picked }
+    return when {
+        picked.isBlank() -> copy(taxType = "", taxRatePercent = 0.0)
+        type != null -> copy(taxType = type.identifier, taxRatePercent = type.rate ?: 0.0)
+        else -> copy(taxType = OTHER_TAX)
+    }
+}
+
 /**
  * A line's keys the editor shows nothing for — the tax flag, coding layers,
  * tags, rental dates, order — carried from the wire to the save untouched.
@@ -223,10 +247,60 @@ object LineItemEditor {
      * A split parent is **replaced** by its children rather than added to
      * them — counting both is how a coded batch ends up at twice its receipt
      * total.
+     *
+     * The reclaimable-tax line **stands in for** the recoverable tax already
+     * inside the lines rather than adding to it: with [recoverable] tax types
+     * known and a tax line present, the lines' reclaimable tax is taken off
+     * and the line's own amount put on, as the web's `claimTaxAdj` does. A
+     * derived line therefore changes nothing; a typed one moves the total by
+     * the difference. With no recoverable types the line simply adds.
      */
-    fun total(lines: List<EditorLine>): Double {
+    fun total(lines: List<EditorLine>, recoverable: Set<String> = emptySet()): Double {
         val splitParents = lines.mapNotNullTo(mutableSetOf()) { it.splitParentId }
-        return round2(lines.filterNot { it.id in splitParents }.sumOf { it.gross })
+        val gross = lines.filterNot { it.id in splitParents }.sumOf { it.gross }
+        val standIn = if (lines.any { it.extras.isTax }) reclaimable(lines, recoverable) else 0.0
+        return round2(gross - standIn)
+    }
+
+    /**
+     * The tax inside the parent lines whose tax type is recoverable — what the
+     * reclaimable-tax line posts when nobody has typed over it
+     * (`computeReclaimableTax`). Split children and the tax line itself are
+     * skipped: a child's tax is its parent's.
+     */
+    fun reclaimable(lines: List<EditorLine>, recoverable: Set<String>): Double {
+        if (recoverable.isEmpty()) return 0.0
+        return round2(
+            lines.filter {
+                !it.isSplitChild && !it.extras.isTax && !it.autoDeduction && it.taxType in recoverable
+            }.sumOf { it.tax },
+        )
+    }
+
+    /**
+     * [lines] with the reclaimable-tax line brought in line with the lines'
+     * recoverable tax, unless it has been [overridden] by a typed amount.
+     *
+     * The line is created when there is tax to reclaim, follows it while it
+     * changes (keeping the nominal, layers and tags it was given), and is
+     * dropped when there is none left and no nominal to keep.
+     */
+    fun withDerivedTax(
+        lines: List<EditorLine>,
+        recoverable: Set<String>,
+        overridden: Boolean,
+        newId: () -> String,
+    ): List<EditorLine> {
+        if (overridden || recoverable.isEmpty()) return lines
+        val derived = reclaimable(lines, recoverable)
+        val existing = lines.firstOrNull { it.extras.isTax }
+        return when {
+            existing == null && derived > 0 ->
+                lines + EditorLine(id = newId(), unitPrice = derived, extras = LineExtras(isTax = true))
+            existing == null -> lines
+            derived <= 0 && existing.account.isBlank() -> lines.filterNot { it.extras.isTax }
+            else -> lines.map { if (it.extras.isTax) it.copy(unitPrice = derived, quantity = 1.0) else it }
+        }
     }
 
     /**
@@ -236,8 +310,8 @@ object LineItemEditor {
      * the single most common reason a batch bounces back from audit, and
      * catching it in the editor saves a round trip through two queues.
      */
-    fun balances(lines: List<EditorLine>, receiptGross: Double): Boolean =
-        kotlin.math.abs(total(lines) - receiptGross) < PENNY
+    fun balances(lines: List<EditorLine>, receiptGross: Double, recoverable: Set<String> = emptySet()): Boolean =
+        kotlin.math.abs(total(lines, recoverable) - receiptGross) < PENNY
 
     /**
      * Reads a wire tax rate at either scale.

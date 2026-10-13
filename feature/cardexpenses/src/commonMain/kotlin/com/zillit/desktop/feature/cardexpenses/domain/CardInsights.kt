@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.cardexpenses.domain
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlin.math.max
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * The rules behind Top-Up To Do, Analytics, Smart Alerts, Settings and Fund
@@ -227,6 +229,13 @@ interface CardHubSource {
 
     suspend fun departments(): List<CardDepartment> = emptyList()
 
+    /**
+     * The balance-sheet nominals a provider's custodian and float codes are picked from
+     * (`BsCodeInput pickableLevels="nominals"`). Empty when the chart cannot be read, and
+     * the editor then keeps plain text fields.
+     */
+    suspend fun nominalCodes(): List<CardCode> = emptyList()
+
     /** Creates [rule] under `card_expenses` when it is not persisted, updates it otherwise. */
     suspend fun saveAssignmentRule(rule: CardAssignmentRule): ZillitResult<CardAssignmentRule> = unavailable()
 
@@ -239,6 +248,12 @@ interface CardHubSource {
         fun <T> unavailable(): ZillitResult<T> =
             ZillitResult.Failure(ZillitError.Unknown("Assignment rules are not available in this build."))
     }
+}
+
+/** One pickable chart code. */
+data class CardCode(val code: String, val name: String) {
+    /** "1010 · Petty Cash", the way a picker row reads. */
+    val display: String get() = if (name.isBlank()) code else "$code · $name"
 }
 
 /**
@@ -276,6 +291,16 @@ fun RequestCap.problem(): RequestCapProblem? = when {
 /** The company that owns [bankId], if any (`CardProvidersEditor.jsx:131-132`). */
 fun List<CardCompany>.ownerOf(bankId: String): CardCompany? =
     bankId.takeIf { it.isNotBlank() }?.let { id -> firstOrNull { id in it.bankIds } }
+
+/**
+ * The id of a provider the server has not seen: `prov_` and a UUID, as the web's editor mints
+ * it (`CardProvidersEditor.jsx:36`). Providers are pinned by id across both clients, and a
+ * numbered `provider-3` from here would collide with another's `provider-3`.
+ */
+object ProviderIds {
+    @OptIn(ExperimentalUuidApi::class)
+    fun mint(): String = "prov_${Uuid.random()}"
+}
 
 // -- fund requests ---------------------------------------------------------------
 

@@ -1,7 +1,6 @@
 package com.zillit.desktop.core.common
 
 import kotlin.math.abs
-import kotlin.math.roundToLong
 
 /**
  * Money formatting for the finance tools.
@@ -94,10 +93,47 @@ object Money {
         return (if (negative) "-" else "") + symbol(currencyCode) + body
     }
 
+    /**
+     * [value] in units of 10⁻[decimals], rounded half away from zero on its
+     * shortest decimal form — how the web's `toLocaleString` rounds.
+     *
+     * Not `round(value * 100)`: `1.005 * 100` is `100.49999999999999`, so the
+     * web's £1.01 would print as £1.00, and an exact half goes to the even
+     * neighbour (£0.125 → £0.12 against the web's £0.13). A total that differs
+     * from the web's by a penny is a total nobody can reconcile.
+     */
+    fun scaledHalfAway(value: Double, decimals: Int): Long {
+        if (!value.isFinite()) return 0
+        val plain = plainDecimal(abs(value))
+        val point = plain.indexOf('.')
+        val whole = if (point < 0) plain else plain.substring(0, point)
+        val fraction = (if (point < 0) "" else plain.substring(point + 1)).padEnd(decimals + 1, '0')
+        val truncated = (whole + fraction.take(decimals)).toLong()
+        val scaled = if (fraction[decimals] >= '5') truncated + 1 else truncated
+        return if (value < 0) -scaled else scaled
+    }
+
+    /** `1.2345678905E7` → `12345678.905`: the JVM's shortest form, without the exponent it uses past 10⁷. */
+    private fun plainDecimal(value: Double): String {
+        val text = value.toString()
+        val exponentAt = text.indexOfFirst { it == 'E' || it == 'e' }
+        if (exponentAt < 0) return text
+        val mantissa = text.substring(0, exponentAt)
+        val digits = mantissa.replace(".", "")
+        val point = (mantissa.indexOf('.').takeIf { it >= 0 } ?: mantissa.length) +
+            text.substring(exponentAt + 1).toInt()
+        return when {
+            point <= 0 -> "0." + "0".repeat(-point) + digits
+            point >= digits.length -> digits + "0".repeat(point - digits.length)
+            else -> digits.substring(0, point) + "." + digits.substring(point)
+        }
+    }
+
     /** Thousands-separated fixed-point, no sign and no symbol. */
     fun group(value: Double, decimals: Int): String {
-        val scale = POWERS_OF_TEN[decimals.coerceIn(0, MAX_DECIMALS)]
-        val scaled = (value * scale).roundToLong()
+        val places = decimals.coerceIn(0, MAX_DECIMALS)
+        val scale = POWERS_OF_TEN[places]
+        val scaled = scaledHalfAway(value, places)
         val whole = scaled / scale
         val fraction = scaled % scale
 

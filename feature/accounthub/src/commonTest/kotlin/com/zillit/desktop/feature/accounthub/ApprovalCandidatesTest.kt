@@ -36,4 +36,13 @@ class ApprovalCandidatesTest {
     fun `people with view rights join the accounts team, accepted crew only`() {
         assertEquals(listOf("u1", "u2"), ApprovalCandidates.pick(roster, setOf("u2", "u4")).map { it.id })
     }
+
+    /** The web matches `department_identifier === 'department_accounts'` and nothing else. */
+    @Test
+    fun `the accounts team is the identifier alone, never a name that mentions accounts`() {
+        assertEquals(true, HubUser("a", departmentIdentifier = "department_accounts").isAccountsTeam)
+        assertEquals(false, HubUser("b", department = "Accounts").isAccountsTeam)
+        val payable = HubUser("c", department = "Accounts Payable", departmentIdentifier = "department_ap")
+        assertEquals(false, payable.isAccountsTeam)
+    }
 }

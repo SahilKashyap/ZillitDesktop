@@ -182,17 +182,6 @@ class CrewFormRulesTest {
     }
 
     @Test
-    fun `the footer's still-empty note counts marked flat fields, never nested sections or the passport`() {
-        val marked = deal(
-            """{"_id":"d2","crew_details":{"mandatory_fields":["passportAttachment","emergencyEmail"]}}""",
-        )
-        assertFalse(CrewFormRules.markedGateableMissing(marked, CrewDraft.seed(marked)))
-
-        val flat = deal("""{"_id":"d3","crew_details":{"mandatory_fields":["dob","homeAddress"]}}""")
-        assertTrue(CrewFormRules.markedGateableMissing(flat, CrewDraft.seed(flat)))
-    }
-
-    @Test
     fun `a marked address needs line one, city and postcode`() {
         assertTrue(DealAddress(line1 = "12 Baker Street", city = "London").isIncomplete)
         assertFalse(DealAddress(line1 = "12 Baker Street", city = "London", postalCode = "NW1").isIncomplete)

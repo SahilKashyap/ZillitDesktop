@@ -31,29 +31,23 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
-import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardNominal
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
 import com.zillit.desktop.feature.cardexpenses.domain.MatchStatus
-import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 
 /**
  * Pieces the crew pages share: the page frame, the web's status vocabulary,
- * the adaptive card grid, the chart-code picker and the receipt file pane.
+ * the adaptive card grid and the chart-code picker.
  */
 
 /** A crew page that scrolls as a whole. */
@@ -262,49 +256,6 @@ private fun suggest(nominals: List<CardNominal>, needle: String): List<CardNomin
     return (starts + contains).take(SUGGESTIONS)
 }
 
-/**
- * The receipt's document, left of a dialog's fields — the web's
- * `ReceiptPreviewPane` / `ReceiptMediaPanel`.
- *
- * The desktop opens the file through the host rather than drawing it inline,
- * so the pane names it and offers Open; without one it says so.
- */
-@Composable
-internal fun ReceiptFilePane(receipt: CardReceipt, onEvent: (CardEvent) -> Unit, modifier: Modifier = Modifier) {
-    val colors = ZillitTheme.colors
-    val key = receipt.attachmentKey?.takeIf { it.isNotBlank() }
-    Column(
-        modifier = modifier
-            .clip(ZillitTheme.shapes.large)
-            .background(colors.surfaceSunken)
-            .padding(ZillitTheme.spacing.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.CenterVertically),
-    ) {
-        ZillitIcon(ZillitIcons.File, tint = if (key == null) colors.textMuted else colors.accent, size = FILE_ICON)
-        if (key == null) {
-            ZillitText(
-                text = str(S.desktop_ce_process_no_receipt),
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
-            )
-        } else {
-            ZillitText(
-                text = receipt.attachmentName ?: key.substringAfterLast('/'),
-                style = ZillitTheme.typography.bodySmall,
-                maxLines = 2,
-            )
-            ZillitButton(
-                text = str(S.drive_btn_open),
-                onClick = { onEvent(CardEvent.ViewReceipt(key)) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Eye,
-            )
-        }
-    }
-}
-
 /** A rounded amber well behind an icon — the web's `bg-[#fdf2e2]` chips. */
 @Composable
 internal fun IconWell(icon: androidx.compose.ui.graphics.vector.ImageVector, size: Dp = WELL) {
@@ -326,6 +277,5 @@ private val POPUP_WIDTH = 320.dp
 private val POPUP_ELEVATION = 8.dp
 private const val CODE_DROP = 68
 private const val SUGGESTIONS = 8
-private val FILE_ICON = ZillitDimens.icon * 2
 private val WELL = 36.dp
 private val WELL_CORNER = 10.dp

@@ -147,6 +147,8 @@ internal data class TransactionDto(
     @SerialName("amount") val amount: String? = null,
     @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
+    @SerialName("transaction_currency") val transactionCurrency: String? = null,
     @SerialName("date") val date: String? = null,
     @SerialName("transaction_date") val transactionDate: String? = null,
     @SerialName("status") val status: String? = null,
@@ -188,6 +190,8 @@ internal data class TransactionDto(
             matchStatus = MatchStatus.from(matchStatus),
             receiptId = (receiptId ?: receiptIdCamel)?.takeIf { it.isNotBlank() },
             personal = workflow == CardWorkflowStatus.Personal,
+            statusWire = status?.trim()?.takeIf { it.isNotEmpty() },
+            transactionCurrency = transactionCurrency,
         )
     }
 }
@@ -207,6 +211,8 @@ internal data class ReceiptDto(
     @SerialName("amount") val amount: String? = null,
     @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
+    @SerialName("transaction_currency") val transactionCurrency: String? = null,
     @SerialName("date") val date: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("status") val status: String? = null,
@@ -227,6 +233,8 @@ internal data class ReceiptDto(
     @SerialName("transaction_date") val transactionDate: String? = null,
     @SerialName("transaction_card_last4") val transactionCardLastFour: String? = null,
     @SerialName("nominal_code") val nominalCode: String? = null,
+    /** What the approval queues read as the row's code (`ApprovalQueuePage.jsx:345`); `nominal_code` elsewhere. */
+    @SerialName("code") val code: String? = null,
     @SerialName("code_description") val codeDescription: String? = null,
     @SerialName("episode") val episode: String? = null,
     /** An attachment model, a bare key, or a JSON string holding one. */
@@ -276,7 +284,7 @@ internal data class ReceiptDto(
             transactionAmount = transactionAmount.toAmountOrNull(),
             transactionDate = transactionDate.toEpochMillisOrNull(),
             transactionCardLastFour = transactionCardLastFour,
-            nominalCode = nominalCode,
+            nominalCode = listOf(nominalCode, code).firstOrNull { !it.isNullOrBlank() },
             codeDescription = codeDescription,
             episode = episode,
             attachmentKey = attachment.readAttachmentKey(),
@@ -301,6 +309,12 @@ internal data class ReceiptDto(
             rejectedBy = rejectedBy?.takeIf { it.isNotBlank() },
             rejectedAt = rejectedAt.toEpochMillisOrNull(),
             attachmentName = attachment.readAttachmentName(),
+            ownDate = date.toEpochMillisOrNull(),
+            matchWire = matchStatus,
+            matchFraction = matchScore.asFraction(),
+            duplicateFraction = duplicateScore.asFraction(),
+            personalFraction = personalScore.asFraction(),
+            transactionCurrency = transactionCurrency,
         )
     }
 
@@ -827,6 +841,16 @@ internal fun String?.asPercent(): Int? {
     if (value <= 0) return null
     val percent = if (value <= 1.0) value * PERCENT else value
     return percent.roundToInt().coerceAtMost(PERCENT.toInt())
+}
+
+/**
+ * The same score as the fraction the web thresholds on (`>= 0.8`, `>= 0.85`).
+ * A value above one is a percentage already; zero and below are no score.
+ */
+internal fun String?.asFraction(): Double? {
+    val value = this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull() ?: return null
+    if (value <= 0) return null
+    return if (value <= 1.0) value else (value / PERCENT).coerceAtMost(1.0)
 }
 
 /**

@@ -37,6 +37,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
@@ -117,7 +118,7 @@ internal fun PoReviewOverlay(
             invoiceNumber = invoice.displayNumber,
             rows = review.history,
             loading = review.historyLoading,
-            nameOf = { id -> review.names[id] ?: state.userNames[id] ?: id.ifBlank { str(S.desktop_unknown) } },
+            nameOf = { id -> historyActor(state, id) },
             onClose = { onEvent(InvoicesEvent.ReviewHideHistory) },
         )
     }
@@ -267,11 +268,12 @@ private fun RecordPane(state: InvoicesUiState, review: ReviewOverlay, onEvent: (
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             ZillitButton(
                 text = str(S.ah_cd_query),
-                onClick = { onEvent(QueryEvent.Open(invoice)) },
+                onClick = { onEvent(QueryEvent.Open(invoice, readKey = state.overlayQueryKey)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Chat,
             )
+            ZillitBadge(count = state.queryUnread(state.overlayQueryKey, invoice.id))
             ZillitButton(
                 text = str(S.history),
                 onClick = { onEvent(InvoicesEvent.ReviewShowHistory) },

@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.accounthub.data.hubRefreshes
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
 import com.zillit.desktop.feature.accounthub.domain.HubBadges
@@ -214,6 +215,10 @@ class AccountHubViewModel(
             (landingRow ?: HubNavigation.landingTool(identity))?.let { row -> onEvent(AccountHubEvent.OpenTool(row)) }
         }
 
+        listenForRefreshes()
+    }
+
+    private fun listenForRefreshes() {
         // A vendor verified, an account code changed. Only the area on screen
         // reloads; every area reloads on open anyway. `listening` outlives
         // `started`, which onProjectChanged resets, so a production switch
@@ -224,10 +229,18 @@ class AccountHubViewModel(
             launch {
                 hubRefreshes(bus).collect { area ->
                     when {
-                        currentState.area != area -> Unit
+                        // The chart feeds the code pickers on other pages (a bank's
+                        // nominal, a vendor's default code), which the web refreshes
+                        // from the same event wherever they are. Re-read it quietly
+                        // if it was ever loaded, so they do not keep a stale one.
+                        currentState.area != area ->
+                            if (area == HubArea.ChartOfAccounts && currentState.chart.loaded) chartActions.load()
                         // The slices only: a whole setup load would restart
                         // the page's spinner and tour for somebody's save.
-                        area == HubArea.ProductionSetup -> setupLoader.loadAll()
+                        area == HubArea.ProductionSetup -> {
+                            setupLoader.loadAll()
+                            loadBanks()
+                        }
                         else -> load(area)
                     }
                 }
@@ -254,9 +267,36 @@ class AccountHubViewModel(
         loadSetup()
     }
 
+    /**
+     * Prepares the Approvers page a host shows on its own, locked to [module]
+     * — Deal Memo's, where the web mounts `ApproversModule` with `fixedModule`.
+     *
+     * Not [start], for the reason [openCompanies] gives, and meant for a view
+     * model of its own: the console's Approvers page keeps its module and open
+     * builder in this state, and a second window would trample them. Chains
+     * other clients save arrive as the area's refresh, so a page left open
+     * shows them without being asked.
+     */
+    fun openApprovers(module: ApprovalModule) {
+        val identity = viewer()
+        setState {
+            copy(
+                viewer = identity,
+                area = HubArea.Approvers,
+                projectName = projectName(),
+                approvals = approvals.copy(module = module),
+            )
+        }
+        loadRoster()
+        listenForRefreshes()
+        approvalActions.load()
+    }
+
     /** Re-reads rights when the open production changes. */
     fun onProjectChanged() {
         started = false
+        rosterLoaded = false
+        tourActions.reset()
         setState { AccountHubUiState() }
         start()
     }
@@ -276,6 +316,9 @@ class AccountHubViewModel(
         // Read outside the state lambda: inside it, `viewer` is the
         // state's own viewer property rather than the supplier.
         val resolved = viewer()
+        // Someone who was inside and has lost the hub's view right is sent back to the
+        // tools grid, as the web's gate does; one who never got in keeps the empty state.
+        val wasInside = currentState.viewer.let { it.ready && !it.isBlocked }
         setState {
             copy(
                 viewer = resolved,
@@ -283,6 +326,7 @@ class AccountHubViewModel(
                 vendors = vendors.copy(viewerId = resolved.userId),
             )
         }
+        if (wasInside && resolved.isBlocked) sendEffect(AccountHubEffect.Back)
     }
 
     /** The host's badge ledger, mapped to the sidebar's units. */
@@ -312,6 +356,7 @@ class AccountHubViewModel(
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
             is AccountHubEvent.OpenGuide ->
                 HubGuides.url(event.itemId, projectType())?.let { sendEffect(AccountHubEffect.OpenUrl(it)) }
+            is AccountHubEvent.OpenLink -> sendEffect(AccountHubEffect.OpenUrl(event.url))
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
             else -> return false
         }
@@ -669,6 +714,13 @@ class AccountHubViewModel(
     internal fun mayEdit(): Boolean = requireEdit()
 
     internal fun mayActAsAccountant(): Boolean = requireAccountant()
+
+    /** [mayActAsAccountant], widened to the people a host vouches for on its own Approvers page. */
+    internal fun mayEditApprovals(): Boolean {
+        if (currentState.viewer.canEditApprovals) return true
+        sendEffect(AccountHubEffect.Failed(str(S.desktop_hub_only_the_accounts_department_can_do_that)))
+        return false
+    }
 
     /** The host's clock, for the one screen that needs "now" on screen. */
     internal fun nowMillis(): Long = clock()

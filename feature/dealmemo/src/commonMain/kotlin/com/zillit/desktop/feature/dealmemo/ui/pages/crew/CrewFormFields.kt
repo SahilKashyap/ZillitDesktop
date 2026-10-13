@@ -13,14 +13,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -174,7 +179,7 @@ internal fun InlineError(text: String?) {
     )
 }
 
-/** A labelled text input (`INP`) with its in-flow error. */
+/** A labelled text input (`INP`) with its in-flow error; [missing] is the red "still to fill" hint under it. */
 @Composable
 internal fun LabelledInput(
     label: String,
@@ -185,6 +190,7 @@ internal fun LabelledInput(
     error: String? = null,
     mono: Boolean = false,
     onBlur: (() -> Unit)? = null,
+    missing: String? = null,
 ) {
     Column {
         RowLabel(label, required)
@@ -194,9 +200,11 @@ internal fun LabelledInput(
             placeholder = placeholder,
             mono = mono,
             error = error != null,
+            missing = error == null && missing != null,
             onBlur = onBlur,
         )
-        InlineError(error)
+        // A format error outranks "Required", though the two never coincide: formats only fire on a value.
+        InlineError(error ?: missing)
     }
 }
 
@@ -204,6 +212,7 @@ internal fun LabelledInput(
  * `W.inp`: 44 tall, white, a hairline; focus turns the border amber with a
  * soft outer ring. An emptied box hands back `""`.
  */
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 @Composable
 internal fun FormInput(
     value: String,
@@ -213,6 +222,7 @@ internal fun FormInput(
     mono: Boolean = false,
     enabled: Boolean = true,
     error: Boolean = false,
+    missing: Boolean = false,
     onBlur: (() -> Unit)? = null,
     onEnter: (() -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
@@ -222,6 +232,8 @@ internal fun FormInput(
 ) {
     val p = cp
     var focused by remember { mutableStateOf(false) }
+    // `ah-missing`: a required box still empty goes red with a soft ring, and hands back to the amber while typed in.
+    val red = missing && !focused && enabled
     val shape = RoundedCornerShape(RADIUS)
     val style = if (mono) {
         DmType.mono((textSize - 0.5f).sp, FontWeight.Medium)
@@ -232,7 +244,7 @@ internal fun FormInput(
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (enabled) 1f else DISABLED)
-            .focusRing(focused && enabled, RADIUS, p.amber)
+            .focusRing(red || (focused && enabled), RADIUS, if (red) p.missing else p.amber)
             .height(height)
             .clip(shape)
             .background(p.inputBg)
@@ -240,6 +252,7 @@ internal fun FormInput(
                 1.dp,
                 when {
                     error -> Color(0xFFF87171)
+                    red -> p.missing
                     focused -> p.focusBorder
                     else -> p.inputBorder
                 },
@@ -279,7 +292,7 @@ internal fun FormInput(
     }
 }
 
-/** A 3dp ring just outside the control while it has focus — drawn, so it never moves the layout. */
+/** A 3dp ring just outside the control while it has focus (or is red) — drawn, so it never moves the layout. */
 internal fun Modifier.focusRing(show: Boolean, radius: Dp, color: Color): Modifier =
     if (!show) {
         this
@@ -304,10 +317,12 @@ internal fun LabelledSelect(
     options: List<Pair<String, String>>,
     onPick: (String) -> Unit,
     required: Boolean = false,
+    missing: String? = null,
 ) {
     Column {
         RowLabel(label, required)
-        FormSelect(value, listOf("" to SELECT_PLACEHOLDER) + options, onPick)
+        FormSelect(value, listOf("" to SELECT_PLACEHOLDER) + options, onPick, error = missing != null)
+        InlineError(missing)
     }
 }
 
@@ -325,11 +340,13 @@ internal fun FormSelect(
     height: Dp = 44.dp,
     menuWidth: Dp = 280.dp,
     textSize: Float = 13.5f,
+    error: Boolean = false,
 ) {
     DmSelectField(
         shown = value.takeIf { it.isNotEmpty() }?.let { v -> options.firstOrNull { it.first == v }?.second ?: v },
         placeholder = options.firstOrNull { it.first.isEmpty() }?.second.orEmpty(),
         modifier = modifier,
+        error = error,
         height = height,
         textSize = textSize,
         minListWidth = menuWidth,
@@ -350,19 +367,45 @@ internal fun FormSelect(
     }
 }
 
-/** A cell of a [FormGrid]: half a row, or all of it. */
-internal class GridCell(val wide: Boolean, val content: @Composable () -> Unit)
+/** A cell of a [FormGrid]: half a row, or all of it. [path] names the required field it holds, for [OpenScroll]. */
+internal class GridCell(val wide: Boolean, val path: String?, val content: @Composable () -> Unit)
 
 internal class FormGridScope {
     val cells = mutableListOf<GridCell>()
 
-    fun half(content: @Composable () -> Unit) {
-        cells += GridCell(wide = false, content = content)
+    fun half(path: String? = null, content: @Composable () -> Unit) {
+        cells += GridCell(wide = false, path = path, content = content)
     }
 
-    fun wide(content: @Composable () -> Unit) {
-        cells += GridCell(wide = true, content = content)
+    fun wide(path: String? = null, content: @Composable () -> Unit) {
+        cells += GridCell(wide = true, path = path, content = content)
     }
+}
+
+/**
+ * Where the form opens: the path of its first red field, brought into view once. The web writes its own
+ * scroller's `scrollTop` for this (`scrollIntoView` also scrolled the tool window); a bring-into-view request
+ * only ever moves the scroll container the cell sits in.
+ */
+internal class OpenScroll(val target: String?, val onDone: () -> Unit)
+
+internal val LocalOpenScroll = compositionLocalOf<OpenScroll?> { null }
+
+/** Wraps [content] so [OpenScroll] can find it; the wrapper stays when the request is spent, so no state resets. */
+@Composable
+internal fun OpenAnchor(path: String?, content: @Composable () -> Unit) {
+    val scroll = LocalOpenScroll.current
+    val requester = remember { BringIntoViewRequester() }
+    val mine = path != null && scroll?.target == path
+    if (mine) {
+        LaunchedEffect(Unit) {
+            // After layout, or the request finds nothing to scroll to.
+            withFrameNanos { }
+            requester.bringIntoView()
+            scroll?.onDone?.invoke()
+        }
+    }
+    Box(Modifier.bringIntoViewRequester(requester)) { content() }
 }
 
 /**
@@ -377,15 +420,15 @@ internal fun FormGrid(modifier: Modifier = Modifier, build: FormGridScope.() -> 
         val single = maxWidth < SINGLE_COLUMN_BELOW
         Column(verticalArrangement = Arrangement.spacedBy(GAP)) {
             if (single) {
-                cells.forEach { it.content() }
+                cells.forEach { OpenAnchor(it.path, it.content) }
             } else {
                 gridRows(cells).forEach { row ->
                     if (row.size == 1 && row[0].wide) {
-                        row[0].content()
+                        OpenAnchor(row[0].path, row[0].content)
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(GAP), verticalAlignment = Alignment.Top) {
-                            Box(Modifier.weight(1f)) { row[0].content() }
-                            Box(Modifier.weight(1f)) { row.getOrNull(1)?.content?.invoke() }
+                            Box(Modifier.weight(1f)) { OpenAnchor(row[0].path, row[0].content) }
+                            Box(Modifier.weight(1f)) { row.getOrNull(1)?.let { OpenAnchor(it.path, it.content) } }
                         }
                     }
                 }

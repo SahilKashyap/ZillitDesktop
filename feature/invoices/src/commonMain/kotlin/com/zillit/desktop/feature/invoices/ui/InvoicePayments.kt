@@ -71,7 +71,10 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         if (first) vm.update { copy(pay = pay.copy(runsLoading = true)) }
         vm.run {
             val runs = vm.repo.paymentRuns().getOrNull().orEmpty()
-            vm.update { copy(paymentRuns = runs, pay = pay.copy(runsLoading = false)) }
+            // The bar's names follow the directory as it loads, not as the settings arrived (`USERS_BY_ID`).
+            vm.update {
+                copy(paymentRuns = runs, pay = pay.copy(runsLoading = false, authLabels = authLabels(runAuth)))
+            }
         }
     }
 

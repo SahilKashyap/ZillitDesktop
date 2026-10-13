@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardRules
 import com.zillit.desktop.feature.cardexpenses.domain.CardServerNote
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapGuard
 
 /**
@@ -221,6 +222,24 @@ internal class CardsActions(
         if (state.viewer.isAccountant) return
         if (state.cards.any { it.holderId == state.viewer.userId && CardRules.blocksNewRequest(it) }) return
         area { copy(crewRequest = CrewCardDraft(currency = state.defaultCurrency)) }
+        loadDeal()
+    }
+
+    /**
+     * The requester's own active deal, for a salary-basis cap
+     * (`useRequestCapGuard.js:57-68`). Only that basis reads one, so a
+     * max-amount production makes no request at all; a failed or empty read
+     * leaves the deal null and the cap on its flat ceiling, as the web's does.
+     */
+    private fun loadDeal() {
+        val cap = vm.current.requestCap
+        if (cap == null || !cap.enabled || cap.basis != RequestCapBasis.WeeklySalary) {
+            return area { copy(deal = null) }
+        }
+        vm.run {
+            val rate = vm.repo.myActiveDeal().getOrNull()
+            area { copy(deal = rate) }
+        }
     }
 
     /**
@@ -262,6 +281,7 @@ internal class CardsActions(
                 ),
             )
         }
+        loadDeal()
     }
 
     /**
@@ -319,19 +339,14 @@ internal class CardsActions(
         }
 
     /**
-     * A receipt row opens the receipt. Until the receipt detail is rebuilt,
-     * an accountant gets the read-only process view and a cardholder the
-     * stored document.
+     * A receipt row opens the shared read-only receipt detail, for every
+     * viewer (`CardDetailModal.jsx:180-198, 1073-1079`): the document, the
+     * lines, the chain so far, History and Query. Nothing in it writes — an
+     * accountant who wants the process editor opens the receipt from a queue.
      */
     private fun openReceipt(receiptId: String) {
-        val state = vm.current
-        val receipt = state.cardDetail?.receipts?.firstOrNull { it.id == receiptId } ?: return
-        if (state.viewer.isAccountant) {
-            vm.update { copy(receipts = receipts.filterNot { it.id == receiptId } + receipt) }
-            vm.onEvent(CardEvent.OpenProcess(receiptId, ProcessMode.History))
-        } else {
-            receipt.attachmentKey?.takeIf { it.isNotBlank() }?.let { vm.onEvent(CardEvent.ViewReceipt(it)) }
-        }
+        val receipt = vm.current.cardDetail?.receipts?.firstOrNull { it.id == receiptId } ?: return
+        vm.inboxActions.open(receipt, ReceiptDetailSource.Card)
     }
 
     private fun refuse() = vm.fail(str(S.desktop_po_no_rights_on_project))

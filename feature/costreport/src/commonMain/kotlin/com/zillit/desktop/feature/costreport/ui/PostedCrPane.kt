@@ -47,6 +47,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
@@ -99,6 +100,7 @@ internal fun PostedCrPane(
             filter = posted.filter,
             symbolFor = { state.symbolFor(it.currency ?: state.current.currencyCode) },
             resolveUser = resolveUser,
+            unread = { state.postedUnread[it.id] ?: 0 },
             onFilter = { onEvent(CostReportEvent.SelectPostedFilter(it)) },
             onRefresh = { onEvent(CostReportEvent.RefreshPosted) },
             onOpen = { onEvent(CostReportEvent.OpenSnapshot(it)) },
@@ -127,6 +129,8 @@ internal fun CrHistoryCard(
     onRefresh: () -> Unit,
     onOpen: (SnapshotHeader) -> Unit,
     modifier: Modifier = Modifier,
+    /** A post's unread count (`PostedCRTabContent.jsx:162`); the accountant's history carries none. */
+    unread: (SnapshotHeader) -> Int = { 0 },
 ) {
     val colors = ZillitTheme.colors
     val shown = remember(rows, filter) {
@@ -201,6 +205,7 @@ internal fun CrHistoryCard(
                         last = index == shown.lastIndex,
                         symbol = symbolFor(row.header),
                         who = row.header.postedBy?.let { resolveUser(it) ?: it },
+                        unread = unread(row.header),
                         onOpen = { onOpen(row.header) },
                     )
                 }
@@ -231,6 +236,7 @@ private fun HistoryItem(
     last: Boolean,
     symbol: String,
     who: String?,
+    unread: Int,
     onOpen: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
@@ -291,6 +297,7 @@ private fun HistoryItem(
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, fontSize = 13.5.sp),
                     maxLines = 1,
                 )
+                ZillitBadge(count = unread)
                 ZillitText(
                     text = kind.chip.uppercase(),
                     style = ZillitTheme.typography.labelSmall.copy(

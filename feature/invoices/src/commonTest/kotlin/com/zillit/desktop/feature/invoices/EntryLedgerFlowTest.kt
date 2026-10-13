@@ -149,6 +149,65 @@ class EntryLedgerFlowTest {
         assertTrue(repo.writes.isEmpty())
     }
 
+    // -- a posted invoice (`EntryDetailModal` `posted`, 824476ab8) -------------------
+
+    @Test
+    fun `a posted invoice is corrected with Save alone while its period is open`() = runTest(dispatcher) {
+        val repo = Repo(
+            row = ROW.copy(status = InvoiceStatus.ReadyToPay),
+            lock = PeriodLock(lockedThrough = "2026-08-01"),
+        )
+        val vm = openPosted(repo, senior())
+        vm.onEvent(EntryEvent.EditLine(LINE.copy(description = "Bulbs")))
+        assertEquals("Bulbs", vm.state.value.ledger?.lines?.single()?.description)
+        vm.onEvent(EntryEvent.Save)
+        advanceUntilIdle()
+        assertEquals(listOf("save:i1"), repo.writes)
+        assertNull(repo.saved.single().status, "a correction changes no status")
+        assertNotNull(vm.state.value.ledger, "Save keeps the screen open")
+
+        // Past the workflow: no review, assign, return or second post.
+        vm.onEvent(EntryEvent.Post)
+        vm.onEvent(EntryEvent.SubmitForReview)
+        vm.onEvent(EntryEvent.ReturnToApproval)
+        vm.onEvent(EntryEvent.Assign)
+        advanceUntilIdle()
+        assertEquals(listOf("save:i1"), repo.writes)
+        assertNull(vm.state.value.assignFor)
+    }
+
+    @Test
+    fun `a posted invoice freezes once the lock reaches its effective date`() = runTest(dispatcher) {
+        val repo = Repo(
+            row = ROW.copy(status = InvoiceStatus.ReadyToPay),
+            lock = PeriodLock(lockedThrough = "2026-12-31"),
+        )
+        val vm = openPosted(repo, senior())
+        vm.onEvent(EntryEvent.EditLine(LINE.copy(description = "changed")))
+        vm.onEvent(EntryEvent.Save)
+        advanceUntilIdle()
+        assertEquals("Lamps", vm.state.value.ledger?.lines?.single()?.description)
+        assertTrue(repo.writes.isEmpty())
+    }
+
+    @Test
+    fun `a posted invoice with no effective date is never locked`() = runTest(dispatcher) {
+        val repo = Repo(
+            row = ROW.copy(status = InvoiceStatus.ReadyToPay, effectiveDateMs = null),
+            lock = PeriodLock(lockedThrough = "2026-12-31"),
+        )
+        val vm = openPosted(repo, senior())
+        vm.onEvent(EntryEvent.Save)
+        advanceUntilIdle()
+        assertEquals(listOf("save:i1"), repo.writes)
+    }
+
+    @Test
+    fun `Posted opens any invoice, where Entry opens only the reader's own`() = runTest(dispatcher) {
+        val repo = Repo(row = ROW.copy(assignedTo = "somebody-else"))
+        assertNotNull(openPosted(repo, junior()).state.value.ledger)
+    }
+
     @Test
     fun `quick entry posts straight to ready to pay and shows payment runs`() = runTest(dispatcher) {
         val repo = Repo()
@@ -295,6 +354,13 @@ class EntryLedgerFlowTest {
         it.onEvent(InvoicesEvent.SelectPage(AccountantPage.Entry))
         dispatcher.scheduler.advanceUntilIdle()
         it.onEvent(EntryEvent.Open(repo.row))
+        dispatcher.scheduler.advanceUntilIdle()
+    }
+
+    private fun openPosted(repo: Repo, viewer: InvoiceViewer): InvoicesViewModel = viewModel(repo, viewer).also {
+        it.onEvent(InvoicesEvent.SelectPage(AccountantPage.Posted))
+        dispatcher.scheduler.advanceUntilIdle()
+        it.onEvent(EntryEvent.Open(repo.row, posted = true))
         dispatcher.scheduler.advanceUntilIdle()
     }
 

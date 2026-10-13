@@ -30,6 +30,12 @@ import kotlinx.coroutines.flow.map
  * `accountHubListeners.js:1535-1549` also refetches the top-up list on
  * `card:topup:completed|partial|skipped`, and its receipt family carries
  * `awaiting_approval` and `escalated`; those five were added 2026-09-24.
+ *
+ * The three bulk verbs — `batch:submitted|approved|posted` — are the one
+ * exception to the `card:` prefix (`accountHubListeners.js:1478-1495`: "Card-namespaced
+ * bulk event (cash bulk uses `cash:batch:*`, no collision)"): a bulk submit,
+ * approval or post moves many receipts at once and is exactly the burst a
+ * queue left open must follow.
  */
 val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:activated", "card:alert:created",
@@ -59,7 +65,23 @@ val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:transaction:rejected", "card:transaction:updated",
     "card:transactions:submitted_to_users", "card:transactions:submitted_to_users:accountants",
     "card:updated", "card:updated_by_accountant",
+    "batch:submitted", "batch:approved", "batch:posted",
 ).map(::SocketEventName)
+
+/**
+ * What changes who may do what on this tool: the settings document (approval
+ * tiers, override rights, coding rule, request cap, providers) and a team
+ * member's posting rights. The web re-reads `/metadata` and `/settings` on
+ * both (`ah:card:settings`); `/metadata` was only ever read at open here, so a
+ * newly made coordinator or approver had no queue tab until a restart.
+ */
+val CARD_RIGHTS_EVENTS: List<SocketEventName> = listOf(
+    "card:settings:updated", "card:team:posting_rights_updated",
+).map(::SocketEventName)
+
+/** One pulse per burst of rights changes, or empty without a bus. */
+internal fun cardRightsChanges(bus: SocketEventBus?): Flow<Unit> =
+    bus?.onAny(CARD_RIGHTS_EVENTS)?.map { }?.conflate() ?: emptyFlow()
 
 /**
  * One pulse per burst of card traffic, or empty without a bus.

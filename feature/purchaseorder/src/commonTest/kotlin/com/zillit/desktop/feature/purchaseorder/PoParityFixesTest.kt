@@ -336,7 +336,8 @@ class PoParityFixesTest {
             parityOrder(id = "a", gross = 100.0, currency = "GBP"),
             parityOrder(id = "b", gross = 125.0, currency = "USD"),
         )
-        assertEquals("£200.00", orders.totalValue(state))
+        // Compact, as the web's card prints it; the exact "£200.00" is the hover title.
+        assertEquals("£200", orders.totalValue(state))
     }
 
     @Test

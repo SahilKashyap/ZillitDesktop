@@ -97,6 +97,10 @@ data class CardTransaction(
     val matchStatus: MatchStatus,
     val receiptId: String?,
     val personal: Boolean,
+    /** The status as the server spelled it — for the words [status] has no entry for. */
+    val statusWire: String? = null,
+    /** `transaction_currency`, the second step of the currency cascade ([CurrencyCascade]). */
+    val transactionCurrency: String? = null,
 )
 
 /** A receipt a cardholder uploaded, before or after it is matched. */
@@ -147,6 +151,23 @@ data class CardReceipt(
     val rejectedAt: Long? = null,
     /** The stored file's own name, from the attachment model's `name`. */
     val attachmentName: String? = null,
+    /**
+     * The engine's scores as the fractions it sent (`0.846`), for the thresholds.
+     * The web tests the raw value (`ReceiptInboxPage.jsx:362,436,463`); the whole
+     * percentages above are what is printed, and 0.846 prints 85 yet is not 0.85.
+     */
+    val matchFraction: Double? = null,
+    val duplicateFraction: Double? = null,
+    val personalFraction: Double? = null,
+    /** `transaction_currency`, the second step of the currency cascade ([CurrencyCascade]). */
+    val transactionCurrency: String? = null,
+    /**
+     * The receipt's `date` alone. [date] falls back to `created_at`, as the web's list rows
+     * do; the approval queues, the detail and Manual Match print a dash instead.
+     */
+    val ownDate: Long? = null,
+    /** `match_status` as sent, blank or absent included — [MatchStatus] reads a missing one as unmatched. */
+    val matchWire: String? = null,
 ) {
     /**
      * What the Receipt Inbox shows in its status column — the label of

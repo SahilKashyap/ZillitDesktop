@@ -271,7 +271,10 @@ object HubNavigation {
     fun visibleTo(viewer: AccountHubViewer): List<HubSection> =
         sections.mapNotNull { section ->
             val items = section.items.filter { item ->
-                val allowedByRole = viewer.isAccountant || viewer.isAdmin || item.forDepartmentUsers
+                // The accounts department only, as the web's sidebar: a production
+                // admin outside accounts gets the department rows like anyone else.
+                // Their Companies page lives in Admin Settings, not here.
+                val allowedByRole = viewer.isAccountant || item.forDepartmentUsers
                 // An accountant's rows ride on the hub's own right, as on the
                 // web (`useAccountHubViewGate`: entered through the hub, every
                 // module is gated on `account_hub_tool` alone). Requiring each
@@ -369,7 +372,7 @@ object HubNavigation {
      * The web renders two kinds full-bleed (`AccountHubToolHost.jsx`,
      * `AccountHubShell.jsx`), and both carry their own way back:
      *  - the "bare" reports — Cost Report, Trial Balance, Bible Report, Period
-     *    Close and Tax Filing — each with its own back button;
+     *    Close and Tax Filing, and Payroll's tile pages — each with its own back button;
      *  - the modules with a deeper sidebar of their own — Invoices and Card
      *    Expenses — where two navigation columns side by side left the content
      *    half the window (`SELF_NAV_MODULE_PREFIXES`). Only for an accountant:
@@ -390,6 +393,9 @@ object HubNavigation {
     private val BARE_TOOL_PATHS = listOf(
         "/film-tools/account-hub/cost-report",
         "/film-tools/account-hub/tax-filing",
+        // Payroll's tiles (`/payroll/:tile`) draw without the shell on the web and each carries
+        // its own Back; the trailing slash keeps the landing, which has the sidebar.
+        "/film-tools/payroll/",
     )
     private val SELF_NAV_TOOL_PATHS = listOf("/film-tools/invoices", "/film-tools/card-expenses")
 

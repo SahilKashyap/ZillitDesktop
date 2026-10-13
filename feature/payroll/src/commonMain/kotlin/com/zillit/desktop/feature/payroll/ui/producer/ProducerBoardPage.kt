@@ -109,6 +109,7 @@ private fun BoardPane(state: PayrollUiState, modifier: Modifier, onEvent: (Payro
                         viewer = state.viewer,
                         timecard = producer.timecard,
                         crewName = state.nameOf(row.userId),
+                        onEvent = onEvent,
                     )
                 },
             )
@@ -121,6 +122,7 @@ private fun BoardPane(state: PayrollUiState, modifier: Modifier, onEvent: (Payro
             } else {
                 str(S.desktop_payroll_select_crew_member)
             },
+            onOpenInvoice = { onEvent(PayrollEvent.OpenInvoice(it)) },
             modifier = Modifier.weight(1f),
             holidayPay = state.holidayPayFor(producer.timecard),
         )

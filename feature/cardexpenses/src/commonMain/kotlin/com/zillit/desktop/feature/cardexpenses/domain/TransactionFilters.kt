@@ -14,9 +14,10 @@ import kotlinx.datetime.minus
  * id, not for all of them.
  *
  * The date window is EITHER [untilToday] (every transaction up to now, no dates
- * sent at all) OR the [from]/[to] range — never both. A [to] of today is never
- * sent either way: there are no future transactions, and `to=<today>T23:59:59Z`
+ * sent at all) OR the [from]/[to] range — never both. A [to] of today or later is
+ * never sent either way: there are no future transactions, and `to=<today>T23:59:59Z`
  * is a UTC day boundary, so west of UTC it clipped part of today's own spend.
+ * [withDateRules] is what Done applies to a typed draft.
  */
 data class TransactionFilters(
     val statementId: String = "",
@@ -32,12 +33,12 @@ data class TransactionFilters(
      * How many filters are set; the date window counts once, however many ends
      * it has. [untilToday] alone still counts as one — the Filters button must
      * show a filter is applied even though nothing is sent. A range whose only
-     * content is a [to] of today counts as none: the query would send nothing.
+     * content is a [to] of today or later counts as none: the query would send nothing.
      */
     val count: Int
         get() {
             val today = todayIso()
-            val hasDateFilter = untilToday || from.isNotBlank() || (to.isNotBlank() && to != today)
+            val hasDateFilter = untilToday || from.isNotBlank() || sendsTo(today)
             return listOf(statementId, cardId, departmentId).count { it.isNotBlank() } +
                 if (hasDateFilter) 1 else 0
         }
@@ -50,8 +51,22 @@ data class TransactionFilters(
         if (!untilToday) {
             val today = todayIso()
             from.trim().takeIf { it.isNotEmpty() }?.let { put("from", "${it}T00:00:00Z") }
-            to.trim().takeIf { it.isNotEmpty() && it != today }?.let { put("to", "${it}T23:59:59Z") }
+            to.trim().takeIf { sendsTo(today) }?.let { put("to", "${it}T23:59:59Z") }
         }
+    }
+
+    /** A real date strictly before [today] — the web's `pickDateTo`; anything else narrows nothing. */
+    private fun sendsTo(today: String): Boolean = YMD.matches(to.trim()) && to.trim() < today
+
+    /**
+     * The draft as Done applies it (`applyDateRules`): each end a real date and never after
+     * [today], so a future From cannot return an empty table. Left alone while [untilToday] is
+     * on, so switching it off brings the typed range back.
+     */
+    fun withDateRules(today: String = todayIso()): TransactionFilters {
+        if (untilToday) return this
+        fun notAfterToday(day: String) = day.trim().takeIf { YMD.matches(it) }?.let { minOf(it, today) }.orEmpty()
+        return copy(from = notAfterToday(from), to = notAfterToday(to))
     }
 
     companion object {
@@ -67,6 +82,8 @@ data class TransactionFilters(
             val start = runCatching { LocalDate.parse(end).minus(1, DateTimeUnit.MONTH).toString() }.getOrDefault("")
             return TransactionFilters(from = start, to = end)
         }
+
+        private val YMD = Regex("""\d{4}-\d{2}-\d{2}""")
 
         internal fun todayIso(): String = CardDates.toIso(Clock.System.now().toEpochMilliseconds())
     }

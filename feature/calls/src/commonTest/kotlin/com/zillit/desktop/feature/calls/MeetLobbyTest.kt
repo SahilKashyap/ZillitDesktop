@@ -51,8 +51,13 @@ import kotlin.test.assertTrue
  * The Line 1 meet lobby, end to end against the scripted calling backend:
  * the join decision tree, the knock, the REST fallback, the roster strip, and
  * the ownership rule that keeps an ended call from bringing the lobby back.
+ *
+ * LargeClass: one decision tree, tested through one harness — the scripted
+ * socket, HTTP and engine every case builds on. Split by path, each piece
+ * would carry its own copy of that harness, and copies drift.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("LargeClass")
 class MeetLobbyTest {
 
     private class QuietSocket : SocketClient {
@@ -127,7 +132,7 @@ class MeetLobbyTest {
             sockets = socket,
             socketUrl = { "wss://calls.test/ws" },
             handshake = { "BLOB" },
-            identity = { LiveKitIdentity("me", "Me", "p1", "Sides Testing") },
+            identity = { LiveKitIdentity("me", "Me", "p1", "Sides Testing", deviceId = "dev-1") },
             roomUrlOverride = { null },
             nowMillis = { clock[0] },
         )
@@ -240,10 +245,27 @@ class MeetLobbyTest {
         assertFalse(state.previewing)
         assertEquals(listOf("open:false"), h.engine.lobby, "a refused camera is never opened")
 
+        assertTrue(state.micBlocked, "the refusal is known, and shown, before Join is pressed")
+
         h.lobby.join()
         runCurrent()
         assertEquals(MeetLobbyStatus.Error(MeetProblem.MicrophoneDenied), h.lobby.state.value?.status)
         assertTrue(h.socket.startCalls().isEmpty())
+    }
+
+    @Test
+    fun `a microphone granted after the lobby opened is asked again on Join, and joins`() = runTest {
+        val h = harness()
+        h.engine.access = LobbyMediaAccess(microphone = false, camera = true)
+        h.open()
+        runCurrent()
+        assertTrue(h.lobby.state.value!!.micBlocked)
+
+        h.engine.access = LobbyMediaAccess(microphone = true, camera = true)
+        h.lobby.join()
+        runCurrent()
+        assertFalse(h.lobby.state.value!!.micBlocked)
+        assertEquals(1, h.socket.startCalls().size)
     }
 
     @Test
@@ -401,18 +423,75 @@ class MeetLobbyTest {
     }
 
     @Test
-    fun `with the socket down, REST mints only for a running room`() = runTest {
+    fun `with the socket down, the meet's REST join starts it, and never a bare token`() = runTest {
+        val h = harness(socketDown = true, http = LiveKitFakeHttp().apply {
+            answers["/v1/meet/m1/join"] =
+                """{"callId":"m1","started":true,"livekit":{"token":"join-tok","url":"wss://eu.livekit.zillit.com"}}"""
+        })
+        h.open()
+        runCurrent()
+        h.lobby.join()
+        runCurrent()
+        assertTrue(h.engine.joins.isEmpty(), "a redialling socket gets its moment before REST")
+        advanceTimeBy(2_001)
+        runCurrent()
+
+        val join = h.engine.joins.single()
+        assertEquals("join-tok", join.livekitToken)
+        assertEquals("wss://eu.livekit.zillit.com", join.livekitUrl)
+        val body = h.http.calls.single { it.first.endsWith("/v1/meet/m1/join") }.second!!
+        assertEquals("me", body["userId"]!!.jsonPrimitive.content)
+        assertEquals("dev-1", body["device_id"]!!.jsonPrimitive.content)
+        assertFalse(h.http.paths().any { it.contains("/v1/livekit/token") }, "a bare token has no session behind it")
+        assertFalse(h.http.paths().any { it.endsWith("/active") }, "the join itself starts an unstarted meet")
+    }
+
+    @Test
+    fun `with the socket down, a non-owner on an owner-started meet is told to ask the host`() = runTest {
+        val h = harness(socketDown = true, http = LiveKitFakeHttp().apply {
+            answers["/v1/meet/m1/join"] = "!403:not_allowed_to_start"
+        })
+        h.open()
+        runCurrent()
+        h.lobby.join()
+        advanceTimeBy(2_001)
+        runCurrent()
+        val status = h.lobby.state.value?.status as MeetLobbyStatus.Error
+        assertEquals(MeetProblem.AskHost, status.problem)
+        assertFalse(status.fatal, "Join must stay pressable for when the socket is back")
+        assertTrue(h.engine.joins.isEmpty())
+    }
+
+    @Test
+    fun `a REST ask-the-host knocks instead when the socket is up`() = runTest {
+        val h = harness(http = LiveKitFakeHttp().apply { answers["/v1/meet/m1/join"] = "!403:not_allowed_to_start" })
+        h.open()
+        runCurrent()
+        h.lobby.join()
+        runCurrent()
+        // The socket is up but its startCall never answers: REST, then the knock REST cannot do.
+        advanceTimeBy(5_001)
+        runCurrent()
+        assertEquals(MeetLobbyStatus.Waiting, h.lobby.state.value?.status)
+        assertTrue("knockCall" in h.socket.sentTypes())
+    }
+
+    @Test
+    fun `a backend without the REST join mints only for a running room`() = runTest {
         val idle = harness(socketDown = true, http = LiveKitFakeHttp().apply {
+            answers["/v1/meet/m1/join"] = "!404:not_enabled"
             answers["/v1/calls/m1/active"] = """{"active":false,"ongoing":true}"""
         })
         idle.open()
         runCurrent()
         idle.lobby.join()
+        advanceTimeBy(2_001)
         runCurrent()
         assertEquals(MeetLobbyStatus.Error(MeetProblem.NotStarted), idle.lobby.state.value?.status)
         assertFalse(idle.http.paths().any { it.contains("/v1/livekit/token") }, "never mint for an unstarted meet")
 
         val running = harness(socketDown = true, http = LiveKitFakeHttp().apply {
+            answers["/v1/meet/m1/join"] = "!404:not_enabled"
             answers["/v1/calls/m1/active"] = """{"active":true}"""
             answers["/v1/livekit/token"] =
                 """{"token":"rest-tok","url":"wss://in.livekit.zillit.com","identity":"me"}"""
@@ -420,15 +499,34 @@ class MeetLobbyTest {
         running.open()
         runCurrent()
         running.lobby.join()
+        advanceTimeBy(2_001)
         runCurrent()
         assertEquals("rest-tok", running.engine.joins.single().livekitToken)
     }
 
     @Test
+    fun `a REST join refused for a dead or cancelled meet says so and stops`() = runTest {
+        listOf(
+            "!404:no_such_meet" to MeetProblem.LinkInvalid,
+            "!409:meet_inactive" to MeetProblem.Cancelled,
+        ).forEach { (answer, problem) ->
+            val h = harness(socketDown = true, http = LiveKitFakeHttp().apply { answers["/v1/meet/m1/join"] = answer })
+            h.open()
+            runCurrent()
+            h.lobby.join()
+            advanceTimeBy(2_001)
+            runCurrent()
+            val status = h.lobby.state.value?.status as MeetLobbyStatus.Error
+            assertEquals(problem, status.problem, answer)
+            assertFalse(h.http.paths().any { it.contains("/v1/livekit/token") }, answer)
+        }
+    }
+
+    @Test
     fun `an ack without a room, or no ack in five seconds, falls back to REST`() = runTest {
         val http = LiveKitFakeHttp().apply {
-            answers["/v1/calls/m1/active"] = """{"active":true}"""
-            answers["/v1/livekit/token"] = """{"token":"rest-tok","url":"wss://in.livekit.zillit.com"}"""
+            answers["/v1/meet/m1/join"] =
+                """{"callId":"m1","started":false,"livekit":{"token":"rest-tok","url":"wss://in.livekit.zillit.com"}}"""
         }
         val h = harness(http = http)
         h.open()
@@ -508,15 +606,21 @@ class MeetLobbyTest {
     }
 
     @Test
-    fun `polling stops while the window is in the background`() = runTest {
+    fun `the roster is read every five seconds until Join is pressed`() = runTest {
         val h = harness()
         h.open()
         runCurrent()
-        val before = h.http.paths().count { it.contains("/roster") }
-        h.lobby.setFocused(false)
-        advanceTimeBy(20_000)
+        advanceTimeBy(10_001)
         runCurrent()
-        assertEquals(before, h.http.paths().count { it.contains("/roster") })
+        assertEquals(3, h.http.paths().count { it.contains("/roster") }, "on open, then every five seconds")
+
+        advanceTimeBy(3_000)
+        h.lobby.join()
+        runCurrent()
+        // Past the next tick (15 s), inside startCall's own five-second wait.
+        advanceTimeBy(4_000)
+        runCurrent()
+        assertEquals(3, h.http.paths().count { it.contains("/roster") }, "a join in flight is not polled over")
     }
 
     // ── Who owns the surface ────────────────────────────────────────────────

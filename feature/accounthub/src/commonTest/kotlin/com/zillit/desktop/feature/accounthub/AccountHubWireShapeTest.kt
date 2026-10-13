@@ -286,6 +286,22 @@ class AccountHubWireShapeTest {
         assertEquals(2, tiers.first().approverCount)
     }
 
+    /** The web's `parseTiers` takes the array or the same array as a JSON string; one row must not fail the list. */
+    @Test
+    fun `an approval chain's tiers may arrive as a JSON string`() {
+        val configs = decodeApprovalConfigs(
+            """
+            [{"id":"cfg-1","module":"purchase_orders","scope":"all",
+              "tiers":"[{\"order\":1,\"rules\":[{\"type\":\"user\",\"user_ids\":[\"u1\"]}]}]"},
+             {"id":"cfg-2","module":"purchase_orders","scope":"department","department_id":"d1","tiers":null}]
+            """.trimIndent(),
+        )
+
+        assertEquals(2, configs.size)
+        assertEquals(listOf("u1"), configs[0].tiers.single().userIds)
+        assertTrue(configs[1].tiers.isEmpty())
+    }
+
     /**
      * A meal break of null and one of zero are different facts.
      *

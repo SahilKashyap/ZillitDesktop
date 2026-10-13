@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
@@ -42,6 +43,7 @@ class PayrollToolProvider(
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
         var failure by remember { mutableStateOf<String?>(null) }
+        val uriHandler = LocalUriHandler.current
 
         LaunchedEffect(viewModel) { viewModel.start() }
         // The route is re-read whenever the viewer changes too: a deep link
@@ -52,6 +54,8 @@ class PayrollToolProvider(
                 when (effect) {
                     is PayrollEffect.Failed -> failure = effect.message
                     is PayrollEffect.Navigate -> navigator.navigate(WorkspaceRoute.Tool(effect.path))
+                    // A presigned address is a credential: opened, never logged or shown.
+                    is PayrollEffect.OpenUrl -> runCatching { uriHandler.openUri(effect.url) }
                 }
             }
         }

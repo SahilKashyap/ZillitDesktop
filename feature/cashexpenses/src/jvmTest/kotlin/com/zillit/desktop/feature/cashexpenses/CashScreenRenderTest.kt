@@ -11,6 +11,9 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
+import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
+import com.zillit.desktop.feature.cashexpenses.domain.EditorLine
+import com.zillit.desktop.feature.cashexpenses.domain.LineExtras
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
@@ -454,6 +457,38 @@ class CashScreenRenderTest {
                 }
             }
             onNodeWithText("Balanced").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun `a coding with tax types offers the Tax select and a typed tax line can be reset`() {
+        val vat = CashTaxType("STANDARD", "VAT", 20.0, true)
+        val open = com.zillit.desktop.feature.cashexpenses.ui.CodingDraft(
+            batchId = "batch-1",
+            claimId = "claim-1",
+            receiptGross = 120.0,
+            currency = "GBP",
+            lines = listOf(
+                EditorLine(
+                    id = "line-1", unitPrice = 100.0, account = "4100", taxType = "STANDARD", taxRatePercent = 20.0,
+                ),
+                EditorLine(id = "tax-1", unitPrice = 15.0, account = "2200", extras = LineExtras(isTax = true)),
+            ),
+            taxTypes = listOf(vat),
+            taxOverridden = true,
+        )
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(
+                        state = state(CashDestination.CodingQueue).copy(coding = open),
+                        onEvent = {},
+                    )
+                }
+            }
+            // The line's type is the project's, and the typed tax line offers its way back.
+            onNodeWithText("VAT · 20%").assertIsDisplayed()
+            onNodeWithText("Recalculate from line items").assertIsDisplayed()
         }
     }
 

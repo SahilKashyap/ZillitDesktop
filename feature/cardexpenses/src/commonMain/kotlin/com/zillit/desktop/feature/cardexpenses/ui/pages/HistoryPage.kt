@@ -91,7 +91,7 @@ private fun historyColumns(state: CardUiState): List<TableColumn<CardReceipt>> =
         HolderCell(state, it.holderId, it.holderName)
     },
     TableColumn(str(S.code), ColumnWidth.Fixed(110.dp)) { CodeCell(it.nominalCode, null, television = false) },
-    TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { AmountCell(it) },
+    TableColumn(str(S.amount), ColumnWidth.Fixed(120.dp), numeric = true) { AmountCell(state, it) },
     TableColumn(str(S.status), ColumnWidth.Fixed(120.dp)) { row ->
         // "Posted", teal, for a posted row — or one with no status at all.
         val posted = row.status == CardWorkflowStatus.Posted || row.status == CardWorkflowStatus.Unknown

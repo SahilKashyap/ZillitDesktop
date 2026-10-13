@@ -26,6 +26,17 @@ val PAYROLL_SYNC_EVENTS: List<SocketEventName> = listOf(
 )
 
 /**
+ * Production Setup changed — the shared project-settings document the pay
+ * period, the approvers and the companies derive from. The web bumps
+ * `ah:payroll:metadata` (and the project-settings and timecard-metadata keys)
+ * on it (`accountHubListeners.js:458`), so a pay-period or approver edit made
+ * elsewhere reaches a payroll screen that is already open.
+ */
+val PAYROLL_SETTINGS_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("production_setup:updated"),
+)
+
+/**
  * The slice of the account-hub envelope this port reads: which production the
  * frame is about. The web drops cross-project frames before any handler runs
  * (`accountHubListeners.js:14-33, 2060-2072`); the rest of the payload is

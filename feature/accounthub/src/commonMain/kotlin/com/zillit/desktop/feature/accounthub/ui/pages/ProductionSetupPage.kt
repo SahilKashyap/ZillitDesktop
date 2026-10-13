@@ -194,7 +194,8 @@ private fun ColumnScope.AccountingSections(
     )
     HubModuleCard(
         title = str(S.desktop_hub_purchase_order_entry_setup),
-        description = str(S.desktop_hub_defaults_for_the_po_module_description_formatting_rental_split_handling),
+        // The tile keeps the web's shorter line; the modal's own description also names the asset register rule.
+        description = str(S.desktop_hub_po_tile_description),
         icon = ZillitIcons.Receipt,
         onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.PurchaseOrders)) },
     )

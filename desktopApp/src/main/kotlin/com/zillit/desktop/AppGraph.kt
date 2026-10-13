@@ -1535,6 +1535,7 @@ sealed interface AppGraph {
                                 displayName = me.fullName,
                                 projectId = project.id,
                                 projectName = project.name,
+                                deviceId = headerContext.value.deviceId,
                             )
                         }
                     },

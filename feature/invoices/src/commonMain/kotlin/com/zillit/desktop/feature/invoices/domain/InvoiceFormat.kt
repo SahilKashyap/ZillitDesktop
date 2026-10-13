@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
@@ -32,25 +33,17 @@ object InvoiceFormat {
     /** 2 dp, no separators — for text fields. */
     fun plain(value: Double): String = amount(value).replace(",", "")
 
-    fun symbol(currency: String): String = when (currency.trim().uppercase()) {
-        "GBP" -> "£"
-        "USD" -> "$"
-        "EUR" -> "€"
-        "INR" -> "₹"
-        "JPY" -> "¥"
-        "AUD" -> "A$"
-        "CAD" -> "C$"
-        "NZD" -> "NZ$"
-        "ZAR" -> "R"
-        "" -> ""
-        else -> currency.trim().uppercase() + " "
-    }
+    /** The catalogue's symbol for [currency] (`HK$`), the bare code and a space for one it does not know. */
+    fun symbol(currency: String): String = Money.symbol(currency)
 
-    /** A date-only field (stored at UTC midnight) as `12 Aug 2026`. */
-    fun date(ms: Long?): String {
+    /**
+     * A date field as `05 Aug 2026`, read in the local zone and zero-padded as the register does
+     * (`RegisterPage.jsx:80-85`): what the review's Accept stores — local midnight — shows as the day typed.
+     */
+    fun date(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (ms == null || ms <= 0) return "—"
-        val d = Instant.fromEpochMilliseconds(ms).toLocalDateTime(TimeZone.UTC).date
-        return "${d.day} ${str(MONTHS[d.month.ordinal])} ${d.year}"
+        val d = Instant.fromEpochMilliseconds(ms).toLocalDateTime(zone).date
+        return "${d.day.pad()} ${str(MONTHS[d.month.ordinal])} ${d.year}"
     }
 
     /**

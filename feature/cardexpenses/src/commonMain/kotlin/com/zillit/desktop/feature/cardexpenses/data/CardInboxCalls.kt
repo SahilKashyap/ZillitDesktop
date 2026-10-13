@@ -286,6 +286,8 @@ private fun JsonObject.toCandidate(): MatchCandidate? {
         currency = this["currency"].currencyCode()?.takeIf(String::isNotBlank),
         // The web rounds `match_score * 100` and shows 0% for none.
         scorePercent = text("match_score").asPercent() ?: 0,
+        cardId = text("card_id"),
+        transactionCurrency = this["transaction_currency"].currencyCode()?.takeIf(String::isNotBlank),
     )
 }
 

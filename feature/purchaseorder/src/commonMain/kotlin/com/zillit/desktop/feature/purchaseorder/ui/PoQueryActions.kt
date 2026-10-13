@@ -38,6 +38,8 @@ internal class PoQueryActions(
         vm.update {
             copy(query = PoQueryState(orderId = orderId, title = order.number.ifBlank { str(S.purchase_order) }))
         }
+        // Reading the thread is what clears its badge, and only this opens it.
+        vm.readQueryBadge(orderId)
         vm.launchWork {
             val answer = repository.queryThread(orderId)
             if (vm.ui.query?.orderId != orderId) return@launchWork

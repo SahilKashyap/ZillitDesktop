@@ -91,6 +91,26 @@ data class PoApprovalTiers(
             tier.any { it.userId == userId && it.coversDepartment(order.departmentId) }
         }
 
+    /**
+     * The tiers the person raising or editing an order has already signed by
+     * raising it — the web's `getAutoApprovals`.
+     *
+     * Consecutive from tier 1: the creator approves every tier they sit on, and
+     * the run stops at the first one they do not. The web resolves the chain at
+     * amount 0 (its `poData.totalAmount` is never filled), so the default
+     * approvers decide this, not an amount rule; the same is done here.
+     */
+    fun autoApprovals(departmentId: String?, userId: String, approvedAt: Long): List<PoAutoApproval> {
+        if (userId.isBlank()) return emptyList()
+        val chain = resolve(departmentId, 0.0)
+        val signed = mutableListOf<PoAutoApproval>()
+        for ((index, tier) in chain.withIndex()) {
+            if (tier.none { it.userId == userId && it.coversDepartment(departmentId) }) break
+            signed += PoAutoApproval(userId = userId, tierNumber = index + 1, approvedAt = approvedAt)
+        }
+        return signed
+    }
+
     companion object {
         const val SCOPE_ALL = "all"
         const val SCOPE_DEPARTMENT = "department"
@@ -98,6 +118,10 @@ data class PoApprovalTiers(
         const val RULE_AMOUNT = "amount"
     }
 }
+
+/** A tier signed at the moment the order is raised, as the create/update body carries it. */
+@kotlinx.serialization.Serializable
+data class PoAutoApproval(val userId: String, val tierNumber: Int, val approvedAt: Long)
 
 /** One chain: the production's (`scope = all`) or one department's. */
 data class PoTierConfig(

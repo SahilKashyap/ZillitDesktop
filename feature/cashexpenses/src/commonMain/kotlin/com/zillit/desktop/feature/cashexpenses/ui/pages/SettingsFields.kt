@@ -117,9 +117,12 @@ internal fun CashCodeField(
     }
 }
 
-/** The accounts a balance-sheet field offers — the chart's balance-sheet rows, or all of it when none is marked. */
+/**
+ * The accounts a balance-sheet field offers — `balanceSheetRows` then `computeNominalRows`, as the web's
+ * `pickableLevels="nominals"` does; the whole chart when none is marked.
+ */
 internal fun List<CashAccount>.balanceSheetCodes(): List<CashAccount> =
-    filter { it.balanceSheet }.ifEmpty { this }
+    filter { it.balanceSheet && it.nominal }.ifEmpty { filter { it.balanceSheet } }.ifEmpty { this }
 
 /** The accounts a nominal field offers — the P&L rows, or all of it when none is marked. */
 internal fun List<CashAccount>.nominalCodes(): List<CashAccount> =

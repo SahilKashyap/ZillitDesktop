@@ -31,6 +31,13 @@ internal val BANK_REFRESH_BY_EVENT: Map<SocketEventName, Set<BankRefresh>> = bui
         setOf(BankRefresh.Workspace, BankRefresh.Fraud, BankRefresh.Exceptions, BankRefresh.Periods),
     )
 
+    // The inverse: a fraud item's alert re-opens, so the same three go stale.
+    // Bulk unmatch emits one frame per line.
+    put(
+        SocketEventName("br:transaction:unmatched"),
+        setOf(BankRefresh.Workspace, BankRefresh.Fraud, BankRefresh.Exceptions),
+    )
+
     put(
         SocketEventName("br:exception:status-changed"),
         setOf(BankRefresh.Exceptions, BankRefresh.Workspace),

@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ImportedRow
 import com.zillit.desktop.feature.cardexpenses.domain.InboxWrite
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptDetail
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptMedia
 import com.zillit.desktop.feature.cardexpenses.domain.StatementCurrencyOptions
 import com.zillit.desktop.feature.cardexpenses.domain.StatementFile
 import com.zillit.desktop.feature.cardexpenses.domain.TransactionSelection
@@ -30,6 +31,7 @@ internal class CardInboxActions(
     private val vm: CardExpensesViewModel,
     private val host: CardInboxHost?,
     private val loadBanks: suspend () -> List<CardBank>,
+    private val bankReadFailed: () -> Boolean = { false },
 ) {
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // A dispatch table; splitting it hides the mapping.
@@ -41,7 +43,7 @@ internal class CardInboxActions(
             }
 
             is InboxEvent.OpenDetail -> openDetail(event.receiptId)
-            InboxEvent.CloseDetail -> edit { copy(detail = null) }
+            InboxEvent.CloseDetail -> close()
             InboxEvent.ShowHistory -> showHistory()
             InboxEvent.HideHistory -> edit { copy(detail = detail?.copy(history = null)) }
 
@@ -116,10 +118,16 @@ internal class CardInboxActions(
     suspend fun loadImport(): ZillitResult<Reducer> {
         val project = host?.currencies() ?: CardCurrencies()
         val bankAccounts = loadBanks()
+        val readFailed = bankReadFailed()
         return ZillitResult.Success {
-            val options = StatementCurrencyOptions.of(providers, bankAccounts, project.codes)
+            val known = bankAccounts.ifEmpty { banks }
+            // The host's bank seam answers an empty list for a failed read too, so providers bound to
+            // banks with none readable is the web's `banksFailed` (`BankAccountsContext.jsx`): the
+            // project list is then not the right source and is never auto-selected.
+            val banksFailed = readFailed || (known.isEmpty() && providers.any { it.bankId.isNotBlank() })
+            val options = StatementCurrencyOptions.of(providers, known, project.codes, banksFailed)
             copy(
-                banks = bankAccounts.ifEmpty { banks },
+                banks = known,
                 inbox = inbox.copy(
                     import = inbox.import.copy(
                         currencies = options,
@@ -150,14 +158,20 @@ internal class CardInboxActions(
 
     // -- inbox -----------------------------------------------------------------
 
-    /**
-     * Opens the detail on the slim row and reads the full one
-     * (`ReceiptInboxPage.jsx:324-336`). Only the newest open may write: a
-     * reply for a receipt already closed or replaced is dropped.
-     */
     private fun openDetail(receiptId: String) {
         val row = vm.current.receipts.firstOrNull { it.id == receiptId } ?: return
-        edit { copy(detail = ReceiptDetailState(receiptId, ReceiptDetail.of(row))) }
+        open(row, ReceiptDetailSource.Inbox)
+    }
+
+    /**
+     * Opens the shared detail on the slim [row] and reads the full one
+     * (`ReceiptInboxPage.jsx:324-336`) — for any page that shows a receipt,
+     * [source] telling the view whose it is. Only the newest open may write:
+     * a reply for a receipt already closed or replaced is dropped.
+     */
+    fun open(row: CardReceipt, source: ReceiptDetailSource) {
+        val receiptId = row.id
+        edit { copy(detail = ReceiptDetailState(receiptId, ReceiptDetail.of(row), source = source)) }
         vm.readRow(CardRowReads.detail(vm.current.destination), receiptId)
         vm.run {
             val read = vm.repo.inboxReceiptDetail(receiptId)
@@ -176,20 +190,30 @@ internal class CardInboxActions(
         }
     }
 
+    /** Closes the shared detail, whoever opened it. */
+    fun close() = edit { copy(detail = null) }
+
     private suspend fun loadMedia(receiptId: String) {
         val media = vm.current.inbox.detail?.detail?.media ?: return
-        val store = host ?: return
+        if (host == null) return
         editDetail(receiptId) { copy(media = MediaState(loading = true)) }
-        val fetched = store.media(media)
-        editDetail(receiptId) {
-            copy(
-                media = when (fetched) {
-                    is ZillitResult.Success -> MediaState(bytes = fetched.data)
-                    is ZillitResult.Failure -> MediaState(failed = true)
-                },
-            )
-        }
+        val fetched = fetchMedia(media)
+        editDetail(receiptId) { copy(media = fetched) }
     }
+
+    /**
+     * A document's bytes for an inline preview, as the pane holds them; the
+     * caller shows its own spinner meanwhile. Without a document store the
+     * pane reads as the file, not as a failure — an empty state.
+     */
+    suspend fun fetchMedia(media: ReceiptMedia): MediaState = when (val fetched = host?.media(media)) {
+        null -> MediaState()
+        is ZillitResult.Success -> MediaState(bytes = fetched.data)
+        is ZillitResult.Failure -> MediaState(failed = true)
+    }
+
+    /** Whether this build can fetch a document at all — the host's store is optional. */
+    val canPreview: Boolean get() = host != null
 
     /** The trail, read when History is pressed — not with the detail. */
     private fun showHistory() {

@@ -6,9 +6,12 @@ import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashAttachment
+import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
+import com.zillit.desktop.feature.cashexpenses.domain.CashCurrency
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
+import com.zillit.desktop.feature.cashexpenses.domain.CashReferenceSources
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
@@ -21,6 +24,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.NewFloatRequest
 import com.zillit.desktop.feature.cashexpenses.domain.ReimbursementMethod
 import com.zillit.desktop.feature.cashexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cashexpenses.domain.RequesterDeal
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesViewModel
@@ -89,10 +93,12 @@ class CrewFlowTest {
     private fun TestScope.viewModel(
         repository: CashRepository,
         template: FormTemplate = FormTemplate(),
+        reference: CashReferenceSources = CashReferenceSources(),
     ) = CashExpensesViewModel(
         repository = repository,
         viewer = { crew },
         formTemplate = { ZillitResult.Success(template) },
+        reference = reference,
     ).also {
         it.start()
         advanceUntilIdle()
@@ -263,7 +269,12 @@ class CrewFlowTest {
         assertEquals("production_office", sent.collectionMethod, "a select starts on its first option")
         assertEquals(CrewDates.utcMillis("2099-01-01"), sent.collectDate)
         assertNull(sent.targetUserId, "crew raise their own")
-        assertFalse(vm.state.value.crew.floatFormOpen, "back to the float list")
+        // Crew stay on the page, which confirms what they sent rather than dropping back to the list.
+        val sentFloat = assertNotNull(vm.state.value.crew.sentFloat)
+        assertTrue(vm.state.value.crew.floatFormOpen)
+        assertEquals("GBP", sentFloat.currency)
+        assertEquals("250", sentFloat.draft.amount, "the form as sent, kept to read back")
+        assertEquals("", vm.state.value.floatDraft.amount, "while the form itself starts fresh")
     }
 
     @Test
@@ -282,6 +293,124 @@ class CrewFlowTest {
 
         assertEquals("Requested Amount exceeds the project cap of £200.00.", vm.state.value.crew.floatSubmitError)
         assertNull(repository.floatRequest)
+    }
+
+    private val weekly = RequestCap(
+        enabled = true,
+        basis = RequestCap.WEEKLY_SALARY,
+        maxAmount = 120.0,
+        salaryMultiplier = 2.0,
+    )
+
+    @Test
+    fun `a weekly cap is the requester's deal rate times the multiplier`() = runTest(dispatcher) {
+        val fake = FakeCash(writesSucceed = true).apply {
+            metadata = CashMetadata(requestCap = weekly)
+            activeDeal = RequesterDeal(weeklyRate = 100.0, currency = "GBP")
+        }
+        val repository = Recording(fake)
+        val vm = viewModel(repository)
+        vm.onEvent(CashEvent.Open(CashDestination.FloatRequest))
+        advanceUntilIdle()
+
+        assertEquals(1, fake.dealReads, "a weekly basis reads the deal")
+        vm.onEvent(CashEvent.EditFloatRequest(FloatRequestDraft(amount = "250", purpose = "Props")))
+        vm.onEvent(CashEvent.SubmitFloatRequest)
+        advanceUntilIdle()
+
+        assertEquals(
+            "Requested Amount exceeds the project cap of £200.00 (your weekly rate × the project multiplier).",
+            vm.state.value.crew.floatSubmitError,
+        )
+        assertNull(repository.floatRequest)
+
+        vm.onEvent(CashEvent.EditFloatRequest(FloatRequestDraft(amount = "200", purpose = "Props")))
+        vm.onEvent(CashEvent.SubmitFloatRequest)
+        advanceUntilIdle()
+
+        assertNotNull(repository.floatRequest, "exactly the cap goes through")
+    }
+
+    @Test
+    fun `a weekly cap with no active deal falls back to the flat ceiling and says so`() = runTest(dispatcher) {
+        val fake = FakeCash(writesSucceed = true).apply { metadata = CashMetadata(requestCap = weekly) }
+        val repository = Recording(fake)
+        val vm = viewModel(repository)
+        vm.onEvent(CashEvent.Open(CashDestination.FloatRequest))
+        advanceUntilIdle()
+
+        vm.onEvent(CashEvent.EditFloatRequest(FloatRequestDraft(amount = "150", purpose = "Props")))
+        vm.onEvent(CashEvent.SubmitFloatRequest)
+        advanceUntilIdle()
+
+        assertEquals(
+            "Requested Amount exceeds the project cap of £120.00 " +
+                "(no active deal found, so the project fallback applies).",
+            vm.state.value.crew.floatSubmitError,
+        )
+    }
+
+    @Test
+    fun `a flat cap reads no deal at all`() = runTest(dispatcher) {
+        val fake = FakeCash(writesSucceed = true).apply {
+            metadata = CashMetadata(requestCap = RequestCap(enabled = true, maxAmount = 200.0))
+        }
+        val vm = viewModel(Recording(fake))
+        vm.onEvent(CashEvent.Open(CashDestination.FloatRequest))
+        advanceUntilIdle()
+
+        assertEquals(0, fake.dealReads)
+    }
+
+    @Test
+    fun `a request in another currency is converted to the default before it meets the cap`() = runTest(dispatcher) {
+        val fake = FakeCash(writesSucceed = true).apply {
+            metadata = CashMetadata(requestCap = RequestCap(enabled = true, maxAmount = 200.0))
+        }
+        val repository = Recording(fake)
+        val currencies = CashCurrencies(
+            currencies = listOf(CashCurrency("GBP", "£"), CashCurrency("USD", "$")),
+            defaultCode = "GBP",
+            rates = mapOf("USD" to 1.25),
+        )
+        val vm = viewModel(repository, reference = CashReferenceSources(currencies = { currencies }))
+        vm.onEvent(CashEvent.Open(CashDestination.FloatRequest))
+        advanceUntilIdle()
+
+        // $300 is £240 — over a £200 cap although 300 is not over 200 as a bare number.
+        vm.onEvent(CashEvent.EditFloatRequest(FloatRequestDraft(amount = "300", currency = "USD", purpose = "Props")))
+        vm.onEvent(CashEvent.SubmitFloatRequest)
+        advanceUntilIdle()
+        assertEquals("Requested Amount exceeds the project cap of £200.00.", vm.state.value.crew.floatSubmitError)
+        assertNull(repository.floatRequest)
+
+        // $250 is £200 exactly.
+        vm.onEvent(CashEvent.EditFloatRequest(FloatRequestDraft(amount = "250", currency = "USD", purpose = "Props")))
+        vm.onEvent(CashEvent.SubmitFloatRequest)
+        advanceUntilIdle()
+        assertNotNull(repository.floatRequest)
+    }
+
+    @Test
+    fun `a currency with no rate lets the request through rather than guess`() = runTest(dispatcher) {
+        val repository = Recording(
+            FakeCash(writesSucceed = true).apply {
+                metadata = CashMetadata(requestCap = RequestCap(enabled = true, maxAmount = 200.0))
+            },
+        )
+        val currencies = CashCurrencies(
+            currencies = listOf(CashCurrency("GBP", "£"), CashCurrency("EUR", "€")),
+            defaultCode = "GBP",
+        )
+        val vm = viewModel(repository, reference = CashReferenceSources(currencies = { currencies }))
+        vm.onEvent(CashEvent.Open(CashDestination.FloatRequest))
+        advanceUntilIdle()
+
+        vm.onEvent(CashEvent.EditFloatRequest(FloatRequestDraft(amount = "9000", currency = "EUR", purpose = "Props")))
+        vm.onEvent(CashEvent.SubmitFloatRequest)
+        advanceUntilIdle()
+
+        assertNotNull(repository.floatRequest)
     }
 
     // -- fixtures -------------------------------------------------------------------------

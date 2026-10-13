@@ -95,6 +95,12 @@ data class PurchaseOrder(
      * (the web's `poDetails.delivery_address`), so neither shape is flattened.
      */
     val deliveryAddressRaw: JsonElement? = null,
+    /**
+     * [deliveryAddressRaw] read back into its parts — an object, a JSON string
+     * holding one, or plain text as the first line. What the edit form fills
+     * its address block from, so a hand-typed address survives an edit.
+     */
+    val deliveryAddressParts: PoAddress? = null,
 ) {
     val isLocalOnly: Boolean get() = local != null
 
@@ -123,6 +129,9 @@ data class PurchaseOrder(
             paidAmount + PENNY >= gross -> PoRelief.FullyRelieved
             else -> PoRelief.PartiallyRelieved
         }
+
+    /** How many files ride the order — the count a list row's paperclip shows. */
+    val attachedFiles: Int get() = maxOf(attachmentCount, attachments.size)
 
     /** Whether the vendor has been sent this order. */
     val emailed: Boolean get() = emailAt != null
@@ -241,6 +250,9 @@ data class PoLine(
 
 /** The expenditure type the rental date pickers and the period split hang off. */
 const val RENTAL_EXPENDITURE_TYPE = "Rent"
+
+/** The web's `OTHER_TAX_OPTION` value: a tax type whose rate is typed on the line, not a Production Setup row. */
+const val OTHER_TAX_TYPE = "other"
 
 /**
  * Net, tax and gross for a set of lines — one formula, every surface.
@@ -407,6 +419,12 @@ data class PoViewer(
      * `department_id` for every PO it writes.
      */
     val departmentId: String? = null,
+    /**
+     * Whether the production is a television one — the Episode field is
+     * theirs alone (`useIsTelevisionProject`, `project_sub_type` carrying
+     * `television_label`). False until the host says otherwise, as on the web.
+     */
+    val isTelevision: Boolean = false,
 ) {
     /**
      * Whether this person processes other people's orders.
@@ -458,6 +476,20 @@ data class PoViewer(
      */
     val isSeniorAccountant: Boolean
         get() = designationIdentifier.seniorRole() in SENIOR_DESIGNATIONS
+
+    /**
+     * The console's own `isAccountant` — the senior designation, *in the
+     * console*.
+     *
+     * `PurchaseOrdersModule.jsx:2256` (`canAccessAnyPO_accountant(viewingUser)`)
+     * gates the selection checkboxes, the bulk bar, the assignee chip and the
+     * Posted and Settings tabs on exactly this: not the accounts department
+     * ([isAccountant], which an assistant satisfies) and not the designation
+     * alone ([isSeniorAccountant], which stays true through the Film Tools
+     * tile, whose department module has none of those controls).
+     */
+    val isConsoleSenior: Boolean
+        get() = isAccountant && isSeniorAccountant
 
     /**
      * Who sees every order on the production — and it is not one rule.
@@ -540,6 +572,11 @@ data class NewPurchaseOrder(
     /** The saved address this one came from, so the server can link them. */
     val deliveryAddressId: String? = null,
     val deliveryAddress: PoAddress? = null,
+    /**
+     * Whether the server should add a hand-typed delivery address to the
+     * address book — the web's `save_delivery_address`. Null leaves the key out.
+     */
+    val saveDeliveryAddress: Boolean? = null,
     /** Quotes and paperwork, uploaded before the order is sent. */
     val attachments: List<PoAttachment> = emptyList(),
     /**
@@ -556,6 +593,12 @@ data class NewPurchaseOrder(
      * one.
      */
     val customFields: List<CustomFieldGroup> = emptyList(),
+    /**
+     * Tiers the creator signs by raising or editing this order. Null leaves the
+     * key out (accounts' own raise, drafts); an empty list is sent, because an
+     * edit has to clear what an earlier approval left.
+     */
+    val approvals: List<PoAutoApproval>? = null,
 ) {
     /** Net of the parent lines — what the server stores as `net_amount`. */
     val total: Double get() = PoTotals.of(lines).net
@@ -577,7 +620,8 @@ data class NewPurchaseOrder(
     fun validationError(): String? = when {
         lines.isEmpty() -> str(S.desktop_po_needs_a_line)
         lines.any { it.description.isBlank() } -> str(S.desktop_po_line_needs_description)
-        lines.any { it.total <= 0 } -> str(S.desktop_po_line_needs_qty_price)
+        // Zero only: a credit or deduction line is negative, and the web accepts it.
+        lines.any { it.total == 0.0 } -> str(S.desktop_po_line_needs_qty_price)
         else -> null
     }
 }
@@ -631,8 +675,42 @@ data class PoAttachment(
     val contentType: String = "",
     val bucket: String = "",
     val region: String = "",
+    /** The file's extension as the web stores it (`pdf`, `png`); blank reads it off the name. */
+    val contentSubtype: String = "",
+    val caption: String = "",
+    /** Bytes, where the picker knew them — the web sends `file_size`. */
+    val size: Long? = null,
 ) {
     val displayName: String get() = name.ifBlank { media.substringAfterLast('/') }
+
+    /**
+     * The web's `content_type`: the major type of the file's MIME
+     * (`application`, `image`) — not the whole MIME. A store that could only say
+     * `application/octet-stream` for a PNG would make the web list an image as
+     * a download, so that case is read off the extension instead.
+     */
+    val wireContentType: String
+        get() {
+            val major = contentType.substringBefore('/').trim().lowercase()
+            if (major.isNotBlank() && contentType != OCTET_STREAM) return major
+            return when (wireSubtype) {
+                in IMAGE_EXTENSIONS -> "image"
+                in VIDEO_EXTENSIONS -> "video"
+                in AUDIO_EXTENSIONS -> "audio"
+                else -> "application"
+            }
+        }
+
+    /** The web's `content_subtype`: the extension, which is what its inline preview matches on. */
+    val wireSubtype: String
+        get() = contentSubtype.ifBlank { displayName.substringAfterLast('.', "") }.trim().lowercase()
+
+    private companion object {
+        const val OCTET_STREAM = "application/octet-stream"
+        val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "svg", "tif", "tiff")
+        val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "avi", "mkv", "webm")
+        val AUDIO_EXTENSIONS = setOf("mp3", "wav", "m4a", "aac", "ogg", "flac")
+    }
 }
 
 /** Everything the purchase order tool asks the server for. */
@@ -737,7 +815,7 @@ interface PurchaseOrderRepository {
      * `{ po_ids, data: { assigned_to, reassignment_reason } }`, the web's bulk
      * Reassign. The server's 100-id cap is checked before the call.
      */
-    suspend fun bulkReassign(ids: List<String>, userId: String, reason: String): ZillitResult<Unit> =
+    suspend fun bulkReassign(ids: List<String>, userId: String, reason: String?): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("bulk reassigning is not wired"))
 
     // -- the account hub's workflow reads: PoWorkflowSource's --------------------
@@ -782,9 +860,10 @@ interface PurchaseOrderRepository {
      * Hands the order to another accountant, with the reason on the record.
      *
      * A PATCH of two fields rather than its own verb, which is what the web
-     * sends: `assigned_to` plus `reassignment_reason`.
+     * sends: `assigned_to` plus `reassignment_reason`. A first assignment has
+     * no reason to give, and the web sends it `null`.
      */
-    suspend fun reassign(id: String, userId: String, reason: String): ZillitResult<Unit> =
+    suspend fun reassign(id: String, userId: String, reason: String?): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("reassigning an order is not wired"))
 
     suspend fun vendors(): ZillitResult<List<Vendor>>
@@ -832,6 +911,14 @@ interface PurchaseOrderRepository {
 
     /** The chart's postable lines, for a rule's nominal codes. */
     suspend fun nominalCodes(): ZillitResult<List<PoNominal>> = noSettings()
+
+    /**
+     * Every active code on the chart, leaves and headings alike — what
+     * [wrapNominal] checks a typed code against. Wider than [nominalCodes]:
+     * the web's `useCoaByCode` holds every active row, and a heading code is
+     * still a code the chart knows.
+     */
+    suspend fun chartCodes(): ZillitResult<Set<String>> = noSettings()
 
     /** The production's line-item tags, for the asset register rule. */
     suspend fun assetTags(): ZillitResult<List<String>> = noSettings()

@@ -53,6 +53,9 @@ sealed interface CashEvent {
     /** "Set Approval Level": the Account Hub's Approvers page, on this module's chain. */
     data object OpenApprovalLevels : CashEvent
 
+    /** Payment Routing's "Preview payroll run" — the Payroll tool's Run screen. */
+    data object OpenPayrollRun : CashEvent
+
     /** Reads the chart of accounts for the nominal pickers, once; a no-op when it is loaded. */
     data object LoadChartAccounts : CashEvent
 
@@ -109,6 +112,9 @@ sealed interface CashEvent {
     data class EditCodingLine(val index: Int, val line: EditorLine) : CashEvent
 
     data object AddCodingLine : CashEvent
+
+    /** Hands the coding's tax line back to the lines' recoverable tax. */
+    data object ResetCodingTax : CashEvent
 
     data class RemoveCodingLine(val id: String) : CashEvent
 
@@ -224,3 +230,6 @@ sealed interface CashEffect {
 
 /** The web's `/film-tools/account-hub/approvers?module=cash_expenses`. */
 const val CASH_APPROVERS_ROUTE = "/film-tools/account-hub/approvers?module=cash_expenses"
+
+/** The Payroll tool's Run screen, entered as the accountant (no `?entry=tool` marker). */
+const val PAYROLL_RUN_ROUTE = "/film-tools/payroll/run"

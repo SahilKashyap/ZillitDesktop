@@ -300,8 +300,32 @@ class TaxFilingScreenRenderTest {
             onNodeWithText("Other income").assertExists()
             onNodeWithText("Other income").performClick()
         }
-        val edit = events.filterIsInstance<TaxFilingEvent.EditMapping>().lastOrNull()
-        assertEquals(listOf("4010"), edit?.mapping?.codes)
+        val added = events.filterIsInstance<TaxFilingEvent.AddCode>().lastOrNull()
+        assertEquals("4010", added?.code)
+        assertEquals(VatBox.DueOnSales, added?.box)
+    }
+
+    /** Text with a letter is a search by name, kept as typed — it is not stripped down to digits. */
+    @Test
+    fun `typing a name searches the chart by name`() {
+        val events = mutableListOf<TaxFilingEvent>()
+        val state = ReturnState(obligations = listOf(open), periodKey = "18A1", expanded = setOf(VatBox.DueOnSales))
+        val lookups = MappingLookups(
+            loaded = true,
+            coa = listOf(CoaCode("4000", "Sales"), CoaCode("4010", "Other income"), CoaCode("7000", "Travel")),
+        )
+        runComposeUiTest {
+            setContent { ZillitTheme { TaxFilingScreen(returnView(state, lookups), { events += it }) } }
+            val codeField = onAllNodes(hasSetTextAction()).onFirst()
+            codeField.performClick()
+            codeField.performTextInput("income other")
+            onNodeWithText("Other income").assertExists()
+            onNodeWithText("Travel").assertDoesNotExist()
+            // A search lists matches and commits nothing of its own.
+            assertTrue(events.none { it is TaxFilingEvent.AddCode })
+            onNodeWithText("Other income").performClick()
+        }
+        assertEquals("4010", events.filterIsInstance<TaxFilingEvent.AddCode>().single().code)
     }
 
     @Test

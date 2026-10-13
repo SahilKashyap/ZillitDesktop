@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat
 
+import com.zillit.desktop.feature.chat.data.DevicePresence
 import com.zillit.desktop.feature.chat.data.PresenceSource
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.GroupRoom
@@ -19,6 +20,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -42,12 +44,12 @@ class ChatPresenceTest {
 
     /** Emits on demand and counts collectors, so leaks are visible. */
     private class FakePresence : PresenceSource {
-        val emissions = MutableSharedFlow<Boolean>()
+        val emissions = MutableSharedFlow<DevicePresence>()
         var active = 0
             private set
         var watched = mutableListOf<Pair<String, String>>()
 
-        override fun watch(deviceId: String, projectId: String): Flow<Boolean> {
+        override fun watch(deviceId: String, projectId: String): Flow<DevicePresence> {
             watched += deviceId to projectId
             return kotlinx.coroutines.flow.flow {
                 active++
@@ -76,13 +78,30 @@ class ChatPresenceTest {
         runCurrent()
 
         assertEquals(listOf("d-aisha" to "p1"), presence.watched)
-        presence.emissions.emit(true)
+        presence.emissions.emit(DevicePresence(online = true))
         runCurrent()
         assertTrue(model.state.value.peerOnline)
 
-        presence.emissions.emit(false)
+        presence.emissions.emit(DevicePresence(online = false))
         runCurrent()
         assertFalse(model.state.value.peerOnline)
+    }
+
+    @Test
+    fun `the node's update time is the header's last-seen stamp, gone with the thread`() = runTest {
+        val presence = FakePresence()
+        val model = viewModel(presence)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        runCurrent()
+
+        presence.emissions.emit(DevicePresence(online = false, updatedMillis = 1_779_864_035_058L))
+        runCurrent()
+        assertFalse(model.state.value.peerOnline)
+        assertEquals(1_779_864_035_058L, model.state.value.peerLastSeenMillis)
+
+        model.onEvent(ChatEvent.CloseThread)
+        runCurrent()
+        assertNull(model.state.value.peerLastSeenMillis)
     }
 
     @Test
@@ -91,7 +110,7 @@ class ChatPresenceTest {
         val model = viewModel(presence)
         model.onEvent(ChatEvent.OpenThread(aisha))
         runCurrent()
-        presence.emissions.emit(true)
+        presence.emissions.emit(DevicePresence(online = true))
         runCurrent()
         assertEquals(1, presence.active)
 

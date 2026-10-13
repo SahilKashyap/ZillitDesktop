@@ -192,7 +192,7 @@ private fun RowScope.CloseForm(state: AccountHubUiState, onEvent: (AccountHubEve
                         }
                         lock.isClosed -> ZillitText(
                             text = IsoDate
-                                .toEpochMillis(lock.lockedThrough)?.let { EpochDate.date(it) } ?: lock.lockedThrough,
+                                .toEpochMillis(lock.lockedThrough)?.let { EpochDate.date(it + DAY_MILLIS / 2) } ?: lock.lockedThrough,
                             style = ZillitTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
                         )
                         else -> ZillitText(
@@ -256,15 +256,19 @@ private fun RowScope.CloseForm(state: AccountHubUiState, onEvent: (AccountHubEve
                             !state.viewer.canActAsAccountant -> str(S.desktop_hub_read_only_for_your_role)
                             target == null -> str(S.desktop_hub_pick_a_date_to_close_through)
                             !afterLock -> str(S.desktop_hub_that_date_is_on_or_before_the_last_closed_period)
-                            else -> "Everything on or before ${EpochDate.date(target)} becomes read-only."
+                            else -> "Everything on or before ${EpochDate.date(target + DAY_MILLIS / 2)} becomes read-only."
                         },
                         Modifier.weight(1f),
                     )
                     ZillitButton(
                         text = if (close.closing) str(S.desktop_closing) else str(S.desktop_close_period),
                         onClick = {
+                            // Noon UTC of the chosen day, as the web sends it: a stable
+                            // point inside the day in every timezone. The last
+                            // millisecond of the UTC day is already tomorrow for a
+                            // project east of UTC, and the lock is irreversible.
                             target?.let { onEvent(
-                                AccountHubEvent.ProposePeriodClose(it + DAY_MILLIS - 1),
+                                AccountHubEvent.ProposePeriodClose(it + DAY_MILLIS / 2),
                             ) } ?: onEvent(AccountHubEvent.ProposePeriodClose(nowMillis))
                         },
                         leadingIcon = ZillitIcons.Shield,
@@ -317,7 +321,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState) {
     val loading = cash.loading
     val total = dash.checklist.size.takeIf { it > 0 } ?: dash.progressTotal
     val done = dash.checklist.count { it.label in cash.checked }
-    val pct = if (dash.checklist.isNotEmpty()) (done * PERCENT / dash.checklist.size) else dash.progressPercent
+    val pct = if (dash.checklist.isNotEmpty()) ((done * PERCENT + dash.checklist.size / 2) / dash.checklist.size) else dash.progressPercent
 
     Box(Modifier.weight(1f).fillMaxHeight()) {
         ZillitScrollColumn(

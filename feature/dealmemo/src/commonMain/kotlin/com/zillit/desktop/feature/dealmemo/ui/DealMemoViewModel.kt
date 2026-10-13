@@ -95,7 +95,13 @@ class DealMemoViewModel(
 
     /** Opens the tool: rights, metadata, directory and setups, then the first page. */
     fun start() {
-        if (started) return
+        if (started) {
+            // Back from the Approvers page lands here as a fresh composition of
+            // the tool: it lives in the same window, so leaving it is not a
+            // restart, and the levels just saved are only in a re-read.
+            refreshMetadata()
+            return
+        }
         started = true
         setState { copy(viewer = viewer()) }
         loadMetadata()
@@ -150,6 +156,8 @@ class DealMemoViewModel(
             is DealMemoEvent.OpenPath -> navigate(DealMemoRoute.parse(event.path.removePrefix(DEAL_MEMO_PATH)))
             is DealMemoEvent.Navigate -> navigate(event.route)
             DealMemoEvent.LeaveTool -> sendEffect(DealMemoEffect.LeaveTool)
+            // The page's editing is for posting users, so is the way to it.
+            DealMemoEvent.OpenApprovers -> if (currentState.rights.canPost) sendEffect(DealMemoEffect.OpenApprovers)
             DealMemoEvent.DismissToast -> setState { copy(toast = null) }
             is DealMemoEvent.OpenHistory -> openHistory(event.deal)
             DealMemoEvent.CloseHistory -> setState { copy(history = null) }
@@ -356,6 +364,23 @@ class DealMemoViewModel(
         }
     }
 
+    /**
+     * A silent re-read of `/metadata` after approval tiers changed — anywhere:
+     * the Approvers page, another window, another accountant. One attempt that
+     * keeps the current value on failure; [loadMetadata] owns the retries. The
+     * approval card, Approve & Sign and the Set Approval Level prompt would
+     * otherwise keep the configs from module entry.
+     */
+    private fun refreshMetadata() {
+        sessionJobs += launch {
+            val result = repository.metadata()
+            if (result is ZillitResult.Success) {
+                setState { copy(metadata = result.data) }
+                syncPage()
+            }
+        }
+    }
+
     /** The departments master and the production's people — every list resolves names through them. */
     private fun loadDirectory() {
         directoryJob = launch {
@@ -413,6 +438,7 @@ class DealMemoViewModel(
         }
     }
 
+    @Suppress("CyclomaticComplexMethod") // One branch per refresh key.
     private fun reloadFor(key: DealRefreshKey) {
         val page = currentState.page as? DealMemoRoute.Tab
         when (key) {
@@ -429,6 +455,10 @@ class DealMemoViewModel(
             }
             DealRefreshKey.Detail -> if (currentState.page is DealMemoRoute.Deal) preview.refresh()
             DealRefreshKey.Templates -> Unit
+            DealRefreshKey.ApprovalTiers -> {
+                refreshMetadata()
+                if (page?.tab == DealTab.Deals) deals.reloadTiers()
+            }
         }
     }
 
@@ -463,3 +493,6 @@ class DealMemoViewModel(
 }
 
 const val DEAL_MEMO_PATH = "/film-tools/deal-memo"
+
+/** Deal Memo's own Approvers page: Account Hub's, locked to the `deal_memo` chain (`DealMemoApproversToolProvider`). */
+const val DEAL_MEMO_APPROVERS_PATH = "$DEAL_MEMO_PATH/approvers"

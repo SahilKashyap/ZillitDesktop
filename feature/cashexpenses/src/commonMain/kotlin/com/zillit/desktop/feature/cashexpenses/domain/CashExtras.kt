@@ -27,6 +27,13 @@ data class RequestCap(
 }
 
 /**
+ * The requester's weekly rate on their active deal, in its own currency — what
+ * a `weekly_salary` cap multiplies. A flat-fee or buy-out deal carries a rate
+ * of 0, which [CrewRequestCap] does not mistake for a 0 cap.
+ */
+data class RequesterDeal(val weeklyRate: Double, val currency: String?)
+
+/**
  * One auto-assignment rule for cash batches.
  *
  * `/api/v2/account-hub/assignment-rules`, module `cash_expenses`. Read off the

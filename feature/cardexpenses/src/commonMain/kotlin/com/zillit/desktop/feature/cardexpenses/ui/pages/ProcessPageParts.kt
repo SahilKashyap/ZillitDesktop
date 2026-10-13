@@ -45,6 +45,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardCoaAccount
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 
@@ -54,11 +55,15 @@ internal fun UrgentPill() {
     ZillitStatusPill(label = str(S.ah_topup_filter_urgent), tone = StatusTone.Rejected, dot = true)
 }
 
-/** A row's date: its own, else when it was created (`r.date ? … : formatDate(r.created_at)`). */
+/**
+ * A row's date: its own, else when it was created (`r.date ? … : formatDate(r.created_at)`).
+ * The approval and coding queues print a dash instead of the second (`ApprovalQueuePage.jsx:308`,
+ * `PendingCodingPage.jsx:317`), which [ownOnly] asks for.
+ */
 @Composable
-internal fun DateCell(receipt: CardReceipt) {
+internal fun DateCell(receipt: CardReceipt, ownOnly: Boolean = false) {
     ZillitText(
-        text = date(receipt.date ?: receipt.createdAt),
+        text = date(if (ownOnly) receipt.ownDate else receipt.date ?: receipt.createdAt),
         style = ZillitTheme.typography.numeric,
         color = ZillitTheme.colors.textMuted,
         maxLines = 1,
@@ -136,7 +141,7 @@ internal fun ReceiptDetailsCell(
             val holder = state.people.firstOrNull { it.id == receipt.holderId }?.name
             val facts = listOfNotNull(
                 holder,
-                receipt.transactionAmount?.let { money(it, receipt.currency) },
+                receipt.transactionAmount?.let { money(it, state.currencyOf(receipt)) },
                 lastFour?.takeIf { it.isNotBlank() }?.let { "•••• $it" },
                 receipt.transactionDate?.let { date(it) },
             )
@@ -173,9 +178,9 @@ internal fun CodeCell(code: String?, episode: String?, television: Boolean) {
 
 /** An amount, right-aligned and in the accent, as the process tables print it. */
 @Composable
-internal fun AmountCell(receipt: CardReceipt) {
+internal fun AmountCell(state: CardUiState, receipt: CardReceipt) {
     ZillitText(
-        text = if (receipt.amount != 0.0) money(receipt.amount, receipt.currency) else EM_DASH,
+        text = if (receipt.amount != 0.0) money(receipt.amount, state.currencyOf(receipt)) else EM_DASH,
         style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
         color = ZillitTheme.colors.accentText,
         maxLines = 1,

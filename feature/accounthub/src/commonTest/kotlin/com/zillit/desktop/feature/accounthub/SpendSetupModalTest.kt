@@ -349,6 +349,31 @@ class SpendSetupModalTest {
             assertTrue(patches(CASH_PATH).isEmpty(), "the document did not change, so it was not written")
         }
 
+    @Test
+    fun `the rules are saved only once the document was accepted`() = runTest(dispatcher) {
+        val model = openModal(SetupModal.PettyCash)
+        val value = model.state.value.setup.spendSetup.edited
+        val rule = AssignmentRule(id = "rule-new-1", module = "cash_expenses", assignTo = "u2")
+        model.onEvent(AccountHubEvent.EditSpendSetup(value.copy(custodianAccount = "1234")))
+        model.onEvent(AccountHubEvent.EditSpendRules(listOf(rule)))
+
+        patchAnswer = PatchAnswer.Refuse
+        model.onEvent(AccountHubEvent.SaveSetupModal)
+        settle { patches(CASH_PATH).isNotEmpty() && !model.state.value.setup.modalSaving }
+        settle { false }
+        assertTrue(
+            writes.value.none { it.first == "POST /api/v2/account-hub/assignment-rules" },
+            "updateSettings refused, so the web never reaches persistRuleDiff",
+        )
+        assertTrue(model.state.value.setup.modalDirty)
+
+        patchAnswer = PatchAnswer.Keep
+        model.onEvent(AccountHubEvent.SaveSetupModal)
+        settle { writes.value.any { it.first == "POST /api/v2/account-hub/assignment-rules" } }
+        assertEquals(2, patches(CASH_PATH).size)
+        assertEquals(1, writes.value.count { it.first == "POST /api/v2/account-hub/assignment-rules" })
+    }
+
     // -- the dialogs -------------------------------------------------------------------------------
 
     @Test

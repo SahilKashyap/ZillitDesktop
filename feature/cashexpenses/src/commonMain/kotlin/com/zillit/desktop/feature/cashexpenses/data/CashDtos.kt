@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
+import com.zillit.desktop.feature.cashexpenses.domain.BankPayee
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashHistoryEntry
@@ -39,6 +40,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -136,6 +138,7 @@ internal data class FloatDto(
             companyName = companyName?.takeIf { it.isNotBlank() },
             episode = episode?.takeIf { it.isNotBlank() },
             createdBy = createdBy?.takeIf { it.isNotBlank() },
+            issuedReported = issuedFloat != null,
         )
     }
 }
@@ -153,12 +156,16 @@ internal data class BatchDto(
     @SerialName("expense_type") val expenseType: String? = null,
     @SerialName("claim_count") val claimCount: Int? = null,
     @SerialName("total_gross") val totalGross: String? = null,
+    @SerialName("total_net") val totalNet: String? = null,
+    @SerialName("total_vat") val totalVat: String? = null,
     @SerialName("reimbursement_amount") val reimbursementAmount: String? = null,
     @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("settlement_type") val settlementType: String? = null,
     /** JSON, sometimes as an object and sometimes as a string holding one. */
     @SerialName("settlement_details") val settlementDetails: JsonElement? = null,
+    /** Payment Routing's BACS rows carry the payee's account here, flattened off `settlement_details`. */
+    @SerialName("bank_details") val bankDetails: JsonElement? = null,
     @SerialName("notes") val notes: String? = null,
     @SerialName("assigned_to") val assignedTo: String? = null,
     @SerialName("assigned_by") val assignedBy: String? = null,
@@ -193,6 +200,8 @@ internal data class BatchDto(
             expenseType = ExpenseType.from(expenseType),
             claimCount = claimCount ?: claims?.size ?: 0,
             totalGross = totalGross.toAmount(),
+            totalNet = totalNet.toAmountOrNull(),
+            totalVat = totalVat.toAmount(),
             reimbursementAmount = reimbursementAmount.toAmount(),
             currency = currency ?: transactionCurrency,
             settlementType = settlementType,
@@ -217,8 +226,21 @@ internal data class BatchDto(
             floatRequestId = floatRequestId?.takeIf { it.isNotBlank() },
             followUp = settlementDetails.readObject()?.get(FOLLOW_UP)?.jsonPrimitiveOrNull()?.contentOrNull(),
             settlementDetails = settlementDetails.readObject(),
+            payee = (bankDetails.readObject() ?: settlementDetails.readObject()?.get(BANK_DETAILS).readObject())
+                .toPayee(),
         )
     }
+}
+
+/** A BACS payee's account (`bank_details`); null when none of its three fields is filled in. */
+private fun JsonObject?.toPayee(): BankPayee? {
+    val bank = this ?: return null
+    fun text(key: String) = bank[key]?.jsonPrimitiveOrNull()?.contentOrNull().orEmpty().trim()
+    return BankPayee(
+        accountName = text("account_name"),
+        sortCode = text("sort_code"),
+        accountNumber = text("account_number"),
+    ).takeIf { it.accountName.isNotEmpty() || it.sortCode.isNotEmpty() || it.accountNumber.isNotEmpty() }
 }
 
 @Serializable
@@ -243,7 +265,7 @@ internal data class ClaimDto(
     @SerialName("receipt_url") val receiptUrl: String? = null,
     @SerialName("line_items") val lineItems: JsonElement? = null,
     @SerialName("is_verified") val isVerified: JsonElement? = null,
-    /** Strings or `{flag}` objects, in an array or a string holding one. */
+    /** Strings or `{flag, title, threshold_value…}` objects, in an array or a string holding one. */
     @SerialName("processing_flags") val processingFlags: JsonElement? = null,
     /** The uploaded file object, or a string holding one — see [readAttachment]. */
     @SerialName("attachment") val attachment: JsonElement? = null,
@@ -272,7 +294,7 @@ internal data class ClaimDto(
             receiptUrl = receiptUrl,
             lineItems = lineItems.readLineItems(),
             isVerified = isVerified.isTrue(),
-            processingFlags = processingFlags.readFlags(),
+            processingRules = processingFlags.readRules(),
             rawLines = lineItems.readRawLines(),
             attachment = attachment.readAttachment(),
             deductionAmount = deductionAmount.toAmount(),
@@ -732,10 +754,17 @@ internal data class SettingsDto(
             overrideReceiptBatch = overrides.flag("override_receipt_batch"),
             requireCoordinatorCoding = overrides.flag("require_coord_code"),
             requireSeniorSignOff = overrides.flag("require_senior_sign_off"),
-            teamMembers = teamMembers.readList(TeamMemberDto.serializer()).map { it.toDomain() },
-            quickCodes = quickCodes.readList(QuickCodeDto.serializer()).map { it.toDomain() },
+            teamMembers = teamMembers.readRows(TeamMemberDto.serializer(), TeamMemberDto.WRITTEN) { dto, extras ->
+                dto.toDomain().copy(extras = extras)
+            },
+            quickCodes = quickCodes.readRows(QuickCodeDto.serializer(), QuickCodeDto.WRITTEN) { dto, extras ->
+                dto.toDomain().copy(extras = extras)
+            },
             reimburseToPayroll = reimburseToPayroll == true,
-            deductionRules = deductionRules.readList(DeductionRuleDto.serializer()).map { it.toDomain() },
+            deductionRules = deductionRules.readRows(
+                DeductionRuleDto.serializer(),
+                DeductionRuleDto.WRITTEN,
+            ) { dto, extras -> dto.toDomain().copy(extras = extras) },
             requestCap = requestCap.readObject().toRequestCap(),
             assignmentRules = assignmentRules.readList(CashRuleDto.serializer()).mapNotNull { it.toDomain() },
             departmentCoordinators = departmentCoordinators.readList(CoordinatorDto.serializer())
@@ -762,8 +791,12 @@ internal data class TeamMemberDto(
     )
 
     companion object {
+        /** The keys [of] writes; every other stored key is carried through as an extra. */
+        val WRITTEN = setOf("user_id", "posting_limit", "can_override", "is_senior")
+
         /** `{user_id, posting_limit, can_override, is_senior}` — a null limit is unlimited. */
         fun of(member: CashTeamMember): JsonObject = buildJsonObject {
+            member.extras.forEach { (key, value) -> put(key, value) }
             put("user_id", JsonPrimitive(member.userId))
             put("posting_limit", member.postingLimit?.let(::JsonPrimitive) ?: JsonNull)
             put("can_override", JsonPrimitive(member.canOverride))
@@ -799,7 +832,10 @@ internal data class QuickCodeDto(
     )
 
     companion object {
+        val WRITTEN = setOf("name", "nominal_code", "keywords", "vat")
+
         fun of(code: QuickCode): JsonObject = buildJsonObject {
+            code.extras.forEach { (key, value) -> put(key, value) }
             put("name", JsonPrimitive(code.name))
             put("nominal_code", JsonPrimitive(code.nominalCode))
             put("keywords", buildJsonArray { code.keywords.forEach { add(JsonPrimitive(it)) } })
@@ -837,7 +873,13 @@ internal data class DeductionRuleDto(
     )
 
     companion object {
+        val WRITTEN = setOf(
+            "id", "type", "title", "description", "process_type", "threshold_type", "threshold_value", "enable",
+            "trigger_codes", "system_default",
+        )
+
         fun of(rule: DeductionRule): JsonObject = buildJsonObject {
+            rule.extras.forEach { (key, value) -> put(key, value) }
             put("id", JsonPrimitive(rule.id))
             put("type", JsonPrimitive(rule.type.ifBlank { rule.id }))
             put("title", JsonPrimitive(rule.title))
@@ -873,6 +915,32 @@ internal fun JsonElement?.readObject(): JsonObject? = when {
     }.getOrNull()
 
     else -> null
+}
+
+/**
+ * [readList] for rows a save writes back whole: each row's keys outside
+ * [written] reach [convert] as extras, since the web rewrites the stored
+ * object (`{...m}`) and a rebuilt row would drop whatever the server added.
+ * A row that does not decode is skipped, as [readList] skips a bad list.
+ */
+internal fun <T, R> JsonElement?.readRows(
+    serializer: kotlinx.serialization.KSerializer<T>,
+    written: Set<String>,
+    convert: (T, Map<String, JsonElement>) -> R,
+): List<R> {
+    val element = when {
+        this == null -> return emptyList()
+        this is JsonPrimitive && isString -> runCatching { lenientJson.parseToJsonElement(content) }.getOrNull()
+            ?: return emptyList()
+
+        else -> this
+    }
+    return (element as? JsonArray).orEmpty().mapNotNull { row ->
+        val body = row as? JsonObject ?: return@mapNotNull null
+        val dto = runCatching { lenientJson.decodeFromJsonElement(serializer, body) }.getOrNull()
+            ?: return@mapNotNull null
+        convert(dto, body.filterKeys { it !in written })
+    }
 }
 
 internal fun <T> JsonElement?.readList(serializer: kotlinx.serialization.KSerializer<T>): List<T> {
@@ -920,5 +988,6 @@ private fun JsonPrimitive.contentOrNull(): String? = content.takeIf { it.isNotBl
 
 private const val PAYMENT_METHOD = "payment_method"
 private const val FOLLOW_UP = "follow_up"
+private const val BANK_DETAILS = "bank_details"
 private const val AUTO = "auto"
 private const val DEDUCT_ACCOUNT = "DEDUCT"

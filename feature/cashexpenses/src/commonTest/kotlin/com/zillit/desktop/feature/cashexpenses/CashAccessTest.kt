@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
 import com.zillit.desktop.feature.cashexpenses.domain.Lifecycle
+import com.zillit.desktop.feature.cashexpenses.domain.ProcessingRule
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -117,6 +118,17 @@ class CashAccessTest {
         assertFalse(viewer(metadata = full).canOverrideFloat())
     }
 
+    /** The web checks only the metadata flags (`PCApprovalPage.jsx:1169-1172`), not the department. */
+    @Test
+    fun `override does not ask the viewer's department`() {
+        val full = CashMetadata(canOverride = true, overrideReceiptBatch = true, overrideFloatRequest = true)
+        val approver = viewer(department = "department_art", metadata = full.copy(isApprover = true))
+        assertTrue(approver.canOverrideBatch())
+        assertTrue(approver.canOverrideFloat())
+        // An accountant who came in through the tool tile sees the crew view, and the same grant.
+        assertTrue(viewer(metadata = full, enteredAsTool = true).canOverrideBatch())
+    }
+
     /**
      * The web's `canPostBatch`: a senior posts by role; anyone else needs to be
      * on the team with an unlimited or non-zero limit. The amount is not
@@ -221,7 +233,7 @@ class CashAccessTest {
         id = "c1", batchId = "b1", description = "Tape", supplier = null, category = null, costCode = "5010",
         codedDescription = null, episode = null, receiptDate = null, grossAmount = 10.0, netAmount = 10.0,
         vatAmount = 0.0, taxRate = null, taxType = null, settlementType = null, status = BatchStatus.ReadyToPost,
-        receiptUrl = null, processingFlags = flags,
+        receiptUrl = null, processingRules = flags.map { ProcessingRule(flag = it) },
     )
 
     @Test

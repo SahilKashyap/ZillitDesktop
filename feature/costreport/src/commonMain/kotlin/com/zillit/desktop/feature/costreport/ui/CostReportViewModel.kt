@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.costreport.ui
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -47,6 +48,8 @@ class CostReportViewModel(
     private val projectName: () -> String,
     private val resolveUser: (String) -> String?,
     private val nowMillis: () -> Long,
+    /** The ledger's rows for Posted CRs per snapshot, and the read a snapshot makes when opened. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
 ) : ZillitViewModel<CostReportUiState, CostReportEvent, CostReportEffect>(CostReportUiState()) {
 
     private var liveJob: Job? = null
@@ -55,8 +58,24 @@ class CostReportViewModel(
     fun start() {
         setState { copy(viewer = resolveViewer(), projectName = projectName()) }
         listenOnce()
+        watchBadges()
         loadReference()
     }
+
+    /**
+     * The Posted CRs unread (`useCostReportBadges`): the unit total for the tab chip, and the count under each
+     * snapshot for its row. Collected once, like the socket listener.
+     */
+    private fun watchBadges() {
+        if (watchingBadges) return
+        watchingBadges = true
+        launch { badges.counts.collect { counts -> setState { copy(postedTotal = counts[POSTED_BADGE] ?: 0) } } }
+        launch {
+            badges.entityCounts.collect { rows -> setState { copy(postedUnread = rows[POSTED_BADGE].orEmpty()) } }
+        }
+    }
+
+    private var watchingBadges = false
 
     /**
      * Folds the socket's announcements into the screen. A `Report` sync — the
@@ -290,6 +309,8 @@ class CostReportViewModel(
     }
 
     private fun openSnapshot(header: SnapshotHeader) {
+        // Opening the snapshot is reading it (`CostReportSnapshotDetailPage.jsx:130-133`).
+        if ((state.value.postedUnread[header.id] ?: 0) > 0) badges.readEntity(POSTED_BADGE, header.id)
         setState {
             copy(snapshot = SnapshotView(header = header, symbol = symbolFor(header.currency ?: current.currencyCode)))
         }
@@ -383,6 +404,9 @@ class CostReportViewModel(
         private val PHASE_INIT: String get() = str(S.ah_loading)
         private val PHASE_LIVE: String get() = str(S.desktop_cr_computing_live)
         private val PHASE_REFRESH: String get() = str(S.desktop_cr_refreshing_live)
+
+        /** The ledger's unit for Posted CRs under the cost report tool (`BADGE_CONSTANTS.posted_cr_label`). */
+        const val POSTED_BADGE = "posted_cr_label"
 
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L

@@ -23,6 +23,13 @@ enum class DealRefreshKey {
 
     /** The setups list — `ah:deal_memo:template:list`. */
     Templates,
+
+    /**
+     * Approval tiers changed anywhere — `ah:approval_tier:list`. Nothing the
+     * deal pages show comes from it directly: the metadata's configs and the
+     * All Deals banner both re-read.
+     */
+    ApprovalTiers,
 }
 
 data class DealRefresh(val keys: Set<DealRefreshKey>, val dealId: String? = null)
@@ -53,6 +60,13 @@ interface DealMemoRepository {
 
     /** Approver flags and tier configs. A 200 without `data` is a failure. */
     suspend fun metadata(): ZillitResult<DealMemoMetadata>
+
+    /**
+     * `GET /account-hub/approval-tiers?module=deal_memo` — the tier configs as
+     * Account Hub's Approvers page saves them, for the banner that must never
+     * show a stale copy.
+     */
+    suspend fun approvalTierConfigs(): ZillitResult<List<ApprovalTierConfig>>
 
     /** The viewer's own deal, or null when none is on file. */
     suspend fun myDeal(): ZillitResult<DealDoc?>

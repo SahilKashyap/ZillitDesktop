@@ -3,11 +3,13 @@ package com.zillit.desktop.feature.purchaseorder.ui.pages
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
@@ -24,12 +26,15 @@ import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoRelief
+import com.zillit.desktop.feature.purchaseorder.domain.PoSortColumn
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
@@ -63,6 +68,7 @@ internal fun PoPostedPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 PoFilterRow(state, onEvent)
             }
         }
+        PostedLedgerHeader(state, rows)
         // Still reading: say so, rather than telling an accountant with a full
         // ledger that nothing has been posted.
         if (rows.isEmpty() && state.loading) {
@@ -147,27 +153,54 @@ private fun PeriodCard(
 
 @Suppress("LongMethod") // A column table; the shape is the documentation.
 private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<TableColumn<PurchaseOrder>> = listOf(
-    textColumn(header = str(S.ah_lbl_po_number), width = ColumnWidth.Fixed(NUMBER_WIDTH), numeric = true) {
-        it.number.ifBlank { "—" }
-    },
-    textColumn(header = str(S.ah_lbl_vendor)) { state.vendorName(it).ifBlank { str(S.desktop_po_no_vendor) } },
-    textColumn(header = str(S.department), width = ColumnWidth.Fixed(DEPT_COLUMN), muted = true) {
+    // Every heading sorts, as the web's Posted table does; the number carries the paperclip.
+    TableColumn(
+        header = str(S.ah_lbl_po_number),
+        headerContent = sortHeading(state, PoSortColumn.Number, str(S.ah_lbl_po_number), onEvent),
+        width = ColumnWidth.Fixed(NUMBER_WIDTH),
+        cell = { order ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                ZillitText(text = order.number.ifBlank { "—" }, style = ZillitTheme.typography.numeric, maxLines = 1)
+                PoAttachmentBadge(order.attachedFiles)
+            }
+        },
+    ),
+    textColumn<PurchaseOrder>(header = str(S.ah_lbl_vendor)) {
+        state.vendorName(it).ifBlank { str(S.desktop_po_no_vendor) }
+    }.copy(headerContent = sortHeading(state, PoSortColumn.Vendor, str(S.ah_lbl_vendor), onEvent)),
+    textColumn<PurchaseOrder>(header = str(S.department), width = ColumnWidth.Fixed(DEPT_COLUMN), muted = true) {
         state.departmentName(it.departmentId).ifBlank { "—" }
-    },
-    textColumn(header = str(S.amount), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    }.copy(headerContent = sortHeading(state, PoSortColumn.Department, str(S.department), onEvent)),
+    textColumn<PurchaseOrder>(header = str(S.amount), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
         Money.format(it.gross, it.currency)
-    },
-    textColumn(header = str(S.ah_lbl_relieved), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    }.copy(headerContent = sortHeading(state, PoSortColumn.Amount, str(S.amount), onEvent)),
+    textColumn<PurchaseOrder>(
+        header = str(S.ah_lbl_relieved),
+        width = ColumnWidth.Fixed(AMOUNT_WIDTH),
+        numeric = true,
+    ) {
         Money.format(it.paidAmount, it.currency)
-    },
-    textColumn(header = str(S.ah_lbl_remaining), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    }.copy(headerContent = sortHeading(state, PoSortColumn.Relieved, str(S.ah_lbl_relieved), onEvent)),
+    textColumn<PurchaseOrder>(
+        header = str(S.ah_lbl_remaining),
+        width = ColumnWidth.Fixed(AMOUNT_WIDTH),
+        numeric = true,
+    ) {
         Money.format(it.remaining, it.currency)
-    },
-    textColumn(header = str(S.ah_row_eff_date_upper), width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
+    }.copy(headerContent = sortHeading(state, PoSortColumn.Remaining, str(S.ah_lbl_remaining), onEvent)),
+    textColumn<PurchaseOrder>(
+        header = str(S.ah_row_eff_date_upper),
+        width = ColumnWidth.Fixed(DATE_WIDTH),
+        muted = true,
+    ) {
         EpochDate.date(it.effectiveDate).ifBlank { "—" }
-    },
+    }.copy(headerContent = sortHeading(state, PoSortColumn.EffectiveDate, str(S.ah_row_eff_date_upper), onEvent)),
     TableColumn(
         header = str(S.status),
+        headerContent = sortHeading(state, PoSortColumn.Relief, str(S.status), onEvent),
         width = ColumnWidth.Fixed(STATUS_WIDTH),
         cell = { order -> ZillitStatusPill(label = order.relief.label, tone = order.relief.tone()) },
     ),
@@ -185,6 +218,14 @@ private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Ta
                         size = ButtonSize.Small,
                     )
                 }
+                // The audit trail, without opening the order (the web's per-row History).
+                ZillitButton(
+                    text = str(S.history),
+                    onClick = { onEvent(PoEvent.OpenHistory(order.id)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Clock,
+                )
                 // Open or partially relieved only: a fully relieved order has
                 // nothing left to release (the web's row rule), and a locked
                 // period is read-only.
@@ -200,6 +241,35 @@ private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Ta
         },
     ),
 )
+
+/**
+ * "Posted Ledger", how many, and what they come to — the web's header above the
+ * period cards, the total compact with the exact figure under the pointer.
+ */
+@Composable
+private fun PostedLedgerHeader(state: PoUiState, rows: List<PurchaseOrder>) {
+    if (rows.isEmpty()) return
+    val total = rows.totalText(state)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(text = str(S.desktop_inv_posted_ledger), style = ZillitTheme.typography.titleSmall)
+        ZillitStatusPill(label = rows.size.toString(), tone = StatusTone.Done)
+        Spacer(modifier = Modifier.weight(1f))
+        ZillitText(
+            text = str(S.desktop_pc_total_posted) + ":",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+        ZillitTooltip(total.title) {
+            ZillitText(text = total.value, style = ZillitTheme.typography.numeric)
+        }
+    }
+}
 
 private fun PoRelief.tone(): StatusTone = when (this) {
     PoRelief.Open -> StatusTone.Pending

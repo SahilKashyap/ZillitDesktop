@@ -388,10 +388,10 @@ object BankAccounts {
         else -> null
     }
 
-    /** `•••• 1234` for anything longer than four characters; short values show whole. */
+    /** `•••• 1234` for anything longer than four characters; a short value is dotted whole (web `maskBankValue`). */
     fun masked(value: String): String {
         val trimmed = value.trim()
-        return if (trimmed.length > MASK_TAIL) "•••• ${trimmed.takeLast(MASK_TAIL)}" else trimmed
+        return if (trimmed.length > MASK_TAIL) "•••• ${trimmed.takeLast(MASK_TAIL)}" else "•".repeat(trimmed.length)
     }
 
     private const val MASK_TAIL = 4
@@ -411,6 +411,9 @@ object SortCode {
 
     /** Formats partial input too, so it can mask a field as it is typed. */
     fun formatted(value: String): String {
+        // A routing number longer than a UK sort code is shown whole, as the web
+        // does, rather than cut to six digits in the form.
+        if (value.count { it.isDigit() } > LENGTH) return value
         val digits = digits(value)
         return when {
             digits.length <= FIRST -> digits
@@ -523,6 +526,21 @@ data class CurrencySettings(
         },
     )
 
+    /**
+     * Fills a blank name or symbol from the live [catalogue] — a legacy `{codes}` or `string[]` payload reads as
+     * code-only rows, and the web's `denormalize` looks each code up at save so the stored row is complete. A code
+     * the catalogue does not list, or a row that already has its text, goes as it is.
+     */
+    fun enrichedFrom(catalogue: List<ProjectCurrency>): CurrencySettings = copy(
+        currencies = currencies.map { currency ->
+            val meta = catalogue.firstOrNull { it.code == currency.code } ?: return@map currency
+            currency.copy(
+                name = currency.name.ifBlank { meta.name },
+                symbol = currency.symbol.ifBlank { meta.symbol },
+            )
+        },
+    )
+
     companion object {
         /** The base every other rate is quoted against. */
         const val BASE_RATE = 1.0
@@ -577,10 +595,34 @@ data class TaxType(
         const val RATE_MIN = 0.0
         const val RATE_MAX = 100.0
 
-        /** Whether a typed rate sits outside 0–100. Blank is not out of range. */
+        private val NOT_NUMERIC = Regex("[^0-9.-]")
+        private val NUMBER_PREFIX = Regex("^-?(\\d+\\.?\\d*|\\.\\d+)")
+
+        /**
+         * The web's `toTaxFloat`: every character that is not a digit, `.` or `-` is dropped and the longest
+         * leading number is kept (`20abc` and `20%` read as 20), so a rate is null only when none is left.
+         */
+        fun toFloat(value: String): Double? =
+            NUMBER_PREFIX.find(value.replace(NOT_NUMERIC, ""))?.value?.toDoubleOrNull()
+
+        /** Whether a typed rate sits outside 0–100. A rate with no number in it saves as null, so it is not out. */
         fun isRateOutOfRange(value: String): Boolean {
-            val rate = value.trim().removeSuffix("%").toDoubleOrNull() ?: return value.isNotBlank()
+            val rate = toFloat(value) ?: return false
             return rate < RATE_MIN || rate > RATE_MAX
+        }
+
+        /**
+         * Catalogue rows re-read from the live catalogue at save — the web rebuilds them from the country's current
+         * type, label and rate rather than resending what was stored. A row the catalogue no longer lists, and every
+         * custom row, goes as it is; an empty catalogue (not loaded) changes nothing.
+         */
+        fun refreshed(rows: List<TaxType>, catalogue: List<CountryTaxes>): List<TaxType> {
+            if (catalogue.isEmpty()) return rows
+            val live = catalogue.flatMap { it.taxes }.associateBy { it.identifier }
+            return rows.map { row ->
+                val current = live[row.identifier]?.takeUnless { row.isCustom } ?: return@map row
+                row.copy(type = current.type, label = current.label, value = current.value)
+            }
         }
 
         /** The web's refusal, or null when every rate is in range. */
@@ -997,7 +1039,7 @@ data class PayrollSettings(
 /** How a payroll journal description reads — the web's two radio cards. */
 enum class JournalDescriptionFormat(val wire: String, val label: String, val sample: String) {
     Uppercase("uppercase", "WEEK DD-DD MON YYYY CREW NAME PAY", "WEEK 22-28 JUN 2026 JANE SMITH OT 1.5X"),
-    Title("title", "Week Dd-Dd Mon Yyyy Crew Name Pay", "Week 22-28 Jun 2026 Jane Smith OT 1.5x"),
+    Title("title", "Week Dd-Dd Mon Yyyy Crew Name Pay", "Week 22-28 Jun 2026 Jane Smith Ot 1.5x"),
     ;
 
     companion object {
@@ -1030,7 +1072,9 @@ data class PayrollGroup(
  * One row of the payroll-accounts batch — `PATCH /payroll-settings/custom-accounts`.
  *
  * No [id] creates the code in the chart; an id updates it; an id with
- * [delete] deactivates it and drops it from the list.
+ * [delete] deactivates it and drops it from the list. [costType], [active]
+ * and [posting] are the grid's other columns; an [active] unticked on a saved
+ * row goes as a delete (see [PayrollAccounts.outgoing]).
  */
 data class PayrollAccountRow(
     val id: String? = null,
@@ -1038,27 +1082,40 @@ data class PayrollAccountRow(
     val name: String = "",
     val lineType: CoaLineType = CoaLineType.Category,
     val delete: Boolean = false,
+    val costType: CoaCostType = CoaCostType.Asset,
+    val active: Boolean = true,
+    val posting: Boolean = true,
 )
 
 /** The rules the payroll-accounts grid applies before its batch goes — the web's `buildCustomAccountRows`. */
 object PayrollAccounts {
 
     /**
-     * What the batch sends: new rows, and seeded rows that changed.
+     * What the batch sends: the deactivations first, then new rows and seeded rows that changed.
      *
-     * A row with no code is a spare the person never filled. An unchanged
-     * seeded row is not sent at all — with twenty accounts on screen a
-     * one-row edit would otherwise rewrite twenty chart rows, and any seed
-     * value that does not round-trip exactly would silently change accounts
-     * nobody touched.
+     * A saved row taken off the grid, or left with Active unticked, is a
+     * deactivation (the web stages the same `{id, status: "delete"}` for the
+     * trash and the tick); deletes lead so a code removed and re-added in one
+     * batch resolves in that order. A row with no code is a spare the person
+     * never filled. An unchanged seeded row is not sent at all — with twenty
+     * accounts on screen a one-row edit would otherwise rewrite twenty chart
+     * rows, and any seed value that does not round-trip exactly would silently
+     * change accounts nobody touched.
      */
-    fun outgoing(rows: List<PayrollAccountRow>, seeds: Map<String, PayrollAccountRow>): List<PayrollAccountRow> =
-        rows.filter { it.code.isNotBlank() }
+    fun outgoing(rows: List<PayrollAccountRow>, seeds: Map<String, PayrollAccountRow>): List<PayrollAccountRow> {
+        val onGrid = rows.mapNotNull { it.id }.toSet()
+        val unticked = rows.filter { it.id != null && !it.active }.mapNotNull { it.id }
+        val deletes = (seeds.keys.filter { it !in onGrid } + unticked).distinct()
+            .map { PayrollAccountRow(id = it, delete = true) }
+        val writes = rows
+            .filter { it.code.isNotBlank() && !(it.id != null && !it.active) }
             .filterNot { row -> row.id != null && seeds[row.id]?.let { same(it, row) } == true }
+        return deletes + writes
+    }
 
     private fun same(a: PayrollAccountRow, b: PayrollAccountRow): Boolean =
         a.code.trim() == b.code.trim() && a.name.trim() == b.name.trim() && a.lineType == b.lineType &&
-            a.delete == b.delete
+            a.delete == b.delete && a.costType == b.costType && a.active == b.active && a.posting == b.posting
 }
 
 // -- purchase order setup ----------------------------------------------------
@@ -1174,7 +1231,7 @@ data class PurchaseOrderSetup(
          * client's to guess at — it simply never sends one.
          */
         fun normalisePrefix(raw: String): String =
-            raw.uppercase().filter { it.isLetterOrDigit() }.take(PREFIX_MAX)
+            raw.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(PREFIX_MAX)
     }
 }
 

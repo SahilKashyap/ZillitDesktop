@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -32,6 +35,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
@@ -39,6 +43,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.BankRow
 import com.zillit.desktop.feature.bankrec.domain.LedgerRow
+import com.zillit.desktop.feature.bankrec.domain.WorkspaceRows
 import com.zillit.desktop.feature.bankrec.ui.BankRecEvent
 import com.zillit.desktop.feature.bankrec.ui.BankRecUiState
 import com.zillit.desktop.feature.bankrec.ui.WorkspaceView
@@ -178,7 +183,7 @@ internal fun ManualMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) ->
         },
     ) {
         if (chosen == null) {
-            PickEntry(bank, view, onEvent)
+            PickEntry(bank, view, state.workspace.manualMatchQuery, onEvent)
         } else {
             ZillitText(
                 str(S.desktop_br_manual_match_explainer),
@@ -197,47 +202,86 @@ internal fun ManualMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) ->
 }
 
 @Composable
-private fun PickEntry(bank: BankRow?, view: WorkspaceView, onEvent: (BankRecEvent) -> Unit) {
+private fun PickEntry(bank: BankRow?, view: WorkspaceView, query: String, onEvent: (BankRecEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val shape = RoundedCornerShape(8.dp)
-    if (bank != null) {
-        Column(
-            Modifier.fillMaxWidth().clip(shape).background(BrTone.Blue.bg()).border(1.dp, BrTone.Blue.edge(), shape)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            ZillitText(str(S.desktop_br_matching_transaction), style = eyebrow(10.sp), color = BrTone.Blue.fg())
-            ZillitText(
-                bank.title,
-                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-            )
-            ZillitText(
-                listOf(bank.reference, signed(bank.amount, bank.amountCurrency ?: view.statementCurrency))
-                    .filter { it.isNotBlank() }.joinToString(" · "),
-                style = mono(11.5.sp),
-                color = colors.textSecondary,
-            )
-        }
-    }
+    if (bank != null) MatchingTransaction(bank, view)
     val entries = view.unmatchedLedger
-    BrFieldLabel(str(S.desktop_br_select_ledger_entry, entries.size))
     if (entries.isEmpty()) {
-        ZillitText(
-            str(S.desktop_br_no_unmatched_entries),
-            style = ZillitTheme.typography.bodySmall,
-            color = colors.textMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-        )
+        BrFieldLabel(str(S.desktop_br_select_ledger_entry, 0))
+        EntryNote(str(S.desktop_br_no_unmatched_entries))
+        return
+    }
+    val hits = WorkspaceRows.manualMatchHits(entries, query, view.projectCurrency)
+    EntrySearch(query, onEvent)
+    BrFieldLabel(
+        if (query.isBlank()) {
+            str(S.desktop_br_select_ledger_entry, entries.size)
+        } else {
+            str(S.desktop_br_select_ledger_entry_filtered, hits.size, entries.size)
+        },
+    )
+    if (hits.isEmpty()) {
+        EntryNote(str(S.desktop_br_no_ledger_entries_match, query.trim()))
         return
     }
     Column(Modifier.fillMaxWidth().clip(shape).border(1.dp, colors.border, shape)) {
-        entries.forEachIndexed { index, entry ->
+        hits.forEachIndexed { index, entry ->
             if (index > 0) ZillitDivider()
             EntryRow(entry, view) { onEvent(BankRecEvent.PickManualMatch(entry.id)) }
         }
     }
+}
+
+/** The line being matched, above the list it is matched from. */
+@Composable
+private fun MatchingTransaction(bank: BankRow, view: WorkspaceView) {
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(BrTone.Blue.bg()).border(1.dp, BrTone.Blue.edge(), shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        ZillitText(str(S.desktop_br_matching_transaction), style = eyebrow(10.sp), color = BrTone.Blue.fg())
+        ZillitText(
+            bank.title,
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+        )
+        ZillitText(
+            listOf(bank.reference, signed(bank.amount, bank.amountCurrency ?: view.statementCurrency))
+                .filter { it.isNotBlank() }.joinToString(" · "),
+            style = mono(11.5.sp),
+            color = ZillitTheme.colors.textSecondary,
+        )
+    }
+}
+
+/**
+ * The search over the unmatched list, focused whenever the list is up — on Back
+ * from the confirm step too, as the web's remount is.
+ */
+@Composable
+private fun EntrySearch(query: String, onEvent: (BankRecEvent) -> Unit) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    ZillitSearchField(
+        value = query,
+        onValueChange = { onEvent(BankRecEvent.SearchManualMatch(it)) },
+        placeholder = str(S.desktop_br_manual_match_search_hint),
+        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+    )
+}
+
+@Composable
+private fun EntryNote(text: String) {
+    ZillitText(
+        text,
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textMuted,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+    )
 }
 
 @Composable
@@ -276,7 +320,7 @@ private fun EntryRow(entry: LedgerRow, view: WorkspaceView, onClick: () -> Unit)
 }
 
 @Composable
-private fun RowScope.BankSide(bank: BankRow?, view: WorkspaceView, tone: BrTone?) {
+internal fun RowScope.BankSide(bank: BankRow?, view: WorkspaceView, tone: BrTone?) {
     if (bank == null) {
         SideCard(str(S.desktop_bank_transaction), str(S.desktop_br_transaction_unavailable), "", "", null, tone)
         return
@@ -308,7 +352,7 @@ private fun RowScope.LedgerSide(
     )
 }
 
-private fun signed(amount: Double, currency: String): String = BankRecFormat.signedMoney(amount, currency)
+internal fun signed(amount: Double, currency: String): String = BankRecFormat.signedMoney(amount, currency)
 
 /**
  * Closing the period — with every reason not to said first.

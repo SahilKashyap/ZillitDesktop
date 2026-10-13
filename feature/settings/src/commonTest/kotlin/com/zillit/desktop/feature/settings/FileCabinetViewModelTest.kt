@@ -167,6 +167,25 @@ class FileCabinetViewModelTest {
     }
 
     @Test
+    fun `a duplicate request is refused with the server's word and shows the one already preparing`() = runTest {
+        val repository = Recorder()
+        repository.requestAnswer = ZillitResult.Failure(ZillitError.Validation("download_request_already_exist"))
+        val model = openCabinet(repository)
+        // Another device made the request after the page loaded.
+        repository.cabinetRequest = DownloadRequest("req-7", DownloadStatus.InProgress)
+
+        model.onEvent(AdminEvent.CabinetToggled("home"))
+        model.onEvent(AdminEvent.CabinetRequestDownload)
+        advanceUntilIdle()
+
+        val cabinet = model.state.value.fileCabinet
+        assertEquals("req-7", cabinet.request?.id)
+        assertTrue(cabinet.request!!.isPreparing)
+        assertTrue(cabinet.selected.isEmpty())
+        assertNotNull(model.state.value.error)
+    }
+
+    @Test
     fun `only an admin may ask for a download`() = runTest {
         val repository = Recorder()
         repository.toolsAnswer = cabinetTools()

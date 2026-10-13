@@ -30,6 +30,8 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashRules
+import com.zillit.desktop.feature.cashexpenses.domain.CashTaxType
+import com.zillit.desktop.feature.cashexpenses.domain.CashTrackingSet
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseCategory
@@ -232,6 +234,8 @@ private fun ClaimLine(
         ClaimRow(
             claim = claim,
             currency = batch.currency,
+            taxTypes = state.taxTypes,
+            trackingSets = state.trackingSets,
             onEvent = onEvent,
             modifier = Modifier.weight(1f),
             // Coding is offered where coding happens: a coordinator in the
@@ -322,6 +326,8 @@ internal data class VerifyControl(val verified: Boolean, val busy: Boolean, val 
 private fun ClaimRow(
     claim: Claim,
     currency: String?,
+    taxTypes: List<CashTaxType>,
+    trackingSets: List<CashTrackingSet>,
     onCode: (() -> Unit)?,
     verify: VerifyControl?,
     onEvent: (CashEvent) -> Unit,
@@ -331,6 +337,7 @@ private fun ClaimRow(
         modifier = modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
+        ProcessingBanners(claim.processingRules, currency)
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
                 text = claim.codedDescription?.takeIf { it.isNotBlank() }
@@ -377,6 +384,8 @@ private fun ClaimRow(
                 tone = StatusTone.Escalated,
             )
         }
+
+        ClaimLinesSection(claim, currency, taxTypes, trackingSets)
 
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             verify?.let { control ->

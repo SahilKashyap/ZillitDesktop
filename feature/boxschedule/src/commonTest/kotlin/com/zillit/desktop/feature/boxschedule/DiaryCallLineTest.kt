@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.boxschedule
 import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.feature.boxschedule.data.eventWire
 import com.zillit.desktop.feature.boxschedule.data.parseEvent
+import com.zillit.desktop.feature.boxschedule.data.parseEvents
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import kotlinx.serialization.json.Json
@@ -34,6 +35,29 @@ class DiaryCallLineTest {
         assertEquals(EventCallLine.Line2, event(""","line":"line_2"""").line)
         assertEquals(EventCallLine.Line1, event(""","line":"line_1"""").line)
         assertEquals("sprint-review-9rhy", event(""","line":"line_1"""").cncCallGroupId)
+    }
+
+    @Test
+    fun `a repeat occurrence takes its call from the series master, never over its own`() {
+        val events = parseEvents(
+            Json.parseToJsonElement(
+                """[
+                  {"_id":"m1","eventType":"event","callType":"video","cncCallGroupId":"room-9","line":"line_1"},
+                  {"_id":"m1_200","masterEventId":"m1","eventType":"event","line":null},
+                  {"_id":"m1_300","masterEventId":"m1","eventType":"event","callType":"audio","line":"line_2"},
+                  {"_id":"x_400","masterEventId":"gone","eventType":"event"}
+                ]""",
+            ),
+        ).associateBy { it.id }
+        val bare = events.getValue("m1_200")
+        assertEquals(EventCallLine.Line1, bare.line)
+        assertEquals("room-9", bare.cncCallGroupId)
+        assertEquals("video", bare.callType)
+        val own = events.getValue("m1_300")
+        assertEquals(EventCallLine.Line2, own.line, "an occurrence's own line wins")
+        assertEquals("audio", own.callType)
+        assertEquals("room-9", own.cncCallGroupId)
+        assertEquals(EventCallLine.Line2, events.getValue("x_400").line, "no master in the list: read as it stands")
     }
 
     @Test

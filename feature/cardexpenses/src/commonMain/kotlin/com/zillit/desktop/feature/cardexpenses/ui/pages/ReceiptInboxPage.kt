@@ -49,8 +49,13 @@ import com.zillit.desktop.feature.cardexpenses.domain.INBOX_STATUS_FILTERS
 import com.zillit.desktop.feature.cardexpenses.domain.InboxSection
 import com.zillit.desktop.feature.cardexpenses.domain.MatchStatus
 import com.zillit.desktop.feature.cardexpenses.domain.ReconciliationBadge
+import com.zillit.desktop.feature.cardexpenses.domain.ScoreBands
+import com.zillit.desktop.feature.cardexpenses.domain.duplicateRaw
 import com.zillit.desktop.feature.cardexpenses.domain.inboxBadge
+import com.zillit.desktop.feature.cardexpenses.domain.matchRaw
 import com.zillit.desktop.feature.cardexpenses.domain.matchesInboxSearch
+import com.zillit.desktop.feature.cardexpenses.domain.offersManualMatch
+import com.zillit.desktop.feature.cardexpenses.domain.personalRaw
 import com.zillit.desktop.feature.cardexpenses.ui.ALL_STATUSES
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
@@ -59,6 +64,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.WorkflowStatusPill
 import com.zillit.desktop.feature.cardexpenses.ui.components.ReconciliationBadgePill
 import com.zillit.desktop.feature.cardexpenses.ui.components.RowAction
 import com.zillit.desktop.feature.cardexpenses.ui.components.RowActionMenu
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
@@ -333,7 +339,7 @@ private fun InboxRow(
                     count = state.unreadRow("receipt_inbox", receipt.id),
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
-                receipt.matchScore?.let { ScorePill(it) }
+                receipt.matchScore?.let { ScorePill(it, receipt.matchRaw) }
                 if (receipt.urgent) {
                     ZillitStatusPill(str(S.ah_topup_filter_urgent), tone = StatusTone.Rejected, dot = true)
                 }
@@ -341,7 +347,7 @@ private fun InboxRow(
             receipt.codeDescription?.takeIf { it.isNotBlank() }?.let {
                 ZillitText(it, style = ZillitTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1)
             }
-            if (!receipt.transactionId.isNullOrBlank()) LinkedTransaction(receipt, holder?.name)
+            if (!receipt.transactionId.isNullOrBlank()) LinkedTransaction(state, receipt, holder?.name)
             Flags(receipt, onEvent)
         }
 
@@ -377,7 +383,7 @@ private fun InboxRow(
         }
 
         ZillitText(
-            text = money(receipt.amount, receipt.currency),
+            text = if (receipt.amount != 0.0) money(receipt.amount, state.currencyOf(receipt)) else EM_DASH,
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
             color = colors.accent,
             textAlign = TextAlign.End,
@@ -395,7 +401,7 @@ private fun InboxRow(
 
 /** "Linked Txn:" merchant, then holder · amount · card · date (`ReceiptInboxPage.jsx:387-433`). */
 @Composable
-private fun LinkedTransaction(receipt: CardReceipt, holderName: String?) {
+private fun LinkedTransaction(state: CardUiState, receipt: CardReceipt, holderName: String?) {
     val colors = ZillitTheme.colors
     Column(modifier = Modifier.padding(top = ZillitTheme.spacing.xs)) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -412,7 +418,7 @@ private fun LinkedTransaction(receipt: CardReceipt, holderName: String?) {
         }
         val line = listOfNotNull(
             holderName,
-            receipt.transactionAmount?.let { money(it, receipt.currency) },
+            receipt.transactionAmount?.let { money(it, state.currencyOf(receipt)) },
             receipt.transactionCardLastFour?.takeIf { it.isNotBlank() }?.let { "···· $it" },
             receipt.transactionDate?.let { date(it) },
         )
@@ -434,24 +440,33 @@ private fun LinkedTransaction(receipt: CardReceipt, holderName: String?) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Flags(receipt: CardReceipt, onEvent: (CardEvent) -> Unit) {
-    val duplicate = receipt.duplicateScore?.takeIf { it > 0 && !receipt.duplicateDismissed }
-    val personal = receipt.personalScore?.takeIf {
+    // The raw fractions, not the printed percentages: 0.846 reads 85 yet is only a possible duplicate.
+    val duplicate = receipt.duplicateRaw?.takeIf { it > 0 && !receipt.duplicateDismissed }
+    val personal = receipt.personalRaw?.takeIf {
         it > 0 && !receipt.personalDismissed && receipt.status.wire != PERSONAL
     }
     if (duplicate == null && personal == null) return
     FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         duplicate?.let { score ->
             FlagChip(
-                label = if (score >= CERTAIN) str(S.dd_csv_status_duplicate) else str(S.desktop_possible_duplicate),
-                strong = score >= CERTAIN,
+                label = if (ScoreBands.isCertain(score)) {
+                    str(S.dd_csv_status_duplicate)
+                } else {
+                    str(S.desktop_possible_duplicate)
+                },
+                strong = ScoreBands.isCertain(score),
                 strongColor = ZillitTheme.colors.violet,
                 onDismiss = { onEvent(InboxEvent.DismissDuplicate(receipt.id)) },
             )
         }
         personal?.let { score ->
             FlagChip(
-                label = if (score >= CERTAIN) str(S.personal) else str(S.desktop_ce_inbox_may_be_personal),
-                strong = score >= CERTAIN,
+                label = if (ScoreBands.isCertain(score)) {
+                    str(S.personal)
+                } else {
+                    str(S.desktop_ce_inbox_may_be_personal)
+                },
+                strong = ScoreBands.isCertain(score),
                 strongColor = ZillitTheme.colors.danger,
                 onDismiss = { onEvent(InboxEvent.DismissPersonal(receipt.id)) },
             )
@@ -516,9 +531,7 @@ private fun rowActions(
             ),
         )
     }
-    // `MatchStatus` reads a missing status as unmatched, so "no status and no
-    // transaction" is covered by the unmatched test.
-    if (receipt.matchStatus == MatchStatus.Unmatched || receipt.matchStatus == MatchStatus.Suggested) {
+    if (receipt.offersManualMatch) {
         add(
             RowAction(
                 label = str(S.desktop_manual_match),
@@ -602,8 +615,6 @@ private val InboxSection.emptyText: String
 
 private const val PERSONAL = "personal"
 
-/** ≥ 85% is named outright; below that it is a suspicion (`ReceiptInboxPage.jsx:436-472`). */
-private const val CERTAIN = 85
 private const val NOTICE_RIM = 0.35f
 private const val FLAG_WASH = 0.10f
 private const val FLAG_RIM = 0.30f

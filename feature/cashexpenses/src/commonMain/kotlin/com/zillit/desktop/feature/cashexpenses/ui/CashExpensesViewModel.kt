@@ -193,6 +193,10 @@ class CashExpensesViewModel(
                 lockedThrough = null,
                 chartAccounts = null,
                 departments = emptyList(),
+                taxTypes = emptyList(),
+                trackingSets = emptyList(),
+                vendors = emptyList(),
+                countries = emptyList(),
                 currencies = CashCurrencies(),
                 floatDetail = null,
             )
@@ -300,10 +304,15 @@ class CashExpensesViewModel(
             is CashEvent.Search -> setState { copy(search = event.query) }
             is CashEvent.SelectBatch -> batchDesk.open(event.batchId)
             is CashEvent.SelectFloat -> setState { copy(selectedFloatId = event.floatId) }
-            is CashEvent.OpenFloatDetail -> floatDesk.openDetail(event.floatId)
+            is CashEvent.OpenFloatDetail -> {
+                loadCompanies()
+                referenceDesk.loadVendors()
+                floatDesk.openDetail(event.floatId)
+            }
             CashEvent.CloseFloatDetail -> floatDesk.closeDetail()
             is CashEvent.SaveFloatBsCode -> floatDesk.saveBsCode(event.floatId, event.bsCode)
             CashEvent.OpenApprovalLevels -> sendEffect(CashEffect.Navigate(CASH_APPROVERS_ROUTE))
+            CashEvent.OpenPayrollRun -> sendEffect(CashEffect.Navigate(PAYROLL_RUN_ROUTE))
             CashEvent.LoadChartAccounts -> referenceDesk.loadChart()
             CashEvent.ClearNotice -> setState { copy(notice = null) }
 
@@ -348,9 +357,8 @@ class CashExpensesViewModel(
 
             is CashEvent.OpenCoding -> openCoding(event.batchId, event.claimId)
             CashEvent.CloseCoding -> setState { copy(coding = null) }
-            is CashEvent.EditCodingLine -> editCoding {
-                copy(lines = lines.mapIndexed { index, line -> if (index == event.index) event.line else line })
-            }
+            is CashEvent.EditCodingLine -> editCoding { editLine(event.index, event.line) }
+            CashEvent.ResetCodingTax -> editCoding { resetTax(newLineId) }
 
             CashEvent.AddCodingLine -> editCoding {
                 // The new line starts at whatever is still uncoded, which is
@@ -358,7 +366,12 @@ class CashExpensesViewModel(
                 copy(lines = lines + EditorLine(id = newLineId(), unitPrice = remaining.coerceAtLeast(0.0)))
             }
 
-            is CashEvent.RemoveCodingLine -> editCoding { copy(lines = LineItemEditor.remove(lines, event.id)) }
+            is CashEvent.RemoveCodingLine -> editCoding {
+                // Removing the tax line gives it back to the lines: it returns
+                // at the recoverable tax they carry, or not at all.
+                val tax = lines.firstOrNull { it.id == event.id }?.extras?.isTax == true
+                copy(lines = LineItemEditor.remove(lines, event.id), taxOverridden = taxOverridden && !tax)
+            }
             is CashEvent.SplitCodingLine -> editCoding {
                 copy(lines = LineItemEditor.split(lines, event.id, event.ways, newLineId))
             }
@@ -475,7 +488,7 @@ class CashExpensesViewModel(
 
     /** Opens a dialog, filling what it needs from what is loaded. */
     private fun ask(prompt: CashPrompt) {
-        if (prompt is CashPrompt.ReadyToCollect && currentState.companies.isEmpty()) loadCompanies()
+        if (prompt is CashPrompt.ReadyToCollect) loadCompanies(quiet = false)
         setState { copy(prompt = prompt) }
     }
 
@@ -496,6 +509,9 @@ class CashExpensesViewModel(
         val crew = CashDepartments.withIds(assignees(), currentState.departments)
         setState { copy(loading = true, error = null, assignees = crew) }
         if (destination.codes && currentState.settings == null) loadQuickCodes()
+        // The company chip and search read `state.companies`; `/details` and the row carry only the id.
+        if (destination == CashDestination.ActiveFloats) loadCompanies()
+        if (destination == CashDestination.FloatRequest) referenceDesk.loadRequestLists()
         if (destination.codes) referenceDesk.loadChart()
         loadJob = launch {
             val outcome: ZillitResult<CashUiState.() -> CashUiState> = when (destination) {
@@ -655,11 +671,16 @@ class CashExpensesViewModel(
         }
     }
 
-    private fun loadCompanies() {
+    /**
+     * Reads the production's companies once (the web's `useProjectCompanies` loads on mount). Quiet by default: a
+     * crew member may not read the slice, and the chip then simply falls back to the float's own name.
+     */
+    private fun loadCompanies(quiet: Boolean = true) {
+        if (currentState.companies.isNotEmpty()) return
         launch {
             when (val companies = repository.companies()) {
                 is ZillitResult.Success -> setState { copy(companies = companies.data) }
-                is ZillitResult.Failure -> host.report(companies.error)
+                is ZillitResult.Failure -> if (!quiet) host.report(companies.error)
             }
         }
     }
@@ -685,6 +706,7 @@ class CashExpensesViewModel(
         setState {
             copy(
                 coding = CodingDraft(
+                    taxTypes = taxTypes,
                     batchId = batchId,
                     claimId = claimId,
                     receiptGross = claim.grossAmount,
@@ -701,14 +723,15 @@ class CashExpensesViewModel(
                             ),
                         )
                     },
-                ),
+                ).opened(newLineId),
             )
         }
     }
 
+    /** A change to the open coding, with the tax line brought back in line with the lines it follows. */
     private fun editCoding(change: CodingDraft.() -> CodingDraft) = setState {
         val open = coding ?: return@setState this
-        copy(coding = open.change())
+        copy(coding = open.change().derived(newLineId))
     }
 
     /**
@@ -727,7 +750,7 @@ class CashExpensesViewModel(
             return
         }
 
-        val lines = LineItemEditor.toWire(draft.lines, newLineId)
+        val lines = LineItemEditor.toWire(draft.savedLines, newLineId)
         // The editor closes only on a saved coding; a failed save keeps the
         // hand-entered lines open for a retry instead of discarding them.
         act(str(S.desktop_card_coding_saved), onSuccess = { copy(coding = null) }) {

@@ -82,10 +82,11 @@ enum class PoSortKey(private val labelKey: String) {
     val label: String get() = str(labelKey)
 
     fun sort(orders: List<PurchaseOrder>): List<PurchaseOrder> = when (this) {
-        // An order with no effective date sorts last rather than interleaving:
-        // a blank is not "the epoch", it is "not decided yet".
+        // The web's `savedAt` (`updated_at || created_at`): an order that was just
+        // touched comes first. The effective date is the accounts period an order
+        // lands in, not when it was last worked on.
         DateDescending -> orders.sortedWith(
-            compareByDescending<PurchaseOrder> { it.effectiveDate ?: it.createdAt ?: 0L }
+            compareByDescending<PurchaseOrder> { it.updatedAt ?: it.createdAt ?: 0L }
                 .thenByDescending { it.number },
         )
 
@@ -100,7 +101,20 @@ enum class PoSortKey(private val labelKey: String) {
  * Separate from [PoSortKey], which is the dropdown above the table: the web has
  * both, and the header click overrides the dropdown while it is set.
  */
-enum class PoSortColumn { Number, Vendor, Department, Amount, EffectiveDate, Status, Assigned }
+enum class PoSortColumn {
+    Number,
+    Vendor,
+    Department,
+    Amount,
+    EffectiveDate,
+    Status,
+    Assigned,
+
+    // The Posted tab's own: what has been invoiced, what is left, and the relief label.
+    Relieved,
+    Remaining,
+    Relief,
+}
 
 /** Ascending or descending, for a clicked column. */
 enum class PoSortDirection { Ascending, Descending }

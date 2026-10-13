@@ -92,7 +92,7 @@ internal class PoProcessActions(
                             // put a second, stale copy of the order behind it.
                             prompt = null,
                             detail = fresh,
-                            entry = fresh.toEntry(),
+                            entry = entryFor(fresh),
                         )
                     }
                 }
@@ -161,7 +161,7 @@ internal class PoProcessActions(
         }
         vm.update { copy(entry = entry.copy(saving = true)) }
         vm.launchWork {
-            val update = ledger.update(entry.header(vm.ui.defaultCurrency()))
+            val update = ledger.update(entry.header(vm.ui.defaultCurrency()), vm.ui.chartCodes)
             when (val saved = repository.saveEntry(order.id, update)) {
                 is ZillitResult.Success -> {
                     val fresh = repository.order(order.id).getOrNull()?.withVendorName(vm.ui)
@@ -170,7 +170,7 @@ internal class PoProcessActions(
                             detail = fresh ?: detail,
                             // Rehydrated from the record, as the web's getOne
                             // after a save: what was stored is what shows.
-                            entry = (fresh?.toEntry()?.copy(previewOpen = entry.previewOpen) ?: entry)
+                            entry = (fresh?.let { entryFor(it) }?.copy(previewOpen = entry.previewOpen) ?: entry)
                                 .copy(saving = false),
                             notice = if (then == null) str(S.saved) else notice,
                         )
@@ -230,7 +230,7 @@ internal class PoProcessActions(
         }
         vm.update { copy(entry = entry.copy(posting = true, missingCodes = emptyList())) }
         vm.launchWork {
-            val request = ledger.post(order, entry.header(vm.ui.defaultCurrency()))
+            val request = ledger.post(order, entry.header(vm.ui.defaultCurrency()), vm.ui.chartCodes)
             when (val posted = repository.post(order.id, request)) {
                 is ZillitResult.Success -> {
                     // The web lands on Posted; an assistant cannot open it, so

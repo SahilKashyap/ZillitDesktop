@@ -19,6 +19,9 @@ object CoaCodes {
     private const val NAME_PREFIX = 60
     private const val CODE_CONTAINS = 40
     private const val NAME_CONTAINS = 20
+    private const val ALL_WORDS = 10
+
+    private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
 
     /**
      * The picker's order for [query] — the web's `rankRows`.
@@ -26,18 +29,23 @@ object CoaCodes {
      * An exact code first, then codes that start with it, names that start
      * with it, codes containing it and names containing it; ties broken by the
      * code in numeric order. Nothing typed keeps the resting (numeric) order.
+     *
+     * Text with a letter in it is a search by description and also finds a row
+     * holding every word in its code or name, in any order, below every
+     * contiguous match ("diesel fuel", "5125 fuel"); a code never gets that.
      */
     fun rank(rows: List<CoaCode>, query: String): List<CoaCode> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return rows
+        val words = if (isCodeQuery(q)) emptyList() else q.split(NON_WORD).filter { it.isNotEmpty() }
         return rows
-            .map { it to score(it, q) }
+            .map { it to score(it, q, words) }
             .filter { it.second > 0 }
             .sortedWith { a, b -> (b.second - a.second).takeIf { it != 0 } ?: compare(a.first.code, b.first.code) }
             .map { it.first }
     }
 
-    private fun score(row: CoaCode, q: String): Int {
+    private fun score(row: CoaCode, q: String, words: List<String>): Int {
         val code = row.code.lowercase()
         val name = row.name.lowercase()
         return when {
@@ -46,6 +54,7 @@ object CoaCodes {
             name.startsWith(q) -> NAME_PREFIX
             code.contains(q) -> CODE_CONTAINS
             name.contains(q) -> NAME_CONTAINS
+            words.isNotEmpty() && "$code $name".let { hay -> words.all { it in hay } } -> ALL_WORDS
             else -> 0
         }
     }
@@ -80,11 +89,31 @@ object CoaCodes {
     }
 
     /**
-     * What may be typed into the code field: digits and hyphens, never a
-     * leading hyphen — the web's filter, which keeps a code from reading as a
-     * negative number and sorting above every real one.
+     * What may be typed into the code field, as a CODE: digits and hyphens,
+     * never a leading hyphen — the web's `codeFromText`, which keeps a code from
+     * reading as a negative number and sorting above every real one.
      */
     fun sanitise(typed: String): String = typed.filter { it.isDigit() || it == '-' }.trimStart('-')
+
+    /**
+     * Whether typed text is a code rather than a search: only a LETTER makes it
+     * a search by code and name — the web's `isCodeQuery`. Text without letters
+     * is a code with separators around it (a pasted "1,100", "11 00").
+     */
+    fun isCodeQuery(text: String): Boolean = text.none { it.isLetter() }
+
+    /**
+     * What the field holds after a keystroke. A search is kept exactly as typed
+     * so names can be found; a code is cleaned to digits, spaces and hyphens
+     * (spaces stay so a word can follow a code, "5120 fuel"), with no leading
+     * hyphen — the web's `onChange`.
+     */
+    fun typedText(raw: String): String {
+        if (!isCodeQuery(raw)) return raw
+        return raw.filter { it.isDigit() || it.isWhitespace() || it == '-' }.replace(LEADING_HYPHENS, "")
+    }
+
+    private val LEADING_HYPHENS = Regex("^\\s*-+")
 }
 
 /** One tracking set — "Locations", "Episodes" — and the codes inside it. */

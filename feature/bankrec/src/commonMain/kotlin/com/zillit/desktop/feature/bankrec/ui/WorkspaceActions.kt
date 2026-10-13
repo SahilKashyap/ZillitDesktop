@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.bankrec.ui
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.bankrec.domain.TxnStatus
 
 /**
  * The reconciliation workspace: which period is open, how it is filtered, and
@@ -122,7 +123,13 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
                     transactions = data.transactions,
                     ledger = data.ledger,
                     closingZillit = data.closingZillit,
+                    counts = data.counts,
                     loading = false,
+                    // A tick whose line is no longer matched (undone elsewhere) would come
+                    // back already ticked if it were matched again while the mode is on.
+                    unmatchTicked = unmatchTicked.filterTo(mutableSetOf()) { id ->
+                        data.transactions.any { it.id == id && it.status == TxnStatus.Matched }
+                    },
                     // A selection that no longer names a row would light nothing.
                     selectedId = selectedId?.takeIf { id ->
                         data.transactions.any { it.id == id } || data.ledger.any { it.id == id }
@@ -139,9 +146,9 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
         val periodId = workspace.periodId.ifBlank { return }
         if (workspace.rerunning) return
         edit { copy(rerunning = true, selectedId = null) }
-        vm.runResult({ vm.repo.rerunAutoMatch(periodId) }, {
+        vm.runResult({ vm.repo.rerunAutoMatch(periodId) }, { message ->
             edit { copy(rerunning = false) }
-            vm.notify(str(S.desktop_br_auto_match_rerun_toast))
+            vm.notify(message.serverText() ?: str(S.desktop_br_auto_match_rerun_toast))
             load(periodId)
             // A re-run moves counts, can add or remove fraud flags, and clears
             // exceptions a new match now answers.
@@ -173,7 +180,8 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
         }
         edit { copy(signOff = dialog.copy(submitting = true)) }
         vm.runResult({ vm.repo.signOffPeriod(periodId, dialog.note.trim()) }, {
-            edit { copy(signOff = null) }
+            // Signed off cannot be undone, so the mode and anything open in it close for good.
+            edit { copy(signOff = null, unreconcile = false, unmatchTicked = emptySet(), unmatch = null) }
             vm.notify(str(S.desktop_br_signed_off))
             // The period has left "in progress"; the list decides where the
             // workspace goes next, with no page reload.

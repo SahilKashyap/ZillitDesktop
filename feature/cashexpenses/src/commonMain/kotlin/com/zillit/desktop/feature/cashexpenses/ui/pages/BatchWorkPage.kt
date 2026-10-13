@@ -216,7 +216,7 @@ private fun PageTiles(state: CashUiState) {
             )
             ZillitStatTile(
                 label = str(S.desktop_pc_total_to_post),
-                value = figure(state.formatAggregate(rows.sumOf { it.totalGross })),
+                value = figure(state.describeTotal(rows.map { it.currency to it.totalGross })),
                 sub = str(S.desktop_pc_to_gl_next_post),
                 icon = ZillitIcons.Wallet,
                 modifier = Modifier.weight(1f),
@@ -246,14 +246,14 @@ private fun PageTiles(state: CashUiState) {
             )
             ZillitStatTile(
                 label = str(S.desktop_pc_total_posted),
-                value = figure(state.formatAggregate(rows.sumOf { it.totalGross })),
+                value = figure(state.describeTotal(rows.map { it.currency to it.totalGross })),
                 sub = str(S.desktop_pc_to_general_ledger),
                 icon = ZillitIcons.Ledger,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
                 label = str(S.desktop_pc_petty_cash_lower),
-                value = figure(state.formatAggregate(petty.sumOf { it.totalGross })),
+                value = figure(state.describeTotal(petty.map { it.currency to it.totalGross })),
                 sub = batchCount(petty.size),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Wallet,
@@ -261,7 +261,7 @@ private fun PageTiles(state: CashUiState) {
             )
             ZillitStatTile(
                 label = str(S.desktop_pc_out_of_pocket_lower),
-                value = figure(state.formatAggregate(oop.sumOf { it.totalGross })),
+                value = figure(state.describeTotal(oop.map { it.currency to it.totalGross })),
                 sub = batchCount(oop.size),
                 tone = StatusTone.Progress,
                 icon = ZillitIcons.Receipt,

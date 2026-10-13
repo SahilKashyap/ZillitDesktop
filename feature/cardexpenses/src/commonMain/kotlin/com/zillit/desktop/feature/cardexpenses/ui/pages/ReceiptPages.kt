@@ -77,8 +77,10 @@ import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.DetailPanePadding
 import com.zillit.desktop.feature.cardexpenses.ui.components.PersonCell
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
+import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
+import com.zillit.desktop.feature.cardexpenses.ui.projectCurrency
 
 /**
  * Every queue of receipts, from one table and one detail pane.
@@ -721,7 +723,7 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
 
         Row(verticalAlignment = Alignment.Bottom) {
             ZillitText(
-                text = money(receipt.amount, receipt.currency),
+                text = money(receipt.amount, state.currencyOf(receipt)),
                 style = ZillitTheme.typography.displayLarge,
                 modifier = Modifier.weight(1f),
             )
@@ -837,7 +839,7 @@ private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (Car
             ZillitText(
                 text = listOfNotNull(
                     receipt.transactionMerchant,
-                    receipt.transactionAmount?.let { money(it, receipt.currency) },
+                    receipt.transactionAmount?.let { money(it, state.currencyOf(receipt)) },
                     date(receipt.transactionDate).takeIf { it != "—" },
                     receipt.transactionCardLastFour?.let { "•••• $it" },
                 ).joinToString(" · "),
@@ -1057,7 +1059,10 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                                     CardConfirmAction.ApproveReceipt,
                                     receipt.id,
                                     str(S.desktop_card_approve_this_receipt),
-                                    str(S.desktop_card_moves_on_to_post, money(receipt.amount, receipt.currency)),
+                                    str(
+                                        S.desktop_card_moves_on_to_post,
+                                        money(receipt.amount, state.currencyOf(receipt)),
+                                    ),
                                 ),
                             )
                         },
@@ -1262,7 +1267,7 @@ private fun receiptColumns(
             ),
         )
     }
-    add(textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
+    add(textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, state.currencyOf(it)) })
     // Date comes off in a narrow table. Inside the Account Hub the hub's
     // sidebar, the tool's own and the detail pane leave this about five
     // hundred points, and the column pushed off the end was the status — which
@@ -1402,7 +1407,7 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             ZillitSectionCard(
                 title = str(S.ah_all_transactions),
                 icon = ZillitIcons.Ledger,
-                meta = money(rows.sumOf { it.amount }, rows.firstOrNull()?.currency),
+                meta = money(rows.sumOf { it.amount }, state.projectCurrency),
                 padded = false,
                 modifier = Modifier.weight(QUEUE_WEIGHT).fillMaxHeight(),
             ) {
@@ -1474,7 +1479,7 @@ private fun TransactionDetail(
         }
 
         ZillitText(
-            text = money(transaction.amount, transaction.currency),
+            text = money(transaction.amount, state.currencyOf(transaction)),
             style = ZillitTheme.typography.displayLarge,
         )
 
@@ -1538,7 +1543,7 @@ private fun TransactionDetail(
                                     str(S.desktop_card_post_this_transaction),
                                     str(
                                         S.desktop_card_goes_to_ledger,
-                                        money(transaction.amount, transaction.currency),
+                                        money(transaction.amount, state.currencyOf(transaction)),
                                     ),
                                 ),
                             ),
@@ -1630,7 +1635,7 @@ private fun transactionColumns(
             cell = { PersonCell(state.personName(it.holderId, it.holderName), userId = it.holderId) },
         ),
     )
-    add(textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
+    add(textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, state.currencyOf(it)) })
     add(textColumn(str(S.date), ColumnWidth.Weight(1f), muted = true) { date(it.date) })
     add(textColumn(str(S.code), ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "—" })
     add(

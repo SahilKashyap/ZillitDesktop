@@ -55,14 +55,14 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
             )
             SetupSection.Currencies -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(currencies = this.setup.currencies.copy(saving = true))) },
-                call = { vm.repo.saveCurrencies(setup.currencies.edited) },
+                call = { vm.repo.saveCurrencies(setup.currencies.edited.enrichedFrom(setup.currencyCatalogue)) },
                 done = { value -> copy(setup = this.setup.copy(currencies = this.setup.currencies.committed(value))) },
                 failed = { copy(setup = this.setup.copy(currencies = this.setup.currencies.copy(saving = false))) },
                 notice = str(S.desktop_currencies_saved),
             )
             SetupSection.TaxTypes -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.copy(saving = true))) },
-                call = { vm.repo.saveTaxTypes(setup.taxTypes.edited) },
+                call = { vm.repo.saveTaxTypes(TaxType.refreshed(setup.taxTypes.edited, setup.countryTaxes)) },
                 done = { rows -> copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.committed(rows))) },
                 failed = { copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.copy(saving = false))) },
                 notice = str(S.desktop_tax_types_saved),

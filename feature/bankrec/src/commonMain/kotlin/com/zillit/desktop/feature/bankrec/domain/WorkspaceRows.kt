@@ -22,6 +22,8 @@ data class SuggestionBar(
     val secondAction: String? = null,
     val viewsInvoice: Boolean = false,
     val invoiceId: String? = null,
+    /** Offers Quick Add beside the other actions — an amber match bar, or a fraud bar with nothing to match. */
+    val quickAdd: Boolean = false,
 )
 
 /** A small uppercase marker beside a line's name. */
@@ -40,6 +42,8 @@ data class BankRow(
     val tags: List<RowTag>,
     val suggestion: SuggestionBar?,
     val matchSuggestion: SuggestionBar?,
+    /** What a matched line is reconciled with — the banner unreconcile mode draws; null unless matched. */
+    val reconciledText: String?,
 ) {
     val id: String get() = txn.id
     val amount: Double get() = txn.amount
@@ -68,6 +72,22 @@ data class WorkspaceCounts(
     val fx: Int = 0,
 )
 
+/**
+ * The tab counts as `workspace-data` reports them, key by key.
+ *
+ * Counted by the backend over bank lines only, by wire status: an FX line is
+ * counted under its own status as well as under [fx]. A key the response lacks
+ * stays null and is tallied from the rows instead — see [WorkspaceRows.counts].
+ */
+data class ServerCounts(
+    val all: Int? = null,
+    val matched: Int? = null,
+    val unmatched: Int? = null,
+    val suggested: Int? = null,
+    val fraud: Int? = null,
+    val fx: Int? = null,
+)
+
 /** A panel's total, compact for the header and exact for its tooltip. */
 data class PanelTotal(val value: String, val exact: String, val total: Double)
 
@@ -80,13 +100,28 @@ enum class WorkspaceFilter(val slug: String) {
     Fx("fx"),
     ;
 
-    /** Applied to both panels by status, as the web does: the ledger only ever answers All or Unmatched. */
+    /** A ledger entry, by status: the ledger only ever answers All or Unmatched. */
     fun accepts(status: TxnStatus): Boolean = when (this) {
         All -> true
         Unmatched -> status == TxnStatus.Unmatched
         Suggested -> status == TxnStatus.Suggested
         Fraud -> status == TxnStatus.FraudFlag
         Fx -> status == TxnStatus.Fx
+    }
+
+    /**
+     * A bank line. The backend counts an FX line under its own status as well
+     * as under FX, so the line also lists under Unmatched or Suggested.
+     */
+    fun accepts(row: BankRow): Boolean {
+        val own = if (row.status == TxnStatus.Fx) row.txn.status else row.status
+        return when (this) {
+            All -> true
+            Unmatched -> own == TxnStatus.Unmatched
+            Suggested -> own == TxnStatus.Suggested
+            Fraud -> row.status == TxnStatus.FraudFlag
+            Fx -> row.status == TxnStatus.Fx
+        }
     }
 }
 
@@ -129,6 +164,11 @@ object WorkspaceRows {
             tags = tags(txn),
             suggestion = suggestion,
             matchSuggestion = matchSuggestion,
+            reconciledText = if (txn.status == TxnStatus.Matched) {
+                str(S.desktop_br_reconciled_with_undo, invoiceDetail(txn, invoices, vendor, amountCurrency))
+            } else {
+                null
+            },
         )
     }
 
@@ -159,11 +199,18 @@ object WorkspaceRows {
                 secondAction = str(S.desktop_manual_match),
                 viewsInvoice = true,
                 invoiceId = txn.matchedInvoiceIds.first(),
+                quickAdd = true,
             )
         }
         return when {
-            flagged && !actioned ->
-                SuggestionBar(SuggestionKind.Fraud, warning, action = str(S.av_review)) to match
+            // With no match bar to carry Quick Add, the fraud bar offers it: a flagged
+            // line has its own exception to post against.
+            flagged && !actioned -> SuggestionBar(
+                SuggestionKind.Fraud,
+                warning,
+                action = str(S.av_review),
+                quickAdd = match == null && txn.status != TxnStatus.Matched,
+            ) to match
 
             txn.fraudType != null && txn.status == TxnStatus.Matched -> SuggestionBar(
                 SuggestionKind.Accepted,
@@ -181,6 +228,9 @@ object WorkspaceRows {
                 ),
                 action = str(S.accept),
                 secondAction = str(S.desktop_manual_match),
+                // A wrong suggestion is often a line with nothing in Zillit to match
+                // (a bank charge, interest), so the bar offers Quick Add as well.
+                quickAdd = true,
             ) to null
 
             txn.status == TxnStatus.Unmatched || (txn.fx != null && txn.status != TxnStatus.Matched) -> SuggestionBar(
@@ -235,7 +285,10 @@ object WorkspaceRows {
                 val gross = inv.grossAmount?.takeIf { it != 0.0 } ?: abs(txn.amount)
                 val amount = BankRecFormat.plainMoney(gross, inv.currency ?: currency)
                 val method = inv.payMethod.takeIf { it.isNotBlank() }?.let { payMethodCode(it).uppercase() }.orEmpty()
-                "$name ${inv.invoiceNumber} · $amount · $method"
+                // Empty parts are dropped, so a ledger row with no invoice number or
+                // pay method leaves no dangling separator.
+                listOf("$name ${inv.invoiceNumber}".trim(), amount, method).filter { it.isNotBlank() }
+                    .joinToString(" · ")
             }
 
             else -> "${found.first().supplierName.ifBlank { vendor }} · " +
@@ -261,14 +314,60 @@ object WorkspaceRows {
         return LedgerRow(entry = entry, title = entry.displayName, reference = reference, amount = entry.amount)
     }
 
-    fun counts(bank: List<BankRow>, ledger: List<LedgerRow>): WorkspaceCounts = WorkspaceCounts(
-        all = bank.size,
-        matched = bank.count { it.status == TxnStatus.Matched },
-        unmatched = bank.count { it.status == TxnStatus.Unmatched } + ledger.count { it.status == TxnStatus.Unmatched },
-        suggested = bank.count { it.status == TxnStatus.Suggested },
-        fraud = bank.count { it.status == TxnStatus.FraudFlag },
-        fx = bank.count { it.status == TxnStatus.Fx },
-    )
+    /**
+     * The pills' and summary bar's counts: the backend's own, key by key.
+     *
+     * The row tally only stands in for a response that carries none, and it
+     * counts differently — Unmatched adds the ledger panel's rows, and an FX
+     * line is left out of its own status.
+     */
+    fun counts(bank: List<BankRow>, ledger: List<LedgerRow>, server: ServerCounts? = null): WorkspaceCounts {
+        val tally = WorkspaceCounts(
+            all = bank.size,
+            matched = bank.count { it.status == TxnStatus.Matched },
+            unmatched = bank.count { it.status == TxnStatus.Unmatched } +
+                ledger.count { it.status == TxnStatus.Unmatched },
+            suggested = bank.count { it.status == TxnStatus.Suggested },
+            fraud = bank.count { it.status == TxnStatus.FraudFlag },
+            fx = bank.count { it.status == TxnStatus.Fx },
+        )
+        server ?: return tally
+        return WorkspaceCounts(
+            all = server.all ?: tally.all,
+            matched = server.matched ?: tally.matched,
+            unmatched = server.unmatched ?: tally.unmatched,
+            suggested = server.suggested ?: tally.suggested,
+            fraud = server.fraud ?: tally.fraud,
+            fx = server.fx ?: tally.fx,
+        )
+    }
+
+    /**
+     * The ledger entries a Manual Match search keeps: by supplier or title, by
+     * reference line, or by amount — as shown (`-£1,250.00`) and bare
+     * (`1250.00`), so `1250` finds it.
+     */
+    fun manualMatchHits(entries: List<LedgerRow>, query: String, fallbackCurrency: String): List<LedgerRow> {
+        val wanted = query.trim().lowercase()
+        if (wanted.isEmpty()) return entries
+        return entries.filter { row ->
+            val amount = row.amount
+            listOfNotNull(
+                row.title,
+                row.reference,
+                amount?.let { BankRecFormat.signedMoney(it, row.entry.currency ?: fallbackCurrency) },
+                amount?.let { bareAmount(abs(it)) },
+            ).any { it.lowercase().contains(wanted) }
+        }
+    }
+
+    /** `1250.00` — two decimals, no grouping, as a number input would hold it. */
+    private fun bareAmount(value: Double): String {
+        val cents = kotlin.math.round(value * CENTS).toLong()
+        return "${cents / CENTS}.${(cents % CENTS).toString().padStart(2, '0')}"
+    }
+
+    private const val CENTS = 100L
 
     /**
      * The rows linked to [selectedId], across the divider.

@@ -166,7 +166,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
 
     /** The production-wide chain, or one untyped level to start it. */
     private fun editDefault(origin: BuilderOrigin = BuilderOrigin.Approvers) {
-        if (!vm.mayActAsAccountant()) return
+        if (!vm.mayEditApprovals()) return
         val approvals = vm.setupState.approvals
         val saved = approvals.defaultConfig
         openBuilder(
@@ -236,7 +236,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
      * Save, so opening a department and cancelling leaves it inheriting.
      */
     private fun editDepartment(departmentId: String, origin: BuilderOrigin = BuilderOrigin.Approvers) {
-        if (!vm.mayActAsAccountant()) return
+        if (!vm.mayEditApprovals()) return
         val state = vm.setupState
         val approvals = state.approvals
         val own = approvals.configFor(departmentId)
@@ -396,7 +396,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
      */
     @Suppress("ReturnCount") // One exit per step; merging them hides which step stopped the save.
     private fun save() {
-        if (!vm.mayActAsAccountant()) return
+        if (!vm.mayEditApprovals()) return
         val approvals = vm.setupState.approvals
         val config = approvals.builder?.config ?: return
         val raw = ApprovalSequence.forSave(config.tiers)
@@ -421,7 +421,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
     private fun refuse(message: String) = updateBuilder { copy(error = message) }
 
     private fun confirmSave() {
-        if (!vm.mayActAsAccountant()) return
+        if (!vm.mayEditApprovals()) return
         when (val confirm = vm.setupState.approvals.builder?.confirm) {
             is BuilderConfirm.EmptyLevels -> write(confirm.payload)
             is BuilderConfirm.RevertToGlobal -> revertDepartmentToGlobal(confirm.configId)

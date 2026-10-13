@@ -83,6 +83,60 @@ class BankRecFlowTest {
         assertNull(model.state.value.workspace.proposal)
     }
 
+    /**
+     * The web's Accept always says "invoice", whatever table the entry is in;
+     * only a hand-picked match names the entry's own kind.
+     */
+    @Test
+    fun `accepting says invoice but a manual match keeps the entry's kind`() = runTest(dispatcher) {
+        val quickEntry = suggestedInvoice.copy(kind = LedgerEntryKind.Transaction)
+        val repo = Fixtures.repo().apply {
+            val fx = invoice.copy(kind = LedgerEntryKind.FxPosting)
+            workspaceData = workspaceData.copy(ledger = listOf(fx, quickEntry))
+        }
+        val model = bankRecViewModel(repo).also { it.start() }
+        model.onEvent(BankRecEvent.OpenTab(BankTab.Workspace))
+        runCurrent()
+
+        model.onEvent(BankRecEvent.ProposeMatch(suggested.id, "inv-2"))
+        model.onEvent(BankRecEvent.ConfirmMatch)
+        runCurrent()
+        assertEquals(Triple("t2", "inv-2", LedgerEntryKind.Invoice), repo.matches.single())
+
+        model.onEvent(BankRecEvent.OpenManualMatch(unmatched.id))
+        model.onEvent(BankRecEvent.PickManualMatch(invoice.id))
+        model.onEvent(BankRecEvent.ConfirmManualMatch)
+        runCurrent()
+        assertEquals(Triple("t1", "inv-1", LedgerEntryKind.FxPosting), repo.matches.last())
+    }
+
+    /** A toast is the server's own message when the write answers one, the local words otherwise. */
+    @Test
+    fun `match and re-run toasts prefer the server's message`() = runTest(dispatcher) {
+        val repo = Fixtures.repo()
+        val model = bankRecViewModel(repo).also { it.start() }
+        model.onEvent(BankRecEvent.OpenTab(BankTab.Workspace))
+        runCurrent()
+
+        model.onEvent(BankRecEvent.ProposeMatch(suggested.id, "inv-2"))
+        model.onEvent(BankRecEvent.ConfirmMatch)
+        runCurrent()
+        val local = model.state.value.notice
+        assertNotNull(local)
+
+        repo.matchMessage = "Matched by the server"
+        model.onEvent(BankRecEvent.OpenManualMatch(unmatched.id))
+        model.onEvent(BankRecEvent.PickManualMatch(invoice.id))
+        model.onEvent(BankRecEvent.ConfirmManualMatch)
+        runCurrent()
+        assertEquals("Matched by the server", model.state.value.notice)
+
+        repo.rerunMessage = "Re-ran on the server"
+        model.onEvent(BankRecEvent.RerunAutoMatch)
+        runCurrent()
+        assertEquals("Re-ran on the server", model.state.value.notice)
+    }
+
     @Test
     fun `a dismissed proposal reconciles nothing`() = runTest(dispatcher) {
         val repo = Fixtures.repo()
@@ -235,6 +289,49 @@ class BankRecFlowTest {
         assertTrue(repo.imports.isEmpty())
     }
 
+    /** The picker keeps the web's `accept` list, by extension; a drop does not (see below). */
+    @Test
+    fun `a picked file outside the statement list is refused`() = runTest(dispatcher) {
+        val statements = FakeStatementFiles(picked = PickedStatement("notes.txt", byteArrayOf(1)))
+        val model = bankRecViewModel(Fixtures.repo(), statements = statements).also { it.start() }
+        model.onEvent(BankRecEvent.OpenImport)
+        model.onEvent(BankRecEvent.BrowseStatement)
+        runCurrent()
+        assertNull(model.state.value.import.file)
+        assertNotNull(model.state.value.import.error)
+
+        statements.picked = PickedStatement("march.QFX", byteArrayOf(1))
+        model.onEvent(BankRecEvent.BrowseStatement)
+        runCurrent()
+        assertEquals("march.QFX", model.state.value.import.file?.name)
+        assertNull(model.state.value.import.error)
+    }
+
+    /**
+     * An open Period Detail re-reads quietly when the periods change under it,
+     * as the web's per-period refresh key does, and closes when its period is gone.
+     */
+    @Test
+    fun `an open period detail refreshes in place and closes when the period is deleted`() = runTest(dispatcher) {
+        val repo = Fixtures.repo()
+        val model = bankRecViewModel(repo).also { it.start() }
+        runCurrent()
+        model.onEvent(BankRecEvent.OpenPeriodDetail("p1"))
+        runCurrent()
+        assertEquals(2, model.state.value.periodDetail?.transactions?.size)
+
+        repo.workspaceData = repo.workspaceData.copy(transactions = listOf(unmatched))
+        model.loadPeriods()
+        runCurrent()
+        assertEquals(listOf("t1"), model.state.value.periodDetail?.transactions?.map { it.id })
+        assertFalse(model.state.value.periodDetail?.loading ?: true)
+
+        repo.periodRows = listOf(closedPeriod)
+        model.loadPeriods()
+        runCurrent()
+        assertNull(model.state.value.periodDetail)
+    }
+
     /** A cancelled picker is not a failure. */
     @Test
     fun `a cancelled file picker chooses nothing and reports nothing`() = runTest(dispatcher) {
@@ -250,8 +347,9 @@ class BankRecFlowTest {
     }
 
     /**
-     * A dropped file that is not a statement is refused by extension; a real
-     * one is shown, and nothing is uploaded until the import starts.
+     * Like the web, only the picker is held to the statement list: a dropped
+     * file of any kind or size is shown, and nothing is uploaded until the
+     * import starts.
      */
     @Test
     fun `a statement is uploaded only when the import starts`() = runTest(dispatcher) {
@@ -263,8 +361,8 @@ class BankRecFlowTest {
         model.onEvent(BankRecEvent.OpenImport)
         model.onEvent(BankRecEvent.SelectImportAccount("b1"))
         model.onEvent(BankRecEvent.DropStatement(PickedStatement("notes.txt", byteArrayOf(1))))
-        assertNull(model.state.value.import.file)
-        assertNotNull(model.state.value.import.error)
+        assertEquals("notes.txt", model.state.value.import.file?.name)
+        assertNull(model.state.value.import.error)
 
         model.onEvent(BankRecEvent.DropStatement(PickedStatement("march.CSV", byteArrayOf(1, 2))))
         assertEquals("march.CSV", model.state.value.import.file?.name)

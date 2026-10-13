@@ -5,6 +5,12 @@ import com.zillit.desktop.feature.purchaseorder.data.body
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
+import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.ui.PoFormMode
+import com.zillit.desktop.feature.purchaseorder.ui.toForm
+import com.zillit.desktop.feature.purchaseorder.ui.toRequest
+import com.zillit.desktop.core.forms.FormLayout
+import com.zillit.desktop.core.forms.FormTemplate
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -95,5 +101,49 @@ class PoWireShapeTest {
         assertEquals(100.0, order.total)
         assertTrue(order.status.isCommitted)
         assertNull(order.lines.single().vatRate)
+    }
+
+    // -- editing an order keeps its typed delivery address --------------------------
+
+    private fun orderWith(address: String, id: String? = null): PurchaseOrder = json.decodeFromString(
+        PoDto.serializer(),
+        """{"id":"po-3","status":"PENDING","delivery_address":$address
+            ${id?.let { ""","delivery_address_id":"$it"""" }.orEmpty()}}""",
+    ).toDomain()!!
+
+    @Test
+    fun `editing an order fills the address block from the typed address`() {
+        val order = orderWith("""{"name":"Stage manager","line1":"Pinewood","city":"Iver","phoneCode":"+44"}""")
+
+        val form = order.toForm(PoFormMode.EditOrder)
+        assertEquals("Stage manager", form.deliveryAddress.name)
+        assertEquals("Pinewood", form.deliveryAddress.line1)
+        assertEquals("Iver", form.deliveryAddress.city)
+        assertEquals("+44", form.deliveryAddress.phoneCode)
+        assertNull(form.deliveryAddressId)
+        // A save sends it back instead of clearing it.
+        val request = form.toRequest(status = null, layout = FormLayout(FormTemplate()))
+        assertEquals(form.deliveryAddress, request.deliveryAddress)
+    }
+
+    @Test
+    fun `a string address, or one stored as a JSON string, is read back too`() {
+        val plain = orderWith("\"Unit 4, Pinewood Studios\"").toForm(PoFormMode.EditOrder)
+        assertEquals("Unit 4, Pinewood Studios", plain.deliveryAddress.line1)
+
+        val stored = orderWith("\"{\\\"city\\\":\\\"Iver\\\"}\"").toForm(PoFormMode.EditOrder)
+        assertEquals("Iver", stored.deliveryAddress.city)
+
+        assertTrue(orderWith("null").toForm(PoFormMode.EditOrder).deliveryAddress.isEmpty)
+    }
+
+    @Test
+    fun `a saved-address link no longer in the book falls back to the typed snapshot`() {
+        val order = orderWith("""{"line1":"Pinewood"}""", id = "addr-1")
+
+        assertEquals("addr-1", order.toForm(PoFormMode.EditOrder, setOf("addr-1")).deliveryAddressId)
+        assertNull(order.toForm(PoFormMode.EditOrder, setOf("other")).deliveryAddressId)
+        assertEquals("Pinewood", order.toForm(PoFormMode.EditOrder, setOf("other")).deliveryAddress.line1)
+        assertEquals("addr-1", order.toForm(PoFormMode.EditOrder, emptySet()).deliveryAddressId, "no book read: keep")
     }
 }

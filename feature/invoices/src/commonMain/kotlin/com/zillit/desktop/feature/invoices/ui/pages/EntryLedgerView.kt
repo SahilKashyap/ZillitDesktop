@@ -76,9 +76,9 @@ import kotlinx.datetime.plus
  *
  * It takes the queue's place in the content column: a top bar with the way
  * back, the breadcrumb and every action; the invoice document on the left
- * when there is one, a third of the width; and the coding column. A posted
- * invoice, or one dated in a closed cost-report period, is frozen — History
- * and Query stay, nothing else does.
+ * when there is one, a third of the width; and the coding column. An invoice
+ * dated in a closed cost-report period is frozen — History and Query stay,
+ * nothing else does; a posted one is otherwise editable, with Save only.
  */
 @Composable
 internal fun ColumnScope.EntryLedgerView(
@@ -182,6 +182,7 @@ private fun LedgerTopBar(
                 tone = StatusTone.Escalated,
             )
             ledger.readOnly -> ZillitStatusPill(label = str(S.desktop_inv_posted_read_only), tone = StatusTone.Neutral)
+            ledger.posted -> ZillitStatusPill(label = str(S.ah_posted_label), tone = StatusTone.Done)
         }
         Spacer(Modifier.weight(1f))
         LedgerActions(state, ledger, frozen = ledger.readOnly || locked, onEvent = onEvent)
@@ -199,10 +200,11 @@ private fun Crumb(text: String) {
 }
 
 /**
- * History and Query always; the rest only while the invoice can change.
- * Submit for Review is a junior's hand-off, so a senior is not offered it,
- * and Post needs the right to post (ZL-20450, ZL-20767). Save and Post say
- * why they would be refused, as the web's `title` hints do (`:1158`, `:1169`).
+ * History and Query always; the rest only while the invoice can change — a
+ * posted one keeps Save alone. Submit for Review is a junior's hand-off, so a
+ * senior is not offered it, and Post needs the right to post (ZL-20450,
+ * ZL-20767). Save and Post say why they would be refused, as the web's `title`
+ * hints do (`:1158`, `:1169`).
  */
 @Composable
 private fun LedgerActions(
@@ -230,6 +232,9 @@ private fun LedgerActions(
                 loading = action == EntryAction.Saving,
             )
         }
+        // Past the workflow: corrected (Save) while its period is open, never re-reviewed,
+        // reassigned, returned or posted again.
+        if (ledger.posted) return@Row
         if (!state.viewer.isSenior) {
             ZillitButton(
                 text = str(S.desktop_submit_for_review),
@@ -545,7 +550,7 @@ private fun HeaderCard(state: InvoicesUiState, ledger: EntryLedger, frozen: Bool
             )
             PayMethodPicker(header, !frozen, edit)
         }
-        EntitiesRow(state, header, frozen, edit)
+        EntitiesRow(state, header, frozen, canPost = state.viewer.canPostToLedger && !ledger.posted, edit = edit)
         if (ledger.currencyChanged(state.projectCurrency)) {
             CurrencyChangedNotice(state, ledger)
         } else {
@@ -601,11 +606,17 @@ private fun ledgerPayLabel(code: String): String = when (code) {
  *
  * Picking a company brings its country's currency (`:1430-1437`); the bank
  * is marked required, and outlined when missing, only for someone who may
- * post (`:1448`, `:1460`). An empty list says so instead of a dead select.
+ * post (`:1448`, `:1460`) — never from Posted, which passes `canPost={false}`.
+ * An empty list says so instead of a dead select.
  */
 @Composable
-private fun EntitiesRow(state: InvoicesUiState, header: EntryHeader, frozen: Boolean, edit: (EntryHeader) -> Unit) {
-    val canPost = state.viewer.canPostToLedger
+private fun EntitiesRow(
+    state: InvoicesUiState,
+    header: EntryHeader,
+    frozen: Boolean,
+    canPost: Boolean,
+    edit: (EntryHeader) -> Unit,
+) {
     FieldRow {
         LabelledPicker(
             label = str(S.company),

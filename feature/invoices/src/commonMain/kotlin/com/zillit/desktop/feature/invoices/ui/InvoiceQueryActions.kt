@@ -19,7 +19,10 @@ internal class InvoiceQueryActions(private val vm: InvoicesViewModel) {
 
     fun onEvent(event: InvoicesEvent): Boolean {
         when (event) {
-            is QueryEvent.Open -> open(event.invoice.id, event.invoice.displayNumber)
+            is QueryEvent.Open -> {
+                event.readKey?.let { vm.readQueryThread(it, event.invoice.id) }
+                open(event.invoice.id, event.invoice.displayNumber)
+            }
             is QueryEvent.Draft -> vm.update { copy(query = query?.copy(draft = event.text)) }
             QueryEvent.Send -> send()
             QueryEvent.Close -> {

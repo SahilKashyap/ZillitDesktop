@@ -48,6 +48,18 @@ internal open class FakeBankRecRepository : BankRecRepository {
     var failingFxPosts: Set<String> = emptySet()
 
     val matches = mutableListOf<Triple<String, String, LedgerEntryKind>>()
+
+    /** Single unmatches, then bulk ones — the two routes the service has for it. */
+    val unmatches = mutableListOf<String>()
+    val bulkUnmatches = mutableListOf<List<String>>()
+
+    /** The message the single route answers with; bulk names none. */
+    var unmatchMessage: String? = "br_transaction_unmatched"
+
+    /** What the match and re-run routes say; null is a server that names none. */
+    var matchMessage: String? = null
+    var rerunMessage: String? = null
+
     val signOffs = mutableListOf<Pair<String, String>>()
     val deletes = mutableListOf<List<String>>()
     val statusChanges = mutableListOf<Pair<String, ExceptionStatus>>()
@@ -93,14 +105,24 @@ internal open class FakeBankRecRepository : BankRecRepository {
         return ZillitResult.Success(workspaceData)
     }
 
-    override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit> {
+    override suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<String?> {
         matches += Triple(id, entityId, kind)
-        return ZillitResult.Success(Unit)
+        return ZillitResult.Success(matchMessage)
     }
 
-    override suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit> {
+    override suspend fun unmatchTransaction(id: String): ZillitResult<String?> {
+        unmatches += id
+        return ZillitResult.Success(unmatchMessage)
+    }
+
+    override suspend fun bulkUnmatchTransactions(transactionIds: List<String>): ZillitResult<String?> {
+        bulkUnmatches += transactionIds
+        return ZillitResult.Success(null)
+    }
+
+    override suspend fun rerunAutoMatch(periodId: String): ZillitResult<String?> {
         rerunCount++
-        return ZillitResult.Success(Unit)
+        return ZillitResult.Success(rerunMessage)
     }
 
     override suspend fun importStatement(

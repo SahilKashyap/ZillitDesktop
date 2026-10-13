@@ -26,6 +26,7 @@ import com.zillit.desktop.feature.taxfiling.ui.TaxFilingEvent
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingView
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.taxfiling.ui.TaxToastTone
+import com.zillit.desktop.feature.taxfiling.ui.UnknownCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -543,6 +544,33 @@ class TaxFilingFlowTest {
         model.onEvent(TaxFilingEvent.Calculate)
         runCurrent()
         assertFalse(model.state.value.returnState.draftStale)
+    }
+
+    /**
+     * A code the chart lacks is asked about before it joins a box — the web's
+     * add-to-chart prompt — while one it has goes straight in.
+     */
+    @Test
+    fun `a code outside the chart is confirmed before it is added`() = runTest(dispatcher) {
+        val model = viewModel(FakeRepo())
+        openReturn(model)
+        val sales = VatBox.SalesExVat
+
+        model.onEvent(TaxFilingEvent.AddCode(sales, "4000"))
+        assertEquals(listOf("4000"), model.state.value.returnState.mappingFor(sales).codes)
+
+        model.onEvent(TaxFilingEvent.AddCode(sales, "9999"))
+        assertEquals(UnknownCode(sales, "9999"), model.state.value.returnState.unknownCode)
+        assertEquals(listOf("4000"), model.state.value.returnState.mappingFor(sales).codes)
+
+        model.onEvent(TaxFilingEvent.DismissUnknownCode)
+        assertNull(model.state.value.returnState.unknownCode)
+        assertEquals(listOf("4000"), model.state.value.returnState.mappingFor(sales).codes)
+
+        model.onEvent(TaxFilingEvent.AddCode(sales, "9999"))
+        model.onEvent(TaxFilingEvent.ConfirmUnknownCode)
+        assertNull(model.state.value.returnState.unknownCode)
+        assertEquals(listOf("4000", "9999"), model.state.value.returnState.mappingFor(sales).codes)
     }
 
     /** Choosing another period drops the draft: it belongs to the period it was built for. */

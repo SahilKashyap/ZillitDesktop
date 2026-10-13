@@ -123,7 +123,7 @@ object WeekView {
             val row = group.row(prefix = "d")
             (if (group.row.isRental) rentals else allowances) += row
         }
-        aggregateDaily(days.flatMap { it.extras }).forEach { (_, group) -> extras += group.row(prefix = "dx") }
+        aggregateDaily(days.flatMap { it.extras }).forEach { (_, group) -> extras += group.row(prefix = EXTRA_PREFIX) }
 
         weeklyAllowances.forEachIndexed { index, line ->
             val row = EntryRow(
@@ -142,6 +142,7 @@ object WeekView {
                 amount = round2(line.lineAmount),
                 daily = false,
                 currency = line.currency,
+                kind = line.extraKind(),
             )
         }
         return MergedEntries(allowances = allowances, rentals = rentals, extras = extras)
@@ -184,11 +185,18 @@ object WeekView {
             daily = true,
             sub = if (dayCount == 1) str(S.desktop_one_day) else str(S.desktop_payroll_days_count, dayCount),
             currency = row.currency,
+            kind = row.extraKind().takeIf { prefix == EXTRA_PREFIX },
         )
     }
 
     private fun round2(value: Double): Double = PayrollTimecard.round2(value)
 
+    /** `upgrade`, or `extra` for anything else — the web's `kind === "upgrade" ? "upgrade" : "extra"`. */
+    private fun PayLine.extraKind(): String = if (kind.equals(UPGRADE, ignoreCase = true)) UPGRADE else EXTRA
+
+    const val UPGRADE = "upgrade"
+    const val EXTRA = "extra"
+    private const val EXTRA_PREFIX = "dx"
     const val DASH = "—"
     private const val MINUTES_PER_HOUR = 60
 }
@@ -270,6 +278,8 @@ data class EntryRow(
     val daily: Boolean,
     val sub: String? = null,
     val currency: String? = null,
+    /** An extra's `upgrade` / `extra` tag; null on an allowance or a rental. */
+    val kind: String? = null,
 )
 
 /** The week's allowances, rentals and extras, grouped as the column draws them. */

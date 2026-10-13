@@ -728,10 +728,11 @@ internal fun ToolInfoDialog(
         onDismiss = onDismiss,
         width = INFO_WIDTH,
         actions = {
-            links?.let { shown ->
+            // A tile that hides its video (`tooltip.hideVideo`) has no button.
+            links?.videoUrl?.let { clip ->
                 ZillitButton(
                     text = str(S.desktop_ft_watch_video),
-                    onClick = { video = shown.videoUrl },
+                    onClick = { video = clip },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Play,
                 )

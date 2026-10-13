@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCoding
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptEdit
 import com.zillit.desktop.feature.cardexpenses.domain.TierVisibility
 import com.zillit.desktop.feature.cardexpenses.domain.UploadHeadroom
+import com.zillit.desktop.feature.cardexpenses.domain.storedMedia
 
 /**
  * The cardholder pages' handlers: My Transactions, Card Extension, the crew
@@ -43,8 +44,6 @@ internal class CardCrewActions(
             is CrewEvent.Filter -> crew { copy(filter = event.status) }
 
             is CrewEvent.OpenReceipt -> openReceipt(event.receiptId)
-            CrewEvent.CloseDetail -> crew { copy(detail = null) }
-            CrewEvent.ToggleDetailHistory -> toggleHistory()
 
             is CrewEvent.OpenEdit -> openEdit(event.receiptId)
             is CrewEvent.EditReceipt -> crew { copy(edit = event.draft) }
@@ -78,7 +77,8 @@ internal class CardCrewActions(
             is CrewEvent.OpenTopUpTrail -> crew { copy(topUpTrailId = event.topUpId) }
 
             is CrewEvent.ShowApprovalTab -> crew { copy(approvalTab = event.tab) }
-            is CrewEvent.OpenApprovalCard -> crew { copy(approvalCardId = event.cardId) }
+            is CrewEvent.OpenApprovalCard -> crew { copy(approvalCardId = event.cardId, approvalCardHistory = null) }
+            is CrewEvent.ShowApprovalCardHistory -> showApprovalCardHistory(event.open)
             is CrewEvent.ApproveCard -> approveCard(event.cardId)
             is CrewEvent.OpenApprovalReceipt -> openApprovalReceipt(event.receiptId)
             is CrewEvent.ApproveReceipt -> approveReceipt(event.receiptId)
@@ -119,38 +119,7 @@ internal class CardCrewActions(
         val receipt = vm.current.receipts.firstOrNull { it.id == receiptId } ?: return
         // A rejected card opens straight into Edit & Resubmit (`UserReceiptsPage.jsx:926`).
         if (receipt.status == CardWorkflowStatus.Rejected) return openEdit(receiptId)
-        showDetail(receipt, CrewOrigin.MyTransactions)
-        vm.readRow(CardRowReads.detail(vm.current.destination), receiptId)
-    }
-
-    /**
-     * Opens the read-only view on the slim row, then swaps in the detail read.
-     *
-     * The response is kept only if the same receipt is still open — a late
-     * answer for a receipt somebody has since closed must not reopen it.
-     */
-    private fun showDetail(receipt: CardReceipt, origin: CrewOrigin) {
-        crew { copy(detail = CrewReceiptView(receipt = receipt, loading = true, origin = origin)) }
-        vm.run {
-            val full = vm.repo.receiptDetail(receipt.id).getOrNull()
-            crew {
-                val open = detail?.takeIf { it.receipt.id == receipt.id } ?: return@crew this
-                copy(detail = open.copy(receipt = full ?: open.receipt, loading = false))
-            }
-        }
-    }
-
-    private fun toggleHistory() {
-        val view = vm.current.crew.detail ?: return
-        crew { copy(detail = view.copy(historyOpen = !view.historyOpen)) }
-        if (view.historyOpen || view.history != null) return
-        vm.run {
-            val trail = vm.repo.receiptHistory(view.receipt.id).getOrNull().orEmpty()
-            crew {
-                val open = detail?.takeIf { it.receipt.id == view.receipt.id } ?: return@crew this
-                copy(detail = open.copy(history = trail))
-            }
-        }
+        vm.inboxActions.open(receipt, ReceiptDetailSource.MyTransactions)
     }
 
     /**
@@ -159,7 +128,7 @@ internal class CardCrewActions(
      */
     private fun openEdit(receiptId: String) {
         val state = vm.current
-        val opened = state.crew.detail?.receipt?.takeIf { it.id == receiptId }
+        val opened = state.inbox.detail?.detail?.receipt?.takeIf { it.id == receiptId }
         val receipt = opened ?: state.receipts.firstOrNull { it.id == receiptId } ?: return
         val allowed = state.destination == CardDestination.MyTransactions &&
             (
@@ -167,7 +136,8 @@ internal class CardCrewActions(
                     CrewRules.canEdit(receipt) || CrewRules.offersUpload(receipt)
                 )
         if (!allowed) return vm.fail(str(S.desktop_po_no_rights_on_project))
-        crew { copy(detail = null, edit = ReceiptEditDraft.of(receipt)) }
+        vm.inboxActions.close()
+        crew { copy(edit = ReceiptEditDraft.of(receipt)) }
     }
 
     private fun pickEditFile() {
@@ -376,9 +346,26 @@ internal class CardCrewActions(
         ) { vm.repo.approveCard(cardId, step, state.viewer.userId) }
     }
 
+    /** A card request's trail, read when its History opens (`CardDetailModal.jsx:1060-1066`). */
+    private fun showApprovalCardHistory(open: Boolean) {
+        val cardId = vm.current.crew.approvalCardId
+        if (!open || cardId == null) return crew { copy(approvalCardHistory = null) }
+        crew { copy(approvalCardHistory = HistoryState()) }
+        vm.run {
+            val trail = vm.repo.cardHistory(cardId).getOrNull().orEmpty()
+            crew {
+                if (approvalCardId != cardId || approvalCardHistory == null) {
+                    this
+                } else {
+                    copy(approvalCardHistory = HistoryState(loading = false, entries = trail))
+                }
+            }
+        }
+    }
+
     private fun openApprovalReceipt(receiptId: String) {
         val receipt = vm.current.crew.approvalReceipts.firstOrNull { it.id == receiptId } ?: return
-        showDetail(receipt, CrewOrigin.ApprovalQueue)
+        vm.inboxActions.open(receipt, ReceiptDetailSource.CrewApproval)
     }
 
     private fun approveReceipt(receiptId: String) {
@@ -387,7 +374,8 @@ internal class CardCrewActions(
             return vm.fail(str(S.desktop_po_no_rights_on_project))
         }
         if (state.crew.actionId != null) return
-        crew { copy(actionId = receiptId, detail = null) }
+        vm.inboxActions.close()
+        crew { copy(actionId = receiptId) }
         commit(
             notice = str(S.desktop_card_receipt_approved),
             onDone = { copy(actionId = null) },
@@ -409,7 +397,8 @@ internal class CardCrewActions(
             val card = state.crew.approvalCards.firstOrNull { it.id == targetId } ?: return
             state.personName(card.holderId).takeIf { it != "—" } ?: str(S.desktop_card_card_holder)
         }
-        crew { copy(detail = null, reject = CrewReject(targetId = targetId, receipt = receipt, subject = subject)) }
+        vm.inboxActions.close()
+        crew { copy(reject = CrewReject(targetId = targetId, receipt = receipt, subject = subject)) }
     }
 
     private fun confirmReject() {
@@ -450,6 +439,22 @@ internal class CardCrewActions(
         // Both level_1s, as the tab sums both (`CodingQueuePage.jsx:66-81`, ZL-20779).
         vm.readRow("coding_queue", receiptId)
         vm.readRow("pending_coding", receiptId)
+        loadCodeMedia(receipt)
+    }
+
+    /** The receipt's document for the dialog's preview pane (`CodingQueuePage.jsx:198`). */
+    private fun loadCodeMedia(receipt: CardReceipt) {
+        val media = receipt.storedMedia ?: return
+        if (!vm.inboxActions.canPreview) return
+        vm.run {
+            setCodeMedia(receipt.id, MediaState(loading = true))
+            setCodeMedia(receipt.id, vm.inboxActions.fetchMedia(media))
+        }
+    }
+
+    /** Only while the dialog is still on [receiptId]: a late answer for a closed one is dropped. */
+    private fun setCodeMedia(receiptId: String, media: MediaState) = crew {
+        copy(code = code?.takeIf { it.receipt.id == receiptId }?.copy(media = media) ?: code)
     }
 
     /**

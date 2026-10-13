@@ -77,6 +77,12 @@ data class ChatUiState(
      * groups and for crew with no registered device.
      */
     val peerOnline: Boolean = false,
+    /**
+     * When the open peer's device last went on or off line — the same node's
+     * `update_time`. Offline, the header prints it as the web does; null until
+     * the node answers, when the header falls back to the users list's stamp.
+     */
+    val peerLastSeenMillis: Long? = null,
     /** Seconds on the open microphone; null when not recording. */
     val recordingSeconds: Int? = null,
     /** The open thread is a group room; sends ride `group_chat`. */
@@ -578,7 +584,9 @@ class ChatViewModel(
             )
             ChatEvent.CloseThread -> {
                 stopPresence()
-                setState { copy(peer = null, messages = emptyList(), peerOnline = false) }
+                setState {
+                    copy(peer = null, messages = emptyList(), peerOnline = false, peerLastSeenMillis = null)
+                }
             }
             is ChatEvent.DraftChanged -> {
                 // The transition is the signal: empty→writing says "start",
@@ -946,11 +954,17 @@ class ChatViewModel(
 
         presenceJob = launch {
             ZillitLog.d(PRESENCE_TAG) { "watching device $deviceId on $projectId" }
-            source.watch(deviceId, projectId).collect { online ->
-                ZillitLog.d(PRESENCE_TAG) { "device $deviceId online=$online" }
+            source.watch(deviceId, projectId).collect { reading ->
+                ZillitLog.d(PRESENCE_TAG) { "device $deviceId online=${reading.online}" }
                 // Guarded by peer, not by job identity: a stale collection's
                 // last emission must not paint the next thread's header.
-                setState { if (peer?.userId == contact.userId) copy(peerOnline = online) else this }
+                setState {
+                    if (peer?.userId == contact.userId) {
+                        copy(peerOnline = reading.online, peerLastSeenMillis = reading.updatedMillis)
+                    } else {
+                        this
+                    }
+                }
             }
         }
     }
@@ -979,6 +993,7 @@ class ChatViewModel(
         isLoading = known == null,
         peerTyping = false,
         peerOnline = false,
+        peerLastSeenMillis = null,
         replyTo = null,
         pendingPreview = null,
         droppedAlong = emptyList(),
