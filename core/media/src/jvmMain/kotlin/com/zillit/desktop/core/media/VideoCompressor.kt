@@ -12,28 +12,30 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
- * Shrinks a large video before it is uploaded, without making it look worse
- * than a phone's own recording.
+ * Re-encodes a video to the size the sender picked — [VideoSend.Sd] (480p) or
+ * [VideoSend.Hd] (1080p) — without making it look worse than that size can.
  *
- * The bar is "no visible loss", not "smallest file": the output is H.264 in
- * an MP4 (what every client plays — the desktop's JavaFX player, the web, old
- * Android phones), capped at 1080p on its short edge, at a quality where the
- * encoder spends bits wherever the picture needs them.
+ * The output is H.264 in an MP4, which every client plays: the desktop's
+ * JavaFX player, the web, old Android phones. The long edge is capped at the
+ * tier's and never raised, so a 720p clip sent as HD keeps its own pixels.
  *
  * Two encoders, tried in order:
  *
- *  - macOS's own `avconvert` (AVFoundation, the hardware encoder). It applies
- *    a phone's rotation, maps an iPhone's HDR (HLG) to ordinary colour rather
- *    than washing it out, and keeps the audio. A 60 s 1080p iPhone clip at
- *    13 Mbit/s came out at 10.5 Mbit/s in 12 s; a 4K one shrinks far more.
  *  - FFmpeg, bundled with the app (`$APPDIR/resources/ffmpeg`, staged by the
  *    build's `stageFfmpeg`), or the machine's own when a build has none. It
  *    decodes what AVFoundation cannot (AV1 without an AV1 chip, VP9) and
  *    hands the frames to the operating system's own H.264 encoder — Apple's
  *    VideoToolbox, Windows' Media Foundation — never to a bundled one: the
  *    LGPL build ships none, and the OS encoder carries its patent licence.
- *    The only route on Windows. Slower on a Mac for exotic sources: an 8K
- *    AV1 file decodes in software at a tenth of real time.
+ *    The only route on Windows. First because it is the only one that hits a
+ *    named resolution and bitrate exactly, which is what the preview has
+ *    already promised the sender; it also compresses harder — a 104 MB iPhone
+ *    clip came out at 53 MB where `avconvert` left 80 MB. Slower for exotic
+ *    sources: an 8K AV1 file decodes in software at a tenth of real time.
+ *  - macOS's own `avconvert` (AVFoundation, the hardware encoder), for a
+ *    build with no FFmpeg beside it. It applies a phone's rotation, maps an
+ *    iPhone's HDR (HLG) to ordinary colour rather than washing it out, and
+ *    keeps the audio, but only at one of Apple's own fixed presets.
  *
  * Anything that goes wrong — no encoder, an encoder that fails, an output no
  * smaller than the input — answers null, and the caller sends the original.
@@ -42,8 +44,15 @@ import kotlinx.coroutines.withContext
  */
 object VideoCompressor {
 
-    /** 100 MB: smaller videos go as they are. */
+    /** 100 MB: the size above which a send with no preview behind it compresses unasked. */
     const val COMPRESS_ABOVE_BYTES: Long = LARGE_VIDEO_BYTES
+
+    /**
+     * Whether this machine can re-encode at all. False on Linux and in a
+     * build with no FFmpeg staged, where the preview offers only the
+     * original rather than a quality that could never be produced.
+     */
+    fun canCompressHere(): Boolean = encoders(VideoSend.Hd).isNotEmpty()
 
     /** "AV1" for a video in a format most players load but cannot draw; null otherwise. */
     fun unplayableFormat(bytes: ByteArray): String? = UNPLAYABLE_FORMATS[Mp4Rotation.videoCodec(bytes)]
@@ -51,7 +60,10 @@ object VideoCompressor {
     /** What the app's player (JavaFX), Safari and many phones load but cannot draw. */
     val UNPLAYABLE_FORMATS: Map<String, String> = mapOf("av01" to "AV1", "vp09" to "VP9", "vp08" to "VP8")
 
-    /** Whether a file of this type and size should be compressed before upload. */
+    /**
+     * Whether a file of this type and size is compressed when nobody was
+     * asked — a send from a surface with no preview dialog in front of it.
+     */
     fun wants(contentType: String, sizeBytes: Long): Boolean =
         contentType.startsWith("video/", ignoreCase = true) && sizeBytes > COMPRESS_ABOVE_BYTES
 
@@ -63,6 +75,8 @@ object VideoCompressor {
     suspend fun compress(
         name: String,
         bytes: ByteArray,
+        /** Which size to aim at; [VideoSend.Original] asks for no encode at all. */
+        quality: VideoSend = VideoSend.Hd,
         /**
          * Whether a result no smaller than the input is thrown away. Not for a
          * clip in a format most players cannot draw (AV1): there the point is
@@ -71,6 +85,7 @@ object VideoCompressor {
         requireSmaller: Boolean = true,
         onProgress: (Int) -> Unit = {},
     ): CompressedVideo? = withContext(Dispatchers.IO) {
+        if (quality == VideoSend.Original) return@withContext null
         val work = Files.createTempDirectory("zillit-video").toFile()
         // The source is copied out, and the output written beside it: with
         // the disk short of both, an encode dies (ENOSPC) minutes in — a 1.8 GB
@@ -85,7 +100,7 @@ object VideoCompressor {
             val extension = name.substringAfterLast('.', "").lowercase().ifBlank { "mov" }
             val source = File(work, "source.$extension").apply { writeBytes(bytes) }
             val output = File(work, "compressed.mp4")
-            for (encoder in encoders()) {
+            for (encoder in encoders(quality)) {
                 output.delete()
                 val started = System.currentTimeMillis()
                 if (!run(encoder.command(source, output), encoder.progress, onProgress)) continue
@@ -114,10 +129,10 @@ object VideoCompressor {
         }
     }
 
-    /** What this machine can encode with, best first. */
-    private fun encoders(): List<Encoder> = buildList {
-        if (currentPlatform().os == OperatingSystem.MacOs && File(AVCONVERT).canExecute()) add(Avconvert)
-        findFfmpeg()?.let { add(Ffmpeg(it, FfmpegTarget.current())) }
+    /** What this machine can encode this tier with, best first. */
+    private fun encoders(quality: VideoSend): List<Encoder> = buildList {
+        findFfmpeg()?.let { add(Ffmpeg(it, FfmpegTarget.current(), quality)) }
+        if (currentPlatform().os == OperatingSystem.MacOs && File(AVCONVERT).canExecute()) add(Avconvert(quality))
     }.also { if (it.isEmpty()) ZillitLog.w(TAG) { "no video encoder on this machine" } }
 
     /**
@@ -231,17 +246,19 @@ internal sealed interface Encoder {
 }
 
 /**
- * Apple's converter. `Preset1920x1080` is H.264 that scales down to fit
- * 1920×1080 and never up; the bitrate is Apple's own for that size, which
- * is well clear of where blocks start to show.
+ * Apple's converter, at the preset nearest the tier: H.264 that scales down
+ * to fit and never up, at Apple's own bitrate for that size. `Preset640x480`
+ * fits a 16:9 clip into 640×360 rather than the 854×480 FFmpeg would hit, so
+ * an SD file from here comes out smaller than the preview's figure — never
+ * larger, which is the direction that would be a lie.
  */
-internal data object Avconvert : Encoder {
+internal class Avconvert(private val quality: VideoSend) : Encoder {
     override val label = "avconvert"
     override val progress = ProgressReader(::avconvertProgress)
     override fun command(source: File, output: File) = listOf(
         "/usr/bin/avconvert",
         "--source", source.absolutePath,
-        "--preset", "Preset1920x1080",
+        "--preset", if (quality == VideoSend.Sd) "Preset640x480" else "Preset1920x1080",
         "--output", output.absolutePath,
         "--replace",
         "--progress",
@@ -271,15 +288,19 @@ internal enum class FfmpegTarget {
 
 /**
  * FFmpeg reading anything, the system writing H.264. The long edge is capped
- * at 1920 (never scaled up), dimensions kept even for 4:2:0, audio re-encoded
- * to AAC so any source container fits in an MP4, and the index moved to the
- * front so playback can start before the download ends.
+ * at the tier's (never scaled up), dimensions kept even for 4:2:0, audio
+ * re-encoded to AAC so any source container fits in an MP4, and the index
+ * moved to the front so playback can start before the download ends.
  */
-internal class Ffmpeg(private val executable: String, private val target: FfmpegTarget) : Encoder {
-    override val label = "ffmpeg"
+internal class Ffmpeg(
+    private val executable: String,
+    private val target: FfmpegTarget,
+    private val quality: VideoSend,
+) : Encoder {
+    override val label = "ffmpeg ${quality.name.lowercase()}"
     override val progress = FfmpegProgress()
     override fun command(source: File, output: File) =
-        ffmpegCommand(executable, source.absolutePath, output.absolutePath, target)
+        ffmpegCommand(executable, source.absolutePath, output.absolutePath, target, quality)
 }
 
 internal fun ffmpegCommand(
@@ -287,31 +308,47 @@ internal fun ffmpegCommand(
     source: String,
     output: String,
     target: FfmpegTarget,
+    quality: VideoSend = VideoSend.Hd,
 ): List<String> = buildList {
+    val sd = quality == VideoSend.Sd
     add(executable)
     addAll(listOf("-hide_banner", "-nostdin", "-y"))
     // Decoding on the media engine where the chip has one for the source;
     // FFmpeg falls back to software by itself where it does not (AV1 on M1/M2).
     if (target == FfmpegTarget.MacAppleSilicon) addAll(listOf("-hwaccel", "videotoolbox"))
-    addAll(listOf("-i", source, "-map", "0:v:0", "-map", "0:a:0?", "-vf", "$FFMPEG_SCALE,format=yuv420p"))
+    val scale = ffmpegScale(quality.longEdge ?: HD_LONG_EDGE)
+    addAll(listOf("-i", source, "-map", "0:v:0", "-map", "0:a:0?", "-vf", "$scale,format=yuv420p"))
+    val bitrate = if (sd) SD_BITRATE else HD_BITRATE
     when (target) {
-        // Quality 65 of 100: a 60 s 1080p iPhone clip at 13 Mbit/s came out
-        // at 7 Mbit/s with no visible blocking — Apple's own converter's
-        // 1080p preset spent 10.5 for the same picture.
-        FfmpegTarget.MacAppleSilicon -> addAll(listOf("-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac_at"))
-        FfmpegTarget.MacIntel -> addAll(listOf("-c:v", "h264_videotoolbox") + BITRATE + listOf("-c:a", "aac_at"))
+        // 1080p asks the hardware for a quality rather than a bitrate: at 65
+        // of 100 a 60 s iPhone clip at 13 Mbit/s came out at 7 with no
+        // visible blocking, where Apple's own 1080p preset spent 10.5. 480p
+        // is given a bitrate instead — a constant quality at that size lands
+        // wherever the picture leads, and the sender was shown a figure.
+        FfmpegTarget.MacAppleSilicon -> addAll(
+            listOf("-c:v", "h264_videotoolbox") +
+                (if (sd) bitrate else listOf("-q:v", "65")) +
+                listOf("-c:a", "aac_at"),
+        )
+        FfmpegTarget.MacIntel -> addAll(listOf("-c:v", "h264_videotoolbox") + bitrate + listOf("-c:a", "aac_at"))
         FfmpegTarget.Windows ->
-            addAll(listOf("-c:v", "h264_mf", "-rate_control", "u_vbr") + BITRATE + listOf("-c:a", "aac"))
+            addAll(listOf("-c:v", "h264_mf", "-rate_control", "u_vbr") + bitrate + listOf("-c:a", "aac"))
     }
-    addAll(listOf("-b:a", "160k", "-movflags", "+faststart", "-progress", "pipe:1", output))
+    val audio = if (sd) "128k" else "160k"
+    addAll(listOf("-b:a", audio, "-movflags", "+faststart", "-progress", "pipe:1", output))
 }
 
 /** 10 Mbit/s, peaks to 14 — clear of blocking at 1080p60 where no quality mode exists. */
-private val BITRATE = listOf("-b:v", "10M", "-maxrate", "14M", "-bufsize", "20M")
+private val HD_BITRATE = listOf("-b:v", "10M", "-maxrate", "14M", "-bufsize", "20M")
 
-/** Long edge at most 1920, aspect kept, both sides even. Quoted so the commas stay inside. */
-internal const val FFMPEG_SCALE =
-    "scale='if(gte(iw,ih),trunc(min(iw,1920)/2)*2,-2)':'if(gte(iw,ih),-2,trunc(min(ih,1920)/2)*2)'"
+/** 1.5 Mbit/s, peaks to 2 — what 480p needs to stay clean on movement. */
+private val SD_BITRATE = listOf("-b:v", "1500k", "-maxrate", "2M", "-bufsize", "3M")
+
+private const val HD_LONG_EDGE = 1920
+
+/** Long edge at most [longEdge], aspect kept, both sides even. Quoted so the commas stay inside. */
+internal fun ffmpegScale(longEdge: Int): String =
+    "scale='if(gte(iw,ih),trunc(min(iw,$longEdge)/2)*2,-2)':'if(gte(iw,ih),-2,trunc(min(ih,$longEdge)/2)*2)'"
 
 /** `avconvert progress:  45.17% complete` — the last one printed wins. */
 internal fun avconvertProgress(output: CharSequence): Int? =

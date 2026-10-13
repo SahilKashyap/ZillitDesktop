@@ -4,10 +4,13 @@ import com.zillit.desktop.core.media.ffmpegPosterJpeg
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import com.zillit.desktop.core.media.LocalPreviewPosterMaker
+import com.zillit.desktop.core.media.Mp4Probe
 import com.zillit.desktop.core.media.PreviewItem
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.media.PreviewPoster
 import com.zillit.desktop.core.media.PreviewPosterMaker
+import com.zillit.desktop.core.media.VideoCompressor
+import com.zillit.desktop.core.media.VideoInfo
 import com.zillit.desktop.feature.home.data.pdfPageCount
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
@@ -29,11 +32,25 @@ internal object DesktopPreviewPosters : PreviewPosterMaker {
         item.kind == PreviewKind.Video -> PreviewPoster(
             videoThumbnailJpeg(item.bytes)?.jpegBytes
                 ?: ffmpegPosterJpeg(item.bytes, item.name, maxEdge = STAGE_EDGE)?.jpegBytes,
-            // Read from the file's own sample description: the preview then
-            // asks how to send an AV1 clip whatever its size.
-            unplayableFormat = com.zillit.desktop.core.media.VideoCompressor.unplayableFormat(item.bytes),
         )
         else -> null
+    }
+
+    /**
+     * What the clip says about itself, so the preview can price each quality:
+     * its length and shape out of its own boxes, the sample description's
+     * format to warn about a clip nobody could draw, and whether this machine
+     * has an encoder at all. All header reads — no decode, no temporary copy.
+     */
+    override suspend fun videoInfo(item: PreviewItem): VideoInfo {
+        val facts = Mp4Probe.of(item.bytes)
+        return VideoInfo(
+            durationSeconds = facts?.seconds,
+            width = facts?.width,
+            height = facts?.height,
+            unplayableFormat = VideoCompressor.unplayableFormat(item.bytes),
+            compressible = VideoCompressor.canCompressHere(),
+        )
     }
 
     private const val STAGE_DPI = 144f

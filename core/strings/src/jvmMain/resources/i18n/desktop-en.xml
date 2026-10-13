@@ -13017,4 +13017,11 @@
     <string name="desktop_cal_n_declined">%1$d Declined</string>
     <string name="desktop_pr_no_report_sections">You do not have access to any production report sections.</string>
     <string name="desktop_pr_publish_no_chat_rights">You don\'t have posting rights in Production Report Chat, so the PDF won\'t be posted to the chat.</string>
+    <string name="desktop_video_quality_prompt">This video is %1$s. Send it as:</string>
+    <string name="desktop_video_quality_sd">SD 480p</string>
+    <string name="desktop_video_quality_hd">HD 1080p</string>
+    <string name="desktop_video_quality_original">Original</string>
+    <string name="desktop_video_quality_estimate">%1$s · ~%2$s</string>
+    <string name="desktop_video_quality_unsupported">This computer has no video encoder, so this clip can only be sent as it is.</string>
+    <string name="desktop_video_quality_unplayable">This video is %1$s, which many phones, browsers and this app can\'t play. SD or HD converts it to H.264, which plays everywhere.</string>
 </resources>

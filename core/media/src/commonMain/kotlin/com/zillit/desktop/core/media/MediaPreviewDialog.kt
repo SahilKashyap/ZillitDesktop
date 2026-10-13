@@ -105,6 +105,7 @@ fun MediaPreviewDialog(
     val session = remember(shown.first()) { MediaPreviewSession(shown, initialCaption, captionPerItem) }
     LaunchedEffect(session, shown) { session.sync(shown) }
     DecodePictures(session)
+    LoadVideoInfo(session)
     LoadPosters(session)
 
     // The on-screen measurer draws the canvas; a second one, at density 1
@@ -121,14 +122,7 @@ fun MediaPreviewDialog(
     // phones and the web both send on Enter from the preview's caption
     // (web `CNC_FIXES_CHANGELOG.md` Fix 7 added it there), and a screen
     // where Enter does nothing reads as one that ignored you.
-    val send: () -> Unit = send@{
-        // A large video asks how it should go, every time; Send shows the
-        // first one still unanswered rather than guessing for the sender.
-        session.awaitingVideoChoice?.let { pending ->
-            session.select(session.items.indexOf(pending))
-            sendError = str(S.desktop_video_choice_needed)
-            return@send
-        }
+    val send: () -> Unit = {
         sendError = null
         sending = true
         scope.launch {
@@ -196,8 +190,8 @@ private fun EditorScreen(
                 .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
         )
         if (!editing) {
-            session.current?.takeIf(session::asksVideoChoice)?.let { video ->
-                VideoChoiceBar(video, session.videoChoice(video), session.unplayableFormat(video)) {
+            session.current?.takeIf(session::offersVideoChoice)?.let { video ->
+                VideoChoiceBar(video, session.videoChoice(video), session.videoInfo(video)) {
                     session.chooseVideo(video, it)
                 }
             }
@@ -353,6 +347,23 @@ private fun DecodePictures(session: MediaPreviewSession) {
             val bitmap = withContext(Dispatchers.Default) { decodeImageBitmap(item.bytes) }
             if (bitmap != null) edit.load(bitmap) else session.markUndecodable(item)
         }
+    }
+}
+
+/**
+ * Reads every video's own header, once each, before any poster is cut: the
+ * quality bar prices its options from this, and the read is a box walk over
+ * bytes already in hand.
+ */
+@Composable
+private fun LoadVideoInfo(session: MediaPreviewSession) {
+    val maker = LocalPreviewPosterMaker.current ?: return
+    LaunchedEffect(session, session.items, maker) {
+        session.items
+            .filter { it.kind == PreviewKind.Video && it !in session.videoInfos }
+            .forEach { item ->
+                session.videoInfos[item] = withContext(Dispatchers.Default) { maker.videoInfo(item) }
+            }
     }
 }
 

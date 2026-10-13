@@ -46,27 +46,43 @@ class MediaPreviewSession(
     val longestCaption: Int
         get() = if (captionPerItem) itemCaptions.values.maxOfOrNull { it.length } ?: 0 else sharedCaption.length
 
-    /** How each large video goes, as the sender chose ([asksVideoChoice]). */
+    /** How each video goes, where the sender said something other than the default. */
     private val videoChoices = mutableStateMapOf<PreviewItem, VideoSend>()
 
-    fun videoChoice(item: PreviewItem): VideoSend? = videoChoices[item]
+    /**
+     * How this video will go: what the sender picked, or the default it sits
+     * at until they do. Null for anything that is not a video.
+     */
+    fun videoChoice(item: PreviewItem): VideoSend? = videoChoices[item] ?: defaultVideoChoice(item)
+
+    /**
+     * Original for every video, so Send is never held up and nothing is
+     * re-encoded unasked — except a clip in a format most players cannot
+     * draw, which starts on HD: sent as it is, most people would see nothing
+     * at all, and the sender can still put it back.
+     */
+    private fun defaultVideoChoice(item: PreviewItem): VideoSend? = when {
+        item.kind != PreviewKind.Video -> null
+        videoInfo(item)?.compressible == false -> VideoSend.Original
+        unplayableFormat(item) != null -> VideoSend.Hd
+        else -> VideoSend.Original
+    }
 
     fun chooseVideo(item: PreviewItem, choice: VideoSend) {
         videoChoices[item] = choice
     }
 
-    /**
-     * Whether the sender must choose how this file goes: a video over 100 MB,
-     * or one of any size in a format most players cannot draw.
-     */
-    fun asksVideoChoice(item: PreviewItem): Boolean = item.asksVideoChoice || unplayableFormat(item) != null
+    /** Every video is offered its quality, whatever it weighs. */
+    fun offersVideoChoice(item: PreviewItem): Boolean = item.kind == PreviewKind.Video
+
+    /** What each video said about itself, as the app's maker read it. */
+    val videoInfos = mutableStateMapOf<PreviewItem, VideoInfo?>()
+
+    /** What the file said about itself, once its header was read. */
+    fun videoInfo(item: PreviewItem): VideoInfo? = videoInfos[item]
 
     /** "AV1", when the app's poster maker found the video in a format that will not play. */
-    fun unplayableFormat(item: PreviewItem): String? = posters[item]?.unplayableFormat
-
-    /** The first video still without an answer — what holds Send back. */
-    val awaitingVideoChoice: PreviewItem?
-        get() = items.firstOrNull { asksVideoChoice(it) && it !in videoChoices }
+    fun unplayableFormat(item: PreviewItem): String? = videoInfo(item)?.unplayableFormat
 
     /** Posters for the files that are not pictures, as the app's maker answers them. */
     val posters = mutableStateMapOf<PreviewItem, PreviewPoster?>()
@@ -117,6 +133,7 @@ class MediaPreviewSession(
         itemCaptions.remove(item)
         videoChoices.remove(item)
         posters.remove(item)
+        videoInfos.remove(item)
         removed += item
         items = items - item
         index = index.coerceAtMost(items.lastIndex)
@@ -143,7 +160,7 @@ class MediaPreviewSession(
      */
     fun results(measurer: TextMeasurer, jpegQuality: Int = JPEG_QUALITY): List<PreviewResult>? =
         items.map { item ->
-            val result = (resultFor(item, measurer, jpegQuality) ?: return null).copy(videoSend = videoChoices[item])
+            val result = (resultFor(item, measurer, jpegQuality) ?: return null).copy(videoSend = videoChoice(item))
             if (captionPerItem) result.copy(caption = itemCaptions[item].orEmpty().trim()) else result
         }
 

@@ -1,5 +1,6 @@
 package com.zillit.desktop.core.media
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -16,7 +17,7 @@ class VideoCompressorTest {
     private val mb = 1024L * 1024
 
     @Test
-    fun `only a video over 100 MB is compressed`() {
+    fun `a video over 100 MB is compressed even when nobody was asked`() {
         assertFalse(VideoCompressor.wants("video/quicktime", 100 * mb))
         assertTrue(VideoCompressor.wants("video/quicktime", 100 * mb + 1))
         assertTrue(VideoCompressor.wants("VIDEO/MP4", 900 * mb))
@@ -54,7 +55,7 @@ class VideoCompressorTest {
         assertEquals("65", mac[mac.indexOf("-q:v") + 1])
         assertEquals("videotoolbox", mac[mac.indexOf("-hwaccel") + 1])
         assertEquals("+faststart", mac[mac.indexOf("-movflags") + 1])
-        assertTrue(mac[mac.indexOf("-vf") + 1].startsWith(FFMPEG_SCALE))
+        assertTrue(mac[mac.indexOf("-vf") + 1].startsWith(ffmpegScale(1920)))
         // An audio-less clip must not fail the map.
         assertTrue("0:a:0?" in mac)
 
@@ -69,6 +70,42 @@ class VideoCompressorTest {
         listOf(mac, intel, windows).forEach { command ->
             assertFalse(command.any { it == "libx264" || it == "libopenh264" }, "no bundled H.264 encoder")
         }
+    }
+
+    @Test
+    fun `SD caps at 480p and spends a bitrate, HD keeps 1080p and a quality`() {
+        val sd = ffmpegCommand("ffmpeg", "in", "out", FfmpegTarget.MacAppleSilicon, VideoSend.Sd)
+        assertTrue(sd[sd.indexOf("-vf") + 1].startsWith(ffmpegScale(854)))
+        assertEquals("1500k", sd[sd.indexOf("-b:v") + 1])
+        assertEquals("128k", sd[sd.indexOf("-b:a") + 1])
+        // A constant quality at 480p lands wherever the picture leads, and the
+        // sender was shown a figure.
+        assertFalse("-q:v" in sd)
+
+        val hd = ffmpegCommand("ffmpeg", "in", "out", FfmpegTarget.MacAppleSilicon, VideoSend.Hd)
+        assertTrue(hd[hd.indexOf("-vf") + 1].startsWith(ffmpegScale(1920)))
+        assertEquals("65", hd[hd.indexOf("-q:v") + 1])
+        assertEquals("160k", hd[hd.indexOf("-b:a") + 1])
+
+        // Where no quality mode exists, both tiers name their own bitrate.
+        val windowsSd = ffmpegCommand("ffmpeg.exe", "in", "out", FfmpegTarget.Windows, VideoSend.Sd)
+        assertEquals("1500k", windowsSd[windowsSd.indexOf("-b:v") + 1])
+        val windowsHd = ffmpegCommand("ffmpeg.exe", "in", "out", FfmpegTarget.Windows, VideoSend.Hd)
+        assertEquals("10M", windowsHd[windowsHd.indexOf("-b:v") + 1])
+    }
+
+    @Test
+    fun `apple's converter takes the preset nearest the tier`() {
+        val sd = Avconvert(VideoSend.Sd).command(File("in.mov"), File("out.mp4"))
+        assertEquals("Preset640x480", sd[sd.indexOf("--preset") + 1])
+        val hd = Avconvert(VideoSend.Hd).command(File("in.mov"), File("out.mp4"))
+        assertEquals("Preset1920x1080", hd[hd.indexOf("--preset") + 1])
+    }
+
+    @Test
+    fun `asked for the original, nothing is encoded at all`() = runTest {
+        val clip = checkNotNull(javaClass.getResourceAsStream("/mp4/rot0.mp4")).use { it.readBytes() }
+        assertNull(VideoCompressor.compress("rot0.mp4", clip, quality = VideoSend.Original))
     }
 
     @Test

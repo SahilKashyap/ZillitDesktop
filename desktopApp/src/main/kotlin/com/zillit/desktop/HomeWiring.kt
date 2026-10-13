@@ -206,7 +206,7 @@ internal fun homeMediaCapture(
         } else {
             original
         }
-        val picked = compressIfLarge(withThumbnail, onProgress)
+        val picked = compressAsChosen(withThumbnail, onProgress)
         // The poster read path signs S3 GETs; a poster keyed into Box could
         // never be fetched. The web skips it there for the same reason.
         val storageIsAws = storageKindOf(storageType()) == StorageKind.Aws
@@ -337,25 +337,34 @@ private suspend fun withThumbnail(picked: PickedMedia): PickedMedia = withContex
 }
 
 /**
- * A video over 100 MB re-encoded before it uploads; anything else, or a video
- * that would not compress, comes back as it was.
+ * A video re-encoded to the quality the sender picked in the preview — SD or
+ * HD — before it uploads; anything else, or a video that would not compress,
+ * comes back as it was.
+ *
+ * A send from a surface with no preview in front of it answers nothing, and
+ * keeps the behaviour that predates the choice: HD above 100 MB, untouched
+ * below it.
  *
  * Compressing reports as its own phase ([UploadProgress.compressing]), so the
  * bubble says "Compressing 40%" and then starts "Uploading" from zero rather
  * than calling the re-encode an upload. The poster was cut from the
  * original, which the compressed copy matches frame for frame.
  */
-private suspend fun compressIfLarge(original: PickedMedia, onProgress: (Int) -> Unit): PickedMedia {
-    // The sender's own answer in the preview; no answer (a path with no
-    // preview) keeps the old behaviour and compresses.
-    if (original.videoSend == VideoSend.Original) return original
-    // Asked for, whatever the size — an AV1 clip under 100 MB still has to
-    // become H.264 for most people to see it.
-    val asked = original.videoSend == VideoSend.Compressed
-    if (!asked && !VideoCompressor.wants(original.contentType, original.bytes.size.toLong())) return original
+private suspend fun compressAsChosen(original: PickedMedia, onProgress: (Int) -> Unit): PickedMedia {
+    val quality = original.videoSend
+        ?: VideoSend.Hd.takeIf { VideoCompressor.wants(original.contentType, original.bytes.size.toLong()) }
+        ?: return original
+    if (quality == VideoSend.Original) return original
     onProgress(UploadProgress.compressing(0))
+    // A clip most players cannot draw is converted whatever it then weighs:
+    // there the point is the H.264, not the saving.
     val unplayable = VideoCompressor.unplayableFormat(original.bytes) != null
-    val compressed = VideoCompressor.compress(original.name, original.bytes, requireSmaller = !unplayable) { percent ->
+    val compressed = VideoCompressor.compress(
+        name = original.name,
+        bytes = original.bytes,
+        quality = quality,
+        requireSmaller = !unplayable,
+    ) { percent ->
         onProgress(UploadProgress.compressing(percent))
     } ?: return original
     return original.copy(name = compressed.name, contentType = compressed.contentType, bytes = compressed.bytes)
