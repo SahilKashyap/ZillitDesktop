@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.chat.data.readReceiptFrom
 import com.zillit.desktop.feature.chat.data.recentPeerIds
 import com.zillit.desktop.feature.chat.data.roomsFrom
 import com.zillit.desktop.feature.chat.data.readChatMessage
+import com.zillit.desktop.feature.chat.data.lastMessagesEnvelope
 import com.zillit.desktop.feature.chat.data.sendEnvelope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
@@ -302,5 +303,38 @@ class ChatWireTest {
                 myUserId = "me",
             ),
         )
+    }
+
+    @Test
+    fun `the warm ask names the conversation, one row, previous`() {
+        val envelope = lastMessagesEnvelope(
+            projectId = "p-1",
+            senderId = "me",
+            receiverId = "u-a",
+            nowMillis = 1_700_000_000_000,
+        )
+        assertEquals("p-1", envelope["project_id"]?.jsonPrimitive?.content)
+        assertEquals("me", envelope["sender"]?.jsonPrimitive?.content)
+        assertEquals("u-a", envelope["receiver"]?.jsonPrimitive?.content)
+        assertEquals("1700000000000", envelope["timestamp"]?.jsonPrimitive?.content)
+        assertEquals("1", envelope["max_records"]?.jsonPrimitive?.content)
+        assertEquals("previous", envelope["next_previous"]?.jsonPrimitive?.content)
+        assertEquals("cnc_section", envelope["chat_tool"]?.jsonPrimitive?.content)
+        // C&C sends neither; the budget tools send both, as their sends do.
+        assertNull(envelope["department_id"])
+        assertNull(envelope["budget_document_id"])
+    }
+
+    @Test
+    fun `the warm ask's rows are read out of the ack's detail`() {
+        // The socket acks under `detail`, where REST answers under `data`.
+        val rows = chatRows(
+            Json.parseToJsonElement(
+                """{"success":true,"detail":{"chat_records":[
+                   {"_id":"m1","sender":"alice","receiver":"me","message":"hex:late","created":300}]}}""",
+            ),
+        )
+        assertEquals(1, rows.size)
+        assertEquals("late", readChatMessage(rows.first(), myUserId = "me", decrypt = ::decrypt)?.body)
     }
 }

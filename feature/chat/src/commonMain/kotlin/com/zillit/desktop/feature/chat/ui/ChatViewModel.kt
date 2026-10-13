@@ -687,6 +687,11 @@ class ChatViewModel(
                         setState { copy(groups = rooms) }
                         // The rooms' own newest lines, now that their ids are known.
                         setState { copy(previews = previews + previewsFor(emptyList())) }
+                        // And the ones this computer has never downloaded. The
+                        // room list carries its own stamps, so this pass is the
+                        // only reader of them — it does not wait for a repaint
+                        // the backlog or the user list might already have done.
+                        warmPreviews()
                     },
                     onError = { },
                 )
@@ -864,6 +869,9 @@ class ChatViewModel(
                 activity = activity,
             )
         }
+        // After the rows are on screen, not before: the pass reads the shelf
+        // this call just wrote, and the lines it fills repaint it again.
+        warmPreviews()
     }
 
     /**
@@ -1691,6 +1699,82 @@ class ChatViewModel(
     private var backlogWindowStart: Long = 0L
 
     /**
+     * The stamp each conversation's last-message line was already fetched for.
+     *
+     * One ask per new stamp: [warmPreviews] runs on every listing repaint, and
+     * without this a conversation the server cannot answer for would be asked
+     * again on each one — and the repaint the answers trigger would ask a
+     * third time. A genuinely newer stamp re-opens exactly one ask.
+     */
+    private val warmedTo = mutableMapOf<String, Long>()
+
+    /** True while a warm pass is in flight, so repaints do not stack passes. */
+    private var warming = false
+
+    /**
+     * Fills the listing's last-message line for conversations whose newest
+     * message this computer never downloaded.
+     *
+     * The line comes from the message caches, and those are filled by a live
+     * arrival or by opening the thread. The stamps do not: the notification
+     * backlog and `sorting_activity` carry them whether or not the message was
+     * ever fetched. So a message written while this desktop was shut moved its
+     * row and badged it while the words underneath stayed old — and opening
+     * the conversation was the only thing that corrected them (QA: "latest
+     * message never showed up on the chat listing"). The same open is why the
+     * thread sat at the last message it had and jumped when history landed.
+     *
+     * Asked over the socket, one row per conversation, as the web's
+     * `CNCSyncHelper` asks it. Only the conversations whose stamp outruns
+     * their cached newest line are asked — the backend has flagged that
+     * fan-out once already — newest first, and no more than
+     * [WARM_PREVIEW_LIMIT] in a pass.
+     */
+    private fun warmPreviews() {
+        if (warming) return
+        val rooms = currentState.groups.associate { it.id to it.sortingActivity }
+        val stamps = knownActivity().toMutableMap()
+        // A room's own `sorting_activity` outlives the backlog's rows, so it
+        // is the stamp that still knows about a room read long ago.
+        rooms.forEach { (id, at) -> if (at > (stamps[id] ?: 0L)) stamps[id] = at }
+        val stale = (currentState.recents + rooms.keys).distinct()
+            .mapNotNull { id ->
+                val at = stamps[id] ?: 0L
+                val cached = repository.lastMessageOf(id)?.timestampMillis ?: 0L
+                if (at > cached && at > (warmedTo[id] ?: 0L)) id to at else null
+            }
+            .sortedByDescending { (_, at) -> at }
+            .take(WARM_PREVIEW_LIMIT)
+        if (stale.isEmpty()) return
+        warming = true
+        launch {
+            var answered = false
+            try {
+                for ((id, at) in stale) {
+                    warmedTo[id] = at
+                    if (repository.lastMessage(id, isGroup = id in rooms) is ZillitResult.Failure) {
+                        // Asked and not answered. Forget the stamp so a later
+                        // repaint can try again, and stop the pass rather than
+                        // spending an ack timeout on every remaining row — and
+                        // without the repaint below, which would start another
+                        // pass on the rows this one gave up on.
+                        warmedTo.remove(id)
+                        return@launch
+                    }
+                    answered = true
+                    // Each line appears as its answer lands, rather than the
+                    // whole shelf waiting on the slowest ask.
+                    setState { copy(previews = previewsFor(recents)) }
+                }
+            } finally {
+                warming = false
+            }
+            // The stamps moved with the lines, so the order is re-read once.
+            if (answered) showRecents(currentState.recents)
+        }
+    }
+
+    /**
      * Seeds the server's word on unread per conversation, and the listing's
      * order, from the notification backlog. Runs on every listing refresh and
      * after a silence, whose prunes the repository applies to the seed.
@@ -1741,6 +1825,9 @@ class ChatViewModel(
         stopPresence()
         serverUnread.clear()
         serverActivity.clear()
+        // Stamps and ids are another production's; so is anything they were
+        // already warmed for.
+        warmedTo.clear()
         // A send pinned to the production being left keeps going (and comes
         // back into its thread on return); one that is not cannot survive.
         unsentMedia.values.removeAll { it.pinned == null }
@@ -2295,6 +2382,16 @@ internal data class CachedRecents(
     val ids: List<String> = emptyList(),
     val activity: Map<String, Long> = emptyMap(),
 )
+
+/**
+ * How many conversations one warm pass may ask the server about.
+ *
+ * The web asks about every conversation in its list on open; the backend
+ * flagged that burst, and its room half was cut back to the rooms actually on
+ * screen. This cap is the same restraint: the rows a reader can plausibly be
+ * looking at, newest first, and the rest on the next repaint.
+ */
+private const val WARM_PREVIEW_LIMIT = 30
 
 /** How long the server gets to apply a read before the tab split is re-asked. */
 private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L

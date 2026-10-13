@@ -31,6 +31,19 @@ val UPDATE_REACTION = SocketEventName("update_reaction")
 val TYPING = SocketEventName("private-chat:typing")
 
 /**
+ * A window of a conversation's history, asked over the socket and answered in
+ * the ack as `detail.chat_records`.
+ *
+ * REST serves the thread an open screen reads ([ChatRepository.history]); this
+ * pair exists for the listing, which needs one row per conversation and would
+ * otherwise make one REST call per row. The web asks here for exactly that
+ * (`CNCSyncHelper` → `cncEmit.getLastMessage` / `getLastMessageRoom`, with
+ * `max_records: 1`).
+ */
+val PRIVATE_CHAT_GET_MESSAGES = SocketEventName("private-chat:get-messages")
+val GROUP_CHAT_GET_MESSAGES = SocketEventName("group-chat:get-messages")
+
+/**
  * A group's typing, which is a different name from a DM's.
  *
  * Android picks the event by the conversation on both halves —
@@ -130,6 +143,40 @@ fun typingEnvelope(
         put("status", if (started) "start" else "end")
         put("chat_tool", tool)
     }
+
+/**
+ * "The newest [maxRecords] rows of this conversation" — the listing's warm
+ * fetch, field for field the web's `getLastMessage` payload
+ * (`CNCSyncHelper.jsx`: project, sender, receiver, `timestamp`, `max_records`,
+ * `next_previous: 'previous'`).
+ *
+ * [receiverId] is the peer for a DM and the room for a group, the way every
+ * send envelope here keys a conversation. The tool rides along as it does on
+ * every other emit from this client; C&C's is the default.
+ */
+@Suppress("LongParameterList") // One field per wire key, as the other envelopes.
+fun lastMessagesEnvelope(
+    projectId: String,
+    senderId: String,
+    receiverId: String,
+    nowMillis: Long,
+    maxRecords: Int = 1,
+    tool: String = ChatScope.CNC,
+    departmentId: String = "",
+    budgetDocumentId: String = "",
+): JsonObject = buildJsonObject {
+    put("project_id", projectId)
+    put("sender", senderId)
+    put("receiver", receiverId)
+    put("timestamp", nowMillis)
+    put("max_records", maxRecords)
+    put("next_previous", "previous")
+    put("chat_tool", tool)
+    if (departmentId.isNotBlank()) {
+        put("department_id", departmentId)
+        put("budget_document_id", budgetDocumentId)
+    }
+}
 
 /**
  * A read-untill event: how far the other end has got with *our* messages.
@@ -452,10 +499,15 @@ fun chatRows(body: JsonElement): List<JsonElement> = when (body) {
     is kotlinx.serialization.json.JsonArray -> body
     is JsonObject -> {
         val data = body["data"]
+        // `detail` is the socket ack's envelope — the warm fetch reads its
+        // rows through here, as REST's answers read theirs through `data`.
+        val detail = body["detail"]
         val candidates = listOfNotNull(
             (data as? JsonObject)?.get("chat_records"),
+            (detail as? JsonObject)?.get("chat_records"),
             body["chat_records"],
             data,
+            detail,
             body["messages"],
             body["items"],
         )

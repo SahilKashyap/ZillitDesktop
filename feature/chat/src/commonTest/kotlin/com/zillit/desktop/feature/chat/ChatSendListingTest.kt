@@ -252,6 +252,33 @@ internal class FakeChatRepository(
     /** A specific failure for the next sends — the handler tests' lever. */
     var sendError: ZillitError? = null
 
+    /**
+     * What the server would answer the listing's warm ask, by conversation —
+     * the newest message of a thread this "computer" never downloaded.
+     */
+    var serverLast: Map<String, ChatMessage> = emptyMap()
+
+    /** Every warm ask made, so a test can prove which rows were (not) asked about. */
+    val lastMessageAsks = mutableListOf<String>()
+
+    /** Refuses every warm ask — the lever for "the server did not answer". */
+    var lastMessageFails: Boolean = false
+
+    override suspend fun lastMessage(
+        conversationId: String,
+        isGroup: Boolean,
+    ): ZillitResult<ChatMessage?> {
+        lastMessageAsks += conversationId
+        if (lastMessageFails) return ZillitResult.Failure(ZillitError.Unknown("ack failed"))
+        val answer = serverLast[conversationId] ?: return ZillitResult.Success(null)
+        // Keyed by the conversation, not by the sender: a room's line comes
+        // from a person and belongs to the room, exactly as the real
+        // repository's `remember` keys it.
+        activityByPeer[conversationId] = answer.timestampMillis
+        lastByPeer[conversationId] = answer
+        return ZillitResult.Success(answer)
+    }
+
     override suspend fun recentPeers(): ZillitResult<List<String>> =
         if (socketDown) {
             ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))

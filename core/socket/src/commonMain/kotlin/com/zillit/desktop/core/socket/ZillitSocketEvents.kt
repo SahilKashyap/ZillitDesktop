@@ -122,6 +122,13 @@ object ZillitSocketEvents {
 
     object PrivateChat {
         val Message = SocketEventName("private_chat")
+
+        /**
+         * Ask-and-answer: a window of a DM's history over the socket, acked
+         * with `detail.chat_records`. The listing's warm fetch asks for one
+         * row — the web's `getLastMessage` (`socket/cncEmit.js:458`).
+         */
+        val GetMessages = SocketEventName("private-chat:get-messages")
         val Delete = SocketEventName("private-chat:delete-messages")
         val ReadUntil = SocketEventName("private_chat_message_read_untill")
         val Edit = SocketEventName("private-chat:edit")
@@ -131,6 +138,9 @@ object ZillitSocketEvents {
 
     object GroupChat {
         val Message = SocketEventName("group_chat")
+
+        /** [PrivateChat.GetMessages] for a room — the web's `getLastMessageRoom`. */
+        val GetMessages = SocketEventName("group-chat:get-messages")
         val Delete = SocketEventName("group-chat:delete-messages")
         val ReadUntil = SocketEventName("group-chat:read-untill")
         val Edit = SocketEventName("group-chat:edit")
@@ -386,6 +396,7 @@ object ZillitSocketEvents {
         Session.JoinUser, Session.UserList, Session.MarkOnline, Session.MarkOffline, Session.UnlinkedDevice,
         PrivateChat.Message, PrivateChat.Delete, PrivateChat.ReadUntil,
         PrivateChat.Edit, PrivateChat.Typing, PrivateChat.Expired,
+        PrivateChat.GetMessages, GroupChat.GetMessages,
         GroupChat.Message, GroupChat.Delete, GroupChat.ReadUntil,
         GroupChat.Edit, GroupChat.Typing, GroupChat.Expired,
         ChatRoom.Create, ChatRoom.Remove, ChatRoom.Updated, ChatRoom.Blocked,

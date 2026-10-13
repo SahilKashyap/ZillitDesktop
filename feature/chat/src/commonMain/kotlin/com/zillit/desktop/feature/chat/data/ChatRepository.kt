@@ -55,6 +55,27 @@ interface ChatRepository {
     suspend fun recentPeers(): ZillitResult<List<String>>
 
     /**
+     * The one newest message in [conversationId], asked of the server and put
+     * in the caches — what the listing's last-message line reads.
+     *
+     * [lastMessageOf] can only answer for a thread this computer has already
+     * downloaded: a live arrival while the app was running, or the history
+     * fetch a thread open performs. A message written while the desktop was
+     * shut, or on another production, is in neither — so the row moved and
+     * badged on the server's stamp while its words stayed old, and only
+     * opening the conversation corrected them. This is the ask that fills
+     * that gap, exactly as the web's `CNCSyncHelper` does it: one row per
+     * conversation over the socket, not a thread fetch per row.
+     *
+     * Answers null when the conversation has no messages. The default
+     * answers null for the hosts and fakes that have no socket.
+     */
+    suspend fun lastMessage(
+        conversationId: String,
+        isGroup: Boolean = false,
+    ): ZillitResult<ChatMessage?> = ZillitResult.Success(null)
+
+    /**
      * The server's unread per conversation — DMs keyed by the peer's user id,
      * rooms by the room id — read off the notification backlog, exactly as
      * both phones and the web seed their chat-list badges. A count exists for
@@ -414,6 +435,8 @@ class ChatRepositoryImpl(
     private val groupEdit = scoped(GROUP_CHAT_EDIT)
     private val privateDelete = scoped(PRIVATE_CHAT_DELETE)
     private val groupDelete = scoped(GROUP_CHAT_DELETE)
+    private val privateGetMessages = scoped(PRIVATE_CHAT_GET_MESSAGES)
+    private val groupGetMessages = scoped(GROUP_CHAT_GET_MESSAGES)
 
     // Scoped like every other name here, so a budget conversation's rooms
     // arrive as `budget:chat-room:*` and C&C's as the bare spelling.
@@ -458,12 +481,24 @@ class ChatRepositoryImpl(
             bus.on(updateReaction).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-        ).mapNotNull { message ->
+        ).map { message ->
+            // The filing is the gate on the log, not the arrival.
+            //
+            // This is a COLD flow and three subscribers collect it — the chat
+            // view model, the desktop notification alerts and the message
+            // widget (`main.kt`, `Alerts.kt`, `MessageWidget.kt`), all alive
+            // for the whole session. So every step after the merge ran once
+            // per subscriber: one socket frame filed the row three times and
+            // logged three lines. [remember] now answers whether the row was
+            // new, which makes one arrival one line again.
+            //
             // Logged like the socket's own connect line: this protocol cannot
             // be exercised from one client, so an arrival leaving a trace is
             // what makes the next report diagnosable. Ids only, never bodies.
-            ZillitLog.i(TAG) { "message in from=${message.senderId} group=${message.isGroup}" }
-            message.also(::remember)
+            if (remember(message)) {
+                ZillitLog.i(TAG) { "message in from=${message.senderId} group=${message.isGroup}" }
+            }
+            message
         }
 
     override val roomChanges: Flow<Unit> =
@@ -580,19 +615,36 @@ class ChatRepositoryImpl(
         return threads
     }
 
-    private fun remember(message: ChatMessage) {
+    /**
+     * Files [message] in the session map and the at-rest cache.
+     *
+     * Answers whether anything changed — false when this precise row is
+     * already filed. [incoming] is cold and three subscribers collect it, so
+     * one socket frame reached here three times: three rebuilds of the whole
+     * thread list and three synchronous SQLite writes, on the UI thread
+     * (`viewModelScope` and `LaunchedEffect` are both Main), for one message.
+     * Row equality is the right test rather than the id alone — an edit, a
+     * reaction or a delivery tick carries the same ids and must still file.
+     *
+     * A row present in the session map is present at rest too: every path
+     * that fills one fills the other ([history] through `replaceThread`,
+     * [cached] by reading the cache back), so there is nothing left to write.
+     */
+    private fun remember(message: ChatMessage): Boolean {
         val peer = when {
             message.isGroup -> message.receiverId
             message.isMine -> message.receiverId
             else -> message.senderId
         }
-        if (peer.isBlank()) return
+        if (peer.isBlank()) return false
         val known = threads()[peer].orEmpty()
+        if (known.any { it.uniqueId == message.uniqueId && it == message }) return false
         // Matched on either id: a send's ack still wears our unique id, an
         // edit's ack may wear only the server's — one row either way.
         threads()[peer] = (known.filterNot { it.uniqueId == message.uniqueId || it.id == message.id } + message)
             .sortedBy(ChatMessage::timestampMillis)
         projectId()?.let { project -> disk?.upsert(project, message.toRow(peer)) }
+        return true
     }
 
     override suspend fun deleteMessages(
@@ -790,6 +842,45 @@ class ChatRepositoryImpl(
             },
             JsonElement.serializer(),
         ).map(::recentPeerIds)
+    }
+
+    /**
+     * `private-chat:get-messages` / `group-chat:get-messages` with
+     * `max_records: 1` — the web's warm fetch (`CNCSyncHelper.fetchUserData`).
+     *
+     * The row goes through [remember], so the listing's preview, the shelf's
+     * order and a later thread open all read it from the same caches that a
+     * live arrival fills. A refusal is logged and answered as a failure; the
+     * caller simply keeps the line it had.
+     */
+    override suspend fun lastMessage(
+        conversationId: String,
+        isGroup: Boolean,
+    ): ZillitResult<ChatMessage?> {
+        val me = myUserId() ?: return ZillitResult.Success(null)
+        val project = projectId() ?: return ZillitResult.Success(null)
+        return bus.emitForAck(
+            if (isGroup) groupGetMessages else privateGetMessages,
+            lastMessagesEnvelope(
+                projectId = project,
+                senderId = me,
+                receiverId = conversationId,
+                nowMillis = kotlin.time.Clock.System.now().toEpochMilliseconds(),
+                tool = scope.messageTool,
+                departmentId = scope.departmentId,
+                budgetDocumentId = scope.budgetDocumentId,
+            ),
+            JsonElement.serializer(),
+        ).flatMap { ack ->
+            ackComplaint(ack)?.let { complaint ->
+                ZillitLog.w(TAG) { "the server refused a last-message ask: $complaint" }
+                return@flatMap ZillitResult.Failure(ZillitError.Unknown(complaint))
+            }
+            val newest = chatRows(ack)
+                .mapNotNull { readChatMessage(it, me, decrypt, isGroup) }
+                .maxByOrNull(ChatMessage::timestampMillis)
+            ZillitResult.Success(newest?.also(::remember))
+        }
     }
 
     /**
