@@ -12845,4 +12845,20 @@
     <string name="desktop_po_unsaved_leave_message">You have unsaved changes on this page. Leaving will discard them. Are you sure?</string>
     <string name="desktop_po_resets_approvals">(resets approvals)</string>
     <string name="desktop_po_set_approver">Set Approver →</string>
+    <string name="desktop_fc_steps_to_download">Steps to download</string>
+    <string name="desktop_fc_steps_title">TAKE A SCREENSHOT FOR THE EASE OF REFERENCE.</string>
+    <string name="desktop_fc_steps_pc">FOR PC COMPUTERS:</string>
+    <string name="desktop_fc_steps_mac">FOR APPLE COMPUTERS:</string>
+    <string name="desktop_fc_steps_pc_1">Click on the download button.</string>
+    <string name="desktop_fc_steps_pc_2">You will see a downward arrow show up next to the tab bar at the top right. Once the download is complete you will see a line formed underneath the arrow signifying that the download is complete.</string>
+    <string name="desktop_fc_steps_pc_3">On the header, click on \'File\' next to \'Home\'.</string>
+    <string name="desktop_fc_steps_pc_4">Click on it and you will see your download history pop up, and the ZIP file downloaded under its name in the history.</string>
+    <string name="desktop_fc_steps_pc_5">Click on the folder; it will take you to the download folder, opening it up to \'Assets\' and underneath \'Index\'. Above it, in the header below the tab bar, you will see \'Sort\', \'View\' and \'Extract All\'. At the extreme right of the header you will see \'Details\'. If you click on it, it will show you a folder image with a zipper on it, showing it is a zipped file.</string>
+    <string name="desktop_fc_steps_pc_6">Click on \'Extract All\'. A popup will ask you to \'Select Destination and Extract Files\'. Below that, in the tab bar, it will show the default destination. You can extract to that folder, or \'Browse\' to put it in another folder or even on your desktop. Once you have decided, click on \'Extract\'. Once the extraction begins you will see a progress bar. When extraction is complete you will see the folder open up again, this time with \'Index\' above \'Assets\'. Under \'Details\' the folder will no longer be zipped.</string>
+    <string name="desktop_fc_steps_mac_2">You will see a downward arrow show up next to the tab bar at the top right. Once the download is complete it will change to a grey circle with an arrow, signifying that the download is complete.</string>
+    <string name="desktop_fc_steps_mac_3">Click on the highlighted downward arrow; you will see your download history pop up, and the ZIP file downloaded under its name in the history.</string>
+    <string name="desktop_fc_steps_mac_4">Click on the folder icon next to the downloaded file name; it will take you to the download folder where you can see the downloaded ZIP file.</string>
+    <string name="desktop_fc_steps_mac_5">Double-click the downloaded ZIP file to extract the files. Once the extraction begins you will see a progress bar. When extraction is complete you will see the folder open up again, this time with \'Index\' above \'Assets\'. Under \'Details\' the folder will no longer be zipped.</string>
+    <string name="desktop_fc_steps_note_folder">Note: You can also access the download you made through your download folder at any time.</string>
+    <string name="desktop_fc_steps_note_keep">Note: This data is now always available to you on your computer. You can now delete the project if you want.</string>
 </resources>

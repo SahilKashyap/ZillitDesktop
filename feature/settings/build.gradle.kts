@@ -9,6 +9,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":core:appupdate"))
+            api(project(":core:cabinet"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
             implementation(project(":core:socket"))

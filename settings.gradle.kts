@@ -138,3 +138,11 @@ include(":feature:sos")
 // for latitude and longitude in two number boxes.
 // ---------------------------------------------------------------------------
 include(":core:locationpicker")
+
+// ---------------------------------------------------------------------------
+// core:cabinet — the seam between Admin Settings' File Cabinet and the tools
+// whose archived records it browses. The page owns the list and the chrome; each
+// feature contributes a read-only viewer for the rows it knows, so settings
+// need not depend on every tool.
+// ---------------------------------------------------------------------------
+include(":core:cabinet")

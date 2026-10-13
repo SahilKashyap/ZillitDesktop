@@ -36,6 +36,9 @@ sealed interface AdminEvent {
     /** Selects every module, or clears the selection when all are already selected. */
     data object CabinetSelectAllToggled : Cabinet
 
+    /** The Select / Deselect button: rows become tick boxes, or go back to opening their viewers. */
+    data object CabinetSelectModeToggled : Cabinet
+
     data object CabinetRequestDownload : Cabinet
 
     data object CabinetCancelRequest : Cabinet

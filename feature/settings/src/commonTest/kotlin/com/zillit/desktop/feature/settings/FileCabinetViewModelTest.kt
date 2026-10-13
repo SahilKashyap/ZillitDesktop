@@ -199,4 +199,44 @@ class FileCabinetViewModelTest {
 
         assertTrue(repository.calls.none { it.startsWith("requestDownload") })
     }
+
+    @Test
+    fun `the page opens in browse mode, and Select turns the rows into tick boxes and back`() = runTest {
+        val model = openCabinet(Recorder())
+        assertEquals(false, model.state.value.fileCabinet.selecting)
+
+        model.onEvent(AdminEvent.CabinetSelectModeToggled)
+        assertEquals(true, model.state.value.fileCabinet.selecting)
+
+        model.onEvent(AdminEvent.CabinetToggled("home"))
+        model.onEvent(AdminEvent.CabinetSelectModeToggled)
+
+        // Deselect drops the ticks, as the web's does.
+        assertEquals(false, model.state.value.fileCabinet.selecting)
+        assertTrue(model.state.value.fileCabinet.selected.isEmpty())
+    }
+
+    @Test
+    fun `asking for a download returns the page to browse mode`() = runTest {
+        val model = openCabinet(Recorder())
+
+        model.onEvent(AdminEvent.CabinetSelectModeToggled)
+        model.onEvent(AdminEvent.CabinetToggled("home"))
+        model.onEvent(AdminEvent.CabinetRequestDownload)
+        advanceUntilIdle()
+
+        assertEquals(false, model.state.value.fileCabinet.selecting)
+    }
+
+    @Test
+    fun `cancelling a request returns the page to browse mode`() = runTest {
+        val repository = Recorder()
+        repository.cabinetRequest = DownloadRequest("req-4", DownloadStatus.Pending)
+        val model = openCabinet(repository)
+
+        model.onEvent(AdminEvent.CabinetCancelRequest)
+        advanceUntilIdle()
+
+        assertEquals(false, model.state.value.fileCabinet.selecting)
+    }
 }

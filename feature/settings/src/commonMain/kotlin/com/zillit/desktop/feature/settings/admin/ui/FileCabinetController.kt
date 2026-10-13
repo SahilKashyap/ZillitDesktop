@@ -35,6 +35,10 @@ internal class FileCabinetController(
         when (event) {
             is AdminEvent.CabinetToggled -> toggle(event.identifier)
             AdminEvent.CabinetSelectAllToggled -> toggleSelectAll()
+            AdminEvent.CabinetSelectModeToggled -> update {
+                // Leaving select mode drops the ticks, as the web's Deselect does.
+                copy(fileCabinet = fileCabinet.copy(selecting = !fileCabinet.selecting, selected = emptySet()))
+            }
             AdminEvent.CabinetRequestDownload -> requestDownload()
             AdminEvent.CabinetCancelRequest -> cancelRequest()
             AdminEvent.CabinetDownload -> download()
@@ -97,14 +101,21 @@ internal class FileCabinetController(
         if (identifiers.isEmpty() || cabinet.request != null) return
 
         cabinetCall(reload = true, call = { repository.requestDownload(identifiers) }) { request ->
-            copy(fileCabinet = fileCabinet.copy(request = request, selected = emptySet(), showNotice = true))
+            copy(
+                fileCabinet = fileCabinet.copy(
+                    request = request,
+                    selected = emptySet(),
+                    selecting = false,
+                    showNotice = true,
+                ),
+            )
         }
     }
 
     private fun cancelRequest() {
         val request = state().fileCabinet.request ?: return
         cabinetCall(reload = true, call = { repository.cancelDownload(request.id) }) {
-            copy(fileCabinet = fileCabinet.copy(request = null, selected = emptySet()))
+            copy(fileCabinet = fileCabinet.copy(request = null, selected = emptySet(), selecting = false))
         }
     }
 
@@ -155,7 +166,7 @@ internal class FileCabinetController(
                     // being prepared is the one to show — with its progress and Cancel, not the ticks.
                     // Read on its own, so the refusal's sentence stays on the strip.
                     if (reload && result.error.userMessage == REQUEST_EXISTS) {
-                        update { copy(fileCabinet = fileCabinet.copy(selected = emptySet())) }
+                        update { copy(fileCabinet = fileCabinet.copy(selected = emptySet(), selecting = false)) }
                         launch { load() }
                     }
                 }

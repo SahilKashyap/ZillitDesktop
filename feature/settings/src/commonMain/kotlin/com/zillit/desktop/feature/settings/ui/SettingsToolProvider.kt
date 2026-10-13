@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.LeaveProductionDialog
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminScreen
+import com.zillit.desktop.core.cabinet.CabinetViewers
 import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
@@ -92,6 +93,8 @@ class SettingsToolProvider(
      * that says it has nothing to show rather than on a crash.
      */
     private val admin: AdminViewModel? = null,
+    /** The read-only viewers the File Cabinet opens its rows into, contributed by the tools. */
+    private val cabinetViewers: CabinetViewers = CabinetViewers.None,
 ) : ToolProvider {
 
     override val path: String = SETTINGS_PATH
@@ -198,6 +201,7 @@ class SettingsToolProvider(
             // Which pages this production has at all. The listing filters on
             // the same facts, so the two cannot disagree.
             production = state.admin.production,
+            cabinetViewers = cabinetViewers,
         )
     }
 

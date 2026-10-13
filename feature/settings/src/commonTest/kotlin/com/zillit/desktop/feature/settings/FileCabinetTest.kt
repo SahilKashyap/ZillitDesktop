@@ -60,6 +60,26 @@ class FileCabinetTest {
         assertEquals(DownloadStatus.Pending, DownloadStatus.of(null))
     }
 
+    @Test
+    fun `four rows do nothing on a click of their body, as on the web`() {
+        val rows = modules(
+            ProductionTool("account_hub_tool", "Account Hub", enabled = true),
+            ProductionTool("document_distribution_tool", "Document Distribution", enabled = true),
+            ProductionTool("transportation_tool", "Transportation", enabled = true),
+            ProductionTool("recce_tool", "Recce", enabled = true),
+            ProductionTool("info_tool", "Info", enabled = true),
+        )
+
+        assertEquals(
+            listOf("account_hub", "document_distribution", "info", "recce", "transportation").sorted(),
+            rows.filter { it.identifier != "group_chat" && it.identifier != "home" }.map { it.identifier }.sorted(),
+        )
+        assertEquals(
+            setOf("account_hub", "document_distribution", "transportation", "recce"),
+            rows.filter { it.rowClickDisabled }.map { it.identifier }.toSet(),
+        )
+    }
+
     // -- the tile, hidden where the web hides it ---------------------------
 
     private fun destinations(production: ProductionFacts) =

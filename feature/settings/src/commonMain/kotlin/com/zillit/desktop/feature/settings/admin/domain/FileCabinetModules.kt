@@ -6,7 +6,20 @@ package com.zillit.desktop.feature.settings.admin.domain
  * @property identifier what the request carries — the web's `commonUnits[].identifier`.
  * @property name the label, already resolved for the reader.
  */
-data class CabinetModule(val identifier: String, val name: String)
+data class CabinetModule(val identifier: String, val name: String) {
+
+    /**
+     * True for the four modules whose row body must not respond to a click: not
+     * to tick it in select mode, not to open a viewer in browse mode. They stay
+     * selectable by their checkbox and by Select All — the web's
+     * `ROW_CLICK_DISABLED_IDENTIFIERS`.
+     */
+    val rowClickDisabled: Boolean get() = identifier in ROW_CLICK_DISABLED
+
+    private companion object {
+        val ROW_CLICK_DISABLED = setOf("account_hub", "document_distribution", "transportation", "recce")
+    }
+}
 
 /**
  * The modules the File Cabinet can archive, in the web's order

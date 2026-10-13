@@ -386,6 +386,12 @@ data class FileCabinetState(
     val modules: List<CabinetModule> = emptyList(),
     /** What the next request will carry, by module identifier. */
     val selected: Set<String> = emptySet(),
+    /**
+     * True while the rows are tick boxes. The page opens in browse mode, as the
+     * web's does: a row opens its viewer, and Select turns the rows into tick
+     * boxes to build a request from.
+     */
+    val selecting: Boolean = false,
     val request: DownloadRequest? = null,
     /** A request, a cancel or a download is in flight. */
     val isWorking: Boolean = false,

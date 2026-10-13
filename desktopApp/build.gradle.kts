@@ -62,6 +62,7 @@ dependencies {
     implementation(project(":core:notifications"))
     implementation(project(":core:media"))
     implementation(project(":core:locationpicker"))
+    implementation(project(":core:cabinet"))
     implementation(project(":feature:notifications"))
     implementation(project(":feature:sos"))
     implementation(project(":core:units"))

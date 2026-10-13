@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.settings.admin.ui.pages.CrewOrderPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.CrewPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.DeleteProductionPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.DepartmentsPage
+import com.zillit.desktop.core.cabinet.CabinetViewers
 import com.zillit.desktop.feature.settings.admin.ui.pages.FileCabinetPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.JobTitlesPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.PreApprovedPage
@@ -49,6 +50,8 @@ fun AdminScreen(
     onBack: () -> Unit,
     production: ProductionFacts,
     modifier: Modifier = Modifier,
+    /** What the File Cabinet can open: the read-only viewers the tools contribute. */
+    cabinetViewers: CabinetViewers = CabinetViewers.None,
 ) {
     // Loading happens on arrival rather than in the provider, so a page reached
     // by any route — rail, deep link, back button — reads the same list.
@@ -80,7 +83,7 @@ fun AdminScreen(
             AdminDestination.ShootingUnits,
             -> UnitsPage(destination, state, onEvent, onBack)
 
-            AdminDestination.FileCabinet -> FileCabinetPage(state, onEvent, onBack)
+            AdminDestination.FileCabinet -> FileCabinetPage(state, onEvent, onBack, cabinetViewers)
             AdminDestination.DeleteProduction -> DeleteProductionPage(state, onEvent, onBack)
         }
 

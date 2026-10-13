@@ -143,6 +143,7 @@ import com.zillit.desktop.feature.email.ui.SignatureToolProvider
 import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.ProfileSeed
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
+import com.zillit.desktop.core.cabinet.CabinetViewers
 import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
 import com.zillit.desktop.feature.settings.ui.path
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
@@ -3970,6 +3971,7 @@ private fun buildRegistry(
         approvals = viewModels.approvals,
         admin = viewModels.admin,
     )
+        cabinetViewers = (graph as? AppGraph.Ready)?.cabinetViewers() ?: CabinetViewers.None,
     // The mail drawer's other two windows — Settings and Contacts.
     val mailSettings = (graph as? AppGraph.Ready)?.let { ready ->
         EmailSettingsToolProvider(
