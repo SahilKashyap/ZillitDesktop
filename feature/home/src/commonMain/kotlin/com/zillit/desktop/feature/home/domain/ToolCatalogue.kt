@@ -207,8 +207,11 @@ object ToolCatalogue {
             (ZillitIcons.Photo to WorkspaceRoute.Tool("/film-tools/still-kills")),
         "timecard_tool" to
             (ZillitToolIcons.Timecard to WorkspaceRoute.Tool("/film-tools/timecard")),
+        // The Transportation HUB, not the older `/film-tools/transportation`
+        // page: the web's tile has opened the hub since April 2026, and the
+        // older page is reachable from the hub's own rail.
         "transportation_tool" to
-            (ZillitToolIcons.Transportation to WorkspaceRoute.Tool("/film-tools/transportation")),
+            (ZillitToolIcons.Transportation to WorkspaceRoute.Tool("/film-tools/transportation-hub")),
         "wardrobe_background_tool" to
             (ZillitToolIcons.Wardrobe to WorkspaceRoute.Tool("/film-tools/wardrobe-background")),
         "wardrobe_main_tool" to

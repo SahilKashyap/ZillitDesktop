@@ -117,6 +117,7 @@ dependencies {
     implementation(project(":feature:bankrec"))
     implementation(project(":feature:invoices"))
     implementation(project(":feature:transportation"))
+    implementation(project(":feature:transporthub"))
     implementation(project(":feature:weather"))
 
     // The app module had no tests until the single-instance guard, which is

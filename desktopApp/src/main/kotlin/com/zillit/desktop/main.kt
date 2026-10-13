@@ -3208,6 +3208,12 @@ internal class AppViewModels(
     val assetRegister: com.zillit.desktop.feature.assetreport.ui.AssetViewModel?,
     /** Transportation: vehicles, pickup requests, permanent allocations, drivers. */
     val transport: TransportViewModel?,
+    /**
+     * Transportation Hub: the tool the web's Transportation tile opens —
+     * trips, ride requests, the fleet, the drivers and the allocations. A
+     * second tool beside [transport], which is the page it replaced.
+     */
+    val transportHub: com.zillit.desktop.feature.transporthub.ui.HubViewModel?,
     /** Zillit Draft: the screenwriting editor, scripts kept on this machine per production. */
     val draft: DraftViewModel?,
     /** Location: the scouting library — photos, videos and links by place. */
@@ -3632,6 +3638,7 @@ private fun rememberAppViewModels(
                 )
             },
             transport = ready?.buildTransport(permissions),
+            transportHub = ready?.buildTransportHub(permissions),
             scheduleDistribution = ready?.buildDistribution(DistributionTool.ScheduleDistribution, permissions),
             scriptDistribution = ready?.buildDistribution(DistributionTool.ScriptDistribution, permissions),
             scheduleDod = ready?.buildDistribution(DistributionTool.ScheduleDod, permissions),
@@ -3794,6 +3801,9 @@ private fun buildRegistry(
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
     }
     val transport = viewModels.transport?.let { (graph as? AppGraph.Ready)?.transportProvider(it, viewModels) }
+    val transportHub = viewModels.transportHub?.let {
+        (graph as? AppGraph.Ready)?.transportHubProvider(it)
+    }
     val draft = viewModels.draft?.let { DraftToolProvider(it) }
     val location = viewModels.location?.let { vm -> (graph as? AppGraph.Ready)?.locationProvider(vm, scope) }
     val continuity = viewModels.continuity?.let { vm ->
@@ -3971,10 +3981,10 @@ private fun buildRegistry(
         onCopy = ::copyToClipboard,
         approvals = viewModels.approvals,
         admin = viewModels.admin,
-    )
         cabinetViewers = (graph as? AppGraph.Ready)
             ?.cabinetViewers { viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty }
             ?: CabinetViewers.None,
+    )
     // The mail drawer's other two windows — Settings and Contacts.
     val mailSettings = (graph as? AppGraph.Ready)?.let { ready ->
         EmailSettingsToolProvider(
@@ -4244,7 +4254,8 @@ private fun buildRegistry(
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
-        assetRegister, transport, location, continuity, costReport, costReportWorksheet, costReportAnalytics,
+        assetRegister, transport, transportHub, location, continuity, costReport, costReportWorksheet,
+        costReportAnalytics,
         invoices, draft,
         mainBudget, departmentBudget, weather, tasks, selectStills, costumeSetSync, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,

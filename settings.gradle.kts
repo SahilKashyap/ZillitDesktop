@@ -121,6 +121,7 @@ include(":feature:settings")
 include(":feature:sides")
 include(":feature:timecard")
 include(":feature:transportation")
+include(":feature:transporthub")
 include(":feature:weather")
 include(":feature:shell")
 
