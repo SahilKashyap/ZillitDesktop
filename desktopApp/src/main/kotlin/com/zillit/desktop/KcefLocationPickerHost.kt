@@ -66,9 +66,17 @@ import kotlin.coroutines.resume
  * second picker opens instantly. [releaseHolder] is registered with [Shutdown]
  * because a displayable AWT window keeps the JVM alive on its own.
  */
+// One member per thing the page or the dialog can do, as KcefCallEngine has.
+@Suppress("TooManyFunctions")
 class KcefLocationPickerHost(
     /** The decrypted Google Maps JS key, or null when the production has none. */
     private val googleMapsKey: suspend () -> String?,
+    /**
+     * Where this machine is, for "My Location" and for the start position of a
+     * picker opened on nothing. Null where the app cannot say — see
+     * [DeviceGeolocation], which is what it is in the running app.
+     */
+    private val locate: suspend () -> GeoPoint?,
     private val scope: CoroutineScope,
 ) : LocationPicker {
 
@@ -89,6 +97,20 @@ class KcefLocationPickerHost(
 
     /** Why the map is not there, when it is not there. */
     val failure: StateFlow<String?> = _failure.asStateFlow()
+
+    private val _locating = MutableStateFlow(false)
+
+    /** True while the position lookup is in flight; the button waits on it. */
+    val locating: StateFlow<Boolean> = _locating.asStateFlow()
+
+    private val _hint = MutableStateFlow<String?>(null)
+
+    /**
+     * One line under the map for something that did not work but must not take
+     * the map away — today only a position nobody could find. [failure]
+     * replaces the map; this sits beside the pick.
+     */
+    val hint: StateFlow<String?> = _hint.asStateFlow()
 
     private val _surface = MutableStateFlow<Component?>(null)
 
@@ -124,6 +146,14 @@ class KcefLocationPickerHost(
     @Volatile
     private var theme: PickerTheme = DEFAULT_THEME
 
+    private val fixLock = Mutex()
+
+    @Volatile
+    private var fix: GeoPoint? = null
+
+    @Volatile
+    private var fixAt = 0L
+
     override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? =
         suspendCancellableCoroutine { continuation ->
             // Only one dialog can be on screen, so a second ask replaces the
@@ -137,6 +167,7 @@ class KcefLocationPickerHost(
             seed = initial
             _picked.value = initial
             _failure.value = null
+            _hint.value = null
             _request.value = Request(title = title, initial = initial)
             // The field's composition can leave while the dialog is up (its
             // form closed underneath it); the dialog must not outlive it.
@@ -169,6 +200,7 @@ class KcefLocationPickerHost(
     private fun withdraw() {
         _request.value = null
         _picked.value = null
+        _hint.value = null
         seed = null
         browser?.let { target -> run(target, LocationPickerWire.resetScript) }
     }
@@ -177,6 +209,74 @@ class KcefLocationPickerHost(
     private suspend fun open() {
         if (!prepare()) return
         if (mapReady) replaySeed()
+        if (seed == null) startOnHere()
+    }
+
+    /**
+     * "My Location" — the pin on this machine's position, with its address read
+     * back off it (`handleMyLocation` in PlacePicker.jsx:163-175).
+     *
+     * The failure is said out loud here, unlike [startOnHere]: someone who
+     * pressed a button is owed an answer, and silence read as a dead button.
+     */
+    fun useMyLocation() {
+        if (_locating.value) return
+        _hint.value = null
+        scope.launch {
+            _locating.value = true
+            val point = try {
+                fix()
+            } finally {
+                _locating.value = false
+            }
+            if (point == null) {
+                _hint.value = str(S.desktop_map_no_current_location)
+                return@launch
+            }
+            val target = browser ?: return@launch
+            run(target, LocationPickerWire.hereScript(point.lat, point.lng, PLACE_ZOOM))
+        }
+    }
+
+    /**
+     * A picker opened on nothing opens **on** the user: the pin is dropped
+     * where they are and its address read back, so the dialog comes up with a
+     * usable pick rather than an empty map over a city nobody chose.
+     *
+     * This goes further than the web, deliberately (asked for on 2026-10-13).
+     * `PlacePicker.jsx:94-98` and transportation's `LocationPicker.jsx:87-90`
+     * only *centre* on the user's position and leave the field empty, which on
+     * the desktop meant "Use this location" stayed disabled over a map already
+     * showing the right place.
+     *
+     * Two things it will not do. It stays at [WIDE_ZOOM], because the position
+     * is a network lookup and street-level zoom would dress a city-level fix up
+     * as an address. And it never overrules the user: a pick made while the
+     * lookup was in flight wins, as the web's own `if (coords) return` guard
+     * has it. Silence on failure is deliberate too — they asked for a picker,
+     * not for a fix.
+     */
+    private suspend fun startOnHere() {
+        val point = fix() ?: return
+        if (_request.value == null || _picked.value != null) return
+        val target = browser ?: return
+        run(target, LocationPickerWire.hereScript(point.lat, point.lng, WIDE_ZOOM))
+    }
+
+    /**
+     * The position, from at most one lookup every [FIX_MAX_AGE_MS].
+     *
+     * Both outcomes are cached, as the web's `useUserLocation` caches its
+     * `null`: the common failure is a key that cannot do geolocation at all,
+     * and asking again on every opening buys a slower picker and nothing else.
+     * The lock keeps two openings in the same minute to one call.
+     */
+    private suspend fun fix(): GeoPoint? = fixLock.withLock {
+        val now = System.currentTimeMillis()
+        if (fixAt != 0L && now - fixAt < FIX_MAX_AGE_MS) return@withLock fix
+        fix = locate()
+        fixAt = now
+        fix
     }
 
     private suspend fun prepare(): Boolean = initLock.withLock {
@@ -348,6 +448,12 @@ class KcefLocationPickerHost(
 
         /** The web's zoom once a place is known (PlacePicker.jsx:322). */
         const val PLACE_ZOOM = 15
+
+        /** And its zoom with no place yet — a city, not a street (PlacePicker.jsx:322). */
+        const val WIDE_ZOOM = 11
+
+        /** `maximumAge` on the web's own position lookups. */
+        const val FIX_MAX_AGE_MS = 5 * 60 * 1000L
 
         /** Far enough out that no arrangement of displays reaches it. */
         const val HOLDER_OFFSCREEN = -8_000

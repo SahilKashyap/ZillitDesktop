@@ -49,12 +49,7 @@ import com.zillit.desktop.feature.maps.ui.screen.MapImages
 import com.zillit.desktop.feature.maps.ui.screen.PHOTO_EXTENSIONS
 import com.zillit.desktop.feature.maps.ui.screen.decodeMapImage
 import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +64,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -362,7 +356,8 @@ private val ACTIVE_ZONES = PreferenceKey.StringKey("map.activeZoneByCity", "{}",
  */
 private fun AppGraph.Ready.mapStaticMaps(): MapStaticMaps = object : MapStaticMaps {
     override suspend fun zone(centre: LatLng, radiusMiles: Double): ByteArray? {
-        val key = remoteConfigRepository.credentials.value?.googleMapsKey?.takeIf { it.isNotBlank() } ?: return null
+        // `current()`, not `credentials.value`: see the note in `mapLocator`.
+        val key = remoteConfigRepository.current()?.googleMapsKey?.takeIf { it.isNotBlank() } ?: return null
         val ring = circlePoints(centre, radiusMiles).joinToString("|") { "${it.lat.format5()},${it.lng.format5()}" }
         val url = "https://maps.googleapis.com/maps/api/staticmap?size=640x320&scale=2" +
             "&path=color:0x3B82F6D9%7Cweight:3%7Cfillcolor:0x3B82F626%7C$ring" +
@@ -377,32 +372,19 @@ private fun AppGraph.Ready.mapStaticMaps(): MapStaticMaps = object : MapStaticMa
 // Position ----------------------------------------------------------------------------
 
 /**
- * Where this machine is, approximately: Google's Geolocation API from the
- * network address, with the production's own key. The map page asks the
- * browser first, but embedded Chromium has no way to grant that prompt, so on
- * the desktop this is the answer that "Use my current location" and the
- * Cities panel's Current Location card actually get. City-level accuracy, which
- * is what both need.
+ * Where this machine is, approximately. The map page asks the browser first,
+ * but embedded Chromium has no way to grant that prompt, so on the desktop
+ * [DeviceGeolocation] is the answer that "Use my current location" and the
+ * Cities panel's Current Location card actually get — the same one the shared
+ * place picker uses, and the same place to look when neither finds you.
  */
 private fun AppGraph.Ready.mapLocator(): MapLocator = object : MapLocator {
-    override suspend fun locate(): LatLng? {
-        val key = remoteConfigRepository.credentials.value?.googleMapsKey?.takeIf { it.isNotBlank() } ?: return null
-        return runCatching {
-            val response = httpClient.post("https://www.googleapis.com/geolocation/v1/geolocate?key=$key") {
-                contentType(ContentType.Application.Json)
-                setBody(GEOLOCATE_BODY)
-            }
-            if (!response.status.isSuccess()) {
-                ZillitLog.w(TAG) { "geolocate refused: ${response.status.value}" }
-                return null
-            }
-            val answer = Json.parseToJsonElement(response.bodyAsText()) as? JsonObject
-            val location = answer?.get("location") as? JsonObject
-            val lat = (location?.get("lat") as? JsonPrimitive)?.doubleOrNull
-            val lng = (location?.get("lng") as? JsonPrimitive)?.doubleOrNull
-            if (lat != null && lng != null) LatLng(lat, lng) else null
-        }.onFailure { ZillitLog.w(TAG) { "geolocate failed: ${it::class.simpleName}" } }.getOrNull()
-    }
+    // `current()` rather than `credentials.value`: a consumer that *needs* the
+    // bundle must be able to provoke the fetch, or one missed refresh at
+    // sign-in leaves the map unable to locate anyone for the whole session.
+    private val device = DeviceGeolocation(httpClient) { remoteConfigRepository.current()?.googleMapsKey }
+
+    override suspend fun locate(): LatLng? = device.locate()?.let { LatLng(it.lat, it.lng) }
 }
 
 /** Points on a circle of [radiusMiles] around [centre] — a destination-point walk. */
@@ -456,8 +438,6 @@ private fun AppGraph.Ready.mapImages(): MapImages {
 /** The web's map badge tool label (`BADGE_CONSTANTS.map_label`). */
 private const val MAP_BADGE_TOOL = "map_label"
 
-/** Locate by network address alone — the desktop has no radios to report. */
-private const val GEOLOCATE_BODY = "{\"considerIp\":true}"
 private const val TAG = "MapsWiring"
 private const val MAX_PHOTO_BYTES = 30L * 1024 * 1024
 private const val CONVERT_SECONDS = 30L

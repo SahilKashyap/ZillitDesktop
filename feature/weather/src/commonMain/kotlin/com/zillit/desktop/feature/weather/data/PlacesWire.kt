@@ -70,6 +70,27 @@ internal object PlacesWire {
      */
     fun isDenied(body: String): Boolean = obj(body)?.str("status") == "REQUEST_DENIED"
 
+    /**
+     * Why Google refused, in its own words: the reason code, then the first of
+     * the sentence.
+     *
+     * `{"error":{"code":403,"status":"PERMISSION_DENIED","message":"Geolocation
+     * API has not been used in project 123 before or it is disabled",
+     * "errors":[{"reason":"accessNotConfigured"}]}}`. Worth parsing because the
+     * status code alone sent a reader hunting for a client bug when the answer
+     * was an API nobody had switched on in the Cloud console — the Geolocation
+     * API is enabled and billed separately from the Maps JavaScript API, and
+     * the web client never needed it. The message is cut short: it ends in a
+     * console URL that wraps the log line three times over.
+     */
+    fun errorReason(body: String): String {
+        val error = obj(body)?.get("error") as? JsonObject ?: return "(no reason given)"
+        val code = ((error["errors"] as? JsonArray)?.firstOrNull() as? JsonObject)?.str("reason")
+            ?: error.str("status")
+        val message = error.str("message")?.take(REASON_CHARS)
+        return listOfNotNull(code, message).joinToString(" — ").ifBlank { "(no reason given)" }
+    }
+
     /** `geolocation/v1/geolocate` → where the network says this machine is. */
     fun parseGeolocation(body: String): LatLng? {
         val location = obj(body)?.get("location") as? JsonObject ?: return null
@@ -91,6 +112,9 @@ internal object PlacesWire {
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.dbl(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
+
+    /** Enough of Google's sentence to name the cause, without its console URL. */
+    private const val REASON_CHARS = 140
 
     /** The component types the web's `getCityName` accepts, in its order of preference. */
     private val CITY_TYPES = setOf("locality", "administrative_area_level_1", "administrative_area_level_2")

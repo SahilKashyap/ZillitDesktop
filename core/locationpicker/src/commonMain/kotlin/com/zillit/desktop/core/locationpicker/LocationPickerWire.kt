@@ -138,6 +138,23 @@ object LocationPickerWire {
     fun setPinScript(lat: Double, lng: Double): String = "zillitPicker.setPin($lat, $lng)"
 
     /**
+     * "My Location": the pin moved to where this machine is, and its address
+     * read back off it — the web's `handleMyLocation`
+     * (boxScheduleV2/components/PlacePicker.jsx:163-175).
+     *
+     * Separate from [setPinScript] because that one deliberately does *not*
+     * geocode (a saved record keeps its own address), while this one must: the
+     * host has coordinates and nothing else, and a pick with no address is not
+     * one anybody can use.
+     *
+     * [zoom] is the caller's, because the two callers mean different things by
+     * the same pin: a deliberate click goes in close, while the pin a picker
+     * drops on opening stays at city level — the fix behind it is a network
+     * lookup, and a street-level view would claim an accuracy it does not have.
+     */
+    fun hereScript(lat: Double, lng: Double, zoom: Int): String = "zillitPicker.here($lat, $lng, $zoom)"
+
+    /**
      * Puts a saved address back in the page's own search box on reopen.
      *
      * Quoted for the same reason the key is: an address arrives off the wire,

@@ -79,11 +79,15 @@ class GooglePlacesGateway(
                 contentType(ContentType.Application.Json)
                 setBody(GEOLOCATE_BODY)
             }
+            val answer = response.bodyAsText()
             if (!response.status.isSuccess()) {
-                ZillitLog.w(TAG) { "geolocate refused: ${response.status.value}" }
+                // The reason, not just the code: a plain "403" here cost a
+                // session's debugging when the cause was the Geolocation API
+                // being switched off for the project. See PlacesWire.
+                ZillitLog.w(TAG) { "geolocate refused: ${response.status.value} ${PlacesWire.errorReason(answer)}" }
                 return null
             }
-            response.bodyAsText()
+            answer
         }.onFailure { ZillitLog.w(TAG) { "geolocate failed: ${it::class.simpleName}" } }.getOrNull()
         val point = body?.let(PlacesWire::parseGeolocation) ?: return null
         return WeatherPlace(

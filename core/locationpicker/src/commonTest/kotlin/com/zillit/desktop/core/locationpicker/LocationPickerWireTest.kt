@@ -161,6 +161,12 @@ class LocationPickerWireTest {
     }
 
     @Test
+    fun `my location is its own op, because it has to geocode and setPin must not`() {
+        assertEquals("zillitPicker.here(51.5074, -0.1278, 15)", LocationPickerWire.hereScript(51.5074, -0.1278, 15))
+        assertEquals("zillitPicker.here(51.5074, -0.1278, 11)", LocationPickerWire.hereScript(51.5074, -0.1278, 11))
+    }
+
+    @Test
     fun `a saved address cannot become code on its way back into the search box`() {
         val hostile = """Unit 3"); window.stolen = 1; ("""
         val script = LocationPickerWire.searchTextScript(hostile)

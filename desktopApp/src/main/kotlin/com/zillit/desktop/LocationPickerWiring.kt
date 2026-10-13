@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -89,6 +90,8 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
     val request by host.request.collectAsState()
     val picked by host.picked.collectAsState()
     val failure by host.failure.collectAsState()
+    val locating by host.locating.collectAsState()
+    val hint by host.hint.collectAsState()
     val colors = ZillitTheme.colors
 
     // The page paints its own search box, so it needs the app's colours. Sent
@@ -108,6 +111,22 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
         // coordinate system to disagree with.
         scrollable = false,
         actions = {
+            // The web keeps My Location in the row above the map, beside the
+            // search box (PlacePicker.jsx:224-231). Here the search box is
+            // inside the page — Compose cannot paint over the heavyweight
+            // surface at all — so the one place a Compose control can go is
+            // the action row, and it leads the row rather than sitting among
+            // the ways out.
+            ZillitButton(
+                text = str(S.my_location),
+                onClick = host::useMyLocation,
+                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Pin,
+                enabled = !locating && failure == null,
+            )
+            // Pushed away from the two ways out: the row is end-aligned, and a
+            // "My Location" sitting against Cancel reads as a third way out.
+            Spacer(Modifier.weight(1f))
             ZillitButton(text = str(S.cancel), onClick = host::cancel, variant = ButtonVariant.Secondary)
             ZillitButton(
                 text = str(S.recce_picker_use),
@@ -118,6 +137,13 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
     ) {
         MapSurface(host = host, failure = failure)
         PickedSummary(picked)
+        if (hint != null) {
+            ZillitText(
+                text = hint.orEmpty(),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
+        }
     }
 }
 

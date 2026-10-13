@@ -1407,6 +1407,12 @@ sealed interface AppGraph {
             // first "Pick on map"; same key closure, same never-logged key.
             val locationPicker = KcefLocationPickerHost(
                 googleMapsKey = { remoteConfigRepository.current()?.googleMapsKey },
+                // The page's own `navigator.geolocation` can never be granted
+                // in JCEF, so "My Location" and an empty picker's start
+                // position come from the network address instead.
+                locate = DeviceGeolocation(storageClient) {
+                    remoteConfigRepository.current()?.googleMapsKey
+                }::locate,
                 scope = appScope,
             ).also(Shutdown::locationPicker)
             // Hoisted above the call coordinator, which needs it: a finished

@@ -152,6 +152,7 @@
     var booted = false;
     var pendingCenter = null;
     var pendingPin = null;
+    var pendingHere = null;
 
     /* The web's fallback centre when neither a value nor a user location
        exists (boxScheduleV2/components/PlacePicker.jsx:34), and its two zoom
@@ -287,6 +288,11 @@
             pendingCenter = null;
             window.zillitPicker.center(c.lat, c.lng, c.zoom);
         }
+        if (pendingHere !== null) {
+            var h = pendingHere;
+            pendingHere = null;
+            window.zillitPicker.here(h.lat, h.lng, h.zoom);
+        }
     };
 
     window.zillitPicker = {
@@ -322,6 +328,21 @@
             placePin(lat, lng, ZOOM_PLACE);
         },
 
+        /* "My Location". The web does this from `navigator.geolocation`
+           (PlacePicker.jsx:163-175) — pan there, then reverse-geocode, so the
+           pin becomes a real pick with an address and not just a point.
+           Embedded Chromium cannot answer that call, so the coordinates come
+           from the host (`DeviceGeolocation`) and the page does the rest
+           exactly as the web does. */
+        here: function (lat, lng, zoom) {
+            /* Queued rather than dropped, and as its own pending slot: a
+               `pendingPin` would place the pin and never geocode it, leaving
+               "Use this location" disabled over a pin the user can see. */
+            if (!map) { pendingHere = { lat: lat, lng: lng, zoom: zoom }; return; }
+            placePin(lat, lng, zoom || ZOOM_PLACE);
+            reverseGeocode(lat, lng);
+        },
+
         /* Lets the host put the saved address back in the box on reopen. */
         setSearchText: function (text) {
             document.getElementById('search').value = text;
@@ -332,6 +353,7 @@
         reset: function () {
             document.getElementById('search').value = '';
             if (marker) { marker.setMap(null); }
+            pendingHere = null;
         }
     };
 
