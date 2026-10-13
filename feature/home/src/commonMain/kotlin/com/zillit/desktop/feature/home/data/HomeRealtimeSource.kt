@@ -41,7 +41,14 @@ class HomeRealtimeSource(
         // A comment's payload is the comment, not the notice it belongs to,
         // so there is nothing to patch in place — the board is re-read, which
         // is what every other board does with the same events.
-        message.event in ZillitSocketEvents.Home.Comments -> HomeRealtimeEvent.UnitsChanged
+        //
+        // The *board*, not the units: a comment leaves the tab strip exactly
+        // as it was, and refetching it blanked the board behind a spinner
+        // every time anybody commented on any unit. The unit id is read off
+        // the payload when it names one, so a comment on a unit nobody is
+        // looking at costs nothing at all.
+        message.event in ZillitSocketEvents.Home.Comments ->
+            HomeRealtimeEvent.BoardChanged(message.payload?.unwrapData()?.stringField("unit_id"))
 
         // An admin moved MY rights: the tab strip and the composer's gate are
         // both stale, so the unit list is read afresh — Android's own
@@ -65,18 +72,23 @@ class HomeRealtimeSource(
 
         return when (message.event) {
             ZillitSocketEvents.Home.MessageAdded ->
-                readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeAdded(unitId, it) }
+                readNotice(body, decryptBody)?.let {
+                    HomeRealtimeEvent.NoticeAdded(unitId, it, body.toString())
+                }
 
             ZillitSocketEvents.Home.MessageEdited ->
-                readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeEdited(unitId, it) }
+                readNotice(body, decryptBody)?.let {
+                    HomeRealtimeEvent.NoticeEdited(unitId, it, body.toString())
+                }
 
             ZillitSocketEvents.Home.MessageDeleted ->
                 body.stringField("_id")?.let { HomeRealtimeEvent.NoticeDeleted(unitId, it) }
 
-            // The multi-delete carries ids rather than a post; reloading is
-            // simpler than removing n things by hand, and it is rare. Any Home
-            // event not named above lands here for the same reason.
-            else -> HomeRealtimeEvent.UnitsChanged
+            // The multi-delete carries ids rather than a post; re-reading the
+            // board is simpler than removing n things by hand, and it is rare.
+            // Any Home event not named above lands here for the same reason —
+            // the board, though, not the tab strip, which none of these move.
+            else -> HomeRealtimeEvent.BoardChanged(unitId)
         }
     }
 }

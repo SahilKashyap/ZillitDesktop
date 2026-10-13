@@ -158,6 +158,16 @@ class RealtimeMergeTest {
     }
 
     @Test
+    fun `a board change leaves the board alone too`() {
+        // Handled by refetching the open board, not by merging: there is
+        // nothing in a comment or a multi-delete payload to apply to a post.
+        val board = listOf(notice("a"))
+
+        assertEquals(board, board.applyRealtime(HomeRealtimeEvent.BoardChanged(unit), unit))
+        assertEquals(board, board.applyRealtime(HomeRealtimeEvent.BoardChanged(null), unit))
+    }
+
+    @Test
     fun `pinned order survives a merge`() {
         val board = listOf(notice("pinned", at = 10).copy(isPinned = true), notice("a", at = 100))
 

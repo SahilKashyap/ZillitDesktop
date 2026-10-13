@@ -26,6 +26,7 @@ import com.zillit.desktop.core.network.HeaderCrypto
 import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.database.ProjectSnapshot
 import com.zillit.desktop.core.database.LabelCache
+import com.zillit.desktop.core.database.NoticeCache
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectListCache
 import com.zillit.desktop.core.database.ScreenplayCache
@@ -185,6 +186,7 @@ import com.zillit.desktop.feature.home.calendar.CalendarRepositoryImpl
 import com.zillit.desktop.feature.home.data.HomeRealtimeSource
 import com.zillit.desktop.feature.home.data.S3NoticeMediaSource
 import com.zillit.desktop.feature.home.domain.NoticeMediaSource
+import com.zillit.desktop.feature.home.domain.NoticeStore
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.data.ChatRepositoryImpl
 import com.zillit.desktop.feature.home.data.NoticeDecryptor
@@ -652,6 +654,13 @@ sealed interface AppGraph {
         val uploaderForProject: (ProjectSnapshot, CallOptions) -> AttachmentUploader,
         val projectContext: ProjectContextLoader?,
         val projectCache: ProjectCache?,
+        /**
+         * One board's offline copy, by board segment (`home`, `info`,
+         * `reports`…); null when the database did not open. A factory rather
+         * than a store, because every board that shares the feed engine needs
+         * its own — see [SqlNoticeStore].
+         */
+        val noticeStoreFor: (String) -> NoticeStore?,
         /** The picker's last list, so productions show without a network. */
         val projectListCache: ProjectListCache?,
         /** Zillit Draft's scripts, per production; null when the database did not open. */
@@ -1067,6 +1076,23 @@ sealed interface AppGraph {
             val projectCache = database?.let {
                 ProjectCache(it, nowMillis = System::currentTimeMillis)
             }
+            // The notice boards at rest. One store per board engine, because
+            // unit ids are only unique within one; each resolves the open
+            // production when it is called rather than capturing it, so a
+            // switch cannot leave a store writing to the production it was
+            // built under.
+            val noticeCache = database?.let {
+                NoticeCache(it, nowMillis = System::currentTimeMillis)
+            }
+            noticeCache?.let { cache -> appScope.launch { cache.prune(System.currentTimeMillis()) } }
+            val noticeStoreFor: (String) -> NoticeStore? = { board ->
+                noticeCache?.let { cache ->
+                    // The same production the read cache keys its rows on, so
+                    // the two offline copies of a board can never disagree
+                    // about whose board it is.
+                    SqlNoticeStore(cache, board = board, projectId = { headerContext.value.projectId })
+                }
+            }
             // Device-scoped, unlike the project cache: survives a switch,
             // cleared on sign-out below.
             val screenplayCache = database?.let(::ScreenplayCache)
@@ -1295,6 +1321,7 @@ sealed interface AppGraph {
                 decrypt = noticeDecryptor,
                 isAdmin = { activeProject.value?.isAdmin == true },
                 nowMillis = System::currentTimeMillis,
+                store = noticeStoreFor("home"),
             )
 
             // Direct messages: history over REST on the chat host, live
@@ -1724,6 +1751,7 @@ sealed interface AppGraph {
 
                 projectContext = projectContext,
                 projectCache = projectCache,
+                noticeStoreFor = noticeStoreFor,
                 projectListCache = projectListCache,
                 screenplayCache = screenplayCache,
                 emailCache = emailCache,

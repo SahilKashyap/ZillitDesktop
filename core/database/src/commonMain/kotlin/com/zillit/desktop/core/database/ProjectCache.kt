@@ -196,19 +196,6 @@ data class ToolSnapshot(
     val onHome: Boolean,
 )
 
-data class NoticeSnapshot(
-    val noticeId: String,
-    val unitId: String,
-    val body: String,
-    val authorName: String,
-    val authorId: String?,
-    val createdAt: Long,
-    val isEdited: Boolean,
-    val isPinned: Boolean,
-    val attachmentCount: Int,
-    val commentCount: Int,
-)
-
 /**
  * Reads and writes the production cache.
  *
@@ -402,49 +389,6 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
             )
         }
 
-    // -- notices -----------------------------------------------------------
-
-    fun saveNotices(projectId: String, unitId: String, notices: List<NoticeSnapshot>) {
-        queries.transaction {
-            // Replace the unit's page rather than the whole board: pagination
-            // will add older pages, and a merge across pages would need cursors
-            // this cache does not have yet.
-            queries.deleteNoticesForUnit(projectId, unitId)
-            notices.forEach { notice ->
-                queries.upsertNotice(
-                    noticeId = notice.noticeId,
-                    projectId = projectId,
-                    unitId = unitId,
-                    body = notice.body,
-                    authorName = notice.authorName,
-                    authorId = notice.authorId,
-                    createdAt = notice.createdAt,
-                    isEdited = notice.isEdited.toDb(),
-                    isPinned = notice.isPinned.toDb(),
-                    attachmentCount = notice.attachmentCount.toLong(),
-                    commentCount = notice.commentCount.toLong(),
-                    cachedAt = nowMillis(),
-                )
-            }
-        }
-    }
-
-    fun notices(projectId: String, unitId: String): List<NoticeSnapshot> =
-        queries.selectNotices(projectId, unitId).executeAsList().map {
-            NoticeSnapshot(
-                noticeId = it.noticeId,
-                unitId = it.unitId,
-                body = it.body,
-                authorName = it.authorName,
-                authorId = it.authorId,
-                createdAt = it.createdAt,
-                isEdited = it.isEdited.toBool(),
-                isPinned = it.isPinned.toBool(),
-                attachmentCount = it.attachmentCount.toInt(),
-                commentCount = it.commentCount.toInt(),
-            )
-        }
-
     /**
      * Drops everything held for a production.
      *
@@ -456,7 +400,6 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
         queries.transaction {
             queries.deleteTools(projectId)
             queries.deleteProjectUsers(projectId)
-            queries.deleteNoticeData(projectId)
             queries.deleteProfileData(projectId)
             queries.deleteProjectData(projectId)
         }

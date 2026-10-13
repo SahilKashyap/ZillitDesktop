@@ -1,0 +1,99 @@
+-- The notice boards, post by post.
+--
+-- Replaces a `cachedNotice` that lived in `ProjectCache.sq` and was never
+-- written to by anything but its own test. That table could not have held a
+-- board anyway: it had no `updated` (which is what the live board ORDERS by),
+-- no message type, no attachment, no location, and counted comments instead of
+-- keeping them. And it was keyed by notice id alone, so the seven boards that
+-- share the feed engine — home, info, confidentialinfo, reports, catering,
+-- account, production-report — would have written over each other.
+--
+-- ## Why the row is the server's own JSON
+--
+-- `wire` is the row exactly as the server sent it, and `readNotice` parses it
+-- on the way out — the same function, and the only one, that parses a live
+-- answer. A column per field would be a second shape to keep in step with a
+-- wire that already surprises us (timestamps where booleans are documented,
+-- `lng` for `long`), and it would have to flatten the replies, the attachment
+-- and the location that a post carries.
+--
+-- It also keeps the post's body ENCRYPTED at rest. Bodies arrive as AES
+-- cipher-hex and are decrypted in memory, so storing the row untouched means
+-- the cipher is what lands on disk — the same choice `ChatCache.sq` makes, and
+-- the opposite of what the old table did. A board can be the Confidential Info
+-- board; the file being SQLCipher-encrypted is not a reason to also write the
+-- plaintext into it.
+--
+-- A cache like every table in this database: refetchable, rebuilt on schema
+-- change, scoped by production, gone with the key on sign-out.
+
+CREATE TABLE cachedNotice (
+    noticeId  TEXT    NOT NULL,
+    projectId TEXT    NOT NULL,
+    -- Which board's engine this row belongs to: `home`, `info`, `reports`…
+    -- Part of the key, because unit ids are only unique within a board.
+    board     TEXT    NOT NULL,
+    unitId    TEXT    NOT NULL,
+    -- The server's row verbatim, `message` still cipher-hex.
+    wire      TEXT    NOT NULL,
+    -- `updated`, not `created`: the live board orders by last touched, so an
+    -- edited post moves to where the people reading it will see it changed.
+    updatedAt INTEGER NOT NULL,
+    cachedAt  INTEGER NOT NULL,
+    PRIMARY KEY (projectId, board, unitId, noticeId)
+);
+
+CREATE INDEX cachedNotice_board ON cachedNotice(projectId, board, unitId, updatedAt);
+
+upsertNotice:
+INSERT OR REPLACE INTO cachedNotice(noticeId, projectId, board, unitId, wire, updatedAt, cachedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- Newest first, so a limit takes the newest window rather than the oldest.
+-- The caller puts them back in board order; `forDisplay` owns that.
+selectNewest:
+SELECT wire FROM cachedNotice
+WHERE projectId = ? AND board = ? AND unitId = ?
+ORDER BY updatedAt DESC
+LIMIT ?;
+
+countForUnit:
+SELECT count(*) FROM cachedNotice WHERE projectId = ? AND board = ? AND unitId = ?;
+
+deleteNotice:
+DELETE FROM cachedNotice
+WHERE projectId = ? AND board = ? AND unitId = ? AND noticeId = ?;
+
+-- A delete whose payload names no unit: the id is unique enough on one board.
+deleteNoticeAnywhere:
+DELETE FROM cachedNotice WHERE projectId = ? AND board = ? AND noticeId = ?;
+
+deleteUnit:
+DELETE FROM cachedNotice WHERE projectId = ? AND board = ? AND unitId = ?;
+
+-- Keeps the newest [limit] rows of a unit and drops the rest, so scrolling
+-- back through a long shoot cannot grow this table without end.
+trimUnit:
+DELETE FROM cachedNotice
+WHERE projectId = ? AND board = ? AND unitId = ? AND noticeId NOT IN (
+    SELECT noticeId FROM cachedNotice
+    WHERE projectId = ? AND board = ? AND unitId = ?
+    ORDER BY updatedAt DESC
+    LIMIT ?
+);
+
+-- project switch -----------------------------------------------------------
+deleteForProject:
+DELETE FROM cachedNotice WHERE projectId = ?;
+
+-- Rows are NOT dropped on a project switch: they are keyed by production, so
+-- one shoot's board can never answer for another's, and keeping them means a
+-- production reopened later still draws at once. Age is what bounds them
+-- instead — a production nobody has opened in a month is not worth the disk,
+-- the same bargain `cachedRead` makes.
+deleteOlderThan:
+DELETE FROM cachedNotice WHERE cachedAt < ?;
+
+-- sign-out -----------------------------------------------------------------
+deleteAll:
+DELETE FROM cachedNotice;

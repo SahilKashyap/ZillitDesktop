@@ -35,22 +35,26 @@ import kotlinx.serialization.json.JsonObject
 /**
  * One board's wire names, grouped by how the desktop reacts to them.
  *
- * [reload] is deliberately coarse: multi-deletes carry ids rather than
- * posts, comment events carry one comment rather than the notice, and unit,
- * rights and archive events reshape the board wholesale — the web patches
- * some of these in place, but [HomeRealtimeEvent.UnitsChanged] makes the
- * feed refetch its tabs *and* the open board, which is always correct and
- * is exactly what Home already does for its own multi-delete.
+ * The two reload lists are both coarse — neither payload can patch a post —
+ * but they are not equally expensive, and conflating them was a bug.
+ * [reloadBoard] is a multi-delete or a comment: the posts are stale, the tab
+ * strip is not. [reloadUnits] is a unit, rights or archive event, which really
+ * does reshape the strip. Only the second refetches the units, because that
+ * sets `isLoadingUnits` — and the board behind a `isLoadingUnits` spinner is
+ * not on screen, so sending a comment down that path blanked the board every
+ * time anybody commented anywhere.
  */
 internal class BoardRealtimeEvents(
     val added: List<SocketEventName> = emptyList(),
     val edited: List<SocketEventName> = emptyList(),
     val deleted: List<SocketEventName> = emptyList(),
-    val reload: List<SocketEventName> = emptyList(),
+    val reloadBoard: List<SocketEventName> = emptyList(),
+    val reloadUnits: List<SocketEventName> = emptyList(),
     /** `<prefix>:message:readby:update` — a receipt, not a change to the post. */
     val readBy: List<SocketEventName> = emptyList(),
 ) {
-    val all: List<SocketEventName> get() = added + edited + deleted + reload + readBy
+    val all: List<SocketEventName>
+        get() = added + edited + deleted + reloadBoard + reloadUnits + readBy
 }
 
 /**
@@ -69,12 +73,15 @@ private fun chatBoard(
     added = listOf(SocketEventName("$prefix:message:added")),
     edited = listOf(SocketEventName("$prefix:message:edited")),
     deleted = if (singleDelete) listOf(SocketEventName("$prefix:message:deleted")) else emptyList(),
-    reload = listOf(
+    reloadBoard = listOf(
         "$prefix:message:deleted:multiple",
         "$prefix:message:comment:added",
         "$prefix:message:comment:edited",
         "$prefix:message:comment:deleted",
-    ).plus(reloadExtras).map(::SocketEventName),
+    ).map(::SocketEventName),
+    // The per-board extras are the unit, rights and archive events — the ones
+    // that genuinely move the tab strip.
+    reloadUnits = reloadExtras.map(::SocketEventName),
     readBy = listOf(SocketEventName("$prefix:message:readby:update")),
 )
 
@@ -91,9 +98,10 @@ private fun wardrobeBoard(): BoardRealtimeEvents {
         added = chats.flatMap { it.added },
         edited = chats.flatMap { it.edited },
         readBy = chats.flatMap { it.readBy },
-        reload = chats.flatMap { it.reload } +
-            listOf("wardrobe:created", "wardrobe:move", "wardrobe:updated", "wardrobe:deleted")
-                .map(::SocketEventName),
+        reloadBoard = chats.flatMap { it.reloadBoard },
+        // A wardrobe record is this tool's "unit", so these reshape the strip.
+        reloadUnits = listOf("wardrobe:created", "wardrobe:move", "wardrobe:updated", "wardrobe:deleted")
+            .map(::SocketEventName),
     )
 }
 
@@ -162,7 +170,7 @@ internal val BOARD_REALTIME_EVENTS: Map<String, BoardRealtimeEvents> = mapOf(
  *
  * No `myUserId` here, unlike Home's source: the per-user access-grid events
  * are Home's business — a board tool's rights ride its own
- * `posting-rights` events, which land in [BoardRealtimeEvents.reload].
+ * `posting-rights` events, which land in [BoardRealtimeEvents.reloadUnits].
  */
 fun boardRealtime(
     events: SocketEventBus,
@@ -184,20 +192,36 @@ fun boardRealtime(
 internal fun BoardRealtimeEvents.toRealtimeEvent(
     message: SocketMessage,
     decryptBody: (String) -> String,
+): HomeRealtimeEvent? = when (message.event) {
+    // The reload and receipt events come first: their payloads carry no post,
+    // and asking unwrapData for one would drop them. A board reload still
+    // reads the unit off the payload when one is there — a null is ordinary,
+    // and means "the board on screen", not "ignore this".
+    in reloadBoard -> HomeRealtimeEvent.BoardChanged(message.payload?.unwrapData()?.stringField("unit_id"))
+    in reloadUnits -> HomeRealtimeEvent.UnitsChanged
+    in readBy -> message.payload?.readByMessageId()?.let(HomeRealtimeEvent::ReadByChanged)
+    else -> message.payload?.unwrapData()?.let { body -> postEvent(message, body, decryptBody) }
+}
+
+/**
+ * The three events whose payload *is* a post, once it has been unwrapped.
+ *
+ * Split out so the dispatch above stays one expression — the same shape as
+ * [HomeRealtimeSource]'s `toEvent` and its `boardEvent`.
+ */
+private fun BoardRealtimeEvents.postEvent(
+    message: SocketMessage,
+    body: JsonObject,
+    decryptBody: (String) -> String,
 ): HomeRealtimeEvent? {
-    // Reload events first: their payloads carry no post, and asking
-    // unwrapData for one would drop them.
-    if (message.event in reload) return HomeRealtimeEvent.UnitsChanged
-    if (message.event in readBy) {
-        return message.payload?.readByMessageId()?.let(HomeRealtimeEvent::ReadByChanged)
-    }
-
-    val body = message.payload?.unwrapData() ?: return null
     val unitId = body.stringField("unit_id")
-
     return when (message.event) {
-        in added -> readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeAdded(unitId, it) }
-        in edited -> readNotice(body, decryptBody)?.let { HomeRealtimeEvent.NoticeEdited(unitId, it) }
+        in added -> readNotice(body, decryptBody)?.let {
+            HomeRealtimeEvent.NoticeAdded(unitId, it, body.toString())
+        }
+        in edited -> readNotice(body, decryptBody)?.let {
+            HomeRealtimeEvent.NoticeEdited(unitId, it, body.toString())
+        }
         in deleted -> body.stringField("_id")?.let { HomeRealtimeEvent.NoticeDeleted(unitId, it) }
         else -> null
     }

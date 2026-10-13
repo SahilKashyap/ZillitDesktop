@@ -24,8 +24,9 @@ class LocalCacheWiper(
     fun wipe() {
         database?.transaction {
             with(database.projectCacheQueries) {
-                deleteAllProfiles(); deleteAllProjects(); deleteAllProjectUsers(); deleteAllTools(); deleteAllNotices()
+                deleteAllProfiles(); deleteAllProjects(); deleteAllProjectUsers(); deleteAllTools()
             }
+            database.noticeCacheQueries.deleteAll()
             with(database.chatCacheQueries) { deleteAllMessages(); deleteAllThreadReads() }
             with(database.emailCacheQueries) { deleteAllEmails(); deleteAllFolders() }
             database.readCacheQueries.deleteAll()

@@ -218,8 +218,62 @@ class ApiClient(
         options: CallOptions,
     ): ZillitResult<ApiEnvelope> {
         val cache = readCache ?: return outcome
-        val scope = readScope() ?: return outcome
-        if (!options.isRead(verb) || module !in CACHEABLE_MODULES) return outcome
+        val kept = keptUnder(verb, url, module, queryParameters, options) ?: return outcome
+        return when (outcome) {
+            is ZillitResult.Success -> {
+                keep(cache, kept.key, kept.scope, outcome.data)
+                outcome
+            }
+
+            is ZillitResult.Failure ->
+                if (outcome.error.isUnreachable()) recall(cache, kept.key, url) ?: outcome else outcome
+        }
+    }
+
+    /**
+     * The kept answer to a read, without going near the network.
+     *
+     * [remembered] above is the offline fallback: it only reaches for the
+     * cache once a call has already failed to reach the server. This is the
+     * other way to use the same rows — ask what we already know, draw it, and
+     * fire the real read behind it. A screen that does both shows its content
+     * at once instead of a spinner, which is the whole reason the rows are
+     * kept at a stable [CallOptions.cacheAs] name.
+     *
+     * Null means "nothing usable": no cache wired, nothing kept under this
+     * question, or a kept body that will not decode into [serializer] any more
+     * — a shape that changed under a row is a cache miss, not a failure worth
+     * showing anybody.
+     *
+     * The arguments must match the [request] this is the cache of, exactly, or
+     * the key will not be the one that was written. [keptUnder] is shared with
+     * [remembered] so the two cannot drift.
+     */
+    suspend fun <T> peekCached(
+        url: String,
+        serializer: KSerializer<T>,
+        module: RequestModule = RequestModule.Default,
+        queryParameters: Map<String, Any?> = emptyMap(),
+        options: CallOptions = CallOptions(),
+    ): T? {
+        val cache = readCache ?: return null
+        // Get, for both a real GET and a POST that named itself a read: the
+        // key spells the verb `GET` either way (see `readKey`).
+        val kept = keptUnder(HttpVerb.Get, url, module, queryParameters, options) ?: return null
+        val envelope = recall(cache, kept.key, url) ?: return null
+        return (envelope.flatMapEnvelope { data -> decode(data, serializer) } as? ZillitResult.Success)?.data
+    }
+
+    /** Where this read's answer lives, or null when it is not cached at all. */
+    private fun keptUnder(
+        verb: HttpVerb,
+        url: String,
+        module: RequestModule,
+        queryParameters: Map<String, Any?>,
+        options: CallOptions,
+    ): KeptRead? {
+        val scope = readScope() ?: return null
+        if (!options.isRead(verb) || module !in CACHEABLE_MODULES) return null
         val projectId = options.projectId ?: scope.projectId
         val name = options.cacheAs
         val key = if (name != null) {
@@ -227,15 +281,7 @@ class ApiClient(
         } else {
             readKey(scope, projectId, url, queryParameters)
         }
-        return when (outcome) {
-            is ZillitResult.Success -> {
-                keep(cache, key, scope.copy(projectId = projectId), outcome.data)
-                outcome
-            }
-
-            is ZillitResult.Failure ->
-                if (outcome.error.isUnreachable()) recall(cache, key, url) ?: outcome else outcome
-        }
+        return KeptRead(key, scope.copy(projectId = projectId))
     }
 
     /** A GET, or a POST that named itself a read — and not opted out. */
@@ -454,6 +500,9 @@ data class ApiFailure(val method: String, val url: String, val error: ZillitErro
  */
 inline fun <reified T> jsonBody(value: T): JsonElement =
     HttpClientFactory.json.encodeToJsonElement(value)
+
+/** Where one read's answer is kept: the key, and the scope it belongs to. */
+private data class KeptRead(val key: String, val scope: ReadScope)
 
 /** The cache key: who, which production, and exactly what was asked. */
 internal fun readKey(scope: ReadScope, projectId: String, url: String, query: Map<String, Any?>): String {

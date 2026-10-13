@@ -815,6 +815,7 @@ internal fun AppGraph.Ready.boardFeed(
             service = service,
             chatSegment = chatSegment,
             receiver = receiver,
+            store = noticeStoreFor(board),
         ),
     )
     return HomeFeedViewModel(

@@ -31,6 +31,7 @@ import com.zillit.desktop.feature.home.domain.withDateSeparators
 import com.zillit.desktop.feature.home.domain.pinnedForBanner
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.applyRealtime
+import com.zillit.desktop.feature.home.domain.matchesUnit
 import com.zillit.desktop.feature.home.domain.forDisplay
 import com.zillit.desktop.feature.home.domain.NoticeDraft
 import com.zillit.desktop.feature.home.domain.AudioRecorder
@@ -52,6 +53,7 @@ import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.asForwardItem
 import com.zillit.desktop.feature.home.domain.replaceTargets
+import com.zillit.desktop.feature.home.domain.sameAs
 import com.zillit.desktop.feature.home.domain.visibleTabs
 
 data class HomeFeedUiState(
@@ -759,6 +761,31 @@ class HomeFeedViewModel(
 
     private val pendingPosts = mutableMapOf<String, PendingPost>()
 
+    /**
+     * The page each tab last showed, by unit id — this session's own memory of
+     * the boards behind the strip.
+     *
+     * Switching tabs used to empty the board and refetch, so going back to a
+     * tab read seconds ago was a spinner and a round trip. This is the cheaper
+     * answer, and a nearer one than disk: it holds what is *on screen*,
+     * socket arrivals and all, not only what the last fetch returned.
+     *
+     * Emptied with the production ([forgetProject]), like every other map
+     * here: one shoot's posts must never appear under another's name.
+     */
+    private val boards = mutableMapOf<String, List<Notice>>()
+
+    /**
+     * The unit whose board read is out right now, or null when none is.
+     *
+     * Only [onUnitsLoaded] asks: a cold open seeds the strip from disk and
+     * opens the tab under it, and the live strip arriving a moment later must
+     * not ask for the same board a second time. It is *not* "has this unit
+     * been read" — a units change with no read in flight still re-reads the
+     * board, because `chat:archived` arrives that way and does move the posts.
+     */
+    private var boardReadInFlight: String? = null
+
     /** Whether a post belongs to the production open now — a pinned one may not. */
     private fun isHere(pin: BoardPin?): Boolean = pin == null || pin.projectId == media.currentProjectId()
 
@@ -823,24 +850,66 @@ class HomeFeedViewModel(
             }
             is HomeFeedEvent.ShowHistory -> setState { withHistory(event.history) }
             // A units change refetches the tab strip — rights may have moved,
-            // and a tab the user can no longer see must go. Everything else is
-            // a pure merge; `applyRealtime` handles our own post arriving back.
-            is HomeFeedEvent.Realtime ->
-                if (event.event == HomeRealtimeEvent.UnitsChanged) {
-                    loadUnits()
-                } else if (event.event is HomeRealtimeEvent.ReadByChanged) {
-                    refreshReadBy(event.event.messageId)
-                } else {
-                    setState { copy(notices = notices.applyRealtime(event.event, selectedUnitId)) }
-                    // A post landing on the open board is read as it lands —
-                    // the web emits on `home_message_added` while visible.
-                    val added = event.event as? HomeRealtimeEvent.NoticeAdded
-                    if (added?.unitId != null && added.unitId == currentState.selectedUnitId) {
-                        launch { onBoardViewed(added.unitId) }
-                    }
-                }
+            // and a tab the user can no longer see must go. A board change
+            // re-reads only the open board. Everything else is a pure merge;
+            // `applyRealtime` handles our own post arriving back.
+            is HomeFeedEvent.Realtime -> onRealtime(event.event)
             is HomeFeedEvent.SelectUnit -> selectUnit(event.unitId)
             else -> onFileEvent(event)
+        }
+    }
+
+    /**
+     * One socket event, applied.
+     *
+     * Three costs, deliberately distinguished. A units change is the dear one
+     * — it refetches the tab strip *and* the board — and is reserved for the
+     * events that really move the strip. A board change re-reads one board,
+     * and only when it is the one on screen: a comment on a unit nobody is
+     * looking at is the badge's business, and the board is read afresh when
+     * that tab is opened anyway. Everything else merges in place.
+     */
+    private fun onRealtime(event: HomeRealtimeEvent) {
+        when (event) {
+            HomeRealtimeEvent.UnitsChanged -> loadUnits()
+
+            is HomeRealtimeEvent.ReadByChanged -> refreshReadBy(event.messageId)
+
+            is HomeRealtimeEvent.BoardChanged -> {
+                val open = currentState.selectedUnit
+                if (open != null && event.matchesUnit(open.id)) loadNotices(open)
+            }
+
+            else -> {
+                setState { copy(notices = notices.applyRealtime(event, selectedUnitId)) }
+                currentState.selectedUnitId?.let { open -> boards[open] = currentState.notices }
+                // The offline copy keeps up with the screen. Without this a
+                // post that arrived while somebody watched is missing from the
+                // next cold open, and worse, a *deleted* one comes back.
+                launch { fileRealtime(event) }
+                // A post landing on the open board is read as it lands —
+                // the web emits on `home_message_added` while visible.
+                val added = event as? HomeRealtimeEvent.NoticeAdded
+                if (added?.unitId != null && added.unitId == currentState.selectedUnitId) {
+                    launch { onBoardViewed(added.unitId) }
+                }
+            }
+        }
+    }
+
+    /** One socket delta, written through to wherever the board is kept. */
+    private suspend fun fileRealtime(event: HomeRealtimeEvent) {
+        when (event) {
+            is HomeRealtimeEvent.NoticeAdded ->
+                repository.rememberNotice(event.unitId, event.notice, event.wire)
+
+            is HomeRealtimeEvent.NoticeEdited ->
+                repository.rememberNotice(event.unitId, event.notice, event.wire)
+
+            is HomeRealtimeEvent.NoticeDeleted ->
+                repository.forgetNotice(event.unitId, event.noticeId)
+
+            else -> Unit
         }
     }
 
@@ -979,15 +1048,24 @@ class HomeFeedViewModel(
             map.keys.retainAll(carried)
         }
         pendingPosts.keys.retainAll(carried)
+        boards.clear()
+        boardReadInFlight = null
         setState { HomeFeedUiState(readOnly = readOnly, nowMillis = nowMillis()) }
     }
 
     private fun selectUnit(unitId: String) {
         val unit = currentState.tabs.firstOrNull { it.id == unitId } ?: return
+        // What the outgoing tab was showing is worth keeping — it is fresher
+        // than any fetch, carrying the socket arrivals and the posts of this
+        // session. Coming back to it draws from here instead of from nothing.
+        currentState.selectedUnitId?.let { leaving ->
+            if (leaving != unit.id) boards[leaving] = currentState.notices
+        }
         setState {
             copy(
-                selectedUnitId = unit.id,
-                notices = emptyList(),
+                // Neither the tab nor the posts are switched here: `loadNotices`
+                // does both, and it needs to know which tab is being *left* to
+                // tell "arriving somewhere new" from "re-reading what is open".
                 replyTo = null,
                 editing = null,
                 editingPost = null,
@@ -2210,26 +2288,58 @@ class HomeFeedViewModel(
             if (recent.isNotEmpty()) setState { copy(recentMentions = recent) }
         }
 
-        launchResult(
-            block = { repository.loadUnits() },
-            onSuccess = { units ->
-                setState {
-                    copy(
-                        isLoadingUnits = false,
-                        units = units,
-                        // The person's chosen landing tab, on first arrival
-                        // only — a tab they picked since is theirs to keep.
-                        selectedUnitId = selectedUnitId
-                            ?: defaultUnitId()?.takeIf { wanted -> units.visibleTabs().any { it.id == wanted } },
-                    )
-                }
-                // Open the tab immediately: a tab strip with nothing under it
-                // reads as a broken screen.
-                currentState.selectedUnit?.let(::loadNotices)
-            },
-            onError = { setState { copy(isLoadingUnits = false, error = it.localised()) } },
-        )
+        launch {
+            // The kept strip first, so the tabs and the board behind them are
+            // on screen before the network answers. This is a read of disk,
+            // not of the server: it cannot tell us a tab was taken away, which
+            // is what the real read below is for.
+            seedUnits()
+
+            when (val result = repository.loadUnits()) {
+                is ZillitResult.Success -> onUnitsLoaded(result.data)
+                is ZillitResult.Failure ->
+                    setState { copy(isLoadingUnits = false, error = result.error.localised()) }
+            }
+        }
     }
+
+    /** The tab strip from disk, and the board under it, while the read is out. */
+    private suspend fun seedUnits() {
+        // Only ever a head start. Tabs already on screen — a refetch, or a
+        // live answer that beat the disk — are never replaced by kept ones.
+        if (currentState.tabs.isNotEmpty()) return
+        val kept = repository.cachedUnits()?.takeIf { it.isNotEmpty() } ?: return
+        if (currentState.tabs.isNotEmpty()) return
+        setState { copy(units = kept, selectedUnitId = selectedUnitId ?: landingTab(kept)) }
+        currentState.selectedUnit?.let(::loadNotices)
+    }
+
+    private fun onUnitsLoaded(units: List<HomeUnit>) {
+        setState {
+            copy(
+                isLoadingUnits = false,
+                units = units,
+                // The person's chosen landing tab, on first arrival
+                // only — a tab they picked since is theirs to keep.
+                selectedUnitId = selectedUnitId ?: landingTab(units),
+            )
+        }
+        // Open the tab immediately: a tab strip with nothing under it
+        // reads as a broken screen.
+        //
+        // Unless a read of this very board is already out — the seed above
+        // opened it a moment ago — in which case asking again would only cost
+        // a round trip for the same page.
+        val open = currentState.selectedUnit ?: return
+        if (boardReadInFlight != open.id) loadNotices(open)
+    }
+
+    /**
+     * The tab a board lands on, when the person has not chosen one yet: their
+     * saved choice, but only while it is a tab they can still see.
+     */
+    private fun landingTab(units: List<HomeUnit>): String? =
+        defaultUnitId()?.takeIf { wanted -> units.visibleTabs().any { it.id == wanted } }
 
     private fun loadNotices(unit: HomeUnit) {
         // Re-read on every board load, not once at startup: the profile that
@@ -2253,38 +2363,137 @@ class HomeFeedViewModel(
             return
         }
 
+        // Whether this read refreshes the board already on screen or opens a
+        // different one. A refresh inherits the reader's scrollback; an
+        // arrival computes it afresh.
+        val rereading = currentState.selectedUnitId == unit.id
+
         setState {
+            // What stays on screen while the read is out. A refetch of the
+            // open board keeps what it is showing; arriving at a tab this
+            // session has already read gets that page back out of memory.
+            // Only a tab nobody has opened yet starts empty — and even that
+            // one reaches for disk, just below.
+            //
+            // The spinner is not conditional on any of this: `isLoadingNotices`
+            // means "a read is out", and the screen draws it only when there is
+            // nothing else to show. One flag, one meaning.
+            val shown = if (rereading) notices else boards[unit.id].orEmpty()
             copy(
                 selectedUnitId = unit.id,
+                notices = shown,
                 isLoadingNotices = true,
                 error = null,
-                hasOlder = false,
+                // Left alone when this is a re-read of the board already open:
+                // `hasOlder` is the reader's own knowledge of what lies behind
+                // the oldest post they have scrolled to, and only `loadOlder`
+                // is entitled to retire it. Recomputing it here is what used
+                // to throw away a scrolled-back board every time a comment
+                // arrived.
+                hasOlder = if (rereading) hasOlder else shown.size > 1,
                 loadingOlder = false,
             )
         }
 
-        launchResult(
+        boardReadInFlight = unit.id
+        launch {
+            seedNotices(unit.id)
+
             // "now" is the newest page — the endpoint reads backwards from a
             // timestamp rather than paging by offset, because a board people are
             // posting to shifts under an offset.
-            block = { repository.loadNotices(unit.id, nowMillis()) },
-            onSuccess = { notices ->
-                // Guard against a slow response for a tab the user has left.
-                if (currentState.selectedUnitId == unit.id) {
-                    // Anything past a lone post may have history behind it;
-                    // the older-page fetch retires the cue itself.
-                    setState { copy(isLoadingNotices = false, notices = notices, hasOlder = notices.size > 1) }
-                    // The board is on screen — that is what "read" means on
-                    // this API, as when the web's Notices tab is visible.
-                    launch { onBoardViewed(unit.id) }
-                }
-            },
-            onError = { error ->
-                if (currentState.selectedUnitId == unit.id) {
-                    setState { copy(isLoadingNotices = false, error = error.localised()) }
-                }
-            },
-        )
+            val result = repository.loadNotices(unit.id, nowMillis())
+            if (boardReadInFlight == unit.id) boardReadInFlight = null
+            when (result) {
+                is ZillitResult.Success -> onNoticesLoaded(unit.id, result.data, rereading)
+                is ZillitResult.Failure ->
+                    // Guard against a slow response for a tab the user has left.
+                    if (currentState.selectedUnitId == unit.id) {
+                        setState { copy(isLoadingNotices = false, error = result.error.localised()) }
+                    }
+            }
+        }
+    }
+
+    /**
+     * The kept newest page, drawn while the real read is out.
+     *
+     * Only when there is nothing on screen for this tab: a page already
+     * showing is at least as fresh as the disk, and replacing it would be a
+     * visible step backwards.
+     */
+    private suspend fun seedNotices(unitId: String) {
+        if (currentState.selectedUnitId != unitId || currentState.notices.isNotEmpty()) return
+        val kept = repository.cachedNotices(unitId)?.takeIf { it.isNotEmpty() } ?: return
+        if (currentState.selectedUnitId != unitId || currentState.notices.isNotEmpty()) return
+        boards[unitId] = kept
+        setState { copy(notices = kept, hasOlder = kept.size > 1) }
+    }
+
+    private fun onNoticesLoaded(unitId: String, fetched: List<Notice>, rereading: Boolean) {
+        if (currentState.selectedUnitId != unitId) {
+            // Still worth keeping: the tab was left mid-read, and this is the
+            // page it will show when it is opened again.
+            boards[unitId] = fetched
+            return
+        }
+        setState {
+            // A post still going up exists only here. Its upload may have
+            // begun after this read went out, so the server's answer does not
+            // contain it — and replacing the list wholesale would take the
+            // card out from under a running upload. Chat guards the same race
+            // the same way (`ChatViewModel.openThread`).
+            val inFlight = notices.filter { local ->
+                local.sendState != NoticeSendState.Sent && fetched.none { it.sameAs(local) }
+            }
+            val behind = if (rereading) pagesBehind(notices, fetched) else emptyList()
+            copy(
+                isLoadingNotices = false,
+                notices = behind + fetched + inFlight,
+                // Anything past a lone post may have history behind it; the
+                // older-page fetch retires the cue itself. A refresh leaves it
+                // as it was — the oldest post shown has not moved, so what
+                // lies behind it has not changed either.
+                hasOlder = if (rereading) hasOlder else fetched.size > 1,
+            )
+        }
+        boards[unitId] = currentState.notices
+        // The board is on screen — that is what "read" means on
+        // this API, as when the web's Notices tab is visible.
+        launch { onBoardViewed(unitId) }
+    }
+
+    /**
+     * The scrolled-back pages a refreshed newest page must not take away.
+     *
+     * The read only ever asks for the newest window, so a reader who has
+     * pressed "show older" four times holds four pages the answer knows
+     * nothing about. Replacing the list with the answer collapsed all of them
+     * — which a comment arriving on the board was enough to do.
+     *
+     * The oldest post in the answer is the boundary. Behind it, a post the
+     * answer does not mention is simply a page that was not asked for, and is
+     * kept. Inside it, a post the answer does not mention is one the server no
+     * longer has — deleted, or moved to the call sheet's history — and keeping
+     * that would be a deleted post that will not go away. Which side of the
+     * boundary a post falls on is the whole distinction, and `pageStamp` is the
+     * same `updated` the endpoint windows by, so the two agree by construction.
+     *
+     * Pending posts are not considered: they are nobody's page, and
+     * [onNoticesLoaded] carries them separately.
+     */
+    private fun pagesBehind(shown: List<Notice>, fetched: List<Notice>): List<Notice> {
+        val boundary = fetched
+            .filter { it.sendState == NoticeSendState.Sent && it.pageStamp > 0 }
+            .minOfOrNull { it.pageStamp }
+        // An empty answer names no boundary. It may mean the board was
+        // emptied, so nothing is assumed and the answer stands as given.
+        if (boundary == null) return emptyList()
+        return shown.filter { post ->
+            post.sendState == NoticeSendState.Sent &&
+                post.pageStamp in 1 until boundary &&
+                fetched.none { it.sameAs(post) }
+        }
     }
 
     /**

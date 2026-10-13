@@ -20,6 +20,8 @@ import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.NoticeComment
 import com.zillit.desktop.feature.home.domain.NoticeKind
+import com.zillit.desktop.feature.home.domain.NoticeStore
+import com.zillit.desktop.feature.home.domain.NoticeWire
 import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.ReadReceipt
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
@@ -27,6 +29,7 @@ import com.zillit.desktop.feature.home.domain.forDisplay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -111,7 +114,19 @@ class HomeFeedRepositoryImpl(
      * board's offline copy, so no page is filed under a cache name.
      */
     private val fileCabinet: Boolean = false,
+    /**
+     * Where this board is kept between launches; null keeps it in memory only.
+     *
+     * Already scoped to this board and production by whoever built it, which
+     * is why nothing here passes either. Never used in [fileCabinet] mode: the
+     * cabinet's records are not the live board, and filing them would replace
+     * it with an archive.
+     */
+    private val store: NoticeStore? = null,
 ) : HomeFeedRepository {
+
+    /** The store, or null when there is nothing to keep a board in. */
+    private val disk: NoticeStore? get() = store?.takeUnless { fileCabinet }
 
     private val home get() = "${config.apiV2(service)}$board/"
 
@@ -124,6 +139,20 @@ class HomeFeedRepositoryImpl(
     /** Home's `home/unit/...` routes stay on the `home` segment for other boards. */
     private val homeUnits get() = "${config.apiV2(ZillitService.Units)}home/"
 
+    /** The tab strip's own route — admins get `/admin`, as the web picks it. */
+    private val unitsUrl get() = "${homeUnits}unit/${if (isAdmin()) "admin" else "user"}"
+
+    /**
+     * What the board's newest page is kept under.
+     *
+     * The URL carries a "now" timestamp and so differs on every load, while
+     * the question — "the newest page of this unit" — never does. One name,
+     * written by [loadNotices] and read back by [cachedNotices]; they must
+     * agree or the cache silently stops answering, which is why neither
+     * spells it out for itself.
+     */
+    private fun newestPage(unitId: String) = CallOptions(cacheAs = "${chat}$unitId/newest")
+
     /**
      * The tab strip.
      *
@@ -133,7 +162,7 @@ class HomeFeedRepositoryImpl(
     override suspend fun loadUnits(): ZillitResult<List<HomeUnit>> =
         units?.invoke() ?: apiClient.request(
             verb = HttpVerb.Get,
-            url = "${homeUnits}unit/${if (isAdmin()) "admin" else "user"}",
+            url = unitsUrl,
             serializer = ListSerializer(HomeUnitDto.serializer()),
             module = RequestModule.ProjectUser,
         ).map { dtos -> dtos.mapNotNull { it.toDomain() } }
@@ -154,17 +183,18 @@ class HomeFeedRepositoryImpl(
             url = "${chat}$unitId/$beforeMillis/previous$cabinetQuery",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
-            // The only page ever asked for is the newest one, from "now" — a
-            // URL that differs on every load. Kept under one name so the board
-            // still shows offline what it showed last time. The cabinet's
-            // records are not that board: filing them there would replace the
-            // live copy with archived posts.
-            options = if (fileCabinet) CallOptions() else CallOptions(cacheAs = "${chat}$unitId/newest"),
-        ).map { rows ->
-            rows.mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, ::decryptBody) }.forDisplay()
-        }
+            // The cabinet's records are not that board: filing them under the
+            // newest-page name would replace the live copy with archived posts.
+            options = if (fileCabinet) CallOptions() else newestPage(unitId),
+        ).alsoFiled(unitId)
 
-    /** Scrolling back: the same route, kept out of the newest-page cache. */
+    /**
+     * Scrolling back: the same route, kept out of the newest-page cache.
+     *
+     * Filed on disk all the same, and this is the page that makes the store
+     * worth having — the `cacheAs` row holds one window, so before this the
+     * only thing offline was whatever the newest read last returned.
+     */
     override suspend fun loadOlderNotices(
         unitId: String,
         beforeMillis: Long,
@@ -174,9 +204,91 @@ class HomeFeedRepositoryImpl(
             url = "${chat}$unitId/$beforeMillis/previous$cabinetQuery",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
-        ).map { rows ->
-            rows.mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, ::decryptBody) }.forDisplay()
+        ).alsoFiled(unitId)
+
+    /**
+     * The kept tab strip, for a board to draw while the real read is out.
+     *
+     * Null on a board whose tabs come from a provider ([units]): those resolve
+     * from the production's tool list rather than this route, so there is no
+     * row of ours to read — and they are one-unit boards, where the strip is
+     * not what anybody is waiting for.
+     */
+    override suspend fun cachedUnits(): List<HomeUnit>? {
+        if (units != null) return null
+        return apiClient.peekCached(
+            url = unitsUrl,
+            serializer = ListSerializer(HomeUnitDto.serializer()),
+            module = RequestModule.ProjectUser,
+        )?.mapNotNull { it.toDomain() }
+    }
+
+    /**
+     * The kept newest page.
+     *
+     * Decrypted and read here exactly as a live answer is — the rows on disk
+     * are the server's own, cipher bodies and all, so there is one parser for
+     * both and no second shape to keep in step.
+     *
+     * Null in cabinet mode, where nothing is filed.
+     *
+     * The store answers first and the `cacheAs` row is the fallback: the store
+     * holds every page that has been read, merged, where that row holds only
+     * the last newest window. The row stays written all the same — it is what
+     * answers the live read itself when the network is gone.
+     */
+    override suspend fun cachedNotices(unitId: String): List<Notice>? {
+        if (fileCabinet) return null
+        disk?.newest(unitId)?.takeIf { it.isNotEmpty() }?.let { kept ->
+            return kept.mapNotNull { runCatching { Json.parseToJsonElement(it) }.getOrNull() }.toNotices()
         }
+        return apiClient.peekCached(
+            // The URL is not part of the key under a `cacheAs` name, but it is
+            // what the log line says it served — so pass the real route.
+            url = "${chat}$unitId/newest",
+            serializer = ListSerializer(JsonElement.serializer()),
+            module = RequestModule.ProjectUser,
+            options = newestPage(unitId),
+        )?.toNotices()
+    }
+
+    override suspend fun rememberNotice(unitId: String?, notice: Notice, wire: String?) {
+        val unit = unitId ?: return
+        val row = wire ?: return
+        disk?.put(unit, NoticeWire(notice.id, row, notice.updatedAtMillis))
+    }
+
+    override suspend fun forgetNotice(unitId: String?, noticeId: String) {
+        disk?.forget(unitId, noticeId)
+    }
+
+    /**
+     * Files a page as it passes, and hands the posts on unchanged.
+     *
+     * Which rows are filed is decided by [readNotice], not by a second set of
+     * guards here: a row it refuses — deleted, or unparseable — is one the
+     * board would never draw, so keeping it would only mean drawing it on the
+     * next cold open.
+     */
+    private suspend fun ZillitResult<List<JsonElement>>.alsoFiled(
+        unitId: String,
+    ): ZillitResult<List<Notice>> = map { rows ->
+        val notices = rows.toNotices()
+        disk?.let { store ->
+            val byId = rows.associateBy { (it as? JsonObject)?.string("_id") }
+            store.save(
+                unitId,
+                notices.mapNotNull { notice ->
+                    byId[notice.id]?.let { NoticeWire(notice.id, it.toString(), notice.updatedAtMillis) }
+                },
+            )
+        }
+        notices
+    }
+
+    /** The wire's rows as posts, in board order. One reader, live or from disk. */
+    private fun List<JsonElement>.toNotices(): List<Notice> =
+        mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, ::decryptBody) }.forDisplay()
 
     /**
      * What the web adds to a chat read in cabinet mode (`fileCabinateDataFetch`,

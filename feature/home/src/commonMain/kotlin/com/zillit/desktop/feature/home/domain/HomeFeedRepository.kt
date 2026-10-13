@@ -13,6 +13,37 @@ interface HomeFeedRepository {
     suspend fun loadNotices(unitId: String, beforeMillis: Long): ZillitResult<List<Notice>>
 
     /**
+     * What the last successful [loadUnits] answered, from disk — null when
+     * this board has never been read on this computer.
+     *
+     * Paired with [cachedNotices] below, this is what lets a board draw
+     * itself before the network answers. Both default to null: a repository
+     * that keeps nothing is simply always a cache miss, which is how every
+     * board behaved before these existed.
+     */
+    suspend fun cachedUnits(): List<HomeUnit>? = null
+
+    /** The same, for [unitId]'s newest page. */
+    suspend fun cachedNotices(unitId: String): List<Notice>? = null
+
+    /**
+     * Files a post that arrived over the socket, so the offline copy keeps up
+     * with what is on screen.
+     *
+     * [wire] is the server's own row when the event carried one; without it
+     * there is nothing to file and the call is a no-op — the post reaches disk
+     * on the board's next read instead.
+     */
+    suspend fun rememberNotice(unitId: String?, notice: Notice, wire: String?) = Unit
+
+    /**
+     * Forgets a deleted post. Without this a post deleted while somebody
+     * watched comes back from disk on the next cold open, until the board's
+     * first read of the session replaces it.
+     */
+    suspend fun forgetNotice(unitId: String?, noticeId: String) = Unit
+
+    /**
      * The page behind [beforeMillis] (a [Notice.pageStamp]) — [loadNotices]
      * without filing it as the board's newest page in the offline cache.
      */
