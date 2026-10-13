@@ -441,20 +441,28 @@ class MediasoupSession(
     }
 
     /**
-     * A remote track started or stopped carrying frames.
+     * A remote track started carrying frames.
      *
      * The page's own reading, and the only one that cannot be lost in transit
      * — so it OVERRIDES whatever the notifications left behind. A camera that
      * is sending must never sit behind a tile that says it is off, which is
      * the bug this answers: the state said off, the packets said otherwise,
      * and only the remote toggling their camera ever settled it.
+     *
+     * One direction only. Arriving packets prove a camera is on; their absence
+     * proves nothing — the SFU forwards no layer at all to a starved consumer,
+     * and read as a camera-off that hid live faces for half a call (see the
+     * page's `watchTrack`). Camera-off has one source here, and it is
+     * signalling: [onConsumerPaused], [onConsumerClosed], `producerPaused` in
+     * the offer. A `muted` from the page is dropped rather than trusted, so
+     * neither side can re-introduce it alone.
      */
     suspend fun onPageTrackState(consumerId: String, peerId: String, kind: String, muted: Boolean) {
         val who = consumersById[consumerId]?.peerId ?: peerId
-        if (who.isBlank() || kind != "video") return
+        if (who.isBlank() || kind != "video" || muted) return
         if (consumersById[consumerId]?.share == true) return
-        ZillitLog.i(TAG) { "$who's video track ${if (muted) "stopped" else "is"} carrying frames" }
-        emitForPeer(who) { uid -> CallEngineEvent.PeerVideoMuted(uid, muted) }
+        ZillitLog.i(TAG) { "$who's video track is carrying frames" }
+        emitForPeer(who) { uid -> CallEngineEvent.PeerVideoMuted(uid, muted = false) }
     }
 
     private suspend fun onConsumerClosed(consumerId: String) {
