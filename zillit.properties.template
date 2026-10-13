@@ -73,11 +73,14 @@ PROD_COST_REPORT_BASE_URL=
 # there yet. Set it anyway — an absent key throws on first use, where a host
 # that is not there reports a readable failure.
 PROD_TAX_FILING_BASE_URL=
-# Tasks. Only `tasksapi-dev` and `tasksapi-qa` answer today; production
-# returns 503 (not deployed yet, probed 2026-10-01).
+# Tasks. Answers in all three environments (probed 2026-10-13: dev 401, QA and
+# production 406 — production was still 503 on 2026-10-01).
 PROD_TASKS_BASE_URL=
-# Select Stills (stillkillsapi). Only `stillkillsapi-dev` answers today; QA and
-# production return 503 (not deployed yet, probed 2026-10-07).
+# Select Stills. Rides the *Tasks* host, not a `stillkillsapi` one: set this to
+# the same value as PROD_TASKS_BASE_URL above. The service moved there on
+# 2026-10-13 and the old `stillkillsapi*` hosts are gone — dev 502, QA and
+# production 503 (probed 2026-10-13). The key stays separate so the two can be
+# split again without a code change.
 PROD_STILL_KILLS_BASE_URL=
 # Costumes & Set Sync (synconsetapi). Answers in all three environments.
 PROD_SYNC_ONSET_BASE_URL=

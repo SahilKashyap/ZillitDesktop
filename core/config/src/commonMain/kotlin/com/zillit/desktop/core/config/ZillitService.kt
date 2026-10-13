@@ -155,12 +155,22 @@ enum class ZillitService(val configKey: String) {
      * photographer's upload, the enrolled cast, face matching and each
      * agent's keep-or-discard queue.
      *
-     * A brand-new service with no pre-merge host: `stillkillsapi-dev` answers
-     * today (`/api/v2/still-kills/me` → 401 `libs_moduledata_not_accepted`,
-     * so the route is there); `-qa` and the unsuffixed production host both
-     * answer 503, so it is not deployed there yet (probed 2026-10-07). The
-     * keys are configured all the same — an absent key throws on first use,
-     * where a host that is not there reports a readable failure.
+     * **It rides the Tasks host**, not a host its path implies: configure
+     * `STILL_KILLS_BASE_URL` to the same value as [Tasks] — `tasksapi-dev` /
+     * `-qa` / unsuffixed. It answers in all three environments (probed
+     * 2026-10-13: dev 401 `libs_moduledata_not_accepted`, QA and production
+     * 406), which is a change from the port: until 2026-10-13 it had its own
+     * `stillkillsapi*` hosts, only `-dev` answering. Those are gone now — dev
+     * 502, QA and production 503 — so a config still pointing at them shows
+     * the tool's "could not be loaded" panel on every launch.
+     *
+     * The key is kept separate from [Tasks] rather than folded into it so the
+     * two can be split again from a properties file, with no code change.
+     *
+     * Note the moduledata guard on this host runs **before** routing, so the
+     * 406 endpoint probe cannot tell a real route from an invented one here —
+     * `/api/v2/still-kills/invented-nonsense` answers 401 exactly as
+     * `/me` does.
      *
      * The web's `VITE_STILL_KILLS_BASE_URL` ends at `/api` and appends
      * `/v2/still-kills`, the same split [AppConfig.apiV2] makes.
