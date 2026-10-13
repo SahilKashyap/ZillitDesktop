@@ -182,7 +182,7 @@ class MailLedgerReadTest {
         assertEquals(listOf("mine", "untagged"), store.unreadRows(BadgeSections.EMAIL).map { it.id })
         assertEquals(4, store.unreadRows(BadgeSections.EMAIL, everyMailbox = true).size, "held, not read")
         assertTrue(storage.rows(project).none { it.messageRead }, "the rows stay unread on disk")
-        assertEquals(mapOf(project to setOf("me@zillit.net")), store.mailboxes())
+        assertEquals(mapOf(project to setOf("me@zillit.net")), store.mailboxesShown)
 
         // The day the desktop opens the Accounts mailbox too, its rows count — the web's total.
         store.showMailboxes(project, setOf("me@zillit.net", "invoices@zillit.net"))
