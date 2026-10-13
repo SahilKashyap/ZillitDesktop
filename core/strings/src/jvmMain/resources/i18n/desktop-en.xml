@@ -13040,4 +13040,6 @@
     <string name="desktop_forward_tool_note">The file is filed in %1$s; nothing is uploaded again.</string>
     <string name="desktop_forward_continuation_question">Is this a continuation of what is on the board, or a new one?</string>
     <string name="desktop_forward_needs_a_file">That tool takes a file, and this message has none</string>
+    <string name="desktop_forward_no_characters">That list has no characters yet, so there is nothing to file this under</string>
+    <string name="desktop_forward_tool_not_granted">That tool is not granted on this production</string>
 </resources>

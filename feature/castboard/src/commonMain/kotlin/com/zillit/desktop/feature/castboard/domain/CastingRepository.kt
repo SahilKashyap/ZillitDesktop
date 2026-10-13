@@ -40,4 +40,19 @@ interface CastingRepository {
         entryId: String,
         status: CastingStatus,
     ): ZillitResult<Unit> = ZillitResult.Failure(ZillitError.Unknown("moving is not wired"))
+
+    /**
+     * Adds one record to a list (`POST /v2/{segment}/{unitId}`) — the web's
+     * `createCasting` and `createWardrobe`, which are the same route under
+     * each service's own noun.
+     */
+    suspend fun create(unitId: String, draft: BoardRecordDraft): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("creating is not wired"))
+
+    /**
+     * A wardrobe list's characters, for the one question a costume asks
+     * (`GET /v2/wardrobe/get-casts/{unitId}`). Empty on casting, which has
+     * no such list: there the character is typed.
+     */
+    suspend fun casts(unitId: String): ZillitResult<List<BoardCast>> = ZillitResult.Success(emptyList())
 }

@@ -35,14 +35,20 @@ data class CastingUnit(
 /**
  * Where a candidate has got to.
  *
- * The segmented control reads Select / Shortlist / Publish, and the wire
- * spells them `selected`, `shortlisted`, `published`
- * (`CastingPage.jsx:83-89`).
+ * The wire spells them `selected`, `shortlisted`, `finalized`
+ * (`CommonCasting.jsx:819-825`, `CommonWardrobe.jsx`, and the forward
+ * submenu's `getLCWEnums`, which returns `finalized` for these two boards
+ * and `published` for location alone).
+ *
+ * The retired `/film-tools/casting` wrapper still maps its third segment to
+ * `published` (`CastingPage.jsx:99-106`); the live `main_casting` and
+ * `extra_casting` routes do not, and a read with `published` answers
+ * nothing — which is what this client used to send.
  */
 enum class CastingStatus(val wire: String, private val labelKey: String) {
     Selected("selected", S.selected),
     Shortlisted("shortlisted", S.shortlisted),
-    Published("published", S.publish),
+    Finalized("finalized", S.finalize),
     ;
 
     val label: String get() = str(labelKey)
@@ -125,6 +131,63 @@ data class CastingViewer(
             return CastingViewer(units = units, resolved = true)
         }
     }
+}
+
+/**
+ * A new record on one of a board's lists.
+ *
+ * Casting and wardrobe post to the same route under their own noun
+ * (`POST /v2/{segment}/{unitId}`) with a body each builds its own way —
+ * casting's `createCastingModal(value, 'create')` and wardrobe's
+ * `handleCreateWardrobe` payload. Both are this draft; which fields travel
+ * is [BoardTool.showsScenes]'s to decide, because a costume files under a
+ * character that already exists while a candidate *is* the character.
+ */
+data class BoardRecordDraft(
+    val uniqueId: String,
+    val status: CastingStatus,
+    /** Casting: the character being cast. Wardrobe: carried only when [castId] is blank. */
+    val characterName: String = "",
+    val talentName: String = "",
+    val gender: String = "",
+    val characterNumber: String = "",
+    val description: String = "",
+    /** Wardrobe: the scene this costume is worn in. */
+    val sceneNumber: String = "",
+    /** Wardrobe: which character on the cast list this costume belongs to. */
+    val castId: String = "",
+    /** A television production's episodes; create sends them as an array. */
+    val episodes: List<String> = emptyList(),
+    val attachment: BoardAttachment? = null,
+)
+
+/** A still or clip already in the production's storage, as a record's attachment. */
+data class BoardAttachment(
+    val media: String,
+    val thumbnail: String = "",
+    val contentType: String = "",
+    val contentSubtype: String = "",
+    val name: String = "",
+    val bucket: String = "",
+    val region: String = "",
+    val fileSize: String = "",
+)
+
+/**
+ * One character on a wardrobe list's cast
+ * (`GET /v2/wardrobe/get-casts/{unitId}`), which is what a costume files
+ * under — the web's `CastPublishDataModal` picker.
+ */
+data class BoardCast(
+    val castId: String,
+    val characterName: String,
+    val talentName: String = "",
+) {
+    /** "Rani — Priya Menon", or the character alone where no one is cast yet. */
+    val label: String
+        get() = listOf(characterName, talentName)
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
 }
 
 /**

@@ -2,12 +2,18 @@ package com.zillit.desktop.feature.castboard.data
 
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.JsonObject
+import com.zillit.desktop.feature.castboard.domain.BoardAttachment
+import com.zillit.desktop.feature.castboard.domain.BoardCast
 import com.zillit.desktop.feature.castboard.domain.BoardMessage
+import com.zillit.desktop.feature.castboard.domain.BoardRecordDraft
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
 import com.zillit.desktop.feature.castboard.domain.CastingMedia
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -80,6 +86,81 @@ internal fun CastingMediaDto.toMedia(): CastingMedia? {
         bucket = bucket.orEmpty(),
         region = region.orEmpty(),
     )
+}
+
+/**
+ * A new record's body.
+ *
+ * Casting's is `createCastingModal(value, 'create')`: a fresh `unique_id`,
+ * the destination's status, and only the fields that were actually answered —
+ * the web sets each key under an `if`, so a blank one is absent rather than
+ * empty, and the character and talent names go up title-cased
+ * (`spaceCapitalizeWords`).
+ *
+ * Wardrobe's is `handleCreateWardrobe`'s: the attachment, a `unique_id`, the
+ * `cast_id` of the character it files under and the scene it is worn in.
+ * A character the cast list does not carry yet travels as `cast`, which is
+ * what the modal sends when the picker produced no id.
+ */
+internal fun createWire(draft: BoardRecordDraft, wardrobe: Boolean): JsonObject = buildJsonObject {
+    put("unique_id", draft.uniqueId)
+    put("status", draft.status.wire)
+    draft.attachment?.let { put("attachment", attachmentWire(it)) }
+    if (draft.episodes.isNotEmpty()) {
+        // Create sends an array; edit sends the string it was typed as.
+        put("episode", buildJsonArray { draft.episodes.forEach { add(JsonPrimitive(it)) } })
+    }
+    draft.description.trim().takeIf { it.isNotBlank() }?.let { put("description", it) }
+    if (wardrobe) {
+        draft.castId.takeIf { it.isNotBlank() }?.let { put("cast_id", it) }
+        draft.sceneNumber.trim().takeIf { it.isNotBlank() }?.let { put("scene_number", it) }
+        if (draft.castId.isBlank() && draft.characterName.isNotBlank()) {
+            put(
+                "cast",
+                buildJsonObject {
+                    put("character_name", titleCaseWords(draft.characterName))
+                    put("talent_name", titleCaseWords(draft.talentName))
+                    put("gender", draft.gender.trim())
+                },
+            )
+        }
+    } else {
+        draft.characterName.takeIf { it.isNotBlank() }?.let { put("character_name", titleCaseWords(it)) }
+        draft.talentName.takeIf { it.isNotBlank() }?.let { put("talent_name", titleCaseWords(it)) }
+        draft.gender.trim().takeIf { it.isNotBlank() }?.let { put("gender", it) }
+        draft.characterNumber.trim().takeIf { it.isNotBlank() }?.let { put("character_number", it) }
+    }
+}
+
+/** The attachment as every film tool sends it — the web's one `dataObj`. */
+private fun attachmentWire(a: BoardAttachment): JsonObject = buildJsonObject {
+    put("media", a.media)
+    put("thumbnail", a.thumbnail.ifBlank { a.media })
+    put("content_type", a.contentType)
+    put("content_subtype", a.contentSubtype)
+    put("caption", "")
+    put("height", 0)
+    put("width", 0)
+    put("duration", 0)
+    put("bucket", a.bucket)
+    put("region", a.region)
+    put("name", a.name.trim())
+    put("file_size", a.fileSize)
+}
+
+/** `spaceCapitalizeWords`: the first letter of each word up. */
+internal fun titleCaseWords(raw: String): String =
+    raw.trim().split(' ').joinToString(" ") { word ->
+        if (word.isEmpty()) word else word.first().uppercaseChar() + word.drop(1)
+    }
+
+/** One row of a wardrobe list's cast — `cast_id` on the list, `_id` on the socket's copy. */
+internal fun parseCast(obj: JsonObject?): BoardCast? {
+    if (obj == null) return null
+    val id = obj.line("cast_id", "_id").takeIf { it.isNotBlank() } ?: return null
+    val character = obj.line("character_name")
+    if (character.isBlank()) return null
+    return BoardCast(castId = id, characterName = character, talentName = obj.line("talent_name"))
 }
 
 /**

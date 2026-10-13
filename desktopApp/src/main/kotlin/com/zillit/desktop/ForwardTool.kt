@@ -13,6 +13,7 @@ import com.zillit.desktop.core.workspace.forward.ForwardItem
 import com.zillit.desktop.core.workspace.forward.ForwardKind
 import com.zillit.desktop.core.workspace.forward.ForwardStep
 import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
+import com.zillit.desktop.core.workspace.forward.ForwardFile
 import com.zillit.desktop.feature.budget.domain.BudgetFile
 import com.zillit.desktop.feature.budget.domain.BudgetRules
 import com.zillit.desktop.feature.budget.domain.BudgetType
@@ -66,8 +67,16 @@ internal class ForwardTool(
     val send: suspend (ForwardItem, Map<String, String>) -> ZillitResult<Unit>,
     /** The heading this tool sits under when it has siblings — the web's submenu. */
     val group: String? = null,
+    /**
+     * A document tool that takes PDFs alone. The web splits `document` in
+     * two: a PDF is offered the distributions and the budgets, anything else
+     * only the notes boards (`addToolsForForward`, `content_subtype === 'pdf'`),
+     * so a .docx must not even be listed for them.
+     */
+    val pdfOnly: Boolean = false,
 ) {
-    fun takes(item: ForwardItem): Boolean = item.kind in kinds
+    fun takes(item: ForwardItem): Boolean =
+        item.kind in kinds && (!pdfOnly || item.file?.isPdf == true)
 
     /** The picker's row for this tool. */
     fun entry(): ForwardStep = ForwardStep(id = id, label = label())
@@ -120,6 +129,7 @@ private fun distributionTool(
     // D.O.D has one tab, so its entry stands alone; the other two carry
     // their tabs under the tool's own name, as the web's submenus do.
     group = tool.title.takeIf { tool.tabs.size > 1 },
+    pdfOnly = true,
     ask = { item ->
         if (!item.isPdf()) {
             ForwardStepOutcome.Refused(str(S.desktop_forward_pdf_only))
@@ -223,8 +233,12 @@ internal fun notesBoardForwardTools(boards: List<ForwardBoard>, newLocalId: () -
             id = "notes:${board.key}",
             label = { board.title() },
             identifier = board.identifier,
-            // Everything the board itself does not already take as a Pick.
-            kinds = ForwardKind.entries.toSet() - ForwardKind.Text,
+            // A document, and only a document: the web offers these three
+            // for `text` (where the board takes it as a Pick, above) and for
+            // `document`, pdf or not — never for a picture or a clip, which
+            // go to casting, wardrobe, location and continuity instead
+            // (`addToolsForForward`).
+            kinds = setOf(ForwardKind.Document),
             ask = { _ ->
                 val units = board.units().filter { it.enabled && it.canPost }
                 if (units.isEmpty()) {
@@ -308,6 +322,7 @@ private fun budgetTool(
     label = { toolLabel("${identifier}_label") },
     identifier = identifier,
     kinds = setOf(ForwardKind.Document),
+    pdfOnly = true,
     ask = { item ->
         when {
             !item.isPdf() -> ForwardStepOutcome.Refused(str(S.desktop_forward_pdf_only))
@@ -509,7 +524,7 @@ private fun colourOptions(): List<ForwardChoice> =
     PageColour.entries.map { ForwardChoice(value = it.name, label = it.label, swatch = it.hex) }
 
 /** The forwarded file as the distributions' already-stored PDF. */
-private fun com.zillit.desktop.core.workspace.forward.ForwardFile.asStoredPdf(): StoredPdf? {
+private fun ForwardFile.asStoredPdf(): StoredPdf? {
     if (media.isBlank()) return null
     return StoredPdf(
         media = media,
@@ -539,6 +554,12 @@ internal const val FIELD_DEPARTMENT = "department"
 internal const val FIELD_DEPARTMENT_NAME = "departmentName"
 internal const val FIELD_NOTES = "notes"
 internal const val FIELD_CITY = "city"
+internal const val FIELD_CHARACTER = "character"
+internal const val FIELD_CHARACTER_NUMBER = "characterNumber"
+internal const val FIELD_TALENT = "talent"
+internal const val FIELD_GENDER = "gender"
+internal const val FIELD_CAST = "cast"
+internal const val FIELD_DESCRIPTION = "description"
 private const val CONTINUATION = "continuation"
 private const val NEW_ONE = "new"
 

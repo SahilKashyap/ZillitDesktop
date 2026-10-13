@@ -6,6 +6,10 @@ import com.zillit.desktop.core.workspace.forward.ForwardFile
 import com.zillit.desktop.core.workspace.forward.ForwardItem
 import com.zillit.desktop.core.workspace.forward.ForwardKind
 import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
+import com.zillit.desktop.feature.castboard.domain.BoardCast
+import com.zillit.desktop.feature.castboard.domain.BoardRecordDraft
+import com.zillit.desktop.feature.castboard.domain.BoardTool
+import com.zillit.desktop.feature.castboard.domain.CastingStatus
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionRepository
@@ -208,6 +212,169 @@ class ForwardToolsTest {
         assertTrue(tool.ask(picture) is ForwardStepOutcome.Refused)
         assertTrue(!tool.takes(picture), "it is not even listed for a picture")
         assertTrue(tool.takes(pdf))
+    }
+
+    /**
+     * The web splits `document` by subtype: a PDF is offered the
+     * distributions and the budgets, anything else is offered neither — not
+     * refused on click, absent from the list.
+     */
+    @Test
+    fun `a document that is not a PDF is not offered the distributions or the budgets`() {
+        val docx = ForwardItem(
+            kind = ForwardKind.Document,
+            file = ForwardFile(media = "chat/notes.docx", name = "notes.docx", subtype = "docx"),
+        )
+        val offered = tools(UploadSpy()) + budgetForwardTools(
+            post = { ZillitResult.Success(Unit) },
+            departments = { emptyList() },
+            isTelevision = { false },
+        )
+
+        assertTrue(offered.none { it.takes(docx) })
+        assertTrue(offered.all { it.takes(pdf) })
+    }
+
+    // Casting and wardrobe ---------------------------------------------------
+
+    /** Records every record created, and answers with a fixed cast list. */
+    private class CastSpy(private val casts: List<BoardCast> = emptyList()) {
+        val created = mutableListOf<Pair<String, BoardRecordDraft>>()
+
+        fun tools(board: BoardTool, television: Boolean = false, granted: Boolean = true) =
+            castBoardForwardTools(
+                board = board,
+                unitId = { identifier -> "unit-$identifier".takeIf { granted } },
+                create = { unitId, draft ->
+                    created += unitId to draft
+                    ZillitResult.Success(Unit)
+                },
+                casts = { casts },
+                isTelevision = { television },
+                newUniqueId = { "uid-1" },
+            )
+    }
+
+    /** Both lists, all three shortlists, under the tool each belongs to. */
+    @Test
+    fun `each cast board offers its two lists at three stages`() {
+        val tools = CastSpy().tools(BoardTool.Casting)
+
+        assertEquals(
+            listOf(
+                "tool:casting_main_tool:selected",
+                "tool:casting_main_tool:shortlisted",
+                "tool:casting_main_tool:finalized",
+                "tool:casting_background_tool:selected",
+                "tool:casting_background_tool:shortlisted",
+                "tool:casting_background_tool:finalized",
+            ),
+            tools.map { it.id },
+        )
+        // Rights are read per list, which is how this production grants them.
+        assertEquals("casting_main_tool", tools.first().identifier)
+        assertTrue(tools.all { it.group != null }, "a submenu, as the web has it")
+    }
+
+    /** `addToolsForForward` offers these four for a picture or a clip alone. */
+    @Test
+    fun `a cast board takes a picture and not a document`() {
+        val tool = CastSpy().tools(BoardTool.Casting).first()
+
+        assertTrue(tool.takes(picture))
+        assertTrue(!tool.takes(pdf))
+    }
+
+    /** Nothing is required on Selects, and everything is from Shortlist on. */
+    @Test
+    fun `casting asks for the character and the candidate, and insists past Selects`() = runTest {
+        val tools = CastSpy().tools(BoardTool.Casting)
+
+        val selects = (tools[0].ask(picture) as ForwardStepOutcome.Asks).form
+        val shortlist = (tools[1].ask(picture) as ForwardStepOutcome.Asks).form
+
+        assertEquals(
+            listOf(FIELD_CHARACTER, FIELD_CHARACTER_NUMBER, FIELD_TALENT, FIELD_GENDER, FIELD_DESCRIPTION),
+            selects.fields.map { it.key },
+        )
+        assertTrue(selects.fields.none { it.required }, "a still with nothing known about it belongs in Selects")
+        assertEquals(
+            listOf(FIELD_CHARACTER, FIELD_TALENT, FIELD_GENDER),
+            shortlist.fields.filter { it.required }.map { it.key },
+        )
+    }
+
+    /** A costume files under a character that already exists on that list. */
+    @Test
+    fun `wardrobe picks the cast and the scene, from the list's own cast`() = runTest {
+        val spy = CastSpy(listOf(BoardCast("k1", "Inspector Rao", "Ravi Menon")))
+        val shortlist = spy.tools(BoardTool.Wardrobe)[1]
+
+        val form = (shortlist.ask(picture) as ForwardStepOutcome.Asks).form
+
+        assertEquals(listOf(FIELD_CAST, FIELD_SCENE, FIELD_DESCRIPTION), form.fields.map { it.key })
+        val cast = form.fields.filterIsInstance<ForwardField.Choice>().single()
+        assertEquals(listOf("k1"), cast.options.map { it.value })
+        assertEquals("Inspector Rao · Ravi Menon", cast.options.single().label)
+        assertTrue(form.fields.first { it.key == FIELD_SCENE }.required)
+    }
+
+    /** With no cast at all there is nothing to answer the one required question with. */
+    @Test
+    fun `wardrobe's shortlists refuse a list with no characters`() = runTest {
+        val spy = CastSpy()
+
+        assertTrue(spy.tools(BoardTool.Wardrobe)[2].ask(picture) is ForwardStepOutcome.Refused)
+        // Selects does not insist, so a costume can still be parked there.
+        assertTrue(spy.tools(BoardTool.Wardrobe)[0].ask(picture) is ForwardStepOutcome.Asks)
+    }
+
+    /** A television production answers for the episode here as well. */
+    @Test
+    fun `a television production is asked for the episode on a cast board`() = runTest {
+        val tools = CastSpy().tools(BoardTool.Casting, television = true)
+
+        val form = (tools[1].ask(picture) as ForwardStepOutcome.Asks).form
+
+        assertTrue(form.fields.any { it.key == FIELD_EPISODE && it.required })
+    }
+
+    /** The answers become the record the board's own dialog would have created. */
+    @Test
+    fun `the answers become a record on that list, with the still on it`() = runTest {
+        val spy = CastSpy()
+        val tool = spy.tools(BoardTool.Casting).first { it.id == "tool:casting_main_tool:finalized" }
+
+        val sent = tool.send(
+            picture,
+            mapOf(
+                FIELD_CHARACTER to "Inspector Rao",
+                FIELD_TALENT to "Ravi Menon",
+                FIELD_GENDER to "male",
+                FIELD_EPISODE to "3, 4",
+                FIELD_DESCRIPTION to "the market scene",
+            ),
+        )
+
+        assertTrue(sent is ZillitResult.Success)
+        val (unitId, draft) = spy.created.single()
+        assertEquals("unit-casting_main_tool", unitId, "the list's own unit id, from the rights")
+        assertEquals(CastingStatus.Finalized, draft.status)
+        assertEquals("Inspector Rao", draft.characterName)
+        assertEquals(listOf("3", "4"), draft.episodes)
+        assertEquals("chat/door.jpg", draft.attachment?.media)
+        assertEquals("image", draft.attachment?.contentType)
+    }
+
+    /** A list this person was not granted has no unit id to post to. */
+    @Test
+    fun `a list that is not granted refuses rather than posting`() = runTest {
+        val spy = CastSpy()
+        val tool = spy.tools(BoardTool.Casting, granted = false).first()
+
+        assertTrue(tool.ask(picture) is ForwardStepOutcome.Refused)
+        assertTrue(tool.send(picture, emptyMap()) is ZillitResult.Failure)
+        assertTrue(spy.created.isEmpty())
     }
 
     private companion object {

@@ -61,7 +61,7 @@ import com.zillit.desktop.feature.castboard.domain.CastingUnit
  * The Casting tool.
  *
  * A board of characters and whoever is up for each, filtered by how far they
- * have got — selected, shortlisted, published — which is the shape both the
+ * have got — selected, shortlisted, finalized — which is the shape both the
  * web's tabs and a casting director's day take.
  */
 @Composable

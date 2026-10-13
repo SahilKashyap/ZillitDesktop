@@ -48,7 +48,7 @@ interface CastingBadges {
         fun unitOf(board: BoardTool, status: CastingStatus): String = when (status) {
             CastingStatus.Selected -> "${board.segment}_select_label"
             CastingStatus.Shortlisted -> "${board.segment}_shortlist_label"
-            CastingStatus.Published -> "${board.segment}_final_label"
+            CastingStatus.Finalized -> "${board.segment}_final_label"
         }
 
         fun statusOf(board: BoardTool, unit: String): CastingStatus? =

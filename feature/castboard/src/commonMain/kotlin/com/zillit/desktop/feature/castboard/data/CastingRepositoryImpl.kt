@@ -9,7 +9,9 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.castboard.domain.BoardTool
+import com.zillit.desktop.feature.castboard.domain.BoardCast
 import com.zillit.desktop.feature.castboard.domain.BoardMessage
+import com.zillit.desktop.feature.castboard.domain.BoardRecordDraft
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
@@ -94,6 +96,32 @@ class CastingRepositoryImpl(
         body = buildJsonObject { put("status", JsonPrimitive(status.wire)) },
     ).mapData { }
 
+    /**
+     * `POST /v2/{segment}/{unitId}` — `createCasting` and `createWardrobe`
+     * are one route under two nouns, and the body is each board's own
+     * ([createWire]).
+     */
+    override suspend fun create(unitId: String, draft: BoardRecordDraft): ZillitResult<Unit> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/${board.segment}/$unitId",
+        module = RequestModule.ProjectUser,
+        body = createWire(draft, wardrobe = board.showsScenes),
+    ).mapData { }
+
+    /**
+     * `GET /v2/{segment}/get-casts/{unitId}?page=0&limit=1000` — the
+     * characters a costume can file under (`wardrobeApi/api.js:16-23`). The
+     * limit is the web's: the picker searches the whole list in the browser.
+     */
+    override suspend fun casts(unitId: String): ZillitResult<List<BoardCast>> = apiClient.envelope(
+        verb = HttpVerb.Get,
+        url = "$base/${board.segment}/get-casts/$unitId",
+        module = RequestModule.ProjectUser,
+        queryParameters = mapOf("page" to 0, "limit" to CAST_PAGE),
+    ).mapData { data ->
+        (data as? JsonArray).orEmpty().mapNotNull { parseCast(it as? JsonObject) }
+    }
+
     /** `GET /v2/{segment}/chat/{entryId}/{before}/previous?limit=&page=`. */
     override suspend fun messages(
         entryId: String,
@@ -145,3 +173,6 @@ class CastingRepositoryImpl(
 
 /** The page size the web asks for on this thread. */
 private const val MESSAGE_PAGE = 50
+
+/** The cast list is read whole, as the web reads it. */
+private const val CAST_PAGE = 1000

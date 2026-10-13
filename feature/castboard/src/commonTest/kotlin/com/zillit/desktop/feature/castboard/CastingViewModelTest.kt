@@ -97,10 +97,10 @@ class CastingViewModelTest {
 
         model.onEvent(CastingEvent.Load)
         advanceUntilIdle()
-        model.onEvent(CastingEvent.StatusChanged(CastingStatus.Published))
+        model.onEvent(CastingEvent.StatusChanged(CastingStatus.Finalized))
         advanceUntilIdle()
 
-        assertEquals("unit-main" to CastingStatus.Published, repository.asked.last())
+        assertEquals("unit-main" to CastingStatus.Finalized, repository.asked.last())
     }
 
     /** Search reads both the character and everyone up for it. */

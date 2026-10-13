@@ -19,6 +19,8 @@ import com.zillit.desktop.core.workspace.forward.ForwardReach
 import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.core.workspace.forward.ForwardStep
 import com.zillit.desktop.core.workspace.forward.ForwardStepOutcome
+import com.zillit.desktop.feature.castboard.data.CastingRepositoryImpl
+import com.zillit.desktop.feature.castboard.domain.BoardTool
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -47,17 +49,16 @@ import java.util.UUID
  * contributes the destinations it owns (a board its own units, a thread its
  * own people and rooms) and asks this for the rest.
  *
- * **What is here and what is not.** The notes boards that take a *text*
- * message — Script Notes, Camera & Sound Report, Production Report Chat —
- * are ordinary boards on another service, and the web posts a forwarded text
- * line straight into them (`handleSendScriptNotes`, `handleSendReports`,
+ * **Where the forms live.** The notes boards that take a *text* message —
+ * Script Notes, Camera & Sound Report, Production Report Chat — are ordinary
+ * boards on another service, and the web posts a forwarded text line
+ * straight into them (`handleSendScriptNotes`, `handleSendReports`,
  * `handleSendProductionReport`: `case 'text'` sends, everything else opens a
- * form). So text reaches them here. A document or a picture to those tools,
- * and the tools whose forward is a *form* in every case (Document
- * Distribution's pages, the script and schedule distributions, the budgets,
- * casting, wardrobe, location, continuity), still has to be built: each
- * needs its own modal — a document name, a scene, a continuation-or-new
- * question — which is a port of its own and is NOT in this file yet.
+ * form). So text reaches them as ordinary board rows here. Every destination
+ * whose forward *is* a form — a document to those same boards, the
+ * distributions, the budgets, continuity, location, casting and wardrobe —
+ * is a [ForwardTool], which answers a click with the questions that tool
+ * asks and posts the answers through the tool's own repository.
  */
 internal class AppForwardReach(
     private val boards: List<ForwardBoard>,
@@ -363,7 +364,7 @@ internal fun AppGraph.Ready.forwardReach(
     }
     return AppForwardReach(
         boards = boards,
-        tools = forwardTools(boards),
+        tools = forwardTools(boards, permissions),
         permissions = permissions,
         crew = { forwardCrew() },
         rooms = { forwardRooms() },
@@ -401,10 +402,15 @@ private suspend fun AppGraph.Ready.forwardRooms(): List<GroupRoom> =
     }
 
 /**
- * The film tools a message can be forwarded into — the distributions today;
- * see [ForwardTool] for what each one asks and where it posts.
+ * The film tools a message can be forwarded into: the distributions, the
+ * notes boards for anything that is not words, the budgets, continuity,
+ * location, casting and wardrobe — the whole of `addToolsForForward`'s
+ * table. See [ForwardTool] for what each one asks and where it posts.
  */
-private fun AppGraph.Ready.forwardTools(boards: List<ForwardBoard>): List<ForwardTool> =
+private fun AppGraph.Ready.forwardTools(
+    boards: List<ForwardBoard>,
+    permissions: () -> ProjectPermissions,
+): List<ForwardTool> =
     distributionForwardTools(
         repository = com.zillit.desktop.feature.pagedistribution.data.DistributionRepositoryImpl(
             apiClient = apiClient,
@@ -442,7 +448,38 @@ private fun AppGraph.Ready.forwardTools(boards: List<ForwardBoard>): List<Forwar
                     currentProjectId = { projectContext?.context?.value?.project?.projectId },
                 ).create(draft, attachment, linkPreview = null).map { }
             },
-        )
+        ) +
+        castBoardForwardTools(BoardTool.Casting, permissions) +
+        castBoardForwardTools(BoardTool.Wardrobe, permissions)
+
+/**
+ * One cast board's twelve destinations — two lists, three shortlists each,
+ * for casting and for wardrobe.
+ *
+ * The unit id comes from the viewer's own rights, which is where every one of
+ * this board's routes gets it ([CastingViewer] reads the same field for the
+ * board itself), so a list this person was not granted contributes a refusal
+ * rather than a request the service would answer with `unit_chat_unit_not_exist`.
+ */
+private fun AppGraph.Ready.castBoardForwardTools(
+    board: BoardTool,
+    permissions: () -> ProjectPermissions,
+): List<ForwardTool> {
+    val repository = CastingRepositoryImpl(apiClient, config, board)
+    return castBoardForwardTools(
+        board = board,
+        unitId = { identifier -> permissions().access(identifier).unitId?.takeIf { it.isNotBlank() } },
+        create = { unitId, draft -> repository.create(unitId, draft) },
+        casts = { unitId ->
+            when (val answer = repository.casts(unitId)) {
+                is ZillitResult.Success -> answer.data
+                is ZillitResult.Failure -> emptyList()
+            }
+        },
+        isTelevision = { isTelevisionProduction() },
+        newUniqueId = { UUID.randomUUID().toString() },
+    )
+}
 
 /** The production's departments, as the department budget's picker lists them. */
 private suspend fun AppGraph.Ready.forwardDepartments(): List<ForwardChoice> {

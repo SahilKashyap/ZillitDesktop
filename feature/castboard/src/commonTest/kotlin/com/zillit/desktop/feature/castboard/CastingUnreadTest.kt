@@ -28,7 +28,7 @@ class CastingUnreadTest {
             leaf(episode = "2", unread = 2),
             leaf(entryId = "e-1"),
             leaf(character = "Raja"),
-            leaf(tool = "casting_background_tool_label", status = CastingStatus.Published),
+            leaf(tool = "casting_background_tool_label", status = CastingStatus.Finalized),
         ),
     )
 
@@ -37,7 +37,7 @@ class CastingUnreadTest {
         assertEquals(5, unread.tool(main))
         assertEquals(1, unread.tool("casting_background_tool_label"))
         assertEquals(5, unread.status(main, CastingStatus.Selected))
-        assertEquals(0, unread.status(main, CastingStatus.Published))
+        assertEquals(0, unread.status(main, CastingStatus.Finalized))
     }
 
     @Test
@@ -50,7 +50,7 @@ class CastingUnreadTest {
 
     @Test
     fun `units and tools spell as the service files them`() {
-        assertEquals("casting_final_label", CastingBadges.unitOf(BoardTool.Casting, CastingStatus.Published))
+        assertEquals("casting_final_label", CastingBadges.unitOf(BoardTool.Casting, CastingStatus.Finalized))
         assertEquals("wardrobe_select_label", CastingBadges.unitOf(BoardTool.Wardrobe, CastingStatus.Selected))
         assertEquals(CastingStatus.Shortlisted, CastingBadges.statusOf(BoardTool.Wardrobe, "wardrobe_shortlist_label"))
         assertEquals("wardrobe_background_tool_label", CastingBadges.toolOf(BoardTool.Wardrobe.units[1]))
@@ -66,13 +66,13 @@ class CastingOrphansTest {
                 CastingBadgeLeaf(main, CastingStatus.Selected, "Rani", "", "", 1),
                 CastingBadgeLeaf(main, CastingStatus.Selected, "Gone", "", "", 1),
                 CastingBadgeLeaf(main, CastingStatus.Selected, "", "", "e-gone", 1),
-                CastingBadgeLeaf(main, CastingStatus.Published, "Rani", "", "", 1),
+                CastingBadgeLeaf(main, CastingStatus.Finalized, "Rani", "", "", 1),
             ),
         )
         val listed = listOf(CastingEntry(id = "e-1", characterName = "Rani"))
         val orphans = unread.orphans(main, CastingStatus.Selected, listed)
         assertEquals(setOf("Gone", ""), orphans.map { it.character }.toSet())
         assertEquals(2, orphans.size)
-        assertEquals(emptyList(), unread.orphans(main, CastingStatus.Published, listed))
+        assertEquals(emptyList(), unread.orphans(main, CastingStatus.Finalized, listed))
     }
 }
