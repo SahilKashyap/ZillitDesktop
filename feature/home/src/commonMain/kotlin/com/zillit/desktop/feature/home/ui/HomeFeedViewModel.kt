@@ -10,7 +10,11 @@ import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.media.TrackedSend
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.workspace.forward.ForwardPick
+import com.zillit.desktop.core.workspace.forward.ForwardReach
+import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -43,6 +47,7 @@ import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
 import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.Notice
+import com.zillit.desktop.feature.home.domain.asForwardItem
 import com.zillit.desktop.feature.home.domain.replaceTargets
 import com.zillit.desktop.feature.home.domain.visibleTabs
 
@@ -78,8 +83,28 @@ data class HomeFeedUiState(
     val searchQuery: String? = null,
     /** Which match the board is looking at, 0-based into [searchMatches]. */
     val searchIndex: Int = 0,
-    /** The post the unit picker is open for, or null when it is closed. */
+    /** The post the forward picker is open for, or null when it is closed. */
     val forwarding: Notice? = null,
+    /**
+     * Where that post may go: this board's units first, then everything the
+     * host can reach — the other boards, the chat halves, the mailbox, the
+     * film tools the post's kind and the viewer's rights allow. Empty until
+     * the picker opens and the reach has answered.
+     */
+    val forwardSections: List<ForwardSection> = emptyList(),
+    /**
+     * The web's selection mode, armed from a post's menu: a batch of posts
+     * ticked for one action, with the composer replaced by a bar saying how
+     * many are picked (`UnitChatMessageBox` `isSelectionMode`). Null when the
+     * board is in its ordinary state.
+     */
+    val selection: BoardSelection? = null,
+    /**
+     * The question asked before anything is withdrawn — the web's
+     * `openCommonPopup` over Delete, on a batch of posts or on one reply.
+     * Null when nothing is being asked.
+     */
+    val deletePrompt: DeletePrompt? = null,
     /** The read-receipts panel: which post, and the lists once fetched. */
     val readBy: ReadByView? = null,
     /** The unit's Media / Docs / Links library is open — Android's Gallery. */
@@ -320,6 +345,34 @@ class DistributionHook(
 data class EditingComment(val noticeId: String, val commentId: String)
 
 /**
+ * What a batch of ticked posts is gathered *for*.
+ *
+ * One entry today. The web's mode carries Delete, Share and Distribute
+ * (`DROPDOWN_OPTIONS`), and the bar draws a different button per action —
+ * the shape is kept so the next one is an entry, not a rewrite.
+ */
+enum class SelectionAction { Delete }
+
+/**
+ * Selection mode: which action, and the posts ticked so far.
+ *
+ * The web arms this from a post's own menu with that post already ticked
+ * (`optionsHandler` → `setSelectedMessages([msgDetails])` +
+ * `openMessageSelectionMode(key)`), which is why [ids] is never empty when
+ * the mode opens.
+ */
+data class BoardSelection(val action: SelectionAction, val ids: Set<String> = emptySet())
+
+/** What a delete is about to remove, while the question is on screen. */
+sealed interface DeletePrompt {
+    /** Posts — one from a card's menu, or every ticked one from the bar. */
+    data class Posts(val ids: List<String>) : DeletePrompt
+
+    /** One reply of a post, which the web asks about on its own. */
+    data class Reply(val noticeId: String, val commentId: String) : DeletePrompt
+}
+
+/**
  * The read-receipts panel's state; [lists] is null while the fetch is out.
  * [commentId] set means the panel is for one reply of the post — its own
  * receipts, on the same route with `?commentId=` (Android `ReadByUserPage`).
@@ -444,12 +497,56 @@ sealed interface HomeFeedEvent {
     data object CancelEditNotice : HomeFeedEvent
     data class DeleteNotice(val noticeId: String) : HomeFeedEvent
 
+    /**
+     * Selection mode and the delete question — everything between a menu's
+     * Delete and the withdrawal itself. Grouped under one marker so the
+     * event loop reads them as one concern (and stays inside detekt's
+     * sixty lines).
+     */
+    sealed interface Picking : HomeFeedEvent
+
+    /**
+     * A post's menu Delete. Not a delete: it ticks that post and opens
+     * selection mode, so more can join it before the one question is asked
+     * — the web's `DELETE_MESSAGE` handler, exactly.
+     */
+    data class SelectForDelete(val noticeId: String) : Picking
+
+    /** A card clicked (or its box ticked) while selection mode is open. */
+    data class ToggleSelected(val noticeId: String) : Picking
+
+    /** The bar's X: selection mode closes and nothing is deleted. */
+    data object CancelSelection : Picking
+
+    /** The bar's Delete: ask about every ticked post. */
+    data object AskDeleteSelected : Picking
+
+    /** A reply's Delete: ask about that one reply. */
+    data class AskDeleteComment(val noticeId: String, val commentId: String) : Picking
+
+    /** The question's No. */
+    data object CancelDeletePrompt : Picking
+
+    /** The question's Yes — what was asked about is withdrawn. */
+    data object ConfirmDelete : Picking
+
     /** Pin a post to the top of the board, or take it back down. */
     data class TogglePin(val noticeId: String) : HomeFeedEvent
 
-    /** Open the unit picker for a post; choosing a unit posts a copy there. */
+    /** Open the forward picker for a post; each destination gets its own copy. */
     data class StartForward(val noticeId: String) : HomeFeedEvent
+
+    /** One unit of this board — the path every forward took before the picker grew. */
     data class ForwardTo(val unitId: String) : HomeFeedEvent
+
+    /** The picker's Send: every ticked destination, this board's and the host's alike. */
+    data class ForwardToAll(val targetIds: List<String>) : HomeFeedEvent
+
+    /**
+     * A destination that asks something first — a tool's form, the mailbox
+     * composer. The host takes over; the picker closes.
+     */
+    data class ForwardStepPicked(val targetId: String) : HomeFeedEvent
     data object CancelForward : HomeFeedEvent
 
     /** Who has read this post — or one reply of it — opens the receipts panel. */
@@ -590,6 +687,17 @@ class HomeFeedViewModel(
      * nothing in an archive.
      */
     private val readOnly: Boolean = false,
+    /**
+     * Everywhere a post can go beyond this board's own units — the web's
+     * forward modal in full. Null leaves the picker showing this board
+     * alone, which is what it showed before the reach existed.
+     */
+    private val reach: ForwardReach? = null,
+    /**
+     * Which board this is, in the reach's terms (`home`, `info`,
+     * `confidentialinfo`…), so it is not offered its own units twice.
+     */
+    private val boardKey: String? = null,
 ) : ZillitViewModel<HomeFeedUiState, HomeFeedEvent, Nothing>(HomeFeedUiState(readOnly = readOnly)) {
 
     /**
@@ -666,14 +774,12 @@ class HomeFeedViewModel(
             is HomeFeedEvent.Retry -> retry(event.localId)
             is HomeFeedEvent.DeleteComment -> delete(event.noticeId, event.commentId)
             is HomeFeedEvent.DeleteNotice -> delete(event.noticeId)
+            is HomeFeedEvent.Picking -> picking(event)
             is HomeFeedEvent.TogglePin -> togglePin(event.noticeId)
-            is HomeFeedEvent.StartForward -> setState {
-                // Only a post the server holds can be copied elsewhere.
-                copy(forwarding = notices.firstOrNull {
-                    it.id == event.noticeId && it.sendState == NoticeSendState.Sent
-                })
-            }
+            is HomeFeedEvent.StartForward -> startForward(event.noticeId)
             is HomeFeedEvent.ForwardTo -> forwardTo(event.unitId)
+            is HomeFeedEvent.ForwardToAll -> forwardToAll(event.targetIds)
+            is HomeFeedEvent.ForwardStepPicked -> forwardStep(event.targetId)
             HomeFeedEvent.CancelForward -> setState { copy(forwarding = null) }
             is HomeFeedEvent.ShowReadBy -> showReadBy(event.noticeId, event.commentId)
             HomeFeedEvent.ShowLibrary -> setState { copy(libraryOpen = true) }
@@ -867,6 +973,10 @@ class HomeFeedViewModel(
                 searchQuery = null,
                 searchIndex = 0,
                 callSheetPrompt = null,
+                // Ticked posts belonged to the unit being left, and so did
+                // the question about them.
+                selection = null,
+                deletePrompt = null,
                 error = null,
             )
         }
@@ -1318,6 +1428,124 @@ class HomeFeedViewModel(
         )
     }
 
+    /** Selection mode's own events, in one place — see [HomeFeedEvent.Picking]. */
+    private fun picking(event: HomeFeedEvent.Picking) {
+        when (event) {
+            is HomeFeedEvent.SelectForDelete -> selectForDelete(event.noticeId)
+            is HomeFeedEvent.ToggleSelected -> toggleSelected(event.noticeId)
+            HomeFeedEvent.CancelSelection -> setState { copy(selection = null) }
+            HomeFeedEvent.AskDeleteSelected -> askDeleteSelected()
+            is HomeFeedEvent.AskDeleteComment -> setState {
+                copy(deletePrompt = DeletePrompt.Reply(event.noticeId, event.commentId))
+            }
+            HomeFeedEvent.CancelDeletePrompt -> setState { copy(deletePrompt = null) }
+            HomeFeedEvent.ConfirmDelete -> confirmDelete()
+        }
+    }
+
+    /**
+     * A post's menu Delete — the web's `DELETE_MESSAGE`: nothing is deleted
+     * here. The post is ticked and selection mode opens, so a second and a
+     * third can join it before the single question is asked. A post this
+     * person may not delete never enters the mode; the refusal is the one
+     * the direct delete would have given.
+     */
+    private fun selectForDelete(noticeId: String) {
+        val refusal = deleteRefusal(noticeId) ?: run {
+            setState { copy(selection = BoardSelection(SelectionAction.Delete, setOf(noticeId))) }
+            return
+        }
+        setState { copy(error = refusal) }
+    }
+
+    /** A card ticked or un-ticked while the mode is open. */
+    private fun toggleSelected(noticeId: String) {
+        val open = currentState.selection ?: return
+        if (noticeId in open.ids) {
+            setState { copy(selection = open.copy(ids = open.ids - noticeId)) }
+            return
+        }
+        val refusal = deleteRefusal(noticeId) ?: run {
+            setState { copy(selection = open.copy(ids = open.ids + noticeId)) }
+            return
+        }
+        setState { copy(error = refusal) }
+    }
+
+    /** The bar's Delete: the question, naming nothing — the batch can be large. */
+    private fun askDeleteSelected() {
+        val ids = currentState.selection?.ids?.toList().orEmpty()
+        if (ids.isEmpty()) return
+        setState { copy(deletePrompt = DeletePrompt.Posts(ids)) }
+    }
+
+    /** The question's Yes. */
+    private fun confirmDelete() {
+        when (val prompt = currentState.deletePrompt) {
+            null -> Unit
+            is DeletePrompt.Reply -> {
+                setState { copy(deletePrompt = null) }
+                delete(prompt.noticeId, prompt.commentId)
+            }
+            is DeletePrompt.Posts -> {
+                setState { copy(deletePrompt = null, selection = null) }
+                deletePosts(prompt.ids)
+            }
+        }
+    }
+
+    /**
+     * Why this post cannot be deleted, or null when it can — the phones'
+     * rule, and the sentence they show for it. Read both when a post is
+     * ticked and again before the batch goes out: the window can close
+     * while the question is on screen.
+     */
+    private fun deleteRefusal(noticeId: String, commentId: String? = null): String? {
+        val target = currentState.notices.firstOrNull { it.id == noticeId } ?: return null
+        val comment = commentId?.let { id -> target.comments.firstOrNull { it.id == id } }
+        val verdict = comment?.deleteVerdict(currentUserId(), isAdmin(), nowMillis())
+            ?: target.deleteVerdict(currentUserId(), isAdmin(), nowMillis())
+        if (verdict.allowed) return null
+        return refusal(verdict, deleting = true, reply = comment != null)
+    }
+
+    /**
+     * Withdraws every ticked post in one call — `PUT home/chat/delete/chats`
+     * is bulk by design and the web's selection mode sends exactly this.
+     *
+     * Off the board first, as the single delete does, and back together if
+     * the server refuses. A post whose window closed between the tick and
+     * the Yes is dropped from the batch with its refusal shown, rather than
+     * failing the whole call.
+     */
+    private fun deletePosts(ids: List<String>) {
+        val refusals = ids.mapNotNull { deleteRefusal(it) }
+        val allowed = ids.filter { deleteRefusal(it) == null }
+        val removed = currentState.notices.filter { it.id in allowed }
+        if (removed.isEmpty()) {
+            refusals.firstOrNull()?.let { only -> setState { copy(error = only) } }
+            return
+        }
+        val gone = removed.map { it.id }
+        setState { copy(notices = notices.filterNot { it.id in gone }, error = refusals.firstOrNull()) }
+        launchResult(
+            block = { repository.deleteNotices(gone) },
+            onSuccess = {
+                val note = if (gone.size == 1) {
+                    str(S.desktop_board_message_deleted)
+                } else {
+                    str(S.desktop_board_messages_deleted)
+                }
+                setState { copy(info = note) }
+            },
+            onError = { error ->
+                setState {
+                    copy(error = error.localised(), notices = (notices + removed).forDisplay())
+                }
+            },
+        )
+    }
+
     /**
      * Removes a post, or one reply of it when [commentId] is given.
      *
@@ -1536,19 +1764,65 @@ class HomeFeedViewModel(
         }
     }
 
+    /**
+     * Opens the picker, and asks the host what else this post can reach.
+     *
+     * This board's own units are listed at once — they are already in state —
+     * and the rest arrive when the reach answers, which is a round trip on
+     * the tools call. The web's modal fills the same way.
+     */
+    private fun startForward(noticeId: String) {
+        // Only a post the server holds can be copied elsewhere.
+        val notice = currentState.notices.firstOrNull {
+            it.id == noticeId && it.sendState == NoticeSendState.Sent
+        } ?: return
+        setState { copy(forwarding = notice, forwardSections = listOf(ownUnitsSection())) }
+        val host = reach ?: return
+        launch {
+            val elsewhere = host.sections(notice.asForwardItem(), from = boardKey)
+            // The picker may have been closed, or opened on another post,
+            // while the tools call was out.
+            if (currentState.forwarding?.id != noticeId) return@launch
+            setState { copy(forwardSections = listOf(ownUnitsSection()) + elsewhere) }
+        }
+    }
+
+    /**
+     * This board's units, as the picker draws them — every visible one, the
+     * current included (both live clients allow forwarding back to the same
+     * board). Rights are not pre-filtered: choosing a unit without posting
+     * access answers with the refusal, exactly as tapping one does on iOS.
+     *
+     * Under the same heading every other board uses, so the picker shows one
+     * list of boards rather than a heading per board.
+     */
+    private fun ownUnitsSection(): ForwardSection = ForwardSection(
+        title = str(S.desktop_forward_boards),
+        entries = currentState.tabs
+            .filter { it.kind != HomeUnitKind.Calendar }
+            .map { unit ->
+                ForwardPick(
+                    id = "$UNIT_TARGET${unit.id}",
+                    label = unit.label,
+                    // Nothing under the name but a warning worth reading:
+                    // repeating the heading there was the first thing anyone
+                    // noticed about this list, and they were right.
+                    caption = if (!unit.canPost && !isAdmin()) {
+                        str(S.desktop_board_no_posting_rights_chip)
+                    } else {
+                        null
+                    },
+                    icon = ZillitIcons.Chat,
+                )
+            },
+    )
+
     private fun forwardTo(unitId: String) {
         val notice = currentState.forwarding ?: return
         val target = currentState.units.firstOrNull { it.id == unitId } ?: return
-
-        if (!target.canPost && !isAdmin()) {
-            setState { copy(forwarding = null, error = noPostingRights(target)) }
-            return
-        }
-        val callSheetTakes = notice.kind == NoticeKind.Text || notice.kind == NoticeKind.Document
-        if (target.kind == HomeUnitKind.CallSheet && !callSheetTakes) {
-            setState {
-                copy(forwarding = null, error = str(S.desktop_board_only_text_and_documents_to, target.label))
-            }
+        val refusal = unitRefusal(target, notice)
+        if (refusal != null) {
+            setState { copy(forwarding = null, error = refusal) }
             return
         }
 
@@ -1562,6 +1836,83 @@ class HomeFeedViewModel(
             },
             onError = { error -> setState { copy(error = error.localised()) } },
         )
+    }
+
+    /** Why this unit will not take the post, or null when it will. */
+    private fun unitRefusal(target: HomeUnit, notice: Notice): String? {
+        if (!target.canPost && !isAdmin()) return noPostingRights(target)
+        val callSheetTakes = notice.kind == NoticeKind.Text || notice.kind == NoticeKind.Document
+        if (target.kind == HomeUnitKind.CallSheet && !callSheetTakes) {
+            return str(S.desktop_board_only_text_and_documents_to, target.label)
+        }
+        return null
+    }
+
+    /**
+     * The picker's Send: one copy per ticked destination — this board's units
+     * through its own route, everywhere else through the host's reach.
+     *
+     * One sentence at the end rather than one per destination: a batch of six
+     * would otherwise stack six toasts. A destination that refuses is named;
+     * the others still go.
+     */
+    private fun forwardToAll(targetIds: List<String>) {
+        val notice = currentState.forwarding ?: return
+        setState { copy(forwarding = null) }
+        launch {
+            val refusals = mutableListOf<String>()
+            var sent = 0
+            var reloadOpen = false
+            targetIds.filter { it.startsWith(UNIT_TARGET) }.forEach { id ->
+                val unitId = id.removePrefix(UNIT_TARGET)
+                val target = currentState.units.firstOrNull { it.id == unitId } ?: return@forEach
+                val refusal = unitRefusal(target, notice)
+                if (refusal != null) {
+                    refusals += refusal
+                    return@forEach
+                }
+                when (val answer = repository.forwardNotice(unitId, notice, newLocalId())) {
+                    is ZillitResult.Success -> {
+                        sent++
+                        if (unitId == currentState.selectedUnit?.id) reloadOpen = true
+                    }
+                    is ZillitResult.Failure -> refusals += answer.error.localised()
+                }
+            }
+            val elsewhere = targetIds.filterNot { it.startsWith(UNIT_TARGET) }
+            if (elsewhere.isNotEmpty()) {
+                when (val answer = reach?.deliver(elsewhere, notice.asForwardItem())) {
+                    null -> Unit
+                    is ZillitResult.Success -> sent += elsewhere.size
+                    is ZillitResult.Failure -> refusals += answer.error.localised()
+                }
+            }
+            // The reload FIRST: `loadNotices` clears `error` as it starts, so
+            // a refusal set before it would vanish the moment one of the
+            // copies landed on the board already on screen.
+            if (reloadOpen) currentState.selectedUnit?.let { loadNotices(it) }
+            setState {
+                copy(
+                    info = forwardedNote(sent),
+                    error = refusals.firstOrNull(),
+                )
+            }
+        }
+    }
+
+    /** What the toast says once the batch has gone out. */
+    private fun forwardedNote(sent: Int): String? = when {
+        sent <= 0 -> null
+        sent == 1 -> str(S.desktop_message_forwarded_success)
+        else -> str(S.desktop_forwarded_to_n, sent)
+    }
+
+    /** A destination that asks something first; the host owns the rest of it. */
+    private fun forwardStep(targetId: String) {
+        val notice = currentState.forwarding ?: return
+        setState { copy(forwarding = null) }
+        val refusal = reach?.open(targetId, notice.asForwardItem())
+        if (refusal != null) setState { copy(error = refusal) }
     }
 
     /** Lists a post's file in the app-wide Uploads tray, with what its Cancel and Retry do. */
@@ -2070,3 +2421,13 @@ private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): No
         )
     },
 )
+
+/**
+ * The prefix on a target id that means "a unit of the board asking".
+ *
+ * The picker's ids are opaque strings, agreed between the surface that
+ * builds an entry and whoever delivers to it: this board builds its own
+ * units' ids, so it is the one that recognises them, and everything else
+ * goes to the host's reach untouched.
+ */
+private const val UNIT_TARGET = "unit:"

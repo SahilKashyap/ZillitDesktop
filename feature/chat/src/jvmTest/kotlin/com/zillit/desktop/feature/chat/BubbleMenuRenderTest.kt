@@ -149,16 +149,24 @@ class BubbleMenuRenderTest {
             }
         }
         waitForIdle()
-        onNodeWithText("Camera").assertExists()
-        onNodeWithText("Bob Ray").assertExists()
+        // Both halves are lists that open — the rooms and the crew are
+        // behind their own headings until one is clicked.
+        onNodeWithText("Groups").assertExists()
+        onNodeWithText("People").assertExists()
+        onNodeWithText("Camera").assertDoesNotExist()
         onNodeWithText("Send").assertIsNotEnabled()
+
+        onNodeWithText("People").performClick()
+        waitForIdle()
+        onNodeWithText("Bob Ray").assertExists()
         onNodeWithText("Bob Ray").performClick()
         waitForIdle()
         onNodeWithText("Send").performClick()
         waitForIdle()
-        val sent = events.filterIsInstance<ChatEvent.ForwardTo>().single()
-        assertEquals(listOf("u2"), sent.targets.map { it.id })
-        assertTrue(sent.targets.none { it.isGroup })
+        // The shared picker speaks in ids; the view model is what turns them
+        // back into this chat's own destinations (see `chatTargetOf`).
+        val sent = events.filterIsInstance<ChatEvent.ForwardPicked>().single()
+        assertEquals(listOf("user:u2"), sent.targetIds)
     }
 
     @Test

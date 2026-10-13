@@ -53,11 +53,13 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.StatusTone
@@ -240,11 +242,15 @@ internal fun ThreadPane(
 
                 // Passed beside the react handler rather than through it: deletion is
                 // keyed by the server's id, and only rows that have one can offer it.
-                Messages(
-                    state, resolveName, MentionHooks(resolveMention, onOpenUser),
-                    media, loadAvatar, onEvent, Modifier.weight(1f),
-                    onImageReply = { imageReply = it },
-                )
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalThreadSelection provides threadSelection(state, onEvent),
+                ) {
+                    Messages(
+                        state, resolveName, MentionHooks(resolveMention, onOpenUser),
+                        media, loadAvatar, onEvent, Modifier.weight(1f),
+                        onImageReply = { imageReply = it },
+                    )
+                }
 
                 if (refused) {
                     DownloadRefusedNotice(seams.requestDownloadRights) { refused = false }
@@ -262,11 +268,7 @@ internal fun ThreadPane(
                     )
                 }
 
-                // No composer for someone who left — there is nobody to deliver
-                // to, and Android hides its whole action row (userActive).
-                if (hasComposer) {
-                    Composer(state, peer.fullName, onEvent)
-                }
+                ThreadFooter(state, peer.fullName, hasComposer, onEvent)
             }
         }
 
@@ -682,6 +684,74 @@ private fun CallLineButton(
     }
 }
 
+/** Selection mode as the bubbles see it, or null when the thread is ordinary. */
+private fun threadSelection(state: ChatUiState, onEvent: (ChatEvent) -> Unit): ThreadSelection? =
+    state.selection?.let { open ->
+        ThreadSelection(open.ids) { id -> onEvent(ChatEvent.ToggleSelected(id)) }
+    }
+
+/**
+ * What sits under the thread: the writing bar, or — while lines are being
+ * ticked — selection mode's bar in its place, as on the web
+ * (`ChatFooterCnc`'s `isSelectMessage` branch returns the bar instead of the
+ * input). No composer at all for someone who left: there is nobody to
+ * deliver to, and Android hides its whole action row (`userActive`).
+ */
+@Composable
+private fun ThreadFooter(
+    state: ChatUiState,
+    peerName: String,
+    hasComposer: Boolean,
+    onEvent: (ChatEvent) -> Unit,
+) {
+    val selection = state.selection
+    when {
+        selection != null -> ChatSelectionBar(selection, onEvent)
+        hasComposer -> Composer(state, peerName, onEvent)
+    }
+}
+
+/**
+ * The bar the composer makes way for while lines are being ticked: how many
+ * are picked, a way out, and the action they were gathered for.
+ *
+ * The web's own (`ChatFooterCnc`): a count, and one button per action —
+ * Delete here, which asks before it sends. Disabled with nothing ticked,
+ * since the whole batch can be un-ticked from under it.
+ */
+@Composable
+private fun ChatSelectionBar(selection: ChatSelection, onEvent: (ChatEvent) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.chatPanel)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        com.zillit.desktop.core.designsystem.component.ZillitIconButton(
+            icon = ZillitIcons.Close,
+            contentDescription = str(S.cancel),
+            onClick = { onEvent(ChatEvent.CancelSelection) },
+        )
+        ZillitText(
+            text = str(S.desktop_n_messages_selected, selection.ids.size),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        when (selection.action) {
+            ChatSelectionAction.Delete -> ZillitButton(
+                text = str(S.delete),
+                enabled = selection.ids.isNotEmpty(),
+                onClick = { onEvent(ChatEvent.AskDeleteSelected) },
+                variant = ButtonVariant.Danger,
+                size = ButtonSize.Small,
+            )
+        }
+    }
+}
+
 /**
  * The writing bar, WhatsApp's: on the grey bar, the emoji palette, the
  * attach sheet and the pin; the white field; and one round button at the end
@@ -890,6 +960,18 @@ private fun Messages(
  * one flag out of the six signatures between [ReadOnlyThread] and the bubble.
  */
 internal val LocalReadOnlyThread = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * Selection mode, while the thread is in it: the ticked ids and the toggle.
+ *
+ * A local for the reason [LocalReadOnlyThread] is one — it would otherwise
+ * be two more parameters on every signature between the pane and the bubble,
+ * and this file is edited by other sessions.
+ */
+internal class ThreadSelection(val ids: Set<String>, val onToggle: (String) -> Unit)
+
+internal val LocalThreadSelection =
+    androidx.compose.runtime.staticCompositionLocalOf<ThreadSelection?> { null }
 
 /**
  * A room's archived lines for reading — the File Cabinet's `CncGroupModal`.
@@ -1253,6 +1335,16 @@ private fun IncomingAware(
     mentions: MentionHooks = MentionHooks(),
     translation: String? = null,
 ) {
+    // Selection mode: the line is a thing to tick, not a thing with a menu.
+    // The web hides the dropdown while the mode is open and makes the whole
+    // row the toggle, with a box at its end (`UnitChatMessage.jsx:841-872`,
+    // `MyMessage.jsx` the same). Decided here rather than inside the bubble
+    // so neither the face column nor the bubble's own affordances are built.
+    val selecting = LocalThreadSelection.current
+    if (selecting != null) {
+        TickableRow(selecting, message, senderName, run, media, actions.onReact, uploadPercent, resolveName, mentions)
+        return
+    }
     // A run's first line stands a little clear of the turn before it; the
     // rest sit tight, so a turn of speech reads as one block.
     val runGap = Modifier.padding(top = if (run.first) ZillitTheme.spacing.sm else 0.dp)
@@ -1302,6 +1394,8 @@ internal class BubbleActions(
     /** Our own delivered line — Edit for words or a caption, Delete for any. */
     val onEdit: (() -> Unit)? = null,
     val onDelete: (() -> Unit)? = null,
+    /** The menu's Delete — ticks the line and opens selection mode. */
+    val onSelectDelete: (() -> Unit)? = null,
     val onForward: (() -> Unit)? = null,
     /** Hands the line to the mailbox composer; null when the host has none. */
     val onShare: (() -> Unit)? = null,
@@ -1351,6 +1445,12 @@ private fun bubbleActions(
         onReply = { onEvent(ChatEvent.StartReply(message.id)) },
         onEdit = { onEvent(ChatEvent.StartEdit(message.id)) }.takeIf { message.isMine && delivered && hasWords },
         onDelete = { onEvent(ChatEvent.AskDelete(message.id)) }.takeIf { message.isDeletable },
+        // The MENU's Delete is the web's: it ticks this line and opens
+        // selection mode, so several can go in one question. The trash
+        // affordance beside the bubble above stays the one-line fast path —
+        // the web has no such button, and losing it to a two-step would be a
+        // regression for the common case.
+        onSelectDelete = { onEvent(ChatEvent.SelectForDelete(message.id)) }.takeIf { message.isDeletable },
         onForward = { onEvent(ChatEvent.StartForward(message.id)) }.takeIf { delivered },
         onShare = seams.shareAsEmail?.let { share ->
             {
@@ -1739,6 +1839,50 @@ private fun Bubble(
                 }
             }
         }
+    }
+}
+
+/**
+ * One line while selection mode is open: the bubble with nothing that acts
+ * on it, a tick-box at the row's end, and the whole row as the toggle — the
+ * web's selected row, tint and all.
+ */
+@Composable
+@Suppress("LongParameterList") // The bubble's own chain, plus the mode.
+private fun TickableRow(
+    selecting: ThreadSelection,
+    message: ChatMessage,
+    senderName: String?,
+    run: RunPosition,
+    media: BubbleMedia,
+    onReact: (String) -> Unit,
+    uploadPercent: Int?,
+    resolveName: (String) -> String?,
+    mentions: MentionHooks,
+) {
+    val ticked = message.id in selecting.ids
+    val toggle = { selecting.onToggle(message.id) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(if (ticked) ZillitTheme.colors.accentSoft else Color.Transparent)
+            .clickable { toggle() }
+            .padding(ZillitTheme.spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Box(
+            Modifier.weight(1f),
+            contentAlignment = if (message.isMine) Alignment.CenterEnd else Alignment.CenterStart,
+        ) {
+            BubbleBody(
+                message, senderName, media, onReact, message.isMine,
+                uploadPercent, resolveName, mentions, tail = run.first,
+                selection = rememberTextSelectionProbe(),
+            )
+        }
+        ZillitCheckbox(checked = ticked, onCheckedChange = { toggle() })
     }
 }
 
@@ -2161,7 +2305,7 @@ private fun BubbleMenu(
             }
             actions.onShowOriginal?.let { add(menuLine(str(S.desktop_show_original), ZillitIcons.Globe, onClick = it)) }
             actions.onShare?.let { add(menuLine(str(S.share), ZillitIcons.Mail, onClick = it)) }
-            actions.onDelete?.let {
+            (actions.onSelectDelete ?: actions.onDelete)?.let {
                 add(menuLine(str(S.desktop_delete_for_everyone), ZillitIcons.Trash, ZillitMenuTone.Danger, it))
             }
             actions.onReadBy?.let { add(menuLine(str(S.read_byr), ZillitIcons.Eye, onClick = it)) }

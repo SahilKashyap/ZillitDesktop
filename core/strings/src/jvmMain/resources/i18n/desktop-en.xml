@@ -13017,6 +13017,17 @@
     <string name="desktop_cal_n_declined">%1$d Declined</string>
     <string name="desktop_pr_no_report_sections">You do not have access to any production report sections.</string>
     <string name="desktop_pr_publish_no_chat_rights">You don\'t have posting rights in Production Report Chat, so the PDF won\'t be posted to the chat.</string>
+    <string name="desktop_n_messages_selected">%1$d message(s) selected</string>
+    <string name="desktop_board_delete_messages_confirm">Are you sure you want to delete these %1$d messages?</string>
+    <string name="desktop_board_message_deleted">Message deleted</string>
+    <string name="desktop_board_messages_deleted">Messages deleted</string>
+    <string name="desktop_board_reply_actions">Reply actions</string>
+    <string name="desktop_forward_search">Search boards, people and tools</string>
+    <string name="desktop_forward_nothing_matches">Nothing matches</string>
+    <string name="desktop_forwarded_to_n">Forwarded to %1$d destinations</string>
+    <string name="desktop_forward_as_email">Forward as email</string>
+    <string name="desktop_forward_destination_unavailable">That destination is not available yet</string>
+    <string name="desktop_forward_boards">Boards</string>
     <string name="desktop_video_quality_prompt">This video is %1$s. Send it as:</string>
     <string name="desktop_video_quality_sd">SD 480p</string>
     <string name="desktop_video_quality_hd">HD 1080p</string>
@@ -13024,4 +13035,5 @@
     <string name="desktop_video_quality_estimate">%1$s · ~%2$s</string>
     <string name="desktop_video_quality_unsupported">This computer has no video encoder, so this clip can only be sent as it is.</string>
     <string name="desktop_video_quality_unplayable">This video is %1$s, which many phones, browsers and this app can\'t play. SD or HD converts it to H.264, which plays everywhere.</string>
+    <string name="desktop_forward_n_groups">%1$d groups</string>
 </resources>

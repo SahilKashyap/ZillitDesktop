@@ -8,6 +8,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -19,7 +20,10 @@ import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeKind
+import com.zillit.desktop.feature.home.ui.BoardSelection
 import com.zillit.desktop.feature.home.ui.CallSheetPrompt
+import com.zillit.desktop.feature.home.ui.DeletePrompt
+import com.zillit.desktop.feature.home.ui.SelectionAction
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedScreen
 import com.zillit.desktop.feature.home.ui.HomeFeedUiState
@@ -63,6 +67,19 @@ class HomeBoardRenderTest {
         createdAtMillis = now,
         kind = NoticeKind.Image,
         attachment = NoticeAttachment(media = "home/door.jpg", fileName = "door.jpg", bucket = "b", region = "r"),
+    )
+
+    private val postWithReply = myOldPost.copy(
+        id = "n3",
+        body = "lunch is at the unit base",
+        comments = listOf(
+            com.zillit.desktop.feature.home.domain.NoticeComment(
+                id = "n3-c",
+                body = "noted, thanks",
+                authorId = "me",
+                createdAtMillis = now,
+            ),
+        ),
     )
 
     private fun board(unit: HomeUnit, vararg posts: Notice) = HomeFeedUiState(
@@ -200,6 +217,66 @@ class HomeBoardRenderTest {
         onNodeWithText("Docs").assertExists()
         onNodeWithText("Links").assertExists()
         onNodeWithText("What has been shared on this board.").assertExists()
+    }
+
+    /**
+     * A reply's own "⋯" — the web hangs a dropdown off every reply
+     * (`ReplyMessage.jsx` → `DropDownForComment`). It used to be a
+     * right-click only, which nobody finds.
+     */
+    @Test
+    fun `a reply's kebab opens the reply's own menu`() = runComposeUiTest {
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(notices, postWithReply), onEvent = {}) }
+        }
+
+        onNodeWithContentDescription("Reply actions").performClick()
+        waitForIdle()
+
+        onNodeWithText("Edit reply").assertExists()
+        onNodeWithText("Delete reply").assertExists()
+        // The reply's own receipts, on the same route with its id.
+        onNodeWithText("Read by…").assertExists()
+    }
+
+    /**
+     * Selection mode — the web's bar in place of the composer, a box per
+     * card, and no menu while it is open (`UnitChatMessage`:
+     * `!isSelectionMode && <DropDown>`).
+     */
+    @Test
+    fun `selection mode swaps the composer for a count and a Delete`() = runComposeUiTest {
+        var fired: HomeFeedEvent? = null
+        val state = board(notices, myOldPost, theirPhoto).copy(
+            selection = BoardSelection(SelectionAction.Delete, setOf("n1")),
+        )
+        setContent { ZillitTheme { HomeFeedScreen(state = state, onEvent = { fired = it }) } }
+
+        onNodeWithText("1 message(s) selected").assertExists()
+        onNodeWithContentDescription("Message actions").assertDoesNotExist()
+        onNodeWithContentDescription("Attach a file").assertDoesNotExist()
+
+        onNodeWithText("Delete").performClick()
+        waitForIdle()
+        assertEquals(HomeFeedEvent.AskDeleteSelected, fired)
+    }
+
+    /** The question the bar's Delete opens, and the words it asks for a batch. */
+    @Test
+    fun `the batch delete asks before it sends`() = runComposeUiTest {
+        var fired: HomeFeedEvent? = null
+        val state = board(notices, myOldPost, theirPhoto).copy(
+            selection = BoardSelection(SelectionAction.Delete, setOf("n1", "n2")),
+            deletePrompt = DeletePrompt.Posts(listOf("n1", "n2")),
+        )
+        setContent { ZillitTheme { HomeFeedScreen(state = state, onEvent = { fired = it }) } }
+
+        onNodeWithText("Confirm Deletion").assertExists()
+        onNodeWithText("Are you sure you want to delete these 2 messages?").assertExists()
+
+        onAllNodesWithText("Delete").onLast().performClick()
+        waitForIdle()
+        assertEquals(HomeFeedEvent.ConfirmDelete, fired)
     }
 
     @Test

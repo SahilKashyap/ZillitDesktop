@@ -64,7 +64,10 @@ interface NoticeDecryptor {
  * production's tool list instead of `home/unit`. [board] and [units] are the
  * two seams; the defaults are Home's.
  */
-@Suppress("LongParameterList") // One seam per way a board differs; a holder would rename, not reduce.
+@Suppress(
+    "LongParameterList", // One seam per way a board differs; a holder would rename, not reduce.
+    "TooManyFunctions", // One function per route the board serves; see the interface.
+)
 class HomeFeedRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
@@ -520,19 +523,26 @@ class HomeFeedRepositoryImpl(
         ).map { row -> readNotice(row, ::decryptBody) }
     }
 
-    /**
-     * `PUT home/chat/delete/chats` with a one-entry list.
-     *
-     * The endpoint is bulk by design — the web's selection mode deletes many at
-     * once — but this client deletes one post per gesture, so it sends one.
-     */
+    /** `PUT home/chat/delete/chats` with a one-entry list. */
     override suspend fun deleteNotice(noticeId: String): ZillitResult<Unit> =
-        apiClient.envelope(
+        deleteNotices(listOf(noticeId))
+
+    /**
+     * `PUT home/chat/delete/chats` — one request for the whole batch.
+     *
+     * The endpoint is bulk by design, and the web's selection mode sends it
+     * exactly this way (`unit-chat-delete-messages.js`: one call with every
+     * `_id`). An empty batch is not a request.
+     */
+    override suspend fun deleteNotices(noticeIds: List<String>): ZillitResult<Unit> {
+        if (noticeIds.isEmpty()) return ZillitResult.Success(Unit)
+        return apiClient.envelope(
             verb = HttpVerb.Put,
             url = "${chat}delete/chats",
             module = RequestModule.ProjectUser,
-            body = jsonBody(DeleteNoticesDto(chatIds = listOf(noticeId))),
+            body = jsonBody(DeleteNoticesDto(chatIds = noticeIds)),
         ).map { }
+    }
 
     private companion object {
         const val TAG = "Home"

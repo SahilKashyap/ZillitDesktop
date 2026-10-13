@@ -50,14 +50,16 @@ fun NoticeContextMenu(
     items: () -> List<NoticeMenuItem>,
     /** Called at the press, before the menu exists — the moment to read anything its popup's focus would clear. */
     onOpen: () -> Unit = {},
+    /** False while the board is in selection mode, where a card has no menu at all. */
+    enabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     var anchor by remember { mutableStateOf<Offset?>(null) }
     Box(
-        Modifier.pointerInput(Unit) {
+        Modifier.pointerInput(enabled) {
             awaitEachGesture {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
-                if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                if (enabled && event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
                     event.changes.forEach { it.consume() }
                     onOpen()
                     anchor = event.changes.first().position

@@ -144,6 +144,24 @@ interface HomeFeedRepository {
 
     /** Removes a post. Soft-deleted server-side, with its replies. */
     suspend fun deleteNotice(noticeId: String): ZillitResult<Unit>
+
+    /**
+     * Removes several posts in one call — the board's selection mode.
+     *
+     * The route is bulk (`{chatIds: [...]}`), so the implementation sends one
+     * request; the default here deletes one at a time and stops at the first
+     * refusal, which is what a fake or a board that only wired the single
+     * delete will do.
+     */
+    suspend fun deleteNotices(noticeIds: List<String>): ZillitResult<Unit> {
+        noticeIds.forEach { id ->
+            when (val answer = deleteNotice(id)) {
+                is ZillitResult.Success -> Unit
+                is ZillitResult.Failure -> return answer
+            }
+        }
+        return ZillitResult.Success(Unit)
+    }
 }
 
 /**

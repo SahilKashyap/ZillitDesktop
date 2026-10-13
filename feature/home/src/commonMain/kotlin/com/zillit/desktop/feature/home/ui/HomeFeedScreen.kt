@@ -59,6 +59,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.workspace.forward.ForwardPickerDialog
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.DroppedFile
 import com.zillit.desktop.core.designsystem.component.ZillitDropOverlay
@@ -197,6 +199,13 @@ private data class BoardUi(
     val uploadProgress: (String) -> Int? = { null },
     /** An archive: no read receipts to ask for, on top of nothing to write. See [HomeFeedUiState.readOnly]. */
     val readOnly: Boolean = false,
+    /**
+     * Selection mode's ticked post ids, or null when the board is in its
+     * ordinary state. Not a boolean plus a set: "no mode" and "mode with
+     * nothing ticked" are different boards, and a card has to tell them
+     * apart to know whether a click selects or does nothing.
+     */
+    val selected: Set<String>? = null,
 )
 
 /**
@@ -280,7 +289,7 @@ internal fun HomeFeedScreen(
             )
         }
 
-        if (state.showsComposer) Composer(state, onEvent, crewNames, resolveAuthor)
+        BoardFooter(state, onEvent, crewNames, resolveAuthor)
     }
 
     if (dropHover) DropOverlay()
@@ -422,6 +431,7 @@ private fun BoardDialogs(
     onOpenLink: (String) -> Unit,
 ) {
     ForwardPicker(state, onEvent)
+    DeletePromptDialog(state, onEvent)
     ReadByPanel(state.readBy, canNotify = state.canCompose, resolveAuthor, loadAvatar, onEvent)
     NoticeLibraryPanel(
         visible = state.libraryOpen,
@@ -503,62 +513,150 @@ private fun DropOverlay() {
 }
 
 /**
- * The forward destination picker — a unit list over a scrim, the desktop's
- * shape of the web's `ForwardMsgModal` and iOS's `ForwardOnUnitsViewController`.
+ * What sits under the board: the composer, or — while posts are being ticked
+ * — selection mode's bar in its place.
  *
- * Every visible board unit is listed, the current one included (both live
- * clients allow forwarding back to the same board). Rights are not pre-filtered:
- * choosing a unit without posting access answers with the permission popup,
- * exactly as tapping one does on iOS.
+ * The web swaps the same way (`UnitChatMessageBox.renderContent` returns the
+ * bar first), and the mode outranks posting rights: it is only reachable
+ * from a menu that already checked them.
  */
 @Composable
-private fun ForwardPicker(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
-    val targets = state.tabs.filter { it.kind != HomeUnitKind.Calendar }
+private fun BoardFooter(
+    state: HomeFeedUiState,
+    onEvent: (HomeFeedEvent) -> Unit,
+    crewNames: () -> List<String>,
+    resolveAuthor: (String?) -> String?,
+) {
+    val selection = state.selection
+    when {
+        selection != null -> SelectionBar(selection, onEvent)
+        state.showsComposer -> Composer(state, onEvent, crewNames, resolveAuthor)
+    }
+}
 
-    ZillitDialogShell(
-        title = str(S.desktop_email_forward_to),
-        subtitle = str(S.desktop_board_forward_subtitle),
-        icon = ZillitIcons.Send,
-        visible = state.forwarding != null,
-        onDismiss = { onEvent(HomeFeedEvent.CancelForward) },
-        width = FORWARD_PICKER_WIDTH,
+/**
+ * The bar the composer makes way for while posts are being ticked: how many
+ * are picked, a way out, and the action they were gathered for.
+ *
+ * The web's own (`UnitChatMessageBox`): an X, "N message(s) selected", and
+ * one button per action — Delete here, red, and disabled until something is
+ * ticked, since the whole batch can be un-ticked from under it.
+ */
+@Composable
+private fun SelectionBar(selection: BoardSelection, onEvent: (HomeFeedEvent) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surface)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        targets.forEach { unit ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(ZillitTheme.shapes.small)
-                    .clickable { onEvent(HomeFeedEvent.ForwardTo(unit.id)) }
-                    .padding(
-                        horizontal = ZillitTheme.spacing.sm,
-                        vertical = ZillitTheme.spacing.xs,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitIcon(
-                    icon = unit.kind.icon(),
-                    contentDescription = null,
-                    tint = ZillitTheme.colors.textMuted,
-                    size = TAB_ICON,
-                )
-                ZillitText(
-                    text = unit.label,
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                if (!unit.canPost && !state.isAdmin) {
-                    ZillitText(
-                        text = str(S.desktop_board_no_posting_rights_chip),
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                }
-            }
+        ZillitIconButton(
+            icon = ZillitIcons.Close,
+            contentDescription = str(S.cancel),
+            onClick = { onEvent(HomeFeedEvent.CancelSelection) },
+        )
+        ZillitText(
+            text = str(S.desktop_n_messages_selected, selection.ids.size),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        when (selection.action) {
+            SelectionAction.Delete -> ZillitButton(
+                text = str(S.delete),
+                enabled = selection.ids.isNotEmpty(),
+                onClick = { onEvent(HomeFeedEvent.AskDeleteSelected) },
+                variant = ButtonVariant.Danger,
+                size = ButtonSize.Small,
+            )
         }
     }
 }
+
+/**
+ * The question before anything is withdrawn — the web's `openCommonPopup`
+ * over every delete path, batch or single.
+ *
+ * It replaced an inline "Delete? Yes / No" under the card: that row was easy
+ * to miss and impossible to reach for a batch, whose Delete lives in the bar
+ * with nothing underneath it to ask in.
+ */
+@Composable
+private fun DeletePromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
+    // Held through the exit animation, as the other dialogs hold their target.
+    var shown by remember { mutableStateOf(state.deletePrompt) }
+    if (state.deletePrompt != null) shown = state.deletePrompt
+    val prompt = shown ?: return
+    val batch = (prompt as? DeletePrompt.Posts)?.ids?.size ?: 1
+
+    ZillitDialogShell(
+        title = str(S.desktop_email_confirm_deletion),
+        icon = ZillitIcons.Trash,
+        visible = state.deletePrompt != null,
+        onDismiss = { onEvent(HomeFeedEvent.CancelDeletePrompt) },
+        actions = {
+            Spacer(Modifier.weight(1f))
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = { onEvent(HomeFeedEvent.CancelDeletePrompt) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(
+                text = str(S.delete),
+                onClick = { onEvent(HomeFeedEvent.ConfirmDelete) },
+                variant = ButtonVariant.Danger,
+            )
+        },
+    ) {
+        ZillitText(
+            text = when {
+                prompt is DeletePrompt.Reply -> DELETE_PROMPT
+                batch > 1 -> str(S.desktop_board_delete_messages_confirm, batch)
+                else -> DELETE_PROMPT
+            },
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
+    }
+}
+
+/**
+ * The forward destination picker — the shared one, which is the web's
+ * `ForwardMsgModal` (see `ForwardPickerDialog`).
+ *
+ * This board's own units head the list, the current one included (both live
+ * clients allow forwarding back to the same board), and everything the host
+ * can reach follows: the other boards, the chat halves, the mailbox, the film
+ * tools this post's kind allows. Rights are not pre-filtered on a unit —
+ * choosing one without posting access answers with the refusal, exactly as
+ * tapping one does on iOS.
+ */
+@Composable
+private fun ForwardPicker(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
+    // Held through the exit animation, as the other dialogs hold their target.
+    var shown by remember { mutableStateOf(state.forwarding) }
+    if (state.forwarding != null) shown = state.forwarding
+    val source = shown ?: return
+
+    ForwardPickerDialog(
+        visible = state.forwarding != null,
+        subtitle = forwardSubtitle(source),
+        sections = state.forwardSections,
+        resetKey = source.id,
+        onSend = { targets -> onEvent(HomeFeedEvent.ForwardToAll(targets)) },
+        onStep = { target -> onEvent(HomeFeedEvent.ForwardStepPicked(target)) },
+        onDismiss = { onEvent(HomeFeedEvent.CancelForward) },
+    )
+}
+
+/** What is being forwarded, in a line: the words, or the file's name, or the place. */
+private fun forwardSubtitle(source: Notice): String = when {
+    source.location != null -> source.location.name.ifBlank { source.body }
+    source.attachment != null -> source.attachment.fileName.ifBlank { source.body }
+    else -> source.body
+}.take(FORWARD_SUBTITLE_CHARS)
 
 /**
  * "Publish to Document Distribution" — the phones' confirm before the
@@ -2020,7 +2118,12 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
         else -> colors.border
     }
     val ringWidth = if (notice.isPinned && !failed) PINNED_RING else HAIRLINE
-    var confirmingDelete by remember(notice.id) { mutableStateOf(false) }
+    // Selection mode: the card is a tick-box, not a thing with a menu. The
+    // web hides the dropdown outright while the mode is open
+    // (`UnitChatMessage`: `!isSelectionMode && <DropDown>`) and makes the
+    // whole row the toggle.
+    val selecting = ui.selected != null
+    val ticked = ui.selected?.contains(notice.id) == true
     // Rounded on all four corners. The web's bubble squares off one corner as
     // a tail pointing at whichever edge it hangs from; centred, there is no
     // edge to point at, and a single square corner reads as a rendering fault.
@@ -2036,7 +2139,7 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     var selectedAtOpen by remember(notice.id) { mutableStateOf("") }
     val noteSelection = { selectedAtOpen = selection.selectedText }
     val menuItems = noticeMenuItems(notice, ui, { selectedAtOpen.ifEmpty { notice.body } }) {
-        confirmingDelete = true
+        ui.onEvent(HomeFeedEvent.SelectForDelete(notice.id))
     }
     var menuOpen by remember(notice.id) { mutableStateOf(false) }
     val hoverSource = remember { MutableInteractionSource() }
@@ -2049,18 +2152,19 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
         animationSpec = tween(MOTION_MILLIS),
         label = "noticeLift",
     )
-    NoticeContextMenu(items = menuItems, onOpen = noteSelection) {
+    NoticeContextMenu(items = menuItems, onOpen = noteSelection, enabled = !selecting) {
     Box(
         modifier = Modifier
             .hoverable(hoverSource)
-            .pointerInput(notice.id) {
-                detectTapGestures(
-                    onLongPress = {
-                        noteSelection()
-                        menuOpen = true
-                    },
-                )
-            },
+            .cardGestures(
+                selecting = selecting,
+                key = notice.id,
+                onToggle = { ui.onEvent(HomeFeedEvent.ToggleSelected(notice.id)) },
+                onLongPress = {
+                    noteSelection()
+                    menuOpen = true
+                },
+            ),
     ) {
     Column(
         modifier = Modifier
@@ -2071,7 +2175,10 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
             .fillMaxWidth()
             .shadow(elevation, bubbleShape, ambientColor = colors.windowShadow, spotColor = colors.windowShadow)
             .clip(bubbleShape)
-            .background(colors.noticeBubble)
+            // Ticked cards are tinted, as the web greys its selected rows
+            // (`bg-gray-300`): in a batch of four, the fill is what says
+            // which four.
+            .background(if (ticked) colors.accentSoft else colors.noticeBubble)
             // Pinned wears an accent ring, not an accent fill. A filled card
             // was legible at a chat bubble's width; across the board's full
             // column it is a slab of orange that pulls the eye off everything
@@ -2113,17 +2220,6 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
 
         NoticeFooter(notice)
 
-        if (confirmingDelete) {
-            DeleteConfirmRow(
-                prompt = DELETE_PROMPT,
-                onConfirm = {
-                    confirmingDelete = false
-                    ui.onEvent(HomeFeedEvent.DeleteNotice(notice.id))
-                },
-                onDismiss = { confirmingDelete = false },
-            )
-        }
-
         NoticeThread(notice, ui)
         }
     }
@@ -2141,17 +2237,65 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
             .align(Alignment.TopEnd)
             .padding(ZillitTheme.spacing.sm),
     ) {
-        KebabButton(
-            cardHovered = hovered || menuOpen,
-            onPress = {
+        CardCorner(
+            selecting = selecting,
+            ticked = ticked,
+            onToggle = { ui.onEvent(HomeFeedEvent.ToggleSelected(notice.id)) },
+            lifted = hovered || menuOpen,
+            menuOpen = menuOpen,
+            onOpenMenu = {
                 noteSelection()
                 menuOpen = true
             },
+            onDismissMenu = { menuOpen = false },
+            items = menuItems,
         )
-        NoticeActionsMenu(open = menuOpen, items = menuItems, onDismiss = { menuOpen = false })
     }
     }
     }
+}
+
+/**
+ * What a click on the card does: ticks it while selection mode is open, and
+ * otherwise waits for the long-press that opens its menu.
+ *
+ * A modifier rather than two branches inside the card, which is already at
+ * detekt's complexity ceiling.
+ */
+private fun Modifier.cardGestures(
+    selecting: Boolean,
+    key: String,
+    onToggle: () -> Unit,
+    onLongPress: () -> Unit,
+): Modifier = if (selecting) {
+    clickable { onToggle() }
+} else {
+    pointerInput(key) { detectTapGestures(onLongPress = { onLongPress() }) }
+}
+
+/**
+ * The card's top-right corner: its "⋯" and the menu that hangs from it, or —
+ * while selection mode is open — the tick-box in the kebab's place, which is
+ * the corner the eye already goes to for "what can I do with this card".
+ */
+@Composable
+@Suppress("LongParameterList") // One slot per thing the corner can be or open.
+private fun CardCorner(
+    selecting: Boolean,
+    ticked: Boolean,
+    onToggle: () -> Unit,
+    lifted: Boolean,
+    menuOpen: Boolean,
+    onOpenMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    items: () -> List<NoticeMenuItem>,
+) {
+    if (selecting) {
+        ZillitCheckbox(checked = ticked, onCheckedChange = { onToggle() })
+        return
+    }
+    KebabButton(cardHovered = lifted, onPress = onOpenMenu)
+    NoticeActionsMenu(open = menuOpen, items = items, onDismiss = onDismissMenu)
 }
 
 /**
@@ -2159,7 +2303,12 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
  * this is a bare icon with its own pointer handling and not [ZillitIconButton].
  */
 @Composable
-private fun KebabButton(cardHovered: Boolean, onPress: () -> Unit) {
+private fun KebabButton(
+    cardHovered: Boolean,
+    onPress: () -> Unit,
+    /** What a reader hears: a post's menu, or a reply's. */
+    description: String = str(S.desktop_board_message_actions),
+) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(
@@ -2172,7 +2321,7 @@ private fun KebabButton(cardHovered: Boolean, onPress: () -> Unit) {
                 if (hovered || cardHovered) ZillitTheme.colors.surfaceHover else ZillitTheme.colors.surfaceSunken,
             )
             .hoverable(hover)
-            .semantics { contentDescription = str(S.desktop_board_message_actions); role = Role.Button }
+            .semantics { contentDescription = description; role = Role.Button }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown().consume()
@@ -2479,30 +2628,6 @@ private fun highlighted(
     }
 }
 
-/** "Delete? Yes / No", in place — a modal would cover the thing being deleted. */
-@Composable
-private fun DeleteConfirmRow(prompt: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        ZillitText(
-            text = prompt,
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-        ZillitText(
-            text = str(S.yes),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.danger,
-            modifier = Modifier.clickable(onClick = onConfirm),
-        )
-        ZillitText(
-            text = str(S.no),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textPrimary,
-            modifier = Modifier.clickable(onClick = onDismiss),
-        )
-    }
-}
-
 /** Everything under the post: its replies, and the Reply / Try again actions. */
 @Composable
 private fun NoticeThread(notice: Notice, ui: BoardUi) {
@@ -2735,6 +2860,7 @@ private fun BoardArea(
                 loadAvatar = loadAvatar,
                 uploadProgress = { localId -> state.uploadProgress[localId] },
                 readOnly = state.readOnly,
+                selected = state.selection?.ids,
             ),
             currentMatch = state.currentSearchMatch,
             paging = BoardPaging(state.hasOlder, state.loadingOlder),
@@ -2844,18 +2970,15 @@ private fun PinnedChip() {
 @Composable
 private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi) {
     val canAct = ui.canActOnComment(comment)
-    var confirmingDelete by remember(comment.id) { mutableStateOf(false) }
     val selection = rememberTextSelectionProbe()
     var selectedAtOpen by remember(comment.id) { mutableStateOf("") }
+    var menuOpen by remember(comment.id) { mutableStateOf(false) }
+    val noteSelection = { selectedAtOpen = selection.selectedText }
+    val menuItems = commentMenuItems(
+        parentId, comment, canAct, ui.onEvent, { selectedAtOpen.ifEmpty { comment.body } }, ui.readOnly,
+    )
 
-    NoticeContextMenu(
-        items = commentMenuItems(
-            parentId, comment, canAct, ui.onEvent, { selectedAtOpen.ifEmpty { comment.body } }, ui.readOnly,
-        ) {
-            confirmingDelete = true
-        },
-        onOpen = { selectedAtOpen = selection.selectedText },
-    ) {
+    NoticeContextMenu(items = menuItems, onOpen = noteSelection) {
     // A row on the thread's rail, not a slab: a small avatar, the name and
     // time on one line, the words under them. The grey inset it replaced
     // read as a second card inside the first.
@@ -2890,16 +3013,22 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
             }
 
             if (comment.isEdited) EditedMark()
-
-            if (canAct) {
-                CommentActions(
-                    parentId = parentId,
-                    comment = comment,
-                    confirmingDelete = confirmingDelete,
-                    onConfirmingChange = { confirmingDelete = it },
-                    onEvent = ui.onEvent,
-                )
-            }
+        }
+        // A reply's own "⋯", beside its words. The menu was on a right-click
+        // alone, which nobody finds: the web hangs a dropdown off every reply
+        // (`ReplyMessage.jsx` → `DropDownForComment`), and so does this.
+        // Always composed, never gated on hover — see the card's kebab for
+        // what a hover-gated button does to the click that opens it.
+        Box {
+            KebabButton(
+                cardHovered = menuOpen,
+                onPress = {
+                    noteSelection()
+                    menuOpen = true
+                },
+                description = str(S.desktop_board_reply_actions),
+            )
+            NoticeActionsMenu(open = menuOpen, items = menuItems, onDismiss = { menuOpen = false })
         }
     }
     }
@@ -2917,7 +3046,6 @@ private fun commentMenuItems(
     /** What Copy puts on the clipboard — the highlighted words, else the whole reply. */
     copyText: () -> String,
     readOnly: Boolean,
-    onArmDelete: () -> Unit,
 ): () -> List<NoticeMenuItem> = {
     buildList {
         if (comment.body.isNotBlank()) {
@@ -2942,7 +3070,7 @@ private fun commentMenuItems(
             }
             add(
                 NoticeMenuItem(str(S.desktop_board_delete_reply), ZillitIcons.Trash, ZillitMenuTone.Danger) {
-                    onArmDelete()
+                    onEvent(HomeFeedEvent.AskDeleteComment(parentId, comment.id))
                 },
             )
         }
@@ -2972,53 +3100,6 @@ private fun CommentHeader(author: String, comment: NoticeComment) {
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
-    }
-}
-
-/**
- * Edit and Delete, with the delete confirmed in place.
- *
- * An inline "Delete? Yes / No" rather than a dialog: the question is small,
- * the target is right there, and a modal would cover the thing being deleted.
- */
-@Composable
-private fun CommentActions(
-    parentId: String,
-    comment: NoticeComment,
-    confirmingDelete: Boolean,
-    onConfirmingChange: (Boolean) -> Unit,
-    onEvent: (HomeFeedEvent) -> Unit,
-) {
-
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        if (confirmingDelete) {
-            DeleteConfirmRow(
-                prompt = DELETE_PROMPT,
-                onConfirm = {
-                    onConfirmingChange(false)
-                    onEvent(HomeFeedEvent.DeleteComment(parentId, comment.id))
-                },
-                onDismiss = { onConfirmingChange(false) },
-            )
-        } else {
-            // Only text replies are rewritable — there is no editing a photo.
-            if (comment.kind == NoticeKind.Text) {
-                ZillitText(
-                    text = str(S.edit),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.accentText,
-                    modifier = Modifier.clickable {
-                        onEvent(HomeFeedEvent.StartEditComment(parentId, comment.id))
-                    },
-                )
-            }
-            ZillitText(
-                text = str(S.delete),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-                modifier = Modifier.clickable { onConfirmingChange(true) },
-            )
-        }
     }
 }
 
@@ -3151,6 +3232,7 @@ internal val HIGHLIGHT = Color(0xFFFFC94D)
 private val DELETE_PROMPT: String get() = str(S.are_you_sure_you_want_to_delete)
 private val LOCATION_PICKER_WIDTH = 340.dp
 private val FORWARD_PICKER_WIDTH = 340.dp
+private const val FORWARD_SUBTITLE_CHARS = 80
 private val CALL_SHEET_PROMPT_WIDTH = 440.dp
 private val READ_BY_LIST_HEIGHT = 320.dp
 private val COMPOSER_RADIUS = 22.dp

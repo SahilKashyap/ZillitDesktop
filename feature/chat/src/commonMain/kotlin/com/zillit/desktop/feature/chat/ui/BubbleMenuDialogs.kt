@@ -26,7 +26,6 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
@@ -35,14 +34,17 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.workspace.forward.ForwardGroup
+import com.zillit.desktop.core.workspace.forward.ForwardPick
+import com.zillit.desktop.core.workspace.forward.ForwardPickerDialog
+import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.CrewContact
-import com.zillit.desktop.feature.chat.domain.ForwardTarget
+import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.ReadByRow
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.lastMessageAt
-import com.zillit.desktop.feature.chat.domain.searchCrew
 
 /**
  * The dialogs the bubble menu opens — Edit, Forward, Read by — each a
@@ -102,20 +104,29 @@ internal fun EditMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit)
 
 /**
  * The question before a line is withdrawn for everyone — the web's
- * "Delete message" modal (`MyMessage.jsx`). Delete used to fire from the
- * menu on one click, and there is no undo.
+ * "Delete message" modal (`MyMessage.jsx`) and the Popconfirm its selection
+ * mode hangs off the bar's Delete (`ChatFooterCnc`: `multiplemessagedelete`).
+ * Delete used to fire from the menu on one click, and there is no undo.
+ *
+ * One dialog for both: the sentence changes with the count, and Yes
+ * withdraws either the one line or the whole ticked batch.
  */
 @Composable
 internal fun DeleteMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
+    val asking: DeleteAsk? = when {
+        state.confirmingDelete != null -> DeleteAsk.One(state.confirmingDelete.id)
+        state.confirmingBatch.isNotEmpty() -> DeleteAsk.Many(state.confirmingBatch.size)
+        else -> null
+    }
     // Held through the exit animation, as the Edit dialog's target is.
-    var shown by remember { mutableStateOf(state.confirmingDelete) }
-    if (state.confirmingDelete != null) shown = state.confirmingDelete
+    var shown by remember { mutableStateOf(asking) }
+    if (asking != null) shown = asking
     val target = shown ?: return
 
     ZillitDialogShell(
         title = str(S.desktop_chat_delete_message),
         icon = ZillitIcons.Trash,
-        visible = state.confirmingDelete != null,
+        visible = asking != null,
         onDismiss = { onEvent(ChatEvent.CancelDelete) },
         actions = {
             Spacer(Modifier.weight(1f))
@@ -126,27 +137,46 @@ internal fun DeleteMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Uni
             )
             ZillitButton(
                 text = str(S.delete),
-                onClick = { onEvent(ChatEvent.Delete(target.id)) },
+                onClick = {
+                    when (target) {
+                        is DeleteAsk.One -> onEvent(ChatEvent.Delete(target.messageId))
+                        is DeleteAsk.Many -> onEvent(ChatEvent.DeleteSelected)
+                    }
+                },
                 variant = ButtonVariant.Danger,
             )
         },
     ) {
         ZillitText(
-            text = str(S.desktop_chat_delete_message_confirm),
+            text = when {
+                target is DeleteAsk.Many && target.count > 1 -> {
+                    str(S.desktop_board_delete_messages_confirm, target.count)
+                }
+                else -> str(S.desktop_chat_delete_message_confirm)
+            },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
     }
 }
 
+/** Which delete the question is about — one line, or a ticked batch. */
+private sealed interface DeleteAsk {
+    data class One(val messageId: String) : DeleteAsk
+
+    data class Many(val count: Int) : DeleteAsk
+}
+
 /**
- * Where to send a copy — the web's "Forward In App" picker
- * (`ForwardMsgModal.jsx`), reduced to the two chat halves this client can
- * reach: rooms first, then people, one search over both, any number ticked.
- * The open thread is a valid destination too, as it is on the web.
+ * Where to send a copy — the shared picker, which is the web's
+ * `ForwardMsgModal` (see `ForwardPickerDialog`).
+ *
+ * The chat's own halves head the list — Groups and People, each a list that
+ * opens, any number of them ticked, the open thread among them (as it is on
+ * the web). After them comes everything the host can reach: the notice
+ * boards, the mailbox, the film tools this line's kind allows.
  */
 @Composable
-@Suppress("LongMethod") // The picker: search, two sections, the empty note.
 internal fun ForwardDialog(
     state: ChatUiState,
     people: List<CrewContact>,
@@ -155,89 +185,85 @@ internal fun ForwardDialog(
     var shown by remember { mutableStateOf(state.forwarding) }
     if (state.forwarding != null) shown = state.forwarding
     val source = shown ?: return
-    var query by remember(source.id) { mutableStateOf("") }
-    var picked by remember(source.id) { mutableStateOf(emptySet<ForwardTarget>()) }
-    val rooms = remember(state.groups, query) {
-        state.groups.filter { query.isBlank() || it.displayName.contains(query.trim(), ignoreCase = true) }
+    val sections = remember(state.groups, people, state.forwardSections) {
+        chatSections(state.groups, people) + state.forwardSections
     }
-    val crew = remember(people, query) { people.searchCrew(query) }
 
-    ZillitDialogShell(
-        title = str(S.forward),
-        subtitle = forwardSubtitle(source),
-        icon = ZillitIcons.Forward,
+    ForwardPickerDialog(
         visible = state.forwarding != null,
+        subtitle = forwardSubtitle(source),
+        sections = sections,
+        resetKey = source.id,
+        onSend = { targets -> onEvent(ChatEvent.ForwardPicked(targets)) },
+        onStep = { target -> onEvent(ChatEvent.ForwardStepPicked(target)) },
         onDismiss = { onEvent(ChatEvent.CancelForward) },
-        width = FORWARD_WIDTH,
-        scrollable = false,
-        actions = {
-            ZillitText(
-                text = if (picked.isEmpty()) "" else str(S.dd_n_selected, picked.size),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
+    )
+}
+
+/**
+ * The two halves this client can reach by itself, as picker entries: the
+ * rooms it is in and the crew it can write to.
+ *
+ * Each is a list that opens, not a run of rows: the web's modal lists "Chat
+ * User" and "Group Chat" as two entries that open their own pickers, and a
+ * production's crew is long enough that spilling it into the dialog buries
+ * everything under it. Ids carry the prefix the view model reads them back
+ * by (`chatTargetOf`).
+ */
+private fun chatSections(
+    rooms: List<GroupRoom>,
+    people: List<CrewContact>,
+): List<ForwardSection> {
+    val entries = buildList {
+        if (rooms.isNotEmpty()) {
+            add(
+                ForwardGroup(
+                    id = "chat-rooms",
+                    label = str(S.groups_txt),
+                    icon = ZillitIcons.Users,
+                    caption = str(S.desktop_forward_n_groups, rooms.size),
+                    children = rooms.map { room ->
+                        ForwardPick(
+                            id = "$ROOM_TARGET${room.id}",
+                            label = room.displayName,
+                            icon = ZillitIcons.Users,
+                        )
+                    },
+                ),
             )
-            Spacer(Modifier.weight(1f))
-            ZillitButton(
-                text = str(S.cancel),
-                onClick = { onEvent(ChatEvent.CancelForward) },
-                variant = ButtonVariant.Secondary,
+        }
+        if (people.isNotEmpty()) {
+            add(
+                ForwardGroup(
+                    id = "chat-people",
+                    label = str(S.section_people),
+                    icon = ZillitIcons.User,
+                    caption = str(S.dd_n_people, people.size),
+                    children = people.map { person ->
+                        ForwardPick(
+                            id = "$USER_TARGET${person.userId}",
+                            label = person.fullName,
+                            // Role AND department, because the picker's one
+                            // search box looks at the caption: `searchCrew`
+                            // matched all three fields, and a coordinator
+                            // looking for "camera" should still find them.
+                            caption = person.roleLine(),
+                            avatarUserId = person.userId,
+                        )
+                    },
+                ),
             )
-            ZillitButton(
-                text = str(S.send),
-                enabled = picked.isNotEmpty(),
-                onClick = { onEvent(ChatEvent.ForwardTo(picked.toList())) },
-            )
-        },
-    ) {
-        ZillitSearchField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = str(S.desktop_chat_search_people_and_groups),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        val listState = rememberLazyListState()
-        ZillitLazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxWidth().heightIn(max = FORWARD_LIST_HEIGHT),
-        ) {
-            if (rooms.isNotEmpty()) {
-                item(key = "groups-heading") { SectionHeading(str(S.groups_txt)) }
-                items(rooms, key = { "g-${it.id}" }) { room ->
-                    val target = ForwardTarget(room.id, isGroup = true)
-                    TargetRow(
-                        name = room.displayName,
-                        caption = null,
-                        checked = target in picked,
-                        onToggle = { picked = picked.toggled(target) },
-                    )
-                }
-            }
-            if (crew.isNotEmpty()) {
-                item(key = "people-heading") { SectionHeading(str(S.section_people)) }
-                items(crew, key = { "u-${it.userId}" }) { person ->
-                    val target = ForwardTarget(person.userId, isGroup = false)
-                    TargetRow(
-                        name = person.fullName,
-                        userId = person.userId,
-                        caption = person.designationLabel(),
-                        checked = target in picked,
-                        onToggle = { picked = picked.toggled(target) },
-                    )
-                }
-            }
-            if (rooms.isEmpty() && crew.isEmpty()) {
-                item(key = "empty") {
-                    ZillitText(
-                        text = str(S.desktop_nobody_matches),
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textMuted,
-                        modifier = Modifier.padding(ZillitTheme.spacing.sm),
-                    )
-                }
-            }
         }
     }
+    return if (entries.isEmpty()) emptyList() else listOf(ForwardSection(str(S.desktop_chat_calls), entries))
 }
+
+/** "1st AD · Camera" — what the picker shows under a name, and searches. */
+private fun CrewContact.roleLine(): String? =
+    listOfNotNull(designationLabel(), department?.takeIf { it.isNotBlank() })
+        .distinct()
+        .joinToString(" · ")
+        .takeIf { it.isNotBlank() }
 
 /** What is being forwarded, in a line: the words, or the file's name, or the place. */
 private fun forwardSubtitle(source: ChatMessage): String = when {
@@ -245,53 +271,6 @@ private fun forwardSubtitle(source: ChatMessage): String = when {
     source.attachment != null -> source.attachment.name
     else -> source.body
 }.take(FORWARD_SUBTITLE_CHARS)
-
-private fun Set<ForwardTarget>.toggled(target: ForwardTarget): Set<ForwardTarget> =
-    if (target in this) this - target else this + target
-
-@Composable
-private fun SectionHeading(label: String) {
-    ZillitText(
-        text = label.uppercase(),
-        style = ZillitTheme.typography.labelSmall,
-        color = ZillitTheme.colors.textMuted,
-        modifier = Modifier.padding(top = ZillitTheme.spacing.sm, bottom = ZillitTheme.spacing.xxs),
-    )
-}
-
-@Composable
-private fun TargetRow(
-    name: String,
-    caption: String?,
-    checked: Boolean,
-    onToggle: () -> Unit,
-    /** A person's id; a group has none and draws its initials. */
-    userId: String? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.small)
-            .clickable(onClick = onToggle)
-            .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitAvatar(name = name, userId = userId, size = TARGET_AVATAR)
-        Column(Modifier.weight(1f)) {
-            ZillitText(text = name, style = ZillitTheme.typography.bodySmall, maxLines = 1)
-            if (caption != null) {
-                ZillitText(
-                    text = caption,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-        }
-        ZillitCheckbox(checked = checked, onCheckedChange = { onToggle() })
-    }
-}
 
 /**
  * Who has and has not read a room's line — the web's `ReadByUsers` modal:

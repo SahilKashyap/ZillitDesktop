@@ -424,6 +424,8 @@ internal fun buildHomeFeed(
     ready: AppGraph.Ready,
     /** The production's tool rights — the Document Distribution gate reads them live. */
     permissions: () -> ProjectPermissions = { ProjectPermissions.Empty },
+    /** Everywhere a post can go beyond this board — see ForwardWiring. */
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
 ) = HomeFeedViewModel(
     repository = ready.homeFeedRepository,
     nowMillis = System::currentTimeMillis,
@@ -451,6 +453,8 @@ internal fun buildHomeFeed(
     // phones honour it. Read at load; the profile arrives beside the units.
     defaultUnitId = { ready.projectContext?.context?.value?.profile?.defaultUnitId },
     distribution = distributionHook(ready, permissions),
+    reach = forward,
+    boardKey = HOME_BOARD,
 )
 
 
@@ -643,6 +647,8 @@ internal fun AppGraph.Ready.boardFeed(
     permissions: () -> ProjectPermissions,
     service: ZillitService = ZillitService.Units,
     chatSegment: String = "chat",
+    /** Everywhere a post can go beyond this board — see ForwardWiring. */
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
 ): HomeFeedViewModel {
     val units: suspend () -> ZillitResult<List<HomeUnit>> = {
         val access = permissions().access(toolIdentifier)
@@ -666,7 +672,7 @@ internal fun AppGraph.Ready.boardFeed(
             )
         }
     }
-    return boardFeed(board, toolIdentifier, units, service, chatSegment = chatSegment)
+    return boardFeed(board, toolIdentifier, units, service, chatSegment = chatSegment, forward = forward)
 }
 
 /**
@@ -678,6 +684,7 @@ internal fun AppGraph.Ready.boardFeed(
  * one right (the tool's) covers every tab. [postAlways] is Accounts'
  * ZL-17603: posting is not gated by the tool right there.
  */
+@Suppress("LongParameterList") // One seam per way a board differs; a holder would rename, not reduce.
 internal fun AppGraph.Ready.serviceUnitsFeed(
     toolIdentifier: String,
     board: String,
@@ -686,6 +693,8 @@ internal fun AppGraph.Ready.serviceUnitsFeed(
     permissions: () -> ProjectPermissions,
     postAlways: Boolean = false,
     readModule: String = "${toolIdentifier.removeSuffix("_tool")}_label",
+    /** Everywhere a post can go beyond this board — see ForwardWiring. */
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
 ): HomeFeedViewModel {
     val source = ReportUnitsSource(apiClient, config, service, unitsRoute)
     val units: suspend () -> ZillitResult<List<HomeUnit>> = {
@@ -704,12 +713,21 @@ internal fun AppGraph.Ready.serviceUnitsFeed(
             }
         }
     }
-    return boardFeed(board, toolIdentifier, units, service, readModule)
+    return boardFeed(board, toolIdentifier, units, service, readModule, forward = forward)
 }
 
 /** Camera & Sound Report — `GET reports/unit/` on the script-notes host. */
-internal fun AppGraph.Ready.reportsFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
-    serviceUnitsFeed(REPORTS_TOOL, "reports", ZillitService.ScriptNotes, "reports/unit/", permissions)
+internal fun AppGraph.Ready.reportsFeed(
+    permissions: () -> ProjectPermissions,
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
+): HomeFeedViewModel = serviceUnitsFeed(
+    toolIdentifier = REPORTS_TOOL,
+    board = "reports",
+    service = ZillitService.ScriptNotes,
+    unitsRoute = "reports/unit/",
+    permissions = permissions,
+    forward = forward,
+)
 
 /**
  * Script Notes — the same board engine on the script-notes host, segment
@@ -718,19 +736,40 @@ internal fun AppGraph.Ready.reportsFeed(permissions: () -> ProjectPermissions): 
  * engine verbatim; its only extras — an episode stamp on document posts for
  * television productions and a deleted-messages history view — are not here.
  */
-internal fun AppGraph.Ready.scriptNotesFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
-    serviceUnitsFeed("script_notes_tool", "script-notes", ZillitService.ScriptNotes, "script-notes/unit", permissions)
+internal fun AppGraph.Ready.scriptNotesFeed(
+    permissions: () -> ProjectPermissions,
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
+): HomeFeedViewModel = serviceUnitsFeed(
+    toolIdentifier = "script_notes_tool",
+    board = "script-notes",
+    service = ZillitService.ScriptNotes,
+    unitsRoute = "script-notes/unit",
+    permissions = permissions,
+    forward = forward,
+)
 
 /** Catering — `GET catering/unit` on the unit host; breakfast/lunch/dinner plus the production's own. */
-internal fun AppGraph.Ready.cateringFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
-    serviceUnitsFeed("catering_tool", "catering", ZillitService.Units, "catering/unit", permissions)
+internal fun AppGraph.Ready.cateringFeed(
+    permissions: () -> ProjectPermissions,
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
+): HomeFeedViewModel = serviceUnitsFeed(
+    toolIdentifier = "catering_tool",
+    board = "catering",
+    service = ZillitService.Units,
+    unitsRoute = "catering/unit",
+    permissions = permissions,
+    forward = forward,
+)
 
 /**
  * Message Accounts — `GET account/unit` on the unit host (General, Purchase
  * Orders, Petty Cash, and the production's own). The web hard-codes posting
  * on for this tool (ZL-17603).
  */
-internal fun AppGraph.Ready.accountsFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
+internal fun AppGraph.Ready.accountsFeed(
+    permissions: () -> ProjectPermissions,
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
+): HomeFeedViewModel =
     serviceUnitsFeed(
         toolIdentifier = "accounting_tool",
         board = "account",
@@ -740,6 +779,7 @@ internal fun AppGraph.Ready.accountsFeed(permissions: () -> ProjectPermissions):
         postAlways = true,
         // The badge module is `accounts_label`, not the identifier's stem.
         readModule = "accounts_label",
+        forward = forward,
     )
 
 private const val REPORTS_TOOL = "reports_tool"
@@ -760,6 +800,8 @@ internal fun AppGraph.Ready.boardFeed(
     receiver: () -> String? = { null },
     /** Wraps the repository — a room's own posting rule sits here. */
     decorate: (HomeFeedRepository) -> HomeFeedRepository = { it },
+    /** Everywhere a post can go beyond this board — see ForwardWiring. */
+    forward: com.zillit.desktop.core.workspace.forward.ForwardReach? = null,
 ): HomeFeedViewModel {
     val repository = decorate(
         HomeFeedRepositoryImpl(
@@ -796,6 +838,8 @@ internal fun AppGraph.Ready.boardFeed(
         saveRecentMentions = { names ->
             preferences.set(ZillitPreferences.RecentMentions, names.joinToString("\n"))
         },
+        reach = forward,
+        boardKey = board,
     )
 }
 

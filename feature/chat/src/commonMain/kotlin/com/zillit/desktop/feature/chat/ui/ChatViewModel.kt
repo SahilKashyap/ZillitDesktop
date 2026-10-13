@@ -8,6 +8,8 @@ import com.zillit.desktop.core.designsystem.component.DroppedFile
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.workspace.forward.ForwardReach
+import com.zillit.desktop.core.workspace.forward.ForwardSection
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
@@ -33,6 +35,7 @@ import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.data.ReplyAwareChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.ChatMessage
+import com.zillit.desktop.feature.chat.domain.asForwardItem
 import com.zillit.desktop.feature.chat.domain.ChatReplyRef
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -144,11 +147,32 @@ data class ChatUiState(
     val info: String? = null,
     /** The message the delete confirmation is open for; null keeps it closed. */
     val confirmingDelete: ChatMessage? = null,
+    /**
+     * Selection mode — the web's, armed from a bubble's menu: which action,
+     * and the lines ticked so far. The composer makes way for a bar saying
+     * how many (`ChatFooterCnc`'s `isSelectMessage` branch). Null is the
+     * ordinary thread.
+     */
+    val selection: ChatSelection? = null,
+    /**
+     * The ids the *batch* delete question is open for; empty keeps it shut.
+     * Apart from [confirmingDelete] because the question is a different
+     * sentence and the answer withdraws a list rather than a line.
+     */
+    val confirmingBatch: List<String> = emptyList(),
     /** The message open in the Edit dialog, and the words as they are being rewritten. */
     val editing: ChatMessage? = null,
     val editDraft: String = "",
     /** The message the Forward picker is open for; null keeps it closed. */
     val forwarding: ChatMessage? = null,
+    /**
+     * Where that message may go beyond this chat — the other boards, the
+     * mailbox, the film tools its kind and the viewer's rights allow, as the
+     * host reaches them. The chat's own people and rooms are added by the
+     * pane, which is where the crew list lives. Empty until the reach
+     * answers, and on a host that wired none.
+     */
+    val forwardSections: List<ForwardSection> = emptyList(),
     /** The readers panel — which message, and its answer as it arrives. */
     val readBy: ReadByView? = null,
     /**
@@ -180,6 +204,19 @@ data class ChatUiState(
 
     val canSend: Boolean get() = draft.isNotBlank() && peer != null
 }
+
+/** What a batch of ticked lines is gathered for. One entry today; the web has three. */
+enum class ChatSelectionAction { Delete }
+
+/**
+ * Selection mode: the action, and the server ids ticked so far.
+ *
+ * The web opens it from the line's own menu with that line already ticked
+ * (`MyMessage.jsx`: `setIsSelectMessage({status: true, type: 'DELETE_MESSAGE'})`
+ * then `setSelectedMessageIds([chat._id])`), so [ids] is never empty at the
+ * moment the mode appears.
+ */
+data class ChatSelection(val action: ChatSelectionAction, val ids: Set<String> = emptySet())
 
 /**
  * The Group info panel's data: the room in full once `GET chat-room/{id}`
@@ -288,9 +325,28 @@ sealed interface ChatEvent {
     /** The quiet button atop the thread: fetch the page before the oldest loaded. */
     data object ShowOlder : ChatEvent
 
-    /** The menu's Delete: asks first, as the web's modal does. */
+    /** The trash beside a bubble: asks about that one line. */
     data class AskDelete(val messageId: String) : ChatEvent
     data object CancelDelete : ChatEvent
+
+    /**
+     * The menu's Delete. Not a delete and not the question either: it ticks
+     * the line and opens selection mode, so more can join it before the one
+     * question is asked — the web's `DELETE_MESSAGE` handler.
+     */
+    data class SelectForDelete(val messageId: String) : ChatEvent
+
+    /** A bubble clicked (or its box ticked) while selection mode is open. */
+    data class ToggleSelected(val messageId: String) : ChatEvent
+
+    /** The bar's X: the mode closes, nothing is deleted. */
+    data object CancelSelection : ChatEvent
+
+    /** The bar's Delete: the question, about every ticked line. */
+    data object AskDeleteSelected : ChatEvent
+
+    /** That question's Yes. */
+    data object DeleteSelected : ChatEvent
 
     /** Withdraws one of our own messages, for everyone in the thread. Confirmed. */
     data class Delete(val messageId: String) : ChatEvent
@@ -320,6 +376,18 @@ sealed interface ChatEvent {
 
     /** The picker's Send: a copy to each destination. */
     data class ForwardTo(val targets: List<ForwardTarget>) : ChatEvent
+
+    /**
+     * The picker's Send, in the shared picker's terms: this chat's own people
+     * and rooms, and whatever else the host offered, in one list of ids.
+     */
+    data class ForwardPicked(val targetIds: List<String>) : ChatEvent
+
+    /**
+     * A destination that asks something first — a tool's form, the mailbox
+     * composer. The host takes over; the picker closes.
+     */
+    data class ForwardStepPicked(val targetId: String) : ChatEvent
     data object CancelForward : ChatEvent
 
     /** The menu's Read by, on a room's line. */
@@ -482,6 +550,12 @@ class ChatViewModel(
      * no local read mark and no badge refresh. It still loads and shows.
      */
     private val readOnly: Boolean = false,
+    /**
+     * Everywhere a line can go beyond this chat — the boards, the mailbox,
+     * the film tools. Null leaves the picker offering the chat's own people
+     * and rooms alone, which is what it offered before the reach existed.
+     */
+    private val reach: ForwardReach? = null,
 ) : ZillitViewModel<ChatUiState, ChatEvent, Nothing>(ChatUiState()) {
 
     /**
@@ -629,7 +703,15 @@ class ChatViewModel(
             ChatEvent.CancelReply -> setState { copy(replyTo = null) }
             ChatEvent.ShowOlder -> loadOlder()
             is ChatEvent.AskDelete -> askDelete(event.messageId)
-            ChatEvent.CancelDelete -> setState { copy(confirmingDelete = null) }
+            ChatEvent.CancelDelete -> setState { copy(confirmingDelete = null, confirmingBatch = emptyList()) }
+            is ChatEvent.SelectForDelete -> selectForDelete(event.messageId)
+            is ChatEvent.ToggleSelected -> toggleSelected(event.messageId)
+            ChatEvent.CancelSelection -> setState { copy(selection = null) }
+            ChatEvent.AskDeleteSelected -> setState {
+                val ids = selection?.ids?.toList().orEmpty()
+                if (ids.isEmpty()) this else copy(confirmingBatch = ids)
+            }
+            ChatEvent.DeleteSelected -> deleteSelected()
             is ChatEvent.Delete -> {
                 setState { copy(confirmingDelete = null) }
                 deleteMessage(event.messageId)
@@ -641,10 +723,10 @@ class ChatViewModel(
             ChatEvent.SubmitEdit -> submitEdit()
             ChatEvent.CancelEdit -> setState { copy(editing = null, editDraft = "") }
             is ChatEvent.Edited -> applyEdit(event.message)
-            is ChatEvent.StartForward -> setState {
-                copy(forwarding = messages.firstOrNull { it.id == event.messageId })
-            }
+            is ChatEvent.StartForward -> startForward(event.messageId)
             is ChatEvent.ForwardTo -> forward(event.targets)
+            is ChatEvent.ForwardPicked -> forwardPicked(event.targetIds)
+            is ChatEvent.ForwardStepPicked -> forwardStep(event.targetId)
             ChatEvent.CancelForward -> setState { copy(forwarding = null) }
             is ChatEvent.ShowReadBy -> showReadBy(event.messageId)
             ChatEvent.DismissReadBy -> setState { copy(readBy = null) }
@@ -1020,9 +1102,14 @@ class ChatViewModel(
         loadingOlder = false,
         error = null,
         confirmingDelete = null,
+        // Ticked lines and the question about them belonged to the thread
+        // being left, exactly as the confirmation above does.
+        selection = null,
+        confirmingBatch = emptyList(),
         editing = null,
         editDraft = "",
         forwarding = null,
+        forwardSections = emptyList(),
         readBy = null,
     )
 
@@ -1853,6 +1940,70 @@ class ChatViewModel(
     }
 
     /**
+     * The menu's Delete: the line is ticked and selection mode opens.
+     *
+     * The window is checked here, as [askDelete] checks it, so a line past
+     * it is refused before the mode rather than after the answer.
+     */
+    private fun selectForDelete(messageId: String) {
+        val target = currentState.messages.firstOrNull { it.id == messageId } ?: return
+        if (!ChatComposerRules.canRewrite(target.timestampMillis, nowMillis(), isAdmin())) {
+            setState { copy(error = ChatComposerRules.REWRITE_WINDOW_CLOSED) }
+            return
+        }
+        setState { copy(selection = ChatSelection(ChatSelectionAction.Delete, setOf(messageId))) }
+    }
+
+    /** A bubble ticked or un-ticked while the mode is open. */
+    private fun toggleSelected(messageId: String) {
+        val open = currentState.selection ?: return
+        if (messageId in open.ids) {
+            setState { copy(selection = open.copy(ids = open.ids - messageId)) }
+            return
+        }
+        val target = currentState.messages.firstOrNull { it.id == messageId } ?: return
+        // Only our own, and only inside the window — the same rule the
+        // affordance is drawn by, applied again to the click.
+        if (!target.isMine || !ChatComposerRules.canRewrite(target.timestampMillis, nowMillis(), isAdmin())) {
+            setState { copy(error = ChatComposerRules.REWRITE_WINDOW_CLOSED) }
+            return
+        }
+        setState { copy(selection = open.copy(ids = open.ids + messageId)) }
+    }
+
+    /**
+     * Withdraws every ticked line in one emit — `private-chat:delete-messages`
+     * takes a list, and the web's selection mode sends exactly this
+     * (`ChatFooterCnc`: `message_ids: selectedIds`).
+     *
+     * The bubbles stay until the server answers, for the reason the single
+     * delete does: a line that came back after "gone" would read as the peer
+     * reposting it.
+     */
+    private fun deleteSelected() {
+        val ids = currentState.confirmingBatch
+        setState { copy(confirmingBatch = emptyList(), selection = null) }
+        if (ids.isEmpty()) return
+        val now = nowMillis()
+        val allowed = ids.filter { id ->
+            val line = currentState.messages.firstOrNull { it.id == id }
+            line != null && ChatComposerRules.canRewrite(line.timestampMillis, now, isAdmin())
+        }
+        if (allowed.isEmpty()) {
+            setState { copy(error = ChatComposerRules.REWRITE_WINDOW_CLOSED) }
+            return
+        }
+        launchResult(
+            block = { repository.deleteMessages(allowed, currentState.peerIsGroup) },
+            onSuccess = { gone ->
+                dropDeleted(gone)
+                setState { copy(info = str(S.desktop_board_messages_deleted)) }
+            },
+            onError = { error -> setState { copy(error = error.localised()) } },
+        )
+    }
+
+    /**
      * Withdraws one of our own messages, everywhere.
      *
      * The bubble stays until the server confirms — a delete is the one send
@@ -1995,6 +2146,57 @@ class ChatViewModel(
      * send does. Failures are counted, not fatal: the web fires every send
      * and toasts success regardless; this toasts what actually went.
      */
+    /**
+     * Opens the picker, and asks the host what else this line can reach.
+     *
+     * The chat's own halves are drawn from state the pane already holds, so
+     * they are there immediately; the rest arrive when the reach answers.
+     */
+    private fun startForward(messageId: String) {
+        val source = currentState.messages.firstOrNull { it.id == messageId } ?: return
+        setState { copy(forwarding = source, forwardSections = emptyList()) }
+        val host = reach ?: return
+        launch {
+            val elsewhere = host.sections(source.asForwardItem(), from = CHAT_SURFACE)
+            // The picker may have been closed, or opened on another line,
+            // while the tools call was out.
+            if (currentState.forwarding?.id != messageId) return@launch
+            setState { copy(forwardSections = elsewhere) }
+        }
+    }
+
+    /**
+     * The picker's Send: this chat's own destinations go through the thread's
+     * own send, everything else through the host's reach.
+     */
+    private fun forwardPicked(targetIds: List<String>) {
+        val source = currentState.forwarding ?: return
+        val mine = targetIds.mapNotNull(::chatTargetOf)
+        val elsewhere = targetIds.filter { chatTargetOf(it) == null }
+        if (mine.isNotEmpty()) {
+            // Closes the picker and says its own "Forwarded".
+            forward(mine)
+        } else {
+            setState { copy(forwarding = null) }
+        }
+        if (elsewhere.isEmpty()) return
+        val host = reach ?: return
+        launch {
+            when (val answer = host.deliver(elsewhere, source.asForwardItem())) {
+                is ZillitResult.Success -> setState { copy(info = FORWARDED) }
+                is ZillitResult.Failure -> setState { copy(error = answer.error.localised()) }
+            }
+        }
+    }
+
+    /** A destination that asks something first; the host owns the rest of it. */
+    private fun forwardStep(targetId: String) {
+        val source = currentState.forwarding ?: return
+        setState { copy(forwarding = null) }
+        val refusal = reach?.open(targetId, source.asForwardItem())
+        if (refusal != null) setState { copy(error = refusal) }
+    }
+
     private fun forward(targets: List<ForwardTarget>) {
         val source = currentState.forwarding ?: return
         setState { copy(forwarding = null) }
@@ -2408,3 +2610,24 @@ private const val PRESENCE_TAG = "Presence"
 /** The shared-place picture's file name and type, as the phones name theirs. */
 private const val LOCATION_MAP_NAME = "location-map.png"
 private const val LOCATION_MAP_TYPE = "image/png"
+
+/**
+ * The chat's own destination ids in the shared picker, and the way back.
+ *
+ * The picker's ids are opaque strings, agreed between whoever builds an
+ * entry and whoever delivers to it: the pane builds these two, the view
+ * model recognises them, and everything else goes to the host's reach
+ * untouched.
+ */
+internal const val USER_TARGET = "user:"
+internal const val ROOM_TARGET = "room:"
+
+/** How this surface names itself to the reach, so it is not offered itself. */
+internal const val CHAT_SURFACE = "chat"
+
+/** A picker id as one of this chat's own destinations, or null for someone else's. */
+internal fun chatTargetOf(targetId: String): ForwardTarget? = when {
+    targetId.startsWith(USER_TARGET) -> ForwardTarget(targetId.removePrefix(USER_TARGET), isGroup = false)
+    targetId.startsWith(ROOM_TARGET) -> ForwardTarget(targetId.removePrefix(ROOM_TARGET), isGroup = true)
+    else -> null
+}

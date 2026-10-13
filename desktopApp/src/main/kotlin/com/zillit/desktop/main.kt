@@ -511,6 +511,11 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
             idGenerator = { UUID.randomUUID().toString() },
         )
     }
+    // The forward picker's Email destination opens the mailbox window from a
+    // view model, which has no navigator; the frame leaves its opener here.
+    remember(workspaceViewModel) {
+        toolOpener.set { path -> workspaceViewModel.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool(path))) }
+    }
     // Window titles are stored at open time; a language change re-asks each
     // provider for its title so the tab strip follows the rest of the frame.
     // Keyed on the label dictionary as well as the app's own words: a tool
@@ -3319,6 +3324,13 @@ private fun rememberAppViewModels(
             )
         }
         val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
+        // Hoisted for the same reason the tool grid is: the forward picker's
+        // Email destination hands a message to this very mailbox, and a
+        // second one would compose into a window nobody is looking at.
+        val mailbox = ready?.let(::buildMailbox)
+        // Everywhere a forwarded message can go beyond the surface it was
+        // forwarded from — see ForwardWiring.
+        val forward = ready?.forwardReach(permissions, ready.emailForwarding(mailbox))
 
         AppViewModels(
             home = home,
@@ -3378,11 +3390,15 @@ private fun rememberAppViewModels(
                     // production's language is not this computer's.
                     isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
                     translator = AppChatTranslator(it, scope.chatUiLanguage(preferences)),
+                    // The boards, the mailbox and the film tools a line can
+                    // be forwarded to — the chat's own people and rooms are
+                    // the pane's own business.
+                    reach = forward,
                 )
             },
-            homeFeed = ready?.let { buildHomeFeed(it, permissions) },
+            homeFeed = ready?.let { buildHomeFeed(it, permissions, forward) },
             calendar = ready?.let(::buildCalendar),
-            email = ready?.let(::buildMailbox),
+            email = mailbox,
             settings = settings,
             approvals = ready?.let { graph ->
                 ApprovalsViewModel(
@@ -3599,16 +3615,18 @@ private fun rememberAppViewModels(
                 board = "info",
                 toolIdentifier = "info_tool",
                 permissions = permissions,
+                forward = forward,
             ),
             confidentialInfo = ready?.boardFeed(
                 board = "confidentialinfo",
                 toolIdentifier = "confidential_info_tool",
                 permissions = permissions,
+                forward = forward,
             ),
-            reports = ready?.reportsFeed(permissions),
-            scriptNotes = ready?.scriptNotesFeed(permissions),
-            catering = ready?.cateringFeed(permissions),
-            accounts = ready?.accountsFeed(permissions),
+            reports = ready?.reportsFeed(permissions, forward),
+            scriptNotes = ready?.scriptNotesFeed(permissions, forward),
+            catering = ready?.cateringFeed(permissions, forward),
+            accounts = ready?.accountsFeed(permissions, forward),
             boxSchedule = ready?.buildBoxSchedule(permissions),
             maps = ready?.buildMaps(permissions),
             recce = ready?.buildRecce(permissions),
