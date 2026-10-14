@@ -142,6 +142,25 @@ class ReadCacheTest {
         assertTrue(cache.rows.isEmpty())
     }
 
+    /**
+     * A switch while the read is out: the answer is the production's that
+     * asked, so that is where it is kept. Keyed as it landed, it went to the
+     * next production — or, mid-switch, to nobody.
+     */
+    @Test
+    fun `an answer that lands after a production switch is kept where it was asked`() = runTest {
+        val switchesMidRead = MockEngine {
+            scope = ReadScope("u2", "p2")
+            respond("""{"status":200,"data":"hello"}""", headers = jsonHeaders)
+        }
+        client(switchesMidRead).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertEquals(listOf(ReadScope("u1", "p1")), cache.rows.values.map { it.first })
+        assertNull(client(answering).peekCached(URL, String.serializer(), RequestModule.ProjectUser), "p2's board")
+        scope = ReadScope("u1", "p1")
+        assertEquals("hello", client(answering).peekCached(URL, String.serializer(), RequestModule.ProjectUser))
+    }
+
     @Test
     fun `a POST that is really a read is kept only when it names itself`() = runTest {
         val name = "$URL/get-emails/inbox/1,2"

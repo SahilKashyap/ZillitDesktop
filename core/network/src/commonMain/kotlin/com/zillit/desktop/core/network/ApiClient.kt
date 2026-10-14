@@ -194,31 +194,34 @@ class ApiClient(
         queryParameters: Map<String, Any?> = emptyMap(),
         options: CallOptions = CallOptions(),
     ): ZillitResult<ApiEnvelope> {
+        // Whose answer this is is settled as it is asked, by the same identity
+        // that signs it. Worked out when the answer landed, a read still out
+        // across a production switch was kept under the next production — or,
+        // mid-switch, under nobody (seen on a real cache: a Home board page
+        // filed under a blank user and production).
+        val kept = readCache?.let { keptUnder(verb, url, module, queryParameters, options) }
         val outcome = send(verb, url, module, body, queryParameters, options)
         onOutcome((outcome as? ZillitResult.Failure)?.error)
         (outcome as? ZillitResult.Failure)?.let { onFailure(ApiFailure(verb.wire, url, it.error)) }
-        return remembered(outcome, verb, url, module, queryParameters, options)
+        return remembered(outcome, kept, url)
     }
 
     /**
      * The read cache, around a GET.
      *
-     * A good answer is kept under (user, production, url, query). When the
-     * same read cannot reach the server — no connection, a timeout — the kept
-     * answer stands in. A refusal (4xx/5xx) is *not* offline and is returned
-     * as is: showing a saved list when the server just said "forbidden" would
-     * be a lie about rights.
+     * A good answer is kept under (user, production, url, query) — [kept],
+     * taken when the call was made. When the same read cannot reach the
+     * server — no connection, a timeout — the kept answer stands in. A refusal
+     * (4xx/5xx) is *not* offline and is returned as is: showing a saved list
+     * when the server just said "forbidden" would be a lie about rights.
      */
     private suspend fun remembered(
         outcome: ZillitResult<ApiEnvelope>,
-        verb: HttpVerb,
+        kept: KeptRead?,
         url: String,
-        module: RequestModule,
-        queryParameters: Map<String, Any?>,
-        options: CallOptions,
     ): ZillitResult<ApiEnvelope> {
         val cache = readCache ?: return outcome
-        val kept = keptUnder(verb, url, module, queryParameters, options) ?: return outcome
+        if (kept == null) return outcome
         return when (outcome) {
             is ZillitResult.Success -> {
                 keep(cache, kept.key, kept.scope, outcome.data)
@@ -247,7 +250,7 @@ class ApiClient(
      *
      * The arguments must match the [request] this is the cache of, exactly, or
      * the key will not be the one that was written. [keptUnder] is shared with
-     * [remembered] so the two cannot drift.
+     * [envelope], which keys the write, so the two cannot drift.
      */
     suspend fun <T> peekCached(
         url: String,

@@ -779,9 +779,50 @@ class HomeFeedViewModel(
      * socket arrivals and all, not only what the last fetch returned.
      *
      * Emptied with the production ([forgetProject]), like every other map
-     * here: one shoot's posts must never appear under another's name.
+     * here: one shoot's posts must never appear under another's name. What it
+     * held goes into [keptProductions], under that production's id.
      */
     private val boards = mutableMapOf<String, List<Notice>>()
+
+    /**
+     * What each production's board last showed — its tab strip, the tab that
+     * was open, and the pages behind every tab — by production id.
+     *
+     * A switch used to drop all of it, so going back to a production read a
+     * minute ago was the tab strip from disk and then the board from disk,
+     * each behind its own spinner, and each queued behind the hundred-odd
+     * answers a switch writes to the same database at once. Kept here, coming
+     * back draws at once and the refresh runs behind it.
+     *
+     * By production, so one shoot's posts can only ever come back under its
+     * own name; a few of them, because the disk copy is the record and this
+     * is only the fast way back to it.
+     */
+    private val keptProductions = mutableMapOf<String, KeptProduction>()
+
+    private class KeptProduction(
+        val units: List<HomeUnit>,
+        val selectedUnitId: String?,
+        val boards: Map<String, List<Notice>>,
+        val hasOlder: Boolean,
+    )
+
+    /**
+     * The production this board's state belongs to: named by the first load
+     * after a switch, cleared by the switch itself. Null when the host does
+     * not say which production is open, which keeps nothing across switches.
+     */
+    private var shownProduction: String? = null
+
+    /**
+     * The reads behind the board on screen — tab strip, pages, the seeds from
+     * disk. Cancelled with their production: a page still on its way when
+     * the switch happens belongs to the production that asked for it, and
+     * landing on the next one put that one's tabs or posts under the wrong
+     * name (and skipped the next one's disk seed, which only runs over an
+     * empty strip).
+     */
+    private val productionReads = mutableListOf<Job>()
 
     /**
      * The unit whose board read is out right now, or null when none is.
@@ -1069,9 +1110,70 @@ class HomeFeedViewModel(
             map.keys.retainAll(carried)
         }
         pendingPosts.keys.retainAll(carried)
+        keepShownProduction()
+        productionReads.forEach { it.cancel() }
+        productionReads.clear()
         boards.clear()
         boardReadInFlight = null
+        shownProduction = null
         setState { HomeFeedUiState(readOnly = readOnly, nowMillis = nowMillis()) }
+    }
+
+    /**
+     * Files what is on screen under the production it belongs to, for the
+     * next time that production is opened. Posts only the server has: a card
+     * still going up is the upload tray's, and a failed one is this session's.
+     */
+    private fun keepShownProduction() {
+        val production = shownProduction ?: return
+        val state = currentState
+        if (readOnly || state.tabs.isEmpty()) return
+        val pages = boards.mapValues { (_, posts) -> posts.sentOnly() }.toMutableMap()
+        state.selectedUnitId?.let { open -> pages[open] = state.notices.sentOnly() }
+        keptProductions.remove(production)
+        keptProductions[production] = KeptProduction(state.units, state.selectedUnitId, pages, state.hasOlder)
+        while (keptProductions.size > MAX_KEPT_PRODUCTIONS) keptProductions.remove(keptProductions.keys.first())
+    }
+
+    /**
+     * Puts a production's kept board back on screen, before any read — the
+     * reads that follow refresh it rather than open it. False when this
+     * production has not been shown here before.
+     */
+    private fun restoreKeptProduction(): Boolean {
+        if (readOnly || currentState.tabs.isNotEmpty()) return false
+        val back = shownProduction?.let(keptProductions::get) ?: return false
+        boards.putAll(back.boards)
+        setState {
+            copy(
+                units = back.units,
+                selectedUnitId = back.selectedUnitId,
+                notices = back.selectedUnitId?.let(back.boards::get).orEmpty(),
+                hasOlder = back.hasOlder,
+            )
+        }
+        return true
+    }
+
+    /**
+     * Whether a read asked now is for this board's own production.
+     *
+     * The first load after a switch names it. After that, a read asked while
+     * another production is open — the moment between the switch and the
+     * board being told, when socket events from the old connection still
+     * arrive — would put one production's answer into the other's board, so
+     * it is not asked at all; the switch's own load follows within the frame.
+     */
+    private fun readsShownProduction(): Boolean {
+        val open = media.currentProjectId()
+        if (shownProduction == null) shownProduction = open
+        return open == shownProduction
+    }
+
+    /** [launch], for a read that belongs to the production on screen; see [productionReads]. */
+    private fun launchRead(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit): Job {
+        productionReads.removeAll { it.isCompleted }
+        return launch(block).also { productionReads += it }
     }
 
     private fun selectUnit(unitId: String) {
@@ -2293,6 +2395,7 @@ class HomeFeedViewModel(
     }
 
     private fun loadUnits() {
+        if (!readsShownProduction()) return
         setState {
             copy(
                 isLoadingUnits = true,
@@ -2303,13 +2406,18 @@ class HomeFeedViewModel(
             )
         }
 
+        // Back in a production this board has already shown: its own tabs and
+        // pages, now, with no disk and no spinner. The board under them is
+        // refreshed at once; the strip is re-read below as on any load.
+        if (restoreKeptProduction()) currentState.selectedUnit?.let(::loadNotices)
+
         // The picker's recency memory rides along with the board's context.
-        launch {
+        launchRead {
             val recent = loadRecentMentions()
             if (recent.isNotEmpty()) setState { copy(recentMentions = recent) }
         }
 
-        launch {
+        launchRead {
             // The kept strip first, so the tabs and the board behind them are
             // on screen before the network answers. This is a read of disk,
             // not of the server: it cannot tell us a tab was taken away, which
@@ -2363,6 +2471,7 @@ class HomeFeedViewModel(
         defaultUnitId()?.takeIf { wanted -> units.visibleTabs().any { it.id == wanted } }
 
     private fun loadNotices(unit: HomeUnit) {
+        if (!readsShownProduction()) return
         // Re-read on every board load, not once at startup: the profile that
         // carries is_admin and the user id loads in parallel with the units,
         // and a value captured before it arrived would stick wrong.
@@ -2419,7 +2528,7 @@ class HomeFeedViewModel(
         }
 
         boardReadInFlight = unit.id
-        launch {
+        launchRead {
             seedNotices(unit.id)
 
             // "now" is the newest page — the endpoint reads backwards from a
@@ -2553,6 +2662,7 @@ class HomeFeedViewModel(
     private fun loadOlder() {
         val unit = currentState.selectedUnit ?: return
         if (currentState.loadingOlder || !currentState.hasOlder) return
+        if (!readsShownProduction()) return
         // An archive pages from `created`, as the web's viewer does (the first
         // row's `created`); the live board pages from `updated`, as Android does.
         val stamp: (Notice) -> Long = if (readOnly) Notice::createdAtMillis else Notice::pageStamp
@@ -2560,24 +2670,22 @@ class HomeFeedViewModel(
             .filter { it.sendState == NoticeSendState.Sent && stamp(it) > 0 }
             .minOfOrNull(stamp) ?: return
         setState { copy(loadingOlder = true) }
-        launchResult(
-            block = { repository.loadOlderNotices(unit.id, oldest) },
-            onSuccess = { page ->
-                setState {
+        launchRead {
+            when (val page = repository.loadOlderNotices(unit.id, oldest)) {
+                is ZillitResult.Success -> setState {
                     if (selectedUnitId != unit.id) {
                         copy(loadingOlder = false)
                     } else {
                         // What is on screen wins a duplicate: it may carry an
                         // edit or a reply the older page predates.
-                        val merged = (notices + page).distinctBy { it.id }
+                        val merged = (notices + page.data).distinctBy { it.id }
                         copy(notices = merged, loadingOlder = false, hasOlder = merged.size > notices.size)
                     }
                 }
-            },
-            onError = { error ->
-                setState { copy(loadingOlder = false, error = error.localised()) }
-            },
-        )
+                is ZillitResult.Failure ->
+                    setState { copy(loadingOlder = false, error = page.error.localised()) }
+            }
+        }
     }
 }
 
@@ -2693,6 +2801,16 @@ private fun Long.toIsoDate(): String {
  * can be "recent"; small enough that the boost still means something.
  */
 private const val MAX_RECENT_MENTIONS = 12
+
+/**
+ * How many productions' boards are kept in memory across switches. Enough
+ * for somebody moving between a handful of shoots; the rest come back from
+ * disk, as before.
+ */
+private const val MAX_KEPT_PRODUCTIONS = 4
+
+/** The posts the server has — what a kept board may hold. */
+private fun List<Notice>.sentOnly(): List<Notice> = filter { it.sendState == NoticeSendState.Sent }
 
 /**
  * Enters or leaves the call sheet's history mode. Entering drops optimistic
