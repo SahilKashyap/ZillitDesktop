@@ -99,6 +99,11 @@ fun CallLogPane(
      * detail dialog.
      */
     inlineDetail: Boolean = false,
+    /**
+     * Opens the row's conversation — the person's thread or the group's
+     * room — from the detail sheet. Null, and the sheet offers no Chat.
+     */
+    onOpenChat: ((CallLogEntry) -> Unit)? = null,
 ) {
     // WhatsApp's calls list: the search pill and the filters in a padded
     // block, then the rows edge to edge under a "Recent" heading.
@@ -136,7 +141,7 @@ fun CallLogPane(
         }
     }
 
-    PaneOverlays(state, onEvent, nameFor, selfUserId, showDetail = !inlineDetail)
+    PaneOverlays(state, onEvent, nameFor, selfUserId, showDetail = !inlineDetail, onOpenChat = onOpenChat)
 }
 
 /**
@@ -152,6 +157,7 @@ private fun PaneOverlays(
     selfUserId: String?,
     /** False where the side pane shows the picked call instead of a dialog. */
     showDetail: Boolean = true,
+    onOpenChat: ((CallLogEntry) -> Unit)? = null,
 ) {
     if (state.confirmingDelete) {
         WindowOverlay(onDismiss = { onEvent(CallLogEvent.CancelDeleteAll) }) {
@@ -176,6 +182,12 @@ private fun PaneOverlays(
                 selfUserId = selfUserId,
                 nameFor = nameFor,
                 onDismiss = { onEvent(CallLogEvent.CloseDetail) },
+                onOpenChat = onOpenChat?.takeIf { entry.hasChat }?.let { open ->
+                    {
+                        onEvent(CallLogEvent.CloseDetail)
+                        open(entry)
+                    }
+                },
             )
         }
     }
@@ -492,12 +504,12 @@ private fun CallLogList(
  * end, and under it how the call went — the kind's glyph and "Incoming",
  * "Outgoing" or a red "Missed" — and the line that carried it.
  *
- * Beside a side pane ([inlineDetail]) a click picks the row and the pane
- * shows the call; the call-back is the phone glyph that appears under the
- * cursor. Without one, a click on a redialable row asks which line and rings
- * — the same menu the thread header's call buttons open — and the info glyph
- * opens the detail sheet. Either way the call goes out with the row's own
- * type, as Android's recents redial it.
+ * Beside a side pane ([inlineDetail]) a click — or the info glyph — picks
+ * the row and the pane shows the call; the call-back is the phone glyph that
+ * appears under the cursor. Without one, a click on a redialable row asks
+ * which line and rings — the same menu the thread header's call buttons open
+ * — and the info glyph opens the detail sheet. Either way the call goes out
+ * with the row's own type, as Android's recents redial it.
  */
 @Composable
 @Suppress("LongParameterList", "LongMethod") // The row's data, its two verbs and the line picker.
@@ -674,11 +686,13 @@ private fun HowItWent(entry: CallLogEntry, modifier: Modifier = Modifier) {
 }
 
 /**
- * The second line's end: the call-back glyph beside a side pane, the info
- * glyph without one. Both are always composed and faded in under the
- * cursor — a control that exists only on hover loses the press to the row
- * beneath it (see `HomeFeedScreen`'s kebab) — and each swallows its own
- * press, so it never also picks or rings the row.
+ * The second line's end: beside a side pane, the call-back glyph faded in
+ * under the cursor — always composed, because a control that exists only on
+ * hover loses the press to the row beneath it (see `HomeFeedScreen`'s
+ * kebab) — then, in both layouts, the info glyph. Info opens what the row's
+ * click opens beside a side pane — the call's info — and the detail sheet
+ * without one. Each swallows its own press, so it never also picks or rings
+ * the row.
  */
 @Composable
 private fun RowTrailing(
@@ -689,26 +703,23 @@ private fun RowTrailing(
     onCallBack: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
-    if (inlineDetail) {
-        if (entry.isRedialable) {
-            ZillitIconButton(
-                icon = if (entry.type == CallType.Video) ZillitIcons.Camera else ZillitIcons.Phone,
-                contentDescription = str(S.desktop_call_again),
-                onClick = onCallBack,
-                tint = colors.success,
-                size = ROW_ACTION,
-                modifier = Modifier.alpha(if (hovered) 1f else 0f),
-            )
-        }
-    } else {
+    if (inlineDetail && entry.isRedialable) {
         ZillitIconButton(
-            icon = ZillitIcons.Info,
-            contentDescription = str(S.desktop_call_details),
-            onClick = onDetail,
-            tint = colors.textMuted,
+            icon = if (entry.type == CallType.Video) ZillitIcons.Camera else ZillitIcons.Phone,
+            contentDescription = str(S.desktop_call_again),
+            onClick = onCallBack,
+            tint = colors.success,
             size = ROW_ACTION,
+            modifier = Modifier.alpha(if (hovered) 1f else 0f),
         )
     }
+    ZillitIconButton(
+        icon = ZillitIcons.Info,
+        contentDescription = str(S.desktop_call_details),
+        onClick = onDetail,
+        tint = colors.textMuted,
+        size = ROW_ACTION,
+    )
 }
 
 /**

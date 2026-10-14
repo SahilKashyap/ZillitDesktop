@@ -49,7 +49,8 @@ import com.zillit.desktop.feature.calls.domain.CallType
  *
  * Fed by the same [CallLogUiState] as [CallLogPane]: picking a row is
  * [CallLogEvent.ShowDetail], closing is [CallLogEvent.CloseDetail], and the
- * call back is the row's own [CallLogEvent.Redial].
+ * call back is the row's own [CallLogEvent.Redial]. Chat is the host's: the
+ * conversation lives in another tab of the tool, which this module cannot see.
  */
 @Composable
 fun CallLogSide(
@@ -63,6 +64,11 @@ fun CallLogSide(
     lines: List<CallLine> = CallLine.DEFAULT,
     /** Opens the people to ring — the host's Contacts; null hides the button. */
     onStartCall: (() -> Unit)? = null,
+    /**
+     * Opens the picked call's conversation — the person's thread or the
+     * group's room; null hides the info's Chat.
+     */
+    onOpenChat: ((CallLogEntry) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.panelGrey)) {
@@ -70,7 +76,7 @@ fun CallLogSide(
         if (entry == null) {
             CallsInvitation(onStartCall)
         } else {
-            CallInfo(entry, nameFor, designationFor, nowMillis, selfUserId, lines, onEvent)
+            CallInfo(entry, nameFor, designationFor, nowMillis, selfUserId, lines, onEvent, onOpenChat)
         }
     }
 }
@@ -135,7 +141,7 @@ private fun RoundAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
-/** A picked call: its bar, who it was with, the call back, and the card. */
+/** A picked call: its bar, who it was with, the call back and chat, and the card. */
 @Composable
 @Suppress("LongParameterList") // The call and the pane's hooks, passed once.
 private fun CallInfo(
@@ -146,6 +152,7 @@ private fun CallInfo(
     selfUserId: String?,
     lines: List<CallLine>,
     onEvent: (CallLogEvent) -> Unit,
+    onOpenChat: ((CallLogEntry) -> Unit)?,
 ) {
     val title = entry.displayTitle(nameFor)
     val designation = entry.displayDesignation(designationFor)
@@ -196,10 +203,37 @@ private fun CallInfo(
                 color = ZillitTheme.colors.textSecondary,
                 textAlign = TextAlign.Center,
             )
-            if (entry.isRedialable && lines.isNotEmpty()) {
-                CallBack(entry, lines) { line -> onEvent(CallLogEvent.Redial(entry, line)) }
-            }
+            InfoActions(entry, lines, onEvent, onOpenChat)
             CallCard(entry, nameFor, nowMillis, selfUserId)
+        }
+    }
+}
+
+/**
+ * Under the name: the call back, and Chat — the conversation the call came
+ * from, the person's thread or the room a group call rang. Each only where
+ * the row can do it; neither, and the row is not drawn.
+ */
+@Composable
+private fun InfoActions(
+    entry: CallLogEntry,
+    lines: List<CallLine>,
+    onEvent: (CallLogEvent) -> Unit,
+    onOpenChat: ((CallLogEntry) -> Unit)?,
+) {
+    val canCall = entry.isRedialable && lines.isNotEmpty()
+    val chat = onOpenChat?.takeIf { entry.hasChat }
+    if (!canCall && chat == null) return
+    Row(
+        modifier = Modifier.padding(vertical = ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+    ) {
+        if (canCall) CallBack(entry, lines) { line -> onEvent(CallLogEvent.Redial(entry, line)) }
+        if (chat != null) {
+            RoundAction(ZillitIcons.Chat, str(S.chat)) {
+                onEvent(CallLogEvent.CloseDetail)
+                chat(entry)
+            }
         }
     }
 }
@@ -209,7 +243,7 @@ private fun CallInfo(
 private fun CallBack(entry: CallLogEntry, lines: List<CallLine>, onPick: (CallLine) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val icon = if (entry.type == CallType.Video) ZillitIcons.Camera else ZillitIcons.Phone
-    Box(Modifier.padding(vertical = ZillitTheme.spacing.sm)) {
+    Box {
         RoundAction(icon, str(S.desktop_call_again)) { if (lines.size == 1) onPick(lines.first()) else open = true }
         ZillitActionMenu(
             expanded = open,

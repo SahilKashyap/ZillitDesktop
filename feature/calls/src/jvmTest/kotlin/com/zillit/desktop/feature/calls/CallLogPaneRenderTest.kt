@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -292,6 +293,96 @@ class CallLogPaneRenderTest {
 
         onNodeWithText("Call info").assertExists()
         onNodeWithText("Call again").assertDoesNotExist()
+    }
+
+    /** Beside a side pane the row's info glyph picks the call, as the row's click does. */
+    @Test
+    fun `beside a side pane the info glyph picks the call`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        val row = entry("c1", CallLine.Agora, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(row)),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    inlineDetail = true,
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Call details").performClick()
+        waitForIdle()
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.ShowDetail(row)), events)
+    }
+
+    /** The picked call's Chat hands its conversation to the host and closes the info. */
+    @Test
+    fun `the call info's Chat opens the call's conversation`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        val opened = mutableListOf<CallLogEntry>()
+        val row = entry("c1", CallLine.Agora, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogSide(
+                    state = CallLogUiState(entries = listOf(row), detail = row),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    onOpenChat = { opened += it },
+                )
+            }
+        }
+
+        onNodeWithText("Chat").performClick()
+        waitForIdle()
+        assertEquals(listOf(row), opened)
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.CloseDetail), events)
+    }
+
+    /** A group row with no room names no conversation, so its info offers no Chat. */
+    @Test
+    fun `a call with no conversation offers no Chat`() = runComposeUiTest {
+        val roomless = entry("c1", CallLine.Agora, "u1").copy(mode = CallMode.Group, roomId = "")
+        setContent {
+            ZillitTheme {
+                CallLogSide(
+                    state = CallLogUiState(entries = listOf(roomless), detail = roomless),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    onOpenChat = {},
+                )
+            }
+        }
+
+        onNodeWithText("Call info").assertExists()
+        onNodeWithText("Chat").assertDoesNotExist()
+    }
+
+    /** The widget's detail sheet carries the same Chat. */
+    @Test
+    fun `the detail sheet's Chat opens the call's conversation`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        val opened = mutableListOf<CallLogEntry>()
+        val row = entry("c1", CallLine.Agora, "u1")
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(row), detail = row),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    onOpenChat = { opened += it },
+                )
+            }
+        }
+
+        onNodeWithText("Chat").performClick()
+        waitForIdle()
+        assertEquals(listOf(row), opened)
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.CloseDetail), events)
     }
 
     /** The list's stamp, WhatsApp's: clock, Yesterday, the weekday, then a date. */

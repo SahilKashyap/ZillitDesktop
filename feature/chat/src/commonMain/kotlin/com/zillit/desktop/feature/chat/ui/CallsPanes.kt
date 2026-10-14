@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.chat.ui
 
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.feature.chat.domain.CrewContact
 
 /**
  * The call history's two halves, supplied by the host.
@@ -10,16 +11,21 @@ import androidx.compose.runtime.Composable
  * picked call. Both read one history, so the host builds them together —
  * this module knows nothing about calls, and the app composes the two, the
  * same arrangement as the thread header's call buttons.
+ *
+ * Both take `onOpenChat`, the way back from a call to its conversation: the
+ * screen switches to Chats and opens [CrewContact.userId]'s thread — a room
+ * id when `isGroup`, the thread header's `onCall` convention.
  */
 interface CallsPanes {
     /**
      * The list. [inlineDetail] is true when [Side] is on screen beside it: a
      * row click then picks the call for the side pane instead of ringing.
+     * Without it the list's own detail sheet offers [onOpenChat].
      */
     @Composable
-    fun List(inlineDetail: Boolean)
+    fun List(inlineDetail: Boolean, onOpenChat: (peer: CrewContact, isGroup: Boolean) -> Unit)
 
     /** Beside the list: "Voice and video calling", or the picked call's info. */
     @Composable
-    fun Side(onStartCall: () -> Unit)
+    fun Side(onStartCall: () -> Unit, onOpenChat: (peer: CrewContact, isGroup: Boolean) -> Unit)
 }

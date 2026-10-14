@@ -32,8 +32,9 @@ import com.zillit.desktop.feature.calls.domain.CallMode
  * three chips (direction, start, duration) and the roster with a status
  * badge per person.
  *
- * Read-only: redialling stays with the row itself, and a dialog that could
- * also ring would be two ways to do one thing.
+ * Redialling stays with the row itself, and a dialog that could also ring
+ * would be two ways to do one thing. Its one action is Chat, the
+ * conversation the call belongs to — nothing else on the row opens that.
  */
 @Composable
 fun CallDetailDialog(
@@ -41,6 +42,8 @@ fun CallDetailDialog(
     selfUserId: String?,
     nameFor: (String) -> String?,
     onDismiss: () -> Unit,
+    /** Opens the person's thread or the group's room; null hides Chat. */
+    onOpenChat: (() -> Unit)? = null,
 ) {
     val title = entry.displayTitle(nameFor)
     ZillitDialogShell(
@@ -51,6 +54,9 @@ fun CallDetailDialog(
         visible = true,
         actions = {
             ZillitButton(text = str(S.close), onClick = onDismiss, variant = ButtonVariant.Tertiary)
+            if (onOpenChat != null) {
+                ZillitButton(text = str(S.chat), onClick = onOpenChat, leadingIcon = ZillitIcons.Chat)
+            }
         },
     ) {
         Row(

@@ -34,6 +34,7 @@ import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallLogPane
 import com.zillit.desktop.feature.calls.ui.CallLogSide
 import com.zillit.desktop.feature.chat.ui.CallsPanes
+import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.calls.ui.CallLogViewModel
 import com.zillit.desktop.feature.calls.ui.OngoingCallsSource
 import com.zillit.desktop.feature.calls.ui.RoomCallJoin
@@ -362,7 +363,7 @@ internal fun rememberCallsPanes(
     return remember(logs, lines) {
         object : CallsPanes {
             @Composable
-            override fun List(inlineDetail: Boolean) {
+            override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) {
                 val state by logs.state.collectAsState()
                 CallLogPane(
                     state = state,
@@ -375,11 +376,12 @@ internal fun rememberCallsPanes(
                     selfUserId = selfUserId(),
                     lines = lines,
                     inlineDetail = inlineDetail,
+                    onOpenChat = { entry -> openCallChat(ready, entry, onOpenChat) },
                 )
             }
 
             @Composable
-            override fun Side(onStartCall: () -> Unit) {
+            override fun Side(onStartCall: () -> Unit, onOpenChat: (CrewContact, Boolean) -> Unit) {
                 val state by logs.state.collectAsState()
                 CallLogSide(
                     state = state,
@@ -390,10 +392,26 @@ internal fun rememberCallsPanes(
                     selfUserId = selfUserId(),
                     lines = lines,
                     onStartCall = onStartCall,
+                    onOpenChat = { entry -> openCallChat(ready, entry, onOpenChat) },
                 )
             }
         }
     }
+}
+
+/**
+ * A history row's conversation, handed to the chat tool: the room a group
+ * call rang, or the person a 1:1 was with, named as the row names them.
+ */
+private fun openCallChat(ready: AppGraph.Ready, entry: CallLogEntry, open: (CrewContact, Boolean) -> Unit) {
+    val isGroup = entry.mode == CallMode.Group
+    open(
+        CrewContact(
+            userId = if (isGroup) entry.roomId else entry.peerUserId,
+            fullName = entry.displayTitle { id -> crewNameOf(ready, id) },
+        ),
+        isGroup,
+    )
 }
 
 /**

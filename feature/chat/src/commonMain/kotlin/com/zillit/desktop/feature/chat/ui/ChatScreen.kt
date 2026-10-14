@@ -170,6 +170,12 @@ fun ChatScreen(
     // the history is fetched when it is looked at, not when chat opens.
     val calls = if (tab == DirectoryTab.Calls.name) callPanes?.invoke() else null
 
+    val showTab: (String) -> Unit = {
+        tab = it
+        viewModel?.onTabShown(it)
+    }
+    val openChat = callChatOpener(viewModel, crew, showTab)
+
     WatchReporter(viewModel, chatState?.peer, compact, callsShown = calls != null)
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -182,18 +188,12 @@ fun ChatScreen(
                 selectedId = selectedId,
                 chatState = chatState,
                 loadAvatar = loadAvatar,
-                onTab = {
-                    tab = it
-                    // Opening the tab is the retry — the init-time fetch can
-                    // predate the socket connecting.
-                    if (it == DirectoryTab.Chats.name) viewModel?.onEvent(ChatEvent.RefreshRecents)
-                    // Looking at the log is what reads a missed call.
-                    if (it == DirectoryTab.Calls.name) viewModel?.onEvent(ChatEvent.CallsViewed)
-                },
+                onTab = showTab,
                 onQuery = { query = it },
                 onSelect = { selectedId = it },
                 onChatEvent = { event -> viewModel?.onEvent(event) },
                 calls = calls,
+                onOpenChat = openChat,
                 hasCalls = callPanes != null,
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
@@ -210,7 +210,7 @@ fun ChatScreen(
                     // The Calls tab owns the pane beside it, as WhatsApp's does;
                     // an open thread is still there on the way back to Chats.
                     callsSide = calls?.takeIf { !compact }?.let { panes ->
-                        { panes.Side(onStartCall = { tab = DirectoryTab.Contacts.name }) }
+                        { panes.Side(onStartCall = { tab = DirectoryTab.Contacts.name }, onOpenChat = openChat) }
                     },
                     onBack = {
                         viewModel?.onEvent(ChatEvent.CloseThread)
@@ -224,6 +224,40 @@ fun ChatScreen(
             NewGroupLayer(crew, selfId, createRoom, groupEditorOpen, viewModel) { groupEditorOpen = false }
         }
     }
+}
+
+/**
+ * A tab coming into view. Opening Chats is the retry — the init-time fetch
+ * can predate the socket connecting — and looking at the call log is what
+ * reads a missed call.
+ */
+private fun ChatViewModel.onTabShown(tab: String) {
+    if (tab == DirectoryTab.Chats.name) onEvent(ChatEvent.RefreshRecents)
+    if (tab == DirectoryTab.Calls.name) onEvent(ChatEvent.CallsViewed)
+}
+
+/**
+ * A call's Chat — see [CallsPanes]: the Chats tab, with the call's
+ * conversation open in it. The room as the listing knows it and the person
+ * as the crew does (their row carries what the header's call buttons need),
+ * else under the name the call log gave them.
+ */
+private fun callChatOpener(
+    viewModel: ChatViewModel?,
+    crew: List<CrewContact>,
+    showTab: (String) -> Unit,
+): (CrewContact, Boolean) -> Unit = { peer, isGroup ->
+    showTab(DirectoryTab.Chats.name)
+    viewModel?.onEvent(
+        if (isGroup) {
+            ChatEvent.OpenGroup(
+                viewModel.state.value.groups.firstOrNull { it.id == peer.userId }
+                    ?: GroupRoom(id = peer.userId, name = peer.fullName),
+            )
+        } else {
+            ChatEvent.OpenThread(crew.firstOrNull { it.userId == peer.userId } ?: peer)
+        },
+    )
 }
 
 /**
@@ -585,6 +619,8 @@ private fun DirectoryPane(
      */
     calls: CallsPanes?,
     hasCalls: Boolean,
+    /** A call's way to its conversation — see [CallsPanes]. */
+    onOpenChat: (peer: CrewContact, isGroup: Boolean) -> Unit,
     /** The Chats search's reach into cached bodies; null keeps it to names. */
     searchMessages: ((String) -> List<MessageHit>)?,
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
@@ -617,7 +653,7 @@ private fun DirectoryPane(
         )
 
         if (tab == DirectoryTab.Calls.name && calls != null) {
-            calls.List(inlineDetail = !compact)
+            calls.List(inlineDetail = !compact, onOpenChat = onOpenChat)
         } else if (tab == DirectoryTab.Contacts.name) {
             ListingSearch(
                 value = query,

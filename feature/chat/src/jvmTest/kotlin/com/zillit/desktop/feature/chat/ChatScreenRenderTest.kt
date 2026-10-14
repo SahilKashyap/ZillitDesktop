@@ -128,7 +128,7 @@ class ChatScreenRenderTest {
     fun `the Calls tab puts the list beside its side pane, and Start call opens Contacts`() = runComposeUiTest {
         setContent {
             ZillitTheme {
-                ChatScreen(crew = crew, loadAvatar = { null }, callPanes = { MarkerCalls })
+                ChatScreen(crew = crew, loadAvatar = { null }, callPanes = { MarkerCalls() })
             }
         }
 
@@ -586,6 +586,93 @@ class ChatsTabSearchAndGroupsTest {
         // Closed: the dialog's title is gone.
         onNodeWithText("Create new group").assertDoesNotExist()
     }
+
+    /**
+     * A call's info offers Chat: the tool leaves the Calls tab for Chats with
+     * that person's thread open — the crew's own row for them, so the header
+     * can still ring them.
+     */
+    @Test
+    fun `a call's Chat opens the person's thread on the Chats tab`() = runComposeUiTest {
+        val model = viewModel(StubChatRepository())
+        // Named as the log names them, which the crew's row outranks.
+        val fromCall = CrewContact(userId = "u1", fullName = "Aisha (call log)")
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew, loadAvatar = { null }, viewModel = model, callPanes = { MarkerCalls(fromCall) })
+            }
+        }
+
+        onNodeWithText("Calls").performClick()
+        waitForIdle()
+        onNodeWithText("chat").performClick()
+        waitForIdle()
+
+        assertEquals(crew.first(), model.state.value.peer)
+        assertEquals(false, model.state.value.peerIsGroup)
+        onNodeWithText("calls-side").assertDoesNotExist()
+        onNodeWithText("calls-list", substring = true).assertDoesNotExist()
+    }
+
+    /** A group call's Chat opens the room it rang, as the listing knows it. */
+    @Test
+    fun `a group call's Chat opens its room`() = runComposeUiTest {
+        val repository = StubChatRepository().apply {
+            roomsAnswer = listOf(GroupRoom("g-night", "Night Shoot"))
+        }
+        val model = viewModel(repository)
+        val fromCall = CrewContact(userId = "g-night", fullName = "Night Shoot")
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(
+                    crew = crew,
+                    loadAvatar = { null },
+                    viewModel = model,
+                    callPanes = { MarkerCalls(fromCall, chatIsGroup = true) },
+                )
+            }
+        }
+
+        onNodeWithText("Calls").performClick()
+        waitForIdle()
+        onNodeWithText("chat").performClick()
+        waitForIdle()
+
+        assertEquals("g-night", model.state.value.peer?.userId)
+        assertEquals(true, model.state.value.peerIsGroup)
+    }
+
+    /**
+     * The widget has no side pane: the list's own sheet offers Chat, and the
+     * thread takes the widget's one pane.
+     */
+    @Test
+    fun `in the widget a call's Chat opens the thread in place of the list`() = runComposeUiTest {
+        val model = viewModel(StubChatRepository())
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(
+                    crew = crew,
+                    loadAvatar = { null },
+                    viewModel = model,
+                    callPanes = { MarkerCalls() },
+                    compact = true,
+                )
+            }
+        }
+
+        onNodeWithText("Calls").performClick()
+        waitForIdle()
+        onNodeWithText("calls-list inline=false").assertExists()
+        onNodeWithText("chat").performClick()
+        waitForIdle()
+
+        assertEquals("u1", model.state.value.peer?.userId)
+        onNodeWithText("calls-list", substring = true).assertDoesNotExist()
+    }
 }
 
 /** The repository reduced to what opening a thread touches. */
@@ -655,27 +742,43 @@ private class StubChatRepository : ChatRepository {
 /** A Calls tab with nothing in it — the tab exists, its panes are blank. */
 private object NoCalls : com.zillit.desktop.feature.chat.ui.CallsPanes {
     @androidx.compose.runtime.Composable
-    override fun List(inlineDetail: Boolean) = Unit
+    override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) = Unit
 
     @androidx.compose.runtime.Composable
-    override fun Side(onStartCall: () -> Unit) = Unit
+    override fun Side(onStartCall: () -> Unit, onOpenChat: (CrewContact, Boolean) -> Unit) = Unit
 }
 
-/** Panes that say where they were drawn, and a Start call to press. */
-private object MarkerCalls : com.zillit.desktop.feature.chat.ui.CallsPanes {
+/**
+ * Panes that say where they were drawn, a Start call to press, and a "chat"
+ * that asks for [chatWith]'s conversation — from the list's sheet in the
+ * widget, from the side pane otherwise.
+ */
+private class MarkerCalls(
+    private val chatWith: CrewContact = CrewContact(userId = "u1", fullName = "Aisha Khan"),
+    private val chatIsGroup: Boolean = false,
+) : com.zillit.desktop.feature.chat.ui.CallsPanes {
     @androidx.compose.runtime.Composable
-    override fun List(inlineDetail: Boolean) {
-        androidx.compose.material3.Text("calls-list inline=$inlineDetail")
+    override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) {
+        androidx.compose.foundation.layout.Column {
+            androidx.compose.material3.Text("calls-list inline=$inlineDetail")
+            if (!inlineDetail) ChatMarker { onOpenChat(chatWith, chatIsGroup) }
+        }
     }
 
     @androidx.compose.runtime.Composable
-    override fun Side(onStartCall: () -> Unit) {
+    override fun Side(onStartCall: () -> Unit, onOpenChat: (CrewContact, Boolean) -> Unit) {
         androidx.compose.foundation.layout.Column {
             androidx.compose.material3.Text("calls-side")
             androidx.compose.material3.Text(
                 "start",
                 modifier = androidx.compose.ui.Modifier.clickable(onClick = onStartCall),
             )
+            ChatMarker { onOpenChat(chatWith, chatIsGroup) }
         }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun ChatMarker(onClick: () -> Unit) {
+        androidx.compose.material3.Text("chat", modifier = androidx.compose.ui.Modifier.clickable(onClick = onClick))
     }
 }

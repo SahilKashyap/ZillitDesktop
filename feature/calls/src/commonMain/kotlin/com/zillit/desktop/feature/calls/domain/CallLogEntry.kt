@@ -145,6 +145,14 @@ data class CallLogEntry(
         }
 
     /**
+     * Whether the row names a conversation to open from its info — the room
+     * a group call rang, or the person a 1:1 was with. A device alone is not
+     * one: threads are keyed by person.
+     */
+    val hasChat: Boolean
+        get() = if (mode == CallMode.Group) roomId.isNotBlank() else peerUserId.isNotBlank()
+
+    /**
      * Deliberately says nothing about who.
      *
      * A call log is a list of who a person has been talking to, which is the
