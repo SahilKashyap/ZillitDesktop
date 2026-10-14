@@ -77,8 +77,12 @@ class StillsWireShapeTest {
                 headerProvider = { _, _, _, _ -> emptyMap() },
             ),
             config = AppConfig(environment = Environment.Develop, services = services, realtime = emptyMap()),
+            now = { clock },
         )
     }
+
+    /** Moved by hand in the outage tests; the rest never look at it. */
+    private var clock = 0L
 
     private fun ok(data: String, message: String? = null) =
         """{"status":1${message?.let { ",\"message\":\"$it\"" }.orEmpty()},"data":$data}"""
@@ -575,6 +579,119 @@ class StillsWireShapeTest {
         assertIs<ZillitResult.Failure>(repo.photos(PhotoFilters(), limit = 60))
         assertIs<ZillitResult.Failure>(repo.decide("p1", "m1", Decision.Approved))
         assertTrue(sent.isEmpty())
+    }
+
+    // -- a service that is down --------------------------------------------------------
+
+    /**
+     * The storm this ends: the screen's polls do not ask whether the last one
+     * worked, so a 503 was fetched 764 times in ninety minutes by one window.
+     */
+    @Test
+    fun `a 5xx parks the polls instead of being asked again`() = runTest {
+        val repo = repository(status = HttpStatusCode.ServiceUnavailable) { ok("{}") }
+
+        assertIs<ZillitResult.Failure>(repo.summary())
+        assertEquals(1, sent.size, "the first ask reaches the service")
+
+        repeat(20) {
+            clock += 100
+            assertIs<ZillitResult.Failure>(repo.summary())
+            assertIs<ZillitResult.Failure>(repo.photos(PhotoFilters(), limit = 60))
+        }
+        assertEquals(1, sent.size, "every poll inside the wait was answered without asking")
+    }
+
+    /** What the screen shows has to be what the service said, not a stand-in. */
+    @Test
+    fun `a parked read answers with the service's own last verdict`() = runTest {
+        val repo = repository(status = HttpStatusCode.ServiceUnavailable) { ok("{}") }
+
+        val asked = (repo.summary() as ZillitResult.Failure).error
+        clock += 100
+        val parked = (repo.summary() as ZillitResult.Failure).error
+
+        assertEquals(asked, parked)
+        assertEquals(503, assertIs<ZillitError.Http>(parked).status)
+    }
+
+    @Test
+    fun `the wait grows, and the service is asked again once it passes`() = runTest {
+        val repo = repository(status = HttpStatusCode.ServiceUnavailable) { ok("{}") }
+
+        repo.summary()
+        assertEquals(1, sent.size)
+
+        // Each wait is longer than the one before it, so a long outage costs
+        // a poll every couple of minutes rather than one every few seconds.
+        var asks = 1
+        for (wait in listOf(5_000L, 15_000L, 45_000L, 120_000L)) {
+            clock += wait - 1
+            repo.summary()
+            assertEquals(asks, sent.size, "still inside a ${wait}ms wait")
+
+            clock += 1
+            repo.summary()
+            asks += 1
+            assertEquals(asks, sent.size, "the ${wait}ms wait has passed")
+        }
+
+        // The last wait is the cap: it does not keep doubling.
+        clock += 120_000
+        repo.summary()
+        assertEquals(asks + 1, sent.size)
+    }
+
+    /** A read is a timer; a write is somebody pressing a button. */
+    @Test
+    fun `a write is never parked`() = runTest {
+        val repo = repository(status = HttpStatusCode.ServiceUnavailable) { ok("{}") }
+
+        repo.summary()
+        assertEquals(1, sent.size)
+
+        clock += 100
+        assertIs<ZillitResult.Failure>(repo.decide("p1", "m1", Decision.Approved))
+        assertEquals(2, sent.size, "the button was pressed; it is owed a real attempt")
+    }
+
+    /**
+     * "It answered" is the signal, not "it succeeded": a 404 or a 401 is a
+     * service that is up and refusing, which is not an outage to wait out.
+     */
+    @Test
+    fun `a refusal clears the wait, because the service answered`() = runTest {
+        var status = HttpStatusCode.ServiceUnavailable
+        val engine = MockEngine { request: HttpRequestData ->
+            sent += Sent(request.method, request.url.toString(), null, null)
+            respond(ok("{}"), status, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val repo = StillsRepositoryImpl(
+            apiClient = ApiClient(
+                httpClient = HttpClientFactory.create({ StillsMockEngineFactory(engine) }),
+                headerProvider = { _, _, _, _ -> emptyMap() },
+            ),
+            config = AppConfig(
+                environment = Environment.Develop,
+                services = ZillitService.entries.associateWith { "https://${it.name.lowercase()}.test" },
+                realtime = emptyMap(),
+            ),
+            now = { clock },
+        )
+
+        repo.summary()
+        assertEquals(1, sent.size)
+
+        // The wait passes once, the service answers 404, and the next poll is
+        // not held back even though it also failed.
+        clock += 5_000
+        status = HttpStatusCode.NotFound
+        repo.summary()
+        assertEquals(2, sent.size)
+
+        clock += 100
+        repo.summary()
+        assertEquals(3, sent.size, "nothing to wait out: the service is up")
     }
 }
 

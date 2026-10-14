@@ -66,7 +66,16 @@ import kotlinx.serialization.json.put
 class StillsRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    private val now: () -> Long,
 ) : StillsRepository {
+
+    /**
+     * The service's last verdict while it is down, and when to believe it
+     * again — see [call].
+     */
+    private var outage: ZillitError? = null
+    private var outageUntil = 0L
+    private var outages = 0
 
     /**
      * Null when this environment has no Select Stills host configured.
@@ -384,6 +393,25 @@ class StillsRepositoryImpl(
     /** What a call answered: its `data`, and the service's own words about it. */
     private class Answered(val data: JsonElement?, val message: String?)
 
+    /**
+     * Every route goes through here — which is why the wait for a broken
+     * service lives here too.
+     *
+     * The screen polls: the counts every few seconds, the tiles when their
+     * links turn over, the queue on its own timer. None of those ticks asks
+     * whether the last one worked, so a service answering 503 was asked 764
+     * times in ninety minutes by one open window (seen in a field log on
+     * 2026-10-14, 12:31 to 14:01). Holding each poll site would mean
+     * remembering to, at six of them and at the seventh somebody adds next.
+     *
+     * So a 5xx parks reads for a growing [OUTAGE_WAITS_MS] and they answer
+     * with what the service actually last said, rather than asking again and
+     * being told the same thing. Anything that *answers* — a success, or a
+     * refusal like 401 or 404 — means it is up, and clears the wait.
+     *
+     * Writes are never held: a read is a timer, a write is somebody pressing
+     * a button, and they are owed a real attempt and a real error.
+     */
     private suspend fun call(
         verb: HttpVerb,
         path: String,
@@ -392,6 +420,9 @@ class StillsRepositoryImpl(
         projectId: String? = null,
     ): ZillitResult<Answered> {
         val base = root ?: return ZillitResult.Failure(ZillitError.Validation(NOT_CONFIGURED))
+        outage?.takeIf { verb == HttpVerb.Get && now() < outageUntil }?.let {
+            return ZillitResult.Failure(it)
+        }
         val answer = apiClient.envelope(
             verb = verb,
             url = base + path,
@@ -403,9 +434,33 @@ class StillsRepositoryImpl(
             // land in the production next door.
             options = if (projectId.isNullOrBlank()) CallOptions() else CallOptions(projectId = projectId),
         )
+        noteOutage(answer)
         return when (answer) {
             is ZillitResult.Failure -> ZillitResult.Failure(answer.error)
             is ZillitResult.Success -> answer.data.asData()
+        }
+    }
+
+    /**
+     * A 5xx starts or lengthens the wait; anything else ends it.
+     *
+     * Deliberately not for [ZillitError.NoConnection] — a laptop whose network
+     * blinked is the one case where asking again shortly is right, and the
+     * client already answers those from its own cache.
+     */
+    private fun noteOutage(answer: ZillitResult<ApiEnvelope>) {
+        val serverIsBroken = (answer as? ZillitResult.Failure)
+            ?.error
+            ?.let { it is ZillitError.Http && it.status >= SERVER_ERROR }
+            ?: false
+        if (serverIsBroken) {
+            outage = (answer as ZillitResult.Failure).error
+            outages = (outages + 1).coerceAtMost(OUTAGE_WAITS_MS.size)
+            outageUntil = now() + OUTAGE_WAITS_MS[outages - 1]
+        } else {
+            outage = null
+            outageUntil = 0
+            outages = 0
         }
     }
 
@@ -462,7 +517,18 @@ class StillsRepositoryImpl(
 
     private companion object {
         const val OK = 200
+        const val SERVER_ERROR = 500
         const val NOT_CONFIGURED = "The Select Stills service is not set up for this environment."
+
+        /**
+         * How long reads wait after the first, second, third… 5xx in a row.
+         *
+         * Short enough that a service restarting is picked up within seconds,
+         * and capped so a long outage costs a poll every two minutes rather
+         * than every three seconds: the ninety minutes that cost 764 requests
+         * would cost about fifty.
+         */
+        val OUTAGE_WAITS_MS = listOf(5_000L, 15_000L, 45_000L, 120_000L)
     }
 }
 
