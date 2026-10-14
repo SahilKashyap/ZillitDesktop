@@ -730,7 +730,9 @@ class StillsScreenRenderTest {
     }
 
     @Test
-    fun `"find this person" lists the faces that look like them, none ticked`() {
+    // Single quotes on purpose: a double quote in a test name becomes a double
+    // quote in the generated class file's name, which Windows cannot write.
+    fun `'find this person' lists the faces that look like them, none ticked`() {
         runComposeUiTest {
             val finding = state(StillsPage.Photos).copy(
                 lightbox = LightboxState(

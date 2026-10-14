@@ -238,7 +238,7 @@ class StillsLogicTest {
     // -- picking files -----------------------------------------------------------------
 
     @Test
-    fun `a camera RAW is refused with its own reason, not as "not a photo"`() {
+    fun `a camera RAW is refused with its own reason, not as 'not a photo'`() {
         val types = listOf("image/jpeg")
         val screened = screenPicks(
             listOf(
