@@ -170,6 +170,53 @@ class ChatDeliveryAckTest {
     }
 
     /**
+     * Opening a thread somebody is watching claims the read ONCE.
+     *
+     * Two paths reach the same watermark on an open — the open itself and the
+     * surface reporting that it is being watched — and both named the same
+     * newest message, so the socket carried the identical claim twice, 170 ms
+     * apart (live, 2026-10-14).
+     */
+    @Test
+    fun `opening a watched thread sends one read, not two`() = runTest(dispatcher) {
+        val repository = FakeChatRepository().apply {
+            history = listOf(incoming(from = aisha.userId, id = "m-10"))
+        }
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        // History lands before the surface reports itself, as it does live —
+        // firing both in one tick leaves `messages` empty and `onWatching`
+        // returns early, which hides the very duplication this pins.
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.Watching(true))
+        advanceUntilIdle()
+
+        assertEquals(listOf(aisha.userId to "m-10"), repository.reads, "one claim, once")
+    }
+
+    /** A newer message is a new claim, so it is sent. */
+    @Test
+    fun `a later message earns its own read`() = runTest(dispatcher) {
+        val repository = FakeChatRepository().apply {
+            history = listOf(incoming(from = aisha.userId, id = "m-11"))
+        }
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.Watching(true))
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.Arrived(incoming(from = aisha.userId, id = "m-12")))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(aisha.userId to "m-11", aisha.userId to "m-12"),
+            repository.reads,
+            "the watermark moved, so the claim is new",
+        )
+    }
+
+    /**
      * Already delivered or read: the web gates its emit on `status === 1` to
      * stop a flood of acks on every sync, and so does this.
      */

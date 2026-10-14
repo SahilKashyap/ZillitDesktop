@@ -314,11 +314,14 @@ internal class FakeChatRepository(
     override fun newestActivity(): Map<String, Long> = activityByPeer.toMap()
     override suspend fun sendTyping(receiverId: String, started: Boolean, isGroup: Boolean) = Unit
 
+    /** What a thread's history answers — empty unless a test seeds it. */
+    var history: List<ChatMessage> = emptyList()
+
     override suspend fun history(
         otherUserId: String,
         nowMillis: Long,
         isGroup: Boolean,
-    ): ZillitResult<List<ChatMessage>> = ZillitResult.Success(emptyList())
+    ): ZillitResult<List<ChatMessage>> = ZillitResult.Success(history)
 
     /** Every message this fake accepted, in order — the location tests read it. */
     val delivered = mutableListOf<ChatMessage>()

@@ -1182,7 +1182,7 @@ class ChatViewModel(
         serverUnread.remove(peer.userId)
         setState { copy(unread = unread - peer.userId) }
         launch {
-            repository.markRead(peer.userId, newest.id, isGroup)
+            sendRead(peer.userId, newest.id, isGroup)
             onThreadRead(peer.userId)
             applySplit(badgeSplit())
         }
@@ -1991,6 +1991,18 @@ class ChatViewModel(
     private var warming = false
 
     /**
+     * The message each conversation has already been reported READ up to.
+     *
+     * A watermark is a claim — "I have read as far as this" — so sending the
+     * same id twice says nothing the server does not know. Opening a watched
+     * thread used to send it twice, 170 ms apart (live, 2026-10-14):
+     * [markOpenedThreadRead] for the open and [onWatching] for the surface
+     * reporting itself, both naming the same newest message. Harmless, and
+     * still one emit of chat traffic per open that nobody needs.
+     */
+    private val readSentTo = mutableMapOf<String, String>()
+
+    /**
      * Whether anybody is actually looking at this model's open thread.
      *
      * Reading a message tells the sender it was seen and clears it on this
@@ -2182,6 +2194,9 @@ class ChatViewModel(
         // Stamps and ids are another production's; so is anything they were
         // already warmed for.
         warmedTo.clear()
+        // Ids do not cross productions, and a stale one would swallow the
+        // first real read of a conversation in the next.
+        readSentTo.clear()
         // A send pinned to the production being left keeps going (and comes
         // back into its thread on return); one that is not cannot survive.
         unsentMedia.values.removeAll { it.pinned == null }
@@ -2724,7 +2739,7 @@ class ChatViewModel(
     /** Opening a thread reads everything it holds, here and on the server. */
     private fun markOpenedThreadRead(peerId: String, rows: List<ChatMessage>, isGroup: Boolean) {
         rows.lastOrNull { !it.isMine }?.let { newest ->
-            launch { repository.markRead(peerId, newest.id, isGroup) }
+            launch { sendRead(peerId, newest.id, isGroup) }
         }
         rows.maxOfOrNull(ChatMessage::timestampMillis)?.let {
             repository.markThreadRead(peerId, it)
@@ -2760,6 +2775,19 @@ class ChatViewModel(
      */
     private fun readsOnArrival(message: ChatMessage, isOpen: Boolean): Boolean =
         isOpen && watching && !message.isMine && !readOnly
+
+    /**
+     * The read emit, once per watermark.
+     *
+     * Only the emit is guarded: the local bookkeeping around each call site —
+     * the read mark, the cleared row, the badge split — is cheap, idempotent,
+     * and still wanted on every path.
+     */
+    private suspend fun sendRead(conversationId: String, messageId: String, isGroup: Boolean) {
+        if (readSentTo[conversationId] == messageId) return
+        readSentTo[conversationId] = messageId
+        repository.markRead(conversationId, messageId, isGroup)
+    }
 
     private fun ackDelivered(message: ChatMessage) {
         if (readOnly || message.isMine || message.sendState != ChatSendState.Sent) return
@@ -2798,7 +2826,7 @@ class ChatViewModel(
             repository.markThreadRead(peer.userId, message.timestampMillis)
             val isGroup = currentState.peerIsGroup
             launch {
-                repository.markRead(peer.userId, message.id, isGroup)
+                sendRead(peer.userId, message.id, isGroup)
                 onThreadRead(peer.userId)
                 applySplit(badgeSplit())
             }
