@@ -15821,6 +15821,7 @@ object S {
     const val desktop_update_required_stop_working: String = "desktop_update_required_stop_working"
     const val desktop_update_required_title: String = "desktop_update_required_title"
     const val desktop_update_restart_after_call: String = "desktop_update_restart_after_call"
+    const val desktop_update_restart_later: String = "desktop_update_restart_later"
     const val desktop_update_restart_now: String = "desktop_update_restart_now"
     const val desktop_update_restarting_in: String = "desktop_update_restarting_in"
     const val desktop_update_rule: String = "desktop_update_rule"

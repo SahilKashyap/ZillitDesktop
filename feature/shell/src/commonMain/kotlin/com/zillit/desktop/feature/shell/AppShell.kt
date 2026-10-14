@@ -688,16 +688,16 @@ internal data class UpdateDismissal(val version: String, val requests: Int)
  * Whether the strip shows, given what the person last dismissed.
  *
  * Dismissed stays dismissed until they ask again, from Settings — whatever
- * step the update is at then: a download that fails at once, or a staged
- * build waiting for "Restart now", is as much the answer to the ask as a
- * progress bar. Nor does a running download ever hide: it could not be
- * cancelled. Nor a restart that is coming on its own: Zillit closing with no
- * warning would look like a crash. Every other step can be dismissed: its X
- * must work.
+ * step the update is at then: a download that fails at once is as much the
+ * answer to the ask as a progress bar. Nor does a running download ever hide:
+ * it could not be cancelled. Nor a staged build: it is installed already and
+ * only a restart finishes it, so the strip stays until Zillit restarts —
+ * "Restart later" puts it off, it does not put it away. Every other step can
+ * be dismissed: its X must work.
  */
 internal fun UpdateNotice.shownAfter(dismissed: UpdateDismissal?): Boolean =
     mandatory || dismissed == null || latestVersion != dismissed.version || requests != dismissed.requests ||
-        install is UpdateInstall.Downloading || (install as? UpdateInstall.Ready)?.automatic == true
+        install is UpdateInstall.Downloading || install is UpdateInstall.Ready
 
 /** The in-app update's progress, as the strip words it. */
 sealed interface UpdateInstall {
@@ -713,15 +713,14 @@ sealed interface UpdateInstall {
     /**
      * Staged; a restart installs it.
      *
-     * The app restarts on its own: [restartIn] counts the seconds down, or,
-     * with [afterCall], the restart waits for the call to end. With neither,
-     * "Restart now" is the only way — an automatic restart already ran for
-     * this version and Zillit came back unchanged (a declined password
-     * prompt, say), and running it again would loop.
+     * Nothing happens on its own: the strip offers "Restart now" and
+     * "Restart later", and the restart is the person's to time. Zillit is in
+     * the middle of somebody's day — it closes when they say so and not on a
+     * countdown they have to race. "Restart later" only drops its own button;
+     * the strip itself stays up until the restart happens, because the
+     * installed build is not the running one until it does.
      */
-    data class Ready(val restartIn: Int? = null, val afterCall: Boolean = false) : UpdateInstall {
-        val automatic: Boolean get() = restartIn != null || afterCall
-    }
+    data object Ready : UpdateInstall
 
     /** Saved to Downloads and shown to the person to install. Nothing was installed. */
     data object Downloaded : UpdateInstall

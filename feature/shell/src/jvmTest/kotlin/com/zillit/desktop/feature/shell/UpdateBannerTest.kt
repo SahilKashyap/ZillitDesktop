@@ -202,7 +202,7 @@ class UpdateBannerTest {
 
         onNodeWithContentDescription("Dismiss update notice").performClick()
         live.value =
-            UpdateNotice("1.2.0", mandatory = false, downloadUrl = DOWNLOAD_URL, install = UpdateInstall.Ready())
+            UpdateNotice("1.2.0", mandatory = false, downloadUrl = DOWNLOAD_URL, install = UpdateInstall.Ready)
             .copy(requests = 2)
         waitForIdle()
         onNodeWithTag(RESTART_TAG).assertIsDisplayed()
@@ -321,7 +321,7 @@ class UpdateBannerTest {
     fun `a staged build offers the restart`() = runComposeUiTest {
         var restarts = 0
         setShell(
-            notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Ready()),
+            notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Ready),
             onRestart = { restarts++ },
         )
 
@@ -330,34 +330,65 @@ class UpdateBannerTest {
         assertEquals(1, restarts)
     }
 
-    /** The restart is coming on its own: the strip says when, and still offers it now. */
+    /**
+     * The one the report was about: a staged build must not start a clock.
+     * The strip says it is ready and offers both buttons; nothing closes the
+     * app until one of them is pressed.
+     */
     @Test
-    fun `an automatic restart counts down and cannot be dismissed`() = runComposeUiTest {
-        var restarts = 0
-        setShell(notice = inApp(UpdateInstall.Ready(restartIn = 12)), onRestart = { restarts++ })
+    fun `a staged build waits on a click, with no countdown`() = runComposeUiTest {
+        setShell(notice = inApp(UpdateInstall.Ready))
 
-        onNodeWithText("Version 1.2.0 is ready. Zillit will restart to finish updating in 12 s.").assertIsDisplayed()
-        onAllNodesWithContentDescription("Dismiss update notice").assertCountEquals(0)
-        onNodeWithTag(RESTART_TAG).performClick()
-
-        assertEquals(1, restarts)
-    }
-
-    @Test
-    fun `an automatic restart waits for the call to end`() = runComposeUiTest {
-        setShell(notice = inApp(UpdateInstall.Ready(afterCall = true)))
-
-        onNodeWithText("Version 1.2.0 is ready. Zillit will restart to finish updating when your call ends.")
+        onNodeWithText("Version 1.2.0 is ready. Zillit will close and reopen to finish updating.")
             .assertIsDisplayed()
+        onNodeWithTag(RESTART_TAG).assertIsDisplayed()
+        onNodeWithTag(RESTART_LATER_TAG).assertIsDisplayed()
+        // Neither of the lines a clock used to put up: no seconds counting
+        // down, and no "when your call ends".
+        onAllNodesWithText("finish updating in", substring = true).assertCountEquals(0)
+        onAllNodesWithText("when your call ends", substring = true).assertCountEquals(0)
     }
 
-    /** Dismissed earlier, the strip comes back for the countdown: Zillit closing unwarned would look like a crash. */
+    /**
+     * Later puts the restart off, not the strip away: the build is installed
+     * and the running one is still the old one until Zillit restarts, so the
+     * line stays — only the button that has been answered goes.
+     */
     @Test
-    fun `a dismissed strip returns for an automatic restart`() {
+    fun `Restart later keeps the strip and takes its own button away`() = runComposeUiTest {
+        setShell(notice = inApp(UpdateInstall.Ready))
+
+        onNodeWithTag(RESTART_LATER_TAG).performClick()
+
+        onNodeWithTag(DISMISSIBLE_TAG).assertIsDisplayed()
+        onNodeWithTag(RESTART_TAG).assertIsDisplayed()
+        onAllNodesWithTag(RESTART_LATER_TAG).assertCountEquals(0)
+    }
+
+    /** No X either: the strip is the only thing left saying a restart is owed. */
+    @Test
+    fun `a staged build cannot be dismissed`() = runComposeUiTest {
+        setShell(notice = inApp(UpdateInstall.Ready))
+
+        onAllNodesWithContentDescription("Dismiss update notice").assertCountEquals(0)
+    }
+
+    /** Dismissed at an earlier step, the strip comes back once the build is staged. */
+    @Test
+    fun `a dismissed strip returns for a staged build`() {
         val dismissed = UpdateDismissal("1.2.0", requests = 0)
 
-        assertTrue(inApp(UpdateInstall.Ready(restartIn = 5)).shownAfter(dismissed))
-        assertFalse(inApp(UpdateInstall.Ready()).shownAfter(dismissed))
+        assertTrue(inApp(UpdateInstall.Ready).shownAfter(dismissed))
+        assertFalse(inApp(UpdateInstall.Downloaded).shownAfter(dismissed))
+    }
+
+    /** There is no "later" for a build the server will stop serving. */
+    @Test
+    fun `a mandatory staged build offers only the restart`() = runComposeUiTest {
+        setShell(notice = UpdateNotice("2.0.0", mandatory = true, downloadUrl = null, install = UpdateInstall.Ready))
+
+        onNodeWithTag(RESTART_TAG).assertIsDisplayed()
+        onAllNodesWithTag(RESTART_LATER_TAG).assertCountEquals(0)
     }
 
     /** Below the floor on a packaged build: the frame is covered, not striped, and Quit is the other way out. */

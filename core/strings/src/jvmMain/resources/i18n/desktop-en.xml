@@ -13042,4 +13042,5 @@
     <string name="desktop_forward_needs_a_file">That tool takes a file, and this message has none</string>
     <string name="desktop_forward_no_characters">That list has no characters yet, so there is nothing to file this under</string>
     <string name="desktop_forward_tool_not_granted">That tool is not granted on this production</string>
+    <string name="desktop_update_restart_later">Restart later</string>
 </resources>

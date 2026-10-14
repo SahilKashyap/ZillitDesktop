@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.progressSemantics
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,11 +50,13 @@ import com.zillit.desktop.core.strings.str
  *
  * ## The in-app steps
  *
- * With [UpdateNotice.install] set the strip walks a progress bar → a
- * countdown to the automatic restart, with Restart now beside it. A failed
- * download offers Try again; a file that failed its
- * checksum or signature does not (it would fail the same way) and falls back
- * to the download page.
+ * With [UpdateNotice.install] set the strip walks a progress bar → a staged
+ * build offering "Restart now" and "Restart later". Nothing restarts on its
+ * own: a countdown would close the app under whoever is typing in it. Later
+ * takes its own button away and leaves the strip, which stays until the
+ * restart actually happens. A failed download offers Try again; a file that
+ * failed its checksum or signature does not (it would fail the same way) and
+ * falls back to the download page.
  *
  * ## Colour is never the only signal
  *
@@ -71,6 +77,9 @@ internal fun UpdateBanner(
     onOpenDownloaded: () -> Unit = {},
 ) {
     val accent = if (notice.mandatory) ZillitTheme.colors.danger else ZillitTheme.colors.info
+    // "Restart later", once pressed, is answered: the button goes and the
+    // strip stays. Per version, so the next build asks again.
+    var later by remember(notice.latestVersion) { mutableStateOf(false) }
     ZillitNotice(
         text = bannerText(notice),
         tone = if (notice.mandatory) StatusTone.Rejected else StatusTone.Progress,
@@ -83,15 +92,22 @@ internal fun UpdateBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                UpdateActions(notice, accent, onDownload, onInstall, onRestart, onCancel, onOpenDownloaded)
+                UpdateActions(
+                    notice, accent, onDownload, onInstall, onRestart, onCancel, onOpenDownloaded,
+                    // Mandatory builds get no "later" at all; neither does one
+                    // already put off.
+                    onRestartLater = { later = true }.takeIf { !notice.mandatory && !later },
+                )
                 // Absent when mandatory: there is no "later" for a build the
                 // server will stop serving.
                 // Nor while downloading: dismissing would hide a download
                 // that is still running, with no way back to cancel it. Nor
-                // while a restart is counting down: the strip stays up (see
-                // shownAfter), so an X would do nothing.
-                val autoRestart = (notice.install as? UpdateInstall.Ready)?.automatic == true
-                if (!notice.mandatory && notice.install !is UpdateInstall.Downloading && !autoRestart) {
+                // once a build is staged: it is installed and waiting on a
+                // restart, so the strip stays up (see shownAfter) and an X
+                // would do nothing — "Restart later" is the way to put it off.
+                if (!notice.mandatory && notice.install !is UpdateInstall.Downloading &&
+                    notice.install !is UpdateInstall.Ready
+                ) {
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
                         contentDescription = str(S.desktop_dismiss_update),
@@ -119,8 +135,10 @@ internal fun UpdateActions(
     onRestart: () -> Unit,
     onCancel: () -> Unit,
     onOpenDownloaded: () -> Unit,
+    /** Puts a staged build's restart off; null leaves the button out. */
+    onRestartLater: (() -> Unit)? = null,
 ) {
-    InstallAction(notice, accent, onInstall, onRestart, onCancel, onOpenDownloaded)
+    InstallAction(notice, accent, onInstall, onRestart, onCancel, onRestartLater, onOpenDownloaded)
     if (notice.install == null || notice.install is UpdateInstall.Failed) {
         notice.downloadUrl?.let { url ->
             // The lambda is the app's guarded launcher — https only.
@@ -148,7 +166,7 @@ internal fun bannerText(notice: UpdateNotice): String {
             ?.let { str(S.desktop_update_downloading_percent, version, it) }
             ?: str(S.desktop_update_downloading, version)
         UpdateInstall.Preparing -> str(S.desktop_update_preparing, version)
-        is UpdateInstall.Ready -> readyText(install, version)
+        UpdateInstall.Ready -> str(S.desktop_update_ready, version)
         UpdateInstall.Downloaded -> str(S.desktop_update_downloaded, version)
         is UpdateInstall.Failed -> when {
             install.retryable -> str(S.desktop_update_failed_network, version)
@@ -164,22 +182,16 @@ internal fun bannerText(notice: UpdateNotice): String {
     }
 }
 
-/** A staged build: when the restart comes on its own, or that it waits for a click. */
-@Composable
-private fun readyText(install: UpdateInstall.Ready, version: String): String = when {
-    install.afterCall -> str(S.desktop_update_restart_after_call, version)
-    install.restartIn != null -> str(S.desktop_update_restarting_in, version, install.restartIn)
-    else -> str(S.desktop_update_ready, version)
-}
-
 /** Update now, the progress bar, Restart now or Try Again — whichever the step calls for. */
 @Composable
+@Suppress("LongParameterList") // one per callback the step can offer
 private fun InstallAction(
     notice: UpdateNotice,
     accent: Color,
     onInstall: () -> Unit,
     onRestart: () -> Unit,
     onCancel: () -> Unit,
+    onRestartLater: (() -> Unit)?,
     onOpenDownloaded: () -> Unit,
 ) {
     val primary = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Primary
@@ -226,13 +238,7 @@ private fun InstallAction(
             variant = primary,
             modifier = Modifier.testTag(OPEN_INSTALLER_TAG),
         )
-        is UpdateInstall.Ready -> ZillitButton(
-            text = str(S.desktop_update_restart_now),
-            onClick = onRestart,
-            size = ButtonSize.Small,
-            variant = primary,
-            modifier = Modifier.testTag(RESTART_TAG),
-        )
+        UpdateInstall.Ready -> RestartActions(primary, onRestart, onRestartLater)
         is UpdateInstall.Failed -> if (install.retryable) {
             ZillitButton(
                 text = str(S.try_again),
@@ -242,6 +248,35 @@ private fun InstallAction(
             )
         }
         UpdateInstall.Preparing, null -> Unit
+    }
+}
+
+/**
+ * A staged build's two buttons.
+ *
+ * Both, and no clock: the countdown this replaced closed the app under
+ * whoever was typing in it, and the only thing that made the restart safe to
+ * leave to a timer — that nobody was busy — was never true. [onRestartLater]
+ * is null on the mandatory screen, which has no later, and once it has been
+ * pressed; the strip itself stays either way until the restart happens.
+ */
+@Composable
+private fun RestartActions(primary: ButtonVariant, onRestart: () -> Unit, onRestartLater: (() -> Unit)?) {
+    ZillitButton(
+        text = str(S.desktop_update_restart_now),
+        onClick = onRestart,
+        size = ButtonSize.Small,
+        variant = primary,
+        modifier = Modifier.testTag(RESTART_TAG),
+    )
+    onRestartLater?.let { later ->
+        ZillitButton(
+            text = str(S.desktop_update_restart_later),
+            onClick = later,
+            size = ButtonSize.Small,
+            variant = ButtonVariant.Secondary,
+            modifier = Modifier.testTag(RESTART_LATER_TAG),
+        )
     }
 }
 
@@ -262,6 +297,9 @@ internal const val INSTALL_TAG = "update-install"
 
 /** "Restart now". */
 internal const val RESTART_TAG = "update-restart"
+
+/** "Restart later", beside it until it is pressed. */
+internal const val RESTART_LATER_TAG = "update-restart-later"
 
 /** The optional strip, which carries a dismiss control. */
 internal const val DISMISSIBLE_TAG = "update-banner"

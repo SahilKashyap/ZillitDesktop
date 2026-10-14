@@ -135,7 +135,8 @@ the only thing that tells a tester which is which before they open it.
 
 The app asks Firebase Remote Config whether it is out of date, once at sign-in
 and every six hours; Settings ▸ About ▸ *Check for updates* asks on demand.
-Where it can, it then updates itself with no click:
+Where it can, it then downloads and installs the update with no click — and
+stops there, because the last step closes the app:
 
 1. **Download** the installer in the background to `~/.zillit/updates/downloads`,
    hashing it as it arrives. A digest that does not match
@@ -144,15 +145,17 @@ Where it can, it then updates itself with no click:
    `codesign --verify --deep --strict`, carry the **same Team ID** as the
    running build, and be built for this Mac's architecture (`lipo -archs`).
    Anything else is refused and nothing is installed.
-3. **Restart** after a countdown in the update strip — 30 s, or 10 s for a
-   mandatory update — held while a call is in progress. A helper script waits
-   for Zillit to quit, swaps the bundle in `/Applications` (asking for an
-   administrator's password if the folder is not writable), and reopens it.
+3. **Restart**, when the person says so. The update strip offers *Restart now*
+   and *Restart later*; nothing is timed, because a countdown closes Zillit
+   under whoever is mid-edit or mid-call. A helper script waits for Zillit to
+   quit, swaps the bundle in `/Applications` (asking for an administrator's
+   password if the folder is not writable), and reopens it.
 
-The automatic restart runs once per version. If Zillit comes back still needing
-it (the password prompt was cancelled), that version waits for *Restart now*
-rather than prompting on every launch. `~/.zillit/updates/install-update.log`
-records what the helper did.
+*Restart later* only takes its own button away: the strip stays up, undismissable,
+until the restart happens, since the installed build is not the running one
+until it does. `~/.zillit/updates/install-update.log` records what the helper
+did — including a password prompt that was cancelled, after which *Restart now*
+is still there to try again.
 
 A mandatory update — below `desktop_min_version`, or `desktop_force_update` on
 and behind `desktop_latest_version` — covers the whole window with an *Update

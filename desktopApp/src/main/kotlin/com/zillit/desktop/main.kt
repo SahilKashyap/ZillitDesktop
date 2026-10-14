@@ -915,10 +915,7 @@ private fun ApplicationScope.ZillitWindows(
         val callState by calls.state.collectAsState()
         var wasPoppedOut by remember { mutableStateOf(false) }
         LaunchedEffect(callState.pipOpen, callState.phase) {
-            if (wasPoppedOut &&
-                !callState.pipOpen &&
-                callState.phase == com.zillit.desktop.feature.calls.domain.CallPhase.InCall
-            ) {
+            if (wasPoppedOut && !callState.pipOpen && callState.phase == CallPhase.InCall) {
                 showMain()
             }
             wasPoppedOut = callState.pipOpen
@@ -1675,11 +1672,11 @@ private fun ZillitContent(
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
     // Computed here rather than inside the shell so the sign-in page and the
-    // picker get the same answer: one six-hourly poll, one restart countdown,
-    // whichever screen is up.
+    // picker get the same answer: one six-hourly poll, one updater, whichever
+    // screen is up.
     val updateScope = rememberCoroutineScope()
     val updateStatus = rememberUpdateStatus(ready)
-    val updateNotice = currentUpdateNotice(ready, updateStatus, onQuit)
+    val updateNotice = currentUpdateNotice(ready, updateStatus)
 
     Box {
         if (authState.step == AuthStep.Complete) {
@@ -1903,7 +1900,8 @@ private fun hostPlatformLabel(): String {
  * The verdict lives in `ready.appUpdateStatus`, which Settings' manual check
  * writes too, so "Check for updates" puts the strip up at once. Any update
  * the app can install itself starts downloading straight away, optional or
- * not; once staged it restarts on its own — see [rememberAutoRestart].
+ * not; once staged, the strip offers the restart and nothing happens until
+ * somebody asks for it — see [UpdateInstall.Ready].
  */
 @Composable
 private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
@@ -1951,76 +1949,25 @@ private fun UpdateStatus.downloadUrlOrNull(): String? = when (this) {
 
 /** The strip's notice for [status], with the updater's progress and Settings' asks to see it. */
 @Composable
-private fun currentUpdateNotice(ready: AppGraph.Ready, status: UpdateStatus, onQuit: () -> Unit): UpdateNotice? {
+private fun currentUpdateNotice(ready: AppGraph.Ready, status: UpdateStatus): UpdateNotice? {
     val installState by ready.inAppUpdater.state.collectAsState()
     val requests by ready.appUpdateRequests.collectAsState()
-    val autoRestart = rememberAutoRestart(ready, installState, onQuit)
-    return status.toNotice(installedAppVersion(), ready.inAppUpdater, installState, autoRestart)
-        ?.copy(requests = requests)
-}
-
-/**
- * Restarts into a staged build on its own, [AUTO_RESTART_SECONDS] after it is
- * staged ([FORCED_RESTART_SECONDS] for a mandatory one), and returns where that has got to for the strip to show.
- *
- * Never mid-call: while the call coordinator's phase is anything but idle the
- * countdown holds, and starts again from the top once the call ends — a
- * restart the moment someone hangs up would feel like the app crashing.
- *
- * Once per version. The attempt is recorded before the helper starts; if
- * Zillit comes back still needing that version (a declined password or UAC
- * prompt), the countdown does not run again and "Restart now" is the way,
- * rather than prompting on every launch.
- */
-@Composable
-private fun rememberAutoRestart(ready: AppGraph.Ready, installState: InstallState, onQuit: () -> Unit): AutoRestart? {
-    val staged = (installState as? InstallState.Ready)?.version
-    // Nothing to finish behind the force-update screen, so no reason to wait long.
-    val seconds = if (ready.appUpdateStatus.collectAsState().value is UpdateStatus.Required) {
-        FORCED_RESTART_SECONDS
-    } else {
-        AUTO_RESTART_SECONDS
-    }
-    val callIdle = ready.callCoordinator.phase.collectAsState().value == CallPhase.Idle
-    var progress by remember(staged) { mutableStateOf<AutoRestart?>(null) }
-    LaunchedEffect(staged, callIdle) {
-        progress = null
-        if (staged == null || ready.preferences.get(ZillitPreferences.UpdateAutoRestartTried) == staged) {
-            return@LaunchedEffect
-        }
-        if (!callIdle) {
-            progress = AutoRestart.AfterCall
-            return@LaunchedEffect
-        }
-        for (left in seconds downTo 1) {
-            progress = AutoRestart.In(left)
-            delay(ONE_SECOND_MILLIS)
-        }
-        ready.restartToUpdate(onQuit)
-    }
-    return progress
-}
-
-/** Where the automatic restart has got to; null when it is not running. */
-private sealed interface AutoRestart {
-    data class In(val seconds: Int) : AutoRestart
-    data object AfterCall : AutoRestart
+    return status.toNotice(installedAppVersion(), ready.inAppUpdater, installState)?.copy(requests = requests)
 }
 
 /**
  * Hands the staged build to the installer and quits — or, when the helper
- * would not start, stays open with the strip saying why. The attempt is
- * recorded first, so an install that does not take is not retried unasked.
+ * would not start, stays open with the strip saying why.
+ *
+ * Only ever from "Restart now". Nothing in the app restarts itself: a
+ * countdown, which this used to run, closes Zillit under whoever is mid-edit
+ * or mid-call, and a declined password prompt then left it trying again every
+ * launch. The person says when.
  */
 private suspend fun AppGraph.Ready.restartToUpdate(onQuit: () -> Unit) {
-    val staged = (inAppUpdater.state.value as? InstallState.Ready)?.version ?: return
-    preferences.set(ZillitPreferences.UpdateAutoRestartTried, staged)
+    if (inAppUpdater.state.value !is InstallState.Ready) return
     if (inAppUpdater.launchInstaller()) onQuit()
 }
-
-private const val AUTO_RESTART_SECONDS = 30
-private const val FORCED_RESTART_SECONDS = 10
-private const val ONE_SECOND_MILLIS = 1_000L
 
 /**
  * Settings' "Check for updates": asks now and shares the answer with the
@@ -2913,7 +2860,6 @@ private fun UpdateStatus.toNotice(
     installed: String,
     updater: InAppUpdater,
     state: InstallState,
-    autoRestart: AutoRestart?,
 ): UpdateNotice? {
     val (version, mandatory, url) = when (this) {
         is UpdateStatus.Available -> Triple(latestVersion, false, downloadUrl)
@@ -2924,7 +2870,7 @@ private fun UpdateStatus.toNotice(
     // hand over; only with neither does the strip fall back to a browser link.
     val installable = updater.canInstall(installer)
     val downloadable = !installable && updater.canDownload(url)
-    val install = if (installable || downloadable) state.toInstall(version, autoRestart) else null
+    val install = if (installable || downloadable) state.toInstall(version) else null
     return UpdateNotice(
         version, mandatory, url,
         installedVersion = installed, install = install, manual = downloadable,
@@ -2934,14 +2880,11 @@ private fun UpdateStatus.toNotice(
 }
 
 /** The updater's state for [version]; a state about another version reads as not started. */
-private fun InstallState.toInstall(version: String, autoRestart: AutoRestart?): UpdateInstall = when {
+private fun InstallState.toInstall(version: String): UpdateInstall = when {
     this.version != version -> UpdateInstall.Offer
     this is InstallState.Downloading -> UpdateInstall.Downloading(fraction?.let { (it * PERCENT).toInt() })
     this is InstallState.Preparing -> UpdateInstall.Preparing
-    this is InstallState.Ready -> UpdateInstall.Ready(
-        restartIn = (autoRestart as? AutoRestart.In)?.seconds,
-        afterCall = autoRestart == AutoRestart.AfterCall,
-    )
+    this is InstallState.Ready -> UpdateInstall.Ready
     this is InstallState.Downloaded -> UpdateInstall.Downloaded
     this is InstallState.Failed -> UpdateInstall.Failed(
         retryable = reason == UpdateFailure.Reason.Network,

@@ -41,13 +41,14 @@ import com.zillit.desktop.core.strings.str
  *
  * The mandatory strip left the app usable, so "must update" was only advice.
  * This is the Android client's `IMMEDIATE` update: nothing behind it takes a
- * click, and the only ways forward are the update itself — downloaded,
- * installed and restarted on its own, with the same steps and buttons as the
- * strip (see [UpdateActions]) — or quitting.
+ * click, and the only ways forward are the update itself — downloaded and
+ * installed in place, with the same steps and buttons as the strip (see
+ * [UpdateActions]) — or quitting.
  *
- * The restart still waits for a call to end: the call overlay is its own
- * window, and a forced update that drops someone mid-call is worse than one
- * that lands a few minutes later.
+ * The restart is still a click, here as in the strip: this screen covers a
+ * call in progress, and closing the app from under it unasked would be worse
+ * than a forced update that lands a minute later. There is no "Restart later"
+ * on it, though — nothing behind it is reachable to go back to.
  */
 @Composable
 // One per callback the strip exposes; and a card whose every line is one

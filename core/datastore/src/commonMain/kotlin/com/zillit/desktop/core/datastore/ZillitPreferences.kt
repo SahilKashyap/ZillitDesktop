@@ -209,14 +209,6 @@ object ZillitPreferences {
     val UpdateInstanceId = PreferenceKey.StringKey("update.instanceId", "", PreferenceScope.Device)
 
     /**
-     * The version the app last restarted itself to install. Seeing that
-     * version staged again means the install did not take — a declined
-     * password or UAC prompt — so the next restart waits for a click instead
-     * of looping.
-     */
-    val UpdateAutoRestartTried = PreferenceKey.StringKey("update.autoRestartTried", "", PreferenceScope.Device)
-
-    /**
      * The last `calling_lines` Remote Config value that parsed — read only
      * when no fetch has succeeded this run, so being offline at launch does
      * not take the call lines away. Never overwritten with an empty value.
@@ -290,7 +282,7 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch, WorkspaceViewMode, RailCollapsed,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
-        UpdateAutoRestartTried, CallingLinesLastGood,
+        CallingLinesLastGood,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
