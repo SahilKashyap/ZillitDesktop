@@ -430,4 +430,65 @@ class CallTilesTest {
         assertEquals("Priya", tiles.single { it.uid == 77 }.name)
         assertEquals("Visitor Ann", tiles.single { it.uid == 78 }.name)
     }
+
+    // -- one person, more than one session ---------------------------------------------
+
+    /**
+     * The crash this ends: a tile's key is its user id, and the users panel
+     * lists `inCall` keyed by it, so two rows for one person threw out of
+     * `LazyColumn`'s measure pass and took the event queue with it
+     * ("Key in-67810b989dcdb99a84298bc8 was already used", 2026-10-12).
+     */
+    @Test
+    fun `somebody on two devices is one tile, not a duplicate key`() {
+        val laptop = person("them", status = CallStatus.InCall, name = "Them")
+        val phone = person("them", status = CallStatus.InCall, name = "Them")
+        val call = session(laptop, phone).copy(provider = CallProvider.Mediasoup)
+
+        val tiles = buildTiles(call, CallMedia(), "Me", micMuted = false, cameraOn = false)
+
+        assertEquals(tiles.map { it.key }.distinct(), tiles.map { it.key }, "every key is its own")
+        assertEquals(1, tiles.count { it.userId == "them" })
+    }
+
+    /** A rejoin whose old row has not gone yet: the row in the channel wins the tile. */
+    @Test
+    fun `between a ringing row and one in the channel, the call shows the channel`() {
+        val stale = person("them", status = CallStatus.Ringing, name = "Them")
+        val joined = person("them", status = CallStatus.InCall, name = "Them")
+        val call = session(stale, joined).copy(provider = CallProvider.Mediasoup)
+
+        val tiles = buildTiles(call, CallMedia(), "Me", micMuted = false, cameraOn = false)
+
+        val theirs = tiles.single { it.userId == "them" }
+        assertEquals(CallStatus.InCall, theirs.presence, "the ringing row would draw them as not yet here")
+    }
+
+    /**
+     * Two rows both in the channel: the one whose stream the engine is
+     * actually carrying, or the person draws dark and muted from the device
+     * that is only sitting there.
+     */
+    @Test
+    fun `between two rows in the channel, the one with the live stream wins`() {
+        val silent = person("them", uid = "500", status = CallStatus.InCall, name = "Them")
+        val sending = person("them", uid = "501", status = CallStatus.InCall, name = "Them")
+        val media = CallMedia(selfUid = 1, peers = mapOf(501 to MediaPeer(501, videoOn = true)))
+
+        val tiles = buildTiles(session(silent, sending), media, "Me", micMuted = false, cameraOn = false)
+
+        val theirs = tiles.single { it.userId == "them" }
+        assertEquals(501, theirs.uid)
+        assertTrue(theirs.media?.videoOn == true, "their camera is on, on the device they are using")
+    }
+
+    /** The ordinary call is untouched: one row each, in roster order. */
+    @Test
+    fun `a roster with no repeats keeps its order`() {
+        val call = session(person("a"), person("b"), person("c"))
+
+        val tiles = buildTiles(call, CallMedia(), "Me", micMuted = false, cameraOn = false)
+
+        assertEquals(listOf("Me", "a", "b", "c"), tiles.map { it.name })
+    }
 }
