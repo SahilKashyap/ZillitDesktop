@@ -39,7 +39,7 @@ import androidx.compose.ui.graphics.SolidColor
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.feature.costumesetsync.domain.NotificationsModel
+import com.zillit.desktop.feature.costumesetsync.domain.GlobalSearchModel
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import kotlinx.coroutines.delay
 
@@ -89,11 +89,11 @@ fun GlobalSearch(modifier: Modifier = Modifier) {
     val hits = if (debounced.isEmpty()) {
         emptyList()
     } else {
-        NotificationsModel.sceneHits(scenes, debounced, t("csync_sc"), t("csync_scene")) +
-            NotificationsModel.characterHits(characters, debounced, t("csync_character")) +
-            NotificationsModel.costumeHits(costumes, ::tEnum, t("csync_costume"))
+        GlobalSearchModel.sceneHits(scenes, debounced, t("csync_sc"), t("csync_scene")) +
+            GlobalSearchModel.characterHits(characters, debounced, t("csync_character")) +
+            GlobalSearchModel.costumeHits(costumes, ::tEnum, t("csync_costume"))
     }
-    fun go(hit: NotificationsModel.Hit) {
+    fun go(hit: GlobalSearchModel.Hit) {
         ctx.nav.go(hit.to)
         open = false
         q = ""
@@ -124,7 +124,7 @@ fun GlobalSearch(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SearchMenu(hits: List<NotificationsModel.Hit>, onPick: (NotificationsModel.Hit) -> Unit) {
+private fun SearchMenu(hits: List<GlobalSearchModel.Hit>, onPick: (GlobalSearchModel.Hit) -> Unit) {
     val colors = ZillitTheme.colors
     Column(
         Modifier.width(MENU_WIDTH).background(

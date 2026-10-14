@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.costumesetsync.data.SyncOnsetApi
 import com.zillit.desktop.feature.costumesetsync.domain.MailBridge
 import com.zillit.desktop.feature.costumesetsync.domain.NoHost
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.SyncBadges
 import com.zillit.desktop.feature.costumesetsync.domain.SyncHost
 import com.zillit.desktop.feature.costumesetsync.domain.SyncProject
 import com.zillit.desktop.feature.costumesetsync.domain.SyncViewer
@@ -28,8 +29,6 @@ data class SyncHostState(
     val project: SyncProject = SyncProject(null, emptySet()),
     /** The production record has answered, either way — the shell holds its loader until then. */
     val projectReady: Boolean = false,
-    /** `/dashboard` `counts`, behind the Costumes menu's figures. */
-    val counts: Rec? = null,
 )
 
 sealed interface SyncHostEvent {
@@ -39,16 +38,14 @@ sealed interface SyncHostEvent {
     /** The production record changed (setup saved). */
     data object ReloadProject : SyncHostEvent
 
-    /** A write succeeded: the nav counts should catch up. */
-    data object Changed : SyncHostEvent
-
     data class AskRights(val kind: RightsKind) : SyncHostEvent
 }
 
 /**
  * What every Costumes & Set Sync screen shares: the rights gate, the service's
- * enum feed, the production record and the nav counts — the web's
- * `SyncOnsetProvider` plus `useNavCounts`.
+ * enum feed and the production record — the web's `SyncOnsetProvider`. The
+ * nav's work counts and their `/dashboard` poll went with the notifications
+ * rework (2026-10-05): the tabs show unread badges only, from [badges].
  *
  * Rights first: the service answers `403 costume_set_sync_tool_not_enabled` for
  * a production without the tool, and a 403 anywhere in this app is read as "no
@@ -65,10 +62,11 @@ class SyncOnsetViewModel(
     val host: SyncHost = NoHost,
     /** Filled in by the app's wiring once the mail window exists; the real [host] opens the composer through it. */
     val mailBridge: MailBridge = MailBridge(),
+    /** The tool's unread notifications, from Zillit's badge ledger. */
+    val badges: SyncBadges = SyncBadges.None,
 ) : ZillitViewModel<SyncHostState, SyncHostEvent, Nothing>(SyncHostState()) {
 
     private var rightsPoll: Job? = null
-    private var countsJob: Job? = null
     private var loadedFor: String? = null
 
     /** Every frame the service emits; screens filter their own. */
@@ -78,7 +76,6 @@ class SyncOnsetViewModel(
         when (event) {
             SyncHostEvent.Load -> load()
             SyncHostEvent.ReloadProject -> loadProject()
-            SyncHostEvent.Changed -> refreshCounts(afterMs = CHANGED_DELAY_MS)
             is SyncHostEvent.AskRights -> rights?.ask(str(S.desktop_csync_tool_name), event.kind)
         }
     }
@@ -109,13 +106,12 @@ class SyncOnsetViewModel(
         // A different production is a different tool: start again.
         if (loadedFor != project) {
             loadedFor = project
-            setState { copy(meta = null, project = SyncProject(null, emptySet()), projectReady = false, counts = null) }
+            setState { copy(meta = null, project = SyncProject(null, emptySet()), projectReady = false) }
         }
         launch {
             (api.meta() as? ZillitResult.Success)?.data?.rec?.let { meta -> setState { copy(meta = meta) } }
             loadProject()
         }
-        startCounts()
     }
 
     private fun loadProject() {
@@ -135,41 +131,8 @@ class SyncOnsetViewModel(
         }
     }
 
-    /** The Costumes menu's figures: every minute, and ~1 s after any write. */
-    private fun startCounts() {
-        countsJob?.cancel()
-        countsJob = launch {
-            while (true) {
-                fetchCounts()
-                delay(COUNTS_POLL_MS)
-            }
-        }
-    }
-
-    private fun refreshCounts(afterMs: Long) {
-        if (!currentState.viewer.canCall) return
-        launch {
-            delay(afterMs)
-            fetchCounts()
-        }
-    }
-
-    private suspend fun fetchCounts() {
-        val answer = api.get("/dashboard")
-        (answer as? ZillitResult.Success)?.data?.rec?.rec("counts")?.let { counts ->
-            setState { copy(counts = counts) }
-        }
-    }
-
-    override fun onCleared() {
-        countsJob?.cancel()
-        super.onCleared()
-    }
-
     private companion object {
         const val RIGHTS_POLLS = 20
         const val RIGHTS_POLL_MS = 500L
-        const val COUNTS_POLL_MS = 60_000L
-        const val CHANGED_DELAY_MS = 1_000L
     }
 }

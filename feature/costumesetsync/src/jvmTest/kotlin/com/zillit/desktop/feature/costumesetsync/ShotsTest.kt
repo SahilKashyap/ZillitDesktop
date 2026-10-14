@@ -27,7 +27,7 @@ class ShotsTest {
             setContent {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
-                        Column(Modifier.size(1240.dp, 800.dp)) { SyncFrame(null, 0, true, {}, {}) }
+                        Column(Modifier.size(1240.dp, 800.dp)) { SyncFrame(emptyMap(), true, {}, {}) }
                     }
                 }
             }

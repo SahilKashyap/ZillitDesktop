@@ -284,7 +284,7 @@ class ShotsBudgetTest {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
                         Box(Modifier.size(width, height)) {
-                            if (content != null) content() else SyncFrame(null, 0, true, {}, {})
+                            if (content != null) content() else SyncFrame(emptyMap(), true, {}, {})
                         }
                     }
                 }

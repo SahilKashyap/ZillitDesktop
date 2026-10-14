@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.costumesetsync.data.Answer
 import com.zillit.desktop.feature.costumesetsync.data.SyncOnsetApi
 import com.zillit.desktop.feature.costumesetsync.domain.NoHost
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.SyncBadges
 import com.zillit.desktop.feature.costumesetsync.domain.SyncHost
 import com.zillit.desktop.feature.costumesetsync.domain.SyncProject
 import com.zillit.desktop.feature.costumesetsync.domain.SyncViewer
@@ -59,11 +60,13 @@ class SyncCtx(
     val toast: (text: String, ok: Boolean) -> Unit = { _, _ -> },
     /** Opens the app's "ask an admin for this right" flow. */
     val askRights: (RightsKind) -> Unit = {},
-    /** A write succeeded: the nav counts should catch up at once (the web's `csync:changed`). */
+    /** A write succeeded (the web's `csync:changed`); nothing listens since the nav counts went. */
     val changed: () -> Unit = {},
     val now: () -> Long = { 0L },
     /** File chooser, storage upload, browser and save dialog — the things only the host app can do. */
     val host: SyncHost = NoHost,
+    /** The tool's unread notifications, and the reads its screens make. */
+    val badges: SyncBadges = SyncBadges.None,
 ) {
     val canPost: Boolean get() = viewer.canPost
     val canDownload: Boolean get() = viewer.canDownload

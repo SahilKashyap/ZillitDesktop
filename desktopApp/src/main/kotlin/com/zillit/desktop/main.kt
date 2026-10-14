@@ -1228,6 +1228,9 @@ private val SELF_READING_TOOLS: Set<String> = setOf(
     // Folders and records read as they are viewed.
     "location_tool", "casting_main_tool", "casting_background_tool", "wardrobe_main_tool", "wardrobe_background_tool",
     "forms_and_signature_tool",
+    // One unit per kind, read as its page is opened; "production created" read
+    // by its own level when the module opens (`CsyncBadges`).
+    "costume_set_sync_tool",
 )
 
 /**

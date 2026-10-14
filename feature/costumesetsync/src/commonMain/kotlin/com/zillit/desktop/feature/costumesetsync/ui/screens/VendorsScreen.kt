@@ -1,12 +1,17 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,25 +19,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.BudgetModel
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
 import com.zillit.desktop.feature.costumesetsync.domain.fmtMoney
+import com.zillit.desktop.feature.costumesetsync.domain.initials
 import com.zillit.desktop.feature.costumesetsync.domain.matches
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.CostumeRow
 import com.zillit.desktop.feature.costumesetsync.ui.DateInput
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
-import com.zillit.desktop.feature.costumesetsync.ui.FieldRow
 import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
 import com.zillit.desktop.feature.costumesetsync.ui.FormWide
@@ -55,6 +68,7 @@ private val OUT = setOf("BOOKED", "PICKED_UP", "OVERDUE")
 private const val DAY_MS = 86_400_000L
 private val SEARCH_WIDTH = 420.dp
 private val CARD_WIDTH = 330.dp
+private val AVATAR = 34.dp
 private val ROW_WEIGHTS = listOf(2.2f, 1.3f, 1f, 1.3f, 0.9f, 1f, 2.5f)
 private val ROW_WEIGHTS_NO_RATE = ROW_WEIGHTS.filterIndexed { i, _ -> i != RATE_AT }
 private const val RATE_AT = 4
@@ -233,6 +247,91 @@ private fun RentalActions(ctx: SyncCtx, r: Rec, reload: () -> Unit) {
     }
 }
 
+/**
+ * One vendor: who they are, how to reach them (icon lines — the email opens
+ * Zillit's own composer addressed to them, as the web's `EmailOpener`), their
+ * note, then what we hold from them in a footer, so a row of cards lines up.
+ */
+@Composable
+private fun VendorCard(v: Rec) {
+    val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
+    val counts = v.rec("counts")
+    SectionCard(modifier = Modifier.width(CARD_WIDTH)) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(AVATAR).clip(CircleShape).background(colors.accentSoft),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ZillitText(
+                        initials(v.str("name")),
+                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = colors.accentText,
+                    )
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    ZillitText(
+                        v.str("name"),
+                        style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                    )
+                    if (v.str("contact_name").isNotBlank()) {
+                        VendorLine(ZillitIcons.User, v.str("contact_name"))
+                    }
+                }
+            }
+            if (v.str("phone").isNotBlank()) VendorLine(ZillitIcons.Phone, v.str("phone"))
+            if (v.str("email").isNotBlank()) {
+                VendorLine(
+                    ZillitIcons.Mail,
+                    v.str("email"),
+                    // Zillit's own composer, addressed to them; without a mailbox
+                    // of one's own there is nothing to send from, and it says so.
+                    // A blank subject and body, as the web's opener leaves them.
+                    onClick = {
+                        if (!ctx.host.composeEmail(subject = "", bodyHtml = "", to = v.str("email"))) {
+                            ctx.toast(str(S.desktop_email_id_not_available), false)
+                        }
+                    },
+                )
+            }
+            if (v.str("address").isNotBlank()) VendorLine(AhIcons.MapPin, v.str("address"))
+            if (v.str("notes").isNotBlank()) MutedText(v.str("notes"), maxLines = 4)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ZillitIcon(ZillitIcons.Tag, tint = colors.textMuted, size = 15.dp)
+                MutedText(
+                    listOf(
+                        "csync_n_costumes" to (counts?.long("costumes") ?: 0L),
+                        "csync_n_rentals" to (counts?.long("rentals") ?: 0L),
+                    ).joinToString(" · ") { (key, n) ->
+                        t(if (n == 1L) "${key}_one" else key, "n" to n)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** A contact line: an icon, then the value — clickable when there is somewhere to go. */
+@Composable
+private fun VendorLine(icon: ImageVector, text: String, onClick: (() -> Unit)? = null) {
+    val colors = ZillitTheme.colors
+    Row(
+        Modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitIcon(icon, tint = colors.textMuted, size = 15.dp)
+        ZillitText(
+            text,
+            style = ZillitTheme.typography.bodySmall,
+            color = if (onClick != null) colors.info else colors.textSecondary,
+            maxLines = 2,
+        )
+    }
+}
+
 @Composable
 private fun VendorsTab(vendors: List<Rec>, q: String) {
     val shown = vendors.filter { matches(
@@ -251,23 +350,7 @@ private fun VendorsTab(vendors: List<Rec>, q: String) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            shown.forEach { v ->
-                SectionCard(title = v.str("name"), modifier = Modifier.width(CARD_WIDTH)) {
-                    FieldRow(t("csync_field_contact"), v.str("contact_name"))
-                    FieldRow(t("csync_field_phone"), v.str("phone"))
-                    FieldRow(t("csync_field_email"), v.str("email"))
-                    FieldRow(t("csync_field_address"), v.str("address"))
-                    FieldRow(
-                        t("csync_items"),
-                        t(
-                            "csync_vendor_counts",
-                            "c" to (v.rec("counts")?.long("costumes") ?: 0L),
-                            "r" to (v.rec("counts")?.long("rentals") ?: 0L),
-                        ),
-                    )
-                    if (v.str("notes").isNotBlank()) MutedText(v.str("notes"), maxLines = 4)
-                }
-            }
+            shown.forEach { v -> VendorCard(v) }
         }
     }
 }

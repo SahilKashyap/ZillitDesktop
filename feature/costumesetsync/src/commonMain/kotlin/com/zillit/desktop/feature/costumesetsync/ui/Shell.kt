@@ -39,15 +39,15 @@ import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.designsystem.icon.AhIcons
-import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.CsyncBadges
 import com.zillit.desktop.feature.costumesetsync.domain.SCAN_ENABLED
 import com.zillit.desktop.feature.costumesetsync.ui.screens.FirstRun
 import kotlin.time.Clock
 
 private val SEARCH_WIDTH = 380.dp
 
-/** One page inside a tab group, with the `counts` key behind its figure. */
-private data class NavItem(val to: String, val labelKey: String, val count: String? = null, val danger: Boolean = false)
+/** One page inside a tab group. Its badge is its unread notifications ([CsyncBadges.unitForPath]). */
+private data class NavItem(val to: String, val labelKey: String)
 
 /** A primary tab; a group lists its pages as a second strip. */
 private data class NavTab(
@@ -70,15 +70,17 @@ private val TABS = listOf(
     ),
     NavTab(
         "costumes", "csync_nav_costumes", "costumes", ZillitIcons.Tag,
+        // The menu shows unread notification badges only, no work counts (was:
+        // the dashboard's figures, until 2026-10-05).
         listOf(
-            NavItem("costumes", "csync_nav_costumes", "costumes"),
-            NavItem("fittings", "csync_nav_fittings", "fittings_today"),
-            NavItem("cleaning", "csync_nav_cleaning", "cleaning"),
-            NavItem("alterations", "csync_nav_alterations", "alteration"),
-            NavItem("damages", "csync_nav_damage", "damaged", danger = true),
-            NavItem("missing", "csync_nav_missing", "missing", danger = true),
+            NavItem("costumes", "csync_nav_costumes"),
+            NavItem("fittings", "csync_nav_fittings"),
+            NavItem("cleaning", "csync_nav_cleaning"),
+            NavItem("alterations", "csync_nav_alterations"),
+            NavItem("damages", "csync_nav_damage"),
+            NavItem("missing", "csync_nav_missing"),
             NavItem("labels", "csync_nav_qr_labels"),
-            NavItem("vendors", "csync_nav_vendors_rentals", "rentals_due", danger = true),
+            NavItem("vendors", "csync_nav_vendors_rentals"),
         ),
     ),
     NavTab(
@@ -124,8 +126,8 @@ fun SyncOnsetShell(viewModel: SyncOnsetViewModel, onTitle: (String) -> Unit = {}
     val scope = rememberCoroutineScope()
     val nav = remember { SyncNav() }
     var toast by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    // Bumped by every successful write, so the header bell re-reads its count just after it.
-    var bellTick by remember { mutableStateOf(0) }
+    // The tool's unread notifications, per unit, from Zillit's badge ledger.
+    val unread by viewModel.badges.unread.collectAsState(emptyMap())
     val projectId = viewModel.projectId()
     // Setup finished in this visit: open the tool even though the counts are still 0 (a setup without a script adds no
     // scenes).
@@ -147,12 +149,12 @@ fun SyncOnsetShell(viewModel: SyncOnsetViewModel, onTitle: (String) -> Unit = {}
             currentUserId = viewModel.userId(),
             toast = { text, ok -> toast = text to ok },
             askRights = { kind -> viewModel.onEvent(SyncHostEvent.AskRights(kind)) },
-            changed = {
-                viewModel.onEvent(SyncHostEvent.Changed)
-                bellTick += 1
-            },
+            // The web still dispatches `csync:changed` after a write and nothing
+            // listens any more: the nav counts it fed went with the badges.
+            changed = {},
             now = { Clock.System.now().toEpochMilliseconds() },
             host = viewModel.host,
+            badges = viewModel.badges,
         )
     }
 
@@ -168,8 +170,7 @@ fun SyncOnsetShell(viewModel: SyncOnsetViewModel, onTitle: (String) -> Unit = {}
                 !state.projectReady || state.meta == null -> Gate(str(S.desktop_csync_loading), null)
                 else -> CompositionLocalProvider(LocalSync provides ctx) {
                     SyncFrame(
-                        counts = state.counts,
-                        bellTick = bellTick,
+                        unread = unread,
                         setUpHere = setUpHere,
                         onSetUp = { setUpHere = true },
                         onReloadProject = { viewModel.onEvent(SyncHostEvent.ReloadProject) },
@@ -192,8 +193,7 @@ private fun Gate(title: String, hint: String?) {
 
 @Composable
 internal fun SyncFrame(
-    counts: Rec?,
-    bellTick: Int,
+    unread: Map<String, Int>,
     setUpHere: Boolean,
     onSetUp: () -> Unit,
     onReloadProject: () -> Unit,
@@ -201,7 +201,7 @@ internal fun SyncFrame(
     val ctx = LocalSync.current
     // A production with nothing in it opens to the first-run landing instead of the tabs (the web's `FirstRun`).
     if (ctx.project.notSetUp && !setUpHere) {
-        TopBar(bellTick, search = false)
+        TopBar(search = false)
         FirstRun(
             onChanged = onReloadProject,
             onDone = {
@@ -214,9 +214,10 @@ internal fun SyncFrame(
     val route = ctx.nav.current
     val activeTab = tabOf(route.head)
     val tabs = TABS.filter { (!it.financeOnly || ctx.isFinance) && (!it.scanOnly || SCAN_ENABLED) }
-    fun countOf(item: NavItem): Int = item.count?.let { counts?.long(it)?.toInt() } ?: 0
+    fun unreadOf(to: String): Int = CsyncBadges.unitForPath(to)?.let { unread[it] } ?: 0
 
-    TopBar(bellTick, search = true)
+    ReadPageUnread(route, unread)
+    TopBar(search = true)
     SyncTabBar(
         tabs = tabs.map { tab ->
             SyncTabModel(
@@ -224,7 +225,8 @@ internal fun SyncFrame(
                 label = t(tab.labelKey),
                 icon = tab.icon,
                 start = tab.start,
-                items = tab.items.map { SyncTabItem(it.to, t(it.labelKey), countOf(it), it.danger) },
+                items = tab.items.map { SyncTabItem(it.to, t(it.labelKey), unreadOf(it.to)) },
+                count = if (tab.items.isEmpty()) unreadOf(tab.start) else 0,
             )
         },
         activeId = activeTab,
@@ -239,12 +241,33 @@ internal fun SyncFrame(
     }
 }
 
+/**
+ * The page's own unread, read as it is looked at — keyed on the live count, so
+ * one that arrives while the page is open clears too, and on the unit, so
+ * Continuity ▸ Book never clears On set's call sheet.
+ *
+ * "Production created" has no tab: opening the module is reading it, scoped to
+ * that `level_1` so the record-chat rows under the same unit are left alone.
+ */
+@Composable
+private fun ReadPageUnread(route: SyncRoute, unread: Map<String, Int>) {
+    val ctx = LocalSync.current
+    val pageUnit = CsyncBadges.unitForPath(route.path)
+    val pageUnread = pageUnit?.let { unread[it] } ?: 0
+    LaunchedEffect(pageUnit, pageUnread) {
+        if (pageUnit != null && pageUnread > 0) ctx.badges.readUnit(pageUnit)
+    }
+    val general = unread[CsyncBadges.GENERAL] ?: 0
+    LaunchedEffect(general) { if (general > 0) ctx.badges.readProductionCreated() }
+}
+
 /** The top bar. [search] is off on the first-run landing, where there is nothing to find yet (the web's `bare`). */
 @Composable
-private fun TopBar(bellTick: Int, search: Boolean) {
+private fun TopBar(search: Boolean) {
     val ctx = LocalSync.current
     // The web's `.csync-topbar`: a 60px bar on the surface with a bottom rule, 18px bold title, then the
-    // search, the bell and (on the web) a theme toggle — omitted here, the desktop has no per-tool theme.
+    // search and (on the web) a theme toggle — omitted here, the desktop has no per-tool theme. There is no
+    // bell: unread notifications are Zillit's own, shown on the tabs (`CsyncBadges`).
     Row(
         Modifier.fillMaxWidth().height(60.dp).background(ZillitTheme.colors.surface).padding(
             horizontal = 16.dp,
@@ -281,7 +304,6 @@ private fun TopBar(bellTick: Int, search: Boolean) {
             )
         }
         if (search) GlobalSearch(Modifier.width(SEARCH_WIDTH))
-        NotificationBell(bellTick)
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.border))
 }

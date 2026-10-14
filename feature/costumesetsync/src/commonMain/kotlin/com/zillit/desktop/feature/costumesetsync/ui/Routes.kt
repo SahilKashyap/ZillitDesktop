@@ -17,7 +17,6 @@ import com.zillit.desktop.feature.costumesetsync.ui.screens.FittingDetailScreen
 import com.zillit.desktop.feature.costumesetsync.ui.screens.FittingsScreen
 import com.zillit.desktop.feature.costumesetsync.ui.screens.GalleryScreen
 import com.zillit.desktop.feature.costumesetsync.ui.screens.LabelsScreen
-import com.zillit.desktop.feature.costumesetsync.ui.screens.NotificationsScreen
 import com.zillit.desktop.feature.costumesetsync.ui.screens.ReportsScreen
 import com.zillit.desktop.feature.costumesetsync.ui.screens.SceneDetailScreen
 import com.zillit.desktop.feature.costumesetsync.ui.screens.ScanScreen
@@ -67,7 +66,6 @@ private fun SyncReportRoutes(route: SyncRoute, id: String) {
         "reports" -> ReportsScreen()
         "budget" -> BudgetScreen()
         "gallery" -> GalleryScreen()
-        "notifications" -> NotificationsScreen()
         // Switched off with SCAN_ENABLED: no tab or button leads here, but the route stands (the web's `scan`).
         "scan" -> ScanScreen()
         else -> DashboardScreen()

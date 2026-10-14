@@ -115,7 +115,7 @@ class ShotsFirstRunTest {
                     ZillitTheme(darkTheme = dark, animateThemeChange = false) {
                         CompositionLocalProvider(LocalSync provides context) {
                             Column(Modifier.size(WIDTH.dp, HEIGHT.dp).background(ZillitTheme.colors.canvas)) {
-                                SyncFrame(null, 0, false, {}, {})
+                                SyncFrame(emptyMap(), false, {}, {})
                             }
                         }
                     }

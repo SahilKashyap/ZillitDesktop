@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.costumesetsync.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,6 +61,11 @@ fun FormDialog(
     /** The web's `.csync-btn-ink` confirm button: dark-filled instead of the brand colour. */
     ink: Boolean = false,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /**
+     * Why the confirm button is greyed out, said beside it rather than left to
+     * be guessed (the web's `.csync-modalfoot__why`). Null once it can be used.
+     */
+    footerNote: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     SyncDialogShell(
@@ -70,6 +77,15 @@ fun FormDialog(
         modifier = modifier,
         width = width,
         actions = {
+            footerNote?.let { note ->
+                ZillitText(
+                    note,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                )
+            }
             ZillitButton(t("csync_cancel"), onClick = onDismiss, variant = ButtonVariant.Secondary, enabled = !busy)
             if (ink && !danger) {
                 InkButton(if (busy) "…" else confirmLabel, onClick = onConfirm, enabled = confirmEnabled && !busy)
@@ -104,6 +120,32 @@ fun FormGrid(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+/**
+ * A field with a tag beside its label — the web's `.csync-fieldtag`, worn by
+ * the one field a ticket cannot be filed without.
+ */
+@Composable
+fun TaggedField(label: String, tag: String, modifier: Modifier = FormWide, content: @Composable () -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(label, style = ZillitTheme.typography.label, color = colors.textSecondary)
+            Box(
+                Modifier
+                    .background(colors.accentSoft, RoundedCornerShape(FIELD_TAG_RADIUS))
+                    .border(1.dp, colors.accent.copy(alpha = FIELD_TAG_EDGE), RoundedCornerShape(FIELD_TAG_RADIUS))
+                    .padding(horizontal = 7.dp, vertical = 1.dp),
+            ) {
+                ZillitText(tag, style = ZillitTheme.typography.labelSmall, color = colors.accentText)
+            }
+        }
+        content()
+    }
+}
+
+private val FIELD_TAG_RADIUS = 9.dp
+private const val FIELD_TAG_EDGE = 0.35f
+
 /** Half a dialog's width — two to a row in a [FormGrid]. */
 val FormCell: Modifier = Modifier.width(290.dp)
 
@@ -114,7 +156,8 @@ val FormWide: Modifier = Modifier.width(592.dp)
 fun TextInput(
     value: String,
     onChange: (String) -> Unit,
-    label: String,
+    /** Null inside a [TaggedField], which draws the label itself. */
+    label: String?,
     modifier: Modifier = FormCell,
     placeholder: String? = null,
     help: String? = null,

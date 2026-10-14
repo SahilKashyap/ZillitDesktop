@@ -504,8 +504,14 @@ fun MediaPicker(
             enabled = enabled,
             files = false,
         )
-        if (entries.isEmpty()) MutedText(t("csync_attached_once_saved"))
-        MutedText(help ?: t("csync_shoot_or_pick"), maxLines = 2)
+        // One line: what to do, then (before anything is picked) when it is attached.
+        MutedText(
+            listOfNotNull(
+                help ?: t("csync_shoot_or_pick"),
+                t("csync_attached_once_saved").takeIf { entries.isEmpty() },
+            ).joinToString(" · "),
+            maxLines = 2,
+        )
         if (entries.isNotEmpty()) {
             FlowRow(
                 Modifier.fillMaxWidth(),

@@ -260,7 +260,7 @@ class ShotsScenes2Test {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
                         Column(Modifier.size(width.dp, height.dp)) {
-                            if (frame) SyncFrame(null, 0, true, {}, {})
+                            if (frame) SyncFrame(emptyMap(), true, {}, {})
                             content?.let { Box(Modifier.size(width.dp, height.dp)) { it(context) } }
                         }
                     }

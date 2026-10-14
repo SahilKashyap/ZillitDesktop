@@ -1,5 +1,7 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeDrilldownQuery
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -13,6 +15,7 @@ import com.zillit.desktop.feature.costumesetsync.data.MultipartSender
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.costumesetsync.domain.CrewMember
+import com.zillit.desktop.feature.costumesetsync.domain.CsyncBadges
 import com.zillit.desktop.feature.costumesetsync.domain.MailBridge
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import io.ktor.client.request.forms.MultiPartFormDataContent
@@ -32,6 +35,7 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.costumesetsync.data.SyncOnsetApi
 import com.zillit.desktop.feature.costumesetsync.domain.PickedFile
 import com.zillit.desktop.feature.costumesetsync.domain.StoredFile
+import com.zillit.desktop.feature.costumesetsync.domain.SyncBadges
 import com.zillit.desktop.feature.costumesetsync.domain.SyncHost
 import com.zillit.desktop.feature.costumesetsync.domain.SyncViewer
 import com.zillit.desktop.feature.costumesetsync.ui.SyncOnsetToolProvider
@@ -41,7 +45,13 @@ import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.FileDialog
 import java.awt.Frame
@@ -64,7 +74,56 @@ internal fun AppGraph.Ready.buildCostumeSetSync(permissions: () -> ProjectPermis
         userId = { projectContext?.context?.value?.profile?.userId.orEmpty() },
         host = costumeSetSyncHost(mailBridge),
         mailBridge = mailBridge,
+        badges = costumeSetSyncBadges(),
     )
+}
+
+/**
+ * The tool's unread notifications over the badge ledger (the web's
+ * `lib/badges.js`): one unit per kind, no levels, `reference_id` the record or
+ * an upload's document. Opening a page reads its unit; opening the module
+ * reads "production created" by its `level_1` alone, so the record-chat rows
+ * filed under the same unit survive; opening a record's chat reads that
+ * record's rows by `reference_id`.
+ */
+internal fun AppGraph.Ready.costumeSetSyncBadges(): SyncBadges = object : SyncBadges {
+    private val reads = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val query = BadgeDrilldownQuery(
+        groupBy = "unit",
+        section = BadgeSections.TOOLS,
+        tool = CsyncBadges.CSYNC_BADGE_TOOL,
+    )
+
+    override val unread: Flow<Map<String, Int>> = badgeStore.counts
+        .map { badgeStore.split(query) }
+        .distinctUntilChanged()
+
+    override fun readUnit(unit: String) {
+        if (unit.isBlank()) return
+        reads.launch { emitLevelRead(tool = CsyncBadges.CSYNC_BADGE_TOOL, unit = unit) }
+    }
+
+    override fun readProductionCreated() {
+        reads.launch {
+            emitLevelRead(
+                tool = CsyncBadges.CSYNC_BADGE_TOOL,
+                unit = CsyncBadges.GENERAL,
+                level1 = CsyncBadges.PRODUCTION_LEVEL,
+            )
+        }
+    }
+
+    override fun readRecordChat(entityId: String) {
+        if (entityId.isBlank()) return
+        reads.launch {
+            emitLevelRead(
+                tool = CsyncBadges.CSYNC_BADGE_TOOL,
+                unit = CsyncBadges.GENERAL,
+                referenceId = entityId,
+            )
+        }
+    }
 }
 
 /**
@@ -167,9 +226,9 @@ internal fun AppGraph.Ready.costumeSetSyncHost(mailBridge: MailBridge = MailBrid
      * The web's `shareMessagesAsEmail`: refused when the user has no Zillit mailbox, otherwise the composer is
      * queued on the mail view model and its window opened ([costumeSetSyncProvider] fills the bridge).
      */
-    override fun composeEmail(subject: String, bodyHtml: String): Boolean {
+    override fun composeEmail(subject: String, bodyHtml: String, to: String): Boolean {
         val mailbox = projectContext?.context?.value?.profile?.mailboxAddress
-        return !mailbox.isNullOrBlank() && mailBridge.open?.invoke(subject, bodyHtml) == true
+        return !mailbox.isNullOrBlank() && mailBridge.open?.invoke(to, subject, bodyHtml) == true
     }
 
     override suspend fun downloadBytes(url: String): ZillitResult<ByteArray> = getForBytes(url)
@@ -256,8 +315,8 @@ internal fun costumeSetSyncProvider(
         onWindow = { navigator ->
             current = navigator
             viewModel.mailBridge.open = mail?.let { mailbox ->
-                { subject, bodyHtml ->
-                    mailbox.composeRequests.post(addressedTo = "", about = subject, bodyHtml = bodyHtml)
+                { to, subject, bodyHtml ->
+                    mailbox.composeRequests.post(addressedTo = to, about = subject, bodyHtml = bodyHtml)
                     navigator.openInNewWindow(WorkspaceRoute.Tool(COSTUME_MAIL_ROUTE))
                     true
                 }

@@ -45,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -55,19 +57,21 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
-/**
- * One page inside a tab group. [danger] turns its figure red, as the web's menu does for Damage, Missing and Rentals
- * due.
- */
-data class SyncTabItem(val to: String, val label: String, val count: Int = 0, val danger: Boolean = false)
+/** One page inside a tab group, with its unread notifications ([count], the web's `UnreadBadge`). */
+data class SyncTabItem(val to: String, val label: String, val count: Int = 0)
 
-/** A top-level tab; one with [items] opens a menu of pages (the web's `TabGroup`). */
+/**
+ * A top-level tab; one with [items] opens a menu of pages (the web's
+ * `TabGroup`). [count] is a page tab's own unread; a group's badge is the sum
+ * of its pages'.
+ */
 data class SyncTabModel(
     val id: String,
     val label: String,
     val icon: ImageVector,
     val start: String,
     val items: List<SyncTabItem> = emptyList(),
+    val count: Int = 0,
 )
 
 /**
@@ -207,25 +211,32 @@ private fun ArrowButton(icon: ImageVector, modifier: Modifier, onClick: () -> Un
     ) { ZillitIcon(icon, tint = colors.textPrimary, size = 14.dp) }
 }
 
-/** A figure beside a tab: amber with dark ink, red for trouble (the web's `.csync-navcount`). */
+/**
+ * A page's unread notifications beside its tab — Zillit's own badge, as the
+ * web's `.csync-badgecount`: a red bubble with the number ("99+" past 99) and
+ * the words for assistive tech. Nothing when there are none.
+ */
 @Composable
-private fun CountPill(n: Int, danger: Boolean) {
+private fun UnreadBadge(n: Int) {
+    if (n <= 0) return
     val colors = ZillitTheme.colors
+    val words = t("csync_char_n_new", "n" to n)
     Box(
         Modifier
             .defaultMinSize(minWidth = 20.dp, minHeight = 18.dp)
-            .background(if (danger) colors.danger else colors.accent, CircleShape)
-            .padding(horizontal = 6.dp),
+            .background(colors.danger, CircleShape)
+            .padding(horizontal = 6.dp)
+            .semantics { contentDescription = words },
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            n.toString(),
+            if (n > MAX_BADGE) "$MAX_BADGE+" else n.toString(),
             style = ZillitTheme.typography.labelSmall.copy(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 14.sp,
             ),
-            color = if (danger) Color.White else PILL_INK,
+            color = Color.White,
             maxLines = 1,
         )
     }
@@ -238,11 +249,8 @@ private fun tabBackground(active: Boolean, hovered: Boolean): Color = when {
     else -> Color.Transparent
 }
 
-private fun menuTone(item: SyncTabItem, activeItem: String): ZillitMenuTone = when {
-    item.to == activeItem -> ZillitMenuTone.Primary
-    item.danger && item.count > 0 -> ZillitMenuTone.Danger
-    else -> ZillitMenuTone.Neutral
-}
+private fun menuTone(item: SyncTabItem, activeItem: String): ZillitMenuTone =
+    if (item.to == activeItem) ZillitMenuTone.Primary else ZillitMenuTone.Neutral
 
 @Composable
 private fun TabCell(
@@ -256,8 +264,7 @@ private fun TabCell(
     var open by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val total = tab.items.sumOf { it.count }
-    val red = tab.items.any { it.danger && it.count > 0 }
+    val total = tab.count + tab.items.sumOf { it.count }
     Box(modifier) {
         Row(
             Modifier
@@ -286,7 +293,7 @@ private fun TabCell(
                 color = ink,
                 maxLines = 1,
             )
-            if (total > 0) CountPill(total, red)
+            UnreadBadge(total)
             if (tab.items.isNotEmpty()) ZillitIcon(ZillitIcons.ChevronDown, tint = ink, size = CARET)
         }
         ZillitActionMenu(
@@ -312,4 +319,4 @@ private val STRIP_PAD = 12.dp
 private val TAB_PAD_X = 22.dp
 private val TAB_PAD_Y = 13.dp
 private const val PAGE = 0.7f
-private val PILL_INK = Color(0xFF1F1A10)
+private const val MAX_BADGE = 99

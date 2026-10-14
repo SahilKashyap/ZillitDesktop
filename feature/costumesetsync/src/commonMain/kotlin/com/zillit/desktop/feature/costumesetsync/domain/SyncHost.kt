@@ -69,7 +69,7 @@ interface SyncHost {
      * Opens the app's Email composer with [subject] and [bodyHtml] filled in (the web's `shareMessagesAsEmail`).
      * False when it could not: the user has no Zillit mailbox, or no mail window is wired.
      */
-    fun composeEmail(subject: String, bodyHtml: String): Boolean = false
+    fun composeEmail(subject: String, bodyHtml: String, to: String = ""): Boolean = false
 
     /**
      * The bytes behind one of this service's own addresses (`SyncOnsetApi.url`), fetched with the project
@@ -99,7 +99,7 @@ interface SyncHost {
  */
 class MailBridge {
     @Volatile
-    var open: ((subject: String, bodyHtml: String) -> Boolean)? = null
+    var open: ((to: String, subject: String, bodyHtml: String) -> Boolean)? = null
 }
 
 /** The host of a build that wires none: picks nothing, stores nothing. */

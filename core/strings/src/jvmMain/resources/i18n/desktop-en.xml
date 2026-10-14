@@ -11653,9 +11653,9 @@
     <string name="desktop_csync_field_last_assigned_short">Last assigned</string>
     <string name="desktop_csync_field_last_scan">Last scan</string>
     <string name="desktop_csync_cancel_q">Cancel?</string>
-    <string name="desktop_csync_send_reminder_title_alterations">Send a reminder request · alterations</string>
-    <string name="desktop_csync_send_reminder_title_damages">Send a reminder request · damage</string>
-    <string name="desktop_csync_send_reminder_title_missing">Send a reminder request · missing</string>
+    <string name="desktop_csync_send_reminder_title_alterations">Send a reminder request · Alterations</string>
+    <string name="desktop_csync_send_reminder_title_damages">Send a reminder request · Damage reports</string>
+    <string name="desktop_csync_send_reminder_title_missing">Send a reminder request · Missing items</string>
     <string name="desktop_csync_field_est_repair_short">Estimated repair</string>
     <string name="desktop_csync_est_repair_colon">Estimated repair: {x}</string>
     <string name="desktop_csync_last_seen_n">Last seen: {x}</string>
@@ -13043,4 +13043,15 @@
     <string name="desktop_forward_no_characters">That list has no characters yet, so there is nothing to file this under</string>
     <string name="desktop_forward_tool_not_granted">That tool is not granted on this production</string>
     <string name="desktop_update_restart_later">Restart later</string>
+    <string name="desktop_csync_need_problem">Describe the problem to continue.</string>
+    <string name="desktop_csync_auto_assign_replacement_hint">The closest match is issued to the actor straight away. Untick to choose one yourself from the matches.</string>
+    <string name="desktop_csync_send_need_subject">Add a subject to send.</string>
+    <string name="desktop_csync_send_need_message">Write a message to send.</string>
+    <string name="desktop_csync_send_need_recipient">Choose who to send it to.</string>
+    <string name="desktop_csync_selected_n">{n} selected</string>
+    <string name="desktop_csync_n_costumes">{n} costumes</string>
+    <string name="desktop_csync_n_costumes_one">{n} costume</string>
+    <string name="desktop_csync_n_rentals">{n} rentals</string>
+    <string name="desktop_csync_n_rentals_one">{n} rental</string>
+    <string name="desktop_csync_request_search_everyone">Search everyone on this production…</string>
 </resources>

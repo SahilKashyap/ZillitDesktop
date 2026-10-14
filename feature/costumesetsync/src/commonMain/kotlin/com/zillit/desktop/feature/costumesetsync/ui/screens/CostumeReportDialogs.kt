@@ -1,25 +1,34 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.unit.sp
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.feature.costumesetsync.ui.FormCell
-import com.zillit.desktop.feature.costumesetsync.ui.Notice
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.icon.AhIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.Answer
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.ui.DateInput
 import com.zillit.desktop.feature.costumesetsync.ui.EnumInput
+import com.zillit.desktop.feature.costumesetsync.ui.FormCell
 import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
 import com.zillit.desktop.feature.costumesetsync.ui.FormWide
@@ -27,9 +36,12 @@ import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MediaEntry
 import com.zillit.desktop.feature.costumesetsync.ui.MediaPicker
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
+import com.zillit.desktop.feature.costumesetsync.ui.Notice
+import com.zillit.desktop.feature.costumesetsync.ui.NoticeTone
 import com.zillit.desktop.feature.costumesetsync.ui.PickInput
 import com.zillit.desktop.feature.costumesetsync.ui.StatusBadge
 import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
+import com.zillit.desktop.feature.costumesetsync.ui.TaggedField
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.attachMedia
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -73,13 +85,36 @@ private fun ReportMedia(filing: ReportFiling, help: String) {
 
 private fun takeOf(text: String): Long? = numOrNull(text)?.toLong()
 
+/** The emergency's warning, as the web's `.csync-notice--warn`: amber, with the triangle beside it. */
 @Composable
 private fun EmergencyNotice() {
-    Notice {
-        ZillitText(
-            t("csync_emergency_explainer"),
-            style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
-        )
+    Notice(tone = NoticeTone.Warn) {
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitIcon(AhIcons.AlertTriangle, tint = ZillitTheme.colors.warning, size = 18.dp)
+            ZillitText(
+                t("csync_emergency_explainer"),
+                style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+            )
+        }
+    }
+}
+
+/**
+ * An option with its consequence spelled out under it, in a card of its own
+ * (the web's `.csync-ticketform__option`) — a tick that issues a replacement
+ * to an actor is not a tick to pass over.
+ */
+@Composable
+private fun OptionCard(checked: Boolean, onChange: (Boolean) -> Unit, label: String, hint: String) {
+    val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(10.dp)
+    Column(
+        Modifier.fillMaxWidth().background(colors.surfaceHover, shape).border(1.dp, colors.border, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitCheckbox(checked, onChange, label = label)
+        MutedText(hint, maxLines = 3)
     }
 }
 
@@ -93,7 +128,7 @@ private fun CleaningPriority(emergency: Boolean, priority: String, onPriority: (
                 style = ZillitTheme.typography.label,
                 color = ZillitTheme.colors.textSecondary,
             )
-            StatusBadge("URGENT", tEnum("URGENT"), large = true)
+            StatusBadge("URGENT", tEnum("URGENT"))
         }
     } else {
         EnumInput(priority, LocalSync.current.metaList("priorities"), onPriority, t("csync_field_priority"))
@@ -113,57 +148,91 @@ internal fun CleaningDialog(
     val ctx = LocalSync.current
     val scope = rememberCoroutineScope()
     val filing = remember { ReportFiling(ctx, "CLEANING", "STAIN") }
-    var problem by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("SPOT_CLEANING") }
-    var priority by remember { mutableStateOf("NORMAL") }
-    var scene by remember { mutableStateOf(sceneId) }
-    var take by remember { mutableStateOf(takeNumber) }
-    var autoAssign by remember { mutableStateOf(true) }
-    val asset = costume.str("asset_number")
+    val f = remember { CleaningTicket(sceneId, takeNumber) }
     FormDialog(
         open = true,
-        title = "${t(if (emergency) "csync_emergency_cleaning" else "csync_act_request_cleaning")} · $asset",
+        title = t(if (emergency) "csync_emergency_cleaning" else "csync_act_request_cleaning"),
+        // The piece under the action, as the web's dialog title reads it.
+        subtitle = pieceOf(costume),
         onDismiss = onClose,
         confirmLabel = if (emergency) t("csync_raise_emergency") else t("csync_request"),
         onConfirm = {
             scope.launch {
-                val request = body(
-                    "costume_id" to costume.id,
-                    "problem" to problem,
-                    "cleaning_type" to type,
-                    "priority" to if (emergency) null else priority,
-                    "scene_id" to scene,
-                    "take_number" to takeOf(take),
-                    "auto_assign_replacement" to if (emergency) autoAssign else null,
-                )
-                if (filing.file(if (emergency) "/cleaning/emergency" else "/cleaning", request)) onFiled(
-                    filing.filedId,
-                    filing.created,
-                )
+                val path = if (emergency) "/cleaning/emergency" else "/cleaning"
+                if (filing.file(path, f.request(costume, emergency))) onFiled(filing.filedId, filing.created)
             }
         },
-        confirmEnabled = problem.isNotBlank(),
+        confirmEnabled = f.problem.isNotBlank(),
         busy = filing.busy,
         danger = emergency,
         ink = !emergency,
-        icon = if (emergency) ZillitIcons.Siren else null,
+        icon = if (emergency) ZillitIcons.Siren else AhIcons.Refresh,
+        footerNote = t("csync_need_problem").takeIf { f.problem.isBlank() },
     ) {
         if (emergency) EmergencyNotice()
-        FormGrid {
-            TextInput(problem, { problem = it }, t("csync_field_problem"), FormWide)
-            EnumInput(
-                type,
-                ctx.metaList("cleaning_types"),
-                { type = it.ifBlank { type } },
-                t("csync_field_cleaning_type"),
-            )
-            CleaningPriority(emergency, priority) { priority = it.ifBlank { priority } }
-            SceneTakeFields(scene, { scene = it }, take, { take = it })
-        }
+        CleaningTicketFields(f, ctx, emergency)
         ReportMedia(filing, t("csync_shoot_stain_hint"))
-        if (emergency) ZillitCheckbox(autoAssign, { autoAssign = it }, label = t("csync_auto_assign_replacement"))
+        if (emergency) {
+            OptionCard(
+                f.autoAssign,
+                { f.autoAssign = it },
+                label = t("csync_auto_assign_replacement"),
+                hint = t("csync_auto_assign_replacement_hint"),
+            )
+        }
     }
 }
+
+/** What a cleaning ticket's form holds, and the body it files. */
+@Stable
+private class CleaningTicket(sceneId: String, takeNumber: String) {
+    var problem by mutableStateOf("")
+    var type by mutableStateOf("SPOT_CLEANING")
+    var priority by mutableStateOf("NORMAL")
+    var scene by mutableStateOf(sceneId)
+    var take by mutableStateOf(takeNumber)
+
+    /** An emergency issues the closest match straight away unless this is unticked. */
+    var autoAssign by mutableStateOf(true)
+
+    fun request(costume: Rec, emergency: Boolean): JsonObject = body(
+        "costume_id" to costume.id,
+        "problem" to problem,
+        "cleaning_type" to type,
+        "priority" to if (emergency) null else priority,
+        "scene_id" to scene,
+        "take_number" to takeOf(take),
+        "auto_assign_replacement" to if (emergency) autoAssign else null,
+    )
+}
+
+/** The problem (required), what cleaning, how urgent, and where it happened. */
+@Composable
+private fun CleaningTicketFields(f: CleaningTicket, ctx: SyncCtx, emergency: Boolean) {
+    FormGrid {
+        TaggedField(t("csync_field_problem"), t("csync_required")) {
+            TextInput(
+                f.problem,
+                { f.problem = it },
+                label = null,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = t("csync_problem_placeholder"),
+            )
+        }
+        EnumInput(
+            f.type,
+            ctx.metaList("cleaning_types"),
+            { f.type = it.ifBlank { f.type } },
+            t("csync_field_cleaning_type"),
+        )
+        CleaningPriority(emergency, f.priority) { f.priority = it.ifBlank { f.priority } }
+        SceneTakeFields(f.scene, { f.scene = it }, f.take, { f.take = it })
+    }
+}
+
+/** A piece as a dialog's subtitle: its asset number, then its name. */
+private fun pieceOf(costume: Rec): String =
+    listOf(costume.str("asset_number"), costume.str("name")).filter { it.isNotBlank() }.joinToString(" · ")
 
 /** "Report damage". The repair estimate is for finance roles only. */
 @Composable

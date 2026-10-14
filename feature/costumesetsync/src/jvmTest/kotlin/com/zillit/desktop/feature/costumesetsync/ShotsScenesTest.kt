@@ -157,7 +157,7 @@ class ShotsScenesTest {
             setContent {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
-                        Column(Modifier.size(width, height)) { SyncFrame(null, 0, true, {}, {})
+                        Column(Modifier.size(width, height)) { SyncFrame(emptyMap(), true, {}, {})
                             body?.invoke(context) }
                     }
                 }

@@ -212,7 +212,7 @@ class ShotsWorkflowTest {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
                         Box(Modifier.size(width, 800.dp)) {
-                            SyncFrame(null, 0, true, {}, {})
+                            SyncFrame(emptyMap(), true, {}, {})
                             overlay()
                         }
                     }

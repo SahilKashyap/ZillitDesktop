@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costumesetsync.domain.PrintHtml
+import com.zillit.desktop.feature.costumesetsync.domain.CsyncBadges
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.relativeTime
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
@@ -209,6 +211,20 @@ private suspend fun SyncCtx.postComment(entityType: String, entityId: String, te
         api.post("/comments", body("entity_type" to entityType, "entity_id" to entityId, "body" to text))
     } != null
 
+/**
+ * Opening a record's chat reads its chat notifications (Zillit's own, unit
+ * `general`) — again whenever a new one lands while it is open, since the live
+ * count is what the effect is keyed on. The dialog composes only while open,
+ * so being here is being open.
+ */
+@Composable
+private fun ReadRecordChat(entityId: String) {
+    val ctx = LocalSync.current
+    val unread by ctx.badges.unread.collectAsState(emptyMap())
+    val chatUnread = unread[CsyncBadges.GENERAL] ?: 0
+    LaunchedEffect(entityId, chatUnread) { if (chatUnread > 0) ctx.badges.readRecordChat(entityId) }
+}
+
 @Composable
 internal fun RecordChatDialog(
     entityType: String,
@@ -230,6 +246,7 @@ internal fun RecordChatDialog(
         messages = list
         onCount(list.size)
     }
+    ReadRecordChat(entityId)
     LaunchedEffect(messages?.size) { scroll.scrollTo(scroll.maxValue) }
     SocketRefresh(
         SyncEvents.Comment,

@@ -1,12 +1,18 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +20,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -22,6 +31,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.BudgetAccount
@@ -32,7 +42,6 @@ import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
 import com.zillit.desktop.feature.costumesetsync.domain.humanize
 import com.zillit.desktop.feature.costumesetsync.domain.matches
-import com.zillit.desktop.feature.costumesetsync.ui.AutoFillGrid
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
@@ -40,7 +49,6 @@ import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
 import com.zillit.desktop.feature.costumesetsync.ui.SectionCard
 import com.zillit.desktop.feature.costumesetsync.ui.SocketRefresh
-import com.zillit.desktop.feature.costumesetsync.ui.StatCard
 import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.mapRows
 import com.zillit.desktop.feature.costumesetsync.ui.rememberResource
@@ -48,8 +56,9 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
 import com.zillit.desktop.feature.costumesetsync.ui.tEnum
 import kotlinx.coroutines.launch
 
-private val TILE_WIDTH = 120.dp
-private val TILE_GAP = 10.dp
+private val CHIP_GAP = 8.dp
+private val CHIP_RADIUS = 10.dp
+private val CHIP_SEP = 20.dp
 private val SEARCH_WIDTH = 420.dp
 
 /**
@@ -302,54 +311,110 @@ private class BudgetView(val ctx: SyncCtx, val book: BudgetData, val cat: String
     fun total(lines: List<Rec>) = BudgetModel.sumByCurrency(lines, currency)
 }
 
+/**
+ * The figures as one slim bar (the web's `.csync-budbar`), so the budget lines
+ * stay in view: the total (also "show all"), each category as a filter (dimmed
+ * with no lines), then what is held or committed rather than spent.
+ */
 @Composable
 private fun BudgetTiles(ctx: SyncCtx, view: BudgetView, cat: String, onCat: (String) -> Unit) {
-    // `.csync-stats--compact`: auto-fill, minmax(120px, 1fr), 10px apart — the tiles stretch to share the row.
-    class Tile(
-        val label: String,
-        val value: String,
-        val hint: String? = null,
-        val active: Boolean = false,
-        val go: () -> Unit,
-    )
-    val tiles = buildList {
-        add(Tile(t("csync_budget_total_spend"), view.total(view.all), active = cat.isEmpty()) { onCat("") })
+    FlowRow(
+        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(CHIP_GAP),
+        verticalArrangement = Arrangement.spacedBy(CHIP_GAP),
+    ) {
+        BudgetChip(
+            t("csync_budget_total_spend"),
+            view.total(view.all),
+            on = cat.isEmpty(),
+            strong = true,
+        ) { onCat("") }
+        ChipSeparator()
         view.cats.forEach { c ->
-            add(
-                Tile(
-                    tEnum(c),
-                    view.total(view.all.filter { it.str("category") == c }),
-                    active = cat == c,
-                ) { onCat(if (cat == c) "" else c) },
-            )
+            val lines = view.all.filter { it.str("category") == c }
+            BudgetChip(tEnum(c), view.total(lines), on = cat == c, dim = lines.isEmpty()) {
+                onCat(if (cat == c) "" else c)
+            }
         }
-        add(
-            Tile(
-                t("csync_budget_inventory_value"),
-                BudgetModel.fmtAmount(view.book.report.double("inventory_value"), view.currency),
-                t("csync_budget_inventory_value_hint"),
-            ) { ctx.nav.go("costumes") },
+        ChipSeparator()
+        BudgetChip(
+            t("csync_budget_inventory_value"),
+            BudgetModel.fmtAmount(view.book.report.double("inventory_value"), view.currency),
+            hint = t("csync_budget_inventory_value_hint"),
+        ) { ctx.nav.go("costumes") }
+        BudgetChip(
+            t("csync_budget_rental_committed"),
+            BudgetModel.fmtAmount(view.book.report.double("rental_committed"), view.currency),
+            hint = t("csync_budget_rental_committed_hint"),
+        ) { ctx.nav.go("vendors") }
+    }
+}
+
+/** One chip of the budget bar: its label, then its figure. */
+@Composable
+private fun BudgetChip(
+    label: String,
+    value: String,
+    on: Boolean = false,
+    strong: Boolean = false,
+    dim: Boolean = false,
+    hint: String? = null,
+    onClick: () -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    val fill = when {
+        on -> colors.accentSoft
+        strong -> colors.surfaceHover
+        else -> colors.surface
+    }
+    // A tooltip only where there is something to explain (the web's `title`).
+    if (hint == null) {
+        BudgetChipBody(label, value, fill, on, dim, onClick)
+    } else {
+        ZillitTooltip(hint) { BudgetChipBody(label, value, fill, on, dim, onClick) }
+    }
+}
+
+@Composable
+private fun BudgetChipBody(
+    label: String,
+    value: String,
+    fill: Color,
+    on: Boolean,
+    dim: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(CHIP_RADIUS)
+    Row(
+        Modifier
+            .clip(shape)
+            .background(fill)
+            .border(1.dp, if (on) colors.accent else colors.border, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            label,
+            style = ZillitTheme.typography.labelSmall,
+            color = if (dim) colors.textMuted else colors.textSecondary,
+            maxLines = 1,
         )
-        add(
-            Tile(
-                t("csync_budget_rental_committed"),
-                BudgetModel.fmtAmount(view.book.report.double("rental_committed"), view.currency),
-                t("csync_budget_rental_committed_hint"),
-            ) { ctx.nav.go("vendors") },
+        ZillitText(
+            value,
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = if (dim) colors.textMuted else colors.textPrimary,
+            maxLines = 1,
         )
     }
-    AutoFillGrid(tiles.size, TILE_WIDTH, TILE_GAP, Modifier.padding(bottom = ZillitTheme.spacing.md)) { i, cell ->
-        val tile = tiles[i]
-        StatCard(
-            tile.label,
-            tile.value,
-            cell,
-            hint = tile.hint,
-            compact = true,
-            active = tile.active,
-            onClick = tile.go,
-        )
-    }
+}
+
+/** The bar's hairline between the total, the categories and what is held. */
+@Composable
+private fun ChipSeparator() {
+    Box(Modifier.width(1.dp).height(CHIP_SEP).background(ZillitTheme.colors.border))
 }
 
 @Composable

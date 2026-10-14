@@ -136,7 +136,6 @@ class RoutesSmokeTest {
     @Test fun reports() = draws("reports")
     @Test fun budget() = draws("budget")
     @Test fun gallery() = draws("gallery")
-    @Test fun notifications() = draws("notifications")
 
     private class Factory(private val engine: MockEngine) : HttpClientEngineFactory<MockEngineConfig> {
         override fun create(block: MockEngineConfig.() -> Unit): HttpClientEngine = engine

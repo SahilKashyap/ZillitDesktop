@@ -175,7 +175,7 @@ class ShotsCostumesTest {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
                         Column(Modifier.size(width.dp, height.dp)) {
-                            if (content == null) SyncFrame(null, 0, true, {}, {}) else Box(
+                            if (content == null) SyncFrame(emptyMap(), true, {}, {}) else Box(
                                 Modifier.size(width.dp, height.dp),
                             ) { content() }
                         }

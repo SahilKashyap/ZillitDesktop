@@ -32,6 +32,9 @@ import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -41,7 +44,7 @@ import org.jetbrains.skia.Image
 import java.io.File
 import kotlin.test.Test
 
-/** Opt-in: `SYNC_SHOTS=1` writes PNGs of the shell, reports, continuity, vendors, budget and notifications. */
+/** Opt-in: `SYNC_SHOTS=1` writes PNGs of the shell, reports, continuity, vendors and budget. */
 @OptIn(ExperimentalTestApi::class)
 class ShotsReportsTest {
     private val costume = """{"_id":"c1","asset_number":"CST-000001","name":"Red wool overcoat","status":"AVAILABLE"}"""
@@ -64,11 +67,6 @@ class ShotsReportsTest {
             path.endsWith("/rentals") ->
                 "[${rental(1, "BOOKED", ""","is_overdue":true""")}," +
                     "${rental(2, "PICKED_UP", ""","due_soon":true""")},${rental(3, "RETURNED")}]"
-            path.endsWith("/notifications") -> """{"unread":2,"items":[
-                {"_id":"n1","title":"Anna's coat needs cleaning","body":"Marked dirty after scene 4",
-                "severity":"WARNING","read":false,"created":1772755000000},
-                {"_id":"n2","title":"Fitting tomorrow","body":"","severity":"INFO","read":true,
-                "created":1772700000000}]}"""
             path.endsWith("/reports/budget") ->
                 """{"inventory_value":1200,"rental_committed":300,"by_category":{"PURCHASE":400},
                 "expenses":[${expense(1, "PURCHASE", 400)},${expense(2, "LAUNDRY", 120)},
@@ -144,18 +142,29 @@ class ShotsReportsTest {
         override fun create(block: MockEngineConfig.() -> Unit): HttpClientEngine = engine
     }
 
-    private fun shot(route: String, width: Int = 1240, name: String = route, fresh: Boolean = false) {
+    private fun shot(
+        route: String,
+        width: Int = 1240,
+        name: String = route,
+        fresh: Boolean = false,
+        /** A tab to take before the picture — the second tab of a page is as much of it as the first. */
+        tab: String? = null,
+    ) {
         if (System.getenv("SYNC_SHOTS") == null) return
         runComposeUiTest {
             val context = ctx(route, fresh)
             setContent {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
-                        Column(Modifier.size(width.dp, 800.dp)) { SyncFrame(null, 0, !fresh, {}, {}) }
+                        Column(Modifier.size(width.dp, 800.dp)) { SyncFrame(emptyMap(), !fresh, {}, {}) }
                     }
                 }
             }
             waitForIdle()
+            tab?.let {
+                onAllNodesWithText(it, substring = true).onFirst().performClick()
+                waitForIdle()
+            }
             val image = onRoot().captureToImage()
             val dir = File("build/shots").apply { mkdirs() }
             File(dir, "r_" + name.replace('/', '_').substringBefore('?') + "_$width.png")
@@ -166,11 +175,11 @@ class ShotsReportsTest {
     @Test fun firstRun() = shot("dashboard", name = "firstrun", fresh = true)
     @Test fun vendors() = shot("vendors")
     @Test fun vendorsNarrow() = shot("vendors", 1000)
+    @Test fun vendorCards() = shot("vendors", name = "vendorcards", tab = "Vendors (")
     @Test fun reports() = shot("reports")
     @Test fun continuity() = shot("continuity")
     @Test fun book() = shot("continuity/book")
     @Test fun budget() = shot("budget")
-    @Test fun notifications() = shot("notifications")
 
     private companion object {
         const val META =

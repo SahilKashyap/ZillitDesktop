@@ -41,6 +41,10 @@ private val WIRE_TOOL_LABELS = listOf(
     "ad_dashboard_label", "supporting_artistes_extras_label",
     "e_signature_label", "sides_label", "recce_label", "cost_report_label",
     "pre_production_label",
+    // Keeps `_tool` in the middle, as `location_tool_label` does: the reverse
+    // suffix rule turned `costume_set_sync_tool` into `costume_set_sync_label`,
+    // a name no row carries, so every read this tool sent named nothing.
+    "costume_set_sync_tool_label",
     "document_distribution_tool", "document_distribution_label",
 )
 

@@ -1,18 +1,17 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,13 +19,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.Answer
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
@@ -67,6 +75,9 @@ private val ALTERATION_PHOTO_KINDS = listOf("DETAIL", "FRONT", "BACK", "SIDE", "
 private val DAMAGE_PHOTO_KINDS = listOf("DETAIL", "OTHER")
 private val MISSING_PHOTO_KINDS = listOf("REFERENCE", "OTHER")
 private const val DEFAULT_FOUND_AT = "Wardrobe Truck"
+private val TILE = 38.dp
+private val TILE_RADIUS = 10.dp
+private val FACT_WIDTH = 150.dp
 private val FOUND_FIELD = 170.dp
 
 /** A confirmation waiting on the user: what to ask and what to do on yes. */
@@ -339,24 +350,6 @@ private fun IssueLine(issue: String, work: String) {
     )
 }
 
-/** The web's `.csync-kv--wide`: a 120dp muted label beside its value, one pair per row, "—" when unknown. */
-@Composable
-private fun KvRows(rows: List<Pair<String, String>>) {
-    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        rows.forEach { (k, v) ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ZillitText(
-                    k,
-                    Modifier.width(120.dp),
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textMuted,
-                )
-                ZillitText(v.ifBlank { "\u2014" }, style = ZillitTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
 @Composable
 private fun AlterationCard(a: Rec, pipeline: List<String>, actions: TicketActions) {
     val ctx = LocalSync.current
@@ -536,40 +529,45 @@ private fun DamageButtons(d: Rec, status: String, actions: TicketActions) {
     )
 }
 
+/**
+ * One missing piece (the web's `.csync-tcard`): what is missing in the header
+ * with everything you can do about it, then its trail, the note, and the
+ * photos under their own heading.
+ */
 @Composable
 private fun MissingCard(m: Rec, actions: TicketActions, foundAt: FoundAt?, onFoundAt: (FoundAt?) -> Unit) {
-    val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
     val costume = m.rec("costume")
     val piece = "${costume?.str("asset_number").orEmpty()} ${costume?.str("name").orEmpty()}"
-    val status = m.str("status")
     SectionCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CostumeLink(costume)
-                    StatusBadge(status)
-                    costume?.rec("character")?.str("name")?.takeIf { it.isNotBlank() }?.let { MutedText(it) }
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            MissingHeader(m, piece, actions, foundAt, onFoundAt)
+            // The trail, label over value, "—" when unknown.
+            FactGrid(
+                listOfNotNull(
+                    t("csync_field_last_seen") to m.str("last_seen_location"),
+                    t("csync_field_last_assigned_short") to m.str("last_assigned_to"),
+                    t("csync_field_last_scan") to fmtDateTime(m.long("last_scan_at")),
+                    t("csync_field_reported") to fmtDateTime(m.long("created")),
+                    if (m.long("resolved_at") != 0L) {
+                        t("csync_field_resolved") to fmtDateTime(m.long("resolved_at"))
+                    } else {
+                        null
+                    },
+                ),
+            )
+            if (m.str("notes").isNotBlank()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                    ZillitIcon(ZillitIcons.Edit, tint = colors.textMuted, size = 16.dp)
+                    MutedText(m.str("notes"), maxLines = 6)
                 }
-                // Label beside value, "—" when unknown — as the reference's list.
-                KvRows(
-                    listOfNotNull(
-                        t("csync_field_last_seen") to m.str("last_seen_location"),
-                        t("csync_field_last_assigned_short") to m.str("last_assigned_to"),
-                        t("csync_field_last_scan") to fmtDateTime(m.long("last_scan_at")),
-                        t("csync_field_reported") to fmtDateTime(m.long("created")),
-                        if (m.long("resolved_at") != 0L) t("csync_field_resolved") to fmtDateTime(
-                            m.long("resolved_at"),
-                        ) else null,
-                    ),
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                ZillitText(
+                    t("csync_photos_and_video"),
+                    style = ZillitTheme.typography.label,
+                    color = colors.textSecondary,
                 )
-                if (m.str("notes").isNotBlank()) MutedText(m.str("notes"), Modifier.padding(top = 10.dp), maxLines = 6)
                 ReferenceGrid(
                     entityType = "MISSING",
                     entityId = m.id,
@@ -579,17 +577,82 @@ private fun MissingCard(m: Rec, actions: TicketActions, foundAt: FoundAt?, onFou
                     attachments = false,
                 )
             }
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        }
+    }
+}
+
+/** The card's head: what is missing, whose it is, and everything you can do about it. */
+@Composable
+private fun MissingHeader(
+    m: Rec,
+    piece: String,
+    actions: TicketActions,
+    foundAt: FoundAt?,
+    onFoundAt: (FoundAt?) -> Unit,
+) {
+    val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
+    val costume = m.rec("costume")
+    val status = m.str("status")
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            Modifier.size(TILE).clip(RoundedCornerShape(TILE_RADIUS)).background(colors.dangerSoft),
+            contentAlignment = Alignment.Center,
+        ) { ZillitIcon(ZillitIcons.Search, tint = colors.danger, size = 20.dp) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                val summary = "${t("csync_share_missing")}: $piece\n" +
-                    fill(t("csync_last_seen_n"), "x" to m.str("last_seen_location").ifBlank { "—" }) + " · " +
-                    fill(t("csync_last_assigned_lower_n"), "x" to m.str("last_assigned_to").ifBlank { "—" }) + "\n" +
-                    fill(t("csync_reported_n"), "date" to fmtDateTime(m.long("created")))
-                WfSendRequestButton { actions.send(m, piece.trim(), summary, "csync_ask_missing") }
-                RecordActions("MISSING", m.id, piece.trim(), summary)
-                if (ctx.canPost && status == "OPEN") MissingButtons(m, actions, foundAt, onFoundAt)
+                CostumeLink(costume)
+                StatusBadge(status)
+            }
+            costume?.rec("character")?.str("name")?.takeIf { it.isNotBlank() }?.let { name ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ZillitIcon(ZillitIcons.User, tint = colors.textMuted, size = 14.dp)
+                    MutedText(name)
+                }
+            }
+        }
+        val summary = "${t("csync_share_missing")}: $piece\n" +
+            fill(t("csync_last_seen_n"), "x" to m.str("last_seen_location").ifBlank { "—" }) + " · " +
+            fill(t("csync_last_assigned_lower_n"), "x" to m.str("last_assigned_to").ifBlank { "—" }) + "\n" +
+            fill(t("csync_reported_n"), "date" to fmtDateTime(m.long("created")))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            WfSendRequestButton { actions.send(m, piece.trim(), summary, "csync_ask_missing") }
+            RecordActions("MISSING", m.id, piece.trim(), summary)
+            if (ctx.canPost && status == "OPEN") MissingButtons(m, actions, foundAt, onFoundAt)
+        }
+    }
+}
+
+/** Facts as label over value, wrapping (the web's `.csync-tcard__facts`). */
+@Composable
+private fun FactGrid(facts: List<Pair<String, String>>) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        facts.forEach { (label, value) ->
+            Column(Modifier.width(FACT_WIDTH), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                ZillitText(
+                    label,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                    maxLines = 1,
+                )
+                ZillitText(value.ifBlank { "—" }, style = ZillitTheme.typography.bodySmall, maxLines = 2)
             }
         }
     }
@@ -625,15 +688,22 @@ private fun MissingButtons(m: Rec, actions: TicketActions, foundAt: FoundAt?, on
                 size = ButtonSize.Small,
                 enabled = !busy,
             )
+            ZillitButton(
+                t("csync_cancel"),
+                onClick = { onFoundAt(null) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
         }
     } else {
         ZillitButton(
             t("csync_found"),
             onClick = { onFoundAt(FoundAt(m.id, DEFAULT_FOUND_AT)) },
             size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Check,
+            leadingIcon = AhIcons.MapPin,
         )
     }
+    // Writing a piece off is a loss, not a tidy-up: it reads as the danger it is.
     ZillitButton(
         t("csync_write_off"),
         onClick = {
@@ -643,7 +713,7 @@ private fun MissingButtons(m: Rec, actions: TicketActions, foundAt: FoundAt?, on
                 },
             )
         },
-        variant = ButtonVariant.Tertiary,
+        variant = ButtonVariant.Danger,
         size = ButtonSize.Small,
         enabled = !busy,
     )

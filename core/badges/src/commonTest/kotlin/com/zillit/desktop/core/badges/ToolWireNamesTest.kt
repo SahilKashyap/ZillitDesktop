@@ -44,6 +44,7 @@ class ToolWireNamesTest {
             "map_label", "production_report_label", "production_report_tool_chat_label",
             "casting_background_tool_label",
             "recce_label", "cost_report_label", "pre_production_label",
+            "costume_set_sync_tool_label",
         ).forEach { label ->
             assertEquals(label, identifierToWireTool(wireToolToIdentifier(label)), "round trip of $label")
         }

@@ -409,7 +409,6 @@ private val EMPTY_EMOJI: Map<String, String> = mapOf(
     "csync_not_in_any_scene_yet" to "🎬",
     "csync_nothing_scheduled_day" to "📋",
     "csync_nothing_to_display" to "★",
-    "csync_notifications_empty_title" to "🔔",
     "csync_rentals_no_match" to "🔍",
     "csync_rentals_none" to "🏷",
     "csync_scan_empty_title" to "📷",

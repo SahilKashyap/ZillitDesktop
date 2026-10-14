@@ -47,6 +47,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private val PICKER_WIDTH = 760.dp
+private const val PICKER_LIST_SHARE = 0.6f
 private const val PICK_PAGE_SIZE = 100
 private const val SEARCH_DEBOUNCE_MS = 300L
 
@@ -89,7 +91,11 @@ fun CostumePickerDialog(
         onDismiss = onClose,
         visible = open,
         modifier = modifier,
-        width = 640.dp,
+        // Wide enough that a row's name, details and location read in full, and
+        // with ONE scroller: the dialog body does not scroll, only the list
+        // does (the web had three nested scrollers here until 2026-10-05).
+        width = PICKER_WIDTH,
+        scrollable = false,
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -140,12 +146,13 @@ private fun PickerList(q: String, characterId: String, exclude: (Rec) -> Boolean
         if (shown.isEmpty()) {
             EmptyState(t("csync_costumes_empty_title"))
         } else {
-            // `.csync-picker`: the list scrolls inside the dialog, capped at 46% of the window.
+            // `.csync-picker`: the only scroller in the dialog, taller than the
+            // module's other lists (the web's `calc(100vh - 150px)` body).
             val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(max = (windowHeight * 0.46f).coerceAtLeast(200.dp))
+                    .heightIn(max = (windowHeight * PICKER_LIST_SHARE).coerceAtLeast(200.dp))
                     .verticalScroll(rememberScrollState())
             ) {
                 shown.forEachIndexed { i, piece ->
