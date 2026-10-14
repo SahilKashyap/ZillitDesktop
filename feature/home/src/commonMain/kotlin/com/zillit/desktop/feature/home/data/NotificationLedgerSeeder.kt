@@ -37,6 +37,15 @@ class NotificationLedgerSeeder(
     private val store: BadgeStore,
     private val myUserId: () -> String? = { null },
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /**
+     * Whether the next seed must start over — the newest page, whatever the
+     * watermark says — and [onResynced] once it has answered. The host's
+     * answer is "the first launch after an update" (`BadgeResync`): rows a new
+     * version reads differently are refreshed from the server in one page,
+     * while the ledger keeps every read made here.
+     */
+    private val resyncDue: suspend () -> Boolean = { false },
+    private val onResynced: suspend () -> Unit = {},
 ) {
 
     /**
@@ -62,7 +71,8 @@ class NotificationLedgerSeeder(
         // whole page again, and an old one re-fetched every other
         // production's rows since.
         val watermark = store.watermark("")
-        val (cursor, direction) = if (watermark <= 0L) nowMillis() to PREVIOUS else watermark to NEXT
+        val resync = resyncDue()
+        val (cursor, direction) = if (resync || watermark <= 0L) nowMillis() to PREVIOUS else watermark to NEXT
         return apiClient.request(
             verb = HttpVerb.Get,
             url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/$cursor/$direction",
@@ -72,6 +82,10 @@ class NotificationLedgerSeeder(
         ).map { payload ->
             val records = payload.wireRecords()
                 .mapNotNull { notificationRecordFrom(it, fromApi = true, fallbackProjectId = projectId) }
+            // Before the rows land: their publish is what repaints the
+            // listing's cards, and those must stop showing the server's totals
+            // by then.
+            if (resync) onResynced()
             val outcome = store.seed(records)
             val me = myUserId()
             // The one line that says where a badge came from — read it before
@@ -84,7 +98,8 @@ class NotificationLedgerSeeder(
                     "perProduction=${records.filter { it.counts }.groupingBy { it.projectId }.eachCount()} " +
                     "here=${records.count { it.projectId == projectId }} " +
                     "mine=${records.count { it.receiver == me }} unread=${outcome.unread} " +
-                    "newest=${records.maxOfOrNull { it.updated } ?: 0L} watermark=$watermark"
+                    "newest=${records.maxOfOrNull { it.updated } ?: 0L} watermark=$watermark" +
+                    if (resync) " (resync after an update)" else ""
             }
             outcome
         }

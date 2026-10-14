@@ -228,6 +228,14 @@ object ZillitPreferences {
      */
     val BadgeMailboxes = PreferenceKey.StringKey("badges.mailboxes", "", PreferenceScope.User)
 
+    /**
+     * The app version this person's badge ledger was last fetched again from
+     * the top under. A different installed version means the app was updated
+     * since, and the next seed starts over (see `BadgeResync`). User-scoped, so
+     * a sign-out clears it and the next person's first session resyncs too.
+     */
+    val BadgeResyncedVersion = PreferenceKey.StringKey("badges.resyncedVersion", "", PreferenceScope.User)
+
     // -- per-project view settings -----------------------------------------
     //
     // Project-scoped because a user's chosen view for one production has no
@@ -286,7 +294,7 @@ object ZillitPreferences {
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
-        LastProjectId, LastUnitId, BadgeMailboxes,
+        LastProjectId, LastUnitId, BadgeMailboxes, BadgeResyncedVersion,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, EmailActiveMailbox, EmailMailboxTourSeen, ToolGroupOrder, RecentMentions, ChatFavourites,
         CallWidget, MessageWidget, CloseToTray, StartAtLogin,

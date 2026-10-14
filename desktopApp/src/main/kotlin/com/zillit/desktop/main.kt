@@ -1353,6 +1353,11 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean, onListing: Bo
     LaunchedEffect(socketState.isConnected) {
         if (socketState.isConnected) ready.seedBadges()
     }
+    // The first launch after an update starts the ledger over at once — on the
+    // listing or in a production, whichever comes first; the seed itself knows
+    // it is a resync (`BadgeResync`). The socket may not be up yet, and the
+    // listing's cards are showing the server's totals until this lands.
+    LaunchedEffect(ready) { if (ready.badgeResync.due()) ready.seedBadges() }
     LaunchedEffect(ready) { badgeSocketEffects(ready) }
     LaunchedEffect(ready) {
         // Coalesce the doubts inside a window, seed once per window.
@@ -2515,7 +2520,8 @@ private fun buildAuth(ready: AppGraph.Ready) = AuthViewModel(
     // ledger's own signal repaints the cards a message or notification moved.
     projectUnread = com.zillit.desktop.feature.auth.ui.PickerBadges(
         refresh = { fetchProjectUnread(ready) },
-        now = { ready.badgeStore.projectCounts(ready.deviceId()) },
+        // The server's totals until an update's resync lands, then the ledger.
+        now = { ready.badgeResync.serverCards ?: ready.badgeStore.projectCounts(ready.deviceId()) },
         changes = ready.badgeStore.changes,
     ),
     projectListStore = ready.projectListCache?.let(::CachedProjectList),
@@ -2555,15 +2561,20 @@ private suspend fun seedFromLastProduction(ready: AppGraph.Ready) {
     ready.mailboxScopes.learn(project.id, userId)
 }
 
-/**
- * `GET device/unread` — unread per production, before any is open.
- *
- * The one badge question with device scope: the listing's cards wear the
- * answer. The row shape is tolerated loosely (`project_id` + `unread`)
- * because only the web still calls this endpoint and its store discards the
- * response shape immediately; unknown rows count nothing rather than fail.
- */
+/** The listing's cards: the ledger's counts, or the server's own in the two cases it stands in. */
 private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> {
+    // The first launch after an update: the server's totals at once, while
+    // the resync `BadgeRefresh` starts fetches the ledger again from the top.
+    // Its rows' publish repaints the cards from the ledger (the picker's
+    // `now` stops answering with [BadgeResync.serverCards] once it lands).
+    if (ready.badgeResync.due()) {
+        val server = serverProjectUnread(ready)
+        ready.badgeResync.showServerCards(server)
+        if (server.isNotEmpty()) {
+            ZillitLog.d("Badges") { "picker counts from device/unread after an update, ledger resync behind" }
+            return server
+        }
+    }
     // Android's foreground fetch (`ZillitApplication.onStart` → `callBadgesApi`):
     // one listing call under the last production's headers, before anything
     // is open — the listing is user-wide, so it fills every production's
@@ -2576,6 +2587,19 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
         ZillitLog.d("Badges") { "picker counts from ledger: $ledger" }
         return ledger
     }
+    return serverProjectUnread(ready)
+}
+
+/**
+ * `GET device/unread` — unread per production, before any is open.
+ *
+ * The one badge question with device scope: the listing's cards wear the
+ * answer while the ledger is empty, or just after an update ([BadgeResync]).
+ * The row shape is tolerated loosely (`project_id` + `unread`) because only
+ * the web still calls this endpoint and its store discards the response shape
+ * immediately; unknown rows count nothing rather than fail.
+ */
+private suspend fun serverProjectUnread(ready: AppGraph.Ready): Map<String, Int> {
     val rows = ready.apiClient.request(
         verb = com.zillit.desktop.core.network.HttpVerb.Get,
         url = "${ready.config.apiV2(com.zillit.desktop.core.config.ZillitService.Notification)}device/unread",
