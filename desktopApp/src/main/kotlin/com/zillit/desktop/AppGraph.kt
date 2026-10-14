@@ -349,22 +349,32 @@ private fun CoroutineScope.announceSelfOnSocketConnect(
     socketClient.connectionState.collect { state ->
         if (state !is SocketConnectionState.Connected) return@collect
 
-        // No production open means nothing to join; the next open reconnects.
-        val projectId = activeProject.value?.id ?: return@collect
-
+        // `user:join` goes out whatever is open: its payload is empty and the
+        // identity comes from the handshake, so there is nothing
+        // production-specific to withhold — and it is what puts this socket in
+        // the user's room. It used to be skipped along with `mark_online`
+        // whenever no production was open, which left the connection the
+        // listing now keeps (see `onProjectOpened`) authenticated, acknowledged
+        // and deaf, exactly as the note above warns.
         socketClient.emit(
             ZillitSocketEvents.Session.JoinUser,
             kotlinx.serialization.json.JsonArray(emptyList()),
             kotlinx.serialization.json.JsonArray.serializer(),
         )
-        socketClient.emit(
-            ZillitSocketEvents.Session.MarkOnline,
-            kotlinx.serialization.json.buildJsonObject {
-                put("project_id", kotlinx.serialization.json.JsonPrimitive(projectId))
-            },
-            kotlinx.serialization.json.JsonObject.serializer(),
-        )
-        ZillitLog.i("Socket") { "announced user:join + mark_online" }
+        // `mark_online` is presence *in a production* and carries its id, so
+        // this one really does wait for an open production.
+        val projectId = activeProject.value?.id
+        if (projectId != null) {
+            socketClient.emit(
+                ZillitSocketEvents.Session.MarkOnline,
+                kotlinx.serialization.json.buildJsonObject {
+                    put("project_id", kotlinx.serialization.json.JsonPrimitive(projectId))
+                },
+                kotlinx.serialization.json.JsonObject.serializer(),
+            )
+        }
+        val announced = if (projectId != null) "user:join + mark_online" else "user:join (no production open)"
+        ZillitLog.i("Socket") { "announced $announced" }
     }
 }
 
@@ -515,7 +525,15 @@ private suspend fun onProjectOpened(
             onSocketReconnectSkippedForCall()
         } else {
             projectContext?.clear(activeProject.value?.id)
-            socket.disconnect()
+            // The connection is NOT cut here any more. Its handshake is this
+            // device's — a device token, or `moduledata` with a null project —
+            // so it is valid with nothing open, and the production listing
+            // wants the frames: that screen's cards carry unread counts, and
+            // Android's own project list runs on a live socket (it collects a
+            // dozen of its events, `isDocDeletedOnProjectList` among them).
+            // Cutting it was why a message arriving while the listing was up
+            // moved nothing until the next 60 s tick. The next open re-connects
+            // and so re-announces, as before.
         }
         return
     }
@@ -1212,6 +1230,32 @@ sealed interface AppGraph {
                     }
                 },
             )
+
+            // The socket belongs to the device, not to a production: once this
+            // person has a session it comes up and stays up, so the production
+            // listing receives frames too — until now it was opened only by
+            // opening a production, which is why a message arriving while the
+            // listing was up moved no card (see `onProjectOpened`'s null leg).
+            // Guarded on an idle connection because `connect` is not
+            // idempotent: it tears the transport down and re-opens it, and a
+            // live call rides that transport for its signalling.
+            appScope.launch {
+                authRepository.session.collect { session ->
+                    if (session == null) return@collect
+                    val idle = socketClient.connectionState.value.let { state ->
+                        state is SocketConnectionState.Disconnected || state is SocketConnectionState.Failed
+                    }
+                    if (!idle) return@collect
+                    ZillitLog.i("Socket") { "signed in with no production open: bringing the connection up" }
+                    socketClient.connect(
+                        SocketConfig(
+                            url = config.baseUrl(ZillitService.Chat),
+                            authHeaders = socketHandshake,
+                            onAuthRejected = socketTokenRejected,
+                        ),
+                    )
+                }
+            }
 
             // Personal productions have no mail, so nobody approved onto one
             // gets a mailbox. Read at decision time, not now: this graph
