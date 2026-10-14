@@ -14,6 +14,11 @@ data class CachedRead(val body: String, val fetchedAt: Long)
  * key; the store only remembers. Every key already carries the user and the
  * production, so one production's answers can never surface in another —
  * the same identity that signs the request scopes the cache.
+ *
+ * Either method may throw: a disk fills, a file locks, an encrypted database
+ * the OS has taken away. An implementation is welcome to say so rather than
+ * pretend. [ApiClient] reads anything thrown as a miss, because a cache that
+ * cannot answer is worth far less than the call it would otherwise take down.
  */
 interface ReadCache {
     suspend fun get(key: String): CachedRead?

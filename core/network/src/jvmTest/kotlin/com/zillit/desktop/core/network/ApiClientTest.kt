@@ -287,6 +287,39 @@ class ApiClientTest {
         assertEquals(0, reports, "the check must not re-raise the signal it is answering")
     }
 
+    // -- what a refusal says in the log ------------------------------------------------
+
+    /**
+     * A 406 is the server refusing the identity a call carried, and this
+     * client already knows when it carried none — so the line that reports the
+     * refusal says so. The field alternative was thirty-three lines of
+     * `406 /api/v2/configuration` (2026-10-12), in a production log with no
+     * INFO in it to cross-reference.
+     */
+    @Test
+    fun `a 406 names whichever half of the identity was missing`() {
+        assertEquals(
+            " — moduledata named no production and no person",
+            blankPairNote(406, ReadScope(userId = "", projectId = "")),
+        )
+        assertEquals(" — moduledata named no person", blankPairNote(406, ReadScope(userId = "", projectId = "p1")))
+        assertEquals(" — moduledata named no production", blankPairNote(406, ReadScope(userId = "u1", projectId = "")))
+        assertEquals(" — no session context to send", blankPairNote(406, null))
+    }
+
+    /**
+     * Silence when there is nothing to add: a 406 with both halves present is
+     * the server refusing something this client cannot see, and guessing at it
+     * in the log would send the next reader after the wrong thing.
+     */
+    @Test
+    fun `a 406 with a full identity, and every other status, adds nothing`() {
+        assertEquals("", blankPairNote(406, ReadScope(userId = "u1", projectId = "p1")))
+        assertEquals("", blankPairNote(401, ReadScope(userId = "", projectId = "")))
+        assertEquals("", blankPairNote(403, ReadScope(userId = "", projectId = "")))
+        assertEquals("", blankPairNote(503, null))
+    }
+
     private companion object {
         const val URL = "https://api.example.com/project"
         const val SIMPLE_BODY = """{"status":200,"data":{"id":"p1","name":"F"}}"""

@@ -12,10 +12,12 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import java.net.ConnectException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.builtins.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -35,17 +37,33 @@ class ReadCacheTest {
         }
     }
 
+    /** A store whose disk is gone: it throws rather than answer. */
+    private class BrokenCache(private val failure: () -> Throwable) : ReadCache {
+        var reads = 0
+        var writes = 0
+
+        override suspend fun get(key: String): CachedRead? {
+            reads++
+            throw failure()
+        }
+
+        override suspend fun put(key: String, scope: ReadScope, body: String, fetchedAt: Long) {
+            writes++
+            throw failure()
+        }
+    }
+
     private val cache = MemoryCache()
     private var scope: ReadScope? = ReadScope("u1", "p1")
     private var now = 1_000L
 
-    private fun client(engine: MockEngine) = ApiClient(
+    private fun client(engine: MockEngine, store: ReadCache = cache) = ApiClient(
         httpClient = HttpClient(engine) {
             expectSuccess = false
             install(ContentNegotiation) { json(HttpClientFactory.json) }
         },
         headerProvider = { _, _, _, _ -> emptyMap() },
-        readCache = cache,
+        readCache = store,
         readScope = { scope },
         nowMillis = { now },
     )
@@ -272,6 +290,57 @@ class ReadCacheTest {
         client(answering).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
 
         assertNull(client(answering).peekCached(URL, Int.serializer(), RequestModule.ProjectUser))
+    }
+
+    // -- a store that cannot answer -----------------------------------------
+
+    /**
+     * The crash this pins: a SQLite I/O error on the cache write left the
+     * request's own coroutine — the main one, for a screen — and killed
+     * `AWT-EventQueue-0`, over a row whose real answer the caller already had.
+     */
+    @Test
+    fun `a store that cannot keep the answer does not fail the call`() = runTest {
+        val broken = BrokenCache { IllegalStateException("disk I/O error") }
+
+        val answer = client(answering, broken)
+            .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertEquals("hello", assertIs<ZillitResult.Success<String>>(answer).data)
+        assertEquals(1, broken.writes, "the row was offered to the store")
+    }
+
+    /** A broken store has nothing to add to a call that already failed. */
+    @Test
+    fun `a store that cannot be read is a miss, not a failure of its own`() = runTest {
+        val broken = BrokenCache { IllegalStateException("disk I/O error") }
+
+        val offline = client(unreachable, broken)
+            .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertIs<ZillitError.NoConnection>(
+            assertIs<ZillitResult.Failure>(offline).error,
+            "the network's answer stands, not the store's",
+        )
+        assertEquals(1, broken.reads)
+    }
+
+    @Test
+    fun `a peek over a broken store finds nothing`() = runTest {
+        val broken = BrokenCache { IllegalStateException("disk I/O error") }
+
+        assertNull(client(answering, broken).peekCached(URL, String.serializer(), RequestModule.ProjectUser))
+    }
+
+    /** Tolerating a broken store must not come to mean swallowing cancellation. */
+    @Test
+    fun `cancellation still propagates out of a cache access`() = runTest {
+        val cancelling = BrokenCache { CancellationException("the screen went away") }
+
+        assertFailsWith<CancellationException> {
+            client(answering, cancelling)
+                .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+        }
     }
 
     private companion object {
