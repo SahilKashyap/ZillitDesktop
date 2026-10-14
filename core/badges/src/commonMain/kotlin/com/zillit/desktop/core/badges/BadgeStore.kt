@@ -195,11 +195,30 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         publish()
     }
 
-    /** Applies a `notification:silent` instruction, as the phones apply it to their ledgers. */
+    /**
+     * Applies a `notification:silent` instruction, as the phones apply it to
+     * their ledgers — across the WHOLE ledger, not only the open production.
+     *
+     * Android prunes Realm with no project filter at all
+     * (`AppBadgeDBManager` 1772-1967), and here it matters twice over: the
+     * production picker counts every production's rows, and between
+     * productions there is no open one, so a prune that reached only
+     * `rows` reached nothing. Measured on the listing before this: an arrival
+     * moved a card in ~60 ms while a read made on a phone took 20-30 s,
+     * because only the next seeded page brought it down.
+     *
+     * A row deleted or read elsewhere is not this device's badge whichever
+     * production it belongs to, so the wider scope is also the more correct
+     * one. Ids and room keys are server-unique; a screen read ([markRead])
+     * stays with the open production, because its tool and unit labels are
+     * not.
+     */
     suspend fun silence(silence: BadgeSilence, ownDeviceId: String? = null) = lock.withLock {
         // Android drops a frame that names this device as its origin (8625-8637).
         if (silence.selfDeviceId != null && silence.selfDeviceId == ownDeviceId) return@withLock
-        flip(rows.values.filter { !it.messageRead && silence.matches(it) }.map { it.id })
+        val ids = storage.unreadAcrossProductions().filter { silence.matches(it) }.map { it.id }
+        if (ids.isEmpty()) return@withLock
+        flip(ids)
         publish()
     }
 

@@ -411,6 +411,29 @@ class BadgeStoreTest {
         assertEquals(1, store.counts.value.section(BadgeSections.CNC))
     }
 
+    /**
+     * A read made on a phone, or a message deleted before anyone read it,
+     * arrives as `notification:silent`. It has to reach the ledger, not just
+     * the open production's copy of it — between productions there is no open
+     * one, and the picker counts them all. Measured before this: arrivals
+     * moved a card in ~60 ms, prunes took 20-30 s (the next seeded page).
+     */
+    @Test
+    fun `a prune reaches every production, including with none open`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("here", referenceId = "m-1"), row("elsewhere", projectId = "p2", referenceId = "m-2")))
+        assertEquals(mapOf(project to 1, "p2" to 1), store.projectCounts(null))
+
+        // Leaving a production empties the in-memory rows; the ledger keeps them.
+        store.clear()
+        store.silence(BadgeSilence(deletedChatIds = setOf("m-1", "m-2")))
+
+        assertTrue(store.projectCounts(null).isEmpty(), "both productions' rows are pruned")
+        assertTrue(storage.rows("p2").all { it.messageRead }, "and it stuck on disk")
+    }
+
     private fun dm(id: String, created: Long = 100L) =
         row(id, section = BadgeSections.CNC, tool = NotificationRecord.CHAT_TOOL, unit = "chat_member_label")
             .copy(senderId = "peer", created = created)
