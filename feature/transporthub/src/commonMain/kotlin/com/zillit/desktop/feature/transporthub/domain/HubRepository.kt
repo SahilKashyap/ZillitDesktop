@@ -11,7 +11,18 @@ import kotlinx.coroutines.flow.emptyFlow
  * these five because that is how many independent loads the hub has. A frame
  * for another production is dropped before it gets here.
  */
-enum class HubSyncKind { Fleet, Drivers, Trips, Rides, Permanent }
+enum class HubSyncKind {
+    Fleet,
+    Drivers,
+    Trips,
+    Rides,
+    Permanent,
+    Maintenance,
+    Tracking,
+    ShuttleRoutes,
+    ShuttleRuns,
+    ActionVehicles,
+}
 
 /** What a vehicle list is narrowed by. Every axis is optional. */
 data class VehicleFilter(
@@ -228,7 +239,7 @@ interface HubRepository {
      * in-flight statuses under one bucket and silently ignores some values —
      * so the whole list comes back and the tabs filter it here.
      */
-    suspend fun trips(): ZillitResult<List<Trip>>
+    suspend fun trips(driverId: String? = null): ZillitResult<List<Trip>>
 
     suspend fun trip(id: String): ZillitResult<Trip?>
 
@@ -260,7 +271,7 @@ interface HubRepository {
      * sends no scope sees everything. Rejected rides are fetched separately
      * and merged, because the default list leaves them out.
      */
-    suspend fun rideRequests(onlyMine: Boolean = false): ZillitResult<List<RideRequest>>
+    suspend fun rideRequests(scope: RideScope = RideScope.All): ZillitResult<List<RideRequest>>
 
     suspend fun activeCars(): ZillitResult<List<ActiveCar>>
 
@@ -321,4 +332,137 @@ interface HubRepository {
     suspend fun swapPermanentVehicle(id: String, vehicleId: String, reason: String): ZillitResult<PermanentTrip?>
 
     suspend fun deletePermanentTrip(id: String): ZillitResult<Unit>
+
+    // Dashboard ------------------------------------------------------------
+
+    /**
+     * The Dashboard's counters.
+     *
+     * Allowed to fail on its own: the page keeps its trip list and shows the
+     * cards as blank rather than a banner, which is what the web does with
+     * `Promise.allSettled`.
+     */
+    suspend fun insights(): ZillitResult<HubInsights>
+
+    /** How many ride requests are waiting — `/ride-request/pending`. */
+    suspend fun pendingRideCount(): ZillitResult<Int>
+
+    // Maintenance ----------------------------------------------------------
+
+    suspend fun maintenance(): ZillitResult<List<MaintenanceRecord>>
+
+    suspend fun addMaintenance(draft: MaintenanceDraft): ZillitResult<Unit>
+
+    suspend fun completeMaintenance(id: String): ZillitResult<Unit>
+
+    suspend fun deleteMaintenance(id: String): ZillitResult<Unit>
+
+    // Live tracking --------------------------------------------------------
+
+    /** Every driver reporting a position right now — `/location/active`. */
+    suspend fun activeLocations(): ZillitResult<List<DriverLocation>>
+
+    // Shuttles ---------------------------------------------------------------
+
+    /**
+     * The standing routes — `/shuttle/routes`, **singular**.
+     *
+     * The runs live under `/shuttles/...`; the two prefixes are not
+     * interchangeable and the wrong one 404s.
+     */
+    suspend fun shuttleRoutes(): ZillitResult<List<ShuttleRoute>>
+
+    suspend fun addShuttleRoute(draft: ShuttleRouteDraft): ZillitResult<Unit>
+
+    suspend fun updateShuttleRoute(id: String, draft: ShuttleRouteDraft): ZillitResult<Unit>
+
+    /** Enables or disables a route. The body spells the field `isActive`. */
+    suspend fun setShuttleRouteActive(id: String, active: Boolean): ZillitResult<Unit>
+
+    suspend fun deleteShuttleRoute(id: String): ZillitResult<Unit>
+
+    /**
+     * Generates this route's runs.
+     *
+     * Refused by the caller unless the route has both a driver and a vehicle:
+     * without them the server creates runs nobody can act on.
+     */
+    suspend fun generateShuttleRuns(id: String): ZillitResult<Unit>
+
+    /** The generated runs — `/shuttles/schedule`, **plural**. */
+    suspend fun shuttleRuns(): ZillitResult<List<ShuttleRun>>
+
+    suspend fun setShuttleRunStatus(id: String, status: ShuttleRunStatus): ZillitResult<Unit>
+
+    // Action vehicles --------------------------------------------------------
+
+    suspend fun actionVehicles(): ZillitResult<List<ActionVehicle>>
+
+    /** Raises a request — the AD's half of the flow. */
+    suspend fun requestActionVehicle(draft: AvDraft, timezone: String): ZillitResult<Unit>
+
+    /** Records the car actually found, and marks the record sourced. */
+    suspend fun sourceActionVehicle(id: String, draft: AvDraft): ZillitResult<Unit>
+
+    /**
+     * Edits a record in place.
+     *
+     * A finalized record is frozen apart from its two shoot dates, so the
+     * caller sends only those — the locked car and money fields must not be
+     * in the body at all.
+     */
+    suspend fun updateActionVehicle(
+        id: String,
+        draft: AvDraft,
+        timezone: String,
+        datesOnly: Boolean,
+    ): ZillitResult<Unit>
+
+    suspend fun setActionVehicleStatus(id: String, status: AvStatus): ZillitResult<Unit>
+
+    suspend fun deleteActionVehicle(id: String): ZillitResult<Unit>
+
+    suspend fun sendActionVehicleForApproval(
+        id: String,
+        approvers: List<AvApprover>,
+    ): ZillitResult<Unit>
+
+    suspend fun approveActionVehicle(id: String): ZillitResult<Unit>
+
+    suspend fun rejectActionVehicle(id: String, reason: String): ZillitResult<Unit>
+
+    suspend fun requestActionVehicleReturn(
+        id: String,
+        approvers: List<AvApprover>,
+        note: String,
+    ): ZillitResult<Unit>
+
+    suspend fun approveActionVehicleReturn(id: String): ZillitResult<Unit>
+
+    suspend fun rejectActionVehicleReturn(id: String, reason: String): ZillitResult<Unit>
+
+    /**
+     * Adds or removes approvers on a record already in flight.
+     *
+     * This route takes **ids only** and resolves the names from project
+     * membership itself — unlike send-for-approval, which trusts the objects
+     * it is given. [returnFlow] picks which of the two lists is edited.
+     */
+    suspend fun editActionVehicleApprovers(
+        id: String,
+        add: List<String> = emptyList(),
+        remove: List<String> = emptyList(),
+        returnFlow: Boolean = false,
+    ): ZillitResult<Unit>
+
+    suspend fun remindActionVehicleApprover(id: String, userId: String): ZillitResult<Unit>
+
+    suspend fun addActionVehicleComment(id: String, text: String): ZillitResult<Unit>
+
+    /** Opens the private thread to more people. */
+    suspend fun sendActionVehicleForComments(
+        id: String,
+        userIds: List<String>,
+        message: String,
+    ): ZillitResult<Unit>
 }

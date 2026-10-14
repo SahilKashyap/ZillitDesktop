@@ -1,4 +1,5 @@
-@file:Suppress("TooManyFunctions", "LargeClass") // One handler per user act; the web spreads them over 24 files.
+// One handler per user act; the web spreads them over 24 files.
+@file:Suppress("TooManyFunctions", "LargeClass", "CyclomaticComplexMethod")
 
 package com.zillit.desktop.feature.transporthub.ui
 
@@ -7,6 +8,17 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
+import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvInsuranceStatus
+import com.zillit.desktop.feature.transporthub.domain.AvSourceType
+import com.zillit.desktop.feature.transporthub.domain.AvDraft
+import com.zillit.desktop.feature.transporthub.domain.AvStatus
+import com.zillit.desktop.feature.transporthub.domain.AvVariant
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRoute
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteDraft
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
+import com.zillit.desktop.feature.transporthub.domain.ShuttleStop
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.DriverDetailsPatch
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeBucket
@@ -16,6 +28,8 @@ import com.zillit.desktop.feature.transporthub.domain.HubPassenger
 import com.zillit.desktop.feature.transporthub.domain.HubRepository
 import com.zillit.desktop.feature.transporthub.domain.HubRole
 import com.zillit.desktop.feature.transporthub.domain.HubStop
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceDraft
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceRecord
 import com.zillit.desktop.feature.transporthub.domain.HubSyncKind
 import com.zillit.desktop.feature.transporthub.domain.HubViewer
 import com.zillit.desktop.feature.transporthub.domain.PermanentDraft
@@ -23,6 +37,7 @@ import com.zillit.desktop.feature.transporthub.domain.PermanentState
 import com.zillit.desktop.feature.transporthub.domain.PermanentTrip
 import com.zillit.desktop.feature.transporthub.domain.RideDraft
 import com.zillit.desktop.feature.transporthub.domain.RideRequest
+import com.zillit.desktop.feature.transporthub.domain.RideScope
 import com.zillit.desktop.feature.transporthub.domain.RideStatus
 import com.zillit.desktop.feature.transporthub.domain.Trip
 import com.zillit.desktop.feature.transporthub.domain.TripDraft
@@ -30,6 +45,11 @@ import com.zillit.desktop.feature.transporthub.domain.TripResourceKind
 import com.zillit.desktop.feature.transporthub.domain.TripStatus
 import com.zillit.desktop.feature.transporthub.domain.VehicleAllocation
 import com.zillit.desktop.feature.transporthub.domain.VehicleDraft
+import com.zillit.desktop.feature.transporthub.data.hubTime
+import com.zillit.desktop.feature.transporthub.data.startOfDay
+import com.zillit.desktop.feature.transporthub.data.toEpochMillisOrNull
+import com.zillit.desktop.feature.transporthub.data.timeZoneId
+import com.zillit.desktop.feature.transporthub.data.toIsoDate
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.conflate
@@ -53,13 +73,22 @@ class HubViewModel(
 
     private var listening = false
 
+    private companion object {
+        /** Where a position is opened, the older tool's own link shape. */
+        const val MAPS_URL = "https://www.google.com/maps/search/?api=1&query="
+
+        /** A picture vehicle nobody has put a car against yet. */
+        val UNSOURCED = setOf(AvStatus.Requested, AvStatus.Rejected)
+    }
+
     fun start() {
         val viewer = resolveViewer()
         setState {
             copy(
                 viewer = viewer,
+                nowMs = nowMillis(),
                 // The rail depends on the role, so the landing section does
-                // too: a driver has no Trips page to land on.
+                // too: a driver has no Dashboard to land on.
                 section = HubSection.homeFor(viewer.role),
             )
         }
@@ -85,6 +114,15 @@ class HubViewModel(
                     HubSyncKind.Trips -> loadTrips()
                     HubSyncKind.Rides -> loadRides()
                     HubSyncKind.Permanent -> loadAllocations()
+                    HubSyncKind.Maintenance -> loadMaintenance()
+                    // Every moving car emits this one, so it is only acted on
+                    // while the page that draws it is open.
+                    HubSyncKind.Tracking ->
+                        if (currentState.section.showsLocations) loadLocations()
+
+                    HubSyncKind.ShuttleRoutes -> loadShuttleRoutes()
+                    HubSyncKind.ShuttleRuns -> loadShuttleRuns()
+                    HubSyncKind.ActionVehicles -> loadActionVehicles()
                 }
             }
         }
@@ -115,6 +153,11 @@ class HubViewModel(
      */
     private fun onSectionEvent(event: HubEvent) {
         when (event) {
+            is HubEvent.DashboardEvent -> onDashboardEvent(event)
+            is HubEvent.MaintenanceEvent -> onMaintenanceEvent(event)
+            is HubEvent.TrackingEvent -> onTrackingEvent(event)
+            is HubEvent.ShuttleEvent -> onShuttleEvent(event)
+            is HubEvent.ActionVehicleEvent -> onActionVehicleEvent(event)
             is HubEvent.FleetEvent -> onFleetEvent(event)
             is HubEvent.DriverEvent -> onDriverEvent(event)
             is HubEvent.TripEvent -> onTripEvent(event)
@@ -128,7 +171,7 @@ class HubViewModel(
 
     private fun refreshAll() {
         if (!currentState.viewer.canView) return
-        setState { copy(loading = true, error = null) }
+        setState { copy(loading = true, error = null, nowMs = nowMillis()) }
         launch {
             coroutineScope {
                 // The directories back every section's pickers, so they load
@@ -162,7 +205,12 @@ class HubViewModel(
                 people.await().onOk { rows -> setState { copy(people = rows) } }
                 types.await().onOk { rows -> setState { copy(vehicleTypes = rows) } }
                 designations.await().onOk { names ->
-                    setState { copy(viewer = viewer.copy(driverDesignations = names)) }
+                    // An empty answer is "could not say", not "there are
+                    // none": replacing a list already in hand with it would
+                    // demote a driver to a passenger mid-session.
+                    if (names.isNotEmpty()) {
+                        setState { copy(viewer = viewer.copy(driverDesignations = names)) }
+                    }
                 }
             }
             // The rail depends on the role, and the role can have changed
@@ -180,7 +228,6 @@ class HubViewModel(
     private fun selectSection(section: HubSection) {
         if (section == currentState.section) return
         setState { copy(section = section, error = null) }
-        if (!section.isPorted) return
         launch {
             loadSection(section)
             // Opening a section clears its unread rows, as the web does on
@@ -192,13 +239,98 @@ class HubViewModel(
 
     private suspend fun loadSection(section: HubSection) {
         when (section) {
+            HubSection.Dashboard -> loadDashboard()
             HubSection.Trips, HubSection.MyTrips -> loadTrips()
-            HubSection.RideRequests, HubSection.MyRides -> loadRides()
+            HubSection.RideRequests, HubSection.MyRides,
+            HubSection.AssignedRides, HubSection.MyRequests,
+            -> loadRides()
+
             HubSection.Fleet -> loadVehicles()
             HubSection.Drivers -> loadDrivers()
             HubSection.Allocations -> loadAllocations()
-            else -> Unit
+            HubSection.Maintenance -> loadMaintenance()
+            HubSection.LiveTracking, HubSection.DriverMap -> loadLocations()
+            HubSection.Shuttles -> loadShuttles()
+            HubSection.ActionVehicles -> loadActionVehicles()
         }
+    }
+
+    /** Both shuttle tabs, so switching between them does not wait on a load. */
+    private suspend fun loadShuttles() {
+        coroutineScope {
+            val routes = async { repository.shuttleRoutes() }
+            val runs = async { repository.shuttleRuns() }
+            routes.await().fold(ok = { rows -> setState { copy(shuttleRoutes = rows) } })
+            // The runs route is the newer of the two and lives under a
+            // different prefix: let it fail on its own rather than costing
+            // the routes tab as well.
+            runs.await().onOk { rows -> setState { copy(shuttleRuns = rows) } }
+        }
+    }
+
+    private suspend fun loadShuttleRoutes() {
+        repository.shuttleRoutes().fold(ok = { rows -> setState { copy(shuttleRoutes = rows) } })
+    }
+
+    private suspend fun loadShuttleRuns() {
+        repository.shuttleRuns().onOk { rows -> setState { copy(shuttleRuns = rows) } }
+    }
+
+    private suspend fun loadActionVehicles() {
+        repository.actionVehicles().fold(
+            ok = { rows ->
+                setState {
+                    copy(
+                        actionVehicles = rows,
+                        // The tabs depend on the records — an approver's tab
+                        // only exists while they have something to decide — so
+                        // one that has just gone away must not stay open. And
+                        // until somebody picks a tab, the first of theirs is
+                        // the one to show, which is the web's own rule.
+                        avTab = when {
+                            avTabPicked && avTab in actionVehicleTabs -> avTab
+                            else -> actionVehicleTabs.firstOrNull() ?: AvTab.Finalized
+                        },
+                    )
+                }
+            },
+        )
+    }
+
+    /**
+     * The Dashboard's four reads.
+     *
+     * Each is allowed to fail on its own — the web runs them through
+     * `Promise.allSettled` for exactly this reason: `/insights/dashboard` is
+     * the newest of the four routes and a deployment without it must still
+     * leave the trip list and the fleet count on screen.
+     */
+    private suspend fun loadDashboard() {
+        coroutineScope {
+            val trips = async { repository.trips() }
+            val insights = async { repository.insights() }
+            val pending = async { repository.pendingRideCount() }
+            val vehicles = async { repository.availableVehicles() }
+            trips.await().onOk { rows -> setState { copy(trips = rows) } }
+            insights.await().onOk { data -> setState { copy(insights = data) } }
+            pending.await().onOk { count -> setState { copy(pendingRideCount = count) } }
+            vehicles.await().onOk { rows -> setState { copy(availableVehicles = rows) } }
+        }
+    }
+
+    private suspend fun loadMaintenance() {
+        repository.maintenance().fold(ok = { rows -> setState { copy(maintenance = rows) } })
+    }
+
+    private suspend fun loadLocations() {
+        repository.activeLocations().fold(
+            ok = { rows ->
+                setState { copy(driverLocations = rows, trackingUpdatedMs = nowMillis()) }
+            },
+        )
+        // A driver's own map shows only their pin; the coordinator's Rides tab
+        // needs the cars, which are the active ride requests.
+        if (currentState.role == HubRole.Coordinator) loadRides()
     }
 
     private suspend fun loadVehicles() {
@@ -218,15 +350,28 @@ class HubViewModel(
         }
     }
 
+    /**
+     * The trips the open section wants.
+     *
+     * A driver's My Trips is scoped to their own driver record. Without that
+     * parameter the route answers the production's whole list — which is what
+     * a driver used to be shown.
+     */
     private suspend fun loadTrips() {
-        repository.trips().fold(ok = { rows -> setState { copy(trips = rows) } })
+        val driverId = if (currentState.role == HubRole.Driver) currentState.myDriverId else null
+        repository.trips(driverId).fold(ok = { rows -> setState { copy(trips = rows) } })
     }
 
+    /**
+     * The rides the open section wants, on that section's own scope.
+     *
+     * The three pages are three different lists, and the one that is easy to
+     * get wrong is a driver's Assigned Rides: `me=true` there answers the
+     * rides that driver *asked for*, not the ones they are to drive.
+     */
     private suspend fun loadRides() {
-        // A driver or a passenger must send the scope: without it the server
-        // answers a coordinator's whole list.
-        val onlyMine = currentState.role != HubRole.Coordinator
-        repository.rideRequests(onlyMine).fold(ok = { rows -> setState { copy(rides = rows) } })
+        repository.rideRequests(currentState.rideScope)
+            .fold(ok = { rows -> setState { copy(rides = rows) } })
     }
 
     private suspend fun loadAllocations() {
@@ -561,6 +706,758 @@ class HubViewModel(
         }
     }
 
+    // Dashboard --------------------------------------------------------------
+
+    private fun onDashboardEvent(event: HubEvent.DashboardEvent) {
+        when (event) {
+            is HubEvent.DashboardFilterChanged -> setState { copy(dashboardFilter = event.filter) }
+            is HubEvent.DashboardSearchChanged -> setState { copy(dashboardSearch = event.query) }
+            HubEvent.OpenAllTrips -> selectSection(HubSection.Trips)
+        }
+    }
+
+    // Maintenance ------------------------------------------------------------
+
+    private fun onMaintenanceEvent(event: HubEvent.MaintenanceEvent) {
+        when (event) {
+            is HubEvent.MaintenanceTabChanged -> setState { copy(maintenanceTab = event.tab) }
+            is HubEvent.MaintenanceSearchChanged -> setState { copy(maintenanceSearch = event.query) }
+            HubEvent.NewMaintenance -> setState {
+                copy(
+                    // The booking cannot be in the past, so today is both the
+                    // default and the earliest the field offers.
+                    maintenanceEditor = MaintenanceEditor(scheduledDate = nowMillis().toIsoDate()),
+                )
+            }
+
+            is HubEvent.MaintenanceEditorChanged -> setState { copy(maintenanceEditor = event.editor) }
+            HubEvent.SaveMaintenance -> saveMaintenance()
+            HubEvent.CloseMaintenanceEditor -> setState { copy(maintenanceEditor = null) }
+            is HubEvent.CompleteMaintenance -> completeMaintenance(event.record)
+            is HubEvent.DeleteMaintenance -> confirmDeleteMaintenance(event.record)
+            is HubEvent.DeleteMaintenanceConfirmed -> deleteMaintenance(event.id)
+        }
+    }
+
+    private fun saveMaintenance() {
+        val editor = currentState.maintenanceEditor ?: return
+        val day = editor.scheduledDate.toEpochMillisOrNull()
+        val problem = when {
+            editor.vehicleId.isBlank() -> str(S.desktop_hub_pick_a_vehicle)
+            day == null -> str(S.desktop_hub_pick_a_date)
+            day.startOfDay() < nowMillis().startOfDay() -> str(S.desktop_hub_date_in_the_past)
+            else -> null
+        }
+        if (problem != null) {
+            notice(problem, success = false)
+            return
+        }
+        setState { copy(maintenanceEditor = editor.copy(saving = true)) }
+        launch {
+            val draft = MaintenanceDraft(
+                vehicleId = editor.vehicleId,
+                type = editor.type,
+                scheduledDateMs = day ?: 0,
+                description = editor.description,
+                estimatedCost = editor.estimatedCost.trim().toDoubleOrNull(),
+                odometerReading = editor.odometerReading.trim().toLongOrNull(),
+            )
+            repository.addMaintenance(draft).fold(
+                ok = {
+                    setState { copy(maintenanceEditor = null) }
+                    notice(str(S.desktop_hub_maintenance_scheduled))
+                    loadMaintenance()
+                },
+                bad = { setState { copy(maintenanceEditor = editor.copy(saving = false)) } },
+            )
+        }
+    }
+
+    private fun completeMaintenance(record: MaintenanceRecord) {
+        setState { copy(busyRowId = record.id) }
+        launch {
+            repository.completeMaintenance(record.id).fold(
+                ok = {
+                    notice(str(S.desktop_hub_maintenance_completed))
+                    loadMaintenance()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    private fun confirmDeleteMaintenance(record: MaintenanceRecord) {
+        setState {
+            copy(
+                confirm = HubConfirm(
+                    title = str(S.desktop_hub_delete_maintenance),
+                    body = str(S.desktop_hub_delete_maintenance_body),
+                    confirmLabel = str(S.delete),
+                    action = HubEvent.DeleteMaintenanceConfirmed(record.id),
+                ),
+            )
+        }
+    }
+
+    private fun deleteMaintenance(id: String) {
+        setState { copy(busyRowId = id) }
+        launch {
+            repository.deleteMaintenance(id).fold(
+                ok = {
+                    notice(str(S.desktop_hub_maintenance_deleted))
+                    setState { copy(maintenance = maintenance.filterNot { it.id == id }) }
+                    loadMaintenance()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    // Live tracking ----------------------------------------------------------
+
+    private fun onTrackingEvent(event: HubEvent.TrackingEvent) {
+        when (event) {
+            is HubEvent.TrackingTabChanged -> setState { copy(trackingTab = event.tab) }
+            HubEvent.RefreshTracking -> launch { loadLocations() }
+            is HubEvent.TrackDriver -> openDriverOnMap(event.driverId)
+        }
+    }
+
+    /**
+     * Opens a driver's last reported position in the browser's map.
+     *
+     * The web draws a Google map inside the page; the desktop has no map
+     * widget, so the position is handed to the browser — the same seam the
+     * older Transportation tool uses for "track driver".
+     */
+    private fun openDriverOnMap(driverId: String) {
+        val point = currentState.driverLocations.firstOrNull { it.driverId == driverId }
+            ?.location
+            ?: currentState.drivers.firstOrNull { it.id == driverId }?.lastLocation
+        if (point == null || !point.hasCoordinates) {
+            notice(str(S.desktop_hub_no_position_yet), success = false)
+            return
+        }
+        sendEffect(HubEffect.OpenLink("$MAPS_URL${point.lat},${point.long}"))
+    }
+
+    // Shuttles ---------------------------------------------------------------
+
+    private fun onShuttleEvent(event: HubEvent.ShuttleEvent) {
+        when (event) {
+            is HubEvent.ShuttleTabChanged -> setState { copy(shuttleTab = event.tab) }
+            is HubEvent.ShuttleSearchChanged -> setState { copy(shuttleSearch = event.query) }
+            is HubEvent.RunRouteFilterChanged -> setState { copy(runRouteFilter = event.routeId) }
+            HubEvent.NewShuttleRoute -> {
+                setState { copy(routeEditor = ShuttleRouteEditor()) }
+                launch { loadAssignable() }
+            }
+
+            is HubEvent.EditShuttleRoute -> {
+                setState { copy(routeEditor = ShuttleRouteEditor.from(event.route)) }
+                launch { loadAssignable() }
+            }
+
+            is HubEvent.RouteEditorChanged -> setState { copy(routeEditor = event.editor) }
+            HubEvent.SaveShuttleRoute -> saveShuttleRoute()
+            HubEvent.CloseRouteEditor -> setState { copy(routeEditor = null) }
+            is HubEvent.ToggleShuttleRoute -> toggleShuttleRoute(event.route)
+            is HubEvent.GenerateShuttleRuns -> generateShuttleRuns(event.route)
+            is HubEvent.DeleteShuttleRoute -> confirmDeleteRoute(event.route)
+            is HubEvent.DeleteShuttleRouteConfirmed -> deleteShuttleRoute(event.id)
+            is HubEvent.SetShuttleRunStatus -> setRunStatus(event.run.id, event.status)
+        }
+    }
+
+    private fun saveShuttleRoute() {
+        val editor = currentState.routeEditor ?: return
+        val problem = when {
+            editor.composedName.isBlank() -> str(S.desktop_hub_route_ends_required)
+            editor.stops.none { !it.location.isEmpty || it.name.isNotBlank() } ->
+                str(S.desktop_hub_route_stop_required)
+
+            else -> null
+        }
+        if (problem != null) {
+            notice(problem, success = false)
+            return
+        }
+        setState { copy(routeEditor = editor.copy(saving = true)) }
+        launch {
+            val draft = ShuttleRouteDraft(
+                name = editor.composedName,
+                type = editor.type,
+                capacity = editor.capacity.trim().toIntOrNull(),
+                notes = editor.notes,
+                frequencyMinutes = editor.frequencyMinutes.trim().toIntOrNull(),
+                startTime = editor.startTime.trim(),
+                endTime = editor.endTime.trim(),
+                daysActive = editor.daysActive,
+                // A blank row is somebody who added a stop and left it: drop
+                // it rather than sending a stop with no address at all.
+                stops = editor.stops.filter { !it.location.isEmpty || it.name.isNotBlank() },
+                driverId = editor.driverId,
+                vehicleId = editor.vehicleId,
+            )
+            val result = editor.id?.let { repository.updateShuttleRoute(it, draft) }
+                ?: repository.addShuttleRoute(draft)
+            result.fold(
+                ok = {
+                    setState { copy(routeEditor = null) }
+                    notice(str(S.desktop_hub_route_saved))
+                    loadShuttleRoutes()
+                },
+                bad = { setState { copy(routeEditor = editor.copy(saving = false)) } },
+            )
+        }
+    }
+
+    private fun toggleShuttleRoute(route: ShuttleRoute) {
+        val next = !route.isActive
+        // Optimistic: the card dims or brightens at once, and no full-page
+        // spinner flashes for a one-field write. Rolled back on refusal.
+        setState {
+            copy(
+                busyRowId = route.id,
+                shuttleRoutes = shuttleRoutes.map {
+                    if (it.id == route.id) it.copy(isActive = next) else it
+                },
+            )
+        }
+        launch {
+            repository.setShuttleRouteActive(route.id, next).fold(
+                ok = { loadShuttleRoutes() },
+                bad = {
+                    setState {
+                        copy(
+                            shuttleRoutes = shuttleRoutes.map {
+                                if (it.id == route.id) it.copy(isActive = route.isActive) else it
+                            },
+                        )
+                    }
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    /**
+     * Generates a route's runs.
+     *
+     * Refused without both a driver and a vehicle, and the refusal says which
+     * is missing: the server would otherwise create runs with nobody to drive
+     * them, and nothing can be done with those afterwards.
+     */
+    private fun generateShuttleRuns(route: ShuttleRoute) {
+        if (!route.canGenerateRuns) {
+            notice(
+                str(
+                    S.desktop_hub_route_needs_assignment,
+                    route.displayName,
+                    when {
+                        route.driverId.isNullOrBlank() && route.vehicleId.isNullOrBlank() ->
+                            str(S.desktop_hub_a_driver_and_a_vehicle)
+
+                        route.driverId.isNullOrBlank() -> str(S.driver)
+                        else -> str(S.vehicle)
+                    },
+                ),
+                success = false,
+            )
+            return
+        }
+        setState { copy(busyRowId = route.id) }
+        launch {
+            repository.generateShuttleRuns(route.id).fold(
+                ok = {
+                    notice(str(S.desktop_hub_runs_generated, route.displayName))
+                    // The web moves to the runs tab so the coordinator can
+                    // see what was just created.
+                    setState { copy(shuttleTab = ShuttleTab.Runs) }
+                    loadShuttleRuns()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    private fun confirmDeleteRoute(route: ShuttleRoute) {
+        setState {
+            copy(
+                confirm = HubConfirm(
+                    title = str(S.desktop_hub_delete_route),
+                    // The server drops every future run of this route in the
+                    // same transaction, which is worth saying before the fact.
+                    body = str(S.desktop_hub_delete_route_body, route.displayName),
+                    confirmLabel = str(S.delete),
+                    action = HubEvent.DeleteShuttleRouteConfirmed(route.id),
+                ),
+            )
+        }
+    }
+
+    private fun deleteShuttleRoute(id: String) {
+        setState { copy(busyRowId = id) }
+        launch {
+            repository.deleteShuttleRoute(id).fold(
+                ok = {
+                    notice(str(S.desktop_hub_route_deleted))
+                    // The cascade also removed this route's future runs, so
+                    // both lists are stale.
+                    loadShuttles()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    private fun setRunStatus(id: String, status: ShuttleRunStatus) {
+        setState { copy(busyRowId = id) }
+        launch {
+            repository.setShuttleRunStatus(id, status).fold(
+                ok = {
+                    notice(str(S.desktop_hub_status_updated))
+                    loadShuttleRuns()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    // Action vehicles --------------------------------------------------------
+
+    private fun onActionVehicleEvent(event: HubEvent.ActionVehicleEvent) {
+        when (event) {
+            is HubEvent.AvTabChanged -> setState { copy(avTab = event.tab, avTabPicked = true) }
+            is HubEvent.AvSearchChanged -> setState { copy(avSearch = event.query) }
+            is HubEvent.AvCategoryChanged -> setState { copy(avCategory = event.category) }
+            HubEvent.NewActionVehicleRequest -> setState {
+                copy(avEditor = AvEditor(mode = AvFormMode.Request))
+            }
+
+            is HubEvent.SourceActionVehicle -> setState {
+                copy(avEditor = event.vehicle.toEditor(AvFormMode.Source))
+            }
+
+            is HubEvent.EditActionVehicle -> setState {
+                copy(avEditor = event.vehicle.toEditor(AvFormMode.Edit))
+            }
+
+            is HubEvent.AvEditorChanged -> setState { copy(avEditor = event.editor) }
+            HubEvent.SaveActionVehicle -> saveActionVehicle()
+            HubEvent.CloseAvEditor -> setState { copy(avEditor = null) }
+            HubEvent.PickAvPhotos -> pickAvPhotos()
+            is HubEvent.RemoveAvPhoto -> setState {
+                copy(avEditor = avEditor?.copy(images = avEditor.images - event.slot))
+            }
+
+            is HubEvent.OpenActionVehicle -> setState { copy(openActionVehicle = event.id) }
+            HubEvent.CloseActionVehicle -> setState { copy(openActionVehicle = null) }
+            is HubEvent.AvTrackerFlowChanged -> setState { copy(avTrackerFlow = event.flow) }
+            else -> onActionVehicleWrite(event)
+        }
+    }
+
+    /** The acts that go out to the server, split out for the complexity budget. */
+    private fun onActionVehicleWrite(event: HubEvent.ActionVehicleEvent) {
+        when (event) {
+            is HubEvent.SetActionVehicleStatus -> moveActionVehicle(event.id, event.status)
+            is HubEvent.DeleteActionVehicle -> confirmDeleteActionVehicle(event.vehicle)
+            is HubEvent.DeleteActionVehicleConfirmed -> deleteActionVehicle(event.id)
+            is HubEvent.PickAvApprovers -> {
+                setState {
+                    copy(
+                        avApproverPicker = AvApproverPicker(
+                            vehicleId = event.vehicle.id,
+                            flow = event.flow,
+                            addingToExisting = event.addingToExisting,
+                        ),
+                    )
+                }
+                launch { if (currentState.people.isEmpty()) loadPeople() }
+            }
+
+            is HubEvent.AvApproverPickerChanged -> setState { copy(avApproverPicker = event.picker) }
+            HubEvent.SubmitAvApprovers -> submitAvApprovers()
+            HubEvent.CloseAvApproverPicker -> setState { copy(avApproverPicker = null) }
+            is HubEvent.RemoveAvApprover ->
+                removeAvApprover(event.vehicleId, event.userId, event.flow)
+
+            is HubEvent.RemindAvApprover -> remindAvApprover(event.vehicleId, event.userId)
+            is HubEvent.DecideActionVehicle -> setState {
+                copy(
+                    avDecision = AvDecision(
+                        vehicleId = event.vehicle.id,
+                        flow = event.flow,
+                        isReject = event.isReject,
+                    ),
+                )
+            }
+
+            is HubEvent.AvDecisionChanged -> setState { copy(avDecision = event.decision) }
+            HubEvent.SubmitAvDecision -> submitAvDecision()
+            HubEvent.CloseAvDecision -> setState { copy(avDecision = null) }
+            is HubEvent.OpenAvThread -> setState { copy(avThread = AvThread(event.vehicleId)) }
+            is HubEvent.AvThreadChanged -> setState { copy(avThread = event.thread) }
+            HubEvent.SendAvComment -> sendAvComment()
+            HubEvent.CloseAvThread -> setState { copy(avThread = null) }
+            is HubEvent.PickAvCommenters -> {
+                setState {
+                    copy(
+                        avCommentPicker = AvCommentPicker(
+                            vehicleId = event.vehicle.id,
+                            // The existing audience is pre-picked, minus the
+                            // viewer: re-opening reads as "add more people"
+                            // and shows who is already in.
+                            picked = event.vehicle.commentAudience.filter { it != viewerId },
+                        ),
+                    )
+                }
+                launch { if (currentState.people.isEmpty()) loadPeople() }
+            }
+
+            is HubEvent.AvCommentPickerChanged -> setState { copy(avCommentPicker = event.picker) }
+            HubEvent.SubmitAvCommenters -> submitAvCommenters()
+            HubEvent.CloseAvCommentPicker -> setState { copy(avCommentPicker = null) }
+            else -> Unit
+        }
+    }
+
+    private val viewerId: String get() = currentState.viewer.userId
+
+    private suspend fun loadPeople() {
+        repository.projectPeople().onOk { rows -> setState { copy(people = rows) } }
+    }
+
+    /**
+     * A record as the form holds it.
+     *
+     * A finalized record is frozen apart from its two shoot dates, and that is
+     * carried on the editor so the form can grey the rest rather than letting
+     * somebody type into fields the server will ignore.
+     */
+    private fun ActionVehicle.toEditor(mode: AvFormMode): AvEditor = AvEditor(
+        id = id,
+        mode = mode,
+        displayName = displayName,
+        categories = categories,
+        vehicleTypes = vehicleTypes,
+        variants = variants.ifEmpty { listOf(AvVariant()) },
+        make = make,
+        model = model,
+        color = color,
+        year = year?.toString().orEmpty(),
+        description = description,
+        condition = condition,
+        modifications = modifications,
+        useType = useType,
+        scenes = scenes,
+        location = location,
+        needRehearsalDate = needRehearsalMs.toIsoDate(),
+        needShootingDate = needShootingMs.toIsoDate(),
+        reminderDays = reminderDays?.toString().orEmpty(),
+        approvedDrivers = approvedDrivers,
+        notes = notes,
+        sourceType = sourceType ?: AvSourceType.Rented,
+        ownerName = ownerName,
+        ownerContactNumber = ownerContactNumber,
+        rate = rate?.toString().orEmpty(),
+        ratePeriod = ratePeriod,
+        agreementStartDate = agreementStartMs.toIsoDate(),
+        agreementEndDate = agreementEndMs.toIsoDate(),
+        insuranceStatus = insuranceStatus ?: AvInsuranceStatus.Pending,
+        policyRef = policyRef,
+        replacementValue = replacementValue?.toString().orEmpty(),
+        licensePlate = licensePlate,
+        permittedUses = permittedUses,
+        propPlates = propPlates,
+        images = images.map { PhotoSlot(attachment = it) },
+        // An edit of a record nobody has sourced yet is still the requester's
+        // own submit, options and all.
+        requesterSubmit = mode == AvFormMode.Request ||
+            (mode == AvFormMode.Edit && status in UNSOURCED),
+    ).let { editor ->
+        if (mode == AvFormMode.Edit && status.isFinalized) editor.frozen() else editor
+    }
+
+    private fun saveActionVehicle() {
+        val editor = currentState.avEditor ?: return
+        validateActionVehicle(editor)?.let { problem ->
+            notice(problem, success = false)
+            return
+        }
+        setState { copy(avEditor = editor.copy(saving = true)) }
+        launch {
+            val draft = editor.toDraft()
+            val result = when {
+                editor.mode == AvFormMode.Request || editor.id == null ->
+                    repository.requestActionVehicle(draft, timeZoneId())
+
+                editor.mode == AvFormMode.Source ->
+                    repository.sourceActionVehicle(editor.id, draft)
+
+                else -> repository.updateActionVehicle(
+                    id = editor.id,
+                    draft = draft,
+                    timezone = timeZoneId(),
+                    datesOnly = editor.datesOnly,
+                )
+            }
+            result.fold(
+                ok = {
+                    setState { copy(avEditor = null) }
+                    notice(
+                        when (editor.mode) {
+                            AvFormMode.Request -> str(S.desktop_hub_av_requested)
+                            AvFormMode.Source -> str(S.desktop_hub_av_sourced)
+                            AvFormMode.Edit -> str(S.saved)
+                        },
+                    )
+                    loadActionVehicles()
+                },
+                bad = { setState { copy(avEditor = editor.copy(saving = false)) } },
+            )
+        }
+    }
+
+    /**
+     * What the form refuses before the server does.
+     *
+     * The two that matter: a request with no option at all (the server
+     * answers `variants required`), and a sourcing with no owner on a vehicle
+     * that is not the production's own.
+     */
+    private fun validateActionVehicle(editor: AvEditor): String? = when {
+        editor.displayName.isBlank() -> str(S.desktop_hub_av_name_required)
+        editor.mode == AvFormMode.Request && editor.variants.all { it.isEmpty } ->
+            str(S.desktop_hub_av_option_required)
+
+        editor.showsSourcing && !editor.datesOnly &&
+            !editor.sourceType.isOwned && editor.ownerName.isBlank() ->
+            str(S.desktop_hub_av_owner_required)
+
+        else -> null
+    }
+
+    private fun moveActionVehicle(id: String, status: AvStatus) {
+        setState { copy(busyRowId = id) }
+        launch {
+            repository.setActionVehicleStatus(id, status).fold(
+                ok = {
+                    notice(str(S.desktop_hub_status_updated))
+                    loadActionVehicles()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    private fun confirmDeleteActionVehicle(vehicle: ActionVehicle) {
+        setState {
+            copy(
+                confirm = HubConfirm(
+                    title = str(S.desktop_hub_delete_action_vehicle),
+                    body = str(S.desktop_hub_delete_action_vehicle_body, vehicle.title),
+                    confirmLabel = str(S.delete),
+                    action = HubEvent.DeleteActionVehicleConfirmed(vehicle.id),
+                ),
+            )
+        }
+    }
+
+    private fun deleteActionVehicle(id: String) {
+        setState { copy(busyRowId = id) }
+        launch {
+            repository.deleteActionVehicle(id).fold(
+                ok = {
+                    notice(str(S.desktop_hub_av_removed))
+                    setState { copy(openActionVehicle = null) }
+                    loadActionVehicles()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    /**
+     * Sends a record to the people who decide on it.
+     *
+     * Three routes behind one picker, and they do not take the same body:
+     * starting a round sends the whole approver objects, a return sends them
+     * plus a note, and adding to a round in flight sends **ids only** because
+     * that route resolves the names itself.
+     */
+    private fun submitAvApprovers() {
+        val picker = currentState.avApproverPicker ?: return
+        if (picker.picked.isEmpty()) {
+            notice(str(S.desktop_hub_pick_an_approver), success = false)
+            return
+        }
+        setState { copy(avApproverPicker = picker.copy(saving = true)) }
+        launch {
+            val approvers = picker.picked.mapNotNull { userId ->
+                currentState.people.firstOrNull { it.userId == userId }?.let { person ->
+                    AvApprover(
+                        userId = person.userId,
+                        name = person.name,
+                        designation = person.designation,
+                    )
+                }
+            }
+            val result = when {
+                picker.addingToExisting -> repository.editActionVehicleApprovers(
+                    id = picker.vehicleId,
+                    add = picker.picked,
+                    returnFlow = picker.flow == AvFlow.Return,
+                )
+
+                picker.flow == AvFlow.Return -> repository.requestActionVehicleReturn(
+                    id = picker.vehicleId,
+                    approvers = approvers,
+                    note = picker.note,
+                )
+
+                else -> repository.sendActionVehicleForApproval(picker.vehicleId, approvers)
+            }
+            result.fold(
+                ok = {
+                    setState { copy(avApproverPicker = null) }
+                    notice(
+                        when {
+                            picker.addingToExisting -> str(S.desktop_hub_approvers_updated)
+                            picker.flow == AvFlow.Return -> str(S.desktop_hub_sent_for_return)
+                            else -> str(S.desktop_hub_sent_for_approval)
+                        },
+                    )
+                    loadActionVehicles()
+                },
+                bad = { setState { copy(avApproverPicker = picker.copy(saving = false)) } },
+            )
+        }
+    }
+
+    private fun removeAvApprover(vehicleId: String, userId: String, flow: AvFlow) {
+        launch {
+            repository.editActionVehicleApprovers(
+                id = vehicleId,
+                remove = listOf(userId),
+                returnFlow = flow == AvFlow.Return,
+            ).fold(
+                ok = {
+                    notice(str(S.desktop_hub_approver_removed))
+                    loadActionVehicles()
+                },
+            )
+        }
+    }
+
+    private fun remindAvApprover(vehicleId: String, userId: String) {
+        launch {
+            repository.remindActionVehicleApprover(vehicleId, userId)
+                .fold(ok = { notice(str(S.desktop_hub_reminder_sent)) })
+        }
+    }
+
+    private fun submitAvDecision() {
+        val decision = currentState.avDecision ?: return
+        setState { copy(avDecision = decision.copy(saving = true)) }
+        launch {
+            val id = decision.vehicleId
+            val result = when {
+                decision.flow == AvFlow.Return && decision.isReject ->
+                    repository.rejectActionVehicleReturn(id, decision.reason)
+
+                decision.flow == AvFlow.Return -> repository.approveActionVehicleReturn(id)
+                decision.isReject -> repository.rejectActionVehicle(id, decision.reason)
+                else -> repository.approveActionVehicle(id)
+            }
+            result.fold(
+                ok = {
+                    setState { copy(avDecision = null) }
+                    notice(
+                        when {
+                            decision.flow == AvFlow.Return && decision.isReject ->
+                                str(S.desktop_hub_return_declined)
+
+                            decision.flow == AvFlow.Return -> str(S.desktop_hub_return_approved)
+                            decision.isReject -> str(S.desktop_hub_sent_back_to_transport)
+                            else -> str(S.desktop_hub_av_approved)
+                        },
+                    )
+                    loadActionVehicles()
+                },
+                bad = { setState { copy(avDecision = decision.copy(saving = false)) } },
+            )
+        }
+    }
+
+    private fun sendAvComment() {
+        val thread = currentState.avThread ?: return
+        val text = thread.draft.trim()
+        if (text.isEmpty()) return
+        // A finished record's thread closes with it: nothing more happens to a
+        // returned or cancelled request, comments included.
+        if (currentState.actionVehicle(thread.vehicleId)?.status?.isTerminal == true) {
+            notice(str(S.desktop_hub_thread_closed), success = false)
+            return
+        }
+        setState { copy(avThread = thread.copy(sending = true)) }
+        launch {
+            repository.addActionVehicleComment(thread.vehicleId, text).fold(
+                ok = {
+                    setState { copy(avThread = thread.copy(draft = "", sending = false)) }
+                    loadActionVehicles()
+                },
+                bad = { setState { copy(avThread = thread.copy(sending = false)) } },
+            )
+        }
+    }
+
+    private fun submitAvCommenters() {
+        val picker = currentState.avCommentPicker ?: return
+        if (picker.picked.isEmpty()) {
+            notice(str(S.desktop_hub_pick_someone), success = false)
+            return
+        }
+        setState { copy(avCommentPicker = picker.copy(saving = true)) }
+        launch {
+            repository.sendActionVehicleForComments(
+                id = picker.vehicleId,
+                userIds = picker.picked,
+                message = picker.message,
+            ).fold(
+                ok = {
+                    setState { copy(avCommentPicker = null) }
+                    notice(str(S.desktop_hub_thread_shared))
+                    loadActionVehicles()
+                },
+                bad = { setState { copy(avCommentPicker = picker.copy(saving = false)) } },
+            )
+        }
+    }
+
+    private fun pickAvPhotos() {
+        val editor = currentState.avEditor ?: return
+        launch {
+            host.pickAndStore(HubMediaKind.Image, multiple = true).fold(
+                ok = { picked ->
+                    if (picked.isEmpty()) return@fold
+                    setState {
+                        copy(
+                            avEditor = avEditor?.let { open ->
+                                open.copy(
+                                    images = open.images + picked.map {
+                                        PhotoSlot(attachment = it.attachment, bytes = it.bytes)
+                                    },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+    }
+
     // Trips ------------------------------------------------------------------
 
     private fun onTripEvent(event: HubEvent.TripEvent) {
@@ -569,7 +1466,7 @@ class HubViewModel(
             is HubEvent.TripSearchChanged -> setState { copy(tripSearch = event.query) }
             is HubEvent.TripDateChanged -> setState { copy(tripDateMs = event.dayStartMs) }
             HubEvent.NewTrip -> {
-                setState { copy(tripEditor = TripEditor(dateMs = nowMillis())) }
+                setState { copy(tripEditor = TripEditor(date = nowMillis().toIsoDate())) }
                 launch { loadAssignable() }
             }
 
@@ -580,6 +1477,21 @@ class HubViewModel(
             HubEvent.CloseTrip -> setState { copy(openTrip = null, openTripEvents = emptyList()) }
             is HubEvent.SetTripStatus -> setTripStatus(event.id, event.status)
             is HubEvent.RemindTrip -> remindTrip(event.id)
+            is HubEvent.AssignTrip -> {
+                val trip = currentState.openTrip?.takeIf { it.id == event.id }
+                    ?: currentState.trips.firstOrNull { it.id == event.id }
+                setState {
+                    copy(
+                        assignEditor = AssignEditor(
+                            rideId = event.id,
+                            driverId = trip?.driverId,
+                            vehicleId = trip?.vehicleId,
+                            isTrip = true,
+                        ),
+                    )
+                }
+                launch { loadAssignable() }
+            }
             is HubEvent.DeleteTrip -> confirmDeleteTrip(event.trip)
             is HubEvent.DeleteTripConfirmed -> deleteTripRow(event.id, event.kind)
         }
@@ -597,7 +1509,7 @@ class HubViewModel(
                 title = editor.title,
                 tripType = editor.tripType,
                 priority = editor.priority,
-                passengers = editor.passengers,
+                passengers = editor.passengers.map { it.toPassenger(editor.date) },
                 notes = editor.notes,
                 driverId = editor.driverId,
                 vehicleId = editor.vehicleId,
@@ -630,8 +1542,28 @@ class HubViewModel(
         editor.passengers.any { it.pickup.address.isBlank() || it.dropoff.address.isBlank() } ->
             str(S.desktop_hub_ends_required)
 
+        editor.date.toEpochMillisOrNull() == null -> str(S.desktop_hub_pick_a_date)
         else -> null
     }
+
+    /**
+     * One form row as the server wants a passenger.
+     *
+     * The day and the `HH:mm` are joined here, which is the only place that
+     * knows both: the row carries the time and the trip carries the day. A
+     * blank time leaves `scheduled_pickup_time` off, and the server then
+     * schedules the trip for the day itself.
+     */
+    private fun TripPassengerRow.toPassenger(day: String): HubPassenger = HubPassenger(
+        userId = userId?.takeIf { it.isNotBlank() },
+        name = name.trim(),
+        contactNumber = contactNumber.trim(),
+        pickupName = pickup.address,
+        pickup = pickup,
+        dropoff = dropoff,
+        scheduledPickupTimeMs = time.trim().takeIf { it.isNotBlank() }
+            ?.let { "${day}T$it".toEpochMillisOrNull() },
+    )
 
     private fun openTrip(id: String) {
         launch {
@@ -927,11 +1859,21 @@ class HubViewModel(
         }
         setState { copy(assignEditor = editor.copy(saving = true)) }
         launch {
-            repository.assignRide(editor.rideId, editor.driverId, editor.vehicleId).fold(
+            val result = if (editor.isTrip) {
+                repository.assignTrip(editor.rideId, editor.driverId, editor.vehicleId)
+            } else {
+                repository.assignRide(editor.rideId, editor.driverId, editor.vehicleId)
+            }
+            result.fold(
                 ok = {
                     setState { copy(assignEditor = null) }
                     notice(str(S.desktop_hub_ride_assigned))
-                    loadRides()
+                    if (editor.isTrip) {
+                        loadTrips()
+                        if (currentState.openTrip?.id == editor.rideId) openTrip(editor.rideId)
+                    } else {
+                        loadRides()
+                    }
                 },
                 bad = { setState { copy(assignEditor = editor.copy(saving = false)) } },
             )

@@ -24,6 +24,9 @@ kotlin {
             implementation(project(":core:workspace"))
             implementation(project(":core:units"))
             implementation(libs.kotlinx.serialization.json)
+            // Shoot days are local days: the hub's dates are formatted in the
+            // machine's own zone, as the web's `toLocaleDateString` is.
+            implementation(libs.kotlinx.datetime)
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)

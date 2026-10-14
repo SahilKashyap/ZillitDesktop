@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -14,8 +18,12 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
+import com.zillit.desktop.core.designsystem.component.ZillitTokenField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transporthub.domain.HubDay
 import com.zillit.desktop.feature.transporthub.domain.HubLocation
@@ -247,3 +255,81 @@ internal fun HubRouteLine(
 
 private val SEARCH_WIDTH = 320.dp
 private val FACT_ICON = 14.dp
+
+/**
+ * An address field with the map behind it.
+ *
+ * The service refuses a ride whose ends carry no coordinates, and a typed
+ * address alone carries none — so every place in the hub is asked for the way
+ * the web asks (`common/LocationPicker.jsx`): type it, or pick it and have the
+ * coordinates filled in. Typing still works, because an address someone knows
+ * by heart should not need a map.
+ *
+ * The longitude is renamed here, at the call site, because the hub's wire
+ * spells it `long` and the picker hands back `lng`.
+ */
+@Composable
+internal fun HubLocationField(
+    label: String,
+    value: HubLocation,
+    onChange: (HubLocation) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ZillitLocationField(
+        text = value.address,
+        onTextChange = { typed ->
+            // Typing over a picked place drops its coordinates: they described
+            // the old address, and sending them with a new one puts the car
+            // somewhere nobody asked for.
+            if (typed == value.address) return@ZillitLocationField
+            onChange(HubLocation(address = typed))
+        },
+        onPicked = { place ->
+            onChange(HubLocation(address = place.address, lat = place.lat, long = place.lng))
+        },
+        label = label,
+        modifier = modifier,
+        initial = value.takeIf { it.hasCoordinates }?.let {
+            PickedLocation(name = "", address = it.address, lat = it.lat, lng = it.long)
+        },
+    )
+}
+
+/**
+ * A "type it and press enter" list of short values.
+ *
+ * Scene numbers, colours, prop plates and approved drivers are all collected
+ * this way on the web (antd's `mode="tags"`). The shared token field is the
+ * closest thing the design system has, and it carries its own text separately
+ * from the chips — so the in-progress text is remembered here rather than
+ * pushed into the editor on every keystroke.
+ */
+@Composable
+internal fun HubTagField(
+    label: String,
+    values: List<String>,
+    onValuesChange: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    placeholder: String? = null,
+) {
+    var typed by remember { mutableStateOf("") }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        ZillitSectionLabel(text = label)
+        ZillitTokenField(
+            tokens = values,
+            input = typed,
+            onValueChange = { tokens, input ->
+                typed = input
+                if (tokens != values) onValuesChange(tokens)
+            },
+            placeholder = placeholder,
+            // A chip the user typed is never silently dropped, even when the
+            // field is read-only — they should still be able to see it.
+            isTokenValid = { enabled },
+        )
+    }
+}

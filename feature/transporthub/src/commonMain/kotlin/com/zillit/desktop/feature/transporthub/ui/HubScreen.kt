@@ -3,7 +3,6 @@
 
 package com.zillit.desktop.feature.transporthub.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,45 +12,53 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.SideNavItem
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.SideNavSection
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
-import com.zillit.desktop.core.designsystem.component.ZillitSideNav
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
-import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.transporthub.domain.HubRole
+import com.zillit.desktop.feature.transporthub.domain.HubInsights
+import com.zillit.desktop.feature.transporthub.ui.pages.ActionVehiclesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.AllocationsPage
+import com.zillit.desktop.feature.transporthub.ui.pages.DashboardPage
+import com.zillit.desktop.feature.transporthub.ui.pages.DriverMapPage
 import com.zillit.desktop.feature.transporthub.ui.pages.DriversPage
 import com.zillit.desktop.feature.transporthub.ui.pages.FleetPage
 import com.zillit.desktop.feature.transporthub.ui.pages.HubDialogs
+import com.zillit.desktop.feature.transporthub.ui.pages.LiveTrackingPage
+import com.zillit.desktop.feature.transporthub.ui.pages.MaintenancePage
 import com.zillit.desktop.feature.transporthub.ui.pages.MyRidesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.MyTripsPage
 import com.zillit.desktop.feature.transporthub.ui.pages.RidesPage
+import com.zillit.desktop.feature.transporthub.ui.pages.ShuttlesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.TripsPage
 
 /**
- * The Transportation Hub: a section rail on the left, the section on the
+ * The Transportation Hub: the web's sidebar on the left, the section on the
  * right, dialogs over both.
  *
- * The rail is the web's sidebar, including the sections phase 1 has not
- * ported — they say so when opened rather than being hidden, so a coordinator
- * who can see Shuttles on the web does not wonder where the data went.
+ * The rail is the role's own, in the web's order — a coordinator's ten
+ * destinations, a driver's four, a passenger's two.
  */
 @Composable
 fun HubScreen(
     state: HubUiState,
     onEvent: (HubEvent) -> Unit,
     openLink: (String) -> Unit = {},
+    /** The way back out of the tool, as the web's sidebar carries. */
+    onBackToFilmTools: (() -> Unit)? = null,
     /**
      * Opens the older Transportation page.
      *
@@ -61,7 +68,6 @@ fun HubScreen(
      */
     openClassicPage: (() -> Unit)? = null,
 ) {
-    val colors = ZillitTheme.colors
     if (!state.viewer.canView) {
         ZillitEmptyState(
             title = str(S.desktop_hub_no_access_title),
@@ -71,31 +77,27 @@ fun HubScreen(
         )
         return
     }
+    var collapsed by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
-            ZillitSideNav(
-                sections = listOf(
-                    SideNavSection(
-                        title = null,
-                        items = state.rail.map { section ->
-                            SideNavItem(
-                                id = section.name,
-                                label = section.label(),
-                                icon = section.icon(),
-                                count = state.badge(section),
-                            )
-                        } + listOfNotNull(
-                            openClassicPage?.let {
-                                SideNavItem(
-                                    id = CLASSIC_PAGE_ID,
-                                    label = str(S.desktop_hub_classic_page),
-                                    icon = ZillitIcons.ArrowLeft,
-                                )
-                            },
-                        ),
-                    ),
+            HubRail(
+                rows = state.rail.map { section ->
+                    HubRailRow(
+                        id = section.name,
+                        label = section.label(),
+                        icon = section.icon(),
+                        badge = state.badge(section),
+                        active = section == state.section,
+                    )
+                } + listOfNotNull(
+                    openClassicPage?.let {
+                        HubRailRow(
+                            id = CLASSIC_PAGE_ID,
+                            label = str(S.desktop_hub_classic_page),
+                            icon = ZillitIcons.Expand,
+                        )
+                    },
                 ),
-                activeId = state.section.name,
                 onSelect = { id ->
                     if (id == CLASSIC_PAGE_ID) {
                         openClassicPage?.invoke()
@@ -103,20 +105,14 @@ fun HubScreen(
                         onEvent(HubEvent.SelectSection(HubSection.valueOf(id)))
                     }
                 },
-                modifier = Modifier.fillMaxHeight().background(colors.surfaceSunken),
-                header = {
-                    Column(Modifier.padding(bottom = ZillitTheme.spacing.sm)) {
-                        ZillitText(
-                            text = str(S.desktop_hub_title),
-                            style = ZillitTheme.typography.titleLarge,
-                        )
-                        ZillitText(
-                            text = state.roleLabel(),
-                            style = ZillitTheme.typography.bodySmall,
-                            color = colors.textMuted,
-                        )
-                    }
-                },
+                collapsed = collapsed,
+                onToggleCollapse = { collapsed = !collapsed },
+                isTempDriver = state.viewer.isTempDriver,
+                profileName = state.viewer.fullName,
+                profileDesignation = state.viewer.designation,
+                profileUserId = state.viewer.userId,
+                profileIsAdmin = state.viewer.isAdmin,
+                onBack = onBackToFilmTools,
             )
             Column(
                 modifier = Modifier
@@ -125,14 +121,10 @@ fun HubScreen(
                     .padding(ZillitTheme.spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                when {
-                    !state.section.isPorted -> NotPortedYet(openClassicPage)
-                    state.loading && state.isSectionEmpty -> Box(
-                        Modifier.fillMaxSize(),
-                        androidx.compose.ui.Alignment.Center,
-                    ) { ZillitSpinner() }
-
-                    else -> HubSectionBody(state, onEvent, openLink, openClassicPage)
+                if (state.loading && state.isSectionEmpty) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }
+                } else {
+                    HubSectionBody(state, onEvent, openLink)
                 }
             }
         }
@@ -146,80 +138,62 @@ private fun HubSectionBody(
     state: HubUiState,
     onEvent: (HubEvent) -> Unit,
     openLink: (String) -> Unit,
-    openClassicPage: (() -> Unit)?,
 ) {
     when (state.section) {
+        HubSection.Dashboard -> DashboardPage(state, onEvent)
         HubSection.Trips -> TripsPage(state, onEvent)
         HubSection.RideRequests -> RidesPage(state, onEvent)
         HubSection.Fleet -> FleetPage(state, onEvent)
         HubSection.Drivers -> DriversPage(state, onEvent, openLink)
         HubSection.Allocations -> AllocationsPage(state, onEvent)
+        HubSection.Maintenance -> MaintenancePage(state, onEvent)
+        HubSection.Shuttles -> ShuttlesPage(state, onEvent)
+        HubSection.ActionVehicles -> ActionVehiclesPage(state, onEvent)
+        HubSection.LiveTracking -> LiveTrackingPage(state, onEvent)
         HubSection.MyTrips -> MyTripsPage(state, onEvent)
-        HubSection.MyRides -> MyRidesPage(state, onEvent)
-        else -> NotPortedYet(openClassicPage)
-    }
-}
+        // A driver's two ride lists are one page: the rows are the same and
+        // only the scope behind them differs, which the load already applied.
+        HubSection.AssignedRides, HubSection.MyRequests, HubSection.MyRides ->
+            MyRidesPage(state, onEvent)
 
-@Composable
-private fun NotPortedYet(openClassicPage: (() -> Unit)?) {
-    ZillitEmptyState(
-        title = str(S.desktop_hub_not_ported_title),
-        message = if (openClassicPage == null) {
-            str(S.desktop_hub_not_ported_body)
-        } else {
-            str(S.desktop_hub_not_ported_open_classic)
-        },
-        icon = ZillitIcons.Info,
-        modifier = Modifier.fillMaxWidth(),
-        action = openClassicPage?.let {
-            {
-                ZillitButton(
-                    text = str(S.desktop_hub_classic_page),
-                    onClick = it,
-                    variant = ButtonVariant.Secondary,
-                )
-            }
-        },
-    )
+        HubSection.DriverMap -> DriverMapPage(state, onEvent)
+    }
 }
 
 /** The rail id of the way back to the older page — never a [HubSection]. */
 private const val CLASSIC_PAGE_ID = "classic-transportation"
 
-/** The rail's own label for a section. */
+/** The rail's own label for a section — the web's `NAV_BY_ROLE` labels. */
+@Suppress("CyclomaticComplexMethod") // One branch per section; a map would hide the pairing.
 internal fun HubSection.label(): String = when (this) {
+    HubSection.Dashboard -> str(S.dashboard)
     HubSection.Trips -> str(S.trips)
     HubSection.RideRequests -> str(S.ride_requests)
     HubSection.Fleet -> str(S.fleet)
+    HubSection.ActionVehicles -> str(S.action_vehicles)
     HubSection.Drivers -> str(S.drivers)
     HubSection.Allocations -> str(S.allocations)
-    HubSection.MyTrips -> str(S.desktop_hub_my_trips)
-    HubSection.MyRides -> str(S.ride_requests)
-    HubSection.Dashboard -> str(S.dashboard)
-    HubSection.ActionVehicles -> str(S.action_vehicles)
     HubSection.Shuttles -> str(S.shuttles)
     HubSection.LiveTracking -> str(S.desktop_hub_live_tracking)
     HubSection.Maintenance -> str(S.maintenance)
+    HubSection.MyTrips -> str(S.desktop_hub_my_trips)
     HubSection.DriverMap -> str(S.desktop_hub_my_map)
+    HubSection.AssignedRides -> str(S.assigned_rides)
+    HubSection.MyRequests, HubSection.MyRides -> str(S.ride_requests)
 }
 
 internal fun HubSection.icon(): ImageVector = when (this) {
+    HubSection.Dashboard -> ZillitIcons.Home
     HubSection.Trips, HubSection.MyTrips -> ZillitIcons.Send
-    HubSection.RideRequests, HubSection.MyRides -> ZillitIcons.Chat
+    HubSection.RideRequests -> ZillitIcons.Chat
+    HubSection.AssignedRides, HubSection.MyRequests, HubSection.MyRides -> ZillitIcons.Transport
     HubSection.Fleet -> ZillitIcons.Transport
+    HubSection.ActionVehicles -> ZillitToolIcons.Script
     HubSection.Drivers -> ZillitIcons.Users
     HubSection.Allocations -> ZillitIcons.Link
-    HubSection.Dashboard -> ZillitIcons.Home
-    HubSection.ActionVehicles -> ZillitToolIcons.Script
     HubSection.Shuttles -> ZillitToolIcons.Transportation
     HubSection.LiveTracking, HubSection.DriverMap -> ZillitToolIcons.Location
     HubSection.Maintenance -> ZillitIcons.Tools
-}
-
-private fun HubUiState.roleLabel(): String = when (role) {
-    HubRole.Coordinator -> str(S.ah_step_coordinator)
-    HubRole.Driver -> str(S.driver)
-    HubRole.Passenger -> str(S.crew)
 }
 
 /**
@@ -230,10 +204,18 @@ private fun HubUiState.roleLabel(): String = when (role) {
  */
 private val HubUiState.isSectionEmpty: Boolean
     get() = when (section) {
+        HubSection.Dashboard -> trips.isEmpty() && insights == HubInsights.Empty
+
         HubSection.Trips, HubSection.MyTrips -> trips.isEmpty()
-        HubSection.RideRequests, HubSection.MyRides -> rides.isEmpty()
+        HubSection.RideRequests, HubSection.MyRides,
+        HubSection.AssignedRides, HubSection.MyRequests,
+        -> rides.isEmpty()
+
         HubSection.Fleet -> vehicles.isEmpty()
         HubSection.Drivers -> drivers.isEmpty()
         HubSection.Allocations -> allocations.isEmpty()
-        else -> true
+        HubSection.Maintenance -> maintenance.isEmpty()
+        HubSection.Shuttles -> shuttleRoutes.isEmpty() && shuttleRuns.isEmpty()
+        HubSection.ActionVehicles -> actionVehicles.isEmpty()
+        HubSection.LiveTracking, HubSection.DriverMap -> driverLocations.isEmpty()
     }

@@ -59,6 +59,9 @@ class HubToolProvider(
             state = state,
             onEvent = viewModel::onEvent,
             openLink = openLink,
+            // The web's sidebar carries a way back to Film Tools, and the hub
+            // is full-bleed: without it there is nothing on screen that leaves.
+            onBackToFilmTools = { navigator.navigate(WorkspaceRoute.Tool(FILM_TOOLS_PATH)) },
             // Its own window: the two tools are separate providers, and
             // replacing this one's content would strand the hub's open form.
             openClassicPage = { navigator.openInNewWindow(WorkspaceRoute.Tool(CLASSIC_PATH)) },
@@ -75,5 +78,8 @@ class HubToolProvider(
 
         /** The older Transportation page, still registered at its own path. */
         const val CLASSIC_PATH = "/film-tools/transportation"
+
+        /** The tile grid the hub opened from — the same route Account Hub goes back to. */
+        const val FILM_TOOLS_PATH = "/home/tools"
     }
 }

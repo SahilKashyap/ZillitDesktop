@@ -1,5 +1,19 @@
 package com.zillit.desktop.feature.transporthub
 
+import com.zillit.desktop.feature.transporthub.data.shuttleRouteBody
+import com.zillit.desktop.feature.transporthub.data.avBody
+import com.zillit.desktop.feature.transporthub.data.toActionVehicle
+import com.zillit.desktop.feature.transporthub.data.toShuttleRoute
+import com.zillit.desktop.feature.transporthub.data.toShuttleRun
+import com.zillit.desktop.feature.transporthub.domain.AvDraft
+import com.zillit.desktop.feature.transporthub.domain.AvSourceType
+import com.zillit.desktop.feature.transporthub.domain.AvStatus
+import com.zillit.desktop.feature.transporthub.domain.AvVariant
+import com.zillit.desktop.feature.transporthub.domain.HubDay
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteDraft
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteType
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
+import com.zillit.desktop.feature.transporthub.domain.ShuttleStop
 import com.zillit.desktop.feature.transporthub.data.record
 import com.zillit.desktop.feature.transporthub.data.rows
 import com.zillit.desktop.feature.transporthub.data.toDriver
@@ -320,5 +334,176 @@ class HubWireTest {
         assertTrue(HubLocation.Empty.isEmpty)
         assertFalse(HubLocation(address = "Base").isEmpty)
         assertFalse(HubLocation(lat = 1.0).isEmpty)
+    }
+
+    // Shuttles ---------------------------------------------------------------
+
+    @Test
+    fun `a route reads its schedule flat or nested`() {
+        val nested = obj(
+            """
+            {"_id":"r1","name":"Base → Set","type":"cast",
+             "schedule":{"frequency":20,"start_time":"06:30","end_time":"21:00",
+                         "days_of_week":["1","2","0"]},
+             "capacity":12}
+            """.trimIndent(),
+        ).toShuttleRoute()!!
+        assertEquals(20, nested.frequencyMinutes)
+        assertEquals("06:30–21:00", nested.timeWindow)
+        assertEquals(ShuttleRouteType.Cast, nested.type)
+        // `days_of_week` is the JS getDay() numbering — Sunday 0 — which is
+        // HubDay's own, so nothing needs remapping.
+        assertEquals(listOf(HubDay.Monday, HubDay.Tuesday, HubDay.Sunday), nested.daysActive)
+
+        val flat = obj(
+            """{"_id":"r2","name":"A → B","frequency":45,"start_time":"07:00"}""",
+        ).toShuttleRoute()!!
+        assertEquals(45, flat.frequencyMinutes)
+        assertEquals("07:00", flat.timeWindow)
+    }
+
+    @Test
+    fun `a route is active unless it says otherwise`() {
+        assertTrue(obj("""{"_id":"r1"}""").toShuttleRoute()!!.isActive)
+        // The list answers snake_case, the update route camelCase.
+        assertFalse(obj("""{"_id":"r1","is_active":false}""").toShuttleRoute()!!.isActive)
+        assertFalse(obj("""{"_id":"r1","isActive":false}""").toShuttleRoute()!!.isActive)
+    }
+
+    @Test
+    fun `a route cannot generate runs without both a driver and a vehicle`() {
+        val half = obj("""{"_id":"r1","driver_id":"d1"}""").toShuttleRoute()!!
+        assertFalse(half.canGenerateRuns)
+        val whole = obj(
+            """{"_id":"r1","driver_id":"d1","vehicle_id":"v1"}""",
+        ).toShuttleRoute()!!
+        assertTrue(whole.canGenerateRuns)
+    }
+
+    @Test
+    fun `a route body nests the schedule and spells the longitude long`() {
+        val body = shuttleRouteBody(
+            ShuttleRouteDraft(
+                name = "Base → Set",
+                type = ShuttleRouteType.Crew,
+                capacity = 15,
+                frequencyMinutes = 30,
+                startTime = "06:00",
+                endTime = "22:00",
+                daysActive = listOf(HubDay.Monday, HubDay.Sunday),
+                stops = listOf(
+                    ShuttleStop(
+                        name = "Gate 3",
+                        location = HubLocation(address = "Gate 3", lat = 19.07, long = 72.87),
+                    ),
+                    // A blank time is omitted, not sent as "": a strict
+                    // validator reads the empty string as a bad time.
+                    ShuttleStop(name = "Set 4"),
+                ),
+            ),
+        )
+        val schedule = body["schedule"] as JsonObject
+        assertEquals("30", schedule["frequency"]!!.jsonPrimitive.content)
+        assertEquals("[1,0]", schedule["days_of_week"].toString())
+        val stops = body["stops"].toString()
+        assertTrue(stops.contains("\"long\":72.87"))
+        assertTrue(stops.contains("\"estimated_time\":\"\"") == false)
+    }
+
+    @Test
+    fun `a run reads its populated route and its departure`() {
+        val run = obj(
+            """
+            {"_id":"run1","status":"in-transit","scheduled_departure":1793000000000,
+             "route_details":{"_id":"r1","name":"Base → Set","type":"vip"},
+             "driver_details":{"full_name":"Asha"},
+             "vehicle_details":{"vehicle_name":"Bus 1"},
+             "occupancy":4,"capacity":20}
+            """.trimIndent(),
+        ).toShuttleRun()!!
+        assertEquals("Base → Set", run.routeName)
+        assertEquals(ShuttleRouteType.Vip, run.routeType)
+        // Kebab and snake spellings both arrive for the same status.
+        assertEquals(ShuttleRunStatus.InTransit, run.status)
+        assertEquals("Asha", run.driverName)
+        assertEquals(4, run.occupancy)
+    }
+
+    // Action vehicles --------------------------------------------------------
+
+    @Test
+    fun `a record collapses the fields that change shape`() {
+        // make/model/colour are arrays on a request and scalars once sourced.
+        val asRequest = obj(
+            """{"_id":"a1","make":["Ford","Chevy"],"category":"hero"}""",
+        ).toActionVehicle()!!
+        assertEquals("Ford", asRequest.make)
+        assertEquals(listOf("hero"), asRequest.categories)
+
+        val asSourced = obj(
+            """{"_id":"a1","make":"Ford","category":["hero","stunt"]}""",
+        ).toActionVehicle()!!
+        assertEquals("Ford", asSourced.make)
+        assertEquals(listOf("hero", "stunt"), asSourced.categories)
+    }
+
+    @Test
+    fun `a record reads its rounds and the viewer's place in them`() {
+        val vehicle = obj(
+            """
+            {"_id":"a1","display_name":"Hero Car","status":"pending_approval",
+             "approvers":[{"user_id":"u1","name":"Dana","status":"approved"},
+                          {"user_id":"u2","name":"Sam"}],
+             "my":{"is_approver":true,"in_comments":true},
+             "comments":[{"id":"c1","text":"ok","created_at":1000,"updated_at":1000}]}
+            """.trimIndent(),
+        ).toActionVehicle()!!
+        assertEquals(AvStatus.PendingApproval, vehicle.status)
+        assertTrue(vehicle.my.isApprover)
+        assertTrue(vehicle.my.inComments)
+        // An absent status is pending, not approved.
+        assertEquals("pending", vehicle.approvers[1].status)
+        // `updated_at` equal to `created_at` is creation, not an edit — the
+        // record writes the two together.
+        assertEquals(0, vehicle.comments.single().editedMs)
+    }
+
+    @Test
+    fun `a comment counts as edited only when updated is meaningfully later`() {
+        val holder = obj(
+            """{"_id":"a1","comments":[{"id":"c1","text":"x","created_at":1000,"updated_at":5000}]}""",
+        ).toActionVehicle()!!
+        assertEquals(5000, holder.comments.single().editedMs)
+    }
+
+    @Test
+    fun `a requester's body carries options and no sourced car`() {
+        val body = avBody(
+            AvDraft(
+                displayName = "Hero Car",
+                variants = listOf(AvVariant(make = "Ford", model = "Mustang", year = 1968)),
+                make = "ignored",
+                isRequesterSubmit = true,
+            ),
+        )
+        assertEquals("", body["make"]!!.jsonPrimitive.content)
+        assertTrue(body["variants"].toString().contains("Mustang"))
+    }
+
+    @Test
+    fun `a production-owned car clears the terms rather than omitting them`() {
+        val body = avBody(
+            AvDraft(
+                displayName = "Hero Car",
+                make = "Ford",
+                sourceType = AvSourceType.ProductionOwned,
+                ownerName = "Was rented from",
+                rate = 500.0,
+            ),
+        )
+        // Switching a rental to owned has to erase what was agreed with the
+        // owner; an omitted field would leave the old terms in place.
+        assertEquals("", body["owner_name"]!!.jsonPrimitive.content)
+        assertEquals("null", body["rate"].toString())
     }
 }

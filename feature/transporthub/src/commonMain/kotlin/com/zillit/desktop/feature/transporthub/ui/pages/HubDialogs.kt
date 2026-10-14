@@ -13,8 +13,10 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
+import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
@@ -22,7 +24,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.transporthub.data.hubTime
+import com.zillit.desktop.feature.transporthub.data.toEpochMillisOrNull
+import com.zillit.desktop.feature.transporthub.data.toIsoDate
 import com.zillit.desktop.feature.transporthub.domain.ActiveCar
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceType
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.HubDay
 import com.zillit.desktop.feature.transporthub.domain.HubLocation
@@ -45,6 +51,10 @@ import com.zillit.desktop.feature.transporthub.ui.HubUiState
 internal fun HubDialogs(state: HubUiState, onEvent: (HubEvent) -> Unit) {
     VehicleDialog(state, onEvent)
     DriverDialog(state, onEvent)
+    TripDialogs(state, onEvent)
+    MaintenanceDialog(state, onEvent)
+    ShuttleRouteDialog(state, onEvent)
+    ActionVehicleDialogs(state, onEvent)
     DriverDetailsDialog(state, onEvent)
     RideDialog(state, onEvent)
     AllocationDialog(state, onEvent)
@@ -401,6 +411,45 @@ private fun RideDialog(state: HubUiState, onEvent: (HubEvent) -> Unit) {
             },
             label = str(S.desktop_hub_as_soon_as_possible),
         )
+        // The day and the time a ride is wanted for. The form held them and
+        // had no fields to set them from, so a ride could only ever be
+        // "as soon as possible" — the switch was the whole schedule.
+        if (!editor.asSoonAsPossible) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                val day = (editor.scheduledPickupTimeMs ?: 0).toIsoDate()
+                ZillitDateField(
+                    value = day,
+                    onValueChange = { typed ->
+                        val time = (editor.scheduledPickupTimeMs ?: 0).hubTime().ifBlank { "00:00" }
+                        onEvent(
+                            HubEvent.RideEditorChanged(
+                                editor.copy(
+                                    scheduledPickupTimeMs = "${typed}T$time".toEpochMillisOrNull(),
+                                ),
+                            ),
+                        )
+                    },
+                    label = str(S.date),
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitTextField(
+                    value = (editor.scheduledPickupTimeMs ?: 0).hubTime(),
+                    onValueChange = { typed ->
+                        onEvent(
+                            HubEvent.RideEditorChanged(
+                                editor.copy(
+                                    scheduledPickupTimeMs = day.takeIf { it.isNotBlank() }
+                                        ?.let { "${it}T$typed".toEpochMillisOrNull() },
+                                ),
+                            ),
+                        )
+                    },
+                    label = str(S.desktop_hub_pickup_time),
+                    placeholder = "HH:mm",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
         ZillitTextField(
             value = editor.notes,
             onValueChange = { onEvent(HubEvent.RideEditorChanged(editor.copy(notes = it))) },
@@ -459,6 +508,54 @@ private fun AllocationDialog(state: HubUiState, onEvent: (HubEvent) -> Unit) {
             chosenId = editor.vehicleId,
             onPick = { onEvent(HubEvent.AllocationEditorChanged(editor.copy(vehicleId = it))) },
         )
+        // The validator refuses an allocation without these: a start, an end
+        // and the time it leaves. They were missing from this form entirely,
+        // so every save went out with zeroes.
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitDateField(
+                value = editor.startDateMs.toIsoDate(),
+                onValueChange = { typed ->
+                    onEvent(
+                        HubEvent.AllocationEditorChanged(
+                            editor.copy(startDateMs = typed.toEpochMillisOrNull() ?: 0),
+                        ),
+                    )
+                },
+                label = str(S.start_date),
+                modifier = Modifier.weight(1f),
+            )
+            ZillitDateField(
+                value = editor.endDateMs.toIsoDate(),
+                onValueChange = { typed ->
+                    onEvent(
+                        HubEvent.AllocationEditorChanged(
+                            editor.copy(endDateMs = typed.toEpochMillisOrNull() ?: 0),
+                        ),
+                    )
+                },
+                label = str(S.end_date),
+                modifier = Modifier.weight(1f),
+            )
+            ZillitTextField(
+                value = editor.scheduledTimeMs.hubTime(),
+                onValueChange = { typed ->
+                    // The time is read against the start date, because that is
+                    // the day the first run leaves on.
+                    val day = editor.startDateMs.takeIf { it > 0 }?.toIsoDate()
+                    onEvent(
+                        HubEvent.AllocationEditorChanged(
+                            editor.copy(
+                                scheduledTimeMs = day?.let { "${it}T$typed".toEpochMillisOrNull() }
+                                    ?: 0,
+                            ),
+                        ),
+                    )
+                },
+                label = str(S.desktop_hub_pickup_time),
+                placeholder = "HH:mm",
+                modifier = Modifier.weight(1f),
+            )
+        }
         DayPicker(
             chosen = editor.activeDays,
             onToggle = { day ->
@@ -822,11 +919,9 @@ private fun ConfirmDialog(state: HubUiState, onEvent: (HubEvent) -> Unit) {
 
 @Composable
 private fun LocationField(label: String, value: HubLocation, onChange: (HubLocation) -> Unit) {
-    ZillitTextField(
-        value = value.address,
-        onValueChange = { onChange(value.copy(address = it)) },
-        label = label,
-    )
+    // A typed address alone has no coordinates, and the service refuses a ride
+    // whose ends have none — so this is the map-backed field, not a text box.
+    HubLocationField(label = label, value = value, onChange = onChange)
 }
 
 @Composable
@@ -852,6 +947,14 @@ private fun VehiclePicker(vehicles: List<Vehicle>, chosenId: String?, onPick: (S
     )
 }
 
+/**
+ * Who is riding.
+ *
+ * A searchable multi-select rather than a list of checkboxes: a production
+ * carries hundreds of members, and the checkbox list stopped at the first
+ * forty — everyone past that simply could not be picked. The web asks the
+ * same way, with a search over the whole crew.
+ */
 @Composable
 private fun PassengerPicker(
     people: List<ProjectPerson>,
@@ -860,13 +963,23 @@ private fun PassengerPicker(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         ZillitSectionLabel(text = str(S.txt_passengers))
-        people.take(PASSENGER_PICKER_LIMIT).forEach { person ->
-            ZillitCheckbox(
-                checked = person.userId in chosen,
-                onCheckedChange = { onToggle(person) },
-                label = person.name,
-            )
-        }
+        ZillitMultiSelect(
+            selected = people.filter { it.userId in chosen },
+            options = people,
+            label = { it.name },
+            onChange = { next ->
+                // The picker hands back the whole set; the editor takes one
+                // change at a time, so the difference is what is toggled.
+                val before = chosen.toSet()
+                val after = next.map { it.userId }.toSet()
+                (before - after).union(after - before).forEach { userId ->
+                    people.firstOrNull { it.userId == userId }?.let(onToggle)
+                }
+            },
+            searchText = { "${it.name} ${it.designation} ${it.phone} ${it.email}" },
+            subtitle = { it.designation.takeIf { d -> d.isNotBlank() } },
+            placeholder = str(S.desktop_hub_pick_from_project),
+        )
     }
 }
 
@@ -892,11 +1005,84 @@ private fun StopAction.label(): String = when (this) {
     StopAction.Waypoint -> str(S.desktop_hub_waypoint)
 }
 
-/**
- * How many project members the checkbox list offers before it stops.
- *
- * A production can carry hundreds, and a list that long inside a dialog is
- * unusable either way — this keeps it from also being slow. A fuller picker
- * belongs with the rest of the create form in phase 2.
- */
-private const val PASSENGER_PICKER_LIMIT = 40
+
+
+/** Coordinator → Maintenance → Schedule. The web's own create modal. */
+@Composable
+private fun MaintenanceDialog(state: HubUiState, onEvent: (HubEvent) -> Unit) {
+    val editor = state.maintenanceEditor ?: return
+    ZillitDialogShell(
+        title = str(S.desktop_hub_schedule_maintenance),
+        visible = true,
+        onDismiss = { onEvent(HubEvent.CloseMaintenanceEditor) },
+        actions = {
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = { onEvent(HubEvent.CloseMaintenanceEditor) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(
+                text = str(S.schedule),
+                onClick = { onEvent(HubEvent.SaveMaintenance) },
+                loading = editor.saving,
+            )
+        },
+    ) {
+        ZillitSelect(
+            value = state.vehicles.firstOrNull { it.id == editor.vehicleId },
+            options = listOf(null) + state.vehicles,
+            onSelect = {
+                onEvent(
+                    HubEvent.MaintenanceEditorChanged(editor.copy(vehicleId = it?.id.orEmpty())),
+                )
+            },
+            label = { it?.displayName ?: str(S.desktop_hub_pick_a_vehicle) },
+            subtitle = { it?.specLine?.takeIf { spec -> spec.isNotBlank() } },
+            showInitials = false,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitSelect(
+                value = editor.type,
+                options = MaintenanceType.entries,
+                onSelect = { onEvent(HubEvent.MaintenanceEditorChanged(editor.copy(type = it))) },
+                label = { it.label() },
+                showInitials = false,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitDateField(
+                value = editor.scheduledDate,
+                onValueChange = {
+                    onEvent(HubEvent.MaintenanceEditorChanged(editor.copy(scheduledDate = it)))
+                },
+                label = str(S.desktop_csync_when_scheduled),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        ZillitTextField(
+            value = editor.description,
+            onValueChange = {
+                onEvent(HubEvent.MaintenanceEditorChanged(editor.copy(description = it)))
+            },
+            label = str(S.description),
+            placeholder = str(S.desktop_hub_what_needs_doing),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitTextField(
+                value = editor.estimatedCost,
+                onValueChange = {
+                    onEvent(HubEvent.MaintenanceEditorChanged(editor.copy(estimatedCost = it)))
+                },
+                label = str(S.desktop_hub_estimated_cost),
+                modifier = Modifier.weight(1f),
+            )
+            ZillitTextField(
+                value = editor.odometerReading,
+                onValueChange = {
+                    onEvent(HubEvent.MaintenanceEditorChanged(editor.copy(odometerReading = it)))
+                },
+                label = str(S.desktop_hub_odometer),
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}

@@ -66,20 +66,28 @@ internal fun AppGraph.Ready.transportHubProvider(viewModel: HubViewModel): HubTo
  * has to be able to revoke coordinator access from anyone, and a designation
  * door would survive the revoke.
  *
- * The designation comes from the **crew list**, not the profile, which does
- * not carry one. Two more things the role needs are the server's to answer —
- * which designations count as a driver's, and whether this person is a
- * temporary driver — and the view model fills both in once its first load
- * lands. Until then a driver reads as a passenger, which is the safe way
- * round: it offers less, not more.
+ * The designation is the **profile's** `designation_name`, which is what the
+ * web's `resolveHubRole` compares against the driver designations; the crew
+ * row is only a fallback, for an offline start where the profile has not
+ * hydrated. Two more things the role needs are the server's to answer — which
+ * designations count as a driver's, and whether this person is a temporary
+ * driver — and the view model fills both in once its first load lands. Until
+ * then a driver reads as a passenger, which is the safe way round: it offers
+ * less, not more.
  */
 private fun AppGraph.Ready.hubViewer(permissions: ProjectPermissions): HubViewer {
     val context = projectContext?.context?.value
-    val userId = context?.profile?.userId.orEmpty()
+    val profile = context?.profile
+    val userId = profile?.userId.orEmpty()
     val crewRow = userId.takeIf { it.isNotBlank() }?.let { context?.user(it) }
     return HubViewer(
         userId = userId,
-        designation = crewRow?.designation.orEmpty(),
+        designation = profile?.designationName?.takeIf { it.isNotBlank() }
+            ?: crewRow?.designation.orEmpty(),
+        // The rail's profile card, which the web's sidebar carries too.
+        fullName = profile?.fullName?.takeIf { it.isNotBlank() }
+            ?: crewRow?.fullName.orEmpty(),
+        isAdmin = context?.isAdmin == true,
         // An empty rights set is "not resolved yet", not a denial: treating it
         // as one shows "no access" while the tools call is still in flight.
         canView = permissions.visibleTools.isEmpty() ||

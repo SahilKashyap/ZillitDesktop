@@ -7,15 +7,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
@@ -27,6 +30,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.transporthub.data.toEpochMillisOrNull
+import com.zillit.desktop.feature.transporthub.data.toIsoDate
 import com.zillit.desktop.feature.transporthub.domain.HubRole
 import com.zillit.desktop.feature.transporthub.domain.Trip
 import com.zillit.desktop.feature.transporthub.domain.TripResourceKind
@@ -97,11 +102,35 @@ private fun TripListBody(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         activeId = state.tripTab.name,
         onSelect = { id -> onEvent(HubEvent.TripTabChanged(TripTab.valueOf(id))) },
     )
-    HubSearch(
-        value = state.tripSearch,
-        placeholder = str(S.desktop_hub_trip_search_hint),
-        onValueChange = { onEvent(HubEvent.TripSearchChanged(it)) },
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        HubSearch(
+            value = state.tripSearch,
+            placeholder = str(S.desktop_hub_trip_search_hint),
+            onValueChange = { onEvent(HubEvent.TripSearchChanged(it)) },
+        )
+        // The web's day filter, which the desktop had the state for and no
+        // field to set it from. Clearing it shows every day again.
+        ZillitDateField(
+            value = state.tripDateMs.toIsoDate(),
+            onValueChange = { typed ->
+                onEvent(HubEvent.TripDateChanged(typed.toEpochMillisOrNull() ?: 0))
+            },
+            label = str(S.date),
+            modifier = Modifier.width(DATE_FILTER_WIDTH),
+        )
+        if (state.tripDateMs > 0) {
+            ZillitButton(
+                text = str(S.txt_clear),
+                onClick = { onEvent(HubEvent.TripDateChanged(0)) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+        }
+    }
     TripRows(state, onEvent)
 }
 
@@ -247,5 +276,7 @@ internal val TRIP_TRANSITIONS: List<TripStatus> = listOf(
     TripStatus.Completed,
     TripStatus.Cancelled,
 )
+
+private val DATE_FILTER_WIDTH = 180.dp
 
 private val StatusToneRequest = com.zillit.desktop.core.designsystem.component.StatusTone.Progress

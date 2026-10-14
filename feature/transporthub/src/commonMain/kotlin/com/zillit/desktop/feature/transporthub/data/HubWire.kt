@@ -3,6 +3,29 @@
 package com.zillit.desktop.feature.transporthub.data
 
 import com.zillit.desktop.feature.transporthub.domain.ActiveCar
+import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
+import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvComment
+import com.zillit.desktop.feature.transporthub.domain.AvDraft
+import com.zillit.desktop.feature.transporthub.domain.AvInsuranceStatus
+import com.zillit.desktop.feature.transporthub.domain.AvMy
+import com.zillit.desktop.feature.transporthub.domain.AvRatePeriod
+import com.zillit.desktop.feature.transporthub.domain.AvSourceType
+import com.zillit.desktop.feature.transporthub.domain.AvStatus
+import com.zillit.desktop.feature.transporthub.domain.AvUseType
+import com.zillit.desktop.feature.transporthub.domain.AvVariant
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRoute
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteDraft
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteType
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRun
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
+import com.zillit.desktop.feature.transporthub.domain.ShuttleStop
+import com.zillit.desktop.feature.transporthub.domain.DriverLocation
+import com.zillit.desktop.feature.transporthub.domain.HubInsights
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceDraft
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceRecord
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceStatus
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceType
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.DriverDraft
 import com.zillit.desktop.feature.transporthub.domain.HubAttachment
@@ -35,10 +58,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
@@ -750,3 +775,468 @@ internal fun promoteBody(trip: PermanentTrip): JsonObject = buildJsonObject {
     )
     put("status", PermanentState.Active.wire)
 }
+
+/**
+ * A maintenance booking.
+ *
+ * `scheduled_date` arrives as `YYYY-MM-DD` on a record the web created and as
+ * epoch millis on one an older handler wrote, so both are accepted; the type
+ * is `type` on some deployments and `maintenance_type` on others.
+ */
+internal fun JsonObject.toMaintenanceRecord(): MaintenanceRecord? {
+    val id = id().takeIf { it.isNotBlank() } ?: return null
+    return MaintenanceRecord(
+        id = id,
+        vehicleId = refId("vehicle_id", "vehicle"),
+        vehicleLabel = refVehicleLabel("vehicle_id", "vehicle"),
+        type = MaintenanceType.from(str("type", "maintenance_type")),
+        status = MaintenanceStatus.from(str("status")),
+        scheduledDateMs = dateMillis("scheduled_date", "scheduled_on", "date"),
+        description = str("description", "notes"),
+        estimatedCost = double("cost", "estimated_cost").takeIf { it > 0 },
+        odometerReading = long("odometer_reading").takeIf { it > 0 },
+    )
+}
+
+/** One driver's reported position — `/location/active`. */
+internal fun JsonObject.toDriverLocation(): DriverLocation? {
+    val driverId = refId("driver_id", "driver", "_id") ?: return null
+    val point = (this["location"] ?: this["current_location"] ?: this["coordinates"])
+        .toLocation()
+        .takeIf { !it.isEmpty }
+        ?: HubLocation(lat = double("lat", "latitude"), long = double("long", "lng", "longitude"))
+    return DriverLocation(
+        driverId = driverId,
+        driverName = str("driver_name", "full_name", "name").ifBlank { refName("driver_id", "driver") },
+        vehicleLabel = refVehicleLabel("vehicle_id", "vehicle", "assigned_vehicle"),
+        location = point,
+        atMs = dateMillis("updated", "updated_at", "timestamp", "reported_at", "created"),
+        isOnDuty = this["is_on_duty"]?.let { bool("is_on_duty") } ?: true,
+        speedKph = double("speed", "speed_kph").takeIf { it > 0 },
+    )
+}
+
+/**
+ * The Dashboard's counters.
+ *
+ * Every key is optional: the web reads this through `Promise.allSettled` and
+ * renders blanks for whatever is absent, so a deployment that ships half the
+ * block must still give the page the half it has.
+ */
+internal fun JsonElement?.toInsights(): HubInsights {
+    val root = this as? JsonObject ?: return HubInsights.Empty
+    val breakdown = root.obj("trip_counts_by_status")
+    val byStatus = breakdown?.entries?.mapNotNull { (mode, element) ->
+        (element as? JsonObject)?.let { counts ->
+            mode to counts.entries.mapNotNull { (status, value) ->
+                (value as? JsonPrimitive)?.content?.trim()?.toIntOrNull()?.let { status to it }
+            }.toMap()
+        }
+    }?.toMap().orEmpty()
+    val fleet = root.obj("fleet_utilization")
+    return HubInsights(
+        byStatus = byStatus,
+        flatActiveTrips = root.int("active_trips", "activeTrips"),
+        completedToday = root.int("completed_today", "completedToday"),
+        fleetTotal = fleet?.int("total_vehicles"),
+        fleetInUse = fleet?.int("in_use"),
+        rideRequestTotal = root.obj("ride_request_counts")?.int("total", "total_requests"),
+        yesterday = root.entries.mapNotNull { (key, value) ->
+            if (!key.endsWith("_yesterday")) return@mapNotNull null
+            (value as? JsonPrimitive)?.content?.trim()?.toIntOrNull()?.let { key to it }
+        }.toMap(),
+    )
+}
+
+/**
+ * How many ride requests are waiting.
+ *
+ * The route answers a number on one deployment, `{count}` on another and the
+ * whole list on a third — all three mean the same thing to the card.
+ */
+internal fun JsonElement?.toPendingCount(): Int = when (this) {
+    is JsonPrimitive -> content.trim().toIntOrNull() ?: 0
+    is JsonArray -> size
+    is JsonObject -> int("count", "total", "pending") ?: rows("ride_requests", "requests").size
+    else -> 0
+}
+
+internal fun maintenanceBody(draft: MaintenanceDraft): JsonObject = buildJsonObject {
+    put("vehicle_id", draft.vehicleId)
+    put("maintenance_type", draft.type.wire)
+    // The validator takes the day, not an instant: `YYYY-MM-DD`.
+    put("scheduled_date", draft.scheduledDateMs.toIsoDate())
+    draft.description.trim().takeIf { it.isNotBlank() }?.let { put("description", it) }
+    draft.estimatedCost?.let { put("estimated_cost", it) }
+    draft.odometerReading?.let { put("odometer_reading", it) }
+}
+
+/**
+ * A `YYYY-MM-DD` or epoch-millis date, as millis at the start of that day.
+ *
+ * Both spellings are in the store, and a card that showed the raw string on
+ * one record and a formatted date on the next would read as two bugs.
+ */
+private fun JsonObject.dateMillis(vararg keys: String): Long {
+    keys.forEach { key ->
+        val primitive = this[key] as? JsonPrimitive ?: return@forEach
+        primitive.longOrNull?.takeIf { it > 0 }?.let { return it }
+        val raw = primitive.content.trim()
+        raw.toLongOrNull()?.takeIf { it > 0 }?.let { return it }
+        raw.toEpochMillisOrNull()?.let { return it }
+    }
+    return 0
+}
+
+/* ── Shuttles ──────────────────────────────────────────────────────────── */
+
+/**
+ * A shuttle route.
+ *
+ * The schedule arrives flat on one deployment and nested under `schedule` on
+ * another, so every field is read from both. `days_of_week` is the JS
+ * `getDay()` numbering — Sunday 0 through Saturday 6 — which is exactly
+ * [HubDay]'s own, so no remapping is needed.
+ */
+internal fun JsonObject.toShuttleRoute(): ShuttleRoute? {
+    val id = id().takeIf { it.isNotBlank() } ?: return null
+    val schedule = obj("schedule")
+    return ShuttleRoute(
+        id = id,
+        name = str("name"),
+        type = ShuttleRouteType.from(str("type")),
+        capacity = int("capacity"),
+        notes = str("notes"),
+        frequencyMinutes = int("frequency") ?: schedule?.int("frequency"),
+        startTime = str("start_time", "startTime").ifBlank { schedule?.str("start_time").orEmpty() },
+        endTime = str("end_time", "endTime").ifBlank { schedule?.str("end_time").orEmpty() },
+        daysActive = (
+            strings("days_active", "daysActive").ifEmpty {
+                schedule?.strings("days_of_week").orEmpty()
+            }
+            ).mapNotNull { HubDay.from(it) },
+        stops = array("stops").mapIndexed { index, stop -> stop.toShuttleStop(index) }
+            .sortedBy { it.order },
+        driverId = refId("assigned_driver", "assignedDriver", "driver_id", "driver"),
+        driverName = refName("assigned_driver", "assignedDriver", "driver_id", "driver"),
+        vehicleId = refId("assigned_vehicle", "assignedVehicle", "vehicle_id", "vehicle"),
+        vehicleLabel = refVehicleLabel(
+            "assigned_vehicle",
+            "assignedVehicle",
+            "vehicle_id",
+            "vehicle",
+        ),
+        // Absent means active; only an explicit false disables a route. The
+        // create route spells it camelCase, the list snake_case.
+        isActive = (this["isActive"] ?: this["is_active"])
+            ?.let { bool("isActive", "is_active") } ?: true,
+    )
+}
+
+private fun JsonObject.toShuttleStop(index: Int): ShuttleStop = ShuttleStop(
+    name = str("name"),
+    location = (this["location"] ?: this["locations"]).toLocation(),
+    order = int("order") ?: index,
+    estimatedTime = str("estimated_time", "estimatedTime"),
+)
+
+/** One generated run. The populated docs sit under `*_details`. */
+internal fun JsonObject.toShuttleRun(): ShuttleRun? {
+    val id = id().takeIf { it.isNotBlank() } ?: return null
+    val route = obj("route_details") ?: obj("route")
+    return ShuttleRun(
+        id = id,
+        routeId = refId("route_id", "route") ?: route?.id(),
+        routeName = route?.str("name").orEmpty().ifBlank { str("route_name") },
+        routeType = route?.str("type")?.takeIf { it.isNotBlank() }?.let { ShuttleRouteType.from(it) },
+        status = ShuttleRunStatus.from(str("status")),
+        departureMs = long("scheduled_departure", "scheduledDeparture"),
+        driverName = (obj("driver_details") ?: obj("driver"))
+            ?.str("full_name", "driver_name", "name").orEmpty(),
+        vehicleLabel = (obj("vehicle_details") ?: obj("vehicle"))
+            ?.str("vehicle_name", "name", "vehicle_number", "license_plate").orEmpty(),
+        occupancy = int("occupancy") ?: 0,
+        capacity = int("capacity") ?: 0,
+    )
+}
+
+/**
+ * A route, as the validator takes it.
+ *
+ * The schedule goes out **nested** — flat keys are read on the way in but the
+ * validator only accepts the block — and a stop's longitude is `long`. An
+ * empty `estimated_time` is omitted rather than sent blank: a strict validator
+ * refuses `""` where it expects a time.
+ */
+internal fun shuttleRouteBody(draft: ShuttleRouteDraft): JsonObject = buildJsonObject {
+    put("name", draft.name)
+    put("type", draft.type.wire)
+    put("capacity", draft.capacity ?: 0)
+    put("notes", draft.notes)
+    putJsonObject("schedule") {
+        put("frequency", draft.frequencyMinutes ?: 0)
+        put("start_time", draft.startTime)
+        put("end_time", draft.endTime)
+        put(
+            "days_of_week",
+            buildJsonArray { draft.daysActive.forEach { add(JsonPrimitive(it.index)) } },
+        )
+    }
+    put(
+        "stops",
+        buildJsonArray {
+            draft.stops.forEachIndexed { index, stop ->
+                add(
+                    buildJsonObject {
+                        put("name", stop.name.trim())
+                        put("location", stop.location.toWire())
+                        put("order", index)
+                        stop.estimatedTime.trim().takeIf { it.isNotBlank() }
+                            ?.let { put("estimated_time", it) }
+                    },
+                )
+            }
+        },
+    )
+    // Omitted rather than blank: a strict validator reads "" as a bad ObjectId.
+    draft.driverId?.takeIf { it.isNotBlank() }?.let { put("driver_id", it) }
+    draft.vehicleId?.takeIf { it.isNotBlank() }?.let { put("vehicle_id", it) }
+}
+
+/* ── Action vehicles ───────────────────────────────────────────────────── */
+
+internal fun JsonObject.toActionVehicle(): ActionVehicle? {
+    val id = id().takeIf { it.isNotBlank() } ?: return null
+    val requester = obj("requested_by")
+    return ActionVehicle(
+        id = id,
+        displayName = str("display_name"),
+        status = AvStatus.from(str("status")),
+        categories = multi("category"),
+        vehicleTypes = multi("vehicle_type"),
+        make = scalarOf("make"),
+        model = scalarOf("model"),
+        color = scalarOf("color"),
+        year = int("year"),
+        variants = array("variants").map { it.toAvVariant() }.filterNot { it.isEmpty },
+        description = str("description"),
+        condition = scalarOf("condition"),
+        modifications = multi("modifications"),
+        useType = AvUseType.from(str("interior_exterior")),
+        scenes = strings("scenes"),
+        location = (this["location_details"] ?: this["location"]).toLocation(),
+        needRehearsalMs = long("need_rehearsal_date"),
+        needShootingMs = long("need_shooting_date"),
+        reminderDays = int("reminder_days"),
+        approvedDrivers = strings("approved_drivers"),
+        notes = str("notes"),
+        sourceType = str("source_type").takeIf { it.isNotBlank() }?.let { AvSourceType.from(it) },
+        ownerName = str("owner_name"),
+        ownerContactNumber = str("owner_contact_number"),
+        rate = double("rate").takeIf { it > 0 },
+        ratePeriod = AvRatePeriod.from(str("rate_period")),
+        agreementStartMs = long("agreement_start"),
+        agreementEndMs = long("agreement_end"),
+        insuranceStatus = str("insurance_status").takeIf { it.isNotBlank() }
+            ?.let { AvInsuranceStatus.from(it) },
+        policyRef = str("policy_ref"),
+        replacementValue = double("replacement_value").takeIf { it > 0 },
+        licensePlate = str("license_plate"),
+        permittedUses = strings("permitted_uses"),
+        propPlates = strings("prop_plates"),
+        images = array("images").mapNotNull { it.toAttachment() },
+        requesterName = requester?.str("name", "full_name").orEmpty(),
+        requesterUserId = requester?.refId("user_id") ?: requester?.id(),
+        approvers = array("approvers").mapNotNull { it.toAvApprover() },
+        returnApprovers = array("return_approvers").mapNotNull { it.toAvApprover() },
+        returnRequestedMs = long("return_requested_at"),
+        rejectionReason = str("rejection_reason", "reject_reason", "reason"),
+        comments = array("comments").mapNotNull { it.toAvComment() },
+        commentAudience = strings("comment_audience"),
+        my = obj("my")?.toAvMy() ?: AvMy(),
+        createdMs = long("created", "created_at"),
+    )
+}
+
+/**
+ * A field that is an array on a request and a scalar on a sourced record.
+ *
+ * `make`, `model` and `colour` are the ones that change shape: the AD's
+ * options carry several and the sourced car is one. A row must read the same
+ * either way, so an array collapses to its first value.
+ */
+private fun JsonObject.scalarOf(key: String): String {
+    (this[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
+        ?.let { return it }
+    return (this[key] as? JsonArray)
+        ?.firstNotNullOfOrNull { (it as? JsonPrimitive)?.content?.takeIf(String::isNotBlank) }
+        .orEmpty()
+}
+
+/** A field the form made multi but older records stored as one string. */
+private fun JsonObject.multi(key: String): List<String> {
+    strings(key).takeIf { it.isNotEmpty() }?.let { return it }
+    return listOfNotNull(
+        (this[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" },
+    )
+}
+
+private fun JsonObject.toAvVariant(): AvVariant = AvVariant(
+    make = str("make"),
+    model = str("model"),
+    year = int("year"),
+    colors = strings("colors", "color"),
+    images = array("images").mapNotNull { it.toAttachment() },
+)
+
+private fun JsonObject.toAvApprover(): AvApprover? {
+    val userId = refId("user_id") ?: id().takeIf { it.isNotBlank() } ?: return null
+    return AvApprover(
+        userId = userId,
+        name = str("name", "full_name").ifBlank { refName("user_id") },
+        designation = str("designation", "designation_name"),
+        status = str("status").ifBlank { "pending" },
+    )
+}
+
+private fun JsonObject.toAvComment(): AvComment? {
+    val id = str("id", "_id").takeIf { it.isNotBlank() } ?: return null
+    val created = long("created_at", "created")
+    val updated = long("updated_at")
+    return AvComment(
+        id = id,
+        userId = refId("user_id").orEmpty(),
+        name = str("name", "full_name"),
+        roleLabel = str("role_label", "designation"),
+        text = str("text", "message"),
+        createdMs = created,
+        editedMs = when {
+            long("edited_at", "editedAt") > 0 -> long("edited_at", "editedAt")
+            bool("is_edited", "isEdited") -> created
+            // Only a meaningfully later `updated_at` is an edit: the record
+            // writes the two equal at creation, and treating its presence as
+            // an edit would tag every comment ever written.
+            updated > 0 && created > 0 && updated - created > EDITED_TOLERANCE_MS -> updated
+            else -> 0
+        },
+    )
+}
+
+private fun JsonObject.toAvMy(): AvMy = AvMy(
+    isRequester = bool("is_requester"),
+    isApprover = bool("is_approver"),
+    isReturnApprover = bool("is_return_approver"),
+    inComments = bool("in_comments", "can_comment"),
+)
+
+/**
+ * A picture vehicle, as the two write routes take it.
+ *
+ * The shape turns on [AvDraft.isRequesterSubmit], not on who is sending it:
+ * a request carries `variants[]` and leaves the scalar make, model and colour
+ * empty, while sourcing carries the one car found and an array there answers
+ * 406. A production-owned car clears the owner and money fields rather than
+ * omitting them, so a source type changed to owned actually erases the terms.
+ */
+internal fun avBody(draft: AvDraft): JsonObject = buildJsonObject {
+    put("display_name", draft.displayName.trim())
+    put("category", draft.categories.toJsonStrings())
+    put("vehicle_type", draft.vehicleTypes.toJsonStrings())
+    put("description", draft.description)
+    put("condition", draft.condition)
+    put("interior_exterior", draft.useType.wire)
+    put("scenes", draft.scenes.toJsonStrings())
+    put("location", draft.location.address)
+    put("need_rehearsal_date", draft.needRehearsalMs.takeIf { it > 0 } ?: 0)
+    put("need_shooting_date", draft.needShootingMs.takeIf { it > 0 } ?: 0)
+    draft.reminderDays?.let { put("reminder_days", it) }
+    put("approved_drivers", draft.approvedDrivers.toJsonStrings())
+    put("notes", draft.notes)
+    if (draft.isRequesterSubmit) {
+        put("make", "")
+        put("model", "")
+        put("color", "")
+        put(
+            "variants",
+            buildJsonArray { draft.variants.filterNot { it.isEmpty }.forEach { add(it.toWire()) } },
+        )
+    } else {
+        sourcedCar(draft)
+        agreement(draft)
+    }
+}
+
+/** The one car actually found. Scalars, because an array on `/source` 406s. */
+private fun JsonObjectBuilder.sourcedCar(draft: AvDraft) {
+    put("make", draft.make.trim())
+    put("model", draft.model.trim())
+    put("color", draft.color.trim())
+    draft.year?.let { put("year", it) }
+    put("modifications", draft.modifications.toJsonStrings())
+    put("images", buildJsonArray { draft.images.forEach { add(it.toWire()) } })
+    draft.replacementValue?.let { put("replacement_value", it) }
+    put("license_plate", draft.licensePlate.trim())
+    put("permitted_uses", draft.permittedUses.toJsonStrings())
+    put("prop_plates", draft.propPlates.toJsonStrings())
+}
+
+/**
+ * Where it came from and on what terms.
+ *
+ * A production-owned car clears the owner and the money rather than omitting
+ * them: switching a rental to owned has to erase what was agreed with the
+ * owner, and an omitted field would leave the old terms in place.
+ */
+private fun JsonObjectBuilder.agreement(draft: AvDraft) {
+    draft.sourceType?.let { put("source_type", it.wire) }
+    if (draft.sourceType?.isOwned == true) {
+        put("owner_name", "")
+        put("owner_contact_number", "")
+        put("rate", JsonNull)
+        put("rate_period", AvRatePeriod.Daily.wire)
+        put("agreement_start", JsonNull)
+        put("agreement_end", JsonNull)
+        return
+    }
+    put("owner_name", draft.ownerName.trim())
+    put("owner_contact_number", draft.ownerContactNumber.trim())
+    draft.rate?.let { put("rate", it) }
+    put("rate_period", draft.ratePeriod.wire)
+    put("agreement_start", draft.agreementStartMs.takeIf { it > 0 } ?: 0)
+    put("agreement_end", draft.agreementEndMs.takeIf { it > 0 } ?: 0)
+    draft.insuranceStatus?.let { put("insurance_status", it.wire) }
+    put("policy_ref", draft.policyRef)
+}
+
+/** The only two fields a finalized record still accepts. */
+internal fun avDatesBody(draft: AvDraft, timezone: String): JsonObject = buildJsonObject {
+    put("need_rehearsal_date", draft.needRehearsalMs.takeIf { it > 0 } ?: 0)
+    put("need_shooting_date", draft.needShootingMs.takeIf { it > 0 } ?: 0)
+    put("timezone", timezone)
+}
+
+private fun AvVariant.toWire(): JsonObject = buildJsonObject {
+    put("make", make.trim())
+    put("model", model.trim())
+    year?.let { put("year", it) }
+    put("colors", colors.toJsonStrings())
+    put("images", buildJsonArray { images.forEach { add(it.toWire()) } })
+}
+
+internal fun List<AvApprover>.toApproverWire(): JsonArray = buildJsonArray {
+    forEach { approver ->
+        add(
+            buildJsonObject {
+                put("user_id", approver.userId)
+                put("name", approver.name)
+                put("designation", approver.designation)
+            },
+        )
+    }
+}
+
+private fun List<String>.toJsonStrings(): JsonArray =
+    buildJsonArray { forEach { add(JsonPrimitive(it)) } }
+
+/** A second of tolerance absorbs the clock skew between two writes. */
+private const val EDITED_TOLERANCE_MS = 1000L

@@ -7,21 +7,34 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
+import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvMy
+import com.zillit.desktop.feature.transporthub.domain.AvStatus
 import com.zillit.desktop.feature.transporthub.domain.Driver
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRoute
+import com.zillit.desktop.feature.transporthub.domain.ShuttleStop
+import com.zillit.desktop.feature.transporthub.domain.DriverLocation
+import com.zillit.desktop.feature.transporthub.domain.HubInsights
 import com.zillit.desktop.feature.transporthub.domain.HubLocation
 import com.zillit.desktop.feature.transporthub.domain.HubPassenger
 import com.zillit.desktop.feature.transporthub.domain.HubViewer
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceRecord
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceType
 import com.zillit.desktop.feature.transporthub.domain.PermanentTrip
 import com.zillit.desktop.feature.transporthub.domain.RideRequest
 import com.zillit.desktop.feature.transporthub.domain.RideStatus
 import com.zillit.desktop.feature.transporthub.domain.Trip
+import com.zillit.desktop.feature.transporthub.domain.TripEvent
 import com.zillit.desktop.feature.transporthub.domain.TripResourceKind
 import com.zillit.desktop.feature.transporthub.domain.TripStatus
 import com.zillit.desktop.feature.transporthub.domain.Vehicle
+import com.zillit.desktop.feature.transporthub.ui.AvTab
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
 import com.zillit.desktop.feature.transporthub.ui.HubScreen
 import com.zillit.desktop.feature.transporthub.ui.HubSection
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
+import com.zillit.desktop.feature.transporthub.ui.TripEditor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -39,6 +52,12 @@ class HubScreenRenderTest {
 
     private val coordinator = HubViewer(userId = "u1", canView = true, canPost = true)
     private val passenger = HubViewer(userId = "u2", canView = true)
+    private val driver = HubViewer(
+        userId = "u3",
+        canView = true,
+        designation = "unit_driver_label",
+        driverDesignations = listOf("unit_driver_label"),
+    )
 
     private val vehicles = listOf(
         Vehicle(
@@ -127,11 +146,16 @@ class HubScreenRenderTest {
     @Test
     fun `every coordinator section composes`() {
         listOf(
+            HubSection.Dashboard,
             HubSection.Trips,
             HubSection.RideRequests,
             HubSection.Fleet,
             HubSection.Drivers,
             HubSection.Allocations,
+            HubSection.Maintenance,
+            HubSection.LiveTracking,
+            HubSection.Shuttles,
+            HubSection.ActionVehicles,
         ).forEach { section ->
             runComposeUiTest {
                 setContent { ZillitTheme { HubScreen(state = state(section), onEvent = {}) } }
@@ -140,6 +164,147 @@ class HubScreenRenderTest {
                 onNodeWithText("Transportation Hub").assertExists()
             }
         }
+    }
+
+    @Test
+    fun `every driver section composes`() {
+        listOf(
+            HubSection.MyTrips,
+            HubSection.AssignedRides,
+            HubSection.MyRequests,
+            HubSection.DriverMap,
+        ).forEach { section ->
+            runComposeUiTest {
+                setContent { ZillitTheme { HubScreen(state = state(section, driver), onEvent = {}) } }
+                onNodeWithText("Transportation Hub").assertExists()
+            }
+        }
+    }
+
+    @Test
+    fun `the dashboard draws its counters and its recent trips`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                HubScreen(
+                    state = state(HubSection.Dashboard).copy(
+                        insights = HubInsights(
+                            byStatus = mapOf("trips" to mapOf("assigned" to 2, "in_transit" to 1)),
+                            completedToday = 4,
+                            fleetTotal = 9,
+                            fleetInUse = 3,
+                        ),
+                        pendingRideCount = 5,
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        // Active must sum every mode, not only one-off trips.
+        onNodeWithText("ACTIVE TRIPS").assertExists()
+        onNodeWithText("3").assertExists()
+        onNodeWithText("1 in transit · 2 assigned").assertExists()
+        onNodeWithText("3 of 9 in use").assertExists()
+        // A Dashboard row leads with the passenger, as the web's does — the
+        // trip's own title is the Trips page's heading, not this one's.
+        onNodeWithText("Kim Wu").assertExists()
+        onNodeWithText("1 person").assertExists()
+    }
+
+    @Test
+    fun `the maintenance list draws the vehicle, the day and the due chip`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                HubScreen(
+                    state = state(HubSection.Maintenance).copy(
+                        nowMs = NOW,
+                        maintenance = listOf(
+                            MaintenanceRecord(
+                                id = "m1",
+                                vehicleId = "v1",
+                                type = MaintenanceType.BrakeCheck,
+                                scheduledDateMs = NOW - DAY_MS,
+                                description = "Pads worn",
+                            ),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        onNodeWithText("Brake check").assertExists()
+        onNodeWithText("Unit Van").assertExists()
+        onNodeWithText("Pads worn").assertExists()
+        // A booking in the past is what a coordinator opens this page for.
+        onNodeWithText("Overdue by 1 days").assertExists()
+    }
+
+    @Test
+    fun `live tracking draws a pin and offers the map`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                HubScreen(
+                    state = state(HubSection.LiveTracking).copy(
+                        driverLocations = listOf(
+                            DriverLocation(
+                                driverId = "d1",
+                                driverName = "Asha Menon",
+                                vehicleLabel = "Unit Van",
+                                location = HubLocation(address = "Gate 3", lat = 19.07, long = 72.87),
+                                atMs = NOW,
+                                isOnDuty = true,
+                            ),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        onNodeWithText("Asha Menon").assertExists()
+        onNodeWithText("On duty").assertExists()
+        onNodeWithText("Open in Maps").assertExists()
+    }
+
+    @Test
+    fun `the new trip form opens with a passenger row`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                HubScreen(
+                    state = state(HubSection.Trips).copy(tripEditor = TripEditor(date = "2026-11-02")),
+                    onEvent = {},
+                )
+            }
+        }
+        // The button used to open nothing at all: no dialog rendered the editor,
+        // so the page's own button was the only "New Trip" on screen.
+        onAllNodesWithText("New Trip").assertCountEquals(2)
+        onNodeWithText("Passenger 1").assertExists()
+        onNodeWithText("Pickup time").assertExists()
+    }
+
+    @Test
+    fun `the trip detail draws its people and its transitions`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                HubScreen(
+                    state = state(HubSection.Trips).copy(
+                        openTrip = trips.first(),
+                        openTripEvents = listOf(
+                            TripEvent(
+                                id = "e1",
+                                type = "assigned",
+                                description = "Assigned to Asha Menon",
+                                atMs = NOW,
+                            ),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        // The View button used to open nothing at all.
+        onNodeWithText("TIMELINE").assertExists()
+        onNodeWithText("Assigned to Asha Menon").assertExists()
+        onNodeWithText("Kim Wu").assertExists()
     }
 
     @Test
@@ -272,21 +437,77 @@ class HubScreenRenderTest {
         }
 
     @Test
-    fun `an unported section says so and offers the classic page`() = runComposeUiTest {
-        var openedClassic = 0
+    fun `the shuttles page draws a route and its stops`() = runComposeUiTest {
         setContent {
             ZillitTheme {
                 HubScreen(
-                    state = state(HubSection.Shuttles),
+                    state = state(HubSection.Shuttles).copy(
+                        shuttleRoutes = listOf(
+                            ShuttleRoute(
+                                id = "sr1",
+                                name = "Base Camp → Unit Base",
+                                frequencyMinutes = 30,
+                                startTime = "06:00",
+                                endTime = "22:00",
+                                capacity = 15,
+                                driverId = "d1",
+                                vehicleId = "v1",
+                                stops = listOf(
+                                    ShuttleStop(name = "Gate 3", order = 0),
+                                    ShuttleStop(name = "Set 4", order = 1),
+                                ),
+                            ),
+                        ),
+                    ),
                     onEvent = {},
-                    openClassicPage = { openedClassic += 1 },
                 )
             }
         }
-        onNodeWithText("Not on the desktop yet").assertExists()
-        // Twice over: the rail's way back, and the empty state's own button.
-        onAllNodesWithText("Classic Transportation").assertCountEquals(2)
+        onNodeWithText("Base Camp → Unit Base").assertExists()
+        onNodeWithText("Every 30 min").assertExists()
+        onNodeWithText("06:00–22:00").assertExists()
+        onNodeWithText("1. Gate 3").assertExists()
+        onNodeWithText("Generate runs").assertExists()
     }
+
+    @Test
+    fun `the action vehicles register draws the round and the approver's buttons`() =
+        runComposeUiTest {
+            setContent {
+                ZillitTheme {
+                    HubScreen(
+                        state = state(HubSection.ActionVehicles).copy(
+                            avTab = AvTab.Pending,
+                            actionVehicles = listOf(
+                                ActionVehicle(
+                                    id = "av1",
+                                    displayName = "Hero Car #1",
+                                    status = AvStatus.PendingApproval,
+                                    categories = listOf("hero"),
+                                    make = "Ford",
+                                    model = "Mustang",
+                                    year = 1968,
+                                    scenes = listOf("12", "14"),
+                                    my = AvMy(isApprover = true),
+                                    approvers = listOf(
+                                        AvApprover(userId = "u9", name = "Dana"),
+                                        AvApprover(userId = "u8", name = "Sam"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("Hero Car #1").assertExists()
+            onNodeWithText("Ford Mustang 1968").assertExists()
+            // A live round shows its running count; the decision is this
+            // viewer's because the server said so for this record.
+            onNodeWithText("0/2 approved").assertExists()
+            onNodeWithText("Approve").assertExists()
+            onNodeWithText("Reject").assertExists()
+        }
 
     @Test
     fun `the rail's classic entry is not mistaken for a section`() = runComposeUiTest {
@@ -368,5 +589,11 @@ class HubScreenRenderTest {
                 onNodeWithText("Transportation Hub").assertExists()
             }
         }
+    }
+
+    private companion object {
+        /** A fixed clock, so an "overdue" chip reads the same every run. */
+        const val NOW = 1_793_000_000_000L
+        const val DAY_MS = 24L * 60 * 60 * 1000
     }
 }

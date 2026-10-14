@@ -77,17 +77,46 @@ class HubStateTest {
     // The rail ---------------------------------------------------------------
 
     @Test
-    fun `each role gets its own rail`() {
-        assertEquals(HubSection.Trips, HubSection.homeFor(HubRole.Coordinator))
+    fun `each role gets its own rail, in the web's order`() {
+        // The web's index route per role: Dashboard for a coordinator.
+        assertEquals(HubSection.Dashboard, HubSection.homeFor(HubRole.Coordinator))
         assertEquals(HubSection.MyTrips, HubSection.homeFor(HubRole.Driver))
         assertEquals(HubSection.MyTrips, HubSection.homeFor(HubRole.Passenger))
 
-        val coordinatorRail = HubSection.railFor(coordinator)
-        assertTrue(HubSection.Fleet in coordinatorRail)
-        assertFalse(HubSection.MyTrips in coordinatorRail)
+        assertEquals(
+            listOf(
+                HubSection.Dashboard,
+                HubSection.Trips,
+                HubSection.RideRequests,
+                HubSection.Fleet,
+                HubSection.ActionVehicles,
+                HubSection.Drivers,
+                HubSection.Allocations,
+                HubSection.Shuttles,
+                HubSection.LiveTracking,
+                HubSection.Maintenance,
+            ),
+            HubSection.railFor(coordinator),
+        )
+        assertFalse(HubSection.MyTrips in HubSection.railFor(coordinator))
 
-        val passengerRail = HubSection.railFor(passenger)
-        assertEquals(listOf(HubSection.MyTrips, HubSection.MyRides), passengerRail)
+        // A driver's own ride requests are a separate entry from the rides
+        // they have been given to drive — two pages on the web, and the
+        // desktop used to merge them into one.
+        assertEquals(
+            listOf(
+                HubSection.MyTrips,
+                HubSection.DriverMap,
+                HubSection.AssignedRides,
+                HubSection.MyRequests,
+            ),
+            HubSection.railFor(driver),
+        )
+
+        assertEquals(
+            listOf(HubSection.MyTrips, HubSection.MyRides),
+            HubSection.railFor(passenger),
+        )
     }
 
     @Test
@@ -96,11 +125,13 @@ class HubStateTest {
     }
 
     @Test
-    fun `the rail keeps the sections phase 1 has not ported`() {
+    fun `every section in the rail has a page behind it`() {
+        // Shuttles and Action Vehicles were the last two stubs; nothing in the
+        // rail opens onto an apology any more.
         val rail = HubSection.railFor(coordinator)
         assertTrue(HubSection.Shuttles in rail)
-        assertFalse(HubSection.Shuttles.isPorted)
-        assertTrue(HubSection.Fleet.isPorted)
+        assertTrue(HubSection.ActionVehicles in rail)
+        assertEquals(HubSection.entries.size, HubSection.entries.distinctBy { it.slug }.size + 1)
     }
 
     // Badge buckets ----------------------------------------------------------

@@ -551,6 +551,9 @@ enum class HubRole { Coordinator, Driver, Passenger }
 data class HubViewer(
     val userId: String = "",
     val designation: String = "",
+    /** For the rail's profile card, which the web's sidebar carries too. */
+    val fullName: String = "",
+    val isAdmin: Boolean = false,
     val canView: Boolean = false,
     val canPost: Boolean = false,
     val isTempDriver: Boolean = false,
@@ -569,4 +572,161 @@ data class HubViewer(
         const val TOOL_IDENTIFIER = "transportation_tool"
         val Empty = HubViewer()
     }
+}
+
+/**
+ * Which ride requests a read asks for.
+ *
+ * Three scopes, and the web uses a different one on each of the three pages
+ * that show rides: a coordinator sees the production's (`/ride-request`), a
+ * driver's Assigned Rides are the ones given to their driver record
+ * (`?driver_id=`), and anyone's own requests are `?me=true`. Sending the wrong
+ * one is not cosmetic — `me=true` on a driver's Assigned Rides answers the
+ * rides they *asked for*, never the ones they are to drive.
+ */
+sealed interface RideScope {
+    data object All : RideScope
+    data object Mine : RideScope
+    data class ForDriver(val driverId: String) : RideScope
+}
+
+/**
+ * The Dashboard's numbers, as `/insights/dashboard` answers them.
+ *
+ * [byStatus] is the response's `trip_counts_by_status`: mode → status → count,
+ * where a mode is `trips`, `ride_requests`, `shuttle_runs` or
+ * `permanent_trips`. The Active card must sum **every** mode — reading only
+ * `trips` under-counts, which is the bug ZL-19718 fixed on the web — and the
+ * flat `active_trips` is only a fallback for a deployment that ships no
+ * breakdown at all.
+ *
+ * [yesterday] holds the `*_yesterday` keys. A deployment that does not ship
+ * them leaves the card's trend line reading "no change" rather than inventing
+ * a direction.
+ */
+data class HubInsights(
+    val byStatus: Map<String, Map<String, Int>> = emptyMap(),
+    val flatActiveTrips: Int? = null,
+    val completedToday: Int? = null,
+    val fleetTotal: Int? = null,
+    val fleetInUse: Int? = null,
+    val rideRequestTotal: Int? = null,
+    val yesterday: Map<String, Int> = emptyMap(),
+) {
+    private fun mode(name: String): Map<String, Int> = byStatus[name].orEmpty()
+
+    private fun sum(name: String, vararg statuses: String): Int =
+        mode(name).let { counts -> statuses.sumOf { counts[it] ?: 0 } }
+
+    /**
+     * Everything still in flight, across all four modes.
+     *
+     * Pending ride requests are left out on purpose: they are the Pending
+     * Requests card's number, and counting them here would double them.
+     */
+    val activeTrips: Int
+        get() = if (byStatus.isEmpty()) {
+            flatActiveTrips ?: 0
+        } else {
+            sum(
+                "trips",
+                "pending", "assigned", "en_route_pickup", "at_pickup", "in_transit", "at_dropoff",
+            ) +
+                sum("ride_requests", "approved", "assigned", "in_progress") +
+                sum("shuttle_runs", "scheduled", "boarding", "in_transit") +
+                sum("permanent_trips", "active")
+        }
+
+    val inTransitTotal: Int
+        get() = sum("trips", "in_transit") +
+            sum("ride_requests", "in_progress") +
+            sum("shuttle_runs", "in_transit")
+
+    val assignedTotal: Int
+        get() = sum("trips", "assigned") + sum("ride_requests", "assigned")
+
+    val completedTotal: Int get() = completedToday ?: mode("trips")["completed"] ?: 0
+
+    /** Free vehicles from the fleet block, when the server ships one. */
+    val availableFromFleet: Int?
+        get() = fleetTotal?.let { total -> (total - (fleetInUse ?: 0)).coerceAtLeast(0) }
+
+    companion object {
+        val Empty = HubInsights()
+    }
+}
+
+/** What a maintenance booking is for — the server's `maintenance_type` enum. */
+enum class MaintenanceType(val wire: String) {
+    OilChange("oil_change"),
+    TireRotation("tire_rotation"),
+    BrakeCheck("brake_check"),
+    Inspection("inspection"),
+    Repair("repair"),
+    Cleaning("cleaning"),
+    Other("other"),
+    ;
+
+    companion object {
+        fun from(value: String?): MaintenanceType {
+            val raw = value?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.wire == raw } ?: Other
+        }
+    }
+}
+
+/** Where a maintenance booking has got to. */
+enum class MaintenanceStatus(val wire: String) {
+    Scheduled("scheduled"),
+    InProgress("in_progress"),
+    Completed("completed"),
+    ;
+
+    companion object {
+        fun from(value: String?): MaintenanceStatus {
+            val raw = value?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.wire == raw } ?: Scheduled
+        }
+    }
+}
+
+/** A vehicle booked in for work. */
+data class MaintenanceRecord(
+    val id: String,
+    val vehicleId: String? = null,
+    val vehicleLabel: String = "",
+    val type: MaintenanceType = MaintenanceType.Other,
+    val status: MaintenanceStatus = MaintenanceStatus.Scheduled,
+    /** Epoch ms at the start of the booked day. 0 when the server sent none. */
+    val scheduledDateMs: Long = 0,
+    val description: String = "",
+    val estimatedCost: Double? = null,
+    val odometerReading: Long? = null,
+) {
+    val isDone: Boolean get() = status == MaintenanceStatus.Completed
+}
+
+/** A maintenance booking being made. The server takes the date as YYYY-MM-DD. */
+data class MaintenanceDraft(
+    val vehicleId: String,
+    val type: MaintenanceType,
+    val scheduledDateMs: Long,
+    val description: String = "",
+    val estimatedCost: Double? = null,
+    val odometerReading: Long? = null,
+)
+
+/** Where a driver last reported being — one pin on the web's live map. */
+data class DriverLocation(
+    val driverId: String,
+    val driverName: String = "",
+    val vehicleLabel: String = "",
+    val location: HubLocation = HubLocation.Empty,
+    /** When the position was reported. 0 when the server sent no stamp. */
+    val atMs: Long = 0,
+    val isOnDuty: Boolean = false,
+    val speedKph: Double? = null,
+) {
+    /** True when there is a point worth putting on a map. */
+    val hasFix: Boolean get() = location.hasCoordinates
 }

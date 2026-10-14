@@ -21,9 +21,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * reloads are debounced, so a doubled frame costs nothing while a missed one
  * would leave a stale list.
  *
- * NOT here, because phase 1 has no page that would use them: the shuttle, the
- * maintenance, the geofence, the day- and trip-template, the talent and the
- * action-vehicle streams, and `driver:location:update` (the live map).
+ * NOT here, because no page would use them yet: the geofence, the day- and
+ * trip-template, and the talent streams.
  */
 val HUB_SYNC_KINDS: Map<SocketEventName, HubSyncKind> = buildMap {
     listOf(
@@ -102,6 +101,46 @@ val HUB_SYNC_KINDS: Map<SocketEventName, HubSyncKind> = buildMap {
         "transportation:permanent:trip:request:assigned:as:driver",
         "transportation:permanent:trip:request:assigned:as:passenger",
     ).forEach { put(SocketEventName(it), HubSyncKind.Permanent) }
+
+    listOf(
+        "transportation:shuttle:route:created",
+        "transportation:shuttle:route:updated",
+        "transportation:shuttle:route:deleted",
+    ).forEach { put(SocketEventName(it), HubSyncKind.ShuttleRoutes) }
+
+    listOf(
+        "transportation:shuttle:run:created",
+        "transportation:shuttle:run:updated",
+        "transportation:shuttle:run:status:changed",
+        "transportation:shuttle:runs:generated",
+    ).forEach { put(SocketEventName(it), HubSyncKind.ShuttleRuns) }
+
+    listOf(
+        "transportation:action-vehicle:created",
+        "transportation:action-vehicle:updated",
+        "transportation:action-vehicle:deleted",
+        "transportation:action-vehicle:status:updated",
+        // A new comment flows into an open thread through the same reload;
+        // the badge itself rides the notification row.
+        "transportation:action-vehicle:comment:added",
+        "transportation:action-vehicle:comment:edited",
+        "transportation:action-vehicle:comment:deleted",
+    ).forEach { put(SocketEventName(it), HubSyncKind.ActionVehicles) }
+
+    listOf(
+        "transportation:maintenance:created",
+        "transportation:maintenance:updated",
+        "transportation:maintenance:completed",
+        "transportation:maintenance:deleted",
+        "transportation:maintenance:alert",
+    ).forEach { put(SocketEventName(it), HubSyncKind.Maintenance) }
+
+    // The live map's own stream. Every moving car emits it, so it is the one
+    // kind the ViewModel only acts on while the page that draws it is open.
+    listOf(
+        "transportation:driver:location:update",
+        "transportation:driver:location:updated",
+    ).forEach { put(SocketEventName(it), HubSyncKind.Tracking) }
 }
 
 val HUB_SYNC_EVENTS: List<SocketEventName> = HUB_SYNC_KINDS.keys.toList()

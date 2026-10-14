@@ -12,18 +12,31 @@ import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.transporthub.domain.ActiveCar
+import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
+import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvDraft
+import com.zillit.desktop.feature.transporthub.domain.AvStatus
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRoute
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteDraft
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRun
+import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.DriverDetailsPatch
 import com.zillit.desktop.feature.transporthub.domain.DriverDraft
+import com.zillit.desktop.feature.transporthub.domain.DriverLocation
+import com.zillit.desktop.feature.transporthub.domain.HubInsights
 import com.zillit.desktop.feature.transporthub.domain.HubPassenger
 import com.zillit.desktop.feature.transporthub.domain.HubRepository
 import com.zillit.desktop.feature.transporthub.domain.HubStop
 import com.zillit.desktop.feature.transporthub.domain.HubSyncKind
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceDraft
+import com.zillit.desktop.feature.transporthub.domain.MaintenanceRecord
 import com.zillit.desktop.feature.transporthub.domain.PermanentDraft
 import com.zillit.desktop.feature.transporthub.domain.PermanentTrip
 import com.zillit.desktop.feature.transporthub.domain.ProjectPerson
 import com.zillit.desktop.feature.transporthub.domain.RideDraft
 import com.zillit.desktop.feature.transporthub.domain.RideRequest
+import com.zillit.desktop.feature.transporthub.domain.RideScope
 import com.zillit.desktop.feature.transporthub.domain.RideStatus
 import com.zillit.desktop.feature.transporthub.domain.Trip
 import com.zillit.desktop.feature.transporthub.domain.TripDraft
@@ -239,8 +252,21 @@ class HubRepositoryImpl(
 
     // Trips ------------------------------------------------------------------
 
-    override suspend fun trips(): ZillitResult<List<Trip>> =
-        get("$base/trip").mapData { data -> data.rows("trips").mapNotNull { it.toTrip() } }
+    /**
+     * The trip list.
+     *
+     * [driverId] is the **driver record's** id, not the user behind it, and it
+     * is what scopes a driver's My Trips to theirs. Leaving it off is the
+     * coordinator's read — and was the driver's too until this was fixed: a
+     * driver saw the production's whole list. The list is never filtered
+     * again here, because `assigned_driver` on the document is a user id and
+     * would match nothing.
+     */
+    override suspend fun trips(driverId: String?): ZillitResult<List<Trip>> =
+        get(
+            "$base/trip",
+            driverId?.takeIf { it.isNotBlank() }?.let { mapOf("driver_id" to it) }.orEmpty(),
+        ).mapData { data -> data.rows("trips").mapNotNull { it.toTrip() } }
 
     override suspend fun trip(id: String): ZillitResult<Trip?> =
         get("$base/trip/$id").mapData { it.record("trip")?.toTrip() }
@@ -299,15 +325,15 @@ class HubRepositoryImpl(
      * second read is allowed to fail — a deployment that rejects the `status`
      * parameter should cost the tab, not the page.
      */
-    override suspend fun rideRequests(onlyMine: Boolean): ZillitResult<List<RideRequest>> {
-        val scope = if (onlyMine) mapOf("me" to "true") else emptyMap()
-        val primary = get("$base/ride-request", scope).mapData { data ->
+    override suspend fun rideRequests(scope: RideScope): ZillitResult<List<RideRequest>> {
+        val query = scope.query()
+        val primary = get("$base/ride-request", query).mapData { data ->
             data.rows("ride_requests").mapNotNull { it.toRideRequest() }
         }
         if (primary is ZillitResult.Failure) return primary
         val rejected = get(
             "$base/ride-request",
-            scope + mapOf("status" to RideStatus.Rejected.wire, "limit" to REJECTED_PAGE_SIZE),
+            query + mapOf("status" to RideStatus.Rejected.wire, "limit" to REJECTED_PAGE_SIZE),
         ).mapData { data -> data.rows("ride_requests").mapNotNull { it.toRideRequest() } }
 
         val rows = (primary as ZillitResult.Success).data
@@ -473,7 +499,252 @@ class HubRepositoryImpl(
     override suspend fun deletePermanentTrip(id: String): ZillitResult<Unit> =
         write(HttpVerb.Delete, "$base/permanent-trip/$id", buildJsonObject { }.withPermanentId(id))
 
+    // Dashboard --------------------------------------------------------------
+
+    override suspend fun insights(): ZillitResult<HubInsights> =
+        get("$base/insights/dashboard").mapData { it.toInsights() }
+
+    override suspend fun pendingRideCount(): ZillitResult<Int> =
+        get("$base/ride-request/pending").mapData { it.toPendingCount() }
+
+    // Maintenance ------------------------------------------------------------
+
+    override suspend fun maintenance(): ZillitResult<List<MaintenanceRecord>> =
+        get("$base/maintenance").mapData { data ->
+            data.rows("maintenance", "items").mapNotNull { it.toMaintenanceRecord() }
+        }
+
+    override suspend fun addMaintenance(draft: MaintenanceDraft): ZillitResult<Unit> =
+        write(HttpVerb.Post, "$base/maintenance", maintenanceBody(draft))
+
+    override suspend fun completeMaintenance(id: String): ZillitResult<Unit> =
+        write(HttpVerb.Put, "$base/maintenance/$id/complete", null)
+
+    override suspend fun deleteMaintenance(id: String): ZillitResult<Unit> =
+        write(HttpVerb.Delete, "$base/maintenance/$id", null)
+
+    // Live tracking ----------------------------------------------------------
+
+    override suspend fun activeLocations(): ZillitResult<List<DriverLocation>> =
+        get("$base/location/active").mapData { data ->
+            data.rows("locations", "drivers").mapNotNull { it.toDriverLocation() }
+        }
+
+    // Shuttles ---------------------------------------------------------------
+
+    override suspend fun shuttleRoutes(): ZillitResult<List<ShuttleRoute>> =
+        get("$base/shuttle/routes").mapData { data ->
+            data.rows("routes").mapNotNull { it.toShuttleRoute() }
+        }
+
+    override suspend fun addShuttleRoute(draft: ShuttleRouteDraft): ZillitResult<Unit> =
+        write(HttpVerb.Post, "$base/shuttle/routes", shuttleRouteBody(draft))
+
+    override suspend fun updateShuttleRoute(
+        id: String,
+        draft: ShuttleRouteDraft,
+    ): ZillitResult<Unit> =
+        write(HttpVerb.Put, "$base/shuttle/routes/$id", shuttleRouteBody(draft).withRouteId(id))
+
+    override suspend fun setShuttleRouteActive(id: String, active: Boolean): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/shuttle/routes/$id",
+            // camelCase inside an otherwise snake_case body — the update
+            // route's own spelling, and the only field this call sends.
+            buildJsonObject { put("isActive", active) }.withRouteId(id),
+        )
+
+    override suspend fun deleteShuttleRoute(id: String): ZillitResult<Unit> =
+        write(HttpVerb.Delete, "$base/shuttle/routes/$id", null)
+
+    override suspend fun generateShuttleRuns(id: String): ZillitResult<Unit> =
+        write(HttpVerb.Post, "$base/shuttle/routes/$id/generate", null)
+
+    /** The runs live under the **plural** prefix; the singular one 404s. */
+    override suspend fun shuttleRuns(): ZillitResult<List<ShuttleRun>> =
+        get("$base/shuttles/schedule").mapData { data ->
+            data.rows("schedule", "runs").mapNotNull { it.toShuttleRun() }
+        }
+
+    override suspend fun setShuttleRunStatus(
+        id: String,
+        status: ShuttleRunStatus,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/shuttles/runs/$id",
+            buildJsonObject { put("status", status.wire) },
+        )
+
+    // Action vehicles --------------------------------------------------------
+
+    override suspend fun actionVehicles(): ZillitResult<List<ActionVehicle>> =
+        get("$base/action-vehicle").mapData { data ->
+            data.rows("action_vehicles", "vehicles").mapNotNull { it.toActionVehicle() }
+        }
+
+    override suspend fun requestActionVehicle(
+        draft: AvDraft,
+        timezone: String,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Post,
+            "$base/action-vehicle/request",
+            buildJsonObject {
+                avBody(draft).forEach { (key, value) -> put(key, value) }
+                // The shoot-day reminder cron computes "N days before" in the
+                // requester's own zone; without it the reminders fall back to
+                // UTC and go out on the wrong day.
+                put("timezone", timezone)
+            },
+        )
+
+    override suspend fun sourceActionVehicle(id: String, draft: AvDraft): ZillitResult<Unit> =
+        write(HttpVerb.Put, "$base/action-vehicle/$id/source", avBody(draft).withAvId(id))
+
+    override suspend fun updateActionVehicle(
+        id: String,
+        draft: AvDraft,
+        timezone: String,
+        datesOnly: Boolean,
+    ): ZillitResult<Unit> {
+        val body = if (datesOnly) {
+            avDatesBody(draft, timezone)
+        } else {
+            buildJsonObject {
+                avBody(draft).forEach { (key, value) -> put(key, value) }
+                put("timezone", timezone)
+            }
+        }
+        return write(HttpVerb.Put, "$base/action-vehicle/$id", body.withAvId(id))
+    }
+
+    override suspend fun setActionVehicleStatus(id: String, status: AvStatus): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/status",
+            buildJsonObject { put("status", status.wire) }.withAvId(id),
+        )
+
+    override suspend fun deleteActionVehicle(id: String): ZillitResult<Unit> =
+        write(HttpVerb.Delete, "$base/action-vehicle/$id", null)
+
+    override suspend fun sendActionVehicleForApproval(
+        id: String,
+        approvers: List<AvApprover>,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/send-for-approval",
+            buildJsonObject { put("approvers", approvers.toApproverWire()) }.withAvId(id),
+        )
+
+    override suspend fun approveActionVehicle(id: String): ZillitResult<Unit> =
+        write(HttpVerb.Put, "$base/action-vehicle/$id/approve", buildJsonObject { }.withAvId(id))
+
+    override suspend fun rejectActionVehicle(id: String, reason: String): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/reject",
+            buildJsonObject { put("reason", reason) }.withAvId(id),
+        )
+
+    override suspend fun requestActionVehicleReturn(
+        id: String,
+        approvers: List<AvApprover>,
+        note: String,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/request-return",
+            buildJsonObject {
+                put("approvers", approvers.toApproverWire())
+                put("note", note.trim())
+            }.withAvId(id),
+        )
+
+    override suspend fun approveActionVehicleReturn(id: String): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/approve-return",
+            buildJsonObject { }.withAvId(id),
+        )
+
+    override suspend fun rejectActionVehicleReturn(
+        id: String,
+        reason: String,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/reject-return",
+            buildJsonObject { put("reason", reason) }.withAvId(id),
+        )
+
+    override suspend fun editActionVehicleApprovers(
+        id: String,
+        add: List<String>,
+        remove: List<String>,
+        returnFlow: Boolean,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/action-vehicle/$id/approvers",
+            buildJsonObject {
+                // Ids only: this route resolves the names from project
+                // membership itself, unlike send-for-approval.
+                if (add.isNotEmpty()) put("add", add.toJsonArray())
+                if (remove.isNotEmpty()) put("remove", remove.toJsonArray())
+                put("kind", if (returnFlow) "return" else "approval")
+            }.withAvId(id),
+        )
+
+    override suspend fun remindActionVehicleApprover(
+        id: String,
+        userId: String,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Post,
+            "$base/action-vehicle/$id/remind-approver",
+            buildJsonObject { put("user_id", userId) }.withAvId(id),
+        )
+
+    override suspend fun addActionVehicleComment(id: String, text: String): ZillitResult<Unit> =
+        write(
+            HttpVerb.Post,
+            "$base/action-vehicle/$id/comment",
+            // The author comes from the token; sending one would be ignored.
+            buildJsonObject { put("text", text.trim()) }.withAvId(id),
+        )
+
+    override suspend fun sendActionVehicleForComments(
+        id: String,
+        userIds: List<String>,
+        message: String,
+    ): ZillitResult<Unit> =
+        write(
+            HttpVerb.Post,
+            "$base/action-vehicle/$id/send-for-comments",
+            buildJsonObject {
+                put("users", userIds.toJsonArray())
+                put("message", message.trim())
+            }.withAvId(id),
+        )
+
     // Plumbing ---------------------------------------------------------------
+
+    /**
+     * The scope parameter, as the three ride pages send it.
+     *
+     * `driver_id` is the driver record's id — `me=true` would answer the rides
+     * that driver *asked for*, which is a different list entirely.
+     */
+    private fun RideScope.query(): Map<String, Any?> = when (this) {
+        RideScope.All -> emptyMap()
+        RideScope.Mine -> mapOf("me" to "true")
+        is RideScope.ForDriver -> mapOf("driver_id" to driverId)
+    }
+
 
     private fun VehicleFilter.query(): Map<String, Any?> = buildMap {
         allocation.query?.let { put("allocation_status", it) }
@@ -534,6 +805,18 @@ class HubRepositoryImpl(
 private fun JsonObject.withRideId(id: String): JsonObject = buildJsonObject {
     put("ride_request_id", id)
     this@withRideId.forEach { (key, value) -> put(key, value) }
+}
+
+/** Adds the `route_id` the shuttle-route update validator requires. */
+private fun JsonObject.withRouteId(id: String): JsonObject = buildJsonObject {
+    put("route_id", id)
+    this@withRouteId.forEach { (key, value) -> put(key, value) }
+}
+
+/** Adds the `action_vehicle_id` every action-vehicle write validator requires. */
+private fun JsonObject.withAvId(id: String): JsonObject = buildJsonObject {
+    put("action_vehicle_id", id)
+    this@withAvId.forEach { (key, value) -> put(key, value) }
 }
 
 /** Adds the `permanent_trip_id` the permanent-trip validators require. */
