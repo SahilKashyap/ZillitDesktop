@@ -2127,10 +2127,17 @@ class ChatViewModel(
             block = { repository.conversationBacklog() },
             onSuccess = { backlog ->
                 serverUnread.clear()
-                // A thread open right now was just read; its rows in
-                // the backlog predate that.
+                // A thread somebody is LOOKING at was just read, so its rows
+                // in the backlog predate that and are dropped. A thread that
+                // is merely open is not: it can sit behind a closed tab for
+                // hours, and dropping its count there is how the rail lost
+                // its badge entirely (user, 2026-10-14, after the read gate
+                // landed — "badges stop appearing when the chat tab is
+                // closed"). The same [watching] that decides whether an
+                // arrival is read decides whether this subtraction is true.
                 val counts = backlog.unread
-                serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
+                val readPeer = currentState.peer?.userId?.takeIf { watching }
+                serverUnread.putAll(readPeer?.let { counts - it } ?: counts)
                 setState { copy(ledgerRooms = backlog.rooms) }
                 backlog.windowStart?.let { backlogWindowStart = maxOf(backlogWindowStart, it) }
                 // The one line that says where a badge came from: read it before

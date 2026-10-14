@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat
 
+import com.zillit.desktop.feature.chat.data.ConversationBacklog
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -119,6 +120,53 @@ class ChatDeliveryAckTest {
 
         assertTrue(repository.reads.any { it.second == "m-9" }, "the read goes when a person looks")
         assertTrue(model.currentState.unread[aisha.userId] == null, "and the row clears")
+    }
+
+    /**
+     * The rail keeps its badge for a thread that is open but unlooked-at.
+     *
+     * The backlog reload drops the open thread's count on the grounds that
+     * "a thread open right now was just read". Once a read needs somebody
+     * watching, that is no longer true of a merely-open thread — and the
+     * subtraction took the whole conversation out of `unread`, so the
+     * sidebar's C&C pill went blank while messages piled up (user,
+     * 2026-10-14: "badges stop appearing when the chat tab is closed").
+     */
+    @Test
+    fun `an open but unwatched thread keeps its backlog count`() = runTest(dispatcher) {
+        val repository = FakeChatRepository().apply {
+            recents = listOf(aisha.userId)
+            backlog = ConversationBacklog(unread = mapOf(aisha.userId to 2))
+        }
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        model.onEvent(ChatEvent.Watching(false))
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.RefreshRecents)
+        advanceUntilIdle()
+
+        assertEquals(2, model.currentState.unread[aisha.userId], "nobody looked, so it is still unread")
+        assertEquals(2, model.currentState.chatsBadge, "and the rail says so")
+    }
+
+    /** Looking at it is what drops the backlog's older count. */
+    @Test
+    fun `a watched thread drops its backlog count`() = runTest(dispatcher) {
+        val repository = FakeChatRepository().apply {
+            recents = listOf(aisha.userId)
+            backlog = ConversationBacklog(unread = mapOf(aisha.userId to 2))
+        }
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        model.onEvent(ChatEvent.Watching(true))
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.RefreshRecents)
+        advanceUntilIdle()
+
+        assertEquals(null, model.currentState.unread[aisha.userId])
+        assertEquals(0, model.currentState.chatsBadge)
     }
 
     /**
