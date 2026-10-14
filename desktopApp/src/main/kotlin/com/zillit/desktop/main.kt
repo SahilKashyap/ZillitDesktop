@@ -1746,10 +1746,9 @@ private fun ZillitContent(
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
-    // Computed here rather than inside the shell so the sign-in page and the
+    // Computed here rather than inside either shell so the sign-in page and the
     // picker get the same answer: one six-hourly poll, one updater, whichever
     // screen is up.
-    val updateScope = rememberCoroutineScope()
     val updateStatus = rememberUpdateStatus(ready)
     val updateNotice = currentUpdateNotice(ready, updateStatus)
 
@@ -1761,37 +1760,70 @@ private fun ZillitContent(
                 updateStatus, updateNotice, landedProject,
             )
         } else {
-            UpdateSurface(
-                notice = updateNotice,
-                onDownload = ::openInBrowser,
-                onInstall = { ready.inAppUpdater.installOrDownload(updateStatus) },
-                onCancel = { ready.inAppUpdater.cancel() },
-                onOpen = { ready.inAppUpdater.openDownloaded() },
-                onRestart = { updateScope.launch { ready.restartToUpdate(onQuit) } },
-                onQuit = onQuit,
-            ) {
-            AuthScreen(
-                viewModel = authViewModel,
-                // The production list carries the shell bar's controls — update,
-                // language, theme: it is the first screen a signed-in user sees,
-                // and the shell is not reachable until they pick a production.
-                // A newer build's answer is the update strip above both screens.
-                themeMode = themeMode, onThemeModeChange = onThemeModeChange,
-                language = language, onLanguageChange = onLanguageChange,
-                onCheckForUpdates = { ready.checkForUpdatesFromBar() },
-                createViewModel = createViewModel, joinViewModel = joinViewModel,
-                onSignOut = { updateScope.launch { ready.authRepository.signOut() } },
-                // On the sign-in page, where someone who cannot get in can
-                // still read it off to support.
-                appVersion = installedAppVersion(),
+            SignedOutShell(
+                ready, viewModels, authViewModel, createViewModel, joinViewModel,
+                themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
+                updateStatus, updateNotice, authState.step,
             )
-            }
-            ProjectListCallBar(ready, viewModels, authState.step)
         }
         // Above either screen: the startup notification-permission check, as
         // the phones make it, whatever the person is looking at.
         NotificationPermissionPrompt()
     }
+}
+
+/**
+ * Everything before a production is open: the sign-in pages and the production
+ * list, under the same update strip the shell carries.
+ *
+ * A sibling of [SignedInShell] rather than the one branch left inline, so the
+ * two halves of [ZillitContent] read the same way — and so neither grows
+ * without somebody noticing.
+ */
+@Composable
+private fun SignedOutShell(
+    ready: AppGraph.Ready,
+    viewModels: AppViewModels,
+    authViewModel: AuthViewModel,
+    createViewModel: CreateProductionViewModel,
+    joinViewModel: JoinProductionViewModel,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
+    onQuit: () -> Unit,
+    /** Computed once in [ZillitContent], so every screen shares one poll. */
+    updateStatus: UpdateStatus,
+    updateNotice: UpdateNotice?,
+    step: AuthStep,
+) {
+    val updateScope = rememberCoroutineScope()
+    UpdateSurface(
+        notice = updateNotice,
+        onDownload = ::openInBrowser,
+        onInstall = { ready.inAppUpdater.installOrDownload(updateStatus) },
+        onCancel = { ready.inAppUpdater.cancel() },
+        onOpen = { ready.inAppUpdater.openDownloaded() },
+        onRestart = { updateScope.launch { ready.restartToUpdate(onQuit) } },
+        onQuit = onQuit,
+    ) {
+        AuthScreen(
+            viewModel = authViewModel,
+            // The production list carries the shell bar's controls — update,
+            // language, theme: it is the first screen a signed-in user sees,
+            // and the shell is not reachable until they pick a production.
+            // A newer build's answer is the update strip above both screens.
+            themeMode = themeMode, onThemeModeChange = onThemeModeChange,
+            language = language, onLanguageChange = onLanguageChange,
+            onCheckForUpdates = { ready.checkForUpdatesFromBar() },
+            createViewModel = createViewModel, joinViewModel = joinViewModel,
+            onSignOut = { updateScope.launch { ready.authRepository.signOut() } },
+            // On the sign-in page, where someone who cannot get in can
+            // still read it off to support.
+            appVersion = installedAppVersion(),
+        )
+    }
+    ProjectListCallBar(ready, viewModels, step)
 }
 
 /**
