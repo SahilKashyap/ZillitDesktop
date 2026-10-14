@@ -55,14 +55,16 @@ class ChatDeliveryAckTest {
     }
 
     /**
-     * The open thread is read, not merely delivered — and only the read goes,
-     * since a 2 landing behind a 3 would walk the sender's ticks backwards.
+     * The open thread SOMEBODY IS LOOKING AT is read, not merely delivered —
+     * and only the read goes, since a 2 landing behind a 3 would walk the
+     * sender's ticks backwards.
      */
     @Test
-    fun `a message in the open thread is read, not acked delivered`() = runTest(dispatcher) {
+    fun `a message in the watched open thread is read, not acked delivered`() = runTest(dispatcher) {
         val repository = FakeChatRepository()
         val model = viewModel(repository)
         model.onEvent(ChatEvent.OpenThread(aisha))
+        model.onEvent(ChatEvent.Watching(true))
         runCurrent()
 
         model.onEvent(ChatEvent.Arrived(incoming(from = aisha.userId, id = "m-2")))
@@ -70,6 +72,53 @@ class ChatDeliveryAckTest {
 
         assertTrue(repository.delivered2.isEmpty(), "the read emit is the stronger claim")
         assertTrue(repository.reads.any { it.second == "m-2" }, "and it did go")
+    }
+
+    /**
+     * An open thread behind another tab, or in an unfocused window, is not
+     * being read by anybody.
+     *
+     * Found live on 2026-10-14: two messages arrived while the window showed
+     * the Transportation Hub and the desktop answered each with
+     * `-> private_chat_message_read_untill`, telling the sender they had been
+     * seen and clearing them on the user's phone. "Open" meant only that a
+     * thread object existed on this model, which outlives looking at it.
+     */
+    @Test
+    fun `an open thread nobody is watching is delivered, never read`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        runCurrent()
+
+        model.onEvent(ChatEvent.Arrived(incoming(from = aisha.userId, id = "m-8")))
+        advanceUntilIdle()
+
+        assertTrue(repository.reads.none { it.second == "m-8" }, "nobody saw it, so nobody read it")
+        assertEquals(listOf(aisha.userId to "m-8"), repository.delivered2, "but it did reach this computer")
+        assertEquals(1, model.currentState.unread[aisha.userId], "and the row says so")
+    }
+
+    /**
+     * Looking is itself the read: what arrived unwatched is on screen the
+     * moment the window comes back, so the receipt it was denied goes then.
+     * Without this the gate would lose those reads rather than defer them.
+     */
+    @Test
+    fun `coming back to the thread sends the read that was withheld`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val model = viewModel(repository)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        runCurrent()
+        model.onEvent(ChatEvent.Arrived(incoming(from = aisha.userId, id = "m-9")))
+        advanceUntilIdle()
+        assertTrue(repository.reads.none { it.second == "m-9" })
+
+        model.onEvent(ChatEvent.Watching(true))
+        advanceUntilIdle()
+
+        assertTrue(repository.reads.any { it.second == "m-9" }, "the read goes when a person looks")
+        assertTrue(model.currentState.unread[aisha.userId] == null, "and the row clears")
     }
 
     /**

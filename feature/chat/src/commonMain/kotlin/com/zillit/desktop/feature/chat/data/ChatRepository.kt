@@ -291,6 +291,16 @@ interface ChatRepository {
     suspend fun cachedRooms(): List<com.zillit.desktop.feature.chat.domain.GroupRoom> = emptyList()
 
     /**
+     * When each conversation last spoke, by id — `GET chat/users-group`.
+     *
+     * The only listing read that stamps a PRIVATE thread; see
+     * [conversationStampsFrom]. Defaulted so a client that does not implement
+     * it simply has no stamps, exactly as before it existed.
+     */
+    suspend fun conversationStamps(): ZillitResult<Map<String, Long>> =
+        ZillitResult.Success(emptyMap())
+
+    /**
      * Creates a CNC group room — `POST chat-room` with Android's
      * `ReqGroupModel` body — answering the room the server saved. Defaulted
      * to a refusal so test fakes that never create rooms need not care.
@@ -589,6 +599,16 @@ class ChatRepositoryImpl(
     /** One emit for both rungs — the envelope differs only in its `status`. */
     private suspend fun emitWatermark(peerId: String, messageId: String, isGroup: Boolean, status: Int) {
         val project = projectId() ?: return
+        // Which rung, in the log. Delivered and read are the same event name
+        // on the wire, so `-> private_chat_message_read_untill` alone cannot
+        // say whether this client claimed somebody SAW a message or only that
+        // it arrived — and that is exactly the question when checking whether
+        // an unwatched thread is reading on the user's behalf. Ids and a
+        // number; no bodies.
+        ZillitLog.d(TAG) {
+            val rung = if (status == READ_UNTILL_READ) "read" else "delivered"
+            "watermark $rung(status=$status) for $peerId up to $messageId group=$isGroup"
+        }
         if (isGroup) {
             val me = myUserId() ?: return
             bus.emit(
@@ -934,6 +954,21 @@ class ChatRepositoryImpl(
             options = scoped(),
             queryParameters = scope.messageParameters(),
         )?.let(::roomsFrom).orEmpty()
+
+    /**
+     * `GET chat/users-group`, the web's `fetchChatListData`.
+     *
+     * Unscoped by tool on purpose: the web sends no query at all, and the
+     * answer is the whole of this user's conversations in the production.
+     */
+    override suspend fun conversationStamps(): ZillitResult<Map<String, Long>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${config.apiV2(ZillitService.Chat)}chat/users-group",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            options = scoped(),
+        ).map(::conversationStampsFrom)
 
     override suspend fun rooms(): ZillitResult<List<com.zillit.desktop.feature.chat.domain.GroupRoom>> =
         apiClient.request(

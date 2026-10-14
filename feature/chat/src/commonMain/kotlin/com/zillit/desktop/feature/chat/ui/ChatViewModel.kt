@@ -260,6 +260,13 @@ data class ReadByView(
 sealed interface ChatEvent {
     data class OpenThread(val contact: CrewContact) : ChatEvent
     data object CloseThread : ChatEvent
+
+    /**
+     * Whether somebody is actually looking at this model's thread — the
+     * surface is composed, its tab is the one showing, and the window has
+     * focus. False until a surface says otherwise.
+     */
+    data class Watching(val watching: Boolean) : ChatEvent
     data class DraftChanged(val text: String) : ChatEvent
     data object Send : ChatEvent
     data class Arrived(val message: ChatMessage) : ChatEvent
@@ -783,6 +790,7 @@ class ChatViewModel(
                         copy(peerTyping = event.started, typistId = if (event.started) event.typistId else typistId)
                     }
                 }
+            is ChatEvent.Watching -> onWatching(event.watching)
             ChatEvent.ProjectChanged -> startFreshProject()
             is ChatEvent.LoadGroupInfo -> loadGroupInfo(event.roomId)
             is ChatEvent.RenameGroup -> renameGroup(event.name)
@@ -872,6 +880,28 @@ class ChatViewModel(
                 // user list might already have done.
                 warmPreviews()
             },
+            onError = { },
+        )
+        // When each conversation last spoke — the one read that stamps a
+        // private thread, and so the only thing that can tell the warm pass
+        // a DM's line is out of date. Without it `at > cached` was `0 > 0`
+        // for every unstamped row, the ask never went out, and the line
+        // stayed as it was until the thread was opened (user, 2026-10-14:
+        // "messages are not updated in chat list until I opened the chat").
+        launchResult(
+            block = { repository.conversationStamps() },
+            onSuccess = { stamps ->
+                if (stamps.isNotEmpty()) {
+                    learnActivity(stamps)
+                    // Re-reads the shelf with the stamps in hand, which is
+                    // what starts the warm pass on the rows it can now see
+                    // are stale.
+                    showRecents(currentState.recents)
+                    launch { rememberRecents() }
+                }
+            },
+            // An environment still on the old contract answers nothing
+            // useful; the listing is exactly as it was. No toast.
             onError = { },
         )
         // The per-conversation counts and stamps, from the server's backlog. A
@@ -1130,6 +1160,31 @@ class ChatViewModel(
     private fun learnActivity(stamps: Map<String, Long>) {
         stamps.forEach { (key, at) ->
             if (at > (serverActivity[key] ?: 0L)) serverActivity[key] = at
+        }
+    }
+
+    /**
+     * A surface started or stopped showing this model's thread.
+     *
+     * Becoming watched is itself a read: the messages that arrived while
+     * nobody was looking are on screen the moment the window comes back, so
+     * the receipt they were denied on arrival is sent now. Without this the
+     * gate would simply lose those reads instead of deferring them.
+     */
+    private fun onWatching(value: Boolean) {
+        if (watching == value) return
+        watching = value
+        if (!value || readOnly) return
+        val peer = currentState.peer ?: return
+        val newest = currentState.messages.lastOrNull { !it.isMine } ?: return
+        repository.markThreadRead(peer.userId, newest.timestampMillis)
+        val isGroup = currentState.peerIsGroup
+        serverUnread.remove(peer.userId)
+        setState { copy(unread = unread - peer.userId) }
+        launch {
+            repository.markRead(peer.userId, newest.id, isGroup)
+            onThreadRead(peer.userId)
+            applySplit(badgeSplit())
         }
     }
 
@@ -1935,6 +1990,23 @@ class ChatViewModel(
     /** True while a warm pass is in flight, so repaints do not stack passes. */
     private var warming = false
 
+    /**
+     * Whether anybody is actually looking at this model's open thread.
+     *
+     * Reading a message tells the sender it was seen and clears it on this
+     * user's OTHER devices, so it has to mean a person looked. It used to
+     * mean only that a thread object existed on this model — which survives
+     * switching tab, losing window focus and hiding the window. Caught live
+     * on 2026-10-14: two messages arrived while the window showed the
+     * Transportation Hub, and the desktop answered each with
+     * `-> private_chat_message_read_untill`, reporting a read nobody made and
+     * clearing the rows on the user's phone before they had seen them.
+     *
+     * False until a surface says otherwise, so a model nobody has wired a
+     * surface to — a widget pane that is never shown, a test — reads nothing.
+     */
+    private var watching = false
+
     /** One throttled job's state: in its window, and whether it owes a trailing pass. */
     private class Throttle {
         var running = false
@@ -2672,6 +2744,16 @@ class ChatViewModel(
      * there is the stronger claim, and racing a 2 behind a 3 would walk the
      * sender's ticks backwards.
      */
+    /**
+     * Whether this arrival counts as read the moment it lands.
+     *
+     * A read-only model sees the line and says nothing about it; neither does
+     * a thread nobody is looking at ([watching]); and our own echo is not
+     * something to acknowledge to ourselves.
+     */
+    private fun readsOnArrival(message: ChatMessage, isOpen: Boolean): Boolean =
+        isOpen && watching && !message.isMine && !readOnly
+
     private fun ackDelivered(message: ChatMessage) {
         if (readOnly || message.isMine || message.sendState != ChatSendState.Sent) return
         val conversation = message.conversationId()
@@ -2699,8 +2781,7 @@ class ChatViewModel(
         val isOpen = peer != null &&
             (message.senderId == peer.userId || message.receiverId == peer.userId)
 
-        // A read-only model sees the line arrive and says nothing about it.
-        val readsIt = isOpen && !message.isMine && !readOnly
+        val readsIt = readsOnArrival(message, isOpen)
         if (readsIt && peer != null) {
             // Reading it here is what tells the sender it was seen — and,
             // for a room, what clears its badge server-side: the group emit
@@ -2716,7 +2797,10 @@ class ChatViewModel(
             }
         }
 
-        if (!isOpen) ackDelivered(message)
+        // Delivered is a fact about this computer, not about attention: a
+        // line that arrived while the thread sat unwatched is still here, and
+        // the sender should see one tick rather than nothing.
+        if (!readsIt) ackDelivered(message)
 
         // The arrival itself is the newest word on its thread — learned here
         // rather than trusted to the cache, so a row lifts on the message
@@ -2726,7 +2810,10 @@ class ChatViewModel(
         val activity = knownActivity()
         // A line for a thread not on screen is one more the server counts;
         // the cache counts it too, and the row shows whichever is larger.
-        if (!isOpen && !message.isMine && other.isNotBlank()) {
+        // Counted unless it was actually read: a message that landed in an
+        // open-but-unwatched thread is one the user has still not seen, and
+        // its row has to say so until they look.
+        if (!readsIt && !message.isMine && other.isNotBlank()) {
             serverUnread[other] = (serverUnread[other] ?: 0) + 1
         }
         val unread = combinedUnread(repository.unreadCounts(serverActivity, backlogWindowStart))

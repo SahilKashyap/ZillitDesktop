@@ -271,6 +271,42 @@ private const val READ_STATUS = 3
 const val DELIVERED_STATUS = 2
 
 /**
+ * `GET chat/users-group` — when each conversation last spoke, by id.
+ *
+ * The one listing call that carries a timestamp for a **private** thread.
+ * Everything else the desktop reads is stamped only for rooms or not at all:
+ * `user:list` is bare ids, the notification backlog ages its rows out, and
+ * `project/users.sorting_activity` does not arrive (DN6, 2026-10-14:
+ * `rows=12 stamped=3`). Without a stamp the warm pass cannot tell a stale row
+ * from a current one — `at > cached` is `0 > 0` — so a conversation whose
+ * newest message this computer never downloaded was never asked about, and
+ * its line stayed blank or old until the thread was opened. That is the whole
+ * of "messages are not updated in the chat list until I open the chat".
+ *
+ * The web reads the same answer the same way (`cncUtil.fetchClubbedChats`):
+ * one `data` array, rooms and people together, split on `is_group`. It uses
+ * the stamps to SKIP its per-user warm fetches, which it only ever made to
+ * sort by; this client still wants the words, so here the stamps are what
+ * tell the warm pass which rows to ask about.
+ */
+fun conversationStampsFrom(body: JsonElement): Map<String, Long> {
+    val rows = when (body) {
+        is kotlinx.serialization.json.JsonArray -> body
+        is JsonObject -> body["data"] as? kotlinx.serialization.json.JsonArray
+        else -> null
+    } ?: return emptyMap()
+    return rows.mapNotNull { entry ->
+        val row = entry as? JsonObject ?: return@mapNotNull null
+        // A person is keyed by `user_id`, a room by its own id — the same
+        // keys the listing holds its rows under.
+        val id = row.str("user_id")?.takeIf { it.isNotBlank() }
+            ?: row.str("_id")?.takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+        row.instantMillis("last_message_posted_on").takeIf { it > 0L }?.let { id to it }
+    }.toMap()
+}
+
+/**
  * The `user:list` ack — `{detail:{usersList:[userId…]}}` — read tolerantly:
  * the ids of everyone this user has a DM thread with.
  *

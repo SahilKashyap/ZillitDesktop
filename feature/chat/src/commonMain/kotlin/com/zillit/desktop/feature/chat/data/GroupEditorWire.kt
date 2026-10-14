@@ -180,7 +180,7 @@ private fun JsonObject.roomStamp(id: String): Long {
 }
 
 /** One time field, as millis, a numeric string, or an ISO-8601 instant; 0 when it is none of them. */
-private fun JsonObject.instantMillis(key: String): Long {
+internal fun JsonObject.instantMillis(key: String): Long {
     val primitive = this[key] as? JsonPrimitive ?: return 0L
     val text = primitive.contentOrNull?.takeIf { it.isNotBlank() }
     val millis = primitive.longOrNull

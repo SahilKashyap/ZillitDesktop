@@ -372,6 +372,16 @@ internal class FakeChatRepository(
 
     override suspend fun cachedRooms(): List<GroupRoom> = keptRooms
 
+    /** What `chat/users-group` would answer — when each conversation last spoke. */
+    var stamps: Map<String, Long> = emptyMap()
+
+    override suspend fun conversationStamps(): ZillitResult<Map<String, Long>> =
+        if (socketDown) {
+            ZillitResult.Failure(ZillitError.NoConnection("no network"))
+        } else {
+            ZillitResult.Success(stamps)
+        }
+
     override suspend fun deleteMessages(
         messageIds: List<String>,
         isGroup: Boolean,

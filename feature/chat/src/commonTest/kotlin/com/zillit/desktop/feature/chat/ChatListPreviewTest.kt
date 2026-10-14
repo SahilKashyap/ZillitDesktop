@@ -61,6 +61,46 @@ class ChatListPreviewTest {
     )
 
     @Test
+    fun `a conversation this computer never downloaded is stamped by users-group and fetched`() =
+        runTest(dispatcher) {
+            // Nothing cached and nothing in the backlog — the shape of almost
+            // every row on a real production (DN6: 12 rows, 3 stamped). The
+            // warm pass compared `0 > 0`, asked nothing, and the line stayed
+            // blank until the thread was opened. `chat/users-group` is the
+            // only read that stamps a private thread, and with it the row is
+            // known to be stale.
+            val repository = FakeChatRepository().apply {
+                recents = listOf("u-a")
+                stamps = mapOf("u-a" to 300L)
+                serverLast = mapOf("u-a" to line("m-new", "u-a", "running late", at = 300L))
+            }
+            val model = viewModel(repository)
+
+            model.onEvent(ChatEvent.RefreshRecents)
+            advanceUntilIdle()
+
+            assertEquals(listOf("u-a"), repository.lastMessageAsks, "the unstamped row became askable")
+            assertEquals("running late", model.currentState.previews["u-a"]?.text)
+        }
+
+    @Test
+    fun `with no stamps from users-group the listing behaves exactly as before`() = runTest(dispatcher) {
+        // An environment still on the old contract: nothing is claimed about
+        // any row, so nothing is asked and nothing is shown that was not
+        // shown before.
+        val repository = FakeChatRepository().apply {
+            recents = listOf("u-a")
+            serverLast = mapOf("u-a" to line("m-new", "u-a", "running late", at = 300L))
+        }
+        val model = viewModel(repository)
+
+        model.onEvent(ChatEvent.RefreshRecents)
+        advanceUntilIdle()
+
+        assertTrue(repository.lastMessageAsks.isEmpty(), "no stamp, no claim, no ask")
+    }
+
+    @Test
     fun `a stamp newer than the cache fetches the line the listing shows`() = runTest(dispatcher) {
         val repository = FakeChatRepository().apply {
             recents = listOf("u-a")

@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +46,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.ZillitLog
@@ -167,6 +170,8 @@ fun ChatScreen(
     // the history is fetched when it is looked at, not when chat opens.
     val calls = if (tab == DirectoryTab.Calls.name) callPanes?.invoke() else null
 
+    WatchReporter(viewModel, chatState?.peer, compact, callsShown = calls != null)
+
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Row(Modifier.fillMaxSize()) {
             if (showDirectory) DirectoryPane(
@@ -218,6 +223,40 @@ fun ChatScreen(
         if (createRoom != null) {
             NewGroupLayer(crew, selfId, createRoom, groupEditorOpen, viewModel) { groupEditorOpen = false }
         }
+    }
+}
+
+/**
+ * Tells [viewModel] whether anybody can actually see its open thread.
+ *
+ * Three facts, and all three are needed: the thread is the pane the detail
+ * side is showing (the Calls tab takes that side for itself), this
+ * composition exists at all (WorkspaceHost disposes an inactive tab's
+ * content, so being composed IS being the tab on show), and the window has
+ * focus.
+ *
+ * Reading a message tells its sender it was seen and clears it on this
+ * user's other devices, so it has to mean a person looked. Without this the
+ * model called a thread "open" for as long as one had ever been selected and
+ * answered arrivals with a read receipt from behind another tab — live on
+ * 2026-10-14, two messages read "by" a window showing the Transportation Hub.
+ */
+@Composable
+private fun WatchReporter(
+    viewModel: ChatViewModel?,
+    peer: CrewContact?,
+    compact: Boolean,
+    callsShown: Boolean,
+) {
+    val threadShown = peer != null && (compact || !callsShown)
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(viewModel, threadShown, windowFocused) {
+        viewModel?.onEvent(ChatEvent.Watching(threadShown && windowFocused))
+    }
+    // Leaving the tab, closing the window or tearing the pane off all land
+    // here; nobody is looking at a disposed composition.
+    DisposableEffect(viewModel) {
+        onDispose { viewModel?.onEvent(ChatEvent.Watching(false)) }
     }
 }
 

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.chat
 
 import com.zillit.desktop.feature.chat.data.chatRows
+import com.zillit.desktop.feature.chat.data.conversationStampsFrom
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.data.readReceiptFrom
 import com.zillit.desktop.feature.chat.data.recentPeerIds
@@ -161,6 +162,30 @@ class ChatWireTest {
         // an empty room outranks a live conversation.
         assertEquals(0L, stamps["none"])
         assertEquals(0L, stamps["junk"])
+    }
+
+    @Test
+    fun `users-group stamps both halves of the listing, people included`() {
+        // The one listing read that timestamps a private thread; the web
+        // splits the same single array on `is_group`.
+        val stamps = conversationStampsFrom(
+            Json.parseToJsonElement(
+                """{"status":1,"data":[
+                   {"user_id":"u-1","is_group":false,"last_message_posted_on":1760000000000},
+                   {"_id":"r-1","is_group":true,"last_message_posted_on":"1760000000001"},
+                   {"user_id":"u-2","is_group":false,"last_message_posted_on":"2026-10-09T18:30:00Z"},
+                   {"user_id":"u-3","is_group":false},
+                   {"user_id":"u-4","is_group":false,"last_message_posted_on":0},
+                   {"is_group":false,"last_message_posted_on":5}]}""",
+            ),
+        )
+        assertEquals(1760000000000L, stamps["u-1"])
+        assertEquals(1760000000001L, stamps["r-1"])
+        assertEquals(1791570600000L, stamps["u-2"])
+        // Never spoken, zero, or no id at all: no stamp rather than a false one.
+        assertEquals(null, stamps["u-3"])
+        assertEquals(null, stamps["u-4"])
+        assertEquals(3, stamps.size)
     }
 
     @Test
