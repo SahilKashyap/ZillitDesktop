@@ -170,8 +170,12 @@ internal class FakeReportRepository : ReportRepository {
 
     override suspend fun deleteTemplate(id: String): ZillitResult<Unit> = ok
 
+    /** Which list queries the service refuses — a failed list must hold the orphan sweep back. */
+    var refuses: (ReportQuery) -> Boolean = { false }
+
     override suspend fun reports(query: ReportQuery): ZillitResult<List<ReportSummary>> {
         queries += query
+        if (refuses(query)) return ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Http(500, "boom"))
         return ZillitResult.Success(rows(query))
     }
 
@@ -360,8 +364,15 @@ internal class FakeBadges : ReportBadgeSource {
 
     val reads = mutableListOf<BadgeRead>()
 
+    /** The keep-set of every orphan sweep asked for. */
+    val sweeps = mutableListOf<Set<String>>()
+
     override fun readBadge(surface: BadgeSurface, kind: BadgeKind, reportId: String) {
         reads += BadgeRead(surface, kind, reportId)
+    }
+
+    override fun sweepApprovalOrphans(keep: Set<String>) {
+        sweeps += keep
     }
 }
 

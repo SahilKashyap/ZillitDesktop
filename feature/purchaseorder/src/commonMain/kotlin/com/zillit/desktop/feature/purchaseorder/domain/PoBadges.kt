@@ -47,6 +47,16 @@ interface PoBadges {
         readOrder(tool, level1, orderId)
 
     /**
+     * An order's query thread read wherever it is filed — iOS `readBadge(entityType:entityId:)`
+     * (`AccountHubViewModel+funcs.swift:55-100`): `unit=purchase_order_label`,
+     * `level_2=query_chat`, `level_3=<order>` and **no** `level_1`, because the
+     * thread's rows land under whichever tab the message fired on (`all_po_unit`,
+     * `po_queue_assigned`, `my_po`…) and opening the thread acknowledges all of
+     * them. Reading one fixed tab left the others' query rows lit.
+     */
+    fun readQuery(tool: String, orderId: String) {}
+
+    /**
      * The department view's Invoices tab taken — the hand-off to the invoices
      * tool reads the invoice rows filed under this tool, whole: the desktop's
      * invoices tool has no per-invoice read yet to clear them one by one.
@@ -98,6 +108,16 @@ data class PoUnread(val leaves: List<PoBadgeLeaf> = emptyList()) {
         scope?.let { s ->
             leaves.filter { it.isIn(s) && it.orderId == orderId && it.inBucket(bucket) }.sumOf { it.unread }
         } ?: 0
+
+    /**
+     * An order's query-thread rows under [tool] on every tab — what [PoBadges.readQuery]
+     * clears. The thread is one conversation, whichever `level_1` each message was
+     * filed under.
+     */
+    fun query(tool: String, orderId: String): Int =
+        leaves.filter {
+            it.tool == tool && it.unit == PoBadges.UNIT_PO && it.orderId == orderId && it.inBucket(PoBadgeBucket.Query)
+        }.sumOf { it.unread }
 
     private fun PoBadgeLeaf.inBucket(bucket: PoBadgeBucket): Boolean =
         (level2 == PoBadges.ACTION_QUERY) == (bucket == PoBadgeBucket.Query)

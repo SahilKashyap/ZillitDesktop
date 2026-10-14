@@ -455,6 +455,14 @@ sealed interface HomeFeedEvent {
     data object Load : HomeFeedEvent
 
     /**
+     * Whether somebody is looking at this board: its window focused and the
+     * board composed. A board read is a "read by" on everyone else's screen
+     * and clears the unit's badge, so it waits for this — see
+     * [HomeFeedViewModel.readBoard].
+     */
+    data class Watching(val watching: Boolean) : HomeFeedEvent
+
+    /**
      * A different production is open. Everything here belonged to the last
      * one — the board, the tab, the reply target, and the half-typed draft —
      * so it all goes. The board loads again when it is next shown ([Load]);
@@ -786,6 +794,18 @@ class HomeFeedViewModel(
      */
     private var boardReadInFlight: String? = null
 
+    /**
+     * Whether the board is on a focused, composed screen — iOS reads a new
+     * post only while its page is the one showing (`ProjectObserver.swift:1608-1609`,
+     * reset as the view disappears, `InfoPageViewController.swift:514-520`).
+     * True until the screen says otherwise, so a host that never reports
+     * keeps the old behaviour.
+     */
+    private var watching = true
+
+    /** A read this board owes from while nobody was looking — sent on [watching]'s return. */
+    private var readOwed = false
+
     /** Whether a post belongs to the production open now — a pinned one may not. */
     private fun isHere(pin: BoardPin?): Boolean = pin == null || pin.projectId == media.currentProjectId()
 
@@ -804,6 +824,7 @@ class HomeFeedViewModel(
         if (readOnly && !event.readsOnly()) return
         when (event) {
             HomeFeedEvent.Load -> loadUnits()
+            is HomeFeedEvent.Watching -> onWatching(event.watching)
             HomeFeedEvent.ProjectChanged -> forgetProject()
             HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
             HomeFeedEvent.LoadOlder -> loadOlder()
@@ -891,7 +912,7 @@ class HomeFeedViewModel(
                 // the web emits on `home_message_added` while visible.
                 val added = event as? HomeRealtimeEvent.NoticeAdded
                 if (added?.unitId != null && added.unitId == currentState.selectedUnitId) {
-                    launch { onBoardViewed(added.unitId) }
+                    readBoard(added.unitId)
                 }
             }
         }
@@ -2353,13 +2374,15 @@ class HomeFeedViewModel(
             )
         }
 
-        // The calendar tab has no board; asking for one would 404. It has a
-        // badge, though — event invites and changes are filed under its unit
-        // — and opening the tab is what reads them, exactly as for a board.
-        // Without this the calendar's count could never fall from here.
+        // The calendar tab has no board; asking for one would 404. Its badge
+        // is the invitations', and opening the tab reads none of them: iOS
+        // skips the calendar unit in `readMessageFromHome` (Ext:299-300) and
+        // reads an invitation when it is answered, and the expired ones when
+        // that tab is shown (`ReceivedEventsView`). A unit read here cleared
+        // every pending invitation the moment the tab was glanced at — and
+        // the server does not even recognise it as a calendar read.
         if (unit.kind == HomeUnitKind.Calendar) {
             setState { copy(selectedUnitId = unit.id, notices = emptyList(), isLoadingNotices = false) }
-            launch { onBoardViewed(unit.id) }
             return
         }
 
@@ -2460,7 +2483,32 @@ class HomeFeedViewModel(
         boards[unitId] = currentState.notices
         // The board is on screen — that is what "read" means on
         // this API, as when the web's Notices tab is visible.
-        launch { onBoardViewed(unitId) }
+        readBoard(unitId)
+    }
+
+    /**
+     * Reads the open board — now if somebody is looking, else once they are.
+     *
+     * A post landing on a board behind another window, or a board reloaded by
+     * a socket event while the app sat in the background, used to read at
+     * once: the badge went before anyone saw the post, and everyone else saw
+     * "read by" for a person who was not there.
+     */
+    private fun readBoard(unitId: String) {
+        if (watching) {
+            launch { onBoardViewed(unitId) }
+        } else {
+            readOwed = true
+        }
+    }
+
+    private fun onWatching(value: Boolean) {
+        if (watching == value) return
+        watching = value
+        if (!value || !readOwed) return
+        readOwed = false
+        val open = currentState.selectedUnit ?: return
+        if (open.kind != HomeUnitKind.Calendar) launch { onBoardViewed(open.id) }
     }
 
     /**

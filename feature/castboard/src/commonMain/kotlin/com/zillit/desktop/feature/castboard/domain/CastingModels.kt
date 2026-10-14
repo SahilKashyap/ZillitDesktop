@@ -80,6 +80,8 @@ data class CastingEntry(
     /** Wardrobe only: the scenes this costume is worn in. */
     val scenes: String = "",
     val media: CastingMedia? = null,
+    /** Wardrobe only: [scenes] one by one — the first is the folder's `level_2`. */
+    val sceneNumbers: List<String> = emptyList(),
 )
 
 /** What this viewer may do with casting. */

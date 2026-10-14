@@ -74,7 +74,11 @@ internal class CardCrewActions(
             is CrewEvent.OpenTopUpRequest -> openTopUpRequest(event.open)
             is CrewEvent.EditTopUpRequest -> crew { copy(topUpRequest = event.draft) }
             CrewEvent.SendTopUpRequest -> sendTopUpRequest()
-            is CrewEvent.OpenTopUpTrail -> crew { copy(topUpTrailId = event.topUpId) }
+            is CrewEvent.OpenTopUpTrail -> {
+                event.topUpId?.let(::readTopUp)
+                crew { copy(topUpTrailId = event.topUpId) }
+            }
+            is CrewEvent.TapTopUp -> tapTopUp(event.topUpId)
 
             is CrewEvent.ShowApprovalTab -> crew { copy(approvalTab = event.tab) }
             is CrewEvent.OpenApprovalCard -> crew { copy(approvalCardId = event.cardId, approvalCardHistory = null) }
@@ -284,6 +288,24 @@ internal class CardCrewActions(
         val state = vm.current
         val toppable = CrewRules.toppableCards(state.cards)
         return toppable.firstOrNull { it.id == state.crew.topUpCardId } ?: toppable.firstOrNull()
+    }
+
+    /** A row tapped: read, then its trail when it has one. */
+    private fun tapTopUp(topUpId: String) {
+        readTopUp(topUpId)
+        if (vm.current.topUps.firstOrNull { it.id == topUpId }?.trail?.isNotEmpty() == true) {
+            crew { copy(topUpTrailId = topUpId) }
+        }
+    }
+
+    /**
+     * One top-up's Card Extension unread read — iOS `readTopUpBadge(topUpId:)`
+     * (`CardExpensesBadgeViewModel.swift:502-508`), which replaced the web's
+     * whole-page read on mount: the holder's other top-ups keep their chips.
+     */
+    private fun readTopUp(topUpId: String) {
+        if (vm.current.destination != CardDestination.CardExtension) return
+        vm.current.topUps.firstOrNull { it.id == topUpId }?.let { vm.readTopUp(CARD_EXTENSION, it) }
     }
 
     private fun openTopUpRequest(open: Boolean) {

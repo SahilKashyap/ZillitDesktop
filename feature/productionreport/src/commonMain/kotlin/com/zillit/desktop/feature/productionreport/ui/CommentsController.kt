@@ -26,7 +26,7 @@ internal class CommentsController(private val ctx: ReportContext) {
      * here, whatever [readOnly] the screen asked for.
      */
     fun open(report: ReportSummary, readOnly: Boolean) {
-        ctx.lists.readRowBadge(report.id, BadgeKind.Comment)
+        ctx.lists.readRowBadge(report, BadgeKind.Comment)
         val mayPost = canPostComments(report, ctx.state.me, ctx.state.isInternalReceiver)
         val closedNote = if (!readOnly && !report.status.locked && !mayPost) READ_ONLY_NOTE else LOCKED_NOTE
         ctx.update {

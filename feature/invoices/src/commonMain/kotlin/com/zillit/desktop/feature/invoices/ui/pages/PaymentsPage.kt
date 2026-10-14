@@ -644,7 +644,12 @@ private fun ColumnScope.RunsPanel(state: InvoicesUiState, onEvent: (InvoicesEven
 }
 
 private fun runColumns(state: InvoicesUiState): List<TableColumn<PaymentRun>> = listOf(
-    TableColumn(str(S.ah_run_card_run_label), ColumnWidth.Weight(1f)) { CellText(it.number) },
+    // The run's own unread: nothing reads the page whole any more, so each run
+    // keeps its chip until it is approved or rejected (iOS
+    // `PaymentRunApprovalPage.swift:325, 338`) — and the chip shows which.
+    TableColumn(str(S.ah_run_card_run_label), ColumnWidth.Weight(1f)) {
+        CellTextWithUnread(it.number, state.rowUnread(PAYMENTS_KEY, it.id))
+    },
     TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) { CellText(it.name) },
     TableColumn(str(S.desktop_method), ColumnWidth.Fixed(PAY_WIDTH)) {
         ZillitStatusPill(label = it.payMethod.label, tone = runMethodTone(it.payMethod))

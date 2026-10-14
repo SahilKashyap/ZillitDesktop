@@ -33,14 +33,50 @@ enum class AdDestination(val slug: String, private val labelKey: String) {
      * web's `AD_UNIT_BY_NAV` (`ad-dashboard-badge-helpers.js:33`), folded onto
      * the desktop's three pages: today's list and the add-extras flow on
      * Today, the register and its queries on Register, the schedule on Days.
-     * AD report rows have no page here.
+     *
+     * The AD reports go on Days: they are each a shoot day's report, the
+     * desktop has no Reports page, and the phones clear them from a nav row
+     * of their own (`ADHomeScreen.swift:87-94`) — without a home here they
+     * counted on the tile with nothing that could clear them.
      */
     val badgeKeys: List<String>
         get() = when (this) {
-            Today -> listOf("today_list_label", "add_extras_label")
-            Register -> listOf("artiste_register_label", "artiste_query_label")
-            Days -> listOf("shoot_schedule_label")
+            Today -> listOf(AdBadges.TODAY_LIST, AdBadges.ADD_EXTRAS)
+            Register -> listOf(AdBadges.REGISTER, AdBadges.QUERY)
+            Days -> listOf(AdBadges.SHOOT_SCHEDULE, AdBadges.REPORTS)
         }
+
+    /**
+     * The units this page reads whole when it is shown — every one of its
+     * [badgeKeys] but the register, which is read per artiste
+     * (`ADRegisterScreen.swift:224-229`, web `AD_ITEM_UNITS`): opening the
+     * tab used to clear every artiste's dot at once. The queries are read
+     * per query on the phones (`ADQueriesScreen.swift:121-126`), but the
+     * desktop has no query list to read one from, so they stay whole here.
+     */
+    val pageReads: List<String>
+        get() = badgeKeys - AdBadges.REGISTER
+}
+
+/**
+ * The AD dashboard's notification units under `ad_dashboard_label` (iOS
+ * `ADBadgeViewModel.Unit`, `ADBadgeViewModel.swift:37-47`).
+ */
+object AdBadges {
+    const val REGISTER = "artiste_register_label"
+    const val QUERY = "artiste_query_label"
+    const val REPORTS = "ad_reports_label"
+    const val TODAY_LIST = "today_list_label"
+    const val ADD_EXTRAS = "add_extras_label"
+    const val SHOOT_SCHEDULE = "shoot_schedule_label"
+
+    /**
+     * Notification-only units — no tab, no chip, on any client (web
+     * `ad-dashboard-badge-helpers.js:20-21`) — that still count on the tile.
+     * Neither the web nor iOS ever reads them, so they would sit on the tile
+     * for good; here the dashboard being shown reads them.
+     */
+    val NOTICE_ONLY: List<String> = listOf("rates_config_label")
 }
 
 /** Adding artistes from the register to the day. */
@@ -65,6 +101,8 @@ data class AdUiState(
     val destination: AdDestination = AdDestination.Today,
     /** Unread notifications per unit — the tabs' red chips. */
     val unread: Map<String, Int> = emptyMap(),
+    /** Unread per unit, then per record (`level_3`) — the register's per-artiste dots. */
+    val entityUnread: Map<String, Map<String, Int>> = emptyMap(),
     val loading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
@@ -111,6 +149,9 @@ data class AdUiState(
             .filter { categoryFilter == null || it.category == categoryFilter }
             .filter { statusFilter == null || it.status == statusFilter }
 
+    /** One artiste's unread updates (web `getAdItemUnread(register, id)`). */
+    fun artisteUnread(id: String): Int = entityUnread[AdBadges.REGISTER]?.get(id) ?: 0
+
     /** Who is on today, present or not. */
     val onToday: Int get() = dayList.size
 
@@ -136,6 +177,16 @@ data class AdUiState(
 sealed interface AdEvent {
     data class Open(val destination: AdDestination) : AdEvent
     data object Refresh : AdEvent
+
+    /**
+     * Whether the dashboard's window is in front. The page on screen is read
+     * as rows land only while it is: the view model outlives its window, and
+     * reading behind a closed one cleared rows nobody saw.
+     */
+    data class WindowFocus(val focused: Boolean) : AdEvent
+
+    /** An artiste's row looked at — its unread updates are read (`ADRegisterScreen.swift:224-229`). */
+    data class SeeArtiste(val id: String) : AdEvent
     data object ClearNotice : AdEvent
     data object DismissError : AdEvent
 

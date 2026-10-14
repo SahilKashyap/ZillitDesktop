@@ -58,8 +58,9 @@ class ChatReadOnlyModelTest {
             ),
         )
 
-        override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) {
+        override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean): Boolean {
             writes += "markRead $peerId $messageId"
+            return true
         }
 
         override suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean) {

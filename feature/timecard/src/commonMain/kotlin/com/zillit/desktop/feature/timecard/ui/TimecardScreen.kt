@@ -29,6 +29,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ColumnWidth
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TableColumn
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
@@ -906,7 +907,13 @@ private fun timecardColumns(
             ),
         )
     }
-    add(textColumn(str(S.crew), ColumnWidth.Weight(1.4f)) { it.crewName.ifBlank { it.userId } })
+    add(
+        TableColumn(
+            header = str(S.crew),
+            width = ColumnWidth.Weight(1.4f),
+            cell = { row -> CrewCell(row, state.rowUnread(row)) },
+        ),
+    )
     add(
         textColumn(str(S.weekly), ColumnWidth.Weight(1.1f), muted = true) {
             EpochDate.date(it.weekStarting).ifEmpty { "—" }
@@ -930,6 +937,27 @@ private fun timecardColumns(
             cell = { WeekStatusPill(it) },
         ),
     )
+}
+
+/**
+ * The crew name with the week's own unread beside it — iOS's per-row dot
+ * (`MyTimecardsModule.swift:1030-1034`, `TCApprovalQueuePage.swift:323-327`),
+ * cleared as the week is opened or decided.
+ */
+@Composable
+private fun CrewCell(card: Timecard, unread: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            text = card.crewName.ifBlank { card.userId },
+            style = ZillitTheme.typography.bodyMedium,
+            maxLines = 1,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        ZillitBadge(count = unread)
+    }
 }
 
 /**

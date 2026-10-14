@@ -31,6 +31,7 @@ internal class CardInsightActions(
 
     @Suppress("CyclomaticComplexMethod") // A dispatch table.
     fun handle(event: InsightsEvent) {
+        event.topUpLookedAt?.let(::readTopUp)
         when (event) {
             is InsightsEvent.FilterTopUps -> edit { copy(topUpFilter = event.filter) }
             is InsightsEvent.MarkToppedUp -> markToppedUp(event.topUpId)
@@ -119,6 +120,29 @@ internal class CardInsightActions(
     }
 
     // -- top-ups ------------------------------------------------------------------
+
+    /**
+     * The top-up a Top-Up To Do event is about — the row the accountant has just
+     * looked into. iOS reads a request as its detail opens (`TopUpDetailPage.swift:
+     * 141-146`); here the pending row is its own detail, laid out in full on the
+     * page, so taking any of its actions (or its history) is the opening, and a
+     * done row's detail dialog is the same detail.
+     */
+    private val InsightsEvent.topUpLookedAt: String?
+        get() = when (this) {
+            is InsightsEvent.MarkToppedUp -> topUpId
+            is InsightsEvent.SkipTopUp -> topUpId
+            is InsightsEvent.OpenPartial -> topUpId
+            is InsightsEvent.OpenTopUpDetail -> topUpId
+            is InsightsEvent.OpenHistory -> topUpId
+            else -> null
+        }
+
+    /** One request's Top-Up To Do unread read — never the page's; see [readTopUp]. */
+    private fun readTopUp(topUpId: String) {
+        if (!vm.current.viewer.isAccountant) return
+        vm.current.topUps.firstOrNull { it.id == topUpId }?.let { vm.readTopUp(TOPUP_TODO, it) }
+    }
 
     /** Funds the row in full — or explains why it cannot (`handleCompleteGroup`). */
     private fun markToppedUp(topUpId: String) {

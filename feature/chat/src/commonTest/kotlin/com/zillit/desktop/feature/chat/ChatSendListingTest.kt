@@ -237,11 +237,17 @@ internal class FakeChatRepository(
 
     override val incoming: Flow<ChatMessage> = emptyFlow()
     override val deletions: Flow<List<String>> = emptyFlow()
-    override val connections: Flow<Unit> = emptyFlow()
+    /** Each emission is the socket coming (back) up — the pending-read tests' lever. */
+    val connected = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    override val connections: Flow<Unit> = connected
     override val typing: Flow<com.zillit.desktop.feature.chat.data.TypingSignal> = emptyFlow()
     override val receipts: Flow<ReadReceipt> = emptyFlow()
     override val edits: Flow<ChatMessage> = emptyFlow()
-    override val selfReads: Flow<String> = emptyFlow()
+    override val selfReads: Flow<com.zillit.desktop.feature.chat.data.SelfRead> = emptyFlow()
+
+    /** Each emission is the host's ledger moving under the listing. */
+    val ledgerMoved = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    override val backlogChanges: Flow<Unit> = ledgerMoved
 
     override fun selfId(): String? = "me"
     override suspend fun sendReaction(messageId: String, emoji: String): ChatMessage? = null
@@ -296,20 +302,39 @@ internal class FakeChatRepository(
             ZillitResult.Success(backlog)
         }
 
-    override fun cached(otherUserId: String): List<ChatMessage>? = null
+    /** This computer's copy of each thread — what an open shows before history answers. */
+    var cachedThreads: Map<String, List<ChatMessage>> = emptyMap()
+
+    override fun cached(otherUserId: String): List<ChatMessage>? = cachedThreads[otherUserId]
     override fun lastMessageOf(otherUserId: String): ChatMessage? = lastByPeer[otherUserId]
     /** Both watermark rungs, recorded so a test can tell which one went. */
     val reads = mutableListOf<Pair<String, String>>()
     val delivered2 = mutableListOf<Pair<String, String>>()
 
-    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) {
+    /** Read emits the socket refused while [readsRefused] — never in [reads]. */
+    val refusedReads = mutableListOf<Pair<String, String>>()
+
+    /** The socket is down for read emits — the pending-read tests' lever. */
+    var readsRefused: Boolean = false
+
+    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean): Boolean {
+        if (readsRefused) {
+            refusedReads += peerId to messageId
+            return false
+        }
         reads += peerId to messageId
+        return true
     }
 
     override suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean) {
         delivered2 += peerId to messageId
     }
-    override fun markThreadRead(peerId: String, uptoMillis: Long) = Unit
+    /** Every local read mark, in order. */
+    val threadMarks = mutableListOf<Pair<String, Long>>()
+
+    override fun markThreadRead(peerId: String, uptoMillis: Long) {
+        threadMarks += peerId to uptoMillis
+    }
     override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> = emptyMap()
     override fun newestActivity(): Map<String, Long> = activityByPeer.toMap()
     override suspend fun sendTyping(receiverId: String, started: Boolean, isGroup: Boolean) = Unit
@@ -317,11 +342,18 @@ internal class FakeChatRepository(
     /** What a thread's history answers — empty unless a test seeds it. */
     var history: List<ChatMessage> = emptyList()
 
+    /** History refuses every ask — offline, or the server down. */
+    var historyFails: Boolean = false
+
     override suspend fun history(
         otherUserId: String,
         nowMillis: Long,
         isGroup: Boolean,
-    ): ZillitResult<List<ChatMessage>> = ZillitResult.Success(history)
+    ): ZillitResult<List<ChatMessage>> = if (historyFails) {
+        ZillitResult.Failure(ZillitError.NoConnection("no network"))
+    } else {
+        ZillitResult.Success(history)
+    }
 
     /** Every message this fake accepted, in order — the location tests read it. */
     val delivered = mutableListOf<ChatMessage>()

@@ -3,7 +3,7 @@ package com.zillit.desktop.core.badges
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Android's composition rules, one per surface — `CommonBadgesHandler.computeBadgesCount`. */
+/** iOS's composition — every unread row of a section counts on it (`getNotificationRootObject`). */
 class BadgeTallyTest {
 
     private fun row(
@@ -32,25 +32,27 @@ class BadgeTallyTest {
         assertEquals(1, counts.section(BadgeSections.SOS))
     }
 
+    /** iOS sums pending and expired invites into Home; an invite with no end is pending, not dropped. */
     @Test
-    fun `home counts units, and a calendar row only when its event has an end`() {
+    fun `home counts units, and every calendar invite, ended or not`() {
         val counts = tallyBadges(
             listOf(
                 row("n1", BadgeSections.HOME, unit = "u1"),
                 row("n2", BadgeSections.HOME, unit = "u1"),
                 row("n3", BadgeSections.HOME, unit = "u2"),
-                row("cal-pending", BadgeSections.HOME, tool = "calendar_label", unit = "cal").copy(calendarEnd = 9L),
-                row("cal-ack", BadgeSections.HOME, tool = "calendar_label", unit = "cal"),
+                row("cal-expired", BadgeSections.HOME, tool = "calendar_label", unit = "cal").copy(calendarExpiry = 9L),
+                row("cal-no-end", BadgeSections.HOME, tool = "calendar_label", unit = "cal"),
             ),
         )
-        assertEquals(4, counts.section(BadgeSections.HOME))
+        assertEquals(5, counts.section(BadgeSections.HOME))
         assertEquals(2, counts.unit("u1"))
         assertEquals(1, counts.unit("u2"))
-        assertEquals(1, counts.unit("cal"))
+        assertEquals(2, counts.unit("cal"))
     }
 
+    /** iOS `ToolType.adDashboard` is a tool like any other — its rows are on the Tools tab. */
     @Test
-    fun `tools count by grid identifier and never the ad dashboard`() {
+    fun `tools count by grid identifier, the ad dashboard included`() {
         val counts = tallyBadges(
             listOf(
                 row("t1", BadgeSections.TOOLS, tool = "call_sheet_label"),
@@ -59,10 +61,55 @@ class BadgeTallyTest {
                 row("t4", BadgeSections.TOOLS, tool = "ad_dashboard_label"),
             ),
         )
-        assertEquals(3, counts.section(BadgeSections.TOOLS))
+        assertEquals(4, counts.section(BadgeSections.TOOLS))
         assertEquals(2, counts["callsheet_tool"])
         assertEquals(1, counts["location_tool"])
-        assertEquals(0, counts["ad_dashboard_tool"])
+        assertEquals(1, counts["ad_dashboard_tool"])
+    }
+
+    /** iOS `FilmToolsViewController`: one tile, every list it opens. */
+    @Test
+    fun `a tile that opens several lists wears all of their counts`() {
+        val counts = tallyBadges(
+            listOf(
+                row("full", BadgeSections.TOOLS, tool = "script_distribution_label"),
+                row("page", BadgeSections.TOOLS, tool = "script_distribution_pages_tool_label", unit = "12"),
+                row("sched", BadgeSections.TOOLS, tool = "schedule_distribution_label"),
+                row("spage", BadgeSections.TOOLS, tool = "schedule_distribution_pages_tool_label", unit = "12"),
+                row("oneline", BadgeSections.TOOLS, tool = "schedule_oneline_label"),
+                row("mail", BadgeSections.EMAIL, unit = "INBOX"),
+            ),
+        )
+        assertEquals(2, counts["script_distribution_tool"])
+        assertEquals(1, counts["script_distribution_pages_tool"], "the pages tab keeps its own count")
+        assertEquals(3, counts["schedule_distribution_tool"])
+        assertEquals(1, counts["schedule_oneline_tool"])
+        assertEquals(1, counts["email_tool"])
+        assertEquals(5, counts.section(BadgeSections.TOOLS), "the Tools total counts each row once")
+    }
+
+    /** iOS `DocuSignBadgeReader.fetchTotalBadge` and `refreshDriveToolBadge`. */
+    @Test
+    fun `e-signature and drive tiles count what iOS's tiles count`() {
+        val esign = "e_signature_label"
+        val counts = tallyBadges(
+            listOf(
+                row("sign1", BadgeSections.TOOLS, tool = esign, unit = "sign_documents_label").copy(level3 = "env1"),
+                row("sign2", BadgeSections.TOOLS, tool = esign, unit = "sign_documents_label").copy(level3 = "env1"),
+                row("done", BadgeSections.TOOLS, tool = esign, unit = "manage_envelopes_label")
+                    .copy(level1 = "completed", level3 = "env1"),
+                row("sent", BadgeSections.TOOLS, tool = esign, unit = "manage_envelopes_label")
+                    .copy(level1 = "sent", level3 = "env2"),
+                row("lost", BadgeSections.TOOLS, tool = esign, unit = "sign_documents_label"),
+                row("folder", BadgeSections.TOOLS, tool = "drive_label", unit = "drive_folder_label"),
+                row("file", BadgeSections.TOOLS, tool = "drive_label", unit = "drive_file_label"),
+                row("other", BadgeSections.TOOLS, tool = "drive_label", unit = "drive_other_label"),
+            ),
+        )
+        // env1 once across the two units, at its larger count; `sent` and the envelope-less row are out.
+        assertEquals(2, counts["e_signature_tool"])
+        assertEquals(2, counts["drive_tool"], "folder and file units only")
+        assertEquals(8, counts.section(BadgeSections.TOOLS), "the Tools total still counts every row")
     }
 
     @Test
@@ -94,8 +141,9 @@ class BadgeTallyTest {
         assertEquals(0, counts.unit(""))
     }
 
+    /** iOS's C&C tab is `chat` — the sum of every `cnc_label` row, call or chat. */
     @Test
-    fun `cnc is missed calls plus chat rows that belong to a conversation`() {
+    fun `cnc counts every row, calls and chats alike`() {
         val counts = tallyBadges(
             listOf(
                 row("call", BadgeSections.CNC, tool = "call_label", unit = "call_missed_label"),
@@ -106,11 +154,12 @@ class BadgeTallyTest {
                 row("orphan", BadgeSections.CNC, tool = "chat_label", unit = "chat_group_label"),
             ),
         )
-        assertEquals(4, counts.section(BadgeSections.CNC))
+        assertEquals(5, counts.section(BadgeSections.CNC))
     }
 
+    /** iOS's Settings tab is `more` — every `settings_label` row, whatever its unit. */
     @Test
-    fun `settings counts only the approval and onboarding units`() {
+    fun `settings counts every row, by unit`() {
         val counts = tallyBadges(
             listOf(
                 row("join", BadgeSections.SETTINGS, unit = "project_join_user_request_label"),
@@ -119,7 +168,9 @@ class BadgeTallyTest {
                 row("other", BadgeSections.SETTINGS, unit = "something_else"),
             ),
         )
-        assertEquals(3, counts.section(BadgeSections.SETTINGS))
+        assertEquals(4, counts.section(BadgeSections.SETTINGS))
+        assertEquals(1, counts.unit("deal_memo_label"))
+        assertEquals(1, counts.unit("something_else"))
     }
 
     @Test
@@ -186,7 +237,7 @@ class BadgeTallyTest {
         val byProject = tallyByProject(rows)
 
         assertEquals(2, byProject.getValue("p").total)
-        assertEquals(1, byProject.getValue("p2").total, "the dashboard row counts nowhere, here either")
+        assertEquals(2, byProject.getValue("p2").total, "the dashboard row counts on the card as on the tab")
         assertEquals(tallyBadges(rows.filter { it.projectId == "p" }), byProject.getValue("p"))
     }
 }

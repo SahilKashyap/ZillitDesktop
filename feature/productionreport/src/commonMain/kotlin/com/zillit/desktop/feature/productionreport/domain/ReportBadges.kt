@@ -79,6 +79,10 @@ data class ReportBadges(
     fun count(surface: BadgeSurface?, kind: BadgeKind, reportId: String): Int =
         surface?.let { rows[it]?.get(kind)?.get(reportId) } ?: 0
 
+    /** One report's unread of one kind on one surface, summed over every id form it is filed under. */
+    fun count(surface: BadgeSurface?, kind: BadgeKind, reportIds: List<String>): Int =
+        reportIds.distinct().sumOf { count(surface, kind, it) }
+
     /** Every unread leaf of a surface — what an entry read walks. */
     fun leaves(surface: BadgeSurface): List<UnreadLeaf> =
         rows[surface].orEmpty().flatMap { (kind, byId) ->
@@ -144,6 +148,41 @@ data class ReportBadges(
             UNIT_PUBLISHED -> BadgeSurface.Published
             UNIT_APPROVAL -> BadgeSurface.fromWire(leaf.level1)?.takeIf { it.isApproval }
             else -> null
+        }
+
+        /**
+         * How long an orphan approval row is spared — iOS's 30 s
+         * (`ApprovalsTabView.swift:304-306`): a row whose report simply has
+         * not reached the list yet must not be swept.
+         */
+        const val ORPHAN_GRACE_MILLIS = 30_000L
+
+        /**
+         * ZL-20673 (iOS `prSweepOrphanReceivedRecords`, `ApprovalsTabView.swift:295-319`;
+         * `updateMarkReadByUnitExcludingLevel3`, `LocalNoticifationRealm.swift:1867-1898`):
+         * whether an approval-unit row belongs to no report in the three
+         * approval lists ([keep], every id form of every report listed) — the
+         * report was acted on by another approver, deleted, or left the
+         * signature phase — and is old enough ([cutoff]) to be judged.
+         *
+         * Attributed on `level_3`, falling back to `reference_id`
+         * (`prReportAttributionKey`, `LocalNoticifationRealm.swift:1822-1825`):
+         * the approval pushes have sent `level_3: null` with the report in
+         * `reference_id`, and judging those on `level_3` alone swept live
+         * rows. A stringified missing `level_3` is no id here. A row with no
+         * `created` is never judged — there is nothing to compare.
+         */
+        fun isOrphanApproval(
+            unit: String,
+            level3: String,
+            referenceId: String,
+            created: Long,
+            keep: Set<String>,
+            cutoff: Long,
+        ): Boolean {
+            if (unit != UNIT_APPROVAL || created <= 0L || created > cutoff) return false
+            val key = level3.trim().takeIf { isDocId(it) } ?: referenceId.trim()
+            return key !in keep
         }
 
         /** The tree producer stringifies a missing `level_3`, so "null"/"undefined" is no document. */

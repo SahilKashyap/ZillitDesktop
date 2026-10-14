@@ -109,6 +109,31 @@ class DistributionToolTest {
         assertFalse(pageFolder.folderKey == dodFolder.folderKey, "scene number vs name")
     }
 
+    /**
+     * A single list's read names its tool label, as iOS's `readToolMessage`
+     * does (`ScriptPagesDistributionView.swift:135`,
+     * `ScheduleDistributionView.swift:227, 232`); Full Script also keeps the
+     * web's unit spelling, `distibution` and all (`RenderScript.jsx:607`).
+     * A folder list names the folder instead, so it carries none.
+     */
+    @Test
+    fun `a single list reads by its tool label and folder lists name no segment`() {
+        fun DistributionTool.segments(key: String) = tabs.first { it.key == key }.readSegments
+        assertEquals(listOf("schedule_distribution_label"), schedule.segments("full_script"))
+        assertEquals(listOf("schedule_oneline_label"), schedule.segments("oneline"))
+        assertEquals(
+            listOf("script_distibution_script_label", "script_distribution_label"),
+            script.segments("full_script"),
+        )
+        val tabs = listOf(schedule, script, dod).flatMap { it.tabs }
+        tabs.filter { it.kind is TabKind.Single }.forEach { tab ->
+            assertTrue(tab.badgeModule in tab.readSegments, "${tab.key} must send the label its chip counts")
+        }
+        tabs.filter { it.kind is TabKind.Folders }.forEach { tab ->
+            assertTrue(tab.readSegments.isEmpty(), "${tab.badgeModule} reads by folder key")
+        }
+    }
+
     @Test
     fun `single tabs replace through a parent pointer`() {
         val single = schedule.tabs.first { it.key == "full_script" }.kind as TabKind.Single

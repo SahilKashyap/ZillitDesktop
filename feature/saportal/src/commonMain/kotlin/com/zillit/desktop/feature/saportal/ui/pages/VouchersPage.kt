@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
@@ -61,7 +62,7 @@ internal fun ColumnScope.VouchersPage(state: SaUiState, onEvent: (SaEvent) -> Un
         return
     }
 
-    state.vouchers.forEach { voucher -> VoucherRow(voucher, onEvent) }
+    state.vouchers.forEach { voucher -> VoucherRow(voucher, state.voucherUnread(voucher.id), onEvent) }
 }
 
 @Composable
@@ -74,8 +75,9 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
+/** One day. Its unread updates are counted on the row and read when it is opened (`SAVouchersScreen.swift:21-24`). */
 @Composable
-private fun VoucherRow(voucher: Voucher, onEvent: (SaEvent) -> Unit) {
+private fun VoucherRow(voucher: Voucher, unread: Int, onEvent: (SaEvent) -> Unit) {
     ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -83,7 +85,13 @@ private fun VoucherRow(voucher: Voucher, onEvent: (SaEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                ZillitText(text = day(voucher.shootDate), style = ZillitTheme.typography.titleSmall)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ZillitText(text = day(voucher.shootDate), style = ZillitTheme.typography.titleSmall)
+                    ZillitBadge(count = unread)
+                }
                 ZillitText(
                     text = "${title(voucher)} · ${shift(voucher)}",
                     style = ZillitTheme.typography.bodySmall,

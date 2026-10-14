@@ -1,7 +1,9 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.badges.NotificationRecord
+import com.zillit.desktop.core.badges.wireRecords
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
@@ -17,10 +19,13 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
 import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.documentdistribution.data.DOC_DIST_DELETE_EVENTS
+import com.zillit.desktop.feature.documentdistribution.data.docDistDeletedIds
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadgeLeaf
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistCrewMember
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistHost
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistRowRef
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistTransfer
 import com.zillit.desktop.feature.documentdistribution.domain.DocumentStorage
@@ -413,14 +418,16 @@ internal fun ProjectContextLoader?.docDistUsesS3(): Boolean =
  * The tool's ledger rows as leaves, and its three reads.
  *
  * Every unread `document_distribution_label` row becomes one leaf with the
- * folder path it sits in, read off the wire row the way
- * `getDocumentDistributionBadgeCounts` reads it: `level_1..3` (skipping the
- * `root` marker), the `levels[]` tail (`level_4:<id>` strings, or objects),
- * and — for a folder's own event — its `reference_id`. The reads are the
- * web's `emitScopedRead` (`Library.jsx:157-165`): the folder's own events
- * on entry, one file's on preview, a whole unit for a side section — the
- * entity reads sent as `notification:read`, which honours `reference_id`
- * (ZL-18873), rather than the level read the web still sends.
+ * folders it badges ([DocDistRowRef.ancestry] — folder and document rows
+ * only, iOS `DDBadgeReader.aggregate`). The reads:
+ *
+ *  - a folder entered reads its subtree here ([DocDistRowRef.isUnderFolder],
+ *    iOS `markDDEntityAsRead`) and tells the server the folder's own events
+ *    with `notification:read`, which honours `reference_id` (ZL-18873). iOS
+ *    sends `notification:level:read` naming only the folder, which the
+ *    server widens to the whole tool — every other folder's badge with it;
+ *  - a file previewed reads that file's rows;
+ *  - a side section reads its units whole, as iOS's toolbar chips do.
  */
 internal fun AppGraph.Ready.docDistBadges(): DocDistBadges = object : DocDistBadges {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -430,12 +437,20 @@ internal fun AppGraph.Ready.docDistBadges(): DocDistBadges = object : DocDistBad
     private fun leavesNow(): List<DocDistBadgeLeaf> =
         badgeStore.unreadRows(BadgeSections.TOOLS)
             .filter { it.tool == DocDistBadges.TOOL }
-            .groupingBy { row -> Triple(row.unit, row.referenceId, row.docDistAncestry()) }
+            .groupingBy { row -> Triple(row.unit, row.referenceId, row.docDistRef().ancestry()) }
             .eachCount()
             .map { (key, count) -> DocDistBadgeLeaf(key.first, key.second, key.third, count) }
 
     override fun readFolder(folderId: String) {
-        scope.launch { emitReferenceRead(DocDistBadges.TOOL, folderId, unit = DocDistBadges.UNIT_FOLDER) }
+        scope.launch {
+            emitReferenceRead(DocDistBadges.TOOL, folderId, unit = DocDistBadges.UNIT_FOLDER)
+            val subtree = badgeStore.markRead(
+                LedgerRead.Matching("doc-dist folder $folderId") { row ->
+                    row.tool in DocDistBadges.TOOL_ALIASES && row.docDistRef().isUnderFolder(folderId)
+                },
+            )
+            if (subtree > 0) ZillitLog.d(DOC_DIST_BADGE_TAG) { "folder $folderId entered: $subtree rows read" }
+        }
     }
 
     override fun readFile(fileId: String) {
@@ -447,22 +462,73 @@ internal fun AppGraph.Ready.docDistBadges(): DocDistBadges = object : DocDistBad
     }
 }
 
-/** Every folder id a row is filed under — see [docDistBadges]. */
-private fun NotificationRecord.docDistAncestry(): Set<String> {
-    val ids = mutableSetOf<String>()
-    listOf(level1, level2, level3).forEach { if (it.isNotBlank() && it != DOC_DIST_ROOT) ids += it }
+/**
+ * A folder or document deleted anywhere retires its badges — iOS
+ * `registerDDDelete` (`ProjectObserver.swift:8740-8773`) with
+ * `removeDocumentDistributionBadges` (`LocalNoticifationRealm.swift:2820-2859`).
+ *
+ * App-wide, beside the ledger's other socket effects, so the tile falls
+ * whether or not the tool is open; and on the deleting device too — the
+ * server never reads those rows, and the screen's own refetch is not a read.
+ * Local only, like the drive's `forget`: there is nothing left
+ * on the server for a read to name.
+ */
+internal suspend fun docDistDeleteSweep(ready: AppGraph.Ready) {
+    ready.socketEvents.onAny(DOC_DIST_DELETE_EVENTS.keys).collect { message ->
+        val record = message.payload.wireRecords().firstOrNull() ?: return@collect
+        val open = ready.projectContext?.context?.value?.project?.projectId
+        val named = (record["project_id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        if (named != null && named != open) return@collect
+        val ids = docDistDeletedIds(message.event, record)
+        if (ids.isEmpty()) return@collect
+        val retired = ready.badgeStore.markRead(
+            LedgerRead.Matching("doc-dist deleted $ids") { row ->
+                row.section == BadgeSections.TOOLS && row.tool in DocDistBadges.TOOL_ALIASES &&
+                    row.docDistRef().isRetiredBy(ids)
+            },
+        )
+        if (retired > 0) ZillitLog.d(DOC_DIST_BADGE_TAG) { "${message.event.value}: $retired rows retired" }
+    }
+}
+
+/**
+ * The ids a ledger row can name a folder or document by, off the wire row:
+ * the lifted columns, the `levels[]` tail (`level_4:<id>` strings, raw ids,
+ * or one id per object) and the `reference_data` ids the delete sweep keys on.
+ */
+private fun NotificationRecord.docDistRef(): DocDistRowRef {
     val row = runCatching { Json.parseToJsonElement(raw) }.getOrNull() as? JsonObject
-    (row?.get("levels") as? JsonArray)?.forEach { entry ->
-        val id = when (entry) {
-            is JsonPrimitive -> entry.contentOrNull?.substringAfter(':')
+    val deeper = (row?.get("levels") as? JsonArray).orEmpty().mapNotNull { entry ->
+        when (entry) {
+            is JsonPrimitive -> entry.contentOrNull
             is JsonObject -> entry.values.lastOrNull()?.let { (it as? JsonPrimitive)?.contentOrNull }
             else -> null
         }
-        if (!id.isNullOrBlank() && id != DOC_DIST_ROOT) ids += id
     }
-    val ownFolder = unit == DocDistBadges.UNIT_FOLDER && referenceId.isNotBlank() && referenceId != DOC_DIST_ROOT
-    if (ownFolder) ids += referenceId
-    return ids
+    val reference = row?.get("reference_data").asJsonObject()
+    return DocDistRowRef(
+        unit = unit,
+        referenceId = referenceId,
+        level1 = level1,
+        level2 = level2,
+        level3 = level3,
+        deeper = deeper,
+        folderId = reference.idField("folder_id"),
+        parentId = reference.idField("parent_id"),
+        documentId = reference.idField("document_id"),
+        ignored = ignored,
+    )
 }
 
-private const val DOC_DIST_ROOT = "root"
+/** `reference_data` arrives as an object or as a JSON string holding one. */
+private fun JsonElement?.asJsonObject(): JsonObject? = when (this) {
+    is JsonObject -> this
+    is JsonPrimitive ->
+        if (isString) runCatching { Json.parseToJsonElement(content) as? JsonObject }.getOrNull() else null
+    else -> null
+}
+
+private fun JsonObject?.idField(key: String): String =
+    (this?.get(key) as? JsonPrimitive)?.contentOrNull?.takeIf { it != "null" }.orEmpty()
+
+private const val DOC_DIST_BADGE_TAG = "DocDistBadges"

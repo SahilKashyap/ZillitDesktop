@@ -17,6 +17,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
@@ -55,11 +56,12 @@ internal fun ColumnScope.QueriesPage(state: SaUiState, onEvent: (SaEvent) -> Uni
         return
     }
 
-    state.openQueries.forEach { query -> QueryRow(query, onEvent) }
+    state.openQueries.forEach { query -> QueryRow(query, state.queryUnread(query.id), onEvent) }
 }
 
+/** One thread. Its unread replies are counted on the row and read when it is opened (`SAQueriesScreen.swift:72`). */
 @Composable
-private fun QueryRow(query: ArtisteQuery, onEvent: (SaEvent) -> Unit) {
+private fun QueryRow(query: ArtisteQuery, unread: Int, onEvent: (SaEvent) -> Unit) {
     ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -67,10 +69,16 @@ private fun QueryRow(query: ArtisteQuery, onEvent: (SaEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                ZillitText(
-                    text = query.title.ifBlank { query.topic.ifBlank { str(S.ah_query_label) } },
-                    style = ZillitTheme.typography.titleSmall,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ZillitText(
+                        text = query.title.ifBlank { query.topic.ifBlank { str(S.ah_query_label) } },
+                        style = ZillitTheme.typography.titleSmall,
+                    )
+                    ZillitBadge(count = unread)
+                }
                 ZillitText(
                     text = query.lastMessage.ifBlank { str(S.desktop_no_messages_yet) },
                     style = ZillitTheme.typography.bodySmall,

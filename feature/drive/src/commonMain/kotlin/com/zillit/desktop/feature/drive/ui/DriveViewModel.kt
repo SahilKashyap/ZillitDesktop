@@ -139,7 +139,7 @@ class DriveViewModel(
         launch {
             badges.rows.collect { rows ->
                 unreadRows = rows
-                setState { copy(unread = listing.driveUnread(rows)) }
+                setState { copy(unread = listing.driveUnread(rows, section)) }
             }
         }
         launch {
@@ -511,9 +511,10 @@ class DriveViewModel(
      */
     private fun openFolder(folderId: String?) {
         val state = currentState
-        // Standing in a folder reads the folder's own unread, not what is
-        // inside it (the web's folder-open effect, `skipChildFiles`).
-        folderId?.let(badges::readItem)
+        // Standing in a folder reads the folder's own unread and its direct
+        // children's — iOS's folder open (`HomeViewModel.emitSharedFolderRead`);
+        // a subfolder's contents wait for that subfolder.
+        folderId?.let(badges::readFolder)
         setState {
             copy(
                 folderId = folderId,
@@ -591,8 +592,8 @@ class DriveViewModel(
                 loading = false,
                 listing = listing,
                 // The dots roll up through the listing's own tree, so a new
-                // listing (a moved folder) re-homes them.
-                unread = listing.driveUnread(unreadRows),
+                // listing (a moved folder) re-homes them; they are the tab's own.
+                unread = listing.driveUnread(unreadRows, section),
                 // A folder that vanished under the user (deleted elsewhere,
                 // or access withdrawn) sends them back to the root, and says so.
                 folderId = if (folderGone) null else folderId,

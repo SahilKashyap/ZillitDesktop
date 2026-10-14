@@ -14,7 +14,6 @@ import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
-import com.zillit.desktop.feature.accounthub.domain.HubBadges
 import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.domain.HubDocumentOpener
 import com.zillit.desktop.feature.accounthub.domain.HubExporter
@@ -122,14 +121,6 @@ class AccountHubViewModel(
      * own window.
      */
     private val embedsTools: Boolean = false,
-    /**
-     * A sidebar tool row taken: the host reads the row's ledger rows where
-     * the tool behind it has no finer read of its own (the spend and invoice
-     * modules), so the sidebar's count falls the way the web's does once the
-     * module is on screen. Purchase Orders and Bank Reconciliation read their
-     * own tabs and rows and are left alone here.
-     */
-    private val readToolRow: (itemId: String, isAccountant: Boolean) -> Unit = { _, _ -> },
 ) : ZillitViewModel<AccountHubUiState, AccountHubEvent, AccountHubEffect>(AccountHubUiState()) {
 
     private var started = false
@@ -406,11 +397,17 @@ class AccountHubViewModel(
      * Reported as an effect rather than handled here: the target owns its own
      * routes and its own idea of the user's role, and the hub knows only where
      * it lives.
+     *
+     * Taking the row reads nothing. It used to read the row's whole unit (or
+     * the whole tool, for a department user), which wiped every per-row pill
+     * Invoices, Card and Cash draw before the module was even on screen. No
+     * other client does that — iOS's hub tiles navigate and nothing more
+     * (`AccountHubAccountantView.swift:83-136`), the web's sidebar only counts (`AccountHubSidebar.jsx:379-394`) — and
+     * all three modules now read their own rows as they are opened or acted
+     * on, so the count falls row by row instead.
      */
     private fun handOff(event: AccountHubEvent.OpenTool) {
         val target = event.item.target as? HubTarget.Tool ?: return
-        val badge = HubBadges.countFor(event.item.id, currentState.viewer.isAccountant, currentState.badges)
-        if (badge > 0) readToolRow(event.item.id, currentState.viewer.isAccountant)
         show(target.toolPath, event.item.label)
     }
 

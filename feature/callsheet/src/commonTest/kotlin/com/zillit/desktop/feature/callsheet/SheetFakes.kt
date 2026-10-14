@@ -355,8 +355,22 @@ internal class FakeBadges : SheetBadgeSource {
     override val leaves = MutableStateFlow<List<BadgeLeaf>>(emptyList())
     val reads = mutableListOf<BadgeRead>()
 
+    /** Every Approvals sub-tab whose report rows were read on entry. */
+    val sectionReads = mutableListOf<BadgeSurface>()
+
+    /** Every orphan sweep asked for: the units judged, and the sheets kept. */
+    val sweeps = mutableListOf<Pair<Set<String>, Set<String>>>()
+
     override fun read(surface: BadgeSurface, kind: BadgeKind, sheetId: String) {
         reads += BadgeRead(surface, kind, sheetId)
+    }
+
+    override fun readSection(surface: BadgeSurface) {
+        sectionReads += surface
+    }
+
+    override fun sweepOrphans(units: Set<String>, keep: Set<String>) {
+        sweeps += units to keep
     }
 }
 

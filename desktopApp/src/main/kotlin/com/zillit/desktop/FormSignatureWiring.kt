@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
@@ -274,15 +275,17 @@ private fun wordMime(fileName: String): String = when (fileName.substringAfterLa
 }
 
 /**
- * The tool's ledger rows as leaves, and its reads.
+ * The tool's ledger rows as leaves, and its reads — one document at a time,
+ * as iOS reads them (`FormDocumentView.swift:401-446`,
+ * `ContractSignatureDocumentView.swift:180-195`).
  *
  * A standard form opened reads its rows under `all_forms` the way
- * `FormDetailsV2.jsx:690-706` does; a documents tab shown reads each leaf
- * the tab is made of — the for-signature unit sliced by `level_1` as
- * `DocumentsForSignature.jsx:95-108` reads it, and the older whole units
- * the web still sums into the tile (`utils.js:212-223`) read whole, or
- * they would sit under the tile with nothing to clear them. The discussion
- * room left reads the general unit under the room (`utils.js:295-316`).
+ * `FormDetailsV2.jsx:690-706` does; a document for signature opened reads
+ * the leaves its tab holds for it — unit, `level_1`, `level_2` — which the
+ * view model picks ([com.zillit.desktop.feature.formsignature.domain.FormSignatureUnread.documentLeaves]),
+ * unattributable leaves of the tab included, so nothing the tab counts is
+ * left with no read to clear it. No tab is read whole on show any more. The
+ * discussion room reads the general unit under the room (`utils.js:295-316`).
  */
 internal fun AppGraph.Ready.formSignatureBadges(): FormSignatureBadges = object : FormSignatureBadges {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -307,13 +310,29 @@ internal fun AppGraph.Ready.formSignatureBadges(): FormSignatureBadges = object 
         }
     }
 
-    override fun readDocumentsTab(leaves: List<FormBadgeLeaf>) {
+    /**
+     * Each leaf as one level read. A leaf with no `level_2` names no
+     * document, and the wire cannot say "no level_2" — a level read without
+     * one is the whole slice, every other document's rows with it — so that
+     * leaf is read in the ledger alone, exactly; the web and Android still
+     * clear the server's copy with their tab read on show. A blank `level_1`
+     * beside a document goes unscoped, wire and ledger alike: that is still
+     * this one document's rows.
+     */
+    override fun readLeaves(leaves: List<FormBadgeLeaf>) {
         scope.launch {
-            leaves.map { it.unit to it.level1 }.distinct().forEach { (unit, level1) ->
-                if (unit == FormSignatureBadges.UNIT_FOR_SIGNATURE) {
-                    emitLevelRead(tool = FormSignatureBadges.TOOL, unit = unit, level1 = level1)
+            leaves.map { Triple(it.unit, it.level1, it.level2) }.distinct().forEach { (unit, level1, level2) ->
+                if (level2.isBlank()) {
+                    badgeStore.markRead(
+                        LedgerRead.Levels(tool = FormSignatureBadges.TOOL, unit = unit, level1 = level1, level2 = ""),
+                    )
                 } else {
-                    emitLevelRead(tool = FormSignatureBadges.TOOL, unit = unit)
+                    emitLevelRead(
+                        tool = FormSignatureBadges.TOOL,
+                        unit = unit,
+                        level1 = level1.ifBlank { null },
+                        level2 = level2,
+                    )
                 }
             }
         }
@@ -336,7 +355,7 @@ internal fun AppGraph.Ready.formSignatureBadges(): FormSignatureBadges = object 
                 )
             }.onFailure { ZillitLog.w(FORM_SIGN_TAG) { "chat read not sent: ${it::class.simpleName}" } }
             badgeStore.markRead(
-                com.zillit.desktop.core.badges.LedgerRead.Levels(
+                LedgerRead.Levels(
                     tool = FormSignatureBadges.TOOL,
                     unit = FormSignatureBadges.UNIT_GENERAL,
                     level1 = unitId,

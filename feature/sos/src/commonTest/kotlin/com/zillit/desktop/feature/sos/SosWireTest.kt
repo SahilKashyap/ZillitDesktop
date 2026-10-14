@@ -42,7 +42,12 @@ class SosWireTest {
             SosEndpoints.alerts(notification, 1700, older = false),
         )
         assertEquals("${notification}levelmarkread/sos_label/1700", SosEndpoints.markRead(notification, 1700))
-        assertEquals("${notification}markdelete/abc/1700", SosEndpoints.deleteAlert(notification, "abc", 1700))
+        // iOS's spelling (ZL-19904): the segment is `sos_label`, the alert rides
+        // as `referenceId`. A bare `markdelete/{id}/{ts}` left the row behind.
+        assertEquals(
+            "${notification}markdelete/sos_label/1700?referenceId=abc",
+            SosEndpoints.deleteAlert(notification, "abc", 1700),
+        )
         assertEquals("${notification}markdelete/sos_label/1700", SosEndpoints.deleteAllAlerts(notification, 1700))
     }
 

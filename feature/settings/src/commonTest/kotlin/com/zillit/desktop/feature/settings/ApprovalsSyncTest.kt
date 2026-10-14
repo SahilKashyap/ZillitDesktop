@@ -7,11 +7,15 @@ import com.zillit.desktop.core.socket.SocketConnectionState
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.core.socket.SocketMessage
+import com.zillit.desktop.feature.settings.approvals.ApprovalDecided
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
+import com.zillit.desktop.feature.settings.approvals.ApprovalViewer
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
 import com.zillit.desktop.feature.settings.approvals.ApprovalsRepository
 import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
 import com.zillit.desktop.feature.settings.approvals.PendingApproval
+import com.zillit.desktop.feature.settings.approvals.approvalDecided
+import com.zillit.desktop.feature.settings.approvals.badgeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,10 +30,16 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -87,7 +97,8 @@ class ApprovalsSyncTest {
         override suspend fun <T> emitForAck(event: SocketEventName, payload: T, serializer: KSerializer<T>) =
             ZillitResult.Success<JsonElement>(JsonObject(emptyMap()))
 
-        suspend fun say(event: String) = flow.emit(SocketMessage(SocketEventName(event), null))
+        suspend fun say(event: String, payload: JsonElement? = null) =
+            flow.emit(SocketMessage(SocketEventName(event), payload))
     }
 
     private val socket = Socket()
@@ -184,5 +195,124 @@ class ApprovalsSyncTest {
 
         assertEquals("sam", approvals.state.value.crew.query)
         assertEquals(listOf("b"), approvals.state.value.crew.visible.map { it.id })
+    }
+
+    // Decided elsewhere ------------------------------------------------------
+
+    private val admin = ApprovalViewer(projectId = "p1", deviceId = "d-me", isAdmin = true)
+
+    private fun decidedFrame(userId: String = "u-1", project: String = "p1", device: String? = "d-other") =
+        buildJsonObject {
+            put("user_id", userId)
+            put("project_id", project)
+            device?.let { put("approved_by_device_id", it) }
+        }
+
+    private fun watcher(
+        repository: Repository,
+        viewer: ApprovalViewer,
+        cleared: MutableList<Pair<ApprovalQueue, String>>,
+    ) = ApprovalsViewModel(
+        repository,
+        events = SocketEventBus(socket),
+        viewer = { viewer },
+        onDecidedElsewhere = { queue, userId -> cleared += queue to userId },
+    )
+
+    /**
+     * Another admin's decision clears its notification on this admin's
+     * desktop too — page opened or not — as iOS does from its socket observer
+     * (`ProjectObserver.swift:4283-4309`, `4512-4537`). The desktop used to
+     * re-read the queue only, so the Settings badge for a request already
+     * gone stayed lit.
+     */
+    @Test
+    fun `another admin's decision clears its notification here`() = runTest {
+        val cleared = mutableListOf<Pair<ApprovalQueue, String>>()
+        watcher(Repository(), admin, cleared)
+        advanceUntilIdle()
+
+        socket.say("project:user:join:request:accepted", decidedFrame())
+        socket.say("project:user:profile:change:rejected", decidedFrame(userId = "u-2"))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ApprovalQueue.NewCrew to "u-1", ApprovalQueue.ProfileChanges to "u-2"),
+            cleared,
+        )
+    }
+
+    /** This device's own decision was read by the decide path already. */
+    @Test
+    fun `a decision made on this device is not read again`() = runTest {
+        val cleared = mutableListOf<Pair<ApprovalQueue, String>>()
+        watcher(Repository(), admin, cleared)
+        advanceUntilIdle()
+
+        socket.say("project:user:join:request:rejected", decidedFrame(device = "d-me"))
+        advanceUntilIdle()
+
+        assertTrue(cleared.isEmpty())
+    }
+
+    @Test
+    fun `an arrival, another production or a non-admin clears nothing`() = runTest {
+        val cleared = mutableListOf<Pair<ApprovalQueue, String>>()
+        watcher(Repository(), admin.copy(isAdmin = false), cleared)
+        val adminCleared = mutableListOf<Pair<ApprovalQueue, String>>()
+        watcher(Repository(), admin, adminCleared)
+        advanceUntilIdle()
+
+        socket.say("project:user:join:request:accepted", decidedFrame())
+        socket.say("project:user:join:request:received", decidedFrame())
+        socket.say("project:user:profile:change:accepted", decidedFrame(project = "p2"))
+        advanceUntilIdle()
+
+        assertTrue(cleared.isEmpty(), "nobody but an admin is notified of requests")
+        assertEquals(listOf(ApprovalQueue.NewCrew to "u-1"), adminCleared, "only the decision on this production")
+    }
+
+    /** A failed clear must not end the collector the queues ride on. */
+    @Test
+    fun `a failed clear does not stop the queues following the socket`() = runTest {
+        val repository = Repository(listOf(request("a")))
+        val approvals = ApprovalsViewModel(
+            repository,
+            events = SocketEventBus(socket),
+            viewer = { admin },
+            onDecidedElsewhere = { _, _ -> error("ledger closed") },
+        )
+        approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        repository.listing = emptyList()
+        socket.say("project:user:join:request:accepted", decidedFrame())
+        advanceUntilIdle()
+        repository.listing = listOf(request("b"))
+        socket.say("project:user:join:request:received")
+        advanceUntilIdle()
+
+        assertEquals(listOf("b"), approvals.state.value.crew.items.map { it.id })
+    }
+
+    @Test
+    fun `a decided frame is read flat or wrapped, and an unnamed device still counts as elsewhere`() {
+        val wrapped = SocketMessage(
+            SocketEventName("project:user:profile:change:accepted"),
+            buildJsonObject { put("data", decidedFrame(device = null)) },
+        )
+        val decided = assertNotNull(approvalDecided(wrapped))
+        assertEquals(ApprovalDecided(ApprovalQueue.ProfileChanges, "u-1", "p1", null), decided)
+        assertTrue(decided.clearsFor(admin))
+        assertFalse(decided.clearsFor(ApprovalViewer(projectId = null, deviceId = "d-me", isAdmin = true)))
+
+        val nobody = SocketMessage(SocketEventName("project:user:join:request:accepted"), JsonPrimitive("x"))
+        assertNull(approvalDecided(nobody))
+    }
+
+    @Test
+    fun `each queue's notifications are filed under its own unit`() {
+        assertEquals("project_join_user_request_label", ApprovalQueue.NewCrew.badgeUnit)
+        assertEquals("project_user_profile_change_request_label", ApprovalQueue.ProfileChanges.badgeUnit)
     }
 }

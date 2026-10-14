@@ -10,8 +10,10 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
 import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvBadges
 import com.zillit.desktop.feature.transporthub.domain.AvMy
 import com.zillit.desktop.feature.transporthub.domain.AvStatus
+import com.zillit.desktop.feature.transporthub.domain.AvVehicleBadge
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.ShuttleRoute
 import com.zillit.desktop.feature.transporthub.domain.ShuttleStop
@@ -513,6 +515,32 @@ class HubScreenRenderTest {
             onNodeWithText("Approve").assertExists()
             onNodeWithText("Reject").assertExists()
         }
+
+    @Test
+    fun `the action vehicles tabs and cards wear their unread alerts`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                HubScreen(
+                    state = state(HubSection.ActionVehicles).copy(
+                        avTab = AvTab.Finalized,
+                        actionVehicles = listOf(
+                            ActionVehicle(id = "av1", displayName = "Hero Car #1", status = AvStatus.Approved),
+                        ),
+                        avBadges = AvBadges(
+                            tabs = mapOf("identify" to 5),
+                            vehicles = mapOf("av1" to AvVehicleBadge(total = 7, comment = 3)),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        // The tab's unread alerts — not how many records it holds.
+        onNodeWithText("5").assertExists()
+        // Every alert on the card, and the thread's own beside its button.
+        onNodeWithText("7").assertExists()
+        onNodeWithText("3").assertExists()
+    }
 
     @Test
     fun `the rail carries no Film Tools button, classic page or profile card`() = runComposeUiTest {

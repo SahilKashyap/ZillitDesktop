@@ -46,12 +46,20 @@ data class DealMemoViewer(
     val isAccountant: Boolean get() = departmentIdentifier?.contains("accounts", ignoreCase = true) == true
 }
 
-/** The four badge units of the tool (`tool: "deal_memo_label"`). */
+/** The badge units of the tool (`tool: "deal_memo_label"`). */
 enum class DealBadgeUnit(val wire: String) {
     AllDeals("all_deals_label"),
     MyDeal("my_deal_label"),
     ApprovalQueue("approval_queue_label"),
     Notices("notices_label"),
+
+    /**
+     * NDAs — their own unit, so an unread NDA never inflates All Deals
+     * (iOS `DealMemoBadgeViewModel.swift:55-58`, web `constants.js:142`). Its
+     * rows counted on the tool's tile and matched no tab, so nothing here
+     * could clear them; see [DealMemoViewModel]'s NDA read.
+     */
+    Nda("nda_label"),
 }
 
 /** Unread counts: per tab, and per deal inside a tab for the rows' red pills. */

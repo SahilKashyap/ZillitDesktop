@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.pagedistribution.data.dayMillis
 import com.zillit.desktop.feature.pagedistribution.data.ymd
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
+import com.zillit.desktop.feature.pagedistribution.domain.DistributionRead
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionRepository
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionTab
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionTool
@@ -45,8 +46,12 @@ class DistributionViewModel(
     private val transfer: DistributionTransfer,
     private val resolveViewer: () -> DistributionViewer,
     private val nowMillis: () -> Long,
-    /** Marks a list (or a folder) read — the web's `notification:read` emit. */
-    private val onListViewed: suspend (module: String, segment: String) -> Unit = { _, _ -> },
+    /**
+     * Marks a list (or a folder) read — the web's `notification:read` emit.
+     * The host maps the [DistributionRead] to the ledger rows it clears and
+     * the segments it sends.
+     */
+    private val onListViewed: suspend (read: DistributionRead) -> Unit = {},
     /**
      * Unread per folder key, live — what each D.O.D folder card wears. The
      * host derives it from the badge ledger grouped by `unit` under the
@@ -105,19 +110,31 @@ class DistributionViewModel(
         listening = true
         launch {
             repository.refreshes(tool).collect {
+                // Nobody asked for this load, so it reads only what is
+                // unread on a list somebody is looking at — the window may
+                // well be closed.
                 val open = state.value.openFolder
-                if (open == null) loadTab() else reloadOpenFolder(open)
+                if (open == null) loadTab(read = false) else reloadOpenFolder(open)
             }
         }
         launch {
-            folderUnread.collect { counts -> setState { copy(folderUnread = counts) } }
+            folderUnread.collect { counts ->
+                setState { copy(folderUnread = counts) }
+                rereadIfUnread()
+            }
         }
         launch {
-            tabUnread.collect { counts -> setState { copy(tabUnread = counts) } }
+            tabUnread.collect { counts ->
+                setState { copy(tabUnread = counts) }
+                rereadIfUnread()
+            }
         }
     }
 
     private var listening = false
+
+    /** See [DistributionEvent.Watching]. The view model outlives its window; this is whether it is on show. */
+    private var watching = false
 
     /** First page again, keeping the folder open — the web refetches in place. */
     private fun reloadOpenFolder(open: OpenFolder) {
@@ -138,6 +155,8 @@ class DistributionViewModel(
                     ),
                 )
             }
+            // What landed in the open folder is on screen now — read, if anybody is looking.
+            rereadIfUnread()
         }
     }
 
@@ -150,6 +169,7 @@ class DistributionViewModel(
         if (state.value.mode == ListMode.Cabinet && event.writes()) return
         when (event) {
             is DistributionEvent.SelectTab -> {
+                leaveFolder()
                 setState {
                     copy(
                         activeTabKey = event.key,
@@ -163,6 +183,7 @@ class DistributionViewModel(
                 loadTab()
             }
             DistributionEvent.ToggleHistory -> if (state.value.mode != ListMode.Cabinet) {
+                leaveFolder()
                 setState {
                     val flipped = if (mode == ListMode.Live) ListMode.History else ListMode.Live
                     copy(mode = flipped, openFolder = null, searchResults = null)
@@ -172,6 +193,7 @@ class DistributionViewModel(
             DistributionEvent.Refresh -> loadTab()
             is DistributionEvent.OpenFolder -> openFolder(event.key)
             DistributionEvent.CloseFolder -> {
+                leaveFolder()
                 setState { copy(openFolder = null) }
                 loadTab()
             }
@@ -232,12 +254,24 @@ class DistributionViewModel(
             DistributionEvent.ConfirmPublish -> publish()
             DistributionEvent.CancelPublish -> setState { copy(confirmPublish = null) }
             DistributionEvent.DismissError -> setState { copy(error = null) }
+            is DistributionEvent.Watching -> {
+                watching = event.watching
+                // Back in front: whatever landed meanwhile is seen now.
+                if (event.watching) launch { rereadIfUnread() }
+            }
         }
     }
 
     // Lists ----------------------------------------------------------------
 
-    private fun loadTab() {
+    /**
+     * Loads the active tab. [read] — the person opened or switched to this
+     * list — reads a single list whole, as iOS does on appear and on every
+     * tab switch (`ScriptPagesDistributionView.swift:132-147`,
+     * `ScheduleDistributionView.swift:224-247`); a load nobody asked for
+     * reads only through [rereadIfUnread].
+     */
+    private fun loadTab(read: Boolean = true) {
         val tab = state.value.activeTab
         val mode = state.value.mode
         setState { copy(loading = true) }
@@ -246,8 +280,11 @@ class DistributionViewModel(
                 is TabKind.Single -> {
                     val rows = repository.documents(tab, mode).orError()
                     setState { copy(loading = false, documents = rows ?: documents) }
-                    val segment = tab.badgeSegment
-                    if (segment != null && mode == ListMode.Live) onListViewed(tab.badgeModule, segment)
+                    if (read && mode == ListMode.Live) {
+                        onListViewed(DistributionRead.WholeTab(tab))
+                    } else {
+                        rereadIfUnread()
+                    }
                 }
                 is TabKind.Folders -> {
                     val rows = repository.folders(tab, mode).orError()
@@ -255,6 +292,49 @@ class DistributionViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Reads the list on show again when unread lands on it while somebody
+     * is looking — iOS's tab-badge sinks (`ScheduleDistributionView.swift:396-402,
+     * 427-433`, `ScriptPagesDistributionView.swift:327-333`), which also
+     * cover its re-reads when an upload lands (388-426; 311-326): the upload
+     * is what raises the count. Gated on [watching], which iOS gets for free
+     * from a view that is gone when it is not on screen.
+     */
+    private suspend fun rereadIfUnread() {
+        if (!watching) return
+        val shown = shownList() ?: return
+        val unread = when (shown) {
+            is DistributionRead.WholeTab -> state.value.tabUnread[shown.tab.key]
+            is DistributionRead.Folder -> state.value.folderUnread[shown.key]
+        }
+        if ((unread ?: 0) > 0) onListViewed(shown)
+    }
+
+    /** The list on show as a read: the open folder, else a single-list tab; none on a folder grid or off live. */
+    private fun shownList(): DistributionRead? {
+        val current = state.value
+        if (current.mode != ListMode.Live) return null
+        val open = current.openFolder
+        return when {
+            open != null -> DistributionRead.Folder(current.activeTab, open.folder.key)
+            current.activeTab.kind is TabKind.Single -> DistributionRead.WholeTab(current.activeTab)
+            else -> null
+        }
+    }
+
+    /**
+     * Leaving a live folder reads it once more — iOS's D.O.D folder does on
+     * disappear (`ScheduleDODFolderView.swift:69-80`), so what landed while
+     * it was open goes with the person who had it on screen.
+     */
+    private fun leaveFolder() {
+        val current = state.value
+        val open = current.openFolder ?: return
+        if (current.mode != ListMode.Live) return
+        val read = DistributionRead.Folder(current.activeTab, open.folder.key)
+        launch { onListViewed(read) }
     }
 
     private fun openFolder(key: String) {
@@ -282,7 +362,7 @@ class DistributionViewModel(
                     openFolder = openFolder?.copy(documents = rows.orEmpty(), exhausted = rows.isNullOrEmpty()),
                 )
             }
-            if (state.value.mode == ListMode.Live) onListViewed(tab.badgeModule, key)
+            if (state.value.mode == ListMode.Live) onListViewed(DistributionRead.Folder(tab, key))
         }
     }
 

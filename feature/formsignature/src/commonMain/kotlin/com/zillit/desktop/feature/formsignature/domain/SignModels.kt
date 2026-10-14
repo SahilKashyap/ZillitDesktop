@@ -169,8 +169,17 @@ data class SignDocument(
     val finalized: Boolean = false,
     /** The union of every signer's boxes — what the sender placed. */
     val spots: List<SignSpot> = emptyList(),
+    /**
+     * `document_id` when the row carries one — the record a received copy
+     * was made from. Badge rows name a document by either id (iOS
+     * `FormDocumentView.swift:430-436` looks both up), as [StandardForm.documentId].
+     */
+    val documentId: String = "",
 ) {
     val name: String get() = document?.name.orEmpty()
+
+    /** Every id a badge row's `level_2` may name this document by. */
+    val badgeIds: List<String> get() = listOf(id, documentId).filter { it.isNotBlank() }.distinct()
 
     /** `users[].user_fullname` for `uploaded_by` — the web's uploader column. */
     fun uploaderName(): String =

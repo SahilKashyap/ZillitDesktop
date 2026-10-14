@@ -1,8 +1,10 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.badges.BadgeDrilldownQuery
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.media.AwtAttachmentPicker
 import com.zillit.desktop.core.media.PickRefusal
@@ -14,8 +16,11 @@ import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.transporthub.data.HubRepositoryImpl
+import com.zillit.desktop.feature.transporthub.domain.AvBadgeRow
+import com.zillit.desktop.feature.transporthub.domain.AvBadges
 import com.zillit.desktop.feature.transporthub.domain.HubAttachment
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeBucket
+import com.zillit.desktop.feature.transporthub.domain.HubBadgeRead
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeUnits
 import com.zillit.desktop.feature.transporthub.domain.HubHost
 import com.zillit.desktop.feature.transporthub.domain.HubMediaKind
@@ -51,6 +56,7 @@ internal fun AppGraph.Ready.buildTransportHub(
     resolveViewer = { hubViewer(permissions()) },
     nowMillis = System::currentTimeMillis,
     onSectionViewed = { bucket -> readHubBadges(bucket) },
+    onBadgeRead = { read -> readHubBadge(read) },
     host = transportHubHost(),
 )
 
@@ -115,34 +121,84 @@ internal fun ProjectPermissions.postsAsIssued(identifier: String): Boolean =
  * A bucket that owns its whole unit clears the unit. One that owns a slice
  * clears its own actions, one read and one frame each — which is what keeps
  * opening Trips from also clearing Shuttles, since both arrive under
- * `transportation_trip_label`.
+ * `transportation_trip_label`. The units a bucket also owns
+ * ([HubBadgeBucket.alsoUnits]) clear whole beside it.
  */
 private suspend fun AppGraph.Ready.readHubBadges(bucket: HubBadgeBucket) {
-    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    if (!bucket.readOnOpen) return
     val actions = bucket.actions.ifEmpty { setOf(null) }
-    actions.forEach { action ->
-        badgeStore.markRead(
-            LedgerRead.Levels(
+    actions.forEach { action -> readHubUnit(bucket.unit, action) }
+    bucket.alsoUnits.forEach { unit -> readHubUnit(unit, action = null) }
+}
+
+/** One unit of the hub — or one action of it — read here and on the server. */
+private suspend fun AppGraph.Ready.readHubUnit(unit: String, action: String?) {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    badgeStore.markRead(LedgerRead.Levels(tool = HubBadgeUnits.MODULE, unit = unit, action = action))
+    socketEvents.emit(
+        ZillitSocketEvents.Badges.NotificationRead,
+        NotificationReadDto(
+            projectId = projectId,
+            // The web sends the unit as `segment` and the module beside
+            // it; `reference_id` stays empty so the whole slice clears
+            // rather than one notification.
+            segment = unit,
+            module = HubBadgeUnits.MODULE,
+            action = action,
+            referenceId = "",
+            timestamp = System.currentTimeMillis(),
+        ),
+        NotificationReadDto.serializer(),
+    )
+}
+
+/**
+ * A read narrower than a rail bucket.
+ *
+ * Action Vehicles go out as the phones send them — `notification:level:read`
+ * on the unit with only the levels given (`ActionVehicleBadges.swift:207-237`;
+ * iOS also stamps `section` with the unit, which the shared emitter does not,
+ * the same difference every other level read here has).
+ *
+ * A trip reads every hub row naming it ([LedgerRead.Entity]) — and, unlike
+ * iOS, whose `markEntityAsRead` flips its own rows and tells nobody
+ * (`TransportationBadgeReader.swift:71-79`), the server too: one
+ * `notification:read` per unit those rows sit under, in the shape the web
+ * names for a per-entity read (`useHubBadges.js:141-147`: the unit as
+ * `segment`, the trip as `reference_id`). Nothing unread, nothing sent.
+ */
+private suspend fun AppGraph.Ready.readHubBadge(read: HubBadgeRead) {
+    if (read !is HubBadgeRead.TripRecord) {
+        read.levelReads().forEach { level ->
+            emitLevelRead(
                 tool = HubBadgeUnits.MODULE,
-                unit = bucket.unit,
-                action = action,
-            ),
-        )
-        socketEvents.emit(
-            ZillitSocketEvents.Badges.NotificationRead,
-            NotificationReadDto(
-                projectId = projectId,
-                // The web sends the unit as `segment` and the module beside
-                // it; `reference_id` stays empty so the whole slice clears
-                // rather than one notification.
-                segment = bucket.unit,
-                module = HubBadgeUnits.MODULE,
-                action = action,
-                referenceId = "",
-                timestamp = System.currentTimeMillis(),
-            ),
-            NotificationReadDto.serializer(),
-        )
+                unit = HubBadgeUnits.ACTION_VEHICLE,
+                level1 = level.level1,
+                level2 = level.level2,
+                level3 = level.level3,
+            )
+        }
+        return
+    }
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    val entity = LedgerRead.Entity(read.tripId, tool = HubBadgeUnits.MODULE)
+    val units = badgeStore.unreadRows(BadgeSections.TOOLS).filter(entity::matches).map { it.unit }.toSet()
+    if (units.isEmpty()) return
+    badgeStore.markRead(entity)
+    units.forEach { unit ->
+        runCatching {
+            socketEvents.emit(
+                ZillitSocketEvents.Badges.NotificationRead,
+                NotificationReadDto(
+                    projectId = projectId,
+                    segment = unit,
+                    module = HubBadgeUnits.MODULE,
+                    referenceId = read.tripId,
+                    timestamp = System.currentTimeMillis(),
+                ),
+                NotificationReadDto.serializer(),
+            )
+        }.onFailure { ZillitLog.w("Badges") { "trip read not sent (${read.tripId}/$unit): ${it::class.simpleName}" } }
     }
 }
 
@@ -224,6 +280,17 @@ private fun AppGraph.Ready.transportHubHost(): HubHost {
         override val badges: Flow<Map<String, Int>> = badgeStore.counts
             .map { hubBadgeCounts() }
             .distinctUntilChanged()
+
+        /** The Action Vehicle unit's rows by tab and by vehicle (`ActionVehicleBadges.swift:104-133`). */
+        override val actionVehicleBadges: Flow<AvBadges> = badgeStore.counts
+            .map {
+                AvBadges.of(
+                    badgeStore.unreadRows(BadgeSections.TOOLS)
+                        .filter { it.tool == HubBadgeUnits.MODULE && it.unit == HubBadgeUnits.ACTION_VEHICLE }
+                        .map { AvBadgeRow(it.level1, it.level2, it.level3) },
+                )
+            }
+            .distinctUntilChanged()
     }
 }
 
@@ -250,7 +317,8 @@ private fun AppGraph.Ready.hubBadgeCounts(): Map<String, Int> {
                 bucket.actions.sumOf { perAction[it] ?: 0 }
             }
         }
-        bucket.name to count.coerceAtLeast(0)
+        val also = bucket.alsoUnits.sumOf { perUnit[it] ?: 0 }
+        bucket.name to (count.coerceAtLeast(0) + also)
     }
 }
 

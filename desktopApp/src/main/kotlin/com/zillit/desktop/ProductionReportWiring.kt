@@ -4,6 +4,7 @@ import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.badges.identifierToWireTool
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -696,7 +697,28 @@ internal fun AppGraph.Ready.productionReportBadges(): ReportBadgeSource = object
             }
         }
     }
+
+    /**
+     * ZL-20673: the orphaned approval rows, read in the ledger only — iOS's
+     * sweep emits nothing (`ApprovalsTabView.swift:295-303`): a server-side
+     * clear of a whole section is exactly what it removed. The grace is
+     * measured in milliseconds, as the rows' `created` is.
+     */
+    override fun sweepApprovalOrphans(keep: Set<String>) {
+        val cutoff = System.currentTimeMillis() - ReportBadges.ORPHAN_GRACE_MILLIS
+        scope.launch {
+            val swept = badgeStore.markRead(
+                LedgerRead.Matching("production report orphan approvals") { row ->
+                    row.tool == ReportBadges.TOOL &&
+                        ReportBadges.isOrphanApproval(row.unit, row.level3, row.referenceId, row.created, keep, cutoff)
+                },
+            )
+            if (swept > 0) ZillitLog.d(BADGES_TAG) { "production report orphan approval rows swept: $swept" }
+        }
+    }
 }
+
+private const val BADGES_TAG = "Badges"
 
 // Weather ---------------------------------------------------------------------------------------------
 

@@ -512,9 +512,11 @@ internal suspend fun emitSegmentRead(
     segment: String,
     module: String,
     referenceId: String? = null,
+    /** What the read clears here, when the segment's own rule is too wide or too narrow. */
+    read: LedgerRead = ledgerReadFor(segment, referenceId),
 ) {
     val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return
-    ready.badgeStore.markRead(ledgerReadFor(segment, referenceId))
+    ready.badgeStore.markRead(read)
     ready.socketEvents.emit(
         ZillitSocketEvents.Badges.NotificationRead,
         NotificationReadDto(
@@ -554,6 +556,48 @@ internal suspend fun emitToolRead(ready: AppGraph.Ready, toolIdentifier: String)
     )
     // Android `Info`/`Production`/`BoxSchedule`…: every row of the tool.
     ready.badgeStore.markRead(LedgerRead.Tool(identifierToWireTool(toolIdentifier)))
+}
+
+/**
+ * The Sides window in front reads the tool, and goes on reading it while it
+ * stays in front — iOS `SDSidesListView` reads on appear and again on every
+ * `sides:generated` (`SDSidesListView.swift:145-166`): the person is looking
+ * at the list the generation just landed in.
+ *
+ * A generation's row and its `sides:generated` travel separately and in
+ * either order, so a sides row landing in the ledger is read as well; on the
+ * event alone, a row that came second would badge the window in front.
+ */
+internal suspend fun readSidesWhileInFront(ready: AppGraph.Ready) = kotlinx.coroutines.coroutineScope {
+    val sides = com.zillit.desktop.feature.sides.domain.SidesViewer.TOOL_IDENTIFIER
+    emitSidesRead(ready)
+    launch {
+        val generated = com.zillit.desktop.core.socket.SocketEventName(
+            com.zillit.desktop.feature.sides.domain.SidesBadgeWire.GENERATED_EVENT,
+        )
+        ready.socketEvents.on(generated).collect { emitSidesRead(ready) }
+    }
+    launch {
+        // On a change of the sides number only: a row no spelling reaches must not resend a read per arrival.
+        var last = 0
+        ready.badgeStore.counts.collect { counts ->
+            val now = counts[sides]
+            if (now > 0 && now != last) emitSidesRead(ready)
+            last = now
+        }
+    }
+}
+
+/**
+ * One sides read: the server's whole-tool read, and here every spelling the
+ * tile counts a sides row by — iOS `markAllRead` over `toolAliases`
+ * (`SDSidesBadgeReader.swift:35-39, 107-127`). `sides_label` alone left a
+ * `sides_tool` or `sides` row on the tile with nothing to clear it.
+ */
+private suspend fun emitSidesRead(ready: AppGraph.Ready) {
+    emitToolRead(ready, com.zillit.desktop.feature.sides.domain.SidesViewer.TOOL_IDENTIFIER)
+    val aliases = com.zillit.desktop.feature.sides.domain.SidesBadgeWire.TOOL_ALIASES
+    ready.badgeStore.markRead(LedgerRead.Matching("sides") { it.tool in aliases })
 }
 
 
@@ -850,7 +894,7 @@ internal fun AppGraph.Ready.boardFeed(
  * `notification:save` files its records; `notification:silent` drops what
  * another device or the server already dropped — reads elsewhere, deleted
  * messages and comments, rooms lost, tools and units this person may no
- * longer see (each lost tool is also re-sent as a read, as iOS's
+ * longer see (each lost tool and unit is also re-sent as a read, as iOS's
  * `emitForBadgeDelete` does, so the server's ledger forgets too); the two
  * `badges:cleared:*` frames empty a production or the device. No refetch
  * follows any of them: the rows are the badges.
@@ -865,9 +909,12 @@ internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.corouti
     launch {
         ready.socketEvents.on(ZillitSocketEvents.Badges.Silent).collect { message ->
             val silence = badgeSilenceFrom(message.payload) ?: return@collect
-            ready.badgeStore.silence(silence)
+            // A frame this very device caused is not news (iOS ZL-21764 gate:
+            // both ids known and equal); everything it says was applied here
+            // when the read was made.
+            ready.badgeStore.silence(silence, ownDeviceId = ready.deviceId())
             val projectId = open() ?: return@collect
-            silence.lostTools.forEach { label ->
+            (silence.lostTools + silence.lostUnits).forEach { label ->
                 ready.socketEvents.emit(
                     ZillitSocketEvents.Badges.NotificationRead,
                     NotificationReadDto(projectId = projectId, segment = label, timestamp = System.currentTimeMillis()),
@@ -886,4 +933,6 @@ internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.corouti
     launch {
         ready.socketEvents.on(ZillitSocketEvents.Badges.ClearedDevice).collect { ready.badgeStore.clearEverything() }
     }
+    // A document-distribution folder or document deleted retires its rows (iOS `registerDDDelete`).
+    launch { docDistDeleteSweep(ready) }
 }

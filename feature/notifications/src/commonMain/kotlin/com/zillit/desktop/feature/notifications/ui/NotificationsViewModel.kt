@@ -18,20 +18,35 @@ import com.zillit.desktop.feature.notifications.domain.forDisplay
  *
  * A port of `NotificationVM` (`bottomNav/common/viewmodel/NotificationVM.kt`):
  * pages older-ward from "now" by timestamp, marks the global segment read
- * after every page that answers, deletes one row or all of them behind a
- * confirmation. Nothing is optimistic except the local removal after a
- * confirmed delete — the same as Android's `adapter.removeItem`.
+ * after every page somebody asked to see, deletes one row or all of them
+ * behind a confirmation. Nothing is optimistic except the local removal after
+ * a confirmed delete — the same as Android's `adapter.removeItem`.
+ *
+ * ## Only a look reads
+ *
+ * iOS marks `global_label` read in the page's `viewWillAppear` and nowhere
+ * else (`NotificationPageViewController.swift:132`, `setUserScreen(.global)`
+ * into `readGlobalMsg`, `FirebaseRealmTimeDB+Ext.swift:2964`); its realtime
+ * refetch (`updateRealTime`, `:47`) reads nothing. This page used to refresh
+ * and read on every `notification:save` once it had been opened — window
+ * closed or not — so after one visit the bell's count could never build up
+ * (found 2026-10-14). Now the screen says where it stands: [start] and [stop]
+ * bracket a visit, [watching] says whether its window is in front. A visit
+ * reads; an arrival reads only while watched; an arrival on an open page
+ * behind another window moves the list and leaves the read owed to the next
+ * look.
  */
 class NotificationsViewModel(
     private val repository: NotificationsRepository,
     private val nowMillis: () -> Long,
     /**
-     * Told after every page that answers, once the REST mark-read has gone
-     * out. The host uses it for what this module cannot reach — the socket
-     * `notification:read` emit the phones and the web send, and the badge
-     * store's refresh — so the bell's count drops the moment the list is open.
+     * Told after every read, once the REST mark-read has gone out, with the
+     * time it carried. The host uses it for what this module cannot reach —
+     * the socket `notification:read` emit the phones and the web send
+     * (iOS `readGlobalMsg`, `FirebaseRealmTimeDB+Ext.swift:2985`) — so the
+     * server's bell read matches theirs, stamped with the same time.
      */
-    private val onListRead: suspend () -> Unit = {},
+    private val onListRead: suspend (timestampMillis: Long) -> Unit = {},
     /** The page size the backend answers; a shorter page is the last one. */
     private val pageLimit: Int = PAGE_LIMIT,
     /**
@@ -60,20 +75,35 @@ class NotificationsViewModel(
     /** The production the rows on screen were loaded for. */
     private var loadedFor: String? = null
 
+    /** Between [start] and [stop]: the page is on screen, in front or not. */
+    private var open = false
+
+    /** The page's window is in front — see [watching]. */
+    private var watched = false
+
+    /**
+     * Rows arrived on an open page nobody was looking at. The list moved; the
+     * read waits for the next look, as iOS's waits for the next appearance.
+     */
+    private var owedRead = false
+
+    /** The page in flight carries a read — set even when a page already was. */
+    private var readOnAnswer = false
+
     init {
-        // Only once the list has been looked at: refetching a page nobody has
-        // opened spends a request to fill state the first `start()` replaces.
-        launch {
-            arrivals.collect { if (currentState.loaded) refresh() }
-        }
+        launch { arrivals.collect { arrived() } }
     }
 
     /**
-     * Every visit to the page. Loads when there is nothing to show for this
-     * production — including after a failed attempt, which is why the error
-     * path leaves [NotificationsUiState.loaded] alone: latching it would mean
-     * one 401 during a production switch disabled the page, and with it the
-     * only thing that marks the global segment read, for the rest of the run.
+     * Every visit to the page: the newest page, then the read — iOS's
+     * `viewWillAppear` does both on every appearance. A revisit refetches
+     * rather than trusting the rows from last time, because arrivals no
+     * longer refresh a closed page; the visit is what catches it up.
+     *
+     * The error path leaves [NotificationsUiState.loaded] alone: latching it
+     * would mean one 401 during a production switch disabled the page, and
+     * with it the only thing that marks the global segment read, for the
+     * rest of the run.
      */
     fun start() {
         val project = projectId()
@@ -87,12 +117,40 @@ class NotificationsViewModel(
         }
         if (currentState.loaded && loadedFor != project) setState { NotificationsUiState() }
         loadedFor = project
-        if (!currentState.loaded && !currentState.loading) refresh()
+        open = true
+        refresh(read = true)
+    }
+
+    /** The page left the screen — its window closed. Arrivals stop reading. */
+    fun stop() {
+        open = false
+        watched = false
+    }
+
+    /**
+     * Whether the page's window is in front — the desktop's "somebody is
+     * looking", as the chat and the boards define it. Coming to the front
+     * settles a read an arrival left owed.
+     */
+    fun watching(on: Boolean) {
+        val looked = on && !watched
+        watched = on
+        if (looked && open && owedRead) refresh(read = true)
+    }
+
+    /**
+     * One `notification:save` frame. A page never opened, or closed, is left
+     * for the next visit; an open one refetches, and reads only if watched.
+     */
+    private fun arrived() {
+        if (!open || !currentState.loaded) return
+        if (!watched) owedRead = true
+        refresh(read = watched)
     }
 
     override fun onEvent(event: NotificationsEvent) {
         when (event) {
-            NotificationsEvent.Refresh -> refresh()
+            NotificationsEvent.Refresh -> refresh(read = true)
             NotificationsEvent.LoadOlder -> loadOlder()
             is NotificationsEvent.AskDelete -> setState {
                 copy(confirm = NotificationsConfirm.DeleteOne(event.notificationId))
@@ -107,8 +165,17 @@ class NotificationsViewModel(
         }
     }
 
-    /** The newest page, replacing whatever is shown — Android's first `getNotifications()`. */
-    private fun refresh() {
+    /**
+     * The newest page, replacing whatever is shown — Android's first
+     * `getNotifications()` — and, when [read], the segment read after it.
+     *
+     * A read asked for while a page is already in flight rides on that page
+     * rather than being dropped with the skipped fetch: the visit's own read
+     * must not be lost to an arrival's unread refetch that happened to be
+     * first.
+     */
+    private fun refresh(read: Boolean) {
+        if (read) readOnAnswer = true
         if (currentState.loading) {
             ZillitLog.d(TAG) { "bell refresh skipped: a page is already in flight" }
             return
@@ -120,10 +187,17 @@ class NotificationsViewModel(
                 setState {
                     copy(loading = false, loaded = true, rows = page.forDisplay(), hasMore = page.size >= pageLimit)
                 }
-                markRead()
+                if (readOnAnswer) {
+                    readOnAnswer = false
+                    owedRead = false
+                    markRead()
+                }
             },
             onError = { error ->
                 ZillitLog.w(TAG) { "bell page failed: $error" }
+                // No page, no read: it stays owed to the next look.
+                if (readOnAnswer) owedRead = true
+                readOnAnswer = false
                 setState { copy(loading = false, error = error.localised()) }
             },
         )
@@ -156,16 +230,17 @@ class NotificationsViewModel(
     }
 
     /**
-     * Every page that answers marks the segment read (`NotificationVM.kt:67-71`),
-     * and only *after* the page: reading first would bump the rows' timestamps
-     * past the cursor and hide them (the web says so at
-     * `DrawerNotification.jsx:189`). The REST answer is not waited on for
-     * anything — Android does not look at it either.
+     * Every page somebody asked to see marks the segment read
+     * (`NotificationVM.kt:67-71`), and only *after* the page: reading first
+     * would bump the rows' timestamps past the cursor and hide them (the web
+     * says so at `DrawerNotification.jsx:189`). The REST answer is not waited
+     * on for anything — Android does not look at it either.
      */
     private fun markRead() {
         launch {
-            repository.markRead(NotificationsEndpoints.GLOBAL_SEGMENT, nowMillis())
-            onListRead()
+            val at = nowMillis()
+            repository.markRead(NotificationsEndpoints.GLOBAL_SEGMENT, at)
+            onListRead(at)
         }
     }
 

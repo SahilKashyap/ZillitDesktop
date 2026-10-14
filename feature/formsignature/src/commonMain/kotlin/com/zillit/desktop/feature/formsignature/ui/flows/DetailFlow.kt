@@ -62,10 +62,21 @@ internal class DetailFlow(
     /** The bytes as fetched, for a Word document that cannot be shown as pages. */
     private var original: ByteArray? = null
 
+    /**
+     * A standard form opened reads its `all_forms` rows (`FormDetailsV2.jsx:690-706`,
+     * iOS `ContractSignatureDocumentView.swift:178-195`); opened from the All
+     * tab, the tab's leaves no listed form names ride along
+     * ([com.zillit.desktop.feature.formsignature.domain.FormSignatureUnread.unlistedAllForms]).
+     */
     fun openStandardForm(form: StandardForm) {
         val me = store.state.currentUserId
         val mine = store.state.standard.tab == StandardTab.Mine
         badges.readStandardForm(form.id)
+        if (!mine) {
+            val listed = store.state.standard.rows.flatMap { listOf(it.id, it.documentId) } + form.id
+            val unlisted = store.state.unread.unlistedAllForms(listed)
+            if (unlisted.isNotEmpty()) badges.readLeaves(unlisted)
+        }
         open(
             DetailState(
                 source = if (mine) DetailSource.MyDownloads else DetailSource.LibraryAll,
@@ -78,9 +89,19 @@ internal class DetailFlow(
         )
     }
 
+    /**
+     * A document for signature opened reads its own leaves in the tab it was
+     * opened from — iOS's one-document read (`FormDocumentView.swift:401-446`)
+     * in place of the web's whole-tab read on entry — with the tab's
+     * unattributable leaves beside them
+     * ([com.zillit.desktop.feature.formsignature.domain.FormSignatureUnread.documentLeaves]).
+     */
     fun openDocument(document: SignDocument) {
         val me = store.state.currentUserId
         val tab = store.state.documents.tab
+        val listed = store.state.documents.rows.flatMap { it.badgeIds }
+        val leaves = store.state.unread.documentLeaves(tab, document.badgeIds, listed)
+        if (leaves.isNotEmpty()) badges.readLeaves(leaves)
         open(
             DetailState(
                 source = DetailSource.ForSignature(tab),

@@ -26,7 +26,10 @@ import kotlinx.serialization.json.JsonArray
  * and the dock badge all show the same numbers, and three copies would
  * disagree the moment one missed an update.
  */
-class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotificationLedgerStore()) {
+class BadgeStore(
+    private val storage: NotificationLedgerStore = InMemoryNotificationLedgerStore(),
+    private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+) {
 
     private val lock = Mutex()
     private val rows = mutableMapOf<String, NotificationRecord>()
@@ -45,6 +48,9 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
      * counts every row.
      */
     private val chatRooms = mutableMapOf<String, Set<String>>()
+
+    /** Messages this person read elsewhere, for rows that arrive after the read — see [ReadEchoes]. */
+    private val readEchoes = ReadEchoes(nowMillis)
 
     private val state = MutableStateFlow(BadgeCounts.Empty)
     val counts: StateFlow<BadgeCounts> = state.asStateFlow()
@@ -91,6 +97,7 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     fun forgetMailboxes() {
         mailboxes.clear()
         chatRooms.clear()
+        readEchoes.clear()
     }
 
     /**
@@ -164,7 +171,7 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         val merged = records.map { incoming ->
             val known = rows[incoming.id] ?: storage.row(incoming.id)
             val readHere = known != null && known.messageRead && !incoming.messageRead
-            if (readHere) incoming.copy(messageRead = true) else incoming
+            if (readHere) incoming.copy(messageRead = true) else readEchoes.applyTo(incoming)
         }
         storage.upsert(merged)
         merged.filter { it.projectId == projectId }.forEach { rows[it.id] = it }
@@ -178,8 +185,9 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
      * Distribution row supersedes an earlier unread row for the same entity
      * rather than stacking on it (Android `insertOrUpdate` 118-139).
      */
-    suspend fun arrived(records: Collection<NotificationRecord>) = lock.withLock {
-        if (records.isEmpty()) return@withLock
+    suspend fun arrived(incoming: Collection<NotificationRecord>) = lock.withLock {
+        if (incoming.isEmpty()) return@withLock
+        val records = incoming.map(readEchoes::applyTo)
         val superseded = records
             .filter { it.tool == DOCUMENT_DISTRIBUTION && it.referenceId.isNotBlank() }
             .flatMap { fresh ->
@@ -216,6 +224,8 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     suspend fun silence(silence: BadgeSilence, ownDeviceId: String? = null) = lock.withLock {
         // Android drops a frame that names this device as its origin (8625-8637).
         if (silence.selfDeviceId != null && silence.selfDeviceId == ownDeviceId) return@withLock
+        // Before the flip: the rows this frame reads may not have arrived yet.
+        readEchoes.remember(silence)
         val ids = storage.unreadAcrossProductions().filter { silence.matches(it) }.map { it.id }
         if (ids.isEmpty()) return@withLock
         flip(ids)
@@ -239,13 +249,21 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         ids.size
     }
 
-    /** `badges:cleared:user` — every row of one production is gone. */
+    /**
+     * `badges:cleared:user` — every unread row of one production written up to
+     * now is read (iOS `clearOutPendingNotificationsByProjectID`).
+     *
+     * Read, not deleted: a deleted row is a row this ledger no longer knows it
+     * read, so the next page that carries it unread would badge it again —
+     * and with the newest rows gone the seed's watermark falls back and asks
+     * for exactly those pages.
+     */
     suspend fun clearProject(projectId: String) = lock.withLock {
-        storage.deleteProject(projectId)
-        if (projectId == this.projectId) {
-            rows.clear()
-            publish()
-        }
+        val cutoff = nowMillis()
+        val ids = storage.rows(projectId).filter { !it.messageRead && it.created <= cutoff }.map { it.id }
+        if (ids.isEmpty()) return@withLock
+        flip(ids)
+        if (projectId == this.projectId) publish()
     }
 
     /** `badges:cleared:device` — every row of every production. */

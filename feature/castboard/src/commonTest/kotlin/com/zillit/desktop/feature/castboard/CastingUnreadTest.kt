@@ -8,6 +8,8 @@ import com.zillit.desktop.feature.castboard.domain.CastingStatus
 import com.zillit.desktop.feature.castboard.domain.CastingUnread
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class CastingUnreadTest {
 
@@ -20,7 +22,10 @@ class CastingUnreadTest {
         episode: String = "",
         entryId: String = "",
         unread: Int = 1,
-    ) = CastingBadgeLeaf(tool, status, character, episode, entryId, unread)
+    ) = CastingBadgeLeaf(tool, status, character, episode, entryId, unread, action = "casting_created")
+
+    private fun CastingBadgeLeaf.at(folder: String, action: String = this.action) =
+        copy(folder = folder, action = action)
 
     private val unread = CastingUnread(
         listOf(
@@ -46,6 +51,53 @@ class CastingUnreadTest {
         assertEquals(4, unread.entry(main, CastingStatus.Selected, rani))
         assertEquals(3, unread.entry(main, CastingStatus.Selected, rani.copy(id = "e-9", episode = "2")))
         assertEquals(1, unread.entry(main, CastingStatus.Selected, CastingEntry(id = "e-2", characterName = "Raja")))
+    }
+
+    @Test
+    fun `a casting folder is its character and talent, a wardrobe one its character and scene`() {
+        val talented = CastingUnread(
+            listOf(
+                leaf().at("Asha"),
+                leaf(unread = 2).at("Meera"),
+                leaf().at(""),
+            ),
+        )
+        val asha = CastingEntry(id = "e-1", characterName = "Rani", talentNames = listOf("Asha", "Kiran"))
+        assertEquals(2, talented.entry(main, CastingStatus.Selected, asha), "Asha's row and the talent-less one")
+        assertEquals(1, talented.entry(main, CastingStatus.Selected, asha.copy(talentNames = emptyList())))
+
+        val wardrobe = "wardrobe_main_tool_label"
+        val costumes = CastingUnread(
+            listOf(
+                leaf(tool = wardrobe).at("12", action = "wardrobe_created"),
+                leaf(tool = wardrobe).at("14", action = "wardrobe_created"),
+            ),
+            board = BoardTool.Wardrobe,
+        )
+        val costume = CastingEntry(
+            id = "w-1",
+            characterName = "Rani",
+            talentNames = listOf("12"),
+            sceneNumbers = listOf("14", "15"),
+        )
+        assertEquals(1, costumes.entry(wardrobe, CastingStatus.Selected, costume), "wardrobe keys by the first scene")
+        assertEquals("14", CastingBadges.folderOf(BoardTool.Wardrobe, costume))
+        assertEquals("12", CastingBadges.folderOf(BoardTool.Casting, costume))
+    }
+
+    @Test
+    fun `opening an entry reads its folder rows, never a sibling's comments`() {
+        val asha = CastingEntry(id = "e-1", characterName = "Rani", talentNames = listOf("Asha"))
+        val board = BoardTool.Casting
+
+        assertTrue(CastingBadges.readsWithEntry(board, leaf().at("Asha"), asha))
+        assertTrue(CastingBadges.readsWithEntry(board, leaf().at("Asha", action = "casting_moved"), asha))
+        val updated = leaf(entryId = "e-2").at("Asha", action = "casting_updated")
+        assertTrue(CastingBadges.readsWithEntry(board, updated, asha), "an updated row is the folder's, as on iOS")
+        val comment = leaf(entryId = "e-2").at("Asha", action = "casting_new_unit_chat")
+        assertFalse(CastingBadges.readsWithEntry(board, comment, asha), "a comment on a sibling entry survives")
+        assertFalse(CastingBadges.readsWithEntry(board, leaf().at("Meera"), asha))
+        assertEquals(setOf("wardrobe_created", "wardrobe_updated"), CastingBadges.readActions(BoardTool.Wardrobe))
     }
 
     @Test

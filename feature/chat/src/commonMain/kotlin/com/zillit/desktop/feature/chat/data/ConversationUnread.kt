@@ -14,10 +14,13 @@ import kotlinx.serialization.json.longOrNull
  * (Android `CommonBadgesHandler.groupCncLabelData`, web `readCncBadgesFromLocalDB`).
  *
  * A row counts when it is a chat notification (`section` cnc_label, `tool`
- * chat_label), unread, not deleted, and not one of our own echoes. Rooms
- * (`unit` chat_group_label) key by `reference_data.chat_room_id`; DMs by the
- * sender — `reference_data.sender_id` first, the row's own `sender` as the
- * fallback. Rows that name neither cannot be placed and are dropped.
+ * chat_label), unread, not deleted, and not one of our own echoes. DMs
+ * (`unit` chat_member_label) key by the sender — `reference_data.sender_id`
+ * first, the row's own `sender` as the fallback; every other unit (a group,
+ * a department room) by `reference_data.chat_room_id`, falling back to the
+ * sender when no room is named — iOS's grouping, and the ledger's
+ * (`NotificationRecord.conversationKey`). Rows that name neither cannot be
+ * placed and are dropped.
  */
 fun conversationUnreadFrom(payload: JsonElement): Map<String, Int> =
     conversationBacklogFrom(payload).unread
@@ -64,6 +67,11 @@ private class BacklogTally(private val readMarks: Map<String, Long>, private val
 
     fun add(row: JsonObject) {
         val key = row.conversationKey() ?: return
+        // A group's rows can outlive the room, and `liveChatUnread` holds
+        // those back. A department's room keys by its room id too now — the
+        // id the listing opens it by — but it cannot be left
+        // (`GroupDetail.isSystemDefined`), so its count is never held back,
+        // as the ledger's own `isOfChatRooms` does not hold it back either.
         if (row.text("unit") == GROUP_UNIT) rooms += key
         readMarks[key]?.takeIf { it > 0L }?.let { readUpTo[key] = it }
         val created = row.createdMillis()
@@ -107,10 +115,11 @@ private fun JsonObject.conversationKey(): String? {
     if (!isChatRow()) return null
     val reference = this["reference_data"] as? JsonObject
     if (reference?.flag("ignore") == true) return null
-    val key = if (text("unit") == GROUP_UNIT) {
-        reference?.text("chat_room_id")
+    val bySender = reference?.text("sender_id")?.takeIf { it.isNotBlank() } ?: text("sender")
+    val key = if (text("unit") == MEMBER_UNIT) {
+        bySender
     } else {
-        reference?.text("sender_id") ?: text("sender")
+        reference?.text("chat_room_id")?.takeIf { it.isNotBlank() } ?: bySender
     }
     return key?.takeIf { it.isNotBlank() }
 }
@@ -141,3 +150,4 @@ private fun JsonObject.flag(key: String): Boolean =
 private const val CNC_SECTION = "cnc_label"
 private const val CHAT_TOOL = "chat_label"
 private const val GROUP_UNIT = "chat_group_label"
+private const val MEMBER_UNIT = "chat_member_label"

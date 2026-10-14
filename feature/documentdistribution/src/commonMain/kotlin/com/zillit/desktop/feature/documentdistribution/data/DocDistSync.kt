@@ -9,6 +9,11 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * The realtime events Document Distribution refreshes on, by wire name —
@@ -73,6 +78,41 @@ internal fun docDistRefreshes(bus: SocketEventBus?): Flow<DocDistRefresh> =
         ?.mapNotNull { DOC_DIST_REFRESH_BY_EVENT[it.event] }
         ?.conflate()
         ?: emptyFlow()
+
+/**
+ * The two deletes that retire badges, and the key each names its entity
+ * under — iOS `registerDDDelete` (`ProjectObserver.swift:8740-8773`):
+ * `folder._id`, `document._id`.
+ *
+ * Public because the sweep is the ledger's business, not this screen's: it
+ * runs app-wide, on the deleting device too, whether or not the tool is
+ * open (see [docDistDeletedIds]).
+ */
+val DOC_DIST_DELETE_EVENTS: Map<SocketEventName, String> = mapOf(
+    SocketEventName("document_distribution:folder:deleted") to "folder",
+    SocketEventName("document_distribution:document:deleted") to "document",
+)
+
+/**
+ * The ids one delete frame names. [record] is the frame's record, already
+ * out of any `data` envelope. The entity is an object (`{"_id": …}`, the
+ * shape iOS reads), and is also taken as a list of them or a bare id — a
+ * sweep that missed a shape would leave the deleted folder's badges for good.
+ */
+fun docDistDeletedIds(event: SocketEventName, record: JsonObject): Set<String> {
+    val key = DOC_DIST_DELETE_EVENTS[event] ?: return emptySet()
+    return when (val named = record[key]) {
+        is JsonObject -> setOfNotNull(named.entityId())
+        is JsonArray -> named.mapNotNull { (it as? JsonObject)?.entityId() ?: it.idText() }.toSet()
+        is JsonPrimitive -> setOfNotNull(named.idText())
+        else -> emptySet()
+    }
+}
+
+private fun JsonObject.entityId(): String? = this["_id"].idText() ?: this["id"].idText()
+
+private fun JsonElement?.idText(): String? =
+    (this as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
 
 /** The one doc-dist event that carries state rather than a stale-listing hint. */
 internal val WATERMARK_SETTINGS_UPDATED = SocketEventName("document_distribution:watermark_settings:updated")

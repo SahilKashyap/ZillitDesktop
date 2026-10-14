@@ -77,8 +77,18 @@ data class ReportSummary(
     val reminders: List<ReportReminder> = emptyList(),
     /** The raw status string, for a status this client does not know. */
     val rawStatus: String = status.wire,
+    /**
+     * The wire's `id` (a uuid) when it differs from `_id` — [id] is the Mongo
+     * id. A badge row's `level_3` may carry either form, so iOS reads and
+     * counts under both (`ApprovalsTabView.swift:289-293`,
+     * `ProductionReportBadgeViewModel.swift:105-109`).
+     */
+    val uuid: String = "",
 ) {
     val statusLabel: String get() = if (status == ReportStatus.Unknown) rawStatus.ifBlank { "-" } else status.label
+
+    /** Every id a badge row may file this report under — the Mongo id, then the uuid when it differs. */
+    val badgeIds: List<String> get() = listOf(id, uuid).filter { it.isNotBlank() }.distinct()
 }
 
 /** A report opened in full: the row, its editable payload, and its review history. */

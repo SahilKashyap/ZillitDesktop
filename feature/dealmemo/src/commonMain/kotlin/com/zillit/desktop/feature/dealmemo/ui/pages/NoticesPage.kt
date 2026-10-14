@@ -46,6 +46,7 @@ import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.NoticeGroup
 import com.zillit.desktop.feature.dealmemo.domain.NoticeGroupKind
 import com.zillit.desktop.feature.dealmemo.domain.NoticeRules
+import com.zillit.desktop.feature.dealmemo.ui.DealBadgeUnit
 import com.zillit.desktop.feature.dealmemo.ui.DeactivateDraft
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoRoute
@@ -59,6 +60,7 @@ import com.zillit.desktop.feature.dealmemo.ui.components.DmCell
 import com.zillit.desktop.feature.dealmemo.ui.components.DmColumn
 import com.zillit.desktop.feature.dealmemo.ui.components.DmEyebrow
 import com.zillit.desktop.feature.dealmemo.ui.components.DmHoverRow
+import com.zillit.desktop.feature.dealmemo.ui.components.DmUnreadPill
 import com.zillit.desktop.feature.dealmemo.ui.components.DmModal
 import com.zillit.desktop.feature.dealmemo.ui.components.DmPersonAvatar
 import com.zillit.desktop.feature.dealmemo.ui.components.DmSearchPill
@@ -243,12 +245,17 @@ private fun NoticeRow(
     val person = labels.labels(deal)
     DmHoverRow(onClick = null, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 14.dp)) {
         DmCell(COLUMNS[0]) {
-            ZillitText(
-                text = deal.reference ?: "—",
-                style = DmType.mono(12.5.sp, FontWeight.SemiBold),
-                color = dm.ink2,
-                maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Which crew member the deactivate-needed notice names — the tab's count
+                // says something happened, this says where (`DMNoticesPage.swift:278-285`).
+                DmUnreadPill(state.badges.deal(DealBadgeUnit.Notices, deal.id))
+                ZillitText(
+                    text = deal.reference ?: "—",
+                    style = DmType.mono(12.5.sp, FontWeight.SemiBold),
+                    color = dm.ink2,
+                    maxLines = 1,
+                )
+            }
         }
         DmCell(COLUMNS[1]) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

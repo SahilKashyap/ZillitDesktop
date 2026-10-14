@@ -44,8 +44,10 @@ data class CalendarUiState(
     val invitationsBusy: Boolean = false,
     /** The way to the next invitations page; null when the list is complete. */
     val invitationsCursor: String? = null,
-    /** How many invitations await an answer — the toolbar badge. */
+    /** How many invitations await an answer, as the pending tab last listed them. */
     val pendingInvitations: Int = 0,
+    /** Unread invitations from the badge ledger — the Invitations button and its tabs wear these. */
+    val invitationUnread: InvitationUnread = InvitationUnread(),
     /** The invitation a decline reason is being written for, or null. */
     val declining: EventInvitation? = null,
     /**
@@ -297,9 +299,26 @@ class CalendarViewModel(
      * passing until whatever time of day breaks them.
      */
     private val now: () -> Instant = { kotlin.time.Clock.System.now() },
+    /** The invitations' badge counts and reads — see [InvitationBadges]. */
+    private val badges: InvitationBadges = InvitationBadges(),
 ) : ZillitViewModel<CalendarUiState, CalendarEvent2Event, Nothing>(
     CalendarUiState(anchor = today(), today = today()),
 ) {
+
+    init {
+        launch {
+            badges.unread.collect { unread ->
+                setState { copy(invitationUnread = unread) }
+                // An invitation expiring — or arriving already over — while
+                // the Expired tab is the one being looked at is read as it
+                // lands, as the tab's own entry read would have read it.
+                if (expiredShown && unread.expired > 0) badges.readExpired()
+            }
+        }
+    }
+
+    private val expiredShown: Boolean
+        get() = currentState.invitationsOpen && currentState.invitationStatus == InvitationStatus.Expired
 
     // No eager load: the events call carries project and user in its header.
 
@@ -358,9 +377,13 @@ class CalendarViewModel(
             CalendarEvent2Event.ShowInvitations -> {
                 setState { copy(invitationsOpen = true) }
                 loadInvitations(currentState.invitationStatus)
+                readExpiredIfShown()
             }
             CalendarEvent2Event.HideInvitations -> setState { copy(invitationsOpen = false) }
-            is CalendarEvent2Event.SetInvitationTab -> loadInvitations(event.status)
+            is CalendarEvent2Event.SetInvitationTab -> {
+                loadInvitations(event.status)
+                readExpiredIfShown()
+            }
             CalendarEvent2Event.LoadMoreInvitations ->
                 loadInvitations(currentState.invitationStatus, append = true)
             is CalendarEvent2Event.AnswerInvitation ->
@@ -369,6 +392,15 @@ class CalendarViewModel(
             CalendarEvent2Event.CancelDecline -> setState { copy(declining = null) }
             else -> Unit
         }
+    }
+
+    /**
+     * The Expired tab shown reads every expired invitation — iOS
+     * `clearBadgeForCurrentTab`. Pending is never read by being looked at:
+     * an invitation is read when it is answered.
+     */
+    private fun readExpiredIfShown() {
+        if (expiredShown) launch { badges.readExpired() }
     }
 
     private fun loadInvitations(status: InvitationStatus, append: Boolean = false) {
@@ -424,7 +456,7 @@ class CalendarViewModel(
             setState { copy(declining = invitation) }
             return
         }
-        sendAnswer { repository.accept(invitation.eventId, invitation.event?.startMillis ?: 0) }
+        sendAnswer(invitation.eventId) { repository.accept(invitation.eventId, invitation.event?.startMillis ?: 0) }
     }
 
     private fun confirmDecline(reason: String) {
@@ -432,7 +464,7 @@ class CalendarViewModel(
         // Closes the popover as well when the decline came from one — the
         // answer is given, and the reload brings back the server's view.
         setState { copy(declining = null, detail = null, inviteeList = null) }
-        sendAnswer {
+        sendAnswer(invitation.eventId) {
             repository.decline(
                 invitation.eventId,
                 invitation.event?.startMillis ?: 0,
@@ -441,13 +473,18 @@ class CalendarViewModel(
         }
     }
 
-    /** One answer's round trip: the open tab refetches, the board reloads. */
-    private fun sendAnswer(block: suspend () -> ZillitResult<Unit>) {
+    /**
+     * One answer's round trip: the open tab refetches, the board reloads, and
+     * the invitation's badge is read (iOS reads it on the answer's success,
+     * not on the row being seen).
+     */
+    private fun sendAnswer(eventId: String, block: suspend () -> ZillitResult<Unit>) {
         setState { copy(invitationsBusy = true) }
         launchResult(
             block = block,
             onSuccess = {
                 markSelfAction()
+                launch { badges.readAnswered(eventId) }
                 loadInvitations(currentState.invitationStatus)
                 load()
             },

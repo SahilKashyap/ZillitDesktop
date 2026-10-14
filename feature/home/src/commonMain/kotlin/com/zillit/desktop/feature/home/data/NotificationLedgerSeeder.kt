@@ -20,9 +20,11 @@ import kotlinx.serialization.json.JsonElement
  * `GET notification/project/all/notifications/{cursor}/{previous|next}` —
  * the rows the ledger has not seen.
  *
- * Android's `BadgesHandler.getAllBadge`: a production whose ledger is empty
- * asks for the page before *now*; one that has rows asks for everything
- * updated since the newest row the API gave it (`AppBadgeDBManager.getTimeStamp`).
+ * iOS's `manageLocalNotification`: a ledger that is empty asks for the page
+ * before *now*; one that has rows asks for everything updated since the
+ * newest row the API ever gave it — one watermark for the device
+ * (`NotificationRealmDateModel`, keyed by device), because the listing is the
+ * person's, across every production.
  * The ledger is never re-read whole — the phones' rule, and the reason a row
  * read here stays read: the server keeps saying "unread" for rows every
  * phone dropped long ago.
@@ -54,10 +56,12 @@ class NotificationLedgerSeeder(
      */
     suspend fun seed(projectId: String, userId: String? = null): ZillitResult<BadgeStore.SeedOutcome> =
         inFlight.withLock {
-        // The picker's seed is user-wide, so its watermark is the ledger's
-        // newest row of any production: keyed on one production it read 0
-        // for a production with no rows and fetched the whole page again.
-        val watermark = store.watermark(if (userId == null) projectId else "")
+        // The listing is user-wide, so the watermark is the ledger's newest
+        // row of any production. Keyed on the open production (Android's
+        // rule) it read 0 for a production with no rows yet and fetched the
+        // whole page again, and an old one re-fetched every other
+        // production's rows since.
+        val watermark = store.watermark("")
         val (cursor, direction) = if (watermark <= 0L) nowMillis() to PREVIOUS else watermark to NEXT
         return apiClient.request(
             verb = HttpVerb.Get,

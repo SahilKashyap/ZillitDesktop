@@ -50,7 +50,7 @@ class CastingViewModel(
     init {
         launch {
             badges.leaves.collect { leaves ->
-                setState { copy(unread = CastingUnread(leaves)) }
+                setState { copy(unread = CastingUnread(leaves, board)) }
                 // A comment landing on the open entry is read as it lands.
                 val open = currentState.openEntry ?: return@collect
                 readIfUnread(open)

@@ -26,6 +26,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 private const val SHARED = DriveBadgeWire.SHARED_VIEW
 private const val MINE = DriveBadgeWire.MY_DRIVE_VIEW
@@ -44,8 +46,8 @@ private fun folderRow(id: String, vararg levels: String, view: String = SHARED) 
     fileRow(id, *levels, view = view).copy(unit = DriveBadgeWire.FOLDER_UNIT)
 
 /**
- * The dots' roll-up is the web's `getDriveBadgeCounts`; these pin the cases
- * its comments argue about (ZL-18873, ZL-20181).
+ * The dots' roll-up is iOS's `DriveBadgeReader.fetchAll`; these pin the cases
+ * its comments argue about (ZL-18484, ZL-18873, ZL-18885, ZL-20179).
  */
 class DriveUnreadRollupTest {
 
@@ -53,7 +55,8 @@ class DriveUnreadRollupTest {
         vararg rows: DriveUnreadRow,
         parents: Map<String, String> = emptyMap(),
         files: Map<String, String> = emptyMap(),
-    ) = driveUnreadFrom(rows.toList(), parents, files)
+        view: DriveSection? = null,
+    ) = driveUnreadFrom(rows.toList(), parents, files, view)
 
     @Test
     fun `an unread file counts for itself and every folder above it`() {
@@ -72,26 +75,70 @@ class DriveUnreadRollupTest {
     }
 
     @Test
-    fun `each row is one unread, so two events on one file read two`() {
-        val u = unread(fileRow("f1", "A"), fileRow("f1", "A"))
+    fun `an item counts once however many rows it left (ZL-18484)`() {
+        val u = unread(fileRow("f1", "A"), fileRow("f1", "A"), folderRow("F", "A"), folderRow("F", "A"))
 
-        assertEquals(2, u.files["f1"])
-        assertEquals(2, u.folders["A"])
+        assertEquals(1, u.files["f1"])
+        assertEquals(2, u.folders["A"], "one file and one folder inside it")
+        assertEquals(1, u.folders["F"])
+        assertEquals(2, u.shared, "the tab counts items, not rows")
+        assertEquals(1, u.sharedFolders)
+        assertEquals(1, u.sharedFiles)
     }
 
     @Test
-    fun `a folder moved since the notification re-homes onto its new parent`() {
+    fun `a folder moved since the notification badges its new parents, never its old (ZL-20179)`() {
         // Stored ancestry says OLD; the live tree has F inside NEW inside TOP.
         val u = unread(folderRow("F", "OLD"), parents = mapOf("F" to "NEW", "NEW" to "TOP"))
 
-        assertEquals(mapOf("F" to 1, "OLD" to 1, "NEW" to 1, "TOP" to 1), u.folders)
+        assertEquals(mapOf("F" to 1, "NEW" to 1, "TOP" to 1), u.folders)
     }
 
     @Test
-    fun `a file's current folder and that folder's parents count too`() {
+    fun `a file the listing holds counts on its current folder and that folder's parents`() {
         val u = unread(fileRow("f1", "OLD"), parents = mapOf("C" to "D"), files = mapOf("f1" to "C"))
 
-        assertEquals(mapOf("OLD" to 1, "C" to 1, "D" to 1), u.folders)
+        assertEquals(mapOf("C" to 1, "D" to 1), u.folders)
+    }
+
+    @Test
+    fun `a file the listing does not hold anchors on reference_data folder_id`() {
+        // Stored levels name A/B; the row says the file sits in B2, which the live tree has under A.
+        val u = unread(fileRow("f1", "A", "B").copy(folderId = "B2"), parents = mapOf("B2" to "A"))
+
+        assertEquals(mapOf("B2" to 1, "A" to 1), u.folders)
+        assertEquals(0, u.sharedRootFiles, "a folder_id is a folder above it")
+    }
+
+    @Test
+    fun `a file whose folder_id is the root marker is loose`() {
+        val u = unread(fileRow("f1").copy(folderId = DriveBadgeWire.ROOT))
+
+        assertEquals(emptyMap(), u.folders)
+        assertEquals(1, u.sharedRootFiles)
+    }
+
+    @Test
+    fun `the row dots belong to the tab on screen (ZL-18885)`() {
+        val rows = arrayOf(fileRow("mine", "A", view = MINE), fileRow("theirs", "A", view = SHARED))
+
+        val inShared = unread(*rows, view = DriveSection.SharedWithMe)
+        assertEquals(mapOf("theirs" to 1), inShared.files)
+        assertEquals(mapOf("A" to 1), inShared.folders)
+
+        val inMine = unread(*rows, view = DriveSection.MyDrive)
+        assertEquals(mapOf("mine" to 1), inMine.files)
+
+        assertEquals(1, inShared.myDrive, "the section tabs still count both")
+        assertEquals(1, inShared.shared)
+    }
+
+    @Test
+    fun `opening a folder reads its own rows and its direct children's only`() {
+        assertTrue(folderRow("F").isReadWithFolder("F"))
+        assertTrue(fileRow("f1").copy(folderId = "F").isReadWithFolder("F"))
+        assertFalse(fileRow("deep", "F", "G").copy(folderId = "G").isReadWithFolder("F"))
+        assertFalse(fileRow("f1").isReadWithFolder(""))
     }
 
     @Test
@@ -106,7 +153,7 @@ class DriveUnreadRollupTest {
         val u = unread(fileRow("f1", DriveBadgeWire.ROOT, MINE, SHARED))
 
         assertEquals(emptyMap(), u.folders)
-        assertEquals(1, u.sharedRootFileRows, "no folder above it makes it a loose root file")
+        assertEquals(1, u.sharedRootFiles, "no folder above it makes it a loose root file")
     }
 
     @Test
@@ -142,7 +189,7 @@ class DriveUnreadRollupTest {
             fileRow("nested2", "A"),
         )
 
-        assertEquals(3, u.foldersTab(DriveSection.SharedWithMe), "one folder row plus two files inside folders")
+        assertEquals(3, u.foldersTab(DriveSection.SharedWithMe), "one folder plus two files inside folders")
         assertEquals(1, u.filesTab(DriveSection.SharedWithMe))
         assertEquals(1, u.tab(DriveSection.SharedWithMe, DriveInnerTab.Files))
     }
@@ -182,9 +229,11 @@ class DriveUnreadViewModelTest {
     private class FakeBadges : DriveBadges {
         val ledger = MutableStateFlow<List<DriveUnreadRow>>(emptyList())
         val read = mutableListOf<String>()
+        val foldersRead = mutableListOf<String>()
         val forgotten = mutableListOf<String>()
         override val rows: Flow<List<DriveUnreadRow>> = ledger
         override fun readItem(id: String) { read += id }
+        override fun readFolder(folderId: String) { foldersRead += folderId }
         override fun forget(ids: Collection<String>) { forgotten += ids }
     }
 
@@ -227,7 +276,7 @@ class DriveUnreadViewModelTest {
     }
 
     @Test
-    fun `opening a folder reads that folder and nothing inside it`() = runTest(dispatcher) {
+    fun `opening a folder is a folder read, not an item read`() = runTest(dispatcher) {
         val badges = FakeBadges()
         val vm = model(badges)
         vm.start()
@@ -236,7 +285,22 @@ class DriveUnreadViewModelTest {
         vm.onEvent(DriveEvent.OpenFolder("A"))
         runCurrent()
 
-        assertEquals(listOf("A"), badges.read)
+        assertEquals(listOf("A"), badges.foldersRead)
+        assertEquals(emptyList(), badges.read)
+    }
+
+    @Test
+    fun `the dots follow the tab on screen`() = runTest(dispatcher) {
+        val badges = FakeBadges()
+        val vm = model(badges)
+        vm.start()
+        runCurrent()
+
+        badges.ledger.value = listOf(fileRow("f1", "A", view = MINE))
+        runCurrent()
+
+        assertEquals(0, vm.state.value.unread.of(file), "a My Drive row dots nothing in Shared with me")
+        assertEquals(1, vm.state.value.unread.of(DriveSection.MyDrive))
     }
 
     @Test
@@ -250,6 +314,7 @@ class DriveUnreadViewModelTest {
         runCurrent()
 
         assertEquals(emptyList(), badges.read)
+        assertEquals(emptyList(), badges.foldersRead)
     }
 
     @Test

@@ -38,6 +38,13 @@ sealed interface CrewEvent : CardEvent {
     data object SendTopUpRequest : CrewEvent
     data class OpenTopUpTrail(val topUpId: String?) : CrewEvent
 
+    /**
+     * A top-up row tapped: its unread is read first — even a row with no trail
+     * to show, so its chip always has a way to clear (`CardExtensionTabView.swift:
+     * 305-312`) — and its trail opens when it has one.
+     */
+    data class TapTopUp(val topUpId: String) : CrewEvent
+
     // -- Approval Queue ----------------------------------------------------------
 
     data class ShowApprovalTab(val tab: CrewApprovalTab) : CrewEvent

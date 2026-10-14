@@ -131,6 +131,22 @@ interface SheetBadgeSource {
     val leaves: Flow<List<BadgeLeaf>> get() = emptyFlow()
 
     fun read(surface: BadgeSurface, kind: BadgeKind, sheetId: String) = Unit
+
+    /**
+     * An Approvals sub-tab shown — iOS `handleBadgeRead(subTab:)`
+     * (`ProjectDetailView.swift:2249-2290`): that sub-tab's REPORT rows, all
+     * sheets (approval unit, `level_1` = the sub-tab, `level_2 = report`, no
+     * `level_3`). Never the whole unit, never its comments: a comment stays
+     * unread until its own thread is opened.
+     */
+    fun readSection(surface: BadgeSurface) = Unit
+
+    /**
+     * Marks read, on this device only, the rows of [units] that name no
+     * sheet in [keep] and are past the week's grace
+     * ([SheetBadges.isOrphan]; iOS `csSweepOrphanCommentRecords`).
+     */
+    fun sweepOrphans(units: Set<String>, keep: Set<String>) = Unit
 }
 
 /** OpenWeather One Call 3.0 for a point, raw — the sheet stores its own shape. */

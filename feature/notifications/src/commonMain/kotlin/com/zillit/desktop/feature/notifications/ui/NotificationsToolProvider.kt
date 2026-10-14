@@ -1,12 +1,14 @@
 package com.zillit.desktop.feature.notifications.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
@@ -58,6 +60,12 @@ class NotificationsToolProvider(
         var notice by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Where the page stands, so an arrival reads only while somebody is
+        // looking: the window in front, and this composition alive — closing
+        // the window disposes it.
+        val focused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(viewModel, focused) { viewModel.watching(focused) }
+        DisposableEffect(viewModel) { onDispose { viewModel.stop() } }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

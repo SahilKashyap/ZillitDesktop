@@ -114,6 +114,39 @@ data class SheetBadges(
         fun isSheetId(level3: String): Boolean =
             level3.trim().let { it.isNotEmpty() && it != "null" && it != "undefined" }
 
+        val UNITS: Set<String> = setOf(UNIT_DRAFTS, UNIT_APPROVAL, UNIT_PUBLISHED)
+
+        /**
+         * How long an orphan row is spared — iOS's `csOrphanGraceMillis`, a
+         * week (`ProjectDetailView.swift:893-905`): clearing a badge nobody
+         * has seen is worse than a stale one, and a row whose sheet simply
+         * is not listed yet must survive.
+         */
+        const val ORPHAN_GRACE_MILLIS = 7L * 24 * 60 * 60 * 1000
+
+        /**
+         * iOS `csSweepOrphanCommentRecords` (`ProjectDetailView.swift:905-924`)
+         * over `updateMarkReadByUnitExcludingLevel3`: whether a row of one of
+         * [units] names no call sheet in [keep] — every sheet the lists hold —
+         * and is older than [cutoff]. Attributed on `level_3`, falling back to
+         * `reference_id` (`LocalNoticifationRealm.swift:1822-1825`); a
+         * stringified missing `level_3` is no id, and a row with no `created`
+         * is never judged.
+         */
+        fun isOrphan(
+            unit: String,
+            level3: String,
+            referenceId: String,
+            created: Long,
+            units: Set<String>,
+            keep: Set<String>,
+            cutoff: Long,
+        ): Boolean {
+            if (unit !in units || created <= 0L || created > cutoff) return false
+            val key = level3.trim().takeIf { isSheetId(it) } ?: referenceId.trim()
+            return key !in keep
+        }
+
         fun from(leaves: List<BadgeLeaf>): SheetBadges {
             val counts = BadgeSurface.entries.associateWith { 0 }.toMutableMap()
             val rows = BadgeSurface.entries.associateWith { _ ->

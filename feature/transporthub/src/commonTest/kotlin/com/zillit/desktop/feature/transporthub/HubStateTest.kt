@@ -3,8 +3,13 @@ package com.zillit.desktop.feature.transporthub
 import com.zillit.desktop.feature.transporthub.data.hubShortDateTime
 import com.zillit.desktop.feature.transporthub.data.hubTime
 import com.zillit.desktop.feature.transporthub.data.startOfDay
+import com.zillit.desktop.feature.transporthub.domain.AvBadgeRow
+import com.zillit.desktop.feature.transporthub.domain.AvBadges
+import com.zillit.desktop.feature.transporthub.domain.AvLevelRead
+import com.zillit.desktop.feature.transporthub.domain.AvVehicleBadge
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeBucket
+import com.zillit.desktop.feature.transporthub.domain.HubBadgeRead
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeUnits
 import com.zillit.desktop.feature.transporthub.domain.HubDay
 import com.zillit.desktop.feature.transporthub.domain.HubLocation
@@ -20,6 +25,7 @@ import com.zillit.desktop.feature.transporthub.domain.RideStatus
 import com.zillit.desktop.feature.transporthub.domain.Trip
 import com.zillit.desktop.feature.transporthub.domain.TripStatus
 import com.zillit.desktop.feature.transporthub.ui.AllocationTab
+import com.zillit.desktop.feature.transporthub.ui.AvTab
 import com.zillit.desktop.feature.transporthub.ui.DriverTab
 import com.zillit.desktop.feature.transporthub.ui.HubSection
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
@@ -191,6 +197,103 @@ class HubStateTest {
         assertEquals(2, state.badge(HubSection.Shuttles))
         // A section with no bucket shows nothing rather than borrowing one.
         assertEquals(0, state.badge(HubSection.LiveTracking))
+    }
+
+    @Test
+    fun `a passenger's ride requests read the trip unit as well`() {
+        // An assigned request becomes a trip, so its completion lands on the
+        // trip unit while the passenger is looking at their requests.
+        assertEquals(
+            listOf(HubBadgeBucket.Rides, HubBadgeBucket.MyTrips),
+            HubSection.MyRides.readsOnOpen,
+        )
+        assertEquals(listOf(HubBadgeBucket.Rides), HubSection.AssignedRides.readsOnOpen)
+        assertEquals(emptyList<HubBadgeBucket>(), HubSection.Dashboard.readsOnOpen)
+    }
+
+    @Test
+    fun `action vehicles count whole but are never read whole`() {
+        assertEquals(HubBadgeUnits.ACTION_VEHICLE, HubBadgeBucket.ActionVehicles.unit)
+        assertFalse(HubBadgeBucket.ActionVehicles.readOnOpen)
+        assertEquals(emptyList<HubBadgeBucket>(), HubSection.ActionVehicles.readsOnOpen)
+    }
+
+    @Test
+    fun `talent rows live with the allocations`() {
+        // No talent page here, so they count and clear on the nearest one.
+        assertEquals(setOf(HubBadgeUnits.TALENT), HubBadgeBucket.Allocations.alsoUnits)
+        assertEquals(listOf(HubBadgeBucket.Allocations), HubSection.Allocations.readsOnOpen)
+    }
+
+    // Action Vehicle badges --------------------------------------------------
+
+    @Test
+    fun `action vehicle rows split by tab and by vehicle and kind`() {
+        val badges = AvBadges.of(
+            listOf(
+                AvBadgeRow("identify", "action", "v1"),
+                AvBadgeRow("identify", "update", "v1"),
+                AvBadgeRow("comments", "comment", "v1"),
+                AvBadgeRow("finalized", "update", "v2"),
+                // No tab and no vehicle: counted nowhere it cannot be shown.
+                AvBadgeRow("", "update", ""),
+            ),
+        )
+        assertEquals(2, badges.tab("identify"))
+        assertEquals(1, badges.tab("comments"))
+        assertEquals(AvVehicleBadge(total = 3, action = 1, update = 1, comment = 1), badges.vehicle("v1"))
+        assertEquals(1, badges.vehicle("v2").update)
+        assertEquals(AvVehicleBadge(), badges.vehicle("nobody"))
+    }
+
+    @Test
+    fun `a tab read clears its updates and only Finalized clears its actions`() {
+        assertEquals(
+            listOf(AvLevelRead("identify", "update", null)),
+            HubBadgeRead.ActionVehicleTab("identify").levelReads(),
+        )
+        assertEquals(
+            listOf(AvLevelRead("finalized", "update", null), AvLevelRead("finalized", "action", null)),
+            HubBadgeRead.ActionVehicleTab("finalized").levelReads(),
+        )
+        assertEquals(
+            listOf(AvLevelRead("pending_approval", "update", "v1")),
+            HubBadgeRead.ActionVehicleRecord("pending_approval", "v1").levelReads(),
+        )
+        assertEquals(
+            listOf(AvLevelRead("finalized", "update", "v1"), AvLevelRead("finalized", "action", "v1")),
+            HubBadgeRead.ActionVehicleRecord("finalized", "v1").levelReads(),
+        )
+    }
+
+    @Test
+    fun `a thread read reaches the comment rows on every tab`() {
+        // No level_1: the copies routed to each recipient's tab all clear.
+        assertEquals(
+            listOf(AvLevelRead(null, "comment", "v1")),
+            HubBadgeRead.ActionVehicleComments("v1").levelReads(),
+        )
+        assertEquals(emptyList<AvLevelRead>(), HubBadgeRead.ActionVehicleComments("").levelReads())
+        assertEquals(emptyList<AvLevelRead>(), HubBadgeRead.TripRecord("t1").levelReads())
+    }
+
+    @Test
+    fun `the action vehicle tabs draw unread alerts, not records`() {
+        val state = HubUiState(
+            viewer = coordinator,
+            avBadges = AvBadges(tabs = mapOf("identify" to 3, "finalized" to 1)),
+        )
+        assertEquals(3, state.actionVehicleUnread[AvTab.Identify])
+        assertEquals(1, state.actionVehicleUnread[AvTab.Finalized])
+        assertEquals(0, state.actionVehicleUnread[AvTab.Request])
+    }
+
+    @Test
+    fun `an unread comment-tab alert brings the Comments tab`() {
+        val quiet = HubUiState(viewer = coordinator)
+        assertFalse(AvTab.Comments in quiet.actionVehicleTabs)
+        val waiting = quiet.copy(avBadges = AvBadges(tabs = mapOf("comments" to 1)))
+        assertTrue(AvTab.Comments in waiting.actionVehicleTabs)
     }
 
     // Tabs -------------------------------------------------------------------

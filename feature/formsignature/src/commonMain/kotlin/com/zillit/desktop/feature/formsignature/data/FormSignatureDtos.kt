@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.formsignature.domain.StandardFormType
 import com.zillit.desktop.feature.formsignature.domain.StoredDocument
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -217,10 +218,13 @@ internal data class SignDocumentDto(
     @SerialName("document_finalized") val finalized: JsonPrimitive? = null,
     @SerialName("user_status") val userStatus: String? = null,
     @SerialName("document_coordinates") val spots: List<SignSpotDto>? = null,
+    /** Read leniently: only a plain string is an id; anything else is ignored rather than failing the row. */
+    @SerialName("document_id") val documentId: JsonElement? = null,
 ) {
     fun toDomain(): SignDocument? {
         val docId = id?.takeIf { it.isNotBlank() } ?: return null
         return SignDocument(
+            documentId = (documentId as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty(),
             id = docId,
             document = document?.toDomain(),
             signingDocument = signingDocument?.toDomain(),

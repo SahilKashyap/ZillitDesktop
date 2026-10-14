@@ -52,7 +52,8 @@ import com.zillit.desktop.feature.cardexpenses.ui.components.InsightTag
 import com.zillit.desktop.feature.cardexpenses.ui.components.insightCard
 import com.zillit.desktop.feature.cardexpenses.ui.currencyOf
 import com.zillit.desktop.feature.cardexpenses.ui.money
-import com.zillit.desktop.feature.cardexpenses.ui.unreadRow
+import com.zillit.desktop.feature.cardexpenses.ui.TOPUP_TODO
+import com.zillit.desktop.feature.cardexpenses.ui.topUpUnread
 
 /**
  * Top-Up To Do — the web's `TopUpToDoPage.jsx`.
@@ -165,8 +166,9 @@ private fun PendingRow(state: CardUiState, topUp: CardTopUp, onEvent: (CardEvent
                         style = ZillitTheme.typography.titleSmall,
                         maxLines = 1,
                     )
-                    // The request's own unread (`TopUpToDoPage.jsx:353-356`).
-                    ZillitBadge(count = state.unreadRow("topup_todo", topUp.badgeKey))
+                    // The request's own unread (`TopUpToDoPage.jsx:353-356`), by its id
+                    // or its entity — read as the row is acted on (`readTopUp`).
+                    ZillitBadge(count = state.topUpUnread(TOPUP_TODO, topUp))
                     ZillitText(text = "—", color = colors.textMuted)
                     ZillitText(
                         text = "••••${topUp.cardLastFour ?: "0000"}",
@@ -337,11 +339,16 @@ private fun DoneBlock(state: CardUiState, rows: List<CardTopUp>, onEvent: (CardE
 private fun doneColumns(state: CardUiState): List<TableColumn<CardTopUp>> = listOf(
     TableColumn(header = str(S.desktop_card_card_holder), width = ColumnWidth.Weight(2f)) { row ->
         Column {
-            ZillitText(
-                text = state.personName(row.holderId, row.holderName),
-                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ZillitText(
+                    text = state.personName(row.holderId, row.holderName),
+                    style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                // A finished request's own unread — its detail opening reads it, as
+                // iOS's history rows open the same detail (`TopUpToDoPage.swift:458`).
+                ZillitBadge(count = state.topUpUnread(TOPUP_TODO, row))
+            }
             designation(state, row.holderId)?.let {
                 ZillitText(text = it, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
             }
@@ -371,13 +378,6 @@ private fun methodTitle(method: String?): String = when (method) {
     null, "" -> str(S.desktop_ce_insights_expense_amount_title)
     else -> method
 }
-
-/**
- * The id a pending request's unread is filed under — the web's `entityKeyOf`
- * (`TopUpToDoPage.jsx:42-44`): its entity, else its card, its holder, itself.
- */
-private val CardTopUp.badgeKey: String
-    get() = listOf(entityId, cardId, holderId).firstOrNull { !it.isNullOrBlank() } ?: id
 
 private fun holderName(state: CardUiState, topUp: CardTopUp): String =
     state.personName(topUp.holderId, topUp.holderName).takeIf { it != "—" } ?: str(S.desktop_unknown)

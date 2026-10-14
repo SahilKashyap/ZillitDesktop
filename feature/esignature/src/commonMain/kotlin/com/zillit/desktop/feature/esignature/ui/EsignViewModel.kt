@@ -91,10 +91,7 @@ class EsignViewModel(
         if (listening) return
         listening = true
         launch {
-            badges.leaves.collect { leaves ->
-                setState { copy(unread = EsignUnread(leaves)) }
-                readSettledTab()
-            }
+            badges.leaves.collect { leaves -> setState { copy(unread = EsignUnread(leaves)) } }
         }
         launch {
             repository.refreshes.collect {
@@ -105,37 +102,12 @@ class EsignViewModel(
     }
 
     /**
-     * The settled tabs read themselves on entry — the web's `markBucketAsRead`
-     * for the sender's Completed / Rejected and the signer's Completed /
-     * Rejected: one read per envelope on the tab that still has rows. The
-     * live tabs (Sent, Draft, Action Required) are read per envelope as each
-     * is opened, so a badge there means something still to look at.
+     * An envelope opened — its rows under both units. The only way an
+     * envelope's badge clears: iOS removed the bucket reads (ZL-21329,
+     * `DocuSignBadgeReader.swift:206-211`), because reading a whole Completed
+     * or Rejected tab on entry — the web's `markBucketAsRead` — wiped the
+     * row pill that says *which* document changed before anyone saw it.
      */
-    private fun readSettledTab() {
-        val s = currentState
-        if (s.page != EsignPageKind.Lists) return
-        when (s.surface) {
-            EsignSurface.Manage -> {
-                val bucket = when (s.manage.outer) {
-                    ManageOuterTab.Completed -> ManageBuckets.COMPLETED
-                    ManageOuterTab.Rejected -> ManageBuckets.REJECTED
-                    ManageOuterTab.Active -> return
-                }
-                s.manage.visibleRows
-                    .filter { s.unread.manageEnvelope(it.id, bucket) > 0 }
-                    .forEach { badges.readEnvelope(EsignBadges.UNIT_MANAGE, it.id) }
-            }
-            EsignSurface.Sign -> {
-                if (s.signList.tab == SignBucket.Action) return
-                s.signList.visibleRows
-                    .filter { s.unread.signEnvelope(it.id) > 0 }
-                    .forEach { badges.readEnvelope(EsignBadges.UNIT_SIGN, it.id) }
-            }
-            EsignSurface.Templates, EsignSurface.Bulk -> Unit
-        }
-    }
-
-    /** An envelope opened — its rows under both units, the web's per-envelope read on open. */
     override fun readEnvelopeBadges(envelopeId: String) {
         val unread = currentState.unread
         if (unread.manageEnvelope(envelopeId, ManageBuckets.SENT) +
@@ -199,10 +171,7 @@ class EsignViewModel(
             EsignEvent.Back -> back()
 
             // manage list
-            is EsignEvent.SwitchOuterTab -> {
-                setState { copy(manage = manage.copy(outer = event.tab)) }
-                readSettledTab()
-            }
+            is EsignEvent.SwitchOuterTab -> setState { copy(manage = manage.copy(outer = event.tab)) }
             is EsignEvent.SwitchInnerTab -> setState { copy(manage = manage.copy(inner = event.tab)) }
             is EsignEvent.SetSentFilter -> setState { copy(manage = manage.copy(sentFilter = event.filter)) }
             is EsignEvent.SearchManage -> setState { copy(manage = manage.copy(search = event.query)) }
@@ -212,10 +181,7 @@ class EsignViewModel(
             EsignEvent.ConfirmDeleteDraft -> lists.deleteDraft()
 
             // sign list
-            is EsignEvent.SwitchSignBucket -> {
-                setState { copy(signList = signList.copy(tab = event.bucket)) }
-                readSettledTab()
-            }
+            is EsignEvent.SwitchSignBucket -> setState { copy(signList = signList.copy(tab = event.bucket)) }
             is EsignEvent.SearchSign -> setState { copy(signList = signList.copy(search = event.query)) }
 
             // opening

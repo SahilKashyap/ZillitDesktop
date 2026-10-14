@@ -23,7 +23,6 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PoTermsFiles
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeBucket
-import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeScope
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadges
 import com.zillit.desktop.feature.purchaseorder.domain.PoUnread
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
@@ -957,20 +956,15 @@ class PurchaseOrderViewModel(
     }
 
     /**
-     * The query thread's rows are read as the Query panel opens, from the same
-     * place whichever tab it was opened from: the accounts console's
-     * `po_queue_assigned` or the department view's `my_po`.
+     * The query thread's rows are read as the Query panel opens — every tab's,
+     * not one: iOS reads `query_chat` for the order with no `level_1`
+     * (`AccountHubViewModel+funcs.swift:55-100`), since a thread's messages
+     * file under whichever tab they fired on. The tool is the viewer's: the
+     * accounts console's rows ride the hub, a department user's the PO tool.
      */
     internal fun readQueryBadge(orderId: String) {
-        val viewer = currentState.viewer
-        val scope = if (viewer.isAccountant) {
-            PoBadgeScope(PoBadges.TOOL_HUB, PoBadges.LEVEL_QUEUE)
-        } else {
-            PoBadgeScope(PoBadges.TOOL_PO, PoBadges.LEVEL_MY_POS)
-        }
-        if (currentState.unread.order(scope, orderId, PoBadgeBucket.Query) > 0) {
-            badges.readOrder(scope.tool, scope.level1, orderId, PoBadgeBucket.Query)
-        }
+        val tool = if (currentState.viewer.isAccountant) PoBadges.TOOL_HUB else PoBadges.TOOL_PO
+        if (currentState.unread.query(tool, orderId) > 0) badges.readQuery(tool, orderId)
     }
 
     /** Keyed by what is fetched, not which tab asked — several tabs share one list. */

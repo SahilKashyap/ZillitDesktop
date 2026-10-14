@@ -362,6 +362,10 @@ internal fun rememberCallsPanes(
     val lines = ready.callingLines.available(projectId).map(CallLine::ofWire)
     return remember(logs, lines) {
         object : CallsPanes {
+            // Whether the log shows Missed — iOS reads the missed-call badge
+            // only from that sub-tab (`MissedCallViewController.swift:376-378`).
+            override val missedOnly: Flow<Boolean> = logs.state.map { it.missedOnly }.distinctUntilChanged()
+
             @Composable
             override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) {
                 val state by logs.state.collectAsState()

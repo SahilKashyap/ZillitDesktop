@@ -1,6 +1,5 @@
 package com.zillit.desktop.feature.timecard.ui
 
-import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitError
@@ -22,12 +21,14 @@ import com.zillit.desktop.feature.timecard.domain.Allowance
 import com.zillit.desktop.feature.timecard.domain.AllowanceType
 import com.zillit.desktop.feature.timecard.domain.DayType
 import com.zillit.desktop.feature.timecard.domain.Timecard
+import com.zillit.desktop.feature.timecard.domain.TimecardBadges
 import com.zillit.desktop.feature.timecard.domain.TimecardDay
 import com.zillit.desktop.feature.timecard.domain.TimecardDraft
 import com.zillit.desktop.feature.timecard.domain.TimecardHistoryEntry
 import com.zillit.desktop.feature.timecard.domain.TimecardMetadata
 import com.zillit.desktop.feature.timecard.domain.TimecardRepository
 import com.zillit.desktop.feature.timecard.domain.TimecardStatus
+import com.zillit.desktop.feature.timecard.domain.TimecardUnread
 import com.zillit.desktop.feature.timecard.domain.TimecardViewer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -86,6 +87,8 @@ data class TimecardUiState(
     val history: List<TimecardHistoryEntry> = emptyList(),
     /** Unread notifications per unit — the tabs' red chips. */
     val unread: Map<String, Int> = emptyMap(),
+    /** The rows behind [unread], for the per-week and per-record dots — see [rowUnread]. */
+    val badgeRows: TimecardUnread = TimecardUnread.None,
     val selectedId: String? = null,
     val selection: Set<String> = emptySet(),
     val search: String = "",
@@ -112,6 +115,20 @@ data class TimecardUiState(
                     EpochDate.date(card.weekStarting).lowercase().contains(search.trim().lowercase())
             }
         }
+
+    /**
+     * One list row's dot on the open page — iOS's per-row counts, each scoped to
+     * the unit its page reads (`badgeCount(forTimecardId:unit:)`,
+     * `TimecardBadgeViewModel.swift:251-256`): My Timecards a week's own rows
+     * ([TimecardUnread.myWeek]), the Approval Queue and Processing (the crew's
+     * disputes) the timecard's.
+     */
+    fun rowUnread(card: Timecard): Int = when (destination) {
+        TimecardDestination.MyWeeks -> badgeRows.myWeek(card)
+        TimecardDestination.ApprovalQueue -> badgeRows.record(TimecardBadges.APPROVAL_QUEUE, card.id)
+        TimecardDestination.Processing -> badgeRows.record(TimecardBadges.CREW_DISPUTES, card.id)
+        TimecardDestination.Edit, TimecardDestination.Outstanding -> 0
+    }
 
     /** Money the visible weeks come to, per currency. */
     val totalsByCurrency: Map<String, Double>
@@ -217,8 +234,8 @@ class TimecardViewModel(
      */
     private val offline: OfflineSupport? = null,
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
-    /** The ledger's rows for this tool per unit, and the page read. */
-    private val badges: TabBadgeSource = TabBadgeSource.None,
+    /** The ledger's rows for this tool, and the per-record and per-week reads. */
+    private val badges: TimecardBadges = TimecardBadges.None,
 ) : ZillitViewModel<TimecardUiState, TimecardEvent, TimecardEffect>(
     TimecardUiState(viewer = viewer()),
 ) {
@@ -228,11 +245,7 @@ class TimecardViewModel(
     private var syncWatch: Job? = null
     private var started = false
     private var watchingBadges = false
-
-    /** The page on screen is its read — every unit it is filed under that has rows. */
-    private fun readPage(destination: TimecardDestination) {
-        destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
-    }
+    private val reads = TimecardReads(badges)
     private val json = Json { ignoreUnknownKeys = true }
 
     fun start() {
@@ -242,11 +255,12 @@ class TimecardViewModel(
         listenOnce()
         if (!watchingBadges) {
             watchingBadges = true
+            // Nothing is read as a row lands: a dot stays until its week or
+            // record is opened or decided (see TimecardReads).
             launch {
-                badges.counts.collect { counts ->
-                    setState { copy(unread = counts) }
-                    // A row landing on the open page is read as it lands.
-                    readPage(currentState.destination)
+                badges.rows.collect { rows ->
+                    val unread = TimecardUnread(rows)
+                    setState { copy(badgeRows = unread, unread = unread.byUnit) }
                 }
             }
         }
@@ -273,7 +287,7 @@ class TimecardViewModel(
                     },
                 )
             }
-            load(currentState.destination)
+            load(currentState.destination, entered = true)
         }
     }
 
@@ -328,11 +342,10 @@ class TimecardViewModel(
     @Suppress("CyclomaticComplexMethod") // One branch per user action.
     override fun onEvent(event: TimecardEvent) {
         when (event) {
-            TimecardEvent.Refresh -> load(currentState.destination)
+            TimecardEvent.Refresh -> load(currentState.destination, entered = true)
             is TimecardEvent.Open -> {
                 setState { copy(destination = event.destination, selectedId = null, error = null, staleSince = null) }
-                load(event.destination)
-                readPage(event.destination)
+                load(event.destination, entered = true)
             }
 
             is TimecardEvent.Search -> setState { copy(search = event.query) }
@@ -395,9 +408,16 @@ class TimecardViewModel(
         copy(draft = current.withDay(dayIndex, day.copy(allowances = claims(day))))
     }
 
-    private fun load(destination: TimecardDestination) {
+    /**
+     * Fetches [destination]'s list. [entered] marks a load the person asked for —
+     * the page opened, the tool started, Refresh pressed — after which the rows
+     * the list cannot show are read ([TimecardReads.sweep]); a reload behind a
+     * socket frame or an action never reads anything, the window may be closed.
+     */
+    private fun load(destination: TimecardDestination, entered: Boolean = false) {
         loadJob?.cancel()
         setState { copy(loading = true, error = null) }
+        val askedAt = nowMillis()
         loadJob = launch {
             val result = when (destination) {
                 TimecardDestination.ApprovalQueue -> repository.approvalQueue()
@@ -418,6 +438,9 @@ class TimecardViewModel(
                     setState { copy(loading = false, timecards = result.data, staleSince = null) }
                     remember(destination.cacheName, ListSerializer(Timecard.serializer()), result.data)
                     seedEditor(destination, result.data)
+                    if (entered && currentState.destination == destination) {
+                        reads.sweep(destination, result.data, currentState.badgeRows, askedAt)
+                    }
                 }
 
                 is ZillitResult.Failure -> {
@@ -460,8 +483,10 @@ class TimecardViewModel(
 
     private fun selectCard(id: String?) {
         setState { copy(selectedId = id, history = emptyList()) }
-        // A week that exists only here has no history to fetch.
+        // A week that exists only here has no history to fetch, nor any unread.
         if (id == null || id.startsWith(LOCAL_WEEK_PREFIX)) return
+        currentState.timecards.firstOrNull { it.id == id }
+            ?.let { reads.opened(currentState.destination, it, currentState.badgeRows) }
         launch {
             repository.history(id).getOrNull()?.let { entries ->
                 if (currentState.selectedId == id) setState { copy(history = entries) }
@@ -735,15 +760,19 @@ class TimecardViewModel(
         when (prompt) {
             is TimecardPrompt.Confirm -> when (prompt.action) {
                 TimecardConfirmAction.Submit -> submitWeek(prompt.targetId)
-                TimecardConfirmAction.Approve -> act(str(S.approved)) { repository.approve(prompt.targetId, null) }
+                TimecardConfirmAction.Approve -> act(str(S.approved), decided = listOf(prompt.targetId)) {
+                    repository.approve(prompt.targetId, null)
+                }
                 TimecardConfirmAction.FinalApprove ->
-                    act(str(S.cs_status_final_approved)) { repository.finalApprove(prompt.targetId) }
+                    act(str(S.cs_status_final_approved), decided = listOf(prompt.targetId)) {
+                        repository.finalApprove(prompt.targetId)
+                    }
 
                 TimecardConfirmAction.Lock -> act(str(S.desktop_week_locked)) { repository.lock(prompt.targetId) }
                 TimecardConfirmAction.MarkPaid -> act(str(S.desktop_marked_paid)) {
                     repository.markPaid(prompt.targetId)
                 }
-                TimecardConfirmAction.ApproveSelected -> batch(S.desktop_timecards_approved_count) {
+                TimecardConfirmAction.ApproveSelected -> batch(S.desktop_timecards_approved_count, decides = true) {
                     repository.approveAll(it)
                 }
                 TimecardConfirmAction.LockSelected -> batch(S.desktop_timecards_locked_count) { repository.lockAll(it) }
@@ -758,7 +787,9 @@ class TimecardViewModel(
                 }
                 when (prompt.action) {
                     TimecardReasonAction.Reject ->
-                        act(str(S.desktop_timecard_rejected)) { repository.reject(prompt.targetId, reason) }
+                        act(str(S.desktop_timecard_rejected), decided = listOf(prompt.targetId)) {
+                            repository.reject(prompt.targetId, reason)
+                        }
 
                     TimecardReasonAction.Query ->
                         act(str(S.ah_query_sent_toast)) { repository.query(prompt.targetId, reason) }
@@ -803,21 +834,35 @@ class TimecardViewModel(
         act(str(S.desktop_timecard_submitted)) { repository.submit(targetId) }
     }
 
-    private fun batch(successKey: String, block: suspend (List<String>) -> ZillitResult<Unit>) {
+    private fun batch(
+        successKey: String,
+        decides: Boolean = false,
+        block: suspend (List<String>) -> ZillitResult<Unit>,
+    ) {
         val ids = currentState.selection.toList()
         if (ids.isEmpty()) {
             sendEffect(TimecardEffect.Failed(str(S.desktop_nothing_is_selected)))
             return
         }
-        act(str(successKey, ids.size)) { block(ids) }
+        act(str(successKey, ids.size), decided = if (decides) ids else emptyList()) { block(ids) }
         setState { copy(selection = emptySet()) }
     }
 
-    private fun act(success: String, block: suspend () -> ZillitResult<Unit>) = launch {
+    /**
+     * Runs one write and reloads the page. [decided] are the weeks it approves or
+     * rejects: their Approval Queue rows are read once it lands, never before — a
+     * refused decision leaves the dot ([TimecardReads.decided]).
+     */
+    private fun act(
+        success: String,
+        decided: List<String> = emptyList(),
+        block: suspend () -> ZillitResult<Unit>,
+    ) = launch {
         setState { copy(busy = true) }
         when (val result = block()) {
             is ZillitResult.Success -> {
                 setState { copy(busy = false, notice = success) }
+                reads.decided(decided, currentState.badgeRows)
                 load(currentState.destination)
             }
 

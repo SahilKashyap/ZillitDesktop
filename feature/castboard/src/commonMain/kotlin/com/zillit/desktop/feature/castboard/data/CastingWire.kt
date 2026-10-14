@@ -74,6 +74,7 @@ internal fun CastingEntryDto.toEntry(keepDeleted: Boolean = false): CastingEntry
         gender = gender.orEmpty(),
         scenes = textOf(sceneNumber),
         media = attachment?.toMedia(),
+        sceneNumbers = namesOf(sceneNumber),
     )
 }
 

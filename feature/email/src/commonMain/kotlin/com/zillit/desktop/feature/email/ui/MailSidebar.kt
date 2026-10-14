@@ -231,14 +231,17 @@ private fun FoldersHeading(hasFolders: Boolean, expanded: Boolean, onToggle: () 
 }
 
 /**
- * The count on a folder's row: the badge ledger's when it has one, else the
- * server's `unread_count`. The ledger keys folders by lower-cased name
- * (iOS's `unreadEmailCountsByFolder`); match the same way.
+ * The count on a folder's row: the badge ledger's for that folder when it has
+ * rows there, else the server's `unread_count` — iOS badges folders from the
+ * mailbox's own unread (ZL-21251, `SideBarEmailView.swift:247-252`). The
+ * fallback is per folder: it used to apply only when the ledger had no mail
+ * rows at all, so one badged folder turned every other folder's server count
+ * into 0 — the destination of a rule-moved mail showed nothing. The ledger
+ * keys folders lower-cased (`MailLedger.folderBadges`), so `INBOX` and
+ * `Inbox` are one folder.
  */
 private fun EmailUiState.unreadBadge(folder: EmailFolder): Int =
-    folderBadges.takeIf { it.isNotEmpty() }
-        ?.let { split -> split[folder.name] ?: split[folder.name.lowercase()] ?: 0 }
-        ?: folder.unreadCount
+    folderBadges[folder.name.trim().lowercase()] ?: folder.unreadCount
 
 @Composable
 @Suppress("LongParameterList")

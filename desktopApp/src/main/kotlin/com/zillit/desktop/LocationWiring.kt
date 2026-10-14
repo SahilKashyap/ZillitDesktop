@@ -1,6 +1,8 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.email.data.AwsCredentials
@@ -137,23 +139,47 @@ private fun AppGraph.Ready.locationBadges(): LocationBadges = object : LocationB
     private fun leavesNow(): List<LocationBadgeLeaf> =
         badgeStore.unreadRows(BadgeSections.TOOLS)
             .filter { it.tool == LocationBadges.TOOL }
-            .groupingBy { row -> row.unit to LocationLeafKey(row.level1, row.level2, row.level3, row.chatUnitId) }
+            .groupingBy { row ->
+                row.unit to LocationLeafKey(row.level1, row.level2, row.level3, row.chatUnitId, row.action)
+            }
             .eachCount()
             .mapNotNull { (key, count) ->
                 val status = LocationBadges.statusOf(key.first) ?: return@mapNotNull null
                 val at = key.second
-                LocationBadgeLeaf(status, at.location, at.scene, at.episode, at.recordId, count)
+                LocationBadgeLeaf(status, at.location, at.scene, at.episode, at.recordId, count, action = at.action)
             }
 
-    override fun readGallery(status: LocationStatus, pick: LocationPick) {
+    /**
+     * The server hears one `notification:level:read` per gallery action, each
+     * naming its action — the wire takes one. iOS's `levelmarkread` call sends
+     * only the first of its two, so `location_updated` rows were read on the
+     * phone and never on the server. Here the gallery's own rows are read
+     * whatever their action, a photo's comments never
+     * ([LocationBadges.isGalleryRow]). A sweep names no action: nothing else
+     * will ever read those rows.
+     */
+    override fun readGallery(status: LocationStatus, pick: LocationPick, sweep: Boolean) {
+        val unit = LocationBadges.unitOf(status)
+        val actions: List<String?> = if (sweep) listOf(null) else LocationBadges.GALLERY_ACTIONS.toList()
         scope.launch {
-            emitLevelRead(
-                tool = LocationBadges.TOOL,
-                unit = LocationBadges.unitOf(status),
-                level1 = pick.location,
-                level2 = pick.scene,
-                level3 = pick.episode.takeIf { it.isNotBlank() },
-            )
+            actions.forEach { action ->
+                emitLevelRead(
+                    tool = LocationBadges.TOOL,
+                    unit = unit,
+                    level1 = pick.location,
+                    level2 = pick.scene,
+                    level3 = pick.episode.takeIf { it.isNotBlank() },
+                    action = action,
+                )
+            }
+            if (!sweep) {
+                badgeStore.markRead(
+                    LedgerRead.Matching("location gallery ${pick.location}/${pick.scene}/${pick.episode}") { row ->
+                        row.tool == LocationBadges.TOOL && row.unit == unit && row.isAt(pick) &&
+                            LocationBadges.isGalleryRow(row.action, row.chatUnitId)
+                    },
+                )
+            }
         }
     }
 
@@ -162,7 +188,18 @@ private fun AppGraph.Ready.locationBadges(): LocationBadges = object : LocationB
     }
 }
 
-private data class LocationLeafKey(val location: String, val scene: String, val episode: String, val recordId: String)
+/** A row filed at the gallery's place and scene — and episode, when the gallery names one. */
+private fun NotificationRecord.isAt(pick: LocationPick): Boolean =
+    level1.trim() == pick.location.trim() && level2.trim() == pick.scene.trim() &&
+        (pick.episode.isBlank() || level3.trim() == pick.episode.trim())
+
+private data class LocationLeafKey(
+    val location: String,
+    val scene: String,
+    val episode: String,
+    val recordId: String,
+    val action: String,
+)
 
 internal fun AppGraph.Ready.locationProvider(viewModel: LocationViewModel,
     scope: CoroutineScope) = LocationToolProvider(

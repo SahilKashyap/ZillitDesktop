@@ -26,7 +26,7 @@ internal class RowActionsController(private val ctx: ReportContext) {
             ListEvent.ClosePdf -> ctx.update { copy(pdf = null) }
             ListEvent.DownloadPdf -> download()
             is ListEvent.Edit -> {
-                ctx.lists.readRowBadge(event.report.id, BadgeKind.Report)
+                ctx.lists.readRowBadge(event.report, BadgeKind.Report)
                 ctx.editor.openExisting(event.report)
             }
             is ListEvent.Delete -> ctx.update {
@@ -53,7 +53,7 @@ internal class RowActionsController(private val ctx: ReportContext) {
 
     /** "Generating PDF", then the viewer — the web's `viewProductionReport`. */
     private fun view(report: ReportSummary) {
-        ctx.lists.readRowBadge(report.id, BadgeKind.Report)
+        ctx.lists.readRowBadge(report, BadgeKind.Report)
         ctx.update { copy(pdf = PdfOverlay(reportId = report.id, title = report.name.ifBlank { "PDF View" })) }
         ctx.launchWork {
             when (val bytes = ctx.services.delivery.pdf(report.id)) {
@@ -121,7 +121,7 @@ internal class RowActionsController(private val ctx: ReportContext) {
     /** History needs the detail — list rows carry neither revisions nor reminders. */
     private fun history(report: ReportSummary, title: String) {
         if (ctx.state.historyLoadingId != null) return
-        ctx.lists.readRowBadge(report.id, BadgeKind.Report)
+        ctx.lists.readRowBadge(report, BadgeKind.Report)
         ctx.update { copy(historyLoadingId = report.id) }
         ctx.launchWork {
             val detail = (ctx.repository.report(report.id) as? ZillitResult.Success)?.data

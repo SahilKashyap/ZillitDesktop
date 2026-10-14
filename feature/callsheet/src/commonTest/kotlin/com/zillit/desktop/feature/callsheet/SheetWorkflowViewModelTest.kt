@@ -562,7 +562,7 @@ class SheetWorkflowViewModelTest {
     }
 
     @Test
-    fun `Published drains on entry per leaf, and at app level for a viewer who has no Published tab`() =
+    fun `Published reads sheet by sheet when opened, and drains only for a viewer who has no Published tab`() =
         runTest(dispatcher) {
             repository.rows = drafts()
             harness.badges.leaves.value = listOf(
@@ -570,22 +570,26 @@ class SheetWorkflowViewModelTest {
                 BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "comment", level3 = "p2"),
             )
             val poster = harness.start(this)
-            assertTrue(harness.badges.reads.isEmpty(), "a poster's tab is not drained before it is drawn")
             poster.onEvent(ListEvent.OpenTab(SheetTab.Published))
             settle()
+            assertTrue(harness.badges.reads.isEmpty(), "showing the tab reads nothing (ProjectDetailView.swift:2606)")
+            harness.badges.leaves.value =
+                harness.badges.leaves.value + BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "report", level3 = "p3")
+            settle()
+            assertTrue(harness.badges.reads.isEmpty(), "nor does a badge landing while it is open")
+
+            val published = CallSheetStatus.Published
+            poster.onEvent(ListEvent.View(Samples.row("p1", "Day 1", status = published)))
+            poster.onEvent(ListEvent.OpenComments(Samples.row("p2", "Day 2", status = published), readOnly = true))
+            settle()
             assertEquals(
-                setOf(
+                listOf(
                     BadgeRead(BadgeSurface.Published, BadgeKind.Report, "p1"),
                     BadgeRead(BadgeSurface.Published, BadgeKind.Comment, "p2"),
                 ),
-                harness.badges.reads.toSet(),
+                harness.badges.reads,
+                "one sheet, one kind, per open — p3 waits for its own",
             )
-            harness.badges.reads.clear()
-            val landed = BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "report", level3 = "p3")
-            harness.badges.leaves.value = listOf(landed)
-            settle()
-            val p3 = BadgeRead(BadgeSurface.Published, BadgeKind.Report, "p3")
-            assertEquals(listOf(p3), harness.badges.reads, "a badge landing while open is read too")
 
             val viewerHarness = SheetHarness(dispatcher)
             viewerHarness.repository.metadata = SheetMetadata(internalReceiverIds = listOf("me"))

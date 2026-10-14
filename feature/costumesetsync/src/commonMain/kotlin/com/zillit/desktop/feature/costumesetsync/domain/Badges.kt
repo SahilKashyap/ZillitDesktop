@@ -17,6 +17,28 @@ object CsyncBadges {
     /** The notification service's name for this tool, as its rows carry it. */
     const val CSYNC_BADGE_TOOL = "costume_set_sync_tool_label"
 
+    /**
+     * Every `tool` spelling a row of this tool may carry — the payload's, the
+     * tile identifier, and the app's label key (iOS `CSSBadgeKey.toolAliases`,
+     * `CSSBadges.swift:33-35`).
+     */
+    val TOOL_ALIASES: Set<String> = setOf(CSYNC_BADGE_TOOL, "costume_set_sync_tool", "costume_set_sync_label")
+
+    /**
+     * The tool's own unit namespace: a row under it is the tool's whatever
+     * `tool` it carries (`CSSBadges.swift:36-37`).
+     */
+    const val UNIT_PREFIX = "costume_set_sync_"
+
+    /**
+     * Whether a ledger row is this tool's. iOS counts a row by either key
+     * (`LocalNoticifationRealm.swift:4305-4309`): a `tool` among
+     * [TOOL_ALIASES], or a `unit` under [UNIT_PREFIX]. Filtering on the one
+     * spelling left a row filed under another counting on the tile and never
+     * on a tab, so nothing here could clear it.
+     */
+    fun owns(tool: String, unit: String): Boolean = tool in TOOL_ALIASES || unit.startsWith(UNIT_PREFIX)
+
     const val CLEANING = "costume_set_sync_cleaning_label"
     const val ALTERATION = "costume_set_sync_alteration_label"
     const val DAMAGE = "costume_set_sync_damage_label"

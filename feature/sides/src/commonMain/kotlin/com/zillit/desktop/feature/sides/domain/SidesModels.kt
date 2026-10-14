@@ -187,6 +187,26 @@ data class ScheduleRef(
     val uploaded: Boolean get() = source == CallSheetRef.SOURCE_UPLOADED
 }
 
+/**
+ * The words a sides notification is filed under — iOS `SDSidesBadgeReader`
+ * (`SDSidesBadgeReader.swift:29-39`).
+ */
+object SidesBadgeWire {
+    /** `tool` on the `sides_has_generated` row. */
+    const val TOOL = "sides_label"
+
+    /** The backend's nudge when a generation finishes — the row it files arrives beside it. */
+    const val GENERATED_EVENT = "sides:generated"
+
+    /**
+     * Every `tool` spelling a sides row has arrived under: the FCM payload's
+     * `sides_label`, the socket twin's `sides_tool` identifier, and bare
+     * `sides`. The tile counts all three as the tool, so a read that cleared
+     * one spelling left a number nothing on screen could clear.
+     */
+    val TOOL_ALIASES: Set<String> = setOf(TOOL, SidesViewer.TOOL_IDENTIFIER, "sides")
+}
+
 /** Who is looking at the sides tool — the `sides_tool` grid row. */
 data class SidesViewer(
     val userId: String = "",

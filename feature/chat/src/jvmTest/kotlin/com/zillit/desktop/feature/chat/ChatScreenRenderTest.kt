@@ -693,7 +693,7 @@ private class StubChatRepository : ChatRepository {
     override val typing: Flow<com.zillit.desktop.feature.chat.data.TypingSignal> = emptyFlow()
     override val receipts: Flow<ReadReceipt> = emptyFlow()
     override val edits: Flow<ChatMessage> = emptyFlow()
-    override val selfReads: Flow<String> = emptyFlow()
+    override val selfReads: Flow<com.zillit.desktop.feature.chat.data.SelfRead> = emptyFlow()
 
     override fun selfId(): String? = "me"
     override suspend fun sendReaction(messageId: String, emoji: String): ChatMessage? = null
@@ -702,7 +702,7 @@ private class StubChatRepository : ChatRepository {
         ZillitResult.Success(recentsAnswer)
     override fun cached(otherUserId: String): List<ChatMessage>? = null
     override fun lastMessageOf(otherUserId: String): ChatMessage? = null
-    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) = Unit
+    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) = true
     override fun markThreadRead(peerId: String, uptoMillis: Long) = Unit
     override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> = emptyMap()
     override fun newestActivity(): Map<String, Long> = emptyMap()

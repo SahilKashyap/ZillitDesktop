@@ -21,17 +21,31 @@ data class LocationBadgeLeaf(
     /** The record a comment row belongs to; blank for a row about the folder itself. */
     val recordId: String,
     val unread: Int,
+    /** The row's `action` — `location_created`, `location_updated`, a comment's own… */
+    val action: String = "",
 )
 
 /**
- * The tool's unread rows, and the reads its screen makes — a gallery opened
- * (Android reads the folder's levels, `markReadFolder`), a record's thread
- * opened (the web's image-chat read, `LCWChatDiscussionV2.jsx:209`).
+ * The tool's unread rows, and the reads its screen makes — a gallery opened,
+ * a record's thread opened (the web's image-chat read,
+ * `LCWChatDiscussionV2.jsx:209`).
  */
 interface LocationBadges {
     val leaves: Flow<List<LocationBadgeLeaf>> get() = emptyFlow()
 
-    fun readGallery(status: LocationStatus, pick: LocationPick) {}
+    /**
+     * A gallery seen: the place, scene and episode's own rows, never a
+     * photo's comments ([isGalleryRow]) — iOS `LocationBadgeViewModel.readToolBagdes`
+     * (`LocationBadgeViewModel.swift:80-102`, `markReadInsideFolderDetail`
+     * `LocalNoticifationRealm.swift:4725-4746`). A comment on one photo is
+     * filed at the same levels; it stays on that photo's dot until its thread
+     * is opened, rather than vanishing with the gallery.
+     *
+     * [sweep] reads every row at the levels whatever its action — for rows
+     * no gallery lists (a deleted place, a scene edited away), which nothing
+     * on screen could ever open.
+     */
+    fun readGallery(status: LocationStatus, pick: LocationPick, sweep: Boolean = false) {}
 
     fun readRecord(recordId: String) {}
 
@@ -48,6 +62,19 @@ interface LocationBadges {
         fun statusOf(unit: String): LocationStatus? = LocationStatus.entries.firstOrNull { unitOf(it) == unit }
 
         const val TOOL = "location_tool_label"
+
+        /** The actions a gallery opened reads — iOS's `unitAction_1` and `unitAction_2`. */
+        val GALLERY_ACTIONS: Set<String> = setOf("location_created", "location_updated")
+
+        /**
+         * Whether opening a gallery reads a row filed at its levels: a
+         * created/updated row as iOS reads it, and any other row that is no
+         * photo's comment ([recordId] blank). iOS's action filter alone would
+         * strand a row of a third action on the gallery with nothing to read
+         * it; the comments it exists to spare are the rows naming a record.
+         */
+        fun isGalleryRow(action: String, recordId: String): Boolean =
+            action in GALLERY_ACTIONS || recordId.isBlank()
     }
 }
 
@@ -66,6 +93,11 @@ data class LocationUnread(val leaves: List<LocationBadgeLeaf> = emptyList()) {
 
     fun pick(status: LocationStatus, pick: LocationPick): Int =
         leaves.filter { it.status == status && it.matches(pick) }.sumOf { it.unread }
+
+    /** What opening the gallery reads — see [LocationBadges.isGalleryRow]. */
+    fun galleryReads(status: LocationStatus, pick: LocationPick): Int =
+        leaves.filter { it.status == status && it.matches(pick) && LocationBadges.isGalleryRow(it.action, it.recordId) }
+            .sumOf { it.unread }
 
     fun record(recordId: String): Int =
         if (recordId.isBlank()) 0 else leaves.filter { it.recordId == recordId }.sumOf { it.unread }

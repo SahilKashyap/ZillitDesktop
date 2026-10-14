@@ -79,6 +79,7 @@ private enum class SharedTab(private val labelKey: String) {
 }
 
 /** What the panel needs from the thread around it, gathered once. */
+@Suppress("LongParameterList") // This IS the bag that keeps the panel's own signatures short.
 internal class InfoHooks(
     val loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
     val media: BubbleMedia,
@@ -212,6 +213,9 @@ private fun Section(content: @Composable () -> Unit) {
 }
 
 /** Face, name, the lines that place them, and the call buttons. */
+// One card read top to bottom; each branch is a line shown only when the
+// person or room has it, and splitting it would scatter that order.
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHooks, group: GroupInfoState?) {
     Column(

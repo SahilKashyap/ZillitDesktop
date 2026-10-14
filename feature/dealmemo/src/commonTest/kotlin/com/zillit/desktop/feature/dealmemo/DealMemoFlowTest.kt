@@ -143,6 +143,7 @@ class DealMemoFlowTest {
         headerProvider = { _, _, _, _ -> emptyMap() },
     )
 
+    private val badgeCounts = MutableStateFlow(DealBadgeCounts())
     private val readTabs = mutableListOf<DealBadgeUnit>()
     private val readDeals = mutableListOf<Pair<DealBadgeUnit, String>>()
     private var savedFile: String? = null
@@ -158,7 +159,7 @@ class DealMemoFlowTest {
         reference = DealReferenceSource(apiClient, config),
         viewer = { viewer },
         badges = object : DealMemoBadgeSource {
-            override val counts = MutableStateFlow(DealBadgeCounts())
+            override val counts = badgeCounts
             override fun readTab(unit: DealBadgeUnit) {
                 readTabs += unit
             }
@@ -223,6 +224,23 @@ class DealMemoFlowTest {
         assertEquals(DealMemoRoute.Tab(DealTab.MyDeal), model.state.value.page)
         assertEquals(listOf(DealBadgeUnit.MyDeal), readTabs)
         assertEquals(0, count(HttpMethod.Get, "/deal-memo/deals"), "crew never fetch the production's deals")
+    }
+
+    @Test
+    fun `the NDA unit is read as the tool is shown, never as an NDA lands while it is open`() = runTest(dispatcher) {
+        badgeCounts.value = DealBadgeCounts(tabs = DealBadgeUnit.entries.associateWith { 0 } + (DealBadgeUnit.Nda to 2))
+        val model = viewModel()
+        model.start()
+        settle { model.state.value.deals.loaded }
+        assertEquals(1, readTabs.count { it == DealBadgeUnit.Nda }, "the tool is the desktop's NDA door")
+
+        badgeCounts.value = DealBadgeCounts(tabs = DealBadgeUnit.entries.associateWith { 0 } + (DealBadgeUnit.Nda to 3))
+        advanceUntilIdle()
+        assertEquals(1, readTabs.count { it == DealBadgeUnit.Nda }, "nobody was shown the new one")
+
+        model.start()
+        advanceUntilIdle()
+        assertEquals(2, readTabs.count { it == DealBadgeUnit.Nda }, "showing the tool again reads it")
     }
 
     // -- list actions ---------------------------------------------------------------------------
@@ -341,10 +359,8 @@ class DealMemoFlowTest {
         val model = viewModel()
         model.start()
         model.onEvent(DealMemoEvent.Navigate(DealMemoRoute.Tab(DealTab.Notices)))
-        settle {
-            model.state.value.notices.loaded &&model.state.value.notices.template.startsWith("Dear") &&
-                DealBadgeUnit.Notices in readTabs
-        }
+        settle { model.state.value.notices.loaded && model.state.value.notices.template.startsWith("Dear") }
+        assertTrue(DealBadgeUnit.Notices !in readTabs, "the tab is read deal by deal, never whole on entry")
 
         model.onEvent(NoticesEvent.OpenSend(model.state.value.notices.rows.last()))
         val draft = assertNotNull(model.state.value.notices.send)
@@ -388,6 +404,9 @@ class DealMemoFlowTest {
         val body = calls.last { it.second.endsWith("/deals/d2/deactivate") }.third!!
         assertEquals(1_787_184_000_000L, body["last_pay_date"]!!.jsonPrimitive.long)
         assertTrue("d2" in model.state.value.notices.deactivatedHere)
+        // iOS reads the deal's notice once its deactivation lands (`DMNoticesPage.swift:493`).
+        assertTrue(DealBadgeUnit.Notices to "d2" in readDeals, "read: $readDeals")
+        assertTrue(DealBadgeUnit.Notices !in readTabs)
         model.onEvent(NoticesEvent.OpenDeactivate(deal))
         assertNull(model.state.value.notices.deactivate, "the button does not come back")
     }

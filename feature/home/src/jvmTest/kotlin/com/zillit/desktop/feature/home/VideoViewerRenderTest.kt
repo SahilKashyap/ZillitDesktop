@@ -245,7 +245,10 @@ class VideoViewerRenderTest {
         onNodeWithText("Could not play this video.").assertExists()
         onNodeWithText("Open outside the app").performClick()
         waitForIdle()
-        assertEquals(listOf<HomeFeedEvent>(HomeFeedEvent.OpenAttachment("n1", clip)), fired)
+        assertEquals(
+            listOf<HomeFeedEvent>(HomeFeedEvent.OpenAttachment("n1", clip)),
+            fired.filterNot { it is HomeFeedEvent.Watching },
+        )
     }
 
     @Test
@@ -267,7 +270,10 @@ class VideoViewerRenderTest {
 
         // The save-and-open goes through the model, as every other open does —
         // the post's id is what lets a call sheet open as its watermarked copy.
-        assertEquals(listOf<HomeFeedEvent>(HomeFeedEvent.OpenAttachment("n1", clip)), fired)
+        assertEquals(
+            listOf<HomeFeedEvent>(HomeFeedEvent.OpenAttachment("n1", clip)),
+            fired.filterNot { it is HomeFeedEvent.Watching },
+        )
         // The viewer went first, so the OS window does not open behind it.
         onNodeWithContentDescription("Close viewer").assertDoesNotExist()
     }

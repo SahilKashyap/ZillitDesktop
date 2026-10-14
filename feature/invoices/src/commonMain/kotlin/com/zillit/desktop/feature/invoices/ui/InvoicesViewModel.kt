@@ -118,24 +118,18 @@ class InvoicesViewModel(
         refresh()
     }
 
-    /**
-     * Payment Runs' tab-entry read — the one whole-`level_1` read the
-     * accountant console makes: `payment_runs`, as the page opens and again
-     * whenever a run lands while it is on screen (`PaymentsPage.jsx:959-977`,
-     * ZL-20693).
-     *
-     * Every other accountant page reads row by row, as the web's does
-     * (`emitInvoiceLevelRead`): Pre-approval as a review opens, the Approval
-     * Queue once a decision lands, Entry as the coding screen opens, Credit
-     * Notes and Sales on a row click, the Inbox as its review opens, and the
-     * Register never — so unread work keeps its chip until it is looked at.
-     * The department board reads row by row too ([readDepartmentRow]).
-     */
-    private fun readPaymentsTab() {
-        if (!currentState.isAccountant || currentState.page != AccountantPage.Payments) return
-        val key = AccountantPage.Payments.badgeKey ?: return
-        if ((currentState.unread[key] ?: 0) > 0) badges.read(key)
-    }
+    // Nothing here reads a whole page. Payment Runs used to read all of
+    // `payment_runs` as it opened and again whenever a run landed on screen
+    // (the web's tab-entry read, `PaymentsPage.jsx:959-977`); iOS reads one run
+    // at a time, as it is approved or rejected (`PaymentRunApprovalPage.swift:325,
+    // 338`), and so does this console now ([readPaymentRunRow]) — a run waiting on
+    // someone keeps its chip until it is decided. An invoice listed there is read
+    // as its detail opens. Every other page reads row by row as well
+    // (`emitInvoiceLevelRead`): Pre-approval as a review opens, the Approval
+    // Queue once a decision lands, Entry as the coding screen opens, Credit
+    // Notes and Sales on a row click, the Inbox as its review opens, and the
+    // Register never. The department board reads row by row too
+    // ([readDepartmentRow]).
 
     /**
      * The coding screen's read — `EntryDetailModal`'s mark-read on open
@@ -164,8 +158,7 @@ class InvoicesViewModel(
     private fun listenOnce() {
         if (listening) return
         listening = true
-        // A run landing while Payment Runs is on screen is read as it lands.
-        launch { badges.counts.collect { counts -> setState { copy(unread = counts) }.also { readPaymentsTab() } } }
+        launch { badges.counts.collect { counts -> setState { copy(unread = counts) } } }
         // Per row, for every table's chips (`renderUnread`) — and an open
         // coding screen reads what lands on its own invoice.
         launch {
@@ -424,7 +417,6 @@ class InvoicesViewModel(
             )
         }
         refresh()
-        readPaymentsTab()
     }
 
     private fun openRoute(path: String) {
@@ -434,7 +426,6 @@ class InvoicesViewModel(
         }
         if (applyRoute(path)) {
             refresh()
-            readPaymentsTab()
         }
         openPostedDeepLink(path)
     }
@@ -1177,7 +1168,10 @@ class InvoicesViewModel(
     /**
      * A payment run's unread read on the accountant console — the web's
      * `emitInvoiceLevelRead({ level_1: payment_runs, invoiceId: run.id })`
-     * after an approve or a reject lands (`PaymentsPage.jsx:1271-1275, 2308-2312`).
+     * after an approve or a reject lands (`PaymentsPage.jsx:1271-1275, 2308-2312`),
+     * iOS's `readInvoiceBadges(section: .paymentRuns, id:)` on the same two
+     * buttons (`PaymentRunApprovalPage.swift:325, 338`). The only way a run's
+     * unread clears on this console.
      */
     internal fun readPaymentRunRow(id: String) {
         val key = AccountantPage.Payments.badgeKey

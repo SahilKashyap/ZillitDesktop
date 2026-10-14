@@ -283,6 +283,23 @@ class PoLowGapsTest {
         assertEquals("purchase_order_label", PoBadgeBucket.Order.level2)
     }
 
+    @Test
+    fun `an order's query thread counts on every tab, under the viewer's tool only`() {
+        val unread = PoUnread(
+            listOf(
+                leaf(PoBadges.LEVEL_ALL_POS, PoBadges.ACTION_QUERY, 1),
+                leaf(PoBadges.LEVEL_QUEUE, PoBadges.ACTION_QUERY, 2),
+                leaf(PoBadges.LEVEL_QUEUE, PoBadges.ACTION_ORDER, 4),
+                PoBadgeLeaf(
+                    PoBadges.TOOL_PO, PoBadges.UNIT_PO, PoBadges.LEVEL_MY_POS, PoBadges.ACTION_QUERY, "po-1", 8,
+                ),
+            ),
+        )
+        assertEquals(3, unread.query(PoBadges.TOOL_HUB, "po-1"))
+        assertEquals(8, unread.query(PoBadges.TOOL_PO, "po-1"))
+        assertEquals(0, unread.query(PoBadges.TOOL_HUB, "po-2"))
+    }
+
     // -- 10. the attachment's own words ------------------------------------------------------------------------------
 
     @Test
@@ -492,10 +509,14 @@ class PoLowGapsFlowTest {
 
     private class Reads(leaves: List<PoBadgeLeaf>) : PoBadges {
         override val leaves: Flow<List<PoBadgeLeaf>> = MutableStateFlow(leaves)
-        val reads = mutableListOf<List<Any>>()
+        val sent = mutableListOf<List<Any>>()
 
         override fun readOrder(tool: String, level1: String, orderId: String, bucket: PoBadgeBucket) {
-            reads += listOf(tool, level1, orderId, bucket)
+            sent += listOf(tool, level1, orderId, bucket)
+        }
+
+        override fun readQuery(tool: String, orderId: String) {
+            sent += listOf(tool, orderId, PoBadgeBucket.Query)
         }
     }
 
@@ -518,17 +539,17 @@ class PoLowGapsFlowTest {
         runCurrent()
         assertEquals(
             listOf(listOf<Any>(PoBadges.TOOL_HUB, PoBadges.LEVEL_ALL_POS, "po-1", PoBadgeBucket.Order)),
-            reads.reads,
+            reads.sent,
             "the query rows on the same tab stay lit",
         )
 
         model.onEvent(PoEvent.OpenQuery("po-1"))
         runCurrent()
         assertEquals(
-            listOf<Any>(PoBadges.TOOL_HUB, PoBadges.LEVEL_QUEUE, "po-1", PoBadgeBucket.Query),
-            reads.reads.last(),
-            "the thread is read from the queue slice, whichever tab opened it",
+            listOf<Any>(PoBadges.TOOL_HUB, "po-1", PoBadgeBucket.Query),
+            reads.sent.last(),
+            "the thread is read on every tab at once — no level_1, as iOS reads it",
         )
-        assertEquals(2, reads.reads.size)
+        assertEquals(2, reads.sent.size)
     }
 }

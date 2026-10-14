@@ -209,6 +209,33 @@ private data class BoardUi(
     val selected: Set<String>? = null,
 )
 
+/** The board's side effects: a hand-off open, and whether anybody is looking. */
+@Composable
+private fun BoardEffects(
+    state: HomeFeedUiState,
+    onOpenAttachment: (NoticeAttachment) -> Unit,
+    onEvent: (HomeFeedEvent) -> Unit,
+) {
+    HandOffOpens(state.pendingOpen, onOpenAttachment, onEvent)
+    BoardWatchReporter(onEvent)
+}
+
+/**
+ * Tells the board whether anybody is looking at it — the window focused and
+ * this composition alive (an inactive workspace tab is disposed, so being
+ * composed is being the tab on show). A board's read is a "read by" on
+ * everyone else's screen; see `HomeFeedViewModel.readBoard`.
+ */
+@Composable
+private fun BoardWatchReporter(onEvent: (HomeFeedEvent) -> Unit) {
+    val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    val current by androidx.compose.runtime.rememberUpdatedState(onEvent)
+    LaunchedEffect(windowFocused) { current(HomeFeedEvent.Watching(windowFocused)) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { current(HomeFeedEvent.Watching(false)) }
+    }
+}
+
 /**
  * Home: a tab per unit, and that unit's notice board beneath it.
  *
@@ -253,7 +280,7 @@ internal fun HomeFeedScreen(
     // An OS drag is over the board; drives the drop overlay.
     var dropHover by remember { mutableStateOf(false) }
 
-    HandOffOpens(state.pendingOpen, onOpenAttachment, onEvent)
+    BoardEffects(state, onOpenAttachment, onEvent)
     // Android's Gallery, from the posts on screen; the viewer's arrows too.
     val library = remember(state.notices) { state.notices.toLibrary() }
 

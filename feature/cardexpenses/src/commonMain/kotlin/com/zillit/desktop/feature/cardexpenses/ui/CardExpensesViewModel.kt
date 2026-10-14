@@ -102,10 +102,17 @@ class CardExpensesViewModel(
     private var pendingPage: CardDestination? = null
 
     /**
-     * The page on screen is its read — but only on the three pages the web
-     * reads whole on mount (Smart Alerts, Top-Up To Do, Card Extension).
-     * Everywhere else a row is read as it is opened ([readRow]), so the
-     * other rows keep their chips, as on the web.
+     * The page on screen is its read — but only on Smart Alerts. Everywhere
+     * else a row is read as it is opened or acted on ([readRow]), so the other
+     * rows keep their chips.
+     *
+     * Top-Up To Do and Card Extension used to be read whole on mount, as the
+     * web's are; iOS reads them one top-up at a time (`TopUpDetailPage.swift:145`,
+     * `CardExtensionTabView.swift:305-312`) and so do they now ([readTopUp]).
+     * Smart Alerts keeps the web's whole read (`SmartAlertsPage.jsx`): iOS
+     * counts its rows but never reads them (`CardExpensesBadgeViewModel.swift:278`
+     * and no reader), and its alerts carry no row chip to read one by one, so
+     * without this the tab's count could never fall on the desktop.
      */
     private fun readPage(destination: CardDestination) {
         if (destination !in WHOLE_READ_PAGES) return
@@ -595,9 +602,5 @@ class CardExpensesViewModel(
     }
 }
 
-/** The pages the web reads whole on mount; every other page reads row by row. */
-private val WHOLE_READ_PAGES = setOf(
-    CardDestination.Alerts,
-    CardDestination.TopUpQueue,
-    CardDestination.CardExtension,
-)
+/** The pages read whole on mount — Smart Alerts alone; every other page reads row by row. */
+private val WHOLE_READ_PAGES = setOf(CardDestination.Alerts)

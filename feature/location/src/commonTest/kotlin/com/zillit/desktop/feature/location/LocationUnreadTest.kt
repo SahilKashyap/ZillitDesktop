@@ -9,7 +9,9 @@ import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationUnread
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * The tool's badges are one set of leaves counted at every grain — a tab
@@ -25,7 +27,8 @@ class LocationUnreadTest {
         episode: String = "",
         recordId: String = "",
         unread: Int = 1,
-    ) = LocationBadgeLeaf(status, location, scene, episode, recordId, unread)
+        action: String = "location_created",
+    ) = LocationBadgeLeaf(status, location, scene, episode, recordId, unread, action)
 
     private fun folder(key: String) = LocationFolder(key, emptyList(), emptyList(), emptyList(), emptyList(), 0L)
 
@@ -53,6 +56,30 @@ class LocationUnreadTest {
         assertEquals(2, unread.pick(LocationStatus.Selected, LocationPick("Lucknow", "12")))
         assertEquals(0, unread.pick(LocationStatus.Selected, LocationPick("Lucknow", "12", episode = "2")))
         assertEquals(1, unread.pick(LocationStatus.Published, LocationPick("Delhi", "3", episode = "1")))
+    }
+
+    @Test
+    fun `opening a gallery reads its created and updated rows, never a photo's comments`() {
+        val gallery = LocationUnread(
+            listOf(
+                leaf(action = "location_created"),
+                leaf(action = "location_updated", unread = 2),
+                leaf(recordId = "rec-1", action = "location_new_unit_chat"),
+            ),
+        )
+        val pick = LocationPick("Lucknow", "12")
+
+        assertEquals(4, gallery.pick(LocationStatus.Selected, pick), "the tile still shows every row")
+        assertEquals(3, gallery.galleryReads(LocationStatus.Selected, pick))
+        assertEquals(0, LocationUnread(listOf(leaf(recordId = "rec-1", action = "location_new_unit_chat")))
+            .galleryReads(LocationStatus.Selected, pick), "a gallery holding only comments has nothing to read")
+    }
+
+    @Test
+    fun `a gallery row of a third action is still the gallery's to read`() {
+        assertTrue(LocationBadges.isGalleryRow("location_deleted", recordId = ""))
+        assertTrue(LocationBadges.isGalleryRow("location_updated", recordId = "rec-1"))
+        assertFalse(LocationBadges.isGalleryRow("location_new_unit_chat", recordId = "rec-1"))
     }
 
     @Test

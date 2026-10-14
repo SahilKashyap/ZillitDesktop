@@ -1,12 +1,14 @@
 package com.zillit.desktop.feature.transporthub.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
@@ -46,6 +48,11 @@ class HubToolProvider(
         var notice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Rows landing on the open section are read only while somebody is
+        // looking; a window behind another leaves them for when it returns.
+        val focused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(viewModel, focused) { viewModel.onEvent(HubEvent.WindowFocus(focused)) }
+        DisposableEffect(viewModel) { onDispose { viewModel.onEvent(HubEvent.WindowFocus(false)) } }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

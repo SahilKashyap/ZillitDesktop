@@ -39,13 +39,19 @@ enum class DocDistDestination(val slug: String, private val labelKey: String) {
     val label: String get() = str(labelKey)
 
     /**
-     * The units whose rows a section shows and reads on entry (`Library.jsx:150-153`);
-     * empty for the library itself.
+     * The units whose rows a section shows and reads on entry; empty for the
+     * library itself.
+     *
+     * iOS's toolbar (`DDLibraryView.swift:601-615`, ZL-19431): History is
+     * "one badge, two emits" — a distribution sent and a publication — and
+     * Distribution Lists is the saved presets alone. A `…_distribution_label`
+     * row is a send, which History lists; counted on Lists it badged a page
+     * that never shows it.
      */
     val badgeUnits: List<String>
         get() = when (this) {
-            History -> listOf(DocDistBadges.UNIT_PUBLICATION)
-            Lists -> listOf(DocDistBadges.UNIT_DISTRIBUTION, DocDistBadges.UNIT_PRESET)
+            History -> listOf(DocDistBadges.UNIT_DISTRIBUTION, DocDistBadges.UNIT_PUBLICATION)
+            Lists -> listOf(DocDistBadges.UNIT_PRESET)
             Templates -> listOf(DocDistBadges.UNIT_TEMPLATE)
             Library, AddressBook -> emptyList()
         }

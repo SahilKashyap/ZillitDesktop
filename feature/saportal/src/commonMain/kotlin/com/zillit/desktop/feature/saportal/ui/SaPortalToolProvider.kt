@@ -1,12 +1,14 @@
 package com.zillit.desktop.feature.saportal.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
@@ -44,6 +46,11 @@ class SaPortalToolProvider(
         var failure by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // The page on screen is read as rows land only while somebody is
+        // looking; the view model outlives this window.
+        val focused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(viewModel, focused) { viewModel.onEvent(SaEvent.WindowFocus(focused)) }
+        DisposableEffect(viewModel) { onDispose { viewModel.onEvent(SaEvent.WindowFocus(false)) } }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

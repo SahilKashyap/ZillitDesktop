@@ -116,7 +116,9 @@ class SqlNotificationLedgerStore(database: ZillitDatabase) : NotificationLedgerS
         chatRoomId = record.chatRoomId,
         senderId = record.senderId,
         chatUnitId = record.chatUnitId,
-        calendarEnd = record.calendarEnd,
+        // The column predates the iOS expiry rule and keeps its name; it now
+        // holds the expiry, not the raw end time.
+        calendarEnd = record.calendarExpiry,
         fromApi = record.fromApi.bit(),
         raw = record.raw,
     )
@@ -147,12 +149,25 @@ class SqlNotificationLedgerStore(database: ZillitDatabase) : NotificationLedgerS
         chatRoomId = row.chatRoomId,
         senderId = row.senderId,
         chatUnitId = row.chatUnitId,
-        calendarEnd = row.calendarEnd,
+        calendarExpiry = if (row.tool == NotificationRecord.CALENDAR_TOOL) storedExpiry(row) else row.calendarEnd,
         fromApi = row.fromApi != 0L,
         raw = row.raw,
     )
 
     private fun Boolean.bit(): Long = if (this) 1L else 0L
+
+    /**
+     * A calendar row's expiry, re-read from the row as sent: rows written
+     * before the iOS rule ([calendarExpiryOf]) stored the bare end time, which
+     * is wrong for a series and missing for a legacy invite. Only calendar rows
+     * pay for the parse.
+     */
+    private fun storedExpiry(row: NotificationLedger): Long? {
+        val wire = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(row.raw) }.getOrNull()
+            as? kotlinx.serialization.json.JsonObject
+            ?: return row.calendarEnd
+        return calendarExpiryOf(wire.referenceData())
+    }
 
     private companion object {
         const val CHUNK = 500

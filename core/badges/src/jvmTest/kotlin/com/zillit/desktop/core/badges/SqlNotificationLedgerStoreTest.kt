@@ -26,7 +26,7 @@ class SqlNotificationLedgerStoreTest {
             tool = "sides_label",
             unit = "u", level1 = "a", level2 = "b", level3 = "c", action = "act", referenceId = "ref",
             sender = "s", receiver = "r", created = updated, updated = updated, isGlobal = true,
-            chatRoomId = "room", senderId = "peer", chatUnitId = "cu", calendarEnd = 5L, fromApi = fromApi,
+            chatRoomId = "room", senderId = "peer", chatUnitId = "cu", calendarExpiry = 5L, fromApi = fromApi,
             raw = """{"notification_uuid":"$id"}""",
         )
 

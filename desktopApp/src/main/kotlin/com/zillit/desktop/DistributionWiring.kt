@@ -2,6 +2,8 @@ package com.zillit.desktop
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.badges.BadgeDrilldownQuery
+import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
@@ -13,6 +15,7 @@ import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.pagedistribution.data.DistributionRepositoryImpl
+import com.zillit.desktop.feature.pagedistribution.domain.DistributionRead
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionTool
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionTransfer
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionViewer
@@ -127,7 +130,7 @@ internal fun AppGraph.Ready.buildDistribution(
     },
     nowMillis = System::currentTimeMillis,
     // The web's `notification:read` for a list or a folder.
-    onListViewed = { module, segment -> emitSegmentRead(this, segment = segment, module = module) },
+    onListViewed = { read -> readDistributionList(read) },
     folderUnread = distributionFolderUnread(tool),
     tabUnread = distributionTabUnread(tool),
     rights = rightsRequests,
@@ -135,30 +138,79 @@ internal fun AppGraph.Ready.buildDistribution(
 )
 
 /**
+ * One look at a list, read here and on the server.
+ *
+ * A whole single list clears every row of its tool — iOS's
+ * `updateMarkReadByTool` (`LocalNoticifationRealm.swift:848-875`) behind
+ * `readToolMessage(<tool label>)` (`FirebaseRealmTimeDB+Ext.swift:1572-1598,
+ * 1626-1652, 1836-1862`). The tab's chip counts the tool, and a row's unit
+ * need not be the tool label — the web reads Full Script by the unit
+ * `script_distibution_script_label` — so the read by unit this used to make
+ * left rows of another unit standing on the chip. Every one of the tab's
+ * segments is sent; the ledger flips once.
+ *
+ * A folder clears its own unit within its own tool. iOS reads a page or
+ * D.O.D folder by unit alone (`updateMarkReadByUnit`, Realm:2093-2121), so
+ * opening script page "12" also read schedule page "12" — not copied.
+ *
+ * Neither touches the bell's rows, as neither iOS read does
+ * (`section != global_label`); the counts below never include them either.
+ */
+private suspend fun AppGraph.Ready.readDistributionList(read: DistributionRead) {
+    val module = read.tab.badgeModule
+    // The view model reads from its badge collectors too; a failed emit must
+    // not take the chips down with it.
+    runCatching {
+        when (read) {
+            is DistributionRead.WholeTab -> {
+                val rows = LedgerRead.Matching("distribution list $module") { row ->
+                    row.tool == module && row.section != BadgeSections.GLOBAL
+                }
+                read.tab.readSegments.forEach { segment ->
+                    emitSegmentRead(this, segment = segment, module = module, read = rows)
+                }
+            }
+            is DistributionRead.Folder -> emitSegmentRead(
+                this,
+                segment = read.key,
+                module = module,
+                read = LedgerRead.Matching("distribution folder $module/${read.key}") { row ->
+                    row.tool == module && row.unit == read.key && row.section != BadgeSections.GLOBAL
+                },
+            )
+        }
+    }.onFailure { ZillitLog.w("DistributionWiring") { "$module read not sent: ${it::class.simpleName}" } }
+}
+
+/**
  * Unread per folder for the tool's folder tab — the service files those
  * rows under the tab's label with `unit=<folder key>`: `dod_label` +
  * folder name for D.O.D, `schedule_distribution_pages_tool_label` +
  * scene number for schedule pages (the web's
  * `toolsUnitBadges[label].data[].unit`). Grouped by `unit` off the ledger
- * so a read or an arrival redraws the card at once.
+ * so a read or an arrival redraws the card at once. Tools-section rows
+ * only, as the Film Tools tile counts them — never one a folder read
+ * would leave standing.
  */
 private fun AppGraph.Ready.distributionFolderUnread(tool: DistributionTool): Flow<Map<String, Int>> {
     val label = tool.tabs.firstOrNull { it.kind is TabKind.Folders }?.badgeModule ?: return emptyFlow()
     return badgeStore.counts
-        .map { badgeStore.split(BadgeDrilldownQuery(groupBy = "unit", tool = label)) }
+        .map { badgeStore.split(BadgeDrilldownQuery(groupBy = "unit", section = BadgeSections.TOOLS, tool = label)) }
         .distinctUntilChanged()
 }
 
 /**
  * Unread per tab — the web's chips on the tab strip, one `toolsUnitBadges`
  * entry per tab label. Grouped by tool off the ledger, then picked by each
- * tab's `badgeModule`.
+ * tab's `badgeModule`. Tools-section rows only, so the chips add up to the
+ * Film Tools tile (which sums these lists) and a read clears all a chip
+ * counts.
  */
 private fun AppGraph.Ready.distributionTabUnread(tool: DistributionTool): Flow<Map<String, Int>> {
     if (tool.tabs.size < 2) return emptyFlow()
     return badgeStore.counts
         .map { _ ->
-            val byTool = badgeStore.split(BadgeDrilldownQuery(groupBy = "tool"))
+            val byTool = badgeStore.split(BadgeDrilldownQuery(groupBy = "tool", section = BadgeSections.TOOLS))
             tool.tabs.associate { tab -> tab.key to (byTool[tab.badgeModule] ?: 0) }
         }
         .distinctUntilChanged()

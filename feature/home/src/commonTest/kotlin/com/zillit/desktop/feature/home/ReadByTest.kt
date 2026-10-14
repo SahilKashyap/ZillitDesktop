@@ -208,6 +208,39 @@ class ReadByTest {
         assertNotNull(model.state.value.error)
     }
 
+    /**
+     * iOS reads a new post only while its page is the one showing. A post
+     * landing on a board behind another window waits until somebody looks.
+     */
+    @Test
+    fun `a post landing while nobody is looking is read when they look`() = runTest(dispatcher) {
+        val viewed = mutableListOf<String>()
+        val model = viewModel(viewed = viewed)
+        advanceUntilIdle()
+        viewed.clear()
+        model.onEvent(HomeFeedEvent.Watching(false))
+
+        model.onEvent(
+            HomeFeedEvent.Realtime(
+                com.zillit.desktop.feature.home.domain.HomeRealtimeEvent.NoticeAdded(
+                    unitId = "u1",
+                    notice = Notice(id = "n2", body = "new", authorName = "Sam"),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        assertEquals(emptyList(), viewed, "nobody saw it yet")
+
+        model.onEvent(HomeFeedEvent.Watching(true))
+        advanceUntilIdle()
+        assertEquals(listOf("u1"), viewed)
+
+        model.onEvent(HomeFeedEvent.Watching(false))
+        model.onEvent(HomeFeedEvent.Watching(true))
+        advanceUntilIdle()
+        assertEquals(listOf("u1"), viewed, "looking again with nothing new reads nothing")
+    }
+
     @Test
     fun `a post for another board is not marked read`() = runTest(dispatcher) {
         val viewed = mutableListOf<String>()

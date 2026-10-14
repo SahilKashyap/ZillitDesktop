@@ -41,10 +41,30 @@ class SaPortalViewModel(
     private var listening = false
     private var watchingBadges = false
 
-    /** The page on screen is its read — the web's `emitSaTabRead`, the whole unit. */
+    /** Whether the window is in front — see [SaEvent.WindowFocus]. Nobody, until it says so. */
+    private var watching = false
+
+    /**
+     * The page on screen, read — only the profile is a read on its own: the
+     * vouchers and the queries clear per record as each is opened
+     * ([SaBadges]), so a list being shown reads nothing. The profile reads
+     * the artiste's own record once it is known, the unit until then
+     * (`SAProfileScreen.swift:71-79`).
+     */
     private fun readPage(destination: SaDestination) {
-        val key = destination.badgeKey ?: return
-        if ((currentState.unread[key] ?: 0) > 0) badges.read(key)
+        if (destination != SaDestination.Profile) return
+        if ((currentState.unread[SaBadges.PROFILE] ?: 0) == 0) return
+        val artiste = currentState.profile?.id?.takeIf { it.isNotBlank() }
+        if (artiste == null) {
+            badges.read(SaBadges.PROFILE)
+        } else {
+            badges.readEntity(SaBadges.PROFILE, artiste, SaBadges.ARTISTE_KIND)
+        }
+    }
+
+    /** One record opened: its rows in that unit and bucket read, whatever the count says. */
+    private fun readRecord(unit: String, id: String, kind: String) {
+        if (id.isNotBlank()) badges.readEntity(unit, id, kind)
     }
 
     fun start() {
@@ -55,9 +75,10 @@ class SaPortalViewModel(
             launch {
                 badges.counts.collect { counts ->
                     setState { copy(unread = counts) }
-                    readPage(currentState.destination)
+                    if (watching) readPage(currentState.destination)
                 }
             }
+            launch { badges.entityCounts.collect { tree -> setState { copy(entityUnread = tree) } } }
         }
         val identity = viewer()
         setState { copy(viewer = identity) }
@@ -113,6 +134,12 @@ class SaPortalViewModel(
             }
 
             SaEvent.Refresh -> refresh()
+            is SaEvent.WindowFocus -> {
+                val gained = event.focused && !watching
+                watching = event.focused
+                if (gained) readPage(currentState.destination)
+            }
+
             SaEvent.ClearNotice -> setState { copy(notice = null) }
             SaEvent.DismissError -> setState { copy(error = null) }
 
@@ -121,7 +148,11 @@ class SaPortalViewModel(
                 loadVouchers()
             }
 
-            is SaEvent.OpenVoucher -> openVoucher(event.id)
+            is SaEvent.OpenVoucher -> {
+                readRecord(SaBadges.VOUCHERS, event.id, SaBadges.VOUCHER_KIND)
+                openVoucher(event.id)
+            }
+
             SaEvent.CloseVoucher -> setState { copy(openVoucher = null) }
 
             is SaEvent.StartSigning -> setState { copy(sign = SignState(voucher = event.voucher)) }
@@ -131,7 +162,11 @@ class SaPortalViewModel(
             SaEvent.ConfirmSign -> confirmSign()
             SaEvent.CancelSign -> setState { copy(sign = null) }
 
-            is SaEvent.OpenQuery -> openQuery(event.id)
+            is SaEvent.OpenQuery -> {
+                readRecord(SaBadges.QUERIES, event.id, SaBadges.QUERY_KIND)
+                openQuery(event.id)
+            }
+
             SaEvent.CloseQuery -> setState { copy(openQuery = null, replyDraft = "") }
             is SaEvent.ReplyDraft -> setState { copy(replyDraft = event.text) }
             SaEvent.SendReply -> sendReply()
@@ -211,7 +246,12 @@ class SaPortalViewModel(
         setState { copy(loading = true) }
         launch {
             when (val result = repository.profile()) {
-                is ZillitResult.Success -> setState { copy(loading = false, profile = result.data) }
+                is ZillitResult.Success -> {
+                    setState { copy(loading = false, profile = result.data) }
+                    // The record is known now: the read can name it.
+                    if (currentState.destination == SaDestination.Profile) readPage(SaDestination.Profile)
+                }
+
                 is ZillitResult.Failure -> settleFailure(result.error)
             }
         }

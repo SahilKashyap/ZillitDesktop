@@ -11,6 +11,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
 import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvBadges
 import com.zillit.desktop.feature.transporthub.domain.AvInsuranceStatus
 import com.zillit.desktop.feature.transporthub.domain.AvSourceType
 import com.zillit.desktop.feature.transporthub.domain.AvDraft
@@ -23,6 +24,7 @@ import com.zillit.desktop.feature.transporthub.domain.ShuttleStop
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.DriverDetailsPatch
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeBucket
+import com.zillit.desktop.feature.transporthub.domain.HubBadgeRead
 import com.zillit.desktop.feature.transporthub.domain.HubHost
 import com.zillit.desktop.feature.transporthub.domain.HubMediaKind
 import com.zillit.desktop.feature.transporthub.domain.HubPassenger
@@ -69,10 +71,26 @@ class HubViewModel(
     private val nowMillis: () -> Long,
     /** Marks a bucket's badge rows read — the web's `useReadHubBadges`. */
     private val onSectionViewed: suspend (bucket: HubBadgeBucket) -> Unit = {},
+    /** Marks one tab's, record's or thread's rows read — see [HubBadgeRead]. */
+    private val onBadgeRead: suspend (read: HubBadgeRead) -> Unit = {},
     private val host: HubHost = HubHost.None,
 ) : ZillitViewModel<HubUiState, HubEvent, HubEffect>(HubUiState()) {
 
     private var listening = false
+
+    /** Whether the window is in front — see [HubEvent.WindowFocus]. Nobody, until it says so. */
+    private var watching = false
+
+    /** False until the first counts land: a first answer is a baseline, not a rise. */
+    private var badgesSeen = false
+
+    /**
+     * The Action Vehicles tab last read since the section was entered — null
+     * until one is. Landing on a tab reads it like tapping one, the first load
+     * included (`ActionVehiclesView.swift:805-824`), and a reload that settles
+     * on the same tab does not read it again.
+     */
+    private var avTabRead: AvTab? = null
 
     private companion object {
         /** Where a position is opened, the older tool's own link shape. */
@@ -93,7 +111,8 @@ class HubViewModel(
                 section = HubSection.homeFor(viewer.role),
             )
         }
-        refreshAll()
+        avTabRead = null
+        refreshAll(land = true)
         listenOnce()
     }
 
@@ -127,9 +146,77 @@ class HubViewModel(
                 }
             }
         }
-        launch {
-            host.badges.collect { counts -> setState { copy(badges = counts) } }
+        launch { host.badges.collect { counts -> onBadgeCounts(counts) } }
+        launch { host.actionVehicleBadges.collect { badges -> onActionVehicleBadges(badges) } }
+    }
+
+    // Badge reads -------------------------------------------------------------
+
+    /**
+     * Every bucket the section reads, read — opening it, or landing on it.
+     * [onlyCounting] skips a bucket with nothing unread, so the landing read
+     * does not repeat the one the window coming to the front just sent.
+     */
+    private suspend fun readSection(section: HubSection, onlyCounting: Boolean = false) {
+        section.readsOnOpen
+            .filter { bucket -> !onlyCounting || (currentState.badges[bucket.name] ?: 0) > 0 }
+            .forEach { bucket -> onSectionViewed(bucket) }
+    }
+
+    /**
+     * New counts. A bucket of the open section that rises while somebody is
+     * looking is read again: iOS My Rides re-reads on every ride or trip
+     * update while it is open (`MyRidesView.swift:659-682`), because a
+     * rejection or a completion lands while the passenger is sitting on the
+     * list. Guarded on the rise, so the read's own fall is not a trigger.
+     */
+    private suspend fun onBadgeCounts(counts: Map<String, Int>) {
+        val before = currentState.badges
+        val baseline = !badgesSeen
+        badgesSeen = true
+        setState { copy(badges = counts) }
+        if (baseline || !watching) return
+        currentState.section.readsOnOpen
+            .filter { bucket -> (counts[bucket.name] ?: 0) > (before[bucket.name] ?: 0) }
+            .forEach { bucket -> onSectionViewed(bucket) }
+    }
+
+    /**
+     * New Action Vehicle counts. A comment landing on the thread that is open
+     * is in front of the reader, so it is read (`ActionVehiclesView.swift:
+     * 192-195`) — on the rise only, so one read is sent per new comment.
+     */
+    private suspend fun onActionVehicleBadges(badges: AvBadges) {
+        val before = currentState.avBadges
+        setState { copy(avBadges = badges) }
+        val thread = currentState.avThread?.vehicleId ?: return
+        if (watching && badges.vehicle(thread).comment > before.vehicle(thread).comment) {
+            onBadgeRead(HubBadgeRead.ActionVehicleComments(thread))
         }
+    }
+
+    /**
+     * The window came to the front: whatever counts on what it shows is read,
+     * as a screen appearing is read on the phones. Rows that landed while it
+     * was behind another window were left for this.
+     */
+    private fun onWindowFocus(focused: Boolean) {
+        val gained = focused && !watching
+        watching = focused
+        if (!gained || !currentState.viewer.canView) return
+        launch {
+            readSection(currentState.section, onlyCounting = true)
+            val state = currentState
+            state.avThread?.vehicleId
+                ?.takeIf { state.avBadges.vehicle(it).comment > 0 }
+                ?.let { onBadgeRead(HubBadgeRead.ActionVehicleComments(it)) }
+        }
+    }
+
+    /** The Action Vehicles tab on screen, read — its `update` rows, and on Finalized its `action` rows. */
+    private suspend fun readActionVehicleTab(tab: AvTab) {
+        avTabRead = tab
+        onBadgeRead(HubBadgeRead.ActionVehicleTab(tab.badgeLevel))
     }
 
     override fun onEvent(event: HubEvent) {
@@ -139,6 +226,7 @@ class HubViewModel(
             HubEvent.DismissError -> setState { copy(error = null) }
             HubEvent.DismissConfirm -> setState { copy(confirm = null) }
             is HubEvent.SetHubTheme -> setState { copy(hubDark = event.dark) }
+            is HubEvent.WindowFocus -> onWindowFocus(event.focused)
             is HubEvent.Confirmed -> {
                 setState { copy(confirm = null) }
                 onEvent(event.action)
@@ -172,7 +260,14 @@ class HubViewModel(
 
     // Loading ----------------------------------------------------------------
 
-    private fun refreshAll() {
+    /**
+     * Reloads the directories and the open section. [land] is the hub being
+     * opened: the section it lands on is read as one picked would be — iOS
+     * reads My Trips and Trips on appear (`MyTripsView.swift:171-179`,
+     * `TripsView.swift:115-123`), and nobody picks the landing section, so
+     * reading only on a pick left it counting.
+     */
+    private fun refreshAll(land: Boolean = false) {
         if (!currentState.viewer.canView) return
         setState { copy(loading = true, error = null, nowMs = nowMillis()) }
         launch {
@@ -225,18 +320,23 @@ class HubViewModel(
             }
             loadSection(currentState.section)
             setState { copy(loading = false) }
+            // Once the ledger has answered, a bucket with nothing unread has
+            // nothing to read; before it has, every one is read.
+            if (land) readSection(currentState.section, onlyCounting = badgesSeen)
         }
     }
 
     private fun selectSection(section: HubSection) {
         if (section == currentState.section) return
         setState { copy(section = section, error = null) }
+        if (section == HubSection.ActionVehicles) avTabRead = null
         launch {
             loadSection(section)
             // Opening a section clears its unread rows, as the web does on
             // mount. A bucket that owns its whole unit clears the unit; one
-            // with actions clears only the actions it owns.
-            section.badgeBucket?.let { bucket -> onSectionViewed(bucket) }
+            // with actions clears only the actions it owns. Action Vehicles
+            // reads its landing tab instead, once its records settle it.
+            readSection(section)
         }
     }
 
@@ -295,6 +395,14 @@ class HubViewModel(
                             else -> actionVehicleTabs.firstOrNull() ?: AvTab.Finalized
                         },
                     )
+                }
+                // Landing on a tab reads it, as tapping one does — the first
+                // load included, and again when the records move the viewer
+                // onto another tab. Only while the page is the one showing:
+                // a socket frame reloads these behind any section.
+                val tab = currentState.avTab
+                if (currentState.section == HubSection.ActionVehicles && tab != avTabRead) {
+                    readActionVehicleTab(tab)
                 }
             },
         )
@@ -1128,7 +1236,13 @@ class HubViewModel(
 
     private fun onActionVehicleEvent(event: HubEvent.ActionVehicleEvent) {
         when (event) {
-            is HubEvent.AvTabChanged -> setState { copy(avTab = event.tab, avTabPicked = true) }
+            is HubEvent.AvTabChanged -> {
+                setState { copy(avTab = event.tab, avTabPicked = true) }
+                // A tab picked is read, even the one already showing
+                // (`ActionVehiclesView.swift:389-394`).
+                launch { readActionVehicleTab(event.tab) }
+            }
+
             is HubEvent.AvSearchChanged -> setState { copy(avSearch = event.query) }
             is HubEvent.AvCategoryChanged -> setState { copy(avCategory = event.category) }
             HubEvent.NewActionVehicleRequest -> setState {
@@ -1151,7 +1265,15 @@ class HubViewModel(
                 copy(avEditor = avEditor?.copy(images = avEditor.images - event.slot))
             }
 
-            is HubEvent.OpenActionVehicle -> setState { copy(openActionVehicle = event.id) }
+            is HubEvent.OpenActionVehicle -> {
+                setState { copy(openActionVehicle = event.id) }
+                // Its informational rows on this tab (`ActionVehiclesView.swift:
+                // 408-413`); its action row survives except on Finalized, and
+                // its comments wait for the thread.
+                val level = currentState.avTab.badgeLevel
+                launch { onBadgeRead(HubBadgeRead.ActionVehicleRecord(level, event.id)) }
+            }
+
             HubEvent.CloseActionVehicle -> setState { copy(openActionVehicle = null) }
             is HubEvent.AvTrackerFlowChanged -> setState { copy(avTrackerFlow = event.flow) }
             else -> onActionVehicleWrite(event)
@@ -1197,7 +1319,11 @@ class HubViewModel(
             is HubEvent.AvDecisionChanged -> setState { copy(avDecision = event.decision) }
             HubEvent.SubmitAvDecision -> submitAvDecision()
             HubEvent.CloseAvDecision -> setState { copy(avDecision = null) }
-            is HubEvent.OpenAvThread -> setState { copy(avThread = AvThread(event.vehicleId)) }
+            is HubEvent.OpenAvThread -> {
+                setState { copy(avThread = AvThread(event.vehicleId)) }
+                launch { onBadgeRead(HubBadgeRead.ActionVehicleComments(event.vehicleId)) }
+            }
+
             is HubEvent.AvThreadChanged -> setState { copy(avThread = event.thread) }
             HubEvent.SendAvComment -> sendAvComment()
             HubEvent.CloseAvThread -> setState { copy(avThread = null) }
@@ -1573,7 +1699,14 @@ class HubViewModel(
             is HubEvent.TripEditorChanged -> setState { copy(tripEditor = event.editor) }
             HubEvent.SaveTrip -> saveTrip()
             HubEvent.CloseTripEditor -> setState { copy(tripEditor = null) }
-            is HubEvent.OpenTrip -> openTrip(event.id)
+            is HubEvent.OpenTrip -> {
+                openTrip(event.id)
+                // Every row naming this trip, whichever unit filed it
+                // (`TripDetailView.swift:220-225`). Only on the open itself:
+                // `openTrip` also re-reads a detail already showing.
+                launch { onBadgeRead(HubBadgeRead.TripRecord(event.id)) }
+            }
+
             HubEvent.CloseTrip -> setState { copy(openTrip = null, openTripEvents = emptyList()) }
             is HubEvent.SetTripStatus -> setTripStatus(event.id, event.status)
             is HubEvent.RemindTrip -> remindTrip(event.id)

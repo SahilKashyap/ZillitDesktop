@@ -346,7 +346,10 @@ private fun ToolbarActions(state: CalendarUiState, onEvent: (CalendarEvent2Event
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        InvitationsButton(state.pendingInvitations) { onEvent(CalendarEvent2Event.ShowInvitations) }
+        // iOS's `receivedTotalBadgeCount`: unread invitations, pending and
+        // expired — not the pending list's length, which counts invitations
+        // already seen on another device.
+        InvitationsButton(state.invitationUnread.total) { onEvent(CalendarEvent2Event.ShowInvitations) }
         // A segmented switch rather than a dropdown: three fixed choices are
         // one click each, and the current one is visible at a glance.
         ZillitSegmented(

@@ -58,7 +58,9 @@ data class DistributionTool(
                         countType = "schedule",
                     ),
                     badgeModule = "schedule_distribution_label",
-                    badgeSegment = "schedule_distribution_label",
+                    // The web and iOS agree: the tool label
+                    // (`ScheduleDistributionMain.jsx:607`, `ScheduleDistributionView.swift:227`).
+                    readSegments = listOf("schedule_distribution_label"),
                     publishSubFolder = "Schedule Full",
                 ),
                 DistributionTab(
@@ -72,7 +74,6 @@ data class DistributionTool(
                         scheduleTypeChoice = true,
                     ),
                     badgeModule = "schedule_distribution_pages_tool_label",
-                    badgeSegment = null,
                     publishSubFolder = "Pages",
                 ),
                 DistributionTab(
@@ -87,7 +88,7 @@ data class DistributionTool(
                         countType = "oneline",
                     ),
                     badgeModule = "schedule_oneline_label",
-                    badgeSegment = "schedule_oneline_label",
+                    readSegments = listOf("schedule_oneline_label"),
                     publishSubFolder = "Schedule One Line",
                 ),
             ),
@@ -113,8 +114,11 @@ data class DistributionTool(
                         countType = "script",
                     ),
                     badgeModule = "script_distribution_label",
-                    // The wire's own spelling — `distibution` — is what the badge is keyed by.
-                    badgeSegment = "script_distibution_script_label",
+                    // The two clients disagree, so both go. The web names the
+                    // unit, in the wire's own spelling — `distibution`
+                    // (`RenderScript.jsx:607`); iOS names the tool
+                    // (`ScriptPagesDistributionView.swift:135`, Ext:1572-1598).
+                    readSegments = listOf("script_distibution_script_label", "script_distribution_label"),
                     publishSubFolder = "Full Script",
                 ),
                 DistributionTab(
@@ -128,7 +132,6 @@ data class DistributionTool(
                         scheduleTypeChoice = false,
                     ),
                     badgeModule = "script_distribution_pages_tool_label",
-                    badgeSegment = null,
                     publishSubFolder = "Pages",
                 ),
             ),
@@ -158,7 +161,6 @@ data class DistributionTool(
                         canMove = true,
                     ),
                     badgeModule = "dod_label",
-                    badgeSegment = null,
                     publishSubFolder = null,
                 ),
             ),
@@ -173,15 +175,35 @@ data class DistributionTab(
     /** The catalogue key for the tab's on-screen name. */
     val labelKey: String,
     val kind: TabKind,
-    /** The `notification:read` module for this list. */
+    /**
+     * The wire tool label this list's rows are filed under — what its chip
+     * counts, what a read of it clears, and the `notification:read` module.
+     */
     val badgeModule: String,
-    /** The read segment when the whole list is one segment; folder lists use the folder key. */
-    val badgeSegment: String?,
     /** The Document Distribution sub-folder under the tool root; none for D.O.D. */
     val publishSubFolder: String?,
+    /**
+     * The `notification:read` segments a look at the whole list sends, one
+     * emit each; empty for folder lists, whose read names the folder key.
+     */
+    val readSegments: List<String> = emptyList(),
 ) {
     /** The tab's name as the crew reads it. */
     val label: String get() = str(labelKey)
+}
+
+/**
+ * What one look at a list reads. The view model names the list; the host
+ * decides what that clears in the ledger and what the server is told.
+ */
+sealed interface DistributionRead {
+    val tab: DistributionTab
+
+    /** A single-list tab on show — every row of [DistributionTab.badgeModule]. */
+    data class WholeTab(override val tab: DistributionTab) : DistributionRead
+
+    /** One folder open — the rows of the tab's tool whose `unit` is [key] (a scene number, a D.O.D name). */
+    data class Folder(override val tab: DistributionTab, val key: String) : DistributionRead
 }
 
 /** How one list talks to the service. */

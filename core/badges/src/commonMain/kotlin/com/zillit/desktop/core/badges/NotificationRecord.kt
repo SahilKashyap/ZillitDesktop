@@ -51,8 +51,12 @@ data class NotificationRecord(
     val senderId: String = "",
     /** `reference_data.chat.unit_id` (or `reference_data.unit_id`) — a unit's chat, read with the unit. */
     val chatUnitId: String = "",
-    /** `reference_data.calendar_data.end_datetime`; a calendar row without one counts nowhere. */
-    val calendarEnd: Long? = null,
+    /**
+     * When a calendar invite stops being pending — see [calendarExpiryOf]. Null
+     * is an invite that never expires (no end known, or a series with no end),
+     * which stays on the pending side; it still counts.
+     */
+    val calendarExpiry: Long? = null,
     /** Whether the API handed this row over (it then moves the seed watermark) or the socket did. */
     val fromApi: Boolean = false,
     val raw: String = "",
@@ -71,20 +75,28 @@ data class NotificationRecord(
     val counts: Boolean get() = !messageRead && !ignored && !deleted && !silent && !self
 
     /**
-     * The conversation a C&C chat row belongs to: the room for a group,
-     * else the sender. Blank keys are Android's "dropped" rows.
+     * The conversation a C&C chat row belongs to — iOS's grouping
+     * (`getNotificationRootObject`): a DM (`chat_member_label`) by its sender,
+     * every other unit — a group, a department room — by its room. A row that
+     * names no room falls back to its sender, as the older writers filed DMs
+     * with no unit. Null when the row names neither.
+     *
+     * The rule used to be the other way round (a group by room, everything
+     * else by sender), which filed a department room's messages under the
+     * DM of whoever wrote them.
      */
     val conversationKey: String?
-        get() = when {
-            tool != CHAT_TOOL -> null
-            unit == CHAT_GROUP_UNIT -> chatRoomId.takeIf { it.isNotBlank() }
-            else -> senderId.takeIf { it.isNotBlank() } ?: sender.takeIf { it.isNotBlank() }
+        get() {
+            if (tool != CHAT_TOOL) return null
+            val bySender = senderId.takeIf { it.isNotBlank() } ?: sender.takeIf { it.isNotBlank() }
+            return if (unit == CHAT_MEMBER_UNIT) bySender else chatRoomId.takeIf { it.isNotBlank() } ?: bySender
         }
 
     companion object {
         const val CHAT_TOOL = "chat_label"
         const val CALL_TOOL = "call_label"
         const val CHAT_GROUP_UNIT = "chat_group_label"
+        const val CHAT_MEMBER_UNIT = "chat_member_label"
         const val CALENDAR_TOOL = "calendar_label"
         const val AD_DASHBOARD_TOOL = "ad_dashboard_label"
     }
@@ -106,7 +118,6 @@ fun notificationRecordFrom(
     val id = row.text("notification_uuid") ?: reference?.text("notification_id") ?: row.text("_id") ?: return null
     val projectId = row.text("project_id") ?: fallbackProjectId ?: return null
     val chat = reference?.get("chat") as? JsonObject
-    val calendar = reference?.get("calendar_data") as? JsonObject
     return NotificationRecord(
         id = id,
         projectId = projectId,
@@ -133,11 +144,42 @@ fun notificationRecordFrom(
         chatRoomId = reference?.text("chat_room_id").orEmpty(),
         senderId = reference?.text("sender_id").orEmpty(),
         chatUnitId = chat?.text("unit_id") ?: reference?.text("unit_id").orEmpty(),
-        calendarEnd = calendar?.long("end_datetime"),
+        calendarExpiry = calendarExpiryOf(reference),
         fromApi = fromApi,
         raw = row.toString(),
     )
 }
+
+/**
+ * When a calendar invite's event is over — iOS `isCalendarNotificationExpired`
+ * (ZL-18722), which mirrors the calendar's own `isSeriesExpired`:
+ *
+ * - `calendar_data` for a one-off event: its `end_datetime`;
+ * - for a series (`repeat_status > 0`): its `repeat_end_date`, and a series
+ *   with no end date never expires;
+ * - otherwise the legacy `reference_data.expired` stamp, which invites written
+ *   before `calendar_data` existed still carry;
+ * - neither: never expired.
+ *
+ * A zero is "not set", not the epoch. The row counts either way — iOS badges
+ * every unread invite on Home, pending and expired alike; this only decides
+ * which of the two the calendar files it under, and what reading the
+ * Expired tab clears.
+ */
+internal fun calendarExpiryOf(reference: JsonObject?): Long? {
+    reference ?: return null
+    val calendar = reference["calendar_data"] as? JsonObject
+    if (calendar != null) {
+        val series = (calendar.long("repeat_status") ?: 0L) > 0L
+        val end = calendar.long(if (series) "repeat_end_date" else "end_datetime")
+        if (end != null && end > 0L) return end
+    }
+    return reference.long("expired")?.takeIf { it > 0L }
+}
+
+/** Whether a calendar invite's event is over at [nowMillis] — see [calendarExpiryOf]. */
+fun NotificationRecord.isCalendarExpired(nowMillis: Long): Boolean =
+    tool == NotificationRecord.CALENDAR_TOOL && calendarExpiry != null && calendarExpiry < nowMillis
 
 /** The row as the chat listing folds it: the wire row, with the ledger's word on `message_read`. */
 fun NotificationRecord.asWireRow(): JsonObject? {
@@ -165,11 +207,28 @@ internal fun JsonObject.flag(key: String): Boolean =
     (this[key] as? JsonPrimitive)?.let { it.booleanOrNull ?: (it.contentOrNull == "true" || it.contentOrNull == "1") }
         ?: false
 
-internal fun JsonObject.strings(key: String): Set<String> =
-    (this[key] as? kotlinx.serialization.json.JsonArray)
-        ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { s -> s.isNotBlank() } }
-        ?.toSet()
-        .orEmpty()
+/**
+ * A list of ids, however the service spelled it: a JSON array, a string
+ * holding a JSON array, or a comma-separated string — the three shapes iOS
+ * decodes for every `notification:silent` list (`ReferenceData.init(from:)`).
+ * A parser that only opened the array dropped the whole instruction when the
+ * server sent a string, and the badge simply stayed.
+ */
+internal fun JsonObject.strings(key: String): Set<String> = when (val value = this[key]) {
+    is kotlinx.serialization.json.JsonArray -> value.idList()
+    is JsonPrimitive -> if (!value.isString) {
+        emptySet()
+    } else {
+        val text = value.content.trim()
+        val parsed = if (text.startsWith("[")) runCatching { Json.parseToJsonElement(text) }.getOrNull() else null
+        (parsed as? kotlinx.serialization.json.JsonArray)?.idList()
+            ?: text.split(',').map { it.trim().trim('"') }.filter { it.isNotBlank() && it != "null" }.toSet()
+    }
+    else -> emptySet()
+}
+
+private fun kotlinx.serialization.json.JsonArray.idList(): Set<String> =
+    mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { s -> s.isNotBlank() } }.toSet()
 
 /**
  * The record(s) inside a socket frame.

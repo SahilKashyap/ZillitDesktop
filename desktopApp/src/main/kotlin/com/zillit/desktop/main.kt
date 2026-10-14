@@ -38,6 +38,9 @@ import com.zillit.desktop.core.badges.BadgeCounts
 import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.badges.NotificationRecord
+import com.zillit.desktop.core.badges.isCalendarExpired
+import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.Strings
 import com.zillit.desktop.core.strings.str
@@ -114,6 +117,8 @@ import com.zillit.desktop.feature.home.calendar.calendarRealtime
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
+import com.zillit.desktop.feature.home.calendar.InvitationBadges
+import com.zillit.desktop.feature.home.calendar.InvitationUnread
 import com.zillit.desktop.feature.home.calendar.EventInvitee
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -150,8 +155,10 @@ import com.zillit.desktop.feature.settings.ui.path
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueueState
+import com.zillit.desktop.feature.settings.approvals.ApprovalViewer
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
 import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
+import com.zillit.desktop.feature.settings.approvals.badgeUnit
 import com.zillit.desktop.feature.settings.approvals.KnownCrewMember
 import com.zillit.desktop.feature.settings.ui.AboutInfo
 import com.zillit.desktop.feature.settings.ui.AccountSummary
@@ -205,6 +212,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import com.zillit.desktop.feature.home.ui.HomeUiState
 import com.zillit.desktop.feature.home.ui.HomeEvent
 import com.zillit.desktop.core.sync.SyncStatus
@@ -992,33 +1000,16 @@ private fun ApplicationScope.ZillitWindows(
  * The entries themselves are fixed — see [DefaultRailItems] for why they are not
  * derived from `project/tools`.
  *
- * Two sources of number, because they count different things. Most badges are
- * unread counts from the server. Settings' is how many people are waiting to be
- * approved on its Admin Settings tab — shown to admins only — which the unread
- * endpoint has nothing to say about: it is asked with `section=tools_label`,
- * so the approval queues report their own length back through the settings
- * state.
+ * One source of number, as on iOS's tab bar (`DashBoardTabBarViewController.addObserver`):
+ * each entry wears its section's unread rows from the ledger. Settings used to
+ * take the larger of that and the approval queues' length — a badge for
+ * requests already seen, which no phone shows — and C&C the chat feature's
+ * own fold, kept apart because the server's section counted rooms the user
+ * had lost; the ledger holds those back itself now (`isOfChatRooms`), so the
+ * rail, the window tab, the dock and the production card are one number.
  */
-private fun railItemsWith(
-    badges: BadgeCounts,
-    isAdmin: Boolean,
-    pendingApprovals: Int,
-    /** The chat feature's live count — not the section's; see the call site. */
-    cncBadge: Int,
-): List<RailItem> = railItemsFor(isAdmin).map { item ->
-    item.copy(
-        badge = when (item.id) {
-            // Whichever says more is waiting — the same rule the two queue
-            // rows already use. The queues are what an admin acts on, but a
-            // settings row the ledger counts and no queue holds (a deal memo,
-            // or any row at all for someone who is not an admin) showed
-            // nowhere inside while the picker's card went on counting it.
-            "settings" -> maxOf(if (isAdmin) pendingApprovals else 0, badges.section(BadgeSections.SETTINGS))
-            "cnc" -> cncBadge
-            else -> badges.section(item.badgeKey())
-        },
-    )
-}
+private fun railItemsWith(badges: BadgeCounts, isAdmin: Boolean): List<RailItem> =
+    railItemsFor(isAdmin).map { item -> item.copy(badge = badges.section(item.badgeKey())) }
 
 /**
  * How a rail section maps onto a badge group.
@@ -1030,11 +1021,8 @@ private fun RailItem.badgeKey(): String = when (id) {
     "cnc" -> "cnc_label"
     "email" -> "email_label"
     "home" -> "home_label"
-    // Settings is the one entry with two sources — the approval queues' own
-    // length and the section's unread — and `railItemsWith` takes the larger
-    // of the two rather than a key from here, so the same event is never
-    // shown twice (web `getSettingsBadges`, `badgeUtils.js:413-437`).
-    "settings" -> ""
+    // iOS's More tab: every unread `settings_label` row (`RootNotificationModel.more`).
+    "settings" -> "settings_label"
     // The SOS feed counts its own segment, as the web's side menu does
     // (`SideMenu.jsx`'s `sosBadges`). Help has nothing to count and must not
     // fall through to the tools total.
@@ -1153,18 +1141,31 @@ private fun EmailRealtime(ready: AppGraph.Ready, mailbox: EmailViewModel?) {
  * cheap endpoint buys correctness for one request.
  */
 /**
- * The dock icon carries the production-wide total, like the phone's app icon.
+ * The dock icon carries every production's unread, like the phone's app icon
+ * (iOS `fetchAppBadgeNotification` sums `getUnreadCountForAllProjects`): the
+ * open production as its rail counts it, every other one as its card on the
+ * production listing does. It used to carry the open production alone, so a
+ * message landing in another production — or anything at all while the
+ * listing was showing — never reached the dock.
+ *
  * Cleared (empty string) rather than set to zero — a dock "0" reads as one
  * unread called zero.
  */
 @Composable
-private fun DockBadge(ready: AppGraph.Ready, viewModels: AppViewModels) {
+private fun DockBadge(ready: AppGraph.Ready) {
     val counts by ready.badgeStore.counts.collectAsState()
-    // The rail's C&C number, not the ledger's raw section: the rail also drops
-    // rooms `chat-room` no longer lists, and the dock must not disagree with it.
-    val chatState by (viewModels.chat?.state
-        ?: MutableStateFlow(com.zillit.desktop.feature.chat.ui.ChatUiState())).collectAsState()
-    val total = counts.totalWith(BadgeSections.CNC, chatState.chatsBadge + chatState.callsBadge)
+    // Re-read on every ledger change, not only the open production's counts:
+    // an arrival for another production moves no rail but does move the dock.
+    val elsewhere by androidx.compose.runtime.produceState(0, ready) {
+        ready.badgeStore.changes.onStart { emit(Unit) }.collect {
+            val open = ready.badgeStore.openProjectId
+            value = withContext(Dispatchers.IO) {
+                ready.badgeStore.projectCounts(ready.deviceId()).filterKeys { it != open }.values.sum()
+            }
+        }
+    }
+    val here = if (ready.badgeStore.openProjectId == null) 0 else counts.total
+    val total = here + elsewhere
     LaunchedEffect(total) {
         runCatching {
             val taskbar = java.awt.Taskbar.getTaskbar()
@@ -1203,7 +1204,8 @@ private fun ToolReadOnFocus(ready: AppGraph.Ready, viewModels: AppViewModels, wo
     LaunchedEffect(identifier) {
         val tool = identifier ?: return@LaunchedEffect
         if (tool in SELF_READING_TOOLS) return@LaunchedEffect
-        emitToolRead(ready, tool)
+        // Sides goes on reading while in front — a generation lands in the list on screen.
+        if (tool == SidesViewer.TOOL_IDENTIFIER) readSidesWhileInFront(ready) else emitToolRead(ready, tool)
     }
 }
 
@@ -1230,7 +1232,10 @@ private val SELF_READING_TOOLS: Set<String> = setOf(
     // the screen but files under its own tool with no History read, so it
     // keeps the whole-tool read — Android's `PreProduction`).
     "box_schedule_tool",
-    // Folders and records read as they are viewed.
+    // Folders and records read as they are viewed. Drive reads per item and
+    // per folder (iOS `readDriveMessage`); a whole-tool read on front wiped
+    // every folder's count before the screen could draw one.
+    "drive_tool",
     "location_tool", "casting_main_tool", "casting_background_tool", "wardrobe_main_tool", "wardrobe_background_tool",
     "forms_and_signature_tool",
     // One unit per kind, read as its page is opened; "production created" read
@@ -1375,9 +1380,26 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean, onListing: Bo
         // A thread read on the phone: the room-level read-until frame, which
         // Android applies to its ledger by conversation
         // (`ChatSocketHelper.kt:1288-1400`) — the same act here.
+        //
+        // When the frame names the messages it read (`chat_message_ids`) they
+        // are read by id as well — iOS `markRemoteChatReadsByReferenceIDs`
+        // (`ChatObserver.swift:321-345, 368-381`) — and remembered, so a
+        // `notification:save` the read outran is filed read when it lands
+        // (ZL-21764). The frame is already known to be this person's own read
+        // (`selfReadOf`) — the only kind the store's read-echo memory keeps.
         launch {
-            ready.chatRepository.selfReads.collect { conversationId ->
-                ready.badgeStore.markRead(LedgerRead.Conversation(conversationId))
+            ready.chatRepository.selfReads.collect { read ->
+                ready.badgeStore.markRead(LedgerRead.Conversation(read.conversationId))
+                if (read.messageIds.isNotEmpty()) {
+                    ready.badgeStore.silence(
+                        com.zillit.desktop.core.badges.BadgeSilence(
+                            readIds = read.messageIds,
+                            section = BadgeSections.CNC,
+                            projectId = read.projectId ?: ready.badgeStore.openProjectId,
+                            ownReadEcho = true,
+                        ),
+                    )
+                }
             }
         }
         launch {
@@ -1598,7 +1620,7 @@ private fun BackgroundWork(
         onListing = auth.step == AuthStep.ProjectSelection,
     )
     ToolsRefresh(ready, viewModels.home)
-    DockBadge(ready, viewModels)
+    DockBadge(ready)
     ApprovalCounts(ready, viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
     HomeRealtime(ready, viewModels.homeFeed)
@@ -1808,13 +1830,6 @@ private fun SignedInShell(
     // disagree about who is a coordinator.
     val settingsState by viewModels.settings.state.collectAsState()
 
-    // The C&C rail and window tab wear the chat feature's own number — the
-    // server's `cnc_label` section also counts rooms the user lost, which
-    // every phone hides (see `ChatUiState.chatsBadge`, verified 2026-08-19:
-    // 40 of 45 "unread" sat in rooms absent from `chat-room`).
-    val chatBadgeState by (viewModels.chat?.state
-        ?: MutableStateFlow(com.zillit.desktop.feature.chat.ui.ChatUiState())).collectAsState()
-    val cncBadge = chatBadgeState.chatsBadge + chatBadgeState.callsBadge
 
     // Classic or windowed, as the rail's switch last left it on this device —
     // the web keeps the same choice in `mdi_view_mode`.
@@ -1880,17 +1895,10 @@ private fun SignedInShell(
         onRailCollapsedChange = { collapsed ->
             scope.launch { ready.preferences.set(ZillitPreferences.RailCollapsed, collapsed) }
         },
-        railItems = railItemsWith(
-            badges = badges,
-            isAdmin = settingsState.account.isAdmin,
-            pendingApprovals = settingsState.admin.pendingTotal,
-            cncBadge = cncBadge,
-        ),
+        railItems = railItemsWith(badges = badges, isAdmin = settingsState.account.isAdmin),
         // Tabs read the same store as the rail — two sources would disagree
         // the moment one missed an update.
-        badgeFor = { route ->
-            if (route.path.trimEnd('/') == "/cnc") cncBadge else badges.forWindow(route, homeState)
-        },
+        badgeFor = { route -> badges.forWindow(route, homeState) },
         // The rail's Logout: the same sign-out Settings runs (device/unlink,
         // then the local wipe); the auth view model watches the session and
         // takes the frame back to the QR screen.
@@ -3031,7 +3039,6 @@ private fun AppGraph.Ready.buildAccountHub(viewer: () -> AccountHubViewer): Acco
         // The console renders the other film tools inside its
         // shell, as the web does — see `AccountHubToolProvider.tools`.
         embedsTools = true,
-        readToolRow = { itemId, isAccountant -> graph.readHubToolRow(itemId, isAccountant) },
     )
 }
 
@@ -3386,10 +3393,19 @@ private fun rememberAppViewModels(
                     // The area's split by tool: chat_label / call_label —
                     // what the Chats and Calls tabs wear.
                     sectionBadges = { sectionSplit(it, "cnc_label", "tool") },
-                    // Looking at the log reads the missed calls (iOS
+                    // Looking at the Missed list reads the missed calls (iOS
                     // `readCNCMessage(.misscall)`: notification:read on call_label).
+                    // The ledger read is iOS's `updateMarkReadByTool`: the
+                    // call rows, never the bell's (`LocalNoticifationRealm.swift:866-874`).
                     onCallsViewed = {
-                        emitSegmentRead(it, segment = "call_label", module = "cnc_label")
+                        emitSegmentRead(
+                            it,
+                            segment = NotificationRecord.CALL_TOOL,
+                            module = BadgeSections.CNC,
+                            read = LedgerRead.Matching("missed calls") { row ->
+                                row.tool == NotificationRecord.CALL_TOOL && row.section != BadgeSections.GLOBAL
+                            },
+                        )
                     },
                     // The bubble menu's clocks and Translate: an admin's
                     // Edit/Delete never time out; Translate shows when the
@@ -3430,6 +3446,24 @@ private fun rememberAppViewModels(
                     // exists to prevent.
                     presets = ApprovalPresets { graph.crewPresets() },
                     nowMillis = System::currentTimeMillis,
+                    // Another admin's decision clears its notification here too,
+                    // as iOS's observer does: this queue's unit, that person.
+                    viewer = {
+                        ApprovalViewer(
+                            projectId = graph.projectContext?.context?.value?.project?.projectId,
+                            deviceId = graph.deviceId(),
+                            isAdmin = graph.projectContext?.context?.value?.isAdmin == true,
+                        )
+                    },
+                    onDecidedElsewhere = { queue, userId ->
+                        emitSegmentRead(
+                            graph,
+                            segment = queue.badgeUnit,
+                            module = queue.badgeUnit,
+                            referenceId = userId,
+                            read = LedgerRead.Reference(userId, unit = queue.badgeUnit),
+                        )
+                    },
                 )
             },
             admin = ready?.let { graph ->
@@ -3516,9 +3550,9 @@ private fun rememberAppViewModels(
                     viewer = { graph.timecardViewer() },
                     currentWeekStarting = ::currentWeekStarting,
                     offline = graph.offlineSupport,
-                    // Every timecard and dispute event files under the tool with
-                    // the tile as its unit (`constants.js:107-116`).
-                    badges = graph.tabBadges("unit") { TabBadgeScope(tool = "timecard_label") },
+                    // Per tab, per week and per record, read one week or record
+                    // at a time as iOS does (HubBadgeWiring.kt).
+                    badges = graph.timecardBadges(),
                 )
             },
             payroll = ready?.buildPayroll(permissions),
@@ -4048,7 +4082,7 @@ private fun buildRegistry(
     val sos = (graph as? AppGraph.Ready)?.let { ready ->
         SosToolProvider(
             viewModel = SosViewModel(
-                repository = SosRepositoryImpl(ready.apiClient, ready.config).readingLedger(ready.badgeStore),
+                repository = SosRepositoryImpl(ready.apiClient, ready.config).readingLedger(ready),
                 nowMillis = System::currentTimeMillis,
                 viewer = { ready.projectContext?.context?.value.sosViewer() },
                 crew = { ready.projectContext?.context?.value.sosCrew() },
@@ -4086,8 +4120,9 @@ private fun buildRegistry(
                 nowMillis = System::currentTimeMillis,
                 // Reading the list is what marks the global segment read on
                 // the phones; the repository's read already flips the ledger
-                // (see `readingLedger`), so nothing more is owed here.
-                onListRead = {},
+                // (see `readingLedger`). What is owed is the socket read iOS
+                // sends, with the REST read's own time.
+                onListRead = { at -> ready.emitSectionRead(BadgeSections.GLOBAL, at) },
                 // The same frame the badge store folds into the bell's count.
                 // Without this the count went up and the open list did not.
                 arrivals = ready.socketEvents.on(ZillitSocketEvents.Badges.Save).map { },
@@ -4732,7 +4767,57 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
     // list through this, and leaving the organiser out left whoever created
     // the event nameless in their own invitee list.
     directory = { crewInvitees(ready) },
+    badges = invitationBadges(ready),
 )
+
+/**
+ * The calendar's invitations on the badge ledger — iOS's Received Events
+ * (ZL-18722): counted from the ledger's calendar rows, split by whether the
+ * event is over; one read per answered invitation, and one for every expired
+ * invitation when the Expired tab is shown.
+ */
+private fun invitationBadges(ready: AppGraph.Ready) = InvitationBadges(
+    unread = ready.badgeStore.changes
+        .onStart { emit(Unit) }
+        .map {
+            val now = System.currentTimeMillis()
+            val invites = ready.badgeStore.unreadRows(BadgeSections.HOME)
+                .filter { it.tool == NotificationRecord.CALENDAR_TOOL }
+            val expired = invites.count { it.isCalendarExpired(now) }
+            InvitationUnread(pending = invites.size - expired, expired = expired)
+        }
+        .distinctUntilChanged(),
+    // `calendar_invite_users` with the event as reference (Ext:398) — the
+    // server reads the invitation's rows, and only those.
+    readAnswered = { eventId ->
+        ready.badgeStore.markRead(LedgerRead.CalendarInvite(eventId))
+        emitCalendarRead(ready, segment = "calendar_invite_users", referenceId = eventId)
+    },
+    // `calendar:expired` (Ext:430) — every expired invitation, server-side too.
+    readExpired = {
+        ready.badgeStore.markRead(LedgerRead.CalendarExpired(System.currentTimeMillis()))
+        emitCalendarRead(ready, segment = "calendar:expired", referenceId = null)
+    },
+)
+
+/**
+ * iOS's calendar reads — `notification:read` with the calendar's own segment
+ * and no module: the generic unit read a Home tab sends is not one the server
+ * files under the calendar (`ReceivedEventsView.swift:239-246`).
+ */
+private suspend fun emitCalendarRead(ready: AppGraph.Ready, segment: String, referenceId: String?) {
+    val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return
+    ready.socketEvents.emit(
+        ZillitSocketEvents.Badges.NotificationRead,
+        NotificationReadDto(
+            projectId = projectId,
+            segment = segment,
+            timestamp = System.currentTimeMillis(),
+            referenceId = referenceId,
+        ),
+        NotificationReadDto.serializer(),
+    )
+}
 
 /** The production's joined crew, as the calendar's people. */
 private fun crewInvitees(ready: AppGraph.Ready): List<EventInvitee> =

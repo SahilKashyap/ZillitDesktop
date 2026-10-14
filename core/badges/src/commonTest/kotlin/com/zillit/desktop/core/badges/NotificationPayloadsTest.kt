@@ -39,7 +39,7 @@ class NotificationPayloadsTest {
         assertEquals("room", record.chatRoomId)
         assertEquals("peer", record.senderId)
         assertEquals("cu", record.chatUnitId)
-        assertEquals(42L, record.calendarEnd)
+        assertEquals(42L, record.calendarExpiry)
         assertTrue(record.fromApi)
         assertTrue(record.counts)
     }
@@ -121,6 +121,72 @@ class NotificationPayloadsTest {
         assertEquals(setOf("own"), silence?.readIds)
         assertNull(badgeSilenceFrom(json("""{"reference_data":{}}""")))
         assertNull(badgeSilenceFrom(json("[]")))
+    }
+
+    /** iOS decodes every list three ways (`ReferenceData.init(from:)`); so does the ledger. */
+    @Test
+    fun `a silent frame's lists open as arrays, JSON strings or comma-separated strings`() {
+        val silence = badgeSilenceFrom(
+            json(
+                """{"project_id":"p","reference_data":{
+                     "deleted_chat_ids":"[\"m1\",\"m2\"]",
+                     "tools_no_view_access":"sides_label, accounts_label",
+                     "unit_no_view_access":"unit-a",
+                     "chat_room_no_access":"[]"}}""",
+            ),
+        )
+        assertNotNull(silence)
+        assertEquals(setOf("m1", "m2"), silence.deletedChatIds)
+        assertEquals(setOf("sides_label", "accounts_label"), silence.lostTools)
+        assertEquals(setOf("unit-a"), silence.lostUnits)
+        assertTrue(silence.lostRooms.isEmpty())
+    }
+
+    @Test
+    fun `an own read echo is told apart from a delete`() {
+        val own = badgeSilenceFrom(
+            json(
+                """{"project_id":"p","section":"cnc_label",
+                    "reference_data":{"self":1,"read_notification_ids":["m1"]}}""",
+            ),
+        )
+        assertEquals(setOf("m1"), own?.readEchoIds)
+        val byAction = badgeSilenceFrom(
+            json("""{"project_id":"p","action":"private_chat_read","reference_data":{"deleted_chat_ids":["m2"]}}"""),
+        )
+        assertEquals(setOf("m2"), byAction?.readEchoIds)
+        val delete = badgeSilenceFrom(json("""{"project_id":"p","reference_data":{"deleted_chat_ids":["m3"]}}"""))
+        assertTrue(delete?.readEchoIds.orEmpty().isEmpty())
+        val drive = badgeSilenceFrom(
+            json(
+                """{"project_id":"p","section":"tools_label",
+                    "reference_data":{"self":true,"read_notification_ids":["n"]}}""",
+            ),
+        )
+        assertTrue(drive?.readEchoIds.orEmpty().isEmpty(), "read ids name messages only on a C&C frame")
+    }
+
+    /** iOS `isCalendarNotificationExpired` (ZL-18722). */
+    @Test
+    fun `a calendar invite expires by its event, its series, or the legacy stamp`() {
+        fun expiry(reference: String) =
+            notificationRecordFrom(
+                json(
+                    """{"notification_uuid":"n","project_id":"p","tool":"calendar_label",
+                        "reference_data":$reference}""",
+                ) as JsonObject,
+                fromApi = true,
+            )?.calendarExpiry
+        assertEquals(10L, expiry("""{"calendar_data":{"end_datetime":10}}"""))
+        assertEquals(20L, expiry("""{"calendar_data":{"repeat_status":1,"end_datetime":10,"repeat_end_date":20}}"""))
+        assertNull(
+            expiry("""{"calendar_data":{"repeat_status":2,"end_datetime":10}}"""),
+            "an endless series never ends",
+        )
+        assertEquals(30L, expiry("""{"calendar_data":{"repeat_status":2},"expired":30}"""))
+        assertEquals(30L, expiry("""{"expired":30}"""))
+        assertNull(expiry("""{"calendar_data":{"end_datetime":0}}"""), "zero is unset, not the epoch")
+        assertNull(expiry("""{}"""))
     }
 
     @Test

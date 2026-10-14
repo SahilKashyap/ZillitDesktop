@@ -177,6 +177,7 @@ fun ChatScreen(
     val openChat = callChatOpener(viewModel, crew, showTab)
 
     WatchReporter(viewModel, chatState?.peer, compact, callsShown = calls != null)
+    MissedCallsReporter(viewModel, calls?.takeIf { showDirectory })
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Row(Modifier.fillMaxSize()) {
@@ -228,12 +229,35 @@ fun ChatScreen(
 
 /**
  * A tab coming into view. Opening Chats is the retry — the init-time fetch
- * can predate the socket connecting — and looking at the call log is what
- * reads a missed call.
+ * can predate the socket connecting. Looking at the missed calls is what
+ * reads them, and [MissedCallsReporter] says when that is.
  */
 private fun ChatViewModel.onTabShown(tab: String) {
     if (tab == DirectoryTab.Chats.name) onEvent(ChatEvent.RefreshRecents)
-    if (tab == DirectoryTab.Calls.name) onEvent(ChatEvent.CallsViewed)
+}
+
+/**
+ * Tells [viewModel] whether the missed calls are in front of somebody: the
+ * call list is on screen ([calls] non-null — the Calls tab, its list not
+ * hidden behind a compact thread), on its Missed view, in a focused window.
+ *
+ * It used to be the Calls tab being clicked — the All view included, and
+ * never a Calls tab restored on screen or a call missed while it stayed
+ * there. A host that cannot say which view is up ([CallsPanes.missedOnly]
+ * null) keeps the one read as the tab comes up, and no more.
+ */
+@Composable
+private fun MissedCallsReporter(viewModel: ChatViewModel?, calls: CallsPanes?) {
+    val missedOnly = calls?.missedOnly
+    val missedView = missedOnly?.collectAsState(initial = false)?.value
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    val shown = calls != null && windowFocused && missedView != false
+    LaunchedEffect(viewModel, shown, missedOnly != null) {
+        viewModel?.onEvent(ChatEvent.MissedCallsShown(shown, live = missedOnly != null))
+    }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel?.onEvent(ChatEvent.MissedCallsShown(false)) }
+    }
 }
 
 /**

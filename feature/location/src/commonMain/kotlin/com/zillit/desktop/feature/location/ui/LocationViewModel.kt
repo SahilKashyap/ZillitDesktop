@@ -208,7 +208,7 @@ class LocationViewModel(
         s.unread.orphans(s.status, rows.map { it.location })
             .map { LocationPick(it.location, it.scene, it.episode) }
             .distinct()
-            .forEach { badges.readGallery(s.status, it) }
+            .forEach { badges.readGallery(s.status, it, sweep = true) }
     }
 
     /**
@@ -231,17 +231,18 @@ class LocationViewModel(
     private fun openGallery(pick: LocationPick, closeIfEmpty: Boolean = false) {
         val s = state.value
         setState { copy(gallery = OpenGallery(pick), loading = true) }
-        // The gallery on screen is the folder read — Android's `markReadFolder`
-        // on the library page, scoped to the place, scene and episode — plus
-        // the place's rows under scenes no gallery lists any more, which
-        // would otherwise badge the folder for good (see `strayScenes`).
+        // The gallery on screen is the folder read — iOS `readToolBagdes`,
+        // scoped to the place, scene and episode and to the created/updated
+        // rows, so each photo's comments stay on its own dot — plus the
+        // place's rows under scenes no gallery lists any more, which would
+        // otherwise badge the folder for good (see `strayScenes`).
         if (!closeIfEmpty) {
-            if (s.unread.pick(s.status, pick) > 0) badges.readGallery(s.status, pick)
+            if (s.unread.galleryReads(s.status, pick) > 0) badges.readGallery(s.status, pick)
             val listed = s.info.filter { it.location.trim() == pick.location.trim() }
                 .flatMap { it.sceneNumbers }
                 .map(Folders::normaliseScene)
             s.unread.strayScenes(s.status, pick.location, listed).forEach { stray ->
-                badges.readGallery(s.status, LocationPick(pick.location, stray))
+                badges.readGallery(s.status, LocationPick(pick.location, stray), sweep = true)
             }
         }
         launch {

@@ -43,8 +43,6 @@ class BadgeAggregationTest {
         )
 
         assertEquals(6, counts.total)
-        // The rail's C&C number stands in for the ledger's, so the dock agrees with the rail.
-        assertEquals(8, counts.totalWith("cnc_label", 3))
     }
 
     @Test

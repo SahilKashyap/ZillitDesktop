@@ -57,7 +57,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
             }
             WorkflowEvent.ConfirmReject -> reject()
             is WorkflowEvent.OpenReminder -> {
-                ctx.lists.readRowBadge(event.report.id, BadgeKind.Report)
+                ctx.lists.readRowBadge(event.report, BadgeKind.Report)
                 ctx.update { copy(dialog = ReportDialog.ReminderCompose(event.report)) }
             }
             is WorkflowEvent.EditReminder -> ctx.update {
@@ -65,7 +65,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
             }
             WorkflowEvent.ConfirmReminder -> remind()
             is WorkflowEvent.ViewReminders -> {
-                ctx.lists.readRowBadge(event.report.id, BadgeKind.Report)
+                ctx.lists.readRowBadge(event.report, BadgeKind.Report)
                 ctx.update { copy(dialog = ReportDialog.Reminders(event.report.id, userReminders(event.report, me))) }
             }
             is WorkflowEvent.OpenPublish, is WorkflowEvent.PickDestination, WorkflowEvent.ContinuePublish,
@@ -240,7 +240,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
     /** ZL-21512: the chooser first; "with signature" advances to the signing screen. */
     private fun openApprove(report: ReportSummary) {
         val request = actionableRequest(report, ctx.state.me)?.takeIf { it.isFinalStage } ?: return
-        ctx.lists.readRowBadge(report.id, BadgeKind.Report)
+        ctx.lists.readRowBadge(report, BadgeKind.Report)
         ctx.update { copy(dialog = ReportDialog.Approve(report, request)) }
     }
 
@@ -265,7 +265,11 @@ internal class WorkflowController(private val ctx: ReportContext) {
         }
     }
 
-    /** Closes only on success — a refused approve leaves the dialog up to retry. */
+    /**
+     * Closes only on success — a refused approve leaves the dialog up to
+     * retry. An approved report has left Received, so its report and comment
+     * rows there are cleared ([ListsController.readReportLeftReceived]).
+     */
     private fun approve(decision: ApprovalDecision) {
         val dialog = ctx.state.dialog as? ReportDialog.Approve ?: return
         if (ctx.state.busy) return
@@ -273,6 +277,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
         ctx.launchWork {
             when (val result = ctx.repository.approve(dialog.request.id, decision)) {
                 is ZillitResult.Success -> {
+                    ctx.lists.readReportLeftReceived(dialog.report)
                     ctx.update {
                         copy(
                             busy = false,
@@ -303,16 +308,18 @@ internal class WorkflowController(private val ctx: ReportContext) {
 
     private fun openReject(report: ReportSummary) {
         val request = actionableRequest(report, ctx.state.me)?.takeIf { it.isFinalStage } ?: return
-        ctx.lists.readRowBadge(report.id, BadgeKind.Report)
+        ctx.lists.readRowBadge(report, BadgeKind.Report)
         ctx.update { copy(dialog = ReportDialog.Reject(report, request)) }
     }
 
+    /** A rejected report has left Received too: the same clear as [approve]. */
     private fun reject() {
         val dialog = ctx.state.dialog as? ReportDialog.Reject ?: return
         ctx.update { copy(busy = true) }
         ctx.launchWork {
             when (val result = ctx.repository.reject(dialog.request.id, dialog.reason)) {
                 is ZillitResult.Success -> {
+                    ctx.lists.readReportLeftReceived(dialog.report)
                     ctx.update {
                         copy(
                             busy = false,
@@ -387,7 +394,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
     private fun onPublishEvent(event: WorkflowEvent) {
         when (event) {
             is WorkflowEvent.OpenPublish -> if (ctx.state.isPoster) {
-                ctx.lists.readRowBadge(event.report.id, BadgeKind.Report)
+                ctx.lists.readRowBadge(event.report, BadgeKind.Report)
                 ctx.update { copy(dialog = ReportDialog.Publish(event.report)) }
                 loadReplaceOptions(event.report.id)
             }

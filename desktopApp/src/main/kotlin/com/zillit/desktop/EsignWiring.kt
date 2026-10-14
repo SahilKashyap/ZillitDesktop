@@ -2,6 +2,7 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -307,11 +308,17 @@ internal fun esignToday(): String = java.time.LocalDate.now()
 /**
  * The tool's ledger rows as leaves, and its read.
  *
- * Every unread `e_signature_label` row becomes one leaf keyed by unit,
- * bucket (`level_1`) and envelope (`level_3`) — the web's
- * `getESignatureBadgesFromDB` split. The read is the web's
- * `markBucketAsRead` / per-envelope open read: `notification:level:read`
- * scoped to the unit and the envelope (`DocuSignPanel.jsx:250-275`).
+ * Every unread `e_signature_label` row that names an envelope becomes one
+ * leaf keyed by unit, bucket (`level_1`) and envelope (`level_3`) — the web's
+ * `getESignatureBadgesFromDB` split. A row with a blank `level_3` is no leaf
+ * (iOS ZL-21329): nothing draws it and no envelope read reaches it.
+ *
+ * The read is the per-envelope open read: `notification:level:read` scoped
+ * to the unit and the envelope (`DocuSignPanel.jsx:250-275`), and locally
+ * every row of the tool naming the envelope as `level_3` *or*
+ * `reference_id`, under either unit — iOS `markReferenceIdAsRead`
+ * (`LocalNoticifationRealm.swift:2926-2927`), so a row filed by reference
+ * alone cannot outlive the envelope's opening.
  */
 internal fun AppGraph.Ready.esignBadges(): EsignBadges = object : EsignBadges {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -320,12 +327,16 @@ internal fun AppGraph.Ready.esignBadges(): EsignBadges = object : EsignBadges {
 
     private fun leavesNow(): List<EsignBadgeLeaf> =
         badgeStore.unreadRows(BadgeSections.TOOLS)
-            .filter { it.tool == EsignBadges.TOOL }
+            .filter { it.tool == EsignBadges.TOOL && it.level3.isNotBlank() }
             .groupingBy { Triple(it.unit, it.level1, it.level3) }
             .eachCount()
             .map { (key, count) -> EsignBadgeLeaf(key.first, key.second, key.third, count) }
 
     override fun readEnvelope(unit: String, envelopeId: String) {
-        scope.launch { emitLevelRead(tool = EsignBadges.TOOL, unit = unit, level3 = envelopeId) }
+        if (envelopeId.isBlank()) return
+        scope.launch {
+            emitLevelRead(tool = EsignBadges.TOOL, unit = unit, level3 = envelopeId)
+            badgeStore.markRead(LedgerRead.Entity(envelopeId, tool = EsignBadges.TOOL))
+        }
     }
 }

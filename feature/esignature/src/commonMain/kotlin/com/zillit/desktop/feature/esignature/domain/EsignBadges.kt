@@ -12,13 +12,18 @@ import kotlinx.coroutines.flow.emptyFlow
  * `action_required` for a signer) and the envelope in `level_3`
  * (`BadgeDB.getESignatureBadgesFromDB`). One envelope can carry rows in two
  * buckets as it moves on, so a tab's row badge counts only its own bucket.
+ *
+ * A row with no envelope is no leaf (iOS ZL-21329,
+ * `DocuSignBadgeReader.swift:67-76, 112-118`): nothing on screen draws it —
+ * every pill and row dot groups by envelope — and no envelope read can
+ * reach it, so counting it pinned a number on the tabs that never fell.
  */
 data class EsignBadgeLeaf(val unit: String, val bucket: String, val envelopeId: String, val unread: Int)
 
 /**
- * The tool's unread rows and its read: one envelope's rows under one unit —
- * when its detail or signing page opens, and, for the settled buckets, as
- * the tab is entered (the web's `markBucketAsRead`, one read per envelope).
+ * The tool's unread rows and its read: one envelope's rows under one unit,
+ * when its detail or signing page opens — the only read (iOS ZL-21329: a tab
+ * is never read whole).
  */
 interface EsignBadges {
     val leaves: Flow<List<EsignBadgeLeaf>> get() = emptyFlow()
@@ -34,8 +39,13 @@ interface EsignBadges {
     }
 }
 
-/** The leaves cut the way the lists ask: a surface, a bucket, one envelope on one tab. */
-data class EsignUnread(val leaves: List<EsignBadgeLeaf> = emptyList()) {
+/**
+ * The leaves cut the way the lists ask: a surface, a bucket, one envelope on
+ * one tab. Envelope-less leaves are dropped here too, whatever the host sent.
+ */
+data class EsignUnread(private val all: List<EsignBadgeLeaf> = emptyList()) {
+
+    val leaves: List<EsignBadgeLeaf> = all.filter { it.envelopeId.isNotBlank() }
 
     val manage: Int get() = leaves.filter { it.unit == EsignBadges.UNIT_MANAGE }.sumOf { it.unread }
 

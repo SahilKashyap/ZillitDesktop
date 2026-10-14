@@ -39,15 +39,36 @@ enum class SaDestination(val slug: String, private val labelKey: String) {
     /**
      * The unit the notification service files this page's rows under — the
      * web's `SA_UNIT_BY_NAV` (`sa-portal-badge-helpers.js:33`); null for a
-     * page nothing is filed under.
+     * page nothing is filed under. It is the tab's chip; what reads it is
+     * the record opened ([SaBadges]), not the page.
      */
     val badgeKey: String?
         get() = when (this) {
-            Vouchers -> "my_vouchers_label"
-            Queries -> "query_label"
-            Profile -> "profile_label"
+            Vouchers -> SaBadges.VOUCHERS
+            Queries -> SaBadges.QUERIES
+            Profile -> SaBadges.PROFILE
             Dashboard, Pay -> null
         }
+}
+
+/**
+ * The portal's notification units and the `level_2` bucket each record's rows
+ * carry (iOS `SABadgeViewModel.Unit`/`Level2`, `SABadgeViewModel.swift:41-56`).
+ *
+ * The phones never read a whole tab: a voucher day clears when it is opened
+ * (`SAVoucherDetailScreen.swift:119-124`), a query when its thread is
+ * (`SAQueryThreadScreen.swift:105-114`), the artiste's own record when the
+ * profile is shown (`SAProfileScreen.swift:71-79`) — and every list row wears
+ * its own count, keyed by `level_3` (`SAVouchersScreen.swift:21-24`).
+ */
+object SaBadges {
+    const val VOUCHERS = "my_vouchers_label"
+    const val QUERIES = "query_label"
+    const val PROFILE = "profile_label"
+
+    const val VOUCHER_KIND = "voucher"
+    const val QUERY_KIND = "query"
+    const val ARTISTE_KIND = "artiste"
 }
 
 /**
@@ -82,6 +103,8 @@ data class SaUiState(
     val destination: SaDestination = SaDestination.Dashboard,
     /** Unread notifications per unit — the tabs' red chips. */
     val unread: Map<String, Int> = emptyMap(),
+    /** Unread per unit, then per record (`level_3`) — the rows' own counts. */
+    val entityUnread: Map<String, Map<String, Int>> = emptyMap(),
     val loading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
@@ -105,6 +128,12 @@ data class SaUiState(
     val sign: SignState? = null,
     val queryDraft: QueryDraft? = null,
 ) {
+    /** One voucher day's unread updates — keyed by the day's id, as the rows are. */
+    fun voucherUnread(id: String): Int = entityUnread[SaBadges.VOUCHERS]?.get(id) ?: 0
+
+    /** One query thread's unread replies. */
+    fun queryUnread(id: String): Int = entityUnread[SaBadges.QUERIES]?.get(id) ?: 0
+
     /** The days still wanting a signature — what the overview leads with. */
     val awaitingSignature: List<Voucher>
         get() = vouchers.filter { it.signable }
@@ -120,6 +149,12 @@ data class SaUiState(
 sealed interface SaEvent {
     data class Open(val destination: SaDestination) : SaEvent
     data object Refresh : SaEvent
+
+    /**
+     * Whether the portal's window is in front. The profile on screen is read
+     * as rows land only while it is: the view model outlives its window.
+     */
+    data class WindowFocus(val focused: Boolean) : SaEvent
     data object ClearNotice : SaEvent
     data object DismissError : SaEvent
 

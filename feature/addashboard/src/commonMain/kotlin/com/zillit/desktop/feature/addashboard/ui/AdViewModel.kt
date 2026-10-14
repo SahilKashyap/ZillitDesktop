@@ -46,9 +46,44 @@ class AdViewModel(
     private var listening = false
     private var watchingBadges = false
 
-    /** The page on screen is its read — the web's `emitAdTabRead`, each unit whole. */
+    /** Whether the window is in front — see [AdEvent.WindowFocus]. Nobody, until it says so. */
+    private var watching = false
+
+    /**
+     * The page on screen is its read — the web's `emitAdTabRead`, each of its
+     * whole units ([AdDestination.pageReads]); the register reads per artiste.
+     * The notification-only units ride along: they have no page, and the
+     * dashboard being looked at is the nearest thing to opening theirs.
+     */
     private fun readPage(destination: AdDestination) {
-        destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+        (destination.pageReads + AdBadges.NOTICE_ONLY)
+            .filter { (currentState.unread[it] ?: 0) > 0 }
+            .forEach(badges::read)
+    }
+
+    /** One artiste's rows read — the web's `emitAdItemRead`: the unit and `level_3`, no `level_2`. */
+    private fun readArtiste(id: String) {
+        if (currentState.artisteUnread(id) > 0) badges.readEntity(AdBadges.REGISTER, id)
+    }
+
+    /**
+     * The artiste an act looks at. The phones read a register row when it is
+     * tapped; the desktop has no artiste detail to open, so a click on the row
+     * and acting on the artiste — verifying, blocking, unblocking — are the look.
+     */
+    private fun AdEvent.artisteSeen(): String? = when (this) {
+        is AdEvent.SeeArtiste -> id
+        is AdEvent.Verify -> id
+        is AdEvent.StartBlock -> artiste.id
+        is AdEvent.Unblock -> id
+        else -> null
+    }
+
+    /** The window in front, or not; coming to the front reads the page on screen. */
+    private fun onWindowFocus(focused: Boolean) {
+        val gained = focused && !watching
+        watching = focused
+        if (gained) readPage(currentState.destination)
     }
 
     /** Refuses, and offers the way forward the phones offer on every refusal. */
@@ -73,9 +108,10 @@ class AdViewModel(
             launch {
                 badges.counts.collect { counts ->
                     setState { copy(unread = counts) }
-                    readPage(currentState.destination)
+                    if (watching) readPage(currentState.destination)
                 }
             }
+            launch { badges.entityCounts.collect { tree -> setState { copy(entityUnread = tree) } } }
         }
         val identity = viewer()
         // Every date on this service is UTC midnight; a local one files the
@@ -130,6 +166,7 @@ class AdViewModel(
 
     @Suppress("CyclomaticComplexMethod") // One branch per action.
     override fun onEvent(event: AdEvent) {
+        event.artisteSeen()?.let(::readArtiste)
         when (event) {
             is AdEvent.Open -> {
                 setState { copy(destination = event.destination) }
@@ -138,6 +175,9 @@ class AdViewModel(
             }
 
             AdEvent.Refresh -> refresh()
+            is AdEvent.WindowFocus -> onWindowFocus(event.focused)
+            // Read above, with every other act on an artiste.
+            is AdEvent.SeeArtiste -> Unit
             AdEvent.ClearNotice -> setState { copy(notice = null) }
             AdEvent.DismissError -> setState { copy(error = null) }
 

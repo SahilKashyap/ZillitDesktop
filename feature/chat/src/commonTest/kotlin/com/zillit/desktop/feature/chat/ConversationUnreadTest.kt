@@ -95,4 +95,32 @@ class ConversationUnreadTest {
         assertEquals(600L, backlog.activity["room9"], "activity still follows every row, read or not")
         assertEquals(100L, backlog.windowStart, "the window starts at the oldest row")
     }
+
+    /**
+     * iOS's grouping (`LocalNoticifationRealm.swift:3780-3805`): a DM by its
+     * sender, every other unit by its room. A department's room used to fall
+     * through to the sender, lighting the writer's DM row while the room —
+     * the row the listing opens a department by — sat still.
+     */
+    @Test
+    fun `a department room keys by its room, and a row naming no room falls back to its sender`() {
+        val payload = Json.parseToJsonElement(
+            """
+            [
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_department_label","sender":"u3",
+               "reference_data":{"sender_id":"u3","chat_room_id":"dept-room"},"message_read":false},
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_department_label","sender":"u4",
+               "reference_data":{"sender_id":"u4","chat_room_id":"dept-room"},"message_read":false},
+              {"section":"cnc_label","tool":"chat_label","sender":"u5",
+               "reference_data":{"sender_id":"u5"},"message_read":false},
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_member_label","sender":"u6",
+               "reference_data":{"sender_id":"u6","chat_room_id":"room-the-dm-is-not"},"message_read":false}
+            ]
+            """.trimIndent(),
+        )
+        val backlog = conversationBacklogFrom(payload)
+        assertEquals(mapOf("dept-room" to 2, "u5" to 1, "u6" to 1), backlog.unread)
+        // Only a group can be left, so only a group's rows are held back for a lost room.
+        assertEquals(emptySet<String>(), backlog.rooms, "a department room is never filed as a room that can be lost")
+    }
 }

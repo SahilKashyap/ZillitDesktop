@@ -1,7 +1,10 @@
 package com.zillit.desktop.feature.sides
 
+import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.sides.data.SIDES_SYNC_EVENTS
 import com.zillit.desktop.feature.sides.domain.ManualPlan
 import com.zillit.desktop.feature.sides.domain.SceneInfo
+import com.zillit.desktop.feature.sides.domain.SidesBadgeWire
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.domain.VersionScenes
 import kotlinx.datetime.TimeZone
@@ -79,5 +82,11 @@ class SidesRulesTest {
         assertEquals("Jan 2, 2026 · 12:00 AM", SidesRules.formatDateTime("2026-01-02T00:00:00Z", utc))
         assertEquals("Sep 15, 2026", SidesRules.formatDate("2026-09-15T15:05:00Z", utc))
         assertEquals("—", SidesRules.formatDate("not a date"))
+    }
+
+    @Test
+    fun `a sides row is read under every spelling the tile counts it by`() {
+        assertEquals(setOf("sides_label", "sides_tool", "sides"), SidesBadgeWire.TOOL_ALIASES)
+        assertEquals(listOf(SocketEventName(SidesBadgeWire.GENERATED_EVENT)), SIDES_SYNC_EVENTS)
     }
 }

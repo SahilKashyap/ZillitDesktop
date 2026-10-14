@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.sides.data
 
 import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.sides.domain.SidesBadgeWire
 
 /**
  * The one sides event, by wire name — the web subscribes it directly on
@@ -11,5 +12,5 @@ import com.zillit.desktop.core.socket.SocketEventName
  * the web (`SidesPage.jsx:112-119`).
  */
 internal val SIDES_SYNC_EVENTS: List<SocketEventName> = listOf(
-    SocketEventName("sides:generated"),
+    SocketEventName(SidesBadgeWire.GENERATED_EVENT),
 )

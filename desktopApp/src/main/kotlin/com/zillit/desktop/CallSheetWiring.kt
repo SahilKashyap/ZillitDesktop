@@ -2,6 +2,7 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.localization.Labels
@@ -408,10 +409,12 @@ private fun AppGraph.Ready.callSheetStorage(): S3AttachmentUploader {
 
 /**
  * Badges v2: the tool's ledger rows as leaves (unit, level_1..3), and the
- * read the web emits — `notification:level:read` naming one sheet's REPORT
- * or COMMENT rows on one surface (unit + level_1 on the approval unit +
- * level_2 + level_3), never unit-wide. Legacy units ride through as leaves
- * and are dropped where the tree is built ([SheetBadges.from]).
+ * reads — `notification:level:read` naming one sheet's REPORT or COMMENT
+ * rows on one surface (unit + level_1 on the approval unit + level_2 +
+ * level_3), or one Approvals sub-tab's REPORT rows (no level_3, iOS
+ * `handleBadgeRead(subTab:)`), never unit-wide — plus iOS's local orphan
+ * sweep. Legacy units ride through as leaves and are dropped where the tree
+ * is built ([SheetBadges.from]).
  */
 internal fun AppGraph.Ready.callSheetBadges(): SheetBadgeSource = object : SheetBadgeSource {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -429,36 +432,63 @@ internal fun AppGraph.Ready.callSheetBadges(): SheetBadgeSource = object : Sheet
         if (sheetId.isBlank()) return
         scope.launch {
             SheetBadges.readScopes(surface, kind).forEach { (unit, level1) ->
-                val now = System.currentTimeMillis()
-                runCatching {
-                    socketEvents.emit(
-                        ZillitSocketEvents.Badges.NotificationLevelRead,
-                        NotificationReadDto(
-                            projectId = projectId,
-                            tool = SheetBadges.TOOL,
-                            module = SheetBadges.TOOL,
-                            unit = unit,
-                            segment = unit,
-                            level1 = level1,
-                            level2 = kind.wire,
-                            level3 = sheetId,
-                            timestamp = now,
-                            readTime = now,
-                        ),
-                        NotificationReadDto.serializer(),
-                    )
-                }
-                badgeStore.markRead(
-                    LedgerRead.Levels(
-                        tool = SheetBadges.TOOL,
-                        unit = unit,
-                        level1 = level1,
-                        level2 = kind.wire,
-                        level3 = sheetId,
-                    ),
-                )
+                levelRead(projectId, unit, level1, kind.wire, sheetId)
             }
         }
+    }
+
+    /** One sub-tab's REPORT rows, every sheet: the same scoped read with no `level_3`. */
+    override fun readSection(surface: BadgeSurface) {
+        val projectId = projectContext?.context?.value?.project?.projectId ?: return
+        if (!surface.isApprovalSection) return
+        scope.launch { levelRead(projectId, SheetBadges.UNIT_APPROVAL, surface.wire, BadgeKind.Report.wire, null) }
+    }
+
+    /**
+     * The orphan sweep, in the ledger only — iOS emits nothing for it
+     * (`ProjectDetailView.swift:905-924`). The grace is in milliseconds, as
+     * the rows' `created` is.
+     */
+    override fun sweepOrphans(units: Set<String>, keep: Set<String>) {
+        val cutoff = System.currentTimeMillis() - SheetBadges.ORPHAN_GRACE_MILLIS
+        scope.launch {
+            val swept = badgeStore.markRead(
+                LedgerRead.Matching("call sheet orphans") { row ->
+                    row.tool == SheetBadges.TOOL &&
+                        SheetBadges.isOrphan(row.unit, row.level3, row.referenceId, row.created, units, keep, cutoff)
+                },
+            )
+            if (swept > 0) ZillitLog.d("Badges") { "call sheet orphan rows swept: $swept" }
+        }
+    }
+
+    /**
+     * `notification:level:read` as the web sends it for this tool, and the
+     * same scope read in the ledger at once. A level left null is not scoped.
+     */
+    private suspend fun levelRead(projectId: String, unit: String, level1: String?, level2: String, level3: String?) {
+        val now = System.currentTimeMillis()
+        runCatching {
+            socketEvents.emit(
+                ZillitSocketEvents.Badges.NotificationLevelRead,
+                NotificationReadDto(
+                    projectId = projectId,
+                    tool = SheetBadges.TOOL,
+                    module = SheetBadges.TOOL,
+                    unit = unit,
+                    segment = unit,
+                    level1 = level1,
+                    level2 = level2,
+                    level3 = level3,
+                    timestamp = now,
+                    readTime = now,
+                ),
+                NotificationReadDto.serializer(),
+            )
+        }
+        badgeStore.markRead(
+            LedgerRead.Levels(tool = SheetBadges.TOOL, unit = unit, level1 = level1, level2 = level2, level3 = level3),
+        )
     }
 }
 

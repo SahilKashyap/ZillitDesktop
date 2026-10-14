@@ -480,8 +480,9 @@ class DocDistViewModel(
     }
 
     private fun openFolder(folderId: String?) {
-        // Entering a folder reads the folder's own events (`Library.jsx:228-234`);
-        // the files inside stay unread until each is opened.
+        // Entering a folder reads its whole subtree — iOS `enterFolder`
+        // (`DDLibraryViewModel.swift:160-166`): the bubble said what was below,
+        // and it is seen now. A file's dot inside clears with it.
         if (folderId != null && currentState.unread.folder(folderId) > 0) badges.readFolder(folderId)
         setState {
             copy(

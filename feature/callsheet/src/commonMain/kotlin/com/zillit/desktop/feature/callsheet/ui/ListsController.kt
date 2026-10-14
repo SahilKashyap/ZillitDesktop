@@ -23,9 +23,11 @@ import kotlinx.coroutines.flow.conflate
 /**
  * The tabs, the lists and their live updates — the web's lazy tab loader
  * (`CallSheetApp.jsx`), its first landing (`initialLanding`), the socket
- * table and the badge reads: one sheet's report or comment badge per open
- * (`readCallSheetBadge`), and Published drained on entry — at app level, so
- * a viewer who has no Published tab still clears it (`useReadBadgesOnEntry`).
+ * table and the badge reads, as iOS makes them: one sheet's report or comment
+ * badge per open (Published included — `ProjectDetailView.swift:2606, 2617`),
+ * an Approvals sub-tab's report rows when it is shown, the orphan sweep after
+ * a list lands, and Published drained only at app level, for a viewer who has
+ * no Published tab (`useReadBadgesOnEntry`).
  *
  * Divergences, each fixing a web bug: the landing waits for the metadata
  * (B-1, B-30); members are read live, never a one-time snapshot (B-3); no
@@ -42,6 +44,9 @@ internal class ListsController(private val ctx: SheetContext) {
 
     /** Published leaves already read, keyed `kind:id:count` — a badge that comes back is read again. */
     private var publishedReads: Set<String> = emptySet()
+
+    /** The Approvals sub-tab on screen when the lists last loaded — its entry read fires once per appearance. */
+    private var sectionOnScreen: ApprovalSection? = null
 
     /** Comment frames go to the open thread; the VM sets this. */
     var onCommentEvent: (SheetSyncEvent) -> Unit = {}
@@ -190,6 +195,7 @@ internal class ListsController(private val ctx: SheetContext) {
         readPublishedBadges()
         val tab = state.activeTab
         if (tab !in state.tabs) return
+        readSectionOnEntry()
         val section = if (tab == SheetTab.Approvals) state.activeSection.name else ""
         val key = "${tab}_$section:${state.isPoster}"
         if (key == lastLoadKey) return
@@ -238,6 +244,7 @@ internal class ListsController(private val ctx: SheetContext) {
                         if (mine is ZillitResult.Success) rows = mergeApprovalRequests(rows, mine.data)
                     }
                     ctx.update { copy(lists = lists.copy(sent = SheetList(rows = rows, loaded = true))) }
+                    sweepOrphans()
                 }
                 is ZillitResult.Failure -> ctx.update {
                     copy(
@@ -312,6 +319,7 @@ internal class ListsController(private val ctx: SheetContext) {
                     val previous = ctx.state.lists.select().rows
                     val rows = merge(result.data, previous)
                     ctx.update { copy(lists = lists.store(SheetList(rows = rows, loaded = true))) }
+                    sweepOrphans()
                 }
                 is ZillitResult.Failure -> ctx.update {
                     copy(
@@ -380,11 +388,75 @@ internal class ListsController(private val ctx: SheetContext) {
     fun readReport(sheetId: String) = readRowBadge(sheetId, BadgeKind.Report)
 
     /**
-     * Published clears on entry, report and comment, per id — while the tab
-     * is on screen, and at app level for a user who has no Published tab
-     * (their badges would otherwise sit on the tile unread forever). A tab
-     * set still unknown reads nothing: a poster's tab must not be drained
-     * before it is drawn.
+     * An Approvals sub-tab appearing reads its REPORT rows for every sheet
+     * (iOS `handleBadgeRead(subTab:)` from each sub-tab's `onAppear`,
+     * `ProjectDetailView.swift:2249-2290`) — once per appearance: it fires
+     * when the sub-tab on screen changes, not on every reload. The read keeps
+     * its level scoping; iOS's per-sheet LOCAL clear dropping `level_1` and
+     * `level_2` (`ProjectDetailView.swift:842-846`) is not copied.
+     */
+    private fun readSectionOnEntry() {
+        val state = ctx.state
+        val section = if (state.activeTab == SheetTab.Approvals) state.activeSection else null
+        if (section == sectionOnScreen) return
+        sectionOnScreen = section
+        section?.let { ctx.services.badges.readSection(it.surface) }
+    }
+
+    private val ApprovalSection.surface: BadgeSurface
+        get() = when (this) {
+            ApprovalSection.Sent -> BadgeSurface.Sent
+            ApprovalSection.Received -> BadgeSurface.Received
+            ApprovalSection.Finalized -> BadgeSurface.Finalized
+        }
+
+    /**
+     * After a list lands, rows that name no sheet any loaded list holds are
+     * marked read here once they are a week old (iOS
+     * `csSweepOrphanCommentRecords`, `ProjectDetailView.swift:344-352, 905-924`):
+     * the sheet was deleted, or sits where this user cannot reach it, and
+     * nothing would ever clear them. iOS judges every unit against whatever
+     * happens to be loaded; here a unit is judged only once every list that
+     * shows it has answered (a unit whose tab this user lacks has no such
+     * list — its rows are unreachable by definition), and only while the
+     * tab set is known: with no tabs yet, every unit would look hidden.
+     */
+    private fun sweepOrphans() {
+        val state = ctx.state
+        if (!state.viewer.ready || !(state.isPoster || state.metadataSettled)) return
+        val lists = state.lists
+        val keep = listOf(lists.drafts, lists.sent, lists.received, lists.finalized, lists.published)
+            .flatMap { list -> list.rows.map { it.id } }
+            .filter { it.isNotBlank() }
+            .toSet()
+        // Nothing loaded yet — every row would look orphaned (`ProjectDetailView.swift:346-348`).
+        if (keep.isEmpty()) return
+        val sections = state.sections.map { section ->
+            when (section) {
+                ApprovalSection.Sent -> lists.sent
+                ApprovalSection.Received -> lists.received
+                ApprovalSection.Finalized -> lists.finalized
+            }
+        }
+        val shown = mapOf(
+            SheetBadges.UNIT_DRAFTS to (SheetTab.Drafts to listOf(lists.drafts)),
+            SheetBadges.UNIT_APPROVAL to (SheetTab.Approvals to sections),
+            SheetBadges.UNIT_PUBLISHED to (SheetTab.Published to listOf(lists.published)),
+        )
+        val units = shown.filterValues { (tab, feeding) ->
+            tab !in state.tabs || feeding.all { it.loaded && !it.loading && it.error == null }
+        }.keys
+        if (units.isNotEmpty()) ctx.services.badges.sweepOrphans(units, keep)
+    }
+
+    /**
+     * Published is read sheet by sheet, on View and on Comments (iOS
+     * `ProjectDetailView.swift:2606, 2617`) — [readRowBadge] does that like any
+     * list. What is left here is the app-level drain: a user who has no
+     * Published tab has its rows read as they arrive, report and comment, per
+     * id, or they would sit on the tile unread forever. A tab set still
+     * unknown reads nothing: a poster's tab must not be drained before it is
+     * drawn.
      */
     fun readPublishedBadges() {
         val state = ctx.state
@@ -392,8 +464,7 @@ internal class ListsController(private val ctx: SheetContext) {
         val tabs = state.tabs
         val tabSetKnown = state.isPoster || state.metadataSettled
         if (!tabSetKnown) return
-        val drains = state.activeTab == SheetTab.Published || SheetTab.Published !in tabs
-        if (!drains) return
+        if (SheetTab.Published in tabs) return
         val leaves = state.badges.leavesOf(BadgeSurface.Published)
         val keys = leaves.map { (kind, id, count) -> "${kind.wire}:$id:$count" }.toSet()
         leaves.forEach { (kind, id, count) ->

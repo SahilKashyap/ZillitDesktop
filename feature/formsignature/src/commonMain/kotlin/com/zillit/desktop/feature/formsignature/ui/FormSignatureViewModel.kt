@@ -85,7 +85,12 @@ class FormSignatureViewModel(
                 }
             }
         }
-        launch { badges.leaves.collect { leaves -> setState { copy(unread = FormSignatureUnread(leaves)) } } }
+        launch {
+            badges.leaves.collect { leaves ->
+                setState { copy(unread = FormSignatureUnread(leaves)) }
+                readOpenRoom()
+            }
+        }
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per user act; the fan-out IS the function.
@@ -196,10 +201,8 @@ class FormSignatureViewModel(
                 loadStandardForms()
                 loadChatUnit()
             }
-            FormSignScreen.DocumentsForSignature -> {
-                loadDocuments()
-                readDocumentsTab()
-            }
+            // No tab read on entry: each document is read when it is opened (DetailFlow.openDocument).
+            FormSignScreen.DocumentsForSignature -> loadDocuments()
             FormSignScreen.SignatureBlock -> marks.load()
             else -> Unit
         }
@@ -255,17 +258,14 @@ class FormSignatureViewModel(
         )
     }
 
+    /**
+     * A tab shown loads its list and reads nothing: iOS reads one document
+     * at a time, as it is opened (`FormDocumentView.swift:401-446`), where the
+     * web cleared the whole tab on show (`DocumentsForSignature.jsx:95-108`).
+     */
     private fun switchDocumentsTab(tab: SignDocumentTab) {
         setState { copy(documents = documents.copy(tab = tab, search = "")) }
         loadDocuments()
-        readDocumentsTab()
-    }
-
-    /** The web reads the tab's badge as it shows (`DocumentsForSignature.jsx:95-108`). */
-    private fun readDocumentsTab() {
-        val tab = currentState.documents.tab
-        val leaves = currentState.unread.tabLeaves(tab)
-        if (leaves.isNotEmpty()) badges.readDocumentsTab(leaves)
     }
 
     private fun selfAssign(formId: String) {
@@ -367,6 +367,18 @@ class FormSignatureViewModel(
         }
         setState { copy(screen = FormSignScreen.Chat, chat = chat.copy(receiver = null)) }
         // The web reads the room's badge once its messages are on screen.
+        readOpenRoom()
+    }
+
+    /**
+     * The room on screen reads what it holds — on opening, and again
+     * whenever a message lands while it stays open, as iOS re-reads on each
+     * arrival (`DiscussionChatView.swift:67-110`). The read on leaving alone
+     * left a window closed mid-room counting a message the reader had seen.
+     */
+    private fun readOpenRoom() {
+        if (currentState.screen != FormSignScreen.Chat) return
+        val unit = currentState.chat.unit ?: return
         if (currentState.unread.chat(unit.id) > 0) badges.readChat(unit.id)
     }
 

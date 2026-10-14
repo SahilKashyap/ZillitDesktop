@@ -25,8 +25,9 @@ internal fun AppGraph.Ready.buildAdDashboard(permissions: () -> ProjectPermissio
     rights = rightsRequests,
     events = socketEvents,
     // Every AD event files under the tool with the dashboard tab as its unit
-    // (`constants.js`, "AD Dashboard module"); the tile itself never counts them.
-    badges = tabBadges("unit") { TabBadgeScope(tool = "ad_dashboard_label") },
+    // (`constants.js`, "AD Dashboard module"), the register's naming its
+    // artiste in `level_3`.
+    badges = unitEntityBadges(tool = "ad_dashboard_label"),
 )
 
 private fun AppGraph.Ready.crewName(userId: String): String? =

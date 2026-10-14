@@ -595,18 +595,31 @@ class ReportWorkflowViewModelTest {
     }
 
     @Test
-    fun `Published clears on entry, leaf by leaf, and drains for a user who has no Published tab`() =
+    fun `Published reads report by report when opened, and drains only for a user who has no Published tab`() =
         runTest(dispatcher) {
             val vm = harness.start(this)
-            harness.badges.live.emit(listOf(BadgeLeaf(ReportBadges.UNIT_PUBLISHED, level2 = "report", level3 = "r9")))
+            harness.badges.live.emit(
+                listOf(
+                    BadgeLeaf(ReportBadges.UNIT_PUBLISHED, level2 = "report", level3 = "r9"),
+                    BadgeLeaf(ReportBadges.UNIT_PUBLISHED, level2 = "comment", level3 = "r9"),
+                    BadgeLeaf(ReportBadges.UNIT_PUBLISHED, level2 = "report", level3 = "r8"),
+                ),
+            )
             settle()
-            assertTrue(harness.badges.reads.isEmpty(), "not while Drafts is on screen")
             vm.onEvent(ListEvent.OpenTab(ManageTab.Published))
             settle()
-            assertEquals(listOf(BadgeRead(BadgeSurface.Published, BadgeKind.Report, "r9")), harness.badges.reads)
-            harness.badges.live.emit(listOf(BadgeLeaf(ReportBadges.UNIT_PUBLISHED, level2 = "report", level3 = "r9")))
+            assertTrue(harness.badges.reads.isEmpty(), "showing the tab reads nothing (PublishedTabView.swift:68, 74)")
+            vm.onEvent(ListEvent.View(Samples.row("r9", "Day 9", status = ReportStatus.Published)))
             settle()
-            assertEquals(1, harness.badges.reads.size, "an unchanged leaf is not read again")
+            assertEquals(listOf(BadgeRead(BadgeSurface.Published, BadgeKind.Report, "r9")), harness.badges.reads)
+            vm.onEvent(ListEvent.OpenComments(Samples.row("r9", "Day 9", status = ReportStatus.Published), true))
+            settle()
+            assertEquals(
+                BadgeRead(BadgeSurface.Published, BadgeKind.Comment, "r9"),
+                harness.badges.reads.last(),
+                "the thread reads its own kind, and r8 is left for its own open",
+            )
+            assertEquals(2, harness.badges.reads.size)
 
             val viewer = ReportHarness(dispatcher)
             viewer.repository.metadata = SheetMetadata(finalApproverIds = listOf("me"))

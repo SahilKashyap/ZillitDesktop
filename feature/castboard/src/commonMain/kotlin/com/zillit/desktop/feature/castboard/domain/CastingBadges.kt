@@ -22,6 +22,10 @@ data class CastingBadgeLeaf(
     /** The entry a comment row belongs to; blank for a row about the folder itself. */
     val entryId: String,
     val unread: Int,
+    /** `level_2` — the talent (casting) or scene (wardrobe) the folder is keyed by. */
+    val folder: String = "",
+    /** The row's `action` — `casting_created`, `wardrobe_updated`, a comment's own… */
+    val action: String = "",
 )
 
 /**
@@ -53,11 +57,53 @@ interface CastingBadges {
 
         fun statusOf(board: BoardTool, unit: String): CastingStatus? =
             CastingStatus.entries.firstOrNull { unitOf(board, it) == unit }
+
+        /**
+         * The `level_2` an entry's folder is filed under — iOS keys a casting
+         * folder by character + talent and a wardrobe one by character + scene
+         * (`CastingFolderDetailViewController.swift:141-145`,
+         * `WardrobeFolderDetailViewController.swift:144`), the first of each
+         * where a record names several (`CastingSceneFolderVC+TableView.swift:215-218`;
+         * the web's `talentName[0]`, `CommonCasting.jsx:892`).
+         */
+        fun folderOf(board: BoardTool, entry: CastingEntry): String =
+            (if (board.showsScenes) entry.sceneNumbers.firstOrNull() else entry.talentNames.firstOrNull())
+                .orEmpty().trim()
+
+        /** The actions a folder read names on the wire — iOS's `unitAction_1` and `unitAction_2`. */
+        fun readActions(board: BoardTool): Set<String> = setOf("${board.segment}_created", "${board.segment}_updated")
+
+        /**
+         * Whether a folder row (no entry id) is about [entry]: the same
+         * character, the same talent or scene where the row names one, the
+         * same episode where both name one. A row naming no `level_2` was
+         * written from the character's own folder (the web's first modal
+         * leaves it blank, `CommonCasting.jsx:329-331`) and belongs to each
+         * of the character's entries, as an episode-less row does.
+         */
+        fun isFolderRowOf(board: BoardTool, leaf: CastingBadgeLeaf, entry: CastingEntry): Boolean =
+            leaf.character.trim() == entry.characterName.trim() &&
+                (leaf.folder.isBlank() || leaf.folder.trim() == folderOf(board, entry)) &&
+                (leaf.episode.isBlank() || entry.episode.isBlank() || leaf.episode.trim() == entry.episode.trim())
+
+        /**
+         * Whether opening [entry] reads a row filed at its folder: a
+         * created/updated row as iOS reads it ([readActions]), and any other
+         * row that is no entry's comment. A comment on a sibling entry is
+         * filed at the same levels; iOS's action filter is what spares it,
+         * and its entry id says the same thing more precisely.
+         */
+        fun readsWithEntry(board: BoardTool, leaf: CastingBadgeLeaf, entry: CastingEntry): Boolean =
+            (leaf.action in readActions(board) || leaf.entryId.isBlank()) && isFolderRowOf(board, leaf, entry)
     }
 }
 
 /** The leaves cut the way the board asks: a list tab, a stage tab, one entry. */
-data class CastingUnread(val leaves: List<CastingBadgeLeaf> = emptyList()) {
+data class CastingUnread(
+    val leaves: List<CastingBadgeLeaf> = emptyList(),
+    /** Whose folders these are — casting keys them by talent, wardrobe by scene. */
+    val board: BoardTool = BoardTool.Casting,
+) {
 
     fun tool(tool: String): Int = leaves.filter { it.tool == tool }.sumOf { it.unread }
 
@@ -65,8 +111,8 @@ data class CastingUnread(val leaves: List<CastingBadgeLeaf> = emptyList()) {
         leaves.filter { it.tool == tool && it.status == status }.sumOf { it.unread }
 
     /**
-     * One entry: its own comments, plus every folder row about its character
-     * (and its episode, where both name one).
+     * One entry: its own comments, plus every folder row about its folder —
+     * character, talent or scene, episode ([CastingBadges.isFolderRowOf]).
      */
     fun entry(tool: String, status: CastingStatus, entry: CastingEntry): Int =
         leaves.filter { it.tool == tool && it.status == status && it.belongsTo(entry) }.sumOf { it.unread }
@@ -83,11 +129,8 @@ data class CastingUnread(val leaves: List<CastingBadgeLeaf> = emptyList()) {
             leaf.tool == tool && leaf.status == status && entries.none { leaf.belongsTo(it) }
         }
 
-    private fun CastingBadgeLeaf.belongsTo(entry: CastingEntry): Boolean = when {
-        entryId.isNotBlank() -> entryId == entry.id
-        character.trim() != entry.characterName.trim() -> false
-        else -> episode.isBlank() || entry.episode.isBlank() || episode.trim() == entry.episode.trim()
-    }
+    private fun CastingBadgeLeaf.belongsTo(entry: CastingEntry): Boolean =
+        if (entryId.isNotBlank()) entryId == entry.id else CastingBadges.isFolderRowOf(board, this, entry)
 
     companion object {
         val None = CastingUnread()

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cardexpenses.ui.pages
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
@@ -32,11 +34,13 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.CrewRules
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
+import com.zillit.desktop.feature.cardexpenses.ui.CARD_EXTENSION
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CrewEvent
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
+import com.zillit.desktop.feature.cardexpenses.ui.topUpUnread
 
 /**
  * Card Extension — the cardholder's top-ups (`CardExtensionPage.jsx`,
@@ -131,18 +135,24 @@ fun CardExtensionPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 state.topUps.isEmpty() -> CenteredNote(str(S.desktop_pc_no_topups_yet))
                 else -> state.topUps.forEachIndexed { index, topUp ->
                     if (index > 0) ZillitDivider()
-                    TopUpRow(topUp, selected, onEvent)
+                    TopUpRow(topUp, selected, state.topUpUnread(CARD_EXTENSION, topUp), onEvent)
                 }
             }
         }
     }
 }
 
+/**
+ * One top-up, with its own unread — a skipped or part-funded request lands a
+ * `card_extension` row naming it (`CardExtensionTabView.swift:274-297`). The
+ * whole row is the tap target, as on iOS: it reads the chip and opens the trail.
+ */
 @Composable
-private fun TopUpRow(topUp: CardTopUp, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
+private fun TopUpRow(topUp: CardTopUp, card: ExpenseCard, unread: Int, onEvent: (CardEvent) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onEvent(CrewEvent.TapTopUp(topUp.id)) }
             .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -152,6 +162,7 @@ private fun TopUpRow(topUp: CardTopUp, card: ExpenseCard, onEvent: (CardEvent) -
             style = ZillitTheme.typography.titleSmall,
         )
         ZillitStatusPill(label = topUpStatusLabel(topUp.status), tone = topUpTone(topUp.status), dot = true)
+        ZillitBadge(count = unread)
         topUp.method?.takeIf { it.isNotBlank() }?.let {
             ZillitText(
                 text = it.uppercase(),

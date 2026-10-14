@@ -33,9 +33,6 @@ class BadgeCounts(
      */
     val total: Int get() = bySection.values.sum()
 
-    /** The total with one section's count replaced — the rail's own C&C number, so the dock agrees with it. */
-    fun totalWith(section: String, count: Int): Int = total - section(section) + count
-
     val isEmpty: Boolean get() = bySection.isEmpty() && byTool.isEmpty() && byUnit.isEmpty()
 
     /** For tests and diagnostics; never for iteration order in the UI. */
@@ -87,17 +84,9 @@ object BadgeSections {
      * A profile change waiting on an admin — the Approve User Profile row.
      *
      * The name the server files these under, and the one the web
-     * (`BADGE_CONSTANTS`) and iOS (`ProjectObserver`) read. Android's
-     * `project_approve_profile_user_request_label` is kept beside it; with only
-     * that one here, every profile-change notification went uncounted.
+     * (`BADGE_CONSTANTS`) and iOS (`SettingType.changeRequest`) read — not
+     * Android's `project_approve_profile_user_request_label`, which no row
+     * carries.
      */
     const val PROFILE_CHANGE_UNIT = "project_user_profile_change_request_label"
-
-    /** The settings units Android sums (`CommonBadgesHandler.kt:2432-2445`), plus the server's profile-change name. */
-    val settingsUnits: Set<String> = setOf(
-        JOIN_REQUEST_UNIT,
-        PROFILE_CHANGE_UNIT,
-        "project_approve_profile_user_request_label",
-        "deal_memo_label",
-    )
 }

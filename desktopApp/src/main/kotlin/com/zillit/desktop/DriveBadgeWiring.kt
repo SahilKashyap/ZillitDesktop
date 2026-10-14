@@ -61,6 +61,43 @@ internal fun AppGraph.Ready.driveBadges(): DriveBadges = object : DriveBadges {
         }
     }
 
+    /**
+     * iOS's folder open (`markDriveFolderAndChildrenRead`): the folder's rows
+     * and its direct children's, here at once. The server is told item by
+     * item — the folder, then each child the read turned — with the same
+     * `reference_id` read as a file open; iOS's bare `notification:level:read`
+     * for the folder is the one the server widens to the whole tool (ZL-18873).
+     */
+    override fun readFolder(folderId: String) {
+        scope.launch {
+            val opened = LedgerRead.Matching("drive folder $folderId") { row ->
+                row.tool == DriveBadgeWire.TOOL && row.toDriveRow().isReadWithFolder(folderId)
+            }
+            val children = badgeStore.unreadRows(BadgeSections.TOOLS)
+                .filter(opened::matches)
+                .map { it.referenceId }
+                .filter { it.isNotBlank() && it != folderId }
+                .distinct()
+            runCatching {
+                emitSegmentRead(
+                    this@driveBadges,
+                    segment = DriveBadgeWire.TOOL,
+                    module = DriveBadgeWire.TOOL,
+                    referenceId = folderId,
+                    read = opened,
+                )
+                children.forEach { child ->
+                    emitSegmentRead(
+                        this@driveBadges,
+                        segment = DriveBadgeWire.TOOL,
+                        module = DriveBadgeWire.TOOL,
+                        referenceId = child,
+                    )
+                }
+            }.onFailure { ZillitLog.w(DRIVE_BADGE_TAG) { "folder read $folderId not sent: ${it::class.simpleName}" } }
+        }
+    }
+
     override fun forget(ids: Collection<String>) {
         if (ids.isEmpty()) return
         scope.launch { ids.forEach { badgeStore.markRead(LedgerRead.Reference(it)) } }
@@ -68,12 +105,14 @@ internal fun AppGraph.Ready.driveBadges(): DriveBadges = object : DriveBadges {
 }
 
 /**
- * A ledger row as the dots read it. `view` hides in `reference_data` (an
- * object, or a JSON string of one) and the depth-four-and-below ancestors in
- * the top-level `levels[]`, neither of which the record lifts out.
+ * A ledger row as the dots read it. `view` and `folder_id` hide in
+ * `reference_data` (an object, or a JSON string of one) and the
+ * depth-four-and-below ancestors in the top-level `levels[]`, none of which
+ * the record lifts out.
  */
 internal fun NotificationRecord.toDriveRow(): DriveUnreadRow {
     val wire = runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+    val reference = wire?.get("reference_data").asObject()
     return DriveUnreadRow(
         unit = unit,
         referenceId = referenceId,
@@ -82,7 +121,8 @@ internal fun NotificationRecord.toDriveRow(): DriveUnreadRow {
         level2 = level2,
         level3 = level3,
         deeper = wire?.get("levels").levelValues(),
-        view = wire?.get("reference_data").asObject()?.get("view").text().orEmpty(),
+        view = reference?.get("view").text().orEmpty(),
+        folderId = reference?.get("folder_id").text().orEmpty(),
     )
 }
 
@@ -95,8 +135,12 @@ private fun JsonElement?.asObject(): JsonObject? = when (this) {
 
 private fun JsonElement?.text(): String? = (this as? JsonPrimitive)?.contentOrNull?.takeIf { it != "null" }
 
-/** `[{"level_4": "id"}, …]` → the ids. */
+/** `[{"level_4": "id"}, …]` → the ids; a `"level_4:id"` string or a bare id is taken too. */
 private fun JsonElement?.levelValues(): List<String> =
     (this as? JsonArray).orEmpty().flatMap { entry ->
-        (entry as? JsonObject)?.values?.mapNotNull { it.text() }.orEmpty()
+        when (entry) {
+            is JsonObject -> entry.values.mapNotNull { it.text() }
+            is JsonPrimitive -> listOfNotNull(entry.text()?.substringAfterLast(':'))
+            else -> emptyList()
+        }
     }

@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.esignature
 
+import com.zillit.desktop.feature.esignature.domain.EsignBadges
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.esignature.domain.AuditEntry
@@ -237,6 +238,7 @@ internal fun testModel(
         SignerOptionLike("u2", "Bob Stone", "bob@x.io"),
         SignerOptionLike("u3", "Cy Nomail", ""),
     ),
+    badges: EsignBadges = EsignBadges.None,
 ): EsignViewModel = EsignViewModel(
     repository = repo,
     transfer = FakeTransfer,
@@ -248,6 +250,7 @@ internal fun testModel(
     newId = { "id-${repo.nextId++}" },
     currentUserEmail = { "ada@x.io" },
     now = { 1_700_000_000_000L },
+    badges = badges,
 )
 
 internal fun signer(id: String, userId: String, status: String = "sent", index: Int = 0) = EnvelopeRecipient(

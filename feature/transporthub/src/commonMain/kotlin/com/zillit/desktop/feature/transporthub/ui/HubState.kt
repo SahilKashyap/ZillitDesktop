@@ -10,6 +10,8 @@ import com.zillit.desktop.feature.transporthub.domain.AvDraft
 import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
 import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
 import com.zillit.desktop.feature.transporthub.domain.AvApprover
+import com.zillit.desktop.feature.transporthub.domain.AvBadgeLevels
+import com.zillit.desktop.feature.transporthub.domain.AvBadges
 import com.zillit.desktop.feature.transporthub.domain.AvCapabilities
 import com.zillit.desktop.feature.transporthub.domain.AvInsuranceStatus
 import com.zillit.desktop.feature.transporthub.domain.AvRatePeriod
@@ -106,6 +108,21 @@ enum class HubSection(
     ;
 
     fun visibleTo(viewer: HubViewer): Boolean = this in railFor(viewer)
+
+    /**
+     * The buckets reading this section reads — on opening it, on landing on
+     * it, and again when one of them rises while somebody is looking.
+     *
+     * A passenger's Ride Requests reads the trip unit too: iOS My Rides clears
+     * both units, because a request that has been assigned becomes a trip and
+     * its completion lands on the trip unit (`MyRidesView.swift:659-682`).
+     * Action Vehicles reads nothing whole ([HubBadgeBucket.readOnOpen]).
+     */
+    val readsOnOpen: List<HubBadgeBucket>
+        get() = when (this) {
+            MyRides -> listOf(HubBadgeBucket.Rides, HubBadgeBucket.MyTrips)
+            else -> listOfNotNull(badgeBucket?.takeIf { it.readOnOpen })
+        }
 
     /** True when this section draws driver positions and wants the live stream. */
     val showsLocations: Boolean get() = this == LiveTracking || this == DriverMap
@@ -291,24 +308,35 @@ enum class ShuttleTab { Routes, Runs }
  * [HubUiState.actionVehicleTabs]; this enum is only their identity and the
  * statuses each accepts.
  */
-enum class AvTab(val statuses: List<AvStatus>) {
+enum class AvTab(
+    val statuses: List<AvStatus>,
+    /**
+     * The backend's `level_1` for this tab on every Action Vehicle
+     * notification — the wire's own words, which are not the tab's
+     * (iOS `ActionVehicleTab.level1`, web `AV_LEVEL_1_BY_TAB`).
+     */
+    val badgeLevel: String,
+) {
     /** The requester's own composer and their requests. */
-    Request(emptyList()),
+    Request(emptyList(), AvBadgeLevels.TAB_REQUESTED),
 
     /** The sourcer's queue: what has been asked for and not yet found. */
-    Identify(listOf(AvStatus.Requested)),
+    Identify(listOf(AvStatus.Requested), AvBadgeLevels.TAB_IDENTIFY),
 
     /** The sourcer's live queue, bounced-back records included. */
-    InProgress(listOf(AvStatus.Sourced, AvStatus.PendingApproval, AvStatus.Rejected)),
+    InProgress(
+        listOf(AvStatus.Sourced, AvStatus.PendingApproval, AvStatus.Rejected),
+        AvBadgeLevels.TAB_SENT_FOR_APPROVAL,
+    ),
 
     /** Only the records this viewer is an approver on. */
-    Pending(listOf(AvStatus.PendingApproval, AvStatus.ReturnPending)),
+    Pending(listOf(AvStatus.PendingApproval, AvStatus.ReturnPending), AvBadgeLevels.TAB_PENDING_APPROVAL),
 
     /** Approved onward — the register everyone with access can see. */
-    Finalized(AvStatus.FINALIZED),
+    Finalized(AvStatus.FINALIZED, AvBadgeLevels.TAB_FINALIZED),
 
     /** A thread this viewer is in the audience for, with no other tab to show it. */
-    Comments(emptyList()),
+    Comments(emptyList(), AvBadgeLevels.TAB_COMMENTS),
     ;
 
     /** True when the tab is narrowed to records the viewer decides on. */
@@ -1003,6 +1031,8 @@ data class HubUiState(
     val showActiveCars: Boolean = false,
 
     val badges: Map<String, Int> = emptyMap(),
+    /** The Action Vehicle unit's unread per tab and per vehicle. */
+    val avBadges: AvBadges = AvBadges.Empty,
 ) {
     val role: HubRole get() = viewer.role
 
@@ -1152,9 +1182,15 @@ data class HubUiState(
     val avCanApprove: Boolean
         get() = actionVehicles.any { it.my.isApprover || it.my.isReturnApprover }
 
-    /** True when they are in some live record's comment audience. */
+    /**
+     * True when they are in some live record's comment audience — or already
+     * have unread comment-tab alerts, whose record may not be in this fetch
+     * yet: that tab is where the backend routes a pure commenter's rows
+     * (`ActionVehiclesView.swift:137-144`, web `hasComments`).
+     */
     val avHasComments: Boolean
-        get() = actionVehicles.any { !it.status.isTerminal && it.my.inComments }
+        get() = avBadges.tab(AvTab.Comments.badgeLevel) > 0 ||
+            actionVehicles.any { !it.status.isTerminal && it.my.inComments }
 
     /**
      * The tabs this viewer gets, as the web's `tabsFor` builds them.
@@ -1191,17 +1227,16 @@ data class HubUiState(
             .filter { avCategory.isBlank() || avCategory in it.categories }
             .filter { it.matches(avSearch) }
 
-    val actionVehicleCounts: Map<AvTab, Int>
-        get() = actionVehicleTabs.associateWith { tab ->
-            actionVehicles.count { vehicle ->
-                when (tab) {
-                    AvTab.Request -> vehicle.my.isRequester
-                    AvTab.Comments -> vehicle.my.inComments
-                    else -> vehicle.status in tab.statuses &&
-                        (!tab.mineAsApprover || vehicle.my.isApprover || vehicle.my.isReturnApprover)
-                }
-            }
-        }
+    /**
+     * Each tab's unread alerts, by its `level_1` — what the tab strip draws.
+     *
+     * Not the records each tab holds: the web replaced those static totals
+     * with "dynamic unread-alert badges … a tab with no unread shows no badge"
+     * (`ActionVehicles.jsx`), and iOS draws `badges.tab(level1)`
+     * (`ActionVehiclesView.swift:221`).
+     */
+    val actionVehicleUnread: Map<AvTab, Int>
+        get() = actionVehicleTabs.associateWith { avBadges.tab(it.badgeLevel) }
 
     /** Every category in use, built-ins first, for the filter. */
     val avCategoryOptions: List<String>
@@ -1476,6 +1511,13 @@ sealed interface HubEvent {
 
     /** The banner's moon/sun — the hub's own theme, apart from the app's. */
     data class SetHubTheme(val dark: Boolean) : Shell
+
+    /**
+     * Whether the hub's window is in front — somebody looking. Rows that land
+     * on the open section are read only then; a window in the background
+     * leaves them for when it comes back.
+     */
+    data class WindowFocus(val focused: Boolean) : Shell
 
     /** Carries out the action a [HubConfirm] was asked about. */
     data class Confirmed(val action: HubEvent) : Shell

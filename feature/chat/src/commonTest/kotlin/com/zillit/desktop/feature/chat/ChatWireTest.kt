@@ -9,6 +9,8 @@ import com.zillit.desktop.feature.chat.data.roomsFrom
 import com.zillit.desktop.feature.chat.data.readChatMessage
 import com.zillit.desktop.feature.chat.data.lastMessagesEnvelope
 import com.zillit.desktop.feature.chat.data.sendEnvelope
+import com.zillit.desktop.feature.chat.data.SelfRead
+import com.zillit.desktop.feature.chat.data.selfReadOf
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -356,6 +358,89 @@ class ChatWireTest {
                     """{"detail":{"sender":"alice","receiver":"me","status":2}}""",
                 ),
                 myUserId = "me",
+            ),
+        )
+    }
+
+    /**
+     * The frame names the messages its read covered — iOS flips its ledger
+     * rows by them (`ChatObserver.swift:321-345`), and a lone id arrives as
+     * a bare string now and then (`ChattingApiModel.swift:698-706`).
+     */
+    @Test
+    fun `my DM read elsewhere carries the message ids it read`() {
+        val read = selfReadOf(
+            Json.parseToJsonElement(
+                """{"detail":{"sender":"alice","receiver":"me","status":3,"project_id":"p-1",
+                   "chat_message_ids":["m-1","m-2",""]}}""",
+            ),
+            myUserId = "me",
+            isGroup = false,
+        )
+        assertEquals(SelfRead("alice", setOf("m-1", "m-2"), isGroup = false, projectId = "p-1"), read)
+
+        val lone = selfReadOf(
+            Json.parseToJsonElement(
+                """{"detail":{"sender":"alice","receiver":"me","status":3,"chat_message_ids":"m-9"}}""",
+            ),
+            myUserId = "me",
+            isGroup = false,
+        )
+        assertEquals(setOf("m-9"), lone?.messageIds)
+    }
+
+    /**
+     * A room's frame in the phones' shape: the room under `receiver`, the
+     * reader under `emitted_sender`, and the reader's rung in
+     * `emitted_status` (Android `ChatSocketHelper.kt:1396`, iOS
+     * `ChatObserver.swift:368`) — its `status` is not the reader's.
+     */
+    @Test
+    fun `a room's read is judged by what the reader emitted`() {
+        val read = selfReadOf(
+            Json.parseToJsonElement(
+                """{"detail":{"receiver":"room-1","sender":"bob","emitted_sender":"me","status":2,
+                   "emitted_status":3,"chat_message_ids":["m-4"]}}""",
+            ),
+            myUserId = "me",
+            isGroup = true,
+        )
+        assertEquals(SelfRead("room-1", setOf("m-4"), isGroup = true), read)
+
+        // Delivered by me, whatever the room's own status says, is no read.
+        assertNull(
+            selfReadOf(
+                Json.parseToJsonElement(
+                    """{"detail":{"room_id":"room-1","user_id":"me","status":3,"emitted_status":2}}""",
+                ),
+                myUserId = "me",
+                isGroup = true,
+            ),
+        )
+    }
+
+    /**
+     * iOS clears a room on anybody's read (`ChatObserver.swift:368-381` never
+     * looks at the reader). That is the reader's state, not mine.
+     */
+    @Test
+    fun `somebody else's read of a room clears nothing here, ids or not`() {
+        assertNull(
+            selfReadOf(
+                Json.parseToJsonElement(
+                    """{"detail":{"receiver":"room-1","emitted_sender":"bob","emitted_status":3,
+                       "chat_message_ids":["m-4"]}}""",
+                ),
+                myUserId = "me",
+                isGroup = true,
+            ),
+        )
+        // A room frame that names no reader at all is nobody's read.
+        assertNull(
+            selfReadOf(
+                Json.parseToJsonElement("""{"detail":{"receiver":"room-1","emitted_status":3}}"""),
+                myUserId = "me",
+                isGroup = true,
             ),
         )
     }

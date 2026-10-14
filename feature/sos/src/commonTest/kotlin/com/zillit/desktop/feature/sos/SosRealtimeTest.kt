@@ -157,6 +157,85 @@ class SosRealtimeTest {
         assertEquals(afterStart + 1, repository.alertCursors.size)
     }
 
+    /**
+     * The reported fault (2026-10-14): after the first visit every alarm
+     * refreshed the feed — and so read `sos_label` — with the page closed,
+     * wiping a new alarm's badge the moment it landed. iOS reads on an alarm
+     * only while the SOS screen is showing (`ProjectObserver.swift:774-777`).
+     */
+    @Test
+    fun `an alarm on a closed page neither fetches nor reads`() = runTest(dispatcher) {
+        val repository = FakeSosRepository()
+        val socket = FakeSocket()
+        val model = viewModel(repository, socket)
+        model.start()
+        model.watching(true)
+        advanceUntilIdle()
+        model.stop()
+        val cursors = repository.alertCursors.size
+
+        socket.deliver(SOS_SYNC_EVENTS.single())
+        advanceUntilIdle()
+
+        assertEquals(cursors, repository.alertCursors.size, "the next visit catches the feed up")
+        assertEquals(1, repository.reads.size, "the alarm's badge is left standing")
+    }
+
+    /** Open behind another window: the alarm shows at once, the read waits for the look. */
+    @Test
+    fun `an alarm behind another window shows but is read only when looked at`() = runTest(dispatcher) {
+        val repository = FakeSosRepository()
+        val socket = FakeSocket()
+        val model = viewModel(repository, socket)
+        model.start()
+        model.watching(false)
+        advanceUntilIdle()
+        val cursors = repository.alertCursors.size
+
+        socket.deliver(SOS_SYNC_EVENTS.single())
+        advanceUntilIdle()
+
+        assertEquals(cursors + 1, repository.alertCursors.size, "an open feed follows the alarm")
+        assertEquals(1, repository.reads.size, "but only the visit has read")
+
+        model.watching(true)
+        advanceUntilIdle()
+
+        assertEquals(2, repository.reads.size, "coming to the front reads what was owed")
+    }
+
+    @Test
+    fun `an alarm on a watched page reads at once`() = runTest(dispatcher) {
+        val repository = FakeSosRepository()
+        val socket = FakeSocket()
+        val model = viewModel(repository, socket)
+        model.start()
+        model.watching(true)
+        advanceUntilIdle()
+
+        socket.deliver(SOS_SYNC_EVENTS.single())
+        advanceUntilIdle()
+
+        assertEquals(2, repository.reads.size)
+    }
+
+    /** Arrivals no longer keep a closed feed current, so every visit refetches and reads. */
+    @Test
+    fun `every visit refetches and reads`() = runTest(dispatcher) {
+        val repository = FakeSosRepository()
+        val socket = FakeSocket()
+        val model = viewModel(repository, socket)
+        model.start()
+        advanceUntilIdle()
+        model.stop()
+
+        model.start()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.alertCursors.size)
+        assertEquals(2, repository.reads.size)
+    }
+
     @Test
     fun `a build with no socket still works, just not live`() = runTest(dispatcher) {
         val repository = FakeSosRepository()

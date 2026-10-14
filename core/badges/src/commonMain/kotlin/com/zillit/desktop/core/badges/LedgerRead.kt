@@ -14,10 +14,12 @@ sealed interface LedgerRead {
     /**
      * A board or unit opened — `Home`/`Default`:
      * `!isGlobal && (unit == id || chatUnitId == id)` (5396-5414, 8093-8100).
+     * The bell's rows are never a board's: iOS `updateMarkReadByUnit` skips
+     * `section == global_label` as well as the flag.
      */
     data class Board(val unitId: String) : LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
-            !row.isGlobal && (row.unit == unitId || row.chatUnitId == unitId)
+            !row.isGlobal && row.section != BadgeSections.GLOBAL && (row.unit == unitId || row.chatUnitId == unitId)
     }
 
     /** A tool fronted — `Info`, `Production`, `MissedCall`…: `tool == label` (5568-5584, 6031-6043). */
@@ -39,10 +41,28 @@ sealed interface LedgerRead {
             (row.referenceId == id || row.id == id || row.mongoId == id) && (unit == null || row.unit == unit)
     }
 
-    /** A conversation read — `markReadyByChatRoomIdSenderId`: room, sender or reference (2072-2109). */
+    /**
+     * A conversation read — iOS `updateMarkReadByCNC`: a DM's rows by sender, a
+     * room's by room, C&C chat rows only ([NotificationRecord.conversationKey]).
+     *
+     * It used to match any row naming the key as room, sender or reference,
+     * and room rows carry their sender too — so opening a DM with someone
+     * also read every message they had posted in every group.
+     */
     data class Conversation(val key: String) : LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
-            row.chatRoomId == key || row.senderId == key || row.referenceId == key
+            row.section == BadgeSections.CNC && row.conversationKey == key
+    }
+
+    /**
+     * One invitation answered — iOS `readCalendarMessage(.pending, eventId)`:
+     * the calendar rows filed against that event (`reference_id`), and only
+     * those; the bell's rows are its own.
+     */
+    data class CalendarInvite(val eventId: String) : LedgerRead {
+        override fun matches(row: NotificationRecord): Boolean =
+            row.tool == NotificationRecord.CALENDAR_TOOL && row.section != BadgeSections.GLOBAL &&
+                eventId.isNotBlank() && row.referenceId == eventId
     }
 
     /**
@@ -69,7 +89,12 @@ sealed interface LedgerRead {
         }
     }
 
-    /** A tool's tab — `markReadCommon(isLCW = true)`: every level given is an equality (1442-1474). */
+    /**
+     * A tool's tab — `markReadCommon(isLCW = true)`: every level given is an
+     * equality (1442-1474). [actions], when given, keeps the read to those
+     * actions — iOS reads a Location or Casting folder's `*_created` /
+     * `*_updated` rows only, so the comment rows filed beside them survive.
+     */
     data class Levels(
         val tool: String,
         val unit: String? = null,
@@ -77,19 +102,46 @@ sealed interface LedgerRead {
         val level2: String? = null,
         val level3: String? = null,
         val action: String? = null,
+        val actions: Set<String>? = null,
     ) : LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
             row.tool == tool &&
                 unit.isNullOr(row.unit) && level1.isNullOr(row.level1) && level2.isNullOr(row.level2) &&
-                level3.isNullOr(row.level3) && action.isNullOr(row.action)
+                level3.isNullOr(row.level3) && action.isNullOr(row.action) &&
+                (actions == null || row.action in actions)
 
         private fun String?.isNullOr(value: String): Boolean = this == null || this == value
     }
 
-    /** The calendar opened — `markReadExpiredEvents`: every invite whose event has ended (2028-2070). */
+    /**
+     * One record wherever it is filed — iOS `markReferenceIdAsRead`: rows whose
+     * `reference_id` or `level_3` names it (a trip, a report, an envelope),
+     * optionally within one tool and one unit.
+     */
+    data class Entity(val id: String, val tool: String? = null, val unit: String? = null) : LedgerRead {
+        override fun matches(row: NotificationRecord): Boolean =
+            id.isNotBlank() && (row.referenceId == id || row.level3 == id) &&
+                (tool == null || row.tool == tool) && (unit == null || row.unit == unit)
+    }
+
+    /**
+     * A read no other variant says — a module's own rule (a document
+     * distribution folder's subtree, a Drive folder's direct children), kept
+     * beside the module that knows it. [name] is for the log line.
+     */
+    class Matching(val name: String, private val test: (NotificationRecord) -> Boolean) : LedgerRead {
+        override fun matches(row: NotificationRecord): Boolean = test(row)
+        override fun toString(): String = "Matching($name)"
+    }
+
+    /**
+     * The Expired tab shown — iOS `updateMarkReadByExpiredCalendar` (ZL-18722):
+     * every unread invite whose event is over, by [calendarExpiryOf]'s rule.
+     * Global rows are the bell's, not the calendar's.
+     */
     data class CalendarExpired(val nowMillis: Long) : LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
-            row.tool == NotificationRecord.CALENDAR_TOOL && (row.calendarEnd ?: Long.MAX_VALUE) < nowMillis
+            row.section != BadgeSections.GLOBAL && row.isCalendarExpired(nowMillis)
     }
 
     /**
@@ -279,7 +331,29 @@ data class BadgeSilence(
     /** `reference_data.self_device_id` — a frame from this very device is not news. */
     val selfDeviceId: String? = null,
     val projectId: String? = null,
+    /** The frame's `section` — `cnc_label` when the read ids are chat messages. */
+    val section: String? = null,
+    /**
+     * Whether this frame is this person's own read, made on another device:
+     * `reference_data.self` set, or an action ending `_read`
+     * (`private_chat_read`) — iOS's `isOwnReadEcho` (ZL-21764).
+     */
+    val ownReadEcho: Boolean = false,
 ) {
+    /**
+     * The message ids this frame says this person has read — what a row
+     * arriving *after* the frame must be filed as read for ([BadgeStore]'s
+     * read echoes). iOS records `deleted_chat_ids`, and `read_notification_ids`
+     * of a C&C frame, and only for an own read: a delete or a read by someone
+     * else says nothing about a message still to come.
+     */
+    val readEchoIds: Set<String>
+        get() = when {
+            !ownReadEcho -> emptySet()
+            section == BadgeSections.CNC -> deletedChatIds + readIds
+            else -> deletedChatIds
+        }
+
     val isEmpty: Boolean
         get() = readIds.isEmpty() && deletedChatIds.isEmpty() && deletedCommentIds.isEmpty() &&
             lostRooms.isEmpty() && lostTools.isEmpty() && lostUnits.isEmpty() && lostAdminSettings.isEmpty()
@@ -311,6 +385,8 @@ fun badgeSilenceFrom(payload: kotlinx.serialization.json.JsonElement?): BadgeSil
         lostAdminSettings = reference.strings("admin_settings_no_access"),
         selfDeviceId = reference.text("self_device_id"),
         projectId = record.text("project_id"),
+        section = record.text("section"),
+        ownReadEcho = reference.flag("self") || record.text("action").orEmpty().endsWith("_read"),
     )
     return silence.takeUnless { it.isEmpty }
 }

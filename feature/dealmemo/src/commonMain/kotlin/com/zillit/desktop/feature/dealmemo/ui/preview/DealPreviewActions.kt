@@ -244,7 +244,7 @@ internal class DealPreviewActions(private val vm: DealMemoViewModel) {
     private fun back() {
         val from = vm.ui.preview?.from
         val tab = when (from) {
-            DealBadgeUnit.AllDeals, DealBadgeUnit.Notices -> DealTab.Deals
+            DealBadgeUnit.AllDeals, DealBadgeUnit.Notices, DealBadgeUnit.Nda -> DealTab.Deals
             DealBadgeUnit.ApprovalQueue -> DealTab.ApprovalQueue
             DealBadgeUnit.MyDeal -> DealTab.MyDeal
             null -> DealTab.defaultFor(vm.ui.rights)

@@ -15,6 +15,11 @@ private val IRREGULAR_WIRE_TOOLS = mapOf(
     // notifications carry the tool's label key, which keeps a `_tool` in the
     // middle that no suffix rule turns into `production_report_chat_tool`.
     "production_report_tool_chat_label" to PRODUCTION_REPORT_CHAT_TOOL,
+    // A budget's chat files under its own label, and iOS adds it to the
+    // budget's tile (`FilmToolsViewController.swift:875-879`). Mapped forward
+    // only — the reverse must keep naming the budget's own label.
+    "main_budget_tool_chat_label" to "main_budget_tool",
+    "department_budget_tool_chat_label" to "department_budget_tool",
 )
 
 /**

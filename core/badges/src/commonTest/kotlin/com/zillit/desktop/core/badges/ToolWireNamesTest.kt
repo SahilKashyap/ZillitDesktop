@@ -20,6 +20,15 @@ class ToolWireNamesTest {
         assertEquals("production_report_chat_tool", wireToolToIdentifier("production_report_tool_chat_label"))
     }
 
+    /** iOS adds a budget's chat to the budget's tile; a read still names the budget's own label. */
+    @Test
+    fun `a budget's chat lights the budget's tile, one way only`() {
+        assertEquals("main_budget_tool", wireToolToIdentifier("main_budget_tool_chat_label"))
+        assertEquals("department_budget_tool", wireToolToIdentifier("department_budget_tool_chat_label"))
+        assertEquals("main_budget_label", identifierToWireTool("main_budget_tool"))
+        assertEquals("department_budget_label", identifierToWireTool("department_budget_tool"))
+    }
+
     @Test
     fun `a read names the tool the way the wire does`() {
         // The wire's two shapes — one keeps `_tool`, one never had it.

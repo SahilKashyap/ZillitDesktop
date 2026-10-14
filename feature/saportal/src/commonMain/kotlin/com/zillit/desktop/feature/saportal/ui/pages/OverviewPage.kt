@@ -15,6 +15,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
@@ -54,7 +55,7 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
                     color = ZillitTheme.colors.textSecondary,
                 )
                 state.awaitingSignature.forEach { voucher ->
-                    OutstandingRow(voucher, onEvent)
+                    OutstandingRow(voucher, state.voucherUnread(voucher.id), onEvent)
                 }
             }
         }
@@ -135,14 +136,20 @@ private fun ColumnScope.EarningsTiles(state: SaUiState) {
 }
 
 @Composable
-private fun OutstandingRow(voucher: Voucher, onEvent: (SaEvent) -> Unit) {
+private fun OutstandingRow(voucher: Voucher, unread: Int, onEvent: (SaEvent) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            ZillitText(text = day(voucher.shootDate), style = ZillitTheme.typography.bodyMedium)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitText(text = day(voucher.shootDate), style = ZillitTheme.typography.bodyMedium)
+                ZillitBadge(count = unread)
+            }
             ZillitText(
                 text = "${title(voucher)} · ${money(voucher.gross, voucher.currency)}",
                 style = ZillitTheme.typography.bodySmall,

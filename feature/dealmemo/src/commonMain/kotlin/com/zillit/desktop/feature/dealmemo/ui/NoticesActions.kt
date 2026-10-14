@@ -38,9 +38,14 @@ internal class NoticesActions(private val vm: DealMemoViewModel) {
         }
     }
 
-    /** Entering reads the tab's badge and loads the deals and the production's template. */
+    /**
+     * Entering loads the deals and the production's template — and reads no
+     * badge. The tab used to read itself whole on entry and on every change while
+     * open; iOS reads one deal's notice, once its deactivation lands
+     * ([confirmDeactivate]), and so does this page now, each row wearing its own
+     * pill until then (`DMNoticesPage.swift:278-285, 480-494`).
+     */
     fun enter() {
-        vm.badges?.readTab(DealBadgeUnit.Notices)
         load(silent = vm.ui.notices.loaded)
         vm.work {
             val template = vm.repository.noticeTemplate().getOrNull()?.takeIf { it.isNotBlank() }
@@ -55,7 +60,10 @@ internal class NoticesActions(private val vm: DealMemoViewModel) {
         if (!silent) edit { copy(loading = true) }
         loadJob = vm.work {
             when (val result = vm.repository.deals()) {
-                is ZillitResult.Success -> edit { copy(rows = result.data, loading = false, loaded = true) }
+                is ZillitResult.Success -> {
+                    edit { copy(rows = result.data, loading = false, loaded = true) }
+                    readSettled(result.data)
+                }
                 is ZillitResult.Failure -> edit {
                     copy(rows = if (silent) rows else emptyList(), loading = false, loaded = true)
                 }
@@ -152,6 +160,9 @@ internal class NoticesActions(private val vm: DealMemoViewModel) {
                 is ZillitResult.Success -> {
                     vm.toastSuccess(result.data, "deal_deactivation_scheduled")
                     edit { copy(deactivate = null, deactivatedHere = deactivatedHere + draft.deal.id) }
+                    // The notice asked for exactly this; once done its badge has
+                    // nothing left to point at (`DMNoticesPage.swift:487-493`).
+                    vm.badges?.readDeal(DealBadgeUnit.Notices, draft.deal.id)
                     reload()
                 }
                 is ZillitResult.Failure -> {
@@ -160,6 +171,26 @@ internal class NoticesActions(private val vm: DealMemoViewModel) {
                 }
             }
         }
+    }
+
+    /**
+     * The notices already answered elsewhere — a deal deactivated from another
+     * screen or device, or gone from the production — read as the list shows it.
+     * iOS's own reason for its per-deal read ("once it's done the badge has
+     * nothing left to point at", `DMNoticesPage.swift:487-492`) holds wherever
+     * the deactivation was made, and no row here can ever offer it again; left
+     * unread, the tab would keep a count no row explains. Only while the page is
+     * on screen: a background reload reads nothing.
+     */
+    private fun readSettled(rows: List<DealDoc>) {
+        val source = vm.badges ?: return
+        if (vm.ui.page != DealMemoRoute.Tab(DealTab.Notices)) return
+        val byId = rows.associateBy { it.id }
+        vm.ui.badges.perDeal[DealBadgeUnit.Notices].orEmpty()
+            .filter { (id, unread) -> unread > 0 && id.isNotBlank() }
+            .keys
+            .filter { id -> byId[id]?.let { !NoticeRules.canDeactivate(it, vm.ui.notices.deactivatedHere) } ?: true }
+            .forEach { source.readDeal(DealBadgeUnit.Notices, it) }
     }
 
     private fun editSend(reducer: (SendNoticeDraft) -> SendNoticeDraft) = edit { copy(send = send?.let(reducer)) }

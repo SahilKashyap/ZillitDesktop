@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.addashboard.ui.pages
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -15,6 +16,7 @@ import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
@@ -82,7 +84,7 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
         return
     }
 
-    state.register.forEach { artiste -> ArtisteRow(artiste, onEvent) }
+    state.register.forEach { artiste -> ArtisteRow(artiste, state.artisteUnread(artiste.id), onEvent) }
 }
 
 @Composable
@@ -95,16 +97,29 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
+/**
+ * One artiste. Their unread updates are counted on the row and read when the
+ * row is taken — the phones' tap on a register row (`ADRegisterScreen.swift:
+ * 166-171, 224-229`); the desktop has no artiste detail to open, so a click
+ * on the row, or acting on the artiste, is the look.
+ */
 @Composable
-private fun ArtisteRow(artiste: Artiste, onEvent: (AdEvent) -> Unit) {
-    ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
+private fun ArtisteRow(artiste: Artiste, unread: Int, onEvent: (AdEvent) -> Unit) {
+    val seen = if (unread > 0) Modifier.clickable { onEvent(AdEvent.SeeArtiste(artiste.id)) } else Modifier
+    ZillitSectionCard(modifier = Modifier.fillMaxWidth().then(seen)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                ZillitText(text = artiste.name, style = ZillitTheme.typography.titleSmall)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ZillitText(text = artiste.name, style = ZillitTheme.typography.titleSmall)
+                    ZillitBadge(count = unread)
+                }
                 ZillitText(
                     text = listOf(
                         artiste.refNumber,
@@ -121,38 +136,45 @@ private fun ArtisteRow(artiste: Artiste, onEvent: (AdEvent) -> Unit) {
                 )
             }
             ZillitStatusPill(label = artiste.status.label, tone = artiste.status.tone())
+            ArtisteActions(artiste, onEvent)
+        }
+    }
+}
 
-            // Every one of these lands in AdViewModel, which answers a press
-            // without posting rights by offering to ask an administrator.
-            when (artiste.status) {
-                ArtisteStatus.Blocked -> ZillitButton(
-                    text = str(S.desktop_unblock),
-                    onClick = { onEvent(AdEvent.Unblock(artiste.id)) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                )
+/**
+ * What can be done to an artiste at their status. Every one of these lands in
+ * AdViewModel, which answers a press without posting rights by offering to
+ * ask an administrator.
+ */
+@Composable
+private fun ArtisteActions(artiste: Artiste, onEvent: (AdEvent) -> Unit) {
+    when (artiste.status) {
+        ArtisteStatus.Blocked -> ZillitButton(
+            text = str(S.desktop_unblock),
+            onClick = { onEvent(AdEvent.Unblock(artiste.id)) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
 
-                ArtisteStatus.Verified -> ZillitButton(
-                    text = str(S.block),
-                    onClick = { onEvent(AdEvent.StartBlock(artiste)) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                )
+        ArtisteStatus.Verified -> ZillitButton(
+            text = str(S.block),
+            onClick = { onEvent(AdEvent.StartBlock(artiste)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
 
-                else -> {
-                    ZillitButton(
-                        text = str(S.txt_verify),
-                        onClick = { onEvent(AdEvent.Verify(artiste.id)) },
-                        size = ButtonSize.Small,
-                    )
-                    ZillitButton(
-                        text = str(S.block),
-                        onClick = { onEvent(AdEvent.StartBlock(artiste)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
-                }
-            }
+        else -> {
+            ZillitButton(
+                text = str(S.txt_verify),
+                onClick = { onEvent(AdEvent.Verify(artiste.id)) },
+                size = ButtonSize.Small,
+            )
+            ZillitButton(
+                text = str(S.block),
+                onClick = { onEvent(AdEvent.StartBlock(artiste)) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
         }
     }
 }

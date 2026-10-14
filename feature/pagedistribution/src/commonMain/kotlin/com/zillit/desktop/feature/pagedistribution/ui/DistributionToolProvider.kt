@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.pagedistribution.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -9,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
@@ -46,6 +48,14 @@ class DistributionToolProvider(
         var notice by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Somebody is looking while this is composed (an inactive workspace
+        // tab is disposed) and its window is in front — what lets unread
+        // that lands on the open list count as seen.
+        val windowFocused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(viewModel, windowFocused) { viewModel.onEvent(DistributionEvent.Watching(windowFocused)) }
+        DisposableEffect(viewModel) {
+            onDispose { viewModel.onEvent(DistributionEvent.Watching(false)) }
+        }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

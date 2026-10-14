@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.settings.approvals
 
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
@@ -255,6 +256,20 @@ class ApprovalsViewModel(
      * another admin — re-reads that queue. Null where nothing needs it.
      */
     private val events: SocketEventBus? = null,
+    /**
+     * Who is looking, read per frame — this model is built once per graph,
+     * before any production is open. Decides whether a decision made
+     * elsewhere is this viewer's to clear ([ApprovalDecided.clearsFor]).
+     */
+    private val viewer: () -> ApprovalViewer = { ApprovalViewer() },
+    /**
+     * Clears the notification of a request another admin decided: the
+     * queue's unit, rows naming that person — iOS `readSettingMessage`
+     * (`FirebaseRealmTimeDB+Ext.swift:3028`), the local flip plus the
+     * `notification:read` emit. The host's, because the badge ledger and the
+     * socket write are not this module's to reach.
+     */
+    private val onDecidedElsewhere: suspend (queue: ApprovalQueue, userId: String) -> Unit = { _, _ -> },
 ) : ZillitViewModel<ApprovalsUiState, ApprovalsEvent, ApprovalsEffect>(ApprovalsUiState()) {
 
     init {
@@ -286,6 +301,15 @@ class ApprovalsViewModel(
 
             is ApprovalsEvent.DismissOutcome -> update(event.queue) { copy(outcome = null) }
 
+            // The ticked-rows vocabulary, handled next door so this `when`
+            // stays one readable screen (and under detekt's complexity bar).
+            else -> onSelectionEvent(event)
+        }
+    }
+
+    /** Ticking rows, and deciding the ticked ones together — the web's select-and-approve. */
+    private fun onSelectionEvent(event: ApprovalsEvent) {
+        when (event) {
             is ApprovalsEvent.ToggleSelected -> update(event.queue) {
                 copy(selected = if (event.id in selected) selected - event.id else selected + event.id)
             }
@@ -301,6 +325,7 @@ class ApprovalsViewModel(
                 decideSelected(event.queue, approved = false)
             }
             is ApprovalsEvent.DismissDeclineSelected -> update(event.queue) { copy(confirmingSelected = false) }
+            else -> Unit
         }
     }
 
@@ -489,12 +514,28 @@ class ApprovalsViewModel(
         load(queue)
     }
 
-    /** Requests arriving, or decided by another admin, while the page is open. */
+    /**
+     * Requests arriving, or decided by another admin.
+     *
+     * A decision made elsewhere also clears its notification here, whether or
+     * not this page was ever opened: iOS does it from its socket observer
+     * (`ProjectObserver.swift:4283-4309`, `4512-4537`), so the admin's Settings
+     * badge falls on every device the moment one admin acts. Before this, the
+     * desktop only re-read the queue, and the badge for a request already
+     * gone stayed lit until someone opened the queue — which reads nothing
+     * for a request no longer in it.
+     */
     private fun listenForChanges() {
         val bus = events ?: return
         launch {
             bus.onAny(APPROVAL_SYNC_EVENTS).collect { message ->
                 val queue = APPROVAL_SYNC_QUEUES[message.event] ?: return@collect
+                approvalDecided(message)?.takeIf { it.clearsFor(viewer()) }?.let { decided ->
+                    // Never allowed to end the collector: a failed read must
+                    // not stop the queues following the socket.
+                    runCatching { onDecidedElsewhere(decided.queue, decided.userId) }
+                        .onFailure { ZillitLog.w(TAG) { "decided elsewhere, not cleared: ${it::class.simpleName}" } }
+                }
                 // A queue nobody has opened is read when it is. Fetching it now
                 // would be a request for a page nobody is looking at.
                 if (currentState[queue].hasLoaded) refresh(queue)
@@ -615,3 +656,5 @@ class ApprovalsViewModel(
 
 /** The web's own bound on a profile-change name — see [ApprovalsViewModel.nameError]. */
 private val NAME_LENGTH = 3..15
+
+private const val TAG = "Approvals"

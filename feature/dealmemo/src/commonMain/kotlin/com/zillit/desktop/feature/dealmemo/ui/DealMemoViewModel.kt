@@ -95,6 +95,8 @@ class DealMemoViewModel(
 
     /** Opens the tool: rights, metadata, directory and setups, then the first page. */
     fun start() {
+        ndaReadOnEntry = true
+        readNdas()
         if (started) {
             // Back from the Approvers page lands here as a fresh composition of
             // the tool: it lives in the same window, so leaving it is not a
@@ -416,14 +418,41 @@ class DealMemoViewModel(
                 source.counts.collect { counts ->
                     val before = currentState.badges.tab(DealBadgeUnit.Notices)
                     setState { copy(badges = counts) }
-                    // Notices reads its tab on entry and on every change while open.
-                    val page = currentState.page
-                    if (page == DealMemoRoute.Tab(DealTab.Notices) && counts.tab(DealBadgeUnit.Notices) != before) {
-                        source.readTab(DealBadgeUnit.Notices)
+                    // `deal_memo_deactivate_needed` is no deal lifecycle frame, so a rising
+                    // Notices count is the page's only word that a row changed: reload it,
+                    // and read nothing (`DMNoticesPage.swift:96-104`).
+                    if (currentState.page == DealMemoRoute.Tab(DealTab.Notices) &&
+                        counts.tab(DealBadgeUnit.Notices) > before
+                    ) {
+                        notices.reload()
                     }
+                    if (ndaReadOnEntry) readNdas()
                 }
             }
         }
+    }
+
+    /** Set as the tool is shown, until the NDA unit's first count has been seen; see [readNdas]. */
+    private var ndaReadOnEntry = false
+
+    /**
+     * The NDA unit read whole — iOS `readWholeUnit(.nda)` as its NDA surface
+     * opens, when it has anything (`DMHubPage.swift:176-178`,
+     * `DealMemoModuleView.swift:282-285`; the web's `DMNdaPage.jsx:185`,
+     * `DMMyNdaPage.jsx:111`): "an NDA badge's `level_3` is the NDA id, and opening
+     * the tile is opening all of them".
+     *
+     * The desktop has no NDA page yet, so the tool itself is that door: its NDA
+     * rows are read as the tool is shown, once — never as they land while it is
+     * open, which would read an NDA nobody was there to see. Without it they sat
+     * on the Film Tools tile with no screen able to clear them.
+     */
+    private fun readNdas() {
+        val source = badges ?: return
+        // No counts yet: the first that arrive answer for this entry.
+        if (!ndaReadOnEntry || currentState.badges.tabs.isEmpty()) return
+        ndaReadOnEntry = false
+        if (currentState.badges.tab(DealBadgeUnit.Nda) > 0) source.readTab(DealBadgeUnit.Nda)
     }
 
     private fun onRefresh(refresh: DealRefresh) {

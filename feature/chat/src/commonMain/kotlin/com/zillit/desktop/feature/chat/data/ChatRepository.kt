@@ -157,8 +157,14 @@ interface ChatRepository {
     /** The newest cached line of a thread — the recents list's preview. */
     fun lastMessageOf(otherUserId: String): ChatMessage?
 
-    /** Tells the sender their messages up to [messageId] were read here. */
-    suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean = false)
+    /**
+     * Tells the sender their messages up to [messageId] were read here.
+     * Answers whether the read left this computer: the socket refuses an emit
+     * while it is down rather than queueing it, and a read that never left
+     * must be sent again once it is back (iOS queues it as a pending event
+     * before its disconnect check, `ChatSocketHelper.swift:1242-1248`).
+     */
+    suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean = false): Boolean
 
     /**
      * Tells the sender their message reached this computer — the ladder's
@@ -170,11 +176,11 @@ interface ChatRepository {
 
     /**
      * Conversations this user read on ANOTHER device — peer id for DMs, room
-     * id for groups. The listing clears its row and the badge refetches;
-     * without this, a thread read on the phone stays badged here until
-     * restart.
+     * id for groups — with the message ids the frame names. The listing
+     * clears its row and the badge ledger flips the rows; without this, a
+     * thread read on the phone stays badged here until restart.
      */
-    val selfReads: Flow<String>
+    val selfReads: Flow<SelfRead>
 
     /**
      * `notification:silent`'s chat instruction — rooms lost and messages
@@ -394,6 +400,9 @@ data class MessageHit(
     // One parameter per collaborator the wire needs — client, config, socket,
     // identity, cipher, cache, surface, production. A bag would only rename them.
     "LongParameterList",
+    // The size follows from the first suppression: one small member per wire
+    // operation and socket stream, each already as short as its envelope.
+    "LargeClass",
 )
 class ChatRepositoryImpl(
     private val apiClient: ApiClient,
@@ -545,11 +554,17 @@ class ChatRepositoryImpl(
                 ?.also(::forget)
         }
 
-    override val selfReads: Flow<String> =
-        kotlinx.coroutines.flow.merge(bus.on(readUntill).hereOnly(), bus.on(groupReadUntill).hereOnly())
-            .mapNotNull { message ->
-                message.payload?.let { selfReadFrom(it, myUserId()) }
-            }
+    // Each event says which kind of conversation it is: a room's frame need
+    // not name a `room_id` (Android's model files the room under `receiver`).
+    override val selfReads: Flow<SelfRead> =
+        kotlinx.coroutines.flow.merge(
+            bus.on(readUntill).hereOnly().mapNotNull { message ->
+                message.payload?.let { selfReadOf(it, myUserId(), isGroup = false) }
+            },
+            bus.on(groupReadUntill).hereOnly().mapNotNull { message ->
+                message.payload?.let { selfReadOf(it, myUserId(), isGroup = true) }
+            },
+        )
 
     override val silenced: Flow<ChatSilence> =
         bus.on(silentEvent).hereOnly().mapNotNull { message -> chatSilenceFrom(message.payload) }
@@ -590,15 +605,19 @@ class ChatRepositoryImpl(
     override fun lastMessageOf(otherUserId: String): ChatMessage? =
         cached(otherUserId)?.maxByOrNull(ChatMessage::timestampMillis)
 
-    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) =
+    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean): Boolean =
         emitWatermark(peerId, messageId, isGroup, READ_UNTILL_READ)
 
-    override suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean) =
+    override suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean) {
         emitWatermark(peerId, messageId, isGroup, DELIVERED_STATUS)
+    }
 
-    /** One emit for both rungs — the envelope differs only in its `status`. */
-    private suspend fun emitWatermark(peerId: String, messageId: String, isGroup: Boolean, status: Int) {
-        val project = projectId() ?: return
+    /**
+     * One emit for both rungs — the envelope differs only in its `status`.
+     * Answers whether the socket took it.
+     */
+    private suspend fun emitWatermark(peerId: String, messageId: String, isGroup: Boolean, status: Int): Boolean {
+        val project = projectId() ?: return false
         // Which rung, in the log. Delivered and read are the same event name
         // on the wire, so `-> private_chat_message_read_untill` alone cannot
         // say whether this client claimed somebody SAW a message or only that
@@ -609,8 +628,8 @@ class ChatRepositoryImpl(
             val rung = if (status == READ_UNTILL_READ) "read" else "delivered"
             "watermark $rung(status=$status) for $peerId up to $messageId group=$isGroup"
         }
-        if (isGroup) {
-            val me = myUserId() ?: return
+        val sent = if (isGroup) {
+            val me = myUserId() ?: return false
             bus.emit(
                 groupReadUntill,
                 groupReadUntillEnvelope(peerId, me, messageId, project, status, scope.messageTool),
@@ -623,6 +642,10 @@ class ChatRepositoryImpl(
                 JsonElement.serializer(),
             )
         }
+        if (sent is ZillitResult.Failure) {
+            ZillitLog.d(TAG) { "watermark for $peerId not sent: ${sent.error::class.simpleName}" }
+        }
+        return sent is ZillitResult.Success
     }
 
     override suspend fun sendTyping(receiverId: String, started: Boolean, isGroup: Boolean) {

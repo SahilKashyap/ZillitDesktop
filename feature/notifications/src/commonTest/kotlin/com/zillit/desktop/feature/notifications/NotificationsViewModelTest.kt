@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.notifications.ui.NotificationsConfirm
 import com.zillit.desktop.feature.notifications.ui.NotificationsEffect
 import com.zillit.desktop.feature.notifications.ui.NotificationsEvent
 import com.zillit.desktop.feature.notifications.ui.NotificationsViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -30,7 +31,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Paging, the read after every page, and the two deletes behind their confirmations, on a fake service. */
+/**
+ * Paging, the read after every page somebody asked to see, the two deletes
+ * behind their confirmations, and the rule that only a look reads — on a fake
+ * service.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest {
 
@@ -52,11 +57,15 @@ class NotificationsViewModelTest {
         var failDelete = false
         var failPage = false
 
+        /** Holds every page until completed — a page kept in flight. */
+        var pageGate: CompletableDeferred<Unit>? = null
+
         // The list screen under test never decodes socket frames.
         override fun banner(payload: kotlinx.serialization.json.JsonElement?): ActivityBanner? = null
 
         override suspend fun page(beforeMillis: Long, newest: Boolean): ZillitResult<List<ProjectNotification>> {
             pageCursors += beforeMillis
+            pageGate?.await()
             if (failPage) return ZillitResult.Failure(ZillitError.Unknown("no page"))
             return ZillitResult.Success(
                 rows.filter { it.updatedMillis < beforeMillis }.sortedByDescending { it.updatedMillis }.take(pageSize),
@@ -94,7 +103,8 @@ class NotificationsViewModelTest {
         isGlobal = global,
     )
 
-    private var listReads = 0
+    /** The times the host was told to send its socket read with. */
+    private val listReads = mutableListOf<Long>()
 
     private var project: String? = "p1"
 
@@ -105,7 +115,7 @@ class NotificationsViewModelTest {
     ) = NotificationsViewModel(
         repository = repository,
         nowMillis = { now },
-        onListRead = { listReads++ },
+        onListRead = { listReads += it },
         pageLimit = repository.pageSize,
         arrivals = arrivals,
         projectId = { project },
@@ -166,7 +176,7 @@ class NotificationsViewModelTest {
             assertTrue(viewModel.currentState.loaded)
             assertFalse(viewModel.currentState.hasMore)
             assertEquals(listOf("global_label" to 1_000L), repository.reads)
-            assertEquals(1, listReads)
+            assertEquals(listOf(1_000L), listReads, "the socket read carries the REST read's time")
         }
 
     @Test
@@ -295,18 +305,114 @@ class NotificationsViewModelTest {
         assertEquals(2, repository.reads.size, "and its own segment read")
     }
 
-    /** The same production twice over is one load, as it always was. */
+    /**
+     * Every visit is a fresh page and a read — iOS's `viewWillAppear` does
+     * both on every appearance. It used to be one load per production, which
+     * was only safe while arrivals kept a closed page current; they no longer
+     * do, so the visit is what catches it up.
+     */
     @Test
-    fun `reopening on the same production does not refetch`() = runTest(dispatcher) {
+    fun `every visit refetches and reads`() = runTest(dispatcher) {
         val repository = FakeRepository().apply { rows += row("first", 100) }
         val model = viewModel(repository).also { it.start() }
         advanceUntilIdle()
+        model.stop()
 
+        repository.rows += row("second", 200)
         model.start()
         advanceUntilIdle()
 
-        assertEquals(1, repository.pageCursors.size)
-        assertEquals(1, repository.reads.size)
+        assertEquals(2, repository.pageCursors.size)
+        assertEquals(2, repository.reads.size)
+        assertEquals(listOf("second", "first"), model.state.value.rows.map { it.id })
+    }
+
+    /**
+     * The reported fault (2026-10-14): once the list had been opened, every
+     * `notification:save` refreshed it and read `global_label`, window closed
+     * or not, so the Z badge could never build up again.
+     */
+    @Test
+    fun `an arrival on a closed page neither fetches nor reads`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val arrivals = MutableSharedFlow<Unit>()
+        val model = viewModel(repository, arrivals = arrivals).also { it.start() }
+        model.watching(true)
+        advanceUntilIdle()
+        model.stop()
+
+        arrivals.emit(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, repository.pageCursors.size, "nobody is looking at a closed page")
+        assertEquals(1, repository.reads.size, "so its count is left to build up")
+        assertEquals(1, listReads.size)
+    }
+
+    /** Open but behind another window: the list follows, the read waits for the look. */
+    @Test
+    fun `an arrival behind another window moves the list and owes the read to the next look`() =
+        runTest(dispatcher) {
+            val repository = FakeRepository().apply { rows += row("first", 100) }
+            val arrivals = MutableSharedFlow<Unit>()
+            val model = viewModel(repository, arrivals = arrivals).also { it.start() }
+            model.watching(false)
+            advanceUntilIdle()
+            assertEquals(1, repository.reads.size, "the visit itself reads")
+
+            repository.rows += row("second", 200)
+            arrivals.emit(Unit)
+            advanceUntilIdle()
+
+            assertTrue(model.state.value.rows.any { it.id == "second" }, "the open list follows")
+            assertEquals(1, repository.reads.size, "but nobody has looked at it")
+
+            model.watching(true)
+            advanceUntilIdle()
+
+            assertEquals(2, repository.reads.size, "coming to the front reads what was owed")
+            model.watching(false)
+            model.watching(true)
+            advanceUntilIdle()
+            assertEquals(2, repository.reads.size, "and a look with nothing owed sends nothing")
+        }
+
+    @Test
+    fun `an arrival while the page is watched reads at once`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val arrivals = MutableSharedFlow<Unit>()
+        val model = viewModel(repository, arrivals = arrivals).also { it.start() }
+        model.watching(true)
+        advanceUntilIdle()
+
+        arrivals.emit(Unit)
+        advanceUntilIdle()
+
+        assertEquals(2, repository.reads.size)
+        assertEquals(2, listReads.size)
+    }
+
+    /**
+     * A read asked for while an unread refetch is in flight rides on it —
+     * the skipped fetch must not take the read down with it.
+     */
+    @Test
+    fun `a read asked for behind an arrival's refetch is not lost`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val arrivals = MutableSharedFlow<Unit>()
+        val model = viewModel(repository, arrivals = arrivals).also { it.start() }
+        advanceUntilIdle()
+        val readsAfterVisit = repository.reads.size
+
+        repository.pageGate = CompletableDeferred()
+        arrivals.emit(Unit)
+        runCurrent()
+        assertTrue(model.state.value.loading, "the arrival's page is in flight")
+        model.onEvent(NotificationsEvent.Refresh)
+        repository.pageGate?.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(readsAfterVisit + 1, repository.reads.size)
     }
 
     /**

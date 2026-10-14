@@ -17,6 +17,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
@@ -33,6 +34,7 @@ import com.zillit.desktop.feature.transporthub.data.hubDate
 import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
 import com.zillit.desktop.feature.transporthub.domain.AvApprovalRound
 import com.zillit.desktop.feature.transporthub.domain.AvStatus
+import com.zillit.desktop.feature.transporthub.domain.AvVehicleBadge
 import com.zillit.desktop.feature.transporthub.domain.avCategories
 import com.zillit.desktop.feature.transporthub.ui.AvTab
 import com.zillit.desktop.feature.transporthub.ui.AvFlow
@@ -57,7 +59,7 @@ import com.zillit.desktop.feature.transporthub.ui.HubUiState
 @Composable
 internal fun ActionVehiclesPage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
     val tabs = state.actionVehicleTabs
-    val counts = state.actionVehicleCounts
+    val unread = state.actionVehicleUnread
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -85,7 +87,7 @@ internal fun ActionVehiclesPage(state: HubUiState, onEvent: (HubEvent) -> Unit) 
             },
         )
         ZillitTabStrip(
-            tabs = tabs.map { ZillitTab(it.name, it.label(), counts[it] ?: 0) },
+            tabs = tabs.map { ZillitTab(it.name, it.label(), unread[it] ?: 0) },
             activeId = state.avTab.name,
             onSelect = { id -> onEvent(HubEvent.AvTabChanged(AvTab.valueOf(id))) },
         )
@@ -139,6 +141,7 @@ private fun AvRows(state: HubUiState, onEvent: (HubEvent) -> Unit) {
                 vehicle = vehicle,
                 busy = state.busyRowId == vehicle.id,
                 canSource = state.avCapabilities.canSource,
+                unread = state.avBadges.vehicle(vehicle.id),
                 onEvent = onEvent,
             )
         }
@@ -150,6 +153,7 @@ private fun AvCard(
     vehicle: ActionVehicle,
     busy: Boolean,
     canSource: Boolean,
+    unread: AvVehicleBadge,
     onEvent: (HubEvent) -> Unit,
 ) {
     ZillitSectionCard {
@@ -166,6 +170,9 @@ private fun AvCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                // Every unread alert on this vehicle, whatever its kind — the
+                // phones' corner count (`ActionVehiclesView.swift:431-433`).
+                ZillitBadge(count = unread.total)
                 vehicle.categories.take(CATEGORY_PILLS).forEach { category ->
                     ZillitStatusPill(label = category.categoryLabel(), tone = StatusTone.Neutral)
                 }
@@ -217,7 +224,7 @@ private fun AvCard(
             if (vehicle.rejectionReason.isNotBlank()) {
                 HubFact(label = str(S.reason), value = vehicle.rejectionReason)
             }
-            AvActions(vehicle, busy, canSource, onEvent)
+            AvActions(vehicle, busy, canSource, unread.comment, onEvent)
         }
     }
 }
@@ -235,6 +242,7 @@ private fun AvActions(
     vehicle: ActionVehicle,
     busy: Boolean,
     canSource: Boolean,
+    unreadComments: Int,
     onEvent: (HubEvent) -> Unit,
 ) {
     Row(
@@ -268,6 +276,12 @@ private fun AvActions(
                 onClick = { onEvent(HubEvent.OpenAvThread(vehicle.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
+            )
+            // Unread comments wait for the thread to be opened, so they are
+            // marked beside the button that opens it (`ActionVehiclesView.swift:631, 649`).
+            ZillitBadge(
+                count = unreadComments,
+                modifier = Modifier.align(Alignment.CenterVertically),
             )
         }
         if (canSource && !vehicle.status.isTerminal) {

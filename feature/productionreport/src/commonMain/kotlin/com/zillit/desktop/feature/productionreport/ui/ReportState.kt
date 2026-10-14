@@ -132,8 +132,12 @@ data class ReportUiState(
             }
         }
 
-    /** A row's unread of one kind on the open list: REPORT beside the name, COMMENT on the kebab. */
-    fun rowBadge(row: ReportSummary, kind: BadgeKind): Int = badges.count(badgeSurface, kind, row.id)
+    /**
+     * A row's unread of one kind on the open list: REPORT beside the name,
+     * COMMENT on the kebab — under both id forms, as iOS counts its pills
+     * (`ProductionReportBadgeViewModel.swift:105-121`).
+     */
+    fun rowBadge(row: ReportSummary, kind: BadgeKind): Int = badges.count(badgeSurface, kind, row.badgeIds)
 
     /** ZL-20659 kept: a count on a section known to be empty is hidden. */
     fun sectionBadge(section: ApprovalSection): Int = when (section) {

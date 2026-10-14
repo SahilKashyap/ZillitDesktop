@@ -47,8 +47,9 @@ import kotlin.test.assertTrue
 /**
  * The accountant console's unread reads, page by page, against the web's
  * pages under `components/invoices/components`: no page reads its whole
- * `level_1` but Payment Runs, and each reads its own rows only at the moment
- * the web's page does.
+ * `level_1` — Payment Runs included, which reads run by run as iOS does
+ * (`PaymentRunApprovalPage.swift:325, 338`) — and each reads its own rows
+ * only at the moment the web's page does.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountantRowReadsParityTest {
@@ -64,7 +65,7 @@ class AccountantRowReadsParityTest {
     // -- whole-page reads ---------------------------------------------------------
 
     @Test
-    fun `no accountant page reads its whole level_1 on opening, but Payment Runs`() = runTest(dispatcher) {
+    fun `no accountant page reads its whole level_1 on opening, Payment Runs included`() = runTest(dispatcher) {
         val badges = Badges()
         badges.counts.value = ROW_PAGES.associate { it.badgeKey.orEmpty() to 3 } + ("payment_runs" to 2)
         val vm = viewModel(Repo(), badges)
@@ -83,13 +84,16 @@ class AccountantRowReadsParityTest {
         assertTrue(badges.tabReads.isEmpty(), "row pages read row by row: ${badges.tabReads}")
         assertTrue(badges.entityReads.isEmpty())
 
-        // Payment Runs' tab-entry read (`PaymentsPage.jsx:959-977`), and again as a run lands.
+        // Payment Runs reads nothing on entry, nor as a run lands: each run is read
+        // as it is decided (iOS `PaymentRunApprovalPage.swift:325, 338`).
         vm.onEvent(InvoicesEvent.SelectPage(AccountantPage.Payments))
         advanceUntilIdle()
-        assertEquals(listOf("payment_runs"), badges.tabReads)
+        vm.onEvent(InvoicesEvent.OpenRoute("/film-tools/invoices/payments"))
+        advanceUntilIdle()
         badges.counts.value = badges.counts.value + ("payment_runs" to 3)
         advanceUntilIdle()
-        assertEquals(listOf("payment_runs", "payment_runs"), badges.tabReads)
+        assertTrue(badges.tabReads.isEmpty(), "runs are read one at a time: ${badges.tabReads}")
+        assertTrue(badges.entityReads.isEmpty())
     }
 
     // -- Register (`RegisterPage.jsx:611-645`) --------------------------------------

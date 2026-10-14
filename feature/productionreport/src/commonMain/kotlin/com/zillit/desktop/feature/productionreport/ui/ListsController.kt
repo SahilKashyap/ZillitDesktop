@@ -36,6 +36,14 @@ internal class ListsController(private val ctx: ReportContext) {
     /** Published leaves already read (`kind:id:count`) — a leaf is read again only when its count changes. */
     private var publishedRead: Set<String> = emptySet()
 
+    /**
+     * Every id form of every report each approval list last answered with —
+     * of EVERY report type, not just this tool's: the AD and Wrap reports
+     * share the production report's badge tool, so a keep-set narrowed to
+     * this window's kind would sweep the other windows' live rows.
+     */
+    private val approvalIds = mutableMapOf<ApprovalSection, Set<String>>()
+
     /** Comment frames go to the open thread; the VM sets this. */
     var onCommentEvent: (ReportSyncEvent) -> Unit = {}
 
@@ -214,6 +222,7 @@ internal class ListsController(private val ctx: ReportContext) {
             ReportQuery(projectId = project, statuses = ReportStatus.SIGNATURE_PHASE),
             select = { sent },
             store = { list -> copy(sent = list) },
+            approval = ApprovalSection.Sent,
         )
     }
 
@@ -243,12 +252,14 @@ internal class ListsController(private val ctx: ReportContext) {
                 ReportQuery(approverId = me, statuses = statuses),
                 select = { this.received },
                 store = { copy(received = it) },
+                approval = ApprovalSection.Received,
             ) { fetched, _ -> receivedRows(fetched, me) }
         } else {
             load(
                 ReportQuery(approverId = me, statuses = statuses),
                 select = { finalized },
                 store = { copy(finalized = it) },
+                approval = ApprovalSection.Finalized,
             )
         }
     }
@@ -261,6 +272,7 @@ internal class ListsController(private val ctx: ReportContext) {
                 ReportQuery(projectId = project, statuses = ReportStatus.FINALIZED_TAB),
                 select = { finalized },
                 store = { copy(finalized = it) },
+                approval = ApprovalSection.Finalized,
             )
         } else {
             loadApproverSheets(received = false)
@@ -276,10 +288,18 @@ internal class ListsController(private val ctx: ReportContext) {
         )
     }
 
+    /**
+     * One list's fetch. [approval] names the Approvals sub-tab the list is:
+     * its answer — every report type, through the same [merge] — feeds the
+     * orphan sweep ([sweepApprovalOrphans]). An approval list's [merge] never
+     * reads `previous`, so merging the whole answer again is the list as the
+     * sweep must see it.
+     */
     private fun load(
         query: ReportQuery,
         select: ReportLists.() -> ReportList,
         store: ReportLists.(ReportList) -> ReportLists,
+        approval: ApprovalSection? = null,
         merge: (fetched: List<ReportSummary>, previous: List<ReportSummary>) -> List<ReportSummary> =
             { fetched, _ -> fetched },
     ) {
@@ -291,6 +311,10 @@ internal class ListsController(private val ctx: ReportContext) {
                     val previous = ctx.state.lists.select().rows
                     val rows = merge(mine, previous)
                     ctx.update { copy(lists = lists.store(ReportList(rows = rows, loaded = true))) }
+                    if (approval != null) {
+                        approvalIds[approval] = merge(result.data, emptyList()).flatMap { it.badgeIds }.toSet()
+                        sweepApprovalOrphans()
+                    }
                 }
                 is ZillitResult.Failure -> ctx.update {
                     copy(
@@ -426,37 +450,92 @@ internal class ListsController(private val ctx: ReportContext) {
 
     /**
      * One report's badges of one kind on the open list, read when the row is
-     * opened (View, Edit, History, Approve, Reject, Publish, its comments).
-     * A poster off `final_approver_ids` has no Received section yet can hold
-     * a request on their own report; opening it from Sent clears those
-     * received leaves too, or they stay on the tile for good.
+     * opened (View, Edit, History, Approve, Reject, Publish, its comments) —
+     * under each id form a row may file it under (iOS `prMarkReportRead`,
+     * `ApprovalsTabView.swift:229-262`). A poster off `final_approver_ids`
+     * has no Received section yet can hold a request on their own report;
+     * opening it from Sent clears those received leaves too, or they stay on
+     * the tile for good.
      */
-    fun readRowBadge(reportId: String, kind: BadgeKind) {
+    fun readRowBadge(report: ReportSummary, kind: BadgeKind) {
         val state = ctx.state
         if (!state.viewer.ready) return
         val surface = state.badgeSurface ?: return
-        if (state.badges.count(surface, kind, reportId) > 0) {
-            ctx.services.badges.readBadge(surface, kind, reportId)
-        }
         val receivedHidden = ApprovalSection.Received !in state.sections
-        if (surface == BadgeSurface.Sent && receivedHidden &&
-            state.badges.count(BadgeSurface.Received, kind, reportId) > 0
-        ) {
-            ctx.services.badges.readBadge(BadgeSurface.Received, kind, reportId)
+        report.badgeIds.forEach { id ->
+            if (state.badges.count(surface, kind, id) > 0) ctx.services.badges.readBadge(surface, kind, id)
+            if (surface == BadgeSurface.Sent && receivedHidden &&
+                state.badges.count(BadgeSurface.Received, kind, id) > 0
+            ) {
+                ctx.services.badges.readBadge(BadgeSurface.Received, kind, id)
+            }
         }
     }
 
     /**
-     * Published clears whole, keyed on its unread leaves (`useReadBadgesOnEntry`):
-     * while the tab is on screen, and — the app-level drain — whenever the tab
-     * is NOT one this user has, since nothing else could ever clear those rows.
+     * A report approved or rejected has LEFT Received: it can no longer be
+     * opened there, so neither its report rows nor its comment rows at
+     * Received would ever be read — clear both, under both id forms (iOS
+     * `prMarkReportLeft`, `ApprovalsTabView.swift:265-271`, called from the
+     * approve funnel `AppViewModel.swift:690` and the reject sheet
+     * `ApprovalsTabView.swift:594`). Unconditional, as iOS: it is the last
+     * chance, and the server may hold rows the ledger has not seen yet.
+     */
+    fun readReportLeftReceived(report: ReportSummary) {
+        if (!ctx.state.viewer.ready) return
+        report.badgeIds.forEach { id ->
+            BadgeKind.entries.forEach { kind -> ctx.services.badges.readBadge(BadgeSurface.Received, kind, id) }
+        }
+    }
+
+    /**
+     * ZL-20673 — after an approval list lands, the approval-unit rows whose
+     * report none of the three lists holds are marked read here (iOS
+     * `prSweepOrphanReceivedRecords(keeping: received + sent + finalized)`,
+     * `AppViewModel.swift:609-615`). iOS fetches all three on entry; this
+     * window loads them lazily, so a sweep waits until every sub-tab this
+     * viewer has has answered — fetching the ones not asked for yet — and a
+     * failed list holds it back: judging rows against a list that did not
+     * load would read live badges nobody has seen.
+     */
+    private fun sweepApprovalOrphans() {
+        val state = ctx.state
+        if (!state.viewer.ready || ManageTab.Approvals !in state.manageTabs) return
+        val pending = state.sections.filter { state.lists.of(it).let { list -> !list.loaded && !list.loading } }
+        if (pending.isNotEmpty()) {
+            pending.forEach { loadSection(it) }
+            return
+        }
+        val settled = state.sections.all { section ->
+            state.lists.of(section).let { it.loaded && !it.loading && it.error == null } && section in approvalIds
+        }
+        if (!settled) return
+        ctx.services.badges.sweepApprovalOrphans(approvalIds.values.flatten().toSet())
+    }
+
+    private fun loadSection(section: ApprovalSection) = when (section) {
+        ApprovalSection.Sent -> loadSent()
+        ApprovalSection.Received -> loadApproverSheets(received = true)
+        ApprovalSection.Finalized -> refreshFinalized()
+    }
+
+    private fun ReportLists.of(section: ApprovalSection): ReportList = when (section) {
+        ApprovalSection.Sent -> sent
+        ApprovalSection.Received -> received
+        ApprovalSection.Finalized -> finalized
+    }
+
+    /**
+     * Published is read report by report, on View and on Comments (iOS
+     * `PublishedTabView.swift:68, 74`) — [readRowBadge] does that like any
+     * list. Only the app-level drain is left here: when Published is NOT a
+     * tab this user has, nothing else could ever clear those rows, so they
+     * are read as they arrive, keyed on the unread leaves.
      */
     private fun drainPublishedBadges() {
         val state = ctx.state
         if (!state.viewer.ready || (!state.isPoster && !state.metadataSettled)) return
-        val onScreen = state.workspace == Workspace.Manage && state.tab == ManageTab.Published && state.editor == null
-        val hidden = ManageTab.Published !in state.manageTabs
-        if (!onScreen && !hidden) return
+        if (ManageTab.Published in state.manageTabs) return
         val leaves = state.badges.leaves(BadgeSurface.Published)
         val keys = leaves.map { "${it.kind.wire}:${it.reportId}:${it.unread}" }.toSet()
         leaves.zip(keys).forEach { (leaf, key) ->

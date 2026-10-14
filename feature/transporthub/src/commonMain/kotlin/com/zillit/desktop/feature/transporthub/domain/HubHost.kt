@@ -39,6 +39,12 @@ interface HubHost {
      */
     val badges: Flow<Map<String, Int>> get() = emptyFlow()
 
+    /**
+     * The Action Vehicle unit's unread per tab and per vehicle — what its tab
+     * strip and its cards draw. Empty when the host keeps no ledger.
+     */
+    val actionVehicleBadges: Flow<AvBadges> get() = emptyFlow()
+
     /** A host with no storage and no badges — tests, and the render harness. */
     object None : HubHost {
         override suspend fun pickAndStore(

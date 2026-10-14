@@ -29,6 +29,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
@@ -62,6 +63,7 @@ internal fun InvitationsPanel(state: CalendarUiState, onEvent: (CalendarEvent2Ev
                 StatusTab(
                     status = status,
                     selected = status == state.invitationStatus,
+                    unread = state.invitationUnread.of(status),
                     onClick = { onEvent(CalendarEvent2Event.SetInvitationTab(status)) },
                 )
             }
@@ -100,8 +102,8 @@ internal fun InvitationsPanel(state: CalendarUiState, onEvent: (CalendarEvent2Ev
 }
 
 @Composable
-private fun StatusTab(status: InvitationStatus, selected: Boolean, onClick: () -> Unit) {
-    Box(
+private fun StatusTab(status: InvitationStatus, selected: Boolean, unread: Int, onClick: () -> Unit) {
+    Row(
         modifier = Modifier
             .clip(ZillitTheme.shapes.small)
             .background(
@@ -109,13 +111,23 @@ private fun StatusTab(status: InvitationStatus, selected: Boolean, onClick: () -
             )
             .clickable(onClick = onClick)
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
             text = str(status.label),
             style = ZillitTheme.typography.labelSmall,
             color = if (selected) ZillitTheme.colors.accent else ZillitTheme.colors.textPrimary,
         )
+        ZillitBadge(count = unread)
     }
+}
+
+/** iOS's two segment pills: unread pending and unread expired; the answered tabs wear none. */
+private fun InvitationUnread.of(status: InvitationStatus): Int = when (status) {
+    InvitationStatus.Pending -> pending
+    InvitationStatus.Expired -> expired
+    else -> 0
 }
 
 @Composable

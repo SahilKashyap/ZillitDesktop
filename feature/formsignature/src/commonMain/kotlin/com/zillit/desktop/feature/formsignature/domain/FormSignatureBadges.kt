@@ -17,9 +17,13 @@ import kotlinx.coroutines.flow.emptyFlow
 data class FormBadgeLeaf(val unit: String, val level1: String, val level2: String, val unread: Int)
 
 /**
- * The tool's unread rows and the reads its screens make — a standard form
- * opened (`FormDetailsV2.jsx:690-706`), a documents tab shown
- * (`DocumentsForSignature.jsx:95-108`).
+ * The tool's unread rows and the reads its screens make — one document at a
+ * time, when it is opened, as iOS reads them (`FormDocumentView.swift:401-446`,
+ * `ContractSignatureDocumentView.swift:180-195`): a standard form under
+ * `all_forms` (`FormDetailsV2.jsx:690-706`), a document for signature by the
+ * leaves its tab holds for it. A tab shown reads nothing any more — the web's
+ * whole-tab read (`DocumentsForSignature.jsx:95-108`) cleared badges nobody
+ * had opened.
  */
 interface FormSignatureBadges {
     val leaves: Flow<List<FormBadgeLeaf>> get() = emptyFlow()
@@ -27,8 +31,13 @@ interface FormSignatureBadges {
     /** A standard form's detail on screen: its rows under `all_forms`. */
     fun readStandardForm(formId: String) {}
 
-    /** A documents tab on screen: every leaf the tab is made of. */
-    fun readDocumentsTab(leaves: List<FormBadgeLeaf>) {}
+    /**
+     * One opened document's rows, leaf by leaf — each leaf's unit, `level_1`
+     * and `level_2` as a level read; a blank level is left unscoped. The
+     * leaves come from [FormSignatureUnread.documentLeaves] /
+     * [FormSignatureUnread.unlistedAllForms].
+     */
+    fun readLeaves(leaves: List<FormBadgeLeaf>) {}
 
     /**
      * The discussion room left (`readContractSignatureChatBadges`):
@@ -101,6 +110,45 @@ data class FormSignatureUnread(val leaves: List<FormBadgeLeaf> = emptyList()) {
                             leaf.level1 != FormSignatureBadges.LEVEL_RECEIVED &&
                             leaf.level1 != FormSignatureBadges.LEVEL_FULLY_SIGNED
                         )
+        }
+    }
+
+    /**
+     * The leaves one document opened from [tab] reads — iOS's per-document
+     * read: unit, `level_1`, `level_2` = the document (`FormDocumentView.swift:401-446`).
+     *
+     * Its own leaves are the tab's leaves whose `level_2` names it ([ids]:
+     * `_id` and `document_id`, which the rows key on alike). Beside them ride
+     * the tab's leaves that name NONE of the documents [listed] in the tab —
+     * a row filed without a document id, or for a document since withdrawn:
+     * no open could ever name those, and with the tab's own entry read gone
+     * they would count for good. So every leaf a tab counts is cleared by
+     * some open in that tab.
+     *
+     * iOS scopes its discussion reads to two actions; here the discussion
+     * unit has no room of its own to clear the rest, so the document's whole
+     * leaf goes.
+     */
+    fun documentLeaves(
+        tab: SignDocumentTab,
+        ids: Collection<String>,
+        listed: Collection<String>,
+    ): List<FormBadgeLeaf> {
+        val own = ids.filter { it.isNotBlank() }.toSet()
+        val known = listed.filter { it.isNotBlank() }.toSet() + own
+        return tabLeaves(tab).filter { it.level2 in own || it.level2 !in known }
+    }
+
+    /**
+     * The All tab's `all_forms` leaves that name none of the forms [listed]
+     * there — read with whichever form is opened, so the tab's count never
+     * holds a row no open could clear (see [documentLeaves]).
+     */
+    fun unlistedAllForms(listed: Collection<String>): List<FormBadgeLeaf> {
+        val known = listed.filter { it.isNotBlank() }.toSet()
+        return leaves.filter {
+            it.unit == FormSignatureBadges.UNIT_GENERAL && it.level1 == FormSignatureBadges.LEVEL_ALL_FORMS &&
+                it.level2 !in known
         }
     }
 

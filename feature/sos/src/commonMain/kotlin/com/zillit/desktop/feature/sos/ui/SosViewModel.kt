@@ -74,6 +74,24 @@ class SosViewModel(
     /** The production the alerts on screen were loaded for. */
     private var loadedFor: String? = null
 
+    /** Between [start] and [stop]: the page is on screen, in front or not. */
+    private var open = false
+
+    /** The page's window is in front — see [watching]. */
+    private var watched = false
+
+    /** An alarm reached an open page nobody was looking at; the next look reads it. */
+    private var owedRead = false
+
+    /** The page in flight carries the `sos_label` read — set even when a page already was. */
+    private var readOnAnswer = false
+
+    /**
+     * Every visit: the newest page, then the read. iOS does both on each
+     * appearance (`SosCallingViewController.swift:178`, `setUserScreen(.sos)`
+     * into `readMessageFromSos`, and `retrieveReceivedSOS`). A revisit
+     * refetches because a closed page no longer follows the alarms.
+     */
     fun start() {
         val project = projectId()
         if (currentState.loaded && loadedFor != project) {
@@ -82,10 +100,27 @@ class SosViewModel(
             setState { SosUiState() }
         }
         loadedFor = project
+        open = true
         setState { copy(viewer = viewer(), contacts = contacts.copy(crew = crew())) }
-        if (!currentState.loaded && !currentState.loading) refresh()
+        refresh(read = true)
         if (!currentState.contacts.loading && currentState.contacts.rows.isEmpty()) loadContacts()
         listenForAlerts()
+    }
+
+    /** The page left the screen — its window closed. Alarms stop reading. */
+    fun stop() {
+        open = false
+        watched = false
+    }
+
+    /**
+     * Whether the page's window is in front — the desktop's "somebody is
+     * looking". Coming to the front settles a read an alarm left owed.
+     */
+    fun watching(on: Boolean) {
+        val looked = on && !watched
+        watched = on
+        if (looked && open && owedRead) refresh(read = true)
     }
 
     /** Set up once: [start] runs on every visit to the screen. */
@@ -99,6 +134,13 @@ class SosViewModel(
      * thing on this wire where being a second late matters, so there is no
      * debounce and no echo suppression — the sender's own alarm reloading
      * their list is harmless, and suppressing it could hide a second alarm.
+     *
+     * But only an open page follows, and only a watched one reads. iOS reads
+     * on an alarm only while the SOS screen is the one showing
+     * (`ProjectObserver.swift:774-777`); this used to refresh — and so read
+     * `sos_label` — on every alarm after the first visit, page open or not,
+     * so a new alarm's badge was wiped the moment it landed (found
+     * 2026-10-14). A closed page is caught up by its next [start].
      */
     private fun listenForAlerts() {
         val bus = events ?: return
@@ -106,13 +148,18 @@ class SosViewModel(
         listening = true
 
         launch {
-            bus.onAny(SOS_SYNC_EVENTS).collect { refresh() }
+            bus.onAny(SOS_SYNC_EVENTS).collect {
+                if (open) {
+                    if (!watched) owedRead = true
+                    refresh(read = watched)
+                }
+            }
         }
     }
 
     override fun onEvent(event: SosEvent) {
         when (event) {
-            SosEvent.Refresh -> refresh()
+            SosEvent.Refresh -> refresh(read = true)
             SosEvent.LoadOlder -> loadOlder()
             SosEvent.AskSendAlert -> setState { copy(confirm = SosConfirm.SendAlert) }
             is SosEvent.AskDeleteAlert -> setState { copy(confirm = SosConfirm.DeleteAlert(event.alertId)) }
@@ -164,8 +211,14 @@ class SosViewModel(
      * The cursor is "now" and the direction is `previous` — Android's
      * empty-list branch (`SosVM.loadInitialOrRefresh`, `SosVM.kt:80-84`) and
      * the web's frozen `sosData` (`SOSMain.jsx:80-92`).
+     *
+     * [read] asks for the segment read after the page. One asked for while a
+     * page is already in flight rides on that page rather than being dropped
+     * with the skipped fetch — a visit's read must not be lost to an alarm's
+     * unread refetch that happened to be first.
      */
-    private fun refresh() {
+    private fun refresh(read: Boolean) {
+        if (read) readOnAnswer = true
         if (currentState.loading) return
         setState { copy(loading = true, error = null) }
         launchResult(
@@ -179,12 +232,21 @@ class SosViewModel(
                         hasMore = page.size >= pageLimit,
                     )
                 }
-                markRead()
+                if (readOnAnswer) {
+                    readOnAnswer = false
+                    owedRead = false
+                    markRead()
+                }
             },
             // `loaded` is left alone: a page that failed has not answered, and
             // latching it would stop [start] ever trying again — the feed, and
-            // the segment read it carries, dead for the rest of the run.
-            onError = { error -> setState { copy(loading = false, error = error.localised()) } },
+            // the segment read it carries, dead for the rest of the run. The
+            // read it carried stays owed to the next look.
+            onError = { error ->
+                if (readOnAnswer) owedRead = true
+                readOnAnswer = false
+                setState { copy(loading = false, error = error.localised()) }
+            },
         )
     }
 
@@ -218,8 +280,8 @@ class SosViewModel(
     }
 
     /**
-     * Every page that answers marks the segment read, and only *after* the
-     * page — Android fires it alongside each list request (`SosVM.kt:135-139`),
+     * Every page somebody asked to see marks the segment read, and only
+     * *after* the page — Android fires it alongside each list request (`SosVM.kt:135-139`),
      * the web after the first one (`SOSMain.jsx:139-149`). The answer is not
      * waited on for anything; neither other client looks at it either.
      */
@@ -318,7 +380,7 @@ class SosViewModel(
         when (confirm) {
             SosConfirm.SendAlert -> {
                 sendEffect(SosEffect.Notice(str(S.desktop_sos_sent_notice)))
-                refresh()
+                refresh(read = true)
             }
             is SosConfirm.DeleteAlert -> sendEffect(SosEffect.Notice(str(S.desktop_sos_alert_deleted)))
             SosConfirm.DeleteAllAlerts -> sendEffect(SosEffect.Notice(str(S.desktop_sos_all_alerts_cleared)))

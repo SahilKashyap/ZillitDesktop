@@ -25,8 +25,14 @@ import com.zillit.desktop.feature.transporthub.domain.MaintenanceDraft
 import com.zillit.desktop.feature.transporthub.domain.MaintenanceRecord
 import com.zillit.desktop.feature.transporthub.domain.MaintenanceType
 import com.zillit.desktop.feature.transporthub.domain.RideScope
+import com.zillit.desktop.feature.transporthub.domain.AvBadges
+import com.zillit.desktop.feature.transporthub.domain.AvVehicleBadge
+import com.zillit.desktop.feature.transporthub.domain.HubBadgeRead
+import com.zillit.desktop.feature.transporthub.domain.HubHost
+import com.zillit.desktop.feature.transporthub.domain.HubMediaKind
 import com.zillit.desktop.feature.transporthub.domain.HubRepository
 import com.zillit.desktop.feature.transporthub.domain.HubStop
+import com.zillit.desktop.feature.transporthub.domain.PickedHubMedia
 import com.zillit.desktop.feature.transporthub.domain.HubViewer
 import com.zillit.desktop.feature.transporthub.domain.PermanentDraft
 import com.zillit.desktop.feature.transporthub.domain.PermanentTrip
@@ -54,6 +60,8 @@ import com.zillit.desktop.feature.transporthub.ui.TripPassengerRow
 import com.zillit.desktop.feature.transporthub.ui.VehicleEditor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -1166,6 +1174,123 @@ class HubFlowsTest {
         assertEquals(listOf("Fleet"), seen)
     }
 
+    // Badge reads ------------------------------------------------------------
+
+    private fun badgeViewModel(
+        repo: HubRepository,
+        viewer: HubViewer,
+        seen: MutableList<String>,
+        reads: MutableList<HubBadgeRead>,
+        host: HubHost = HubHost.None,
+    ) = HubViewModel(
+        repository = repo,
+        resolveViewer = { viewer },
+        nowMillis = { now },
+        onSectionViewed = { bucket -> seen += bucket.name },
+        onBadgeRead = { read -> reads += read },
+        host = host,
+    )
+
+    @Test
+    fun `the section the hub lands on is read`() = runTest(dispatcher) {
+        val seen = mutableListOf<String>()
+        val vm = badgeViewModel(FakeHubRepository(), passengerViewer, seen, mutableListOf())
+        vm.start(); runCurrent()
+        // Nobody picks the landing section, so it is read on landing.
+        assertEquals(listOf("MyTrips"), seen)
+
+        vm.onEvent(HubEvent.SelectSection(HubSection.MyRides)); runCurrent()
+        // A request that became a trip finishes on the trip unit.
+        assertEquals(listOf("MyTrips", "Rides", "MyTrips"), seen)
+    }
+
+    @Test
+    fun `action vehicles read the tab, the record and the thread, never the unit`() =
+        runTest(dispatcher) {
+            val mine = ActionVehicle(id = "a1", status = AvStatus.PendingApproval, my = AvMy(isApprover = true))
+            val seen = mutableListOf<String>()
+            val reads = mutableListOf<HubBadgeRead>()
+            val vm = badgeViewModel(FakeHubRepository(actionVehicles = listOf(mine)), coordinatorViewer, seen, reads)
+            vm.start(); runCurrent()
+            vm.onEvent(HubEvent.SelectSection(HubSection.ActionVehicles)); runCurrent()
+            assertTrue(seen.isEmpty())
+            assertEquals(listOf<HubBadgeRead>(HubBadgeRead.ActionVehicleTab("requested_vehicles")), reads)
+
+            // A reload that settles on the same tab is not a second read.
+            vm.onEvent(HubEvent.Refresh); runCurrent()
+            assertEquals(1, reads.size)
+
+            vm.onEvent(HubEvent.AvTabChanged(AvTab.Pending)); runCurrent()
+            vm.onEvent(HubEvent.OpenActionVehicle("a1")); runCurrent()
+            vm.onEvent(HubEvent.OpenAvThread("a1")); runCurrent()
+            assertEquals(
+                listOf(
+                    HubBadgeRead.ActionVehicleTab("pending_approval"),
+                    HubBadgeRead.ActionVehicleRecord("pending_approval", "a1"),
+                    HubBadgeRead.ActionVehicleComments("a1"),
+                ),
+                reads.drop(1),
+            )
+            assertTrue(seen.isEmpty())
+        }
+
+    @Test
+    fun `opening a trip reads that trip`() = runTest(dispatcher) {
+        val reads = mutableListOf<HubBadgeRead>()
+        val vm = badgeViewModel(FakeHubRepository(), coordinatorViewer, mutableListOf(), reads)
+        vm.start(); runCurrent()
+        vm.onEvent(HubEvent.OpenTrip("t1")); runCurrent()
+        assertEquals(listOf<HubBadgeRead>(HubBadgeRead.TripRecord("t1")), reads)
+    }
+
+    @Test
+    fun `a rise on the open section is read only while the window is in front`() =
+        runTest(dispatcher) {
+            val host = BadgeHost()
+            val seen = mutableListOf<String>()
+            val vm = badgeViewModel(FakeHubRepository(), passengerViewer, seen, mutableListOf(), host)
+            vm.start(); runCurrent()
+            seen.clear()
+
+            // Behind another window: the row waits.
+            host.counts.value = mapOf("MyTrips" to 1); runCurrent()
+            assertTrue(seen.isEmpty())
+
+            // Brought to the front: what counts on the open section is read.
+            vm.onEvent(HubEvent.WindowFocus(true)); runCurrent()
+            assertEquals(listOf("MyTrips"), seen)
+
+            // And a row landing while somebody looks is read as it lands.
+            host.counts.value = mapOf("MyTrips" to 2); runCurrent()
+            assertEquals(listOf("MyTrips", "MyTrips"), seen)
+
+            // A fall — the read's own echo — is not a trigger, nor is another section's rise.
+            host.counts.value = mapOf("Rides" to 3); runCurrent()
+            assertEquals(2, seen.size)
+        }
+
+    @Test
+    fun `a comment landing on the open thread is read`() = runTest(dispatcher) {
+        val host = BadgeHost()
+        val vehicle = ActionVehicle(id = "a1", status = AvStatus.Requested)
+        val reads = mutableListOf<HubBadgeRead>()
+        val vm = badgeViewModel(
+            FakeHubRepository(actionVehicles = listOf(vehicle)),
+            coordinatorViewer,
+            mutableListOf(),
+            reads,
+            host,
+        )
+        vm.start(); runCurrent()
+        vm.onEvent(HubEvent.WindowFocus(true))
+        vm.onEvent(HubEvent.OpenAvThread("a1")); runCurrent()
+        reads.clear()
+
+        host.av.value = AvBadges(vehicles = mapOf("a1" to AvVehicleBadge(total = 1, comment = 1))); runCurrent()
+        assertEquals(listOf<HubBadgeRead>(HubBadgeRead.ActionVehicleComments("a1")), reads)
+        assertEquals(1, vm.currentState.avBadges.vehicle("a1").comment)
+    }
+
     @Test
     fun `opening a section loads only that section`() = runTest(dispatcher) {
         val repo = FakeHubRepository()
@@ -1215,6 +1340,21 @@ class HubFlowsTest {
         resolveViewer = { HubViewer(userId = "u1", canView = true, canPost = true) },
         nowMillis = { now },
     )
+
+    private val coordinatorViewer = HubViewer(userId = "u1", canView = true, canPost = true)
+    private val passengerViewer = HubViewer(userId = "u2", canView = true)
+
+    /** A host whose ledger the test moves by hand. */
+    private class BadgeHost : HubHost {
+        val counts = MutableStateFlow<Map<String, Int>>(emptyMap())
+        val av = MutableStateFlow(AvBadges.Empty)
+        override val badges: Flow<Map<String, Int>> = counts
+        override val actionVehicleBadges: Flow<AvBadges> = av
+        override suspend fun pickAndStore(
+            kind: HubMediaKind,
+            multiple: Boolean,
+        ): ZillitResult<List<PickedHubMedia>> = ZillitResult.Success(emptyList())
+    }
 
     private fun vehicle(id: String) = Vehicle(id = id, name = "Van", licensePlate = "MH01")
 

@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.chat.data.LOCATION_KIND
 import com.zillit.desktop.feature.chat.data.PresenceSource
 import com.zillit.desktop.feature.chat.data.QueuedChatSend
 import com.zillit.desktop.feature.chat.data.toQueuedBubble
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -213,7 +214,7 @@ data class ChatUiState(
     val chatsBadge: Int get() = liveChatUnread(groups, ledgerRooms, unread)
 
     /** Missed calls — the Calls tab. */
-    val callsBadge: Int get() = sectionBadges["call_label"] ?: 0
+    val callsBadge: Int get() = sectionBadges[CALL_TOOL] ?: 0
 
     val canSend: Boolean get() = draft.isNotBlank() && peer != null
 }
@@ -466,11 +467,18 @@ sealed interface ChatEvent {
     data class Refused(val message: String) : ChatEvent
 
     /**
-     * The Calls tab came on screen. Missed calls are read by looking at the
-     * log — iOS's `readCNCMessage(.misscall)`, a `notification:read` on the
-     * `call_label` segment — and the tab's count falls with them.
+     * Whether the missed calls are in front of somebody: the Calls tab is up
+     * on its Missed view, and the window has focus.
+     *
+     * Missed calls are read by looking at them — iOS reads on the Missed
+     * segment only (`MissedCallViewController.swift:376-378, 399`), a
+     * `notification:read` on the `call_label` segment — and every badge
+     * refresh re-runs the screen's read, so a call missed while the list is
+     * on screen clears at once. [live] false is a host that cannot say which
+     * view the list is on: the tab coming up is then read once, as it always
+     * was, and nothing is re-read behind a view that may be All.
      */
-    data object CallsViewed : ChatEvent
+    data class MissedCallsShown(val shown: Boolean, val live: Boolean = true) : ChatEvent
 }
 
 /**
@@ -559,7 +567,10 @@ class ChatViewModel(
      * empty leaves the tabs bare.
      */
     private val sectionBadges: suspend () -> Map<String, Int>? = { emptyMap() },
-    /** Reads the missed-call badge — the Calls tab was opened. Hosts wire the emit. */
+    /**
+     * Reads the missed-call badge — the missed calls are on screen
+     * ([ChatEvent.MissedCallsShown]). Hosts wire the emit and the ledger flip.
+     */
     private val onCallsViewed: suspend () -> Unit = {},
     /**
      * With this wired, a message written with no network is kept on this
@@ -620,6 +631,31 @@ class ChatViewModel(
      */
     private val unsentMedia = linkedMapOf<String, UnsentMedia>()
 
+    /**
+     * Reads that never left this computer, by conversation — the newest
+     * watermark each was meant to report.
+     *
+     * The socket refuses an emit while it is down rather than queueing it, and
+     * a read used to be marked sent before it was emitted, so one made offline
+     * was lost for good: the sender never saw it and the user's other devices
+     * kept the badge. iOS stores the read-untill as a pending event before its
+     * disconnect check and replays it (`ChatSocketHelper.swift:1242-1248`);
+     * here [resendPendingReads] sends these on the next connection. Above
+     * `init` for [unsentMedia]'s reason: the connection collector can run
+     * during construction. In memory: after a relaunch, opening the thread
+     * reads it again.
+     */
+    private val pendingReads = linkedMapOf<String, PendingRead>()
+
+    /** Whether the missed calls are on screen — see [ChatEvent.MissedCallsShown]. */
+    private var missedCallsShown = false
+
+    /** Whether [missedCallsShown] is known to be the Missed view, so a ledger move re-reads it. */
+    private var missedCallsLive = false
+
+    /** One missed-call read at a time: each re-checks the count, so a burst emits once. */
+    private val missedCallsRead = kotlinx.coroutines.sync.Mutex()
+
     init {
         launch {
             val stars = loadFavourites()
@@ -631,6 +667,9 @@ class ChatViewModel(
         launch {
             repository.connections.collect {
                 repository.join()
+                // Reads made while the socket was down never left; they go
+                // now — iOS replays its pending read-untill events the same way.
+                resendPendingReads()
                 onEvent(ChatEvent.RefreshRecents)
             }
         }
@@ -648,8 +687,9 @@ class ChatViewModel(
         // A thread read on another of this user's devices: drop the row's
         // count here too, and let the badge store re-ask the server.
         launch {
-            repository.selfReads.collect { conversationId ->
+            repository.selfReads.collect { read ->
                 if (readOnly) return@collect
+                val conversationId = read.conversationId
                 repository.markThreadRead(conversationId, nowMillis())
                 serverUnread.remove(conversationId)
                 setState { copy(unread = unread - conversationId) }
@@ -671,7 +711,16 @@ class ChatViewModel(
         }
         // The host's ledger seeded or moved under the listing: fold its rows
         // again, or a badge that landed after the listing loaded never shows.
-        launch { repository.backlogChanges.collect { reloadBacklog() } }
+        // The tabs' split follows it — a missed call used to reach the Calls
+        // tab's count only on the next listing refresh — and one that lands
+        // while the Missed list is on screen is read there and then: iOS
+        // re-runs the current screen's read on every badge refresh.
+        launch {
+            repository.backlogChanges.collect {
+                reloadBacklog()
+                if (missedCallsShown && missedCallsLive) readMissedCalls() else refreshSectionBadges()
+            }
+        }
         launch {
             repository.typing.collect { signal ->
                 onEvent(ChatEvent.PeerTyping(signal.conversationId, signal.started, signal.typistId))
@@ -723,12 +772,7 @@ class ChatViewModel(
             }
             ChatEvent.Send -> send()
             is ChatEvent.ToggleFavourite -> toggleFavourite(event.id)
-            ChatEvent.CallsViewed -> if (currentState.callsBadge > 0) {
-                launch {
-                    onCallsViewed()
-                    applySplit(badgeSplit())
-                }
-            }
+            is ChatEvent.MissedCallsShown -> onMissedCallsShown(event)
             ChatEvent.AttachFile -> launch { pickForPreview() }
             is ChatEvent.AttachKind -> launch { pickForPreview(event.kind) }
             is ChatEvent.ShareLocation -> shareLocation(event.place)
@@ -1201,6 +1245,47 @@ class ChatViewModel(
         split?.let { fresh -> setState { copy(sectionBadges = fresh) } }
     }
 
+    /**
+     * The missed calls came on screen or left it. Coming on screen is a read;
+     * while they stay there and the host can say so ([ChatEvent.MissedCallsShown.live]),
+     * every ledger move reads again (see the `backlogChanges` collector).
+     *
+     * The Calls tab used to read them on every opening, its All view
+     * included, and only when the count it last held said so — a count that
+     * was not refreshed while the tab stayed open, so a call missed then sat
+     * unread in front of the user.
+     */
+    private fun onMissedCallsShown(event: ChatEvent.MissedCallsShown) {
+        val was = missedCallsShown
+        missedCallsShown = event.shown
+        missedCallsLive = event.shown && event.live
+        if (event.shown && !was) readMissedCalls()
+    }
+
+    /**
+     * Reads the missed calls when the ledger still holds an unread one —
+     * asked fresh rather than trusted to the tab's last split, which goes
+     * stale while the tab stays open. iOS clears the `call_label` rows and
+     * emits `notification:read {segment: call_label}`
+     * (`FirebaseRealmTimeDB+Ext.swift:2889-2907`); the host does both.
+     * Serialised so a burst of ledger moves emits once: the second pass finds
+     * nothing left to read.
+     */
+    private fun readMissedCalls() {
+        if (readOnly) return
+        launch {
+            missedCallsRead.withLock {
+                val split = badgeSplit()
+                applySplit(split)
+                val unread = (split ?: currentState.sectionBadges)[CALL_TOOL] ?: 0
+                if (unread > 0) {
+                    onCallsViewed()
+                    applySplit(badgeSplit())
+                }
+            }
+        }
+    }
+
     /** The watcher has three exits — replace, close, project switch — and one off switch. */
     private fun stopPresence() {
         presenceJob?.cancel()
@@ -1307,6 +1392,7 @@ class ChatViewModel(
         // delivery for the whole session.
         launch { repository.join() }
         watchPresence(contact, isGroup)
+        if (!readOnly) readOnOpen(contact.userId, known, isGroup)
         launchResult(
             block = { repository.history(contact.userId, nowMillis(), isGroup) },
             onSuccess = { rows ->
@@ -1349,6 +1435,9 @@ class ChatViewModel(
                 if (!readOnly) markOpenedThreadRead(contact.userId, rows, isGroup)
             },
             onError = { error ->
+                // The open has already read what this computer holds
+                // ([readOnOpen]); a history that never answers takes none of
+                // that back.
                 setState { copy(isLoading = false, error = error.localised()) }
             },
         )
@@ -2197,6 +2286,9 @@ class ChatViewModel(
         // Ids do not cross productions, and a stale one would swallow the
         // first real read of a conversation in the next.
         readSentTo.clear()
+        // A read still waiting for the socket names the production being
+        // left; sent after the switch it would be stamped with the next one.
+        pendingReads.clear()
         // A send pinned to the production being left keeps going (and comes
         // back into its thread on return); one that is not cannot survive.
         unsentMedia.values.removeAll { it.pinned == null }
@@ -2736,6 +2828,32 @@ class ChatViewModel(
      * "synced" means to someone looking at the list rather than a thread.
      * Only the open thread also appends the bubble.
      */
+    /**
+     * The read an open makes before — and whatever — history answers.
+     *
+     * iOS flips the conversation's ledger rows as the thread appears,
+     * whatever the network says (`ChatingViewController.swift:527-561`), and
+     * emits the read with the newest message id its own store holds
+     * (`ChatViewModel.swift:424-454`). Here both waited for history: offline,
+     * or with history failing, the thread showed its cached lines and the
+     * row, the rail and the ledger all kept their badge. So the ledger, the
+     * row and the local read mark move now, from the cached thread; the emit
+     * names the cached newest line, and if the socket is down it waits in
+     * [pendingReads]. A history that answers reads again from its own rows
+     * ([markOpenedThreadRead]) — the same watermark is not sent twice.
+     */
+    private fun readOnOpen(peerId: String, cached: List<ChatMessage>?, isGroup: Boolean) {
+        cached?.maxOfOrNull(ChatMessage::timestampMillis)?.let { repository.markThreadRead(peerId, it) }
+        serverUnread.remove(peerId)
+        setState { copy(unread = unread - peerId) }
+        val newest = cached?.filterNot(ChatMessage::isMine)?.maxByOrNull(ChatMessage::timestampMillis)
+        launch {
+            newest?.let { sendRead(peerId, it.id, isGroup) }
+            onThreadRead(peerId)
+            applySplit(badgeSplit())
+        }
+    }
+
     /** Opening a thread reads everything it holds, here and on the server. */
     private fun markOpenedThreadRead(peerId: String, rows: List<ChatMessage>, isGroup: Boolean) {
         rows.lastOrNull { !it.isMine }?.let { newest ->
@@ -2782,11 +2900,30 @@ class ChatViewModel(
      * Only the emit is guarded: the local bookkeeping around each call site —
      * the read mark, the cleared row, the badge split — is cheap, idempotent,
      * and still wanted on every path.
+     *
+     * The watermark is claimed before the emit, so a second caller naming the
+     * same message while the first is on the wire stays quiet, and released
+     * if the emit fails: a read that never left is not a read the server
+     * knows. It used to stay claimed, so a read made offline was never sent
+     * at all. A failed read waits in [pendingReads] for the next connection.
      */
     private suspend fun sendRead(conversationId: String, messageId: String, isGroup: Boolean) {
         if (readSentTo[conversationId] == messageId) return
         readSentTo[conversationId] = messageId
-        repository.markRead(conversationId, messageId, isGroup)
+        if (repository.markRead(conversationId, messageId, isGroup)) {
+            if (pendingReads[conversationId]?.messageId == messageId) pendingReads.remove(conversationId)
+            return
+        }
+        if (readSentTo[conversationId] == messageId) readSentTo.remove(conversationId)
+        pendingReads[conversationId] = PendingRead(messageId, isGroup)
+    }
+
+    /** Sends every read the socket refused while it was down — see [pendingReads]. */
+    private suspend fun resendPendingReads() {
+        if (readOnly || pendingReads.isEmpty()) return
+        pendingReads.toList().forEach { (conversationId, read) ->
+            sendRead(conversationId, read.messageId, read.isGroup)
+        }
     }
 
     private fun ackDelivered(message: ChatMessage) {
@@ -2969,6 +3106,12 @@ private fun ChatSendState.isOurs(): Boolean =
     this == ChatSendState.Sending || this == ChatSendState.Queued || this == ChatSendState.Failed
 
 private const val PRESENCE_TAG = "Presence"
+
+/** The ledger's missed-call tool — the Calls tab's count, and what reading it clears. */
+private const val CALL_TOOL = "call_label"
+
+/** A read that never left — see `ChatViewModel.pendingReads`. */
+private data class PendingRead(val messageId: String, val isGroup: Boolean)
 
 /** The shared-place picture's file name and type, as the phones name theirs. */
 private const val LOCATION_MAP_NAME = "location-map.png"

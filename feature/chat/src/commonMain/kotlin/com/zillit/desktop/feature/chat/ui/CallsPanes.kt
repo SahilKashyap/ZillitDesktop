@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.chat.ui
 
 import androidx.compose.runtime.Composable
 import com.zillit.desktop.feature.chat.domain.CrewContact
+import kotlinx.coroutines.flow.Flow
 
 /**
  * The call history's two halves, supplied by the host.
@@ -28,4 +29,14 @@ interface CallsPanes {
     /** Beside the list: "Voice and video calling", or the picked call's info. */
     @Composable
     fun Side(onStartCall: () -> Unit, onOpenChat: (peer: CrewContact, isGroup: Boolean) -> Unit)
+
+    /**
+     * Whether [List] is on its Missed view — what reads a missed call. iOS
+     * reads them on the Missed segment only (`MissedCallViewController.swift:376-378, 399`),
+     * never on All.
+     *
+     * Null is a host that does not say: the tab then reads the missed calls
+     * once as it comes up, which is what it always did.
+     */
+    val missedOnly: Flow<Boolean>? get() = null
 }

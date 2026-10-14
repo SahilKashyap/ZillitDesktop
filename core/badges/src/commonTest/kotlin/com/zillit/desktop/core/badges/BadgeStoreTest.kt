@@ -219,19 +219,62 @@ class BadgeStoreTest {
         assertEquals(0, store.counts.value.section(BadgeSections.CNC))
     }
 
+    /** iOS `clearOutPendingNotificationsByProjectID` reads the rows; `badges:cleared:device` deletes the table. */
     @Test
-    fun `clearing a production or the device empties the ledger`() = runTest {
+    fun `clearing a production reads its rows, clearing the device empties the ledger`() = runTest {
         val storage = InMemoryNotificationLedgerStore()
-        val store = BadgeStore(storage)
+        val store = BadgeStore(storage, nowMillis = { 1_000L })
         store.open(project)
         store.seed(listOf(row("a"), row("b", projectId = "p2")))
 
         store.clearProject(project)
         assertTrue(store.counts.value.isEmpty)
-        assertEquals(1, storage.rows("p2").size, "the other production's rows stay")
+        assertTrue(storage.row("a")!!.messageRead, "read, not forgotten")
+        assertEquals(false, storage.row("b")!!.messageRead, "the other production's rows stay unread")
+
+        store.seed(listOf(row("a")))
+        assertTrue(store.counts.value.isEmpty, "a page that hands it back unread does not badge it again")
 
         store.clearEverything()
         assertEquals(0, storage.rows("p2").size)
+    }
+
+    /**
+     * ZL-21764: the read echo for a message read on the web can beat the
+     * message's own save to this socket. The save that follows must be filed
+     * read, or the badge sticks.
+     */
+    @Test
+    fun `a row arriving after this person's read echo is filed read`() = runTest {
+        var now = 1_000L
+        val store = BadgeStore(nowMillis = { now })
+        store.open(project)
+        val echo = BadgeSilence(deletedChatIds = setOf("msg-1"), projectId = project, ownReadEcho = true)
+
+        store.silence(echo)
+        store.arrived(listOf(row("late", section = BadgeSections.CNC, tool = "chat_label", referenceId = "msg-1")))
+        assertEquals(0, store.counts.value.section(BadgeSections.CNC))
+
+        store.arrived(listOf(row("other", section = BadgeSections.CNC, tool = "chat_label", referenceId = "msg-2")))
+        assertEquals(1, store.counts.value.section(BadgeSections.CNC), "only the message the echo named")
+
+        now += 6 * 60 * 1000L
+        store.arrived(
+            listOf(row("much-later", section = BadgeSections.CNC, tool = "chat_label", referenceId = "msg-1")),
+        )
+        assertEquals(2, store.counts.value.section(BadgeSections.CNC), "the mark lapses after five minutes")
+    }
+
+    /** Someone else deleting a message, or a read by another person, says nothing about rows still to come. */
+    @Test
+    fun `only an own read is remembered for rows still to come`() = runTest {
+        val store = BadgeStore(nowMillis = { 1_000L })
+        store.open(project)
+
+        store.silence(BadgeSilence(deletedChatIds = setOf("msg-1"), projectId = project))
+        store.seed(listOf(row("late", section = BadgeSections.CNC, tool = "chat_label", referenceId = "msg-1")))
+
+        assertEquals(1, store.counts.value.section(BadgeSections.CNC))
     }
 
     /**
@@ -311,14 +354,12 @@ class BadgeStoreTest {
     }
 
     /**
-     * The reported bug: a production card wearing badges with nothing badged
-     * inside it, and nothing on the web or either phone.
-     *
-     * Each row here is one the composition inside drops — so the card must
-     * drop it too. The card was a raw row count and showed 5.
+     * The card and the tabs inside run one rule — iOS's, where every unread
+     * row of a section counts on that section. Only a row filed under no
+     * section at all is on neither.
      */
     @Test
-    fun `the card counts only what something inside could show`() = runTest {
+    fun `the card counts what the tabs inside count`() = runTest {
         val store = BadgeStore()
         store.open(project)
         store.seed(
@@ -332,8 +373,8 @@ class BadgeStoreTest {
             ),
         )
 
-        assertEquals(1, store.counts.value.total, "only the tool row is a badge inside")
-        assertEquals(mapOf(project to 1), store.projectCounts(null), "and the card says the same")
+        assertEquals(5, store.counts.value.total, "every sectioned row is a badge inside")
+        assertEquals(mapOf(project to 5), store.projectCounts(null), "and the card says the same")
     }
 
     /** One rule for both delivery paths: the socket dropped these, the backlog page did not. */

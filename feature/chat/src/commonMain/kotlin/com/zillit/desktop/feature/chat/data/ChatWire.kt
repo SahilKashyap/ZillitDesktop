@@ -113,22 +113,92 @@ fun groupReadUntillEnvelope(
  * thread, this machine's badge for it must fall. The mirror image of
  * [readReceiptFrom]: there the peer read what I sent; here I read, elsewhere.
  * Answers the conversation key (peer id for DMs, room id for groups), null
- * for anything that is not my own read at status 3.
+ * for anything that is not my own read at status 3. See [selfReadOf] for the
+ * whole frame.
  */
-fun selfReadFrom(payload: JsonElement, myUserId: String?): String? {
+fun selfReadFrom(payload: JsonElement, myUserId: String?): String? = selfReadOf(payload, myUserId)?.conversationId
+
+/**
+ * One of my reads made elsewhere, as a read-untill frame reports it: the
+ * conversation, and the messages the frame names.
+ *
+ * [messageIds] is the frame's `chat_message_ids` — exactly which messages the
+ * read covered. iOS flips its ledger rows by them (`reference_id ∈ ids`,
+ * `ChatObserver.swift:321-345` for a DM, `:368-381` for a room) and, for a DM
+ * read by me, remembers them so a `notification:save` that lands after the
+ * read is filed read (ZL-21764, `:337-339`). Empty when the frame names none —
+ * the conversation alone is then the whole read, as before.
+ */
+data class SelfRead(
+    val conversationId: String,
+    val messageIds: Set<String> = emptySet(),
+    val isGroup: Boolean = false,
+    /** The frame's `project_id`; null when it names none. */
+    val projectId: String? = null,
+)
+
+/**
+ * Reads a read-untill frame as one of [myUserId]'s own reads, or null.
+ *
+ * [isGroup] is which event carried it — `group-chat:read-untill` or the DM's
+ * `private_chat_message_read_untill`. Null guesses from the shape, as this
+ * reader always did: a frame naming a `room_id` is a room's.
+ *
+ * - **Which rung.** A room's frame says what the reader emitted in
+ *   `emitted_status`, which is what every client tests (iOS
+ *   `ChatObserver.swift:368`, Android `ChatSocketHelper.kt:1396`, the web's
+ *   `AllBadges.jsx`); its `status` can be the room's, not the reader's. A
+ *   DM's says it in `status` (iOS `:323`). Each falls back to the other's
+ *   field when its own is absent — the desktop's own emits carry `status`.
+ * - **Whose read.** A DM's rebroadcast frames the reader as `receiver` and
+ *   the read-from peer as `sender`, so receiver == me is my read. A room's
+ *   names the reader in `user_id` (the emit's own field) or `emitted_sender`
+ *   (Android's model) and the room in `room_id` or `receiver`. iOS clears a
+ *   room on ANY member's read (`:368-381` never looks at the reader); that is
+ *   somebody else's state, not mine, so the reader must be me here.
+ */
+fun selfReadOf(payload: JsonElement, myUserId: String?, isGroup: Boolean? = null): SelfRead? {
     val obj = payload as? JsonObject ?: return null
     val detail = (obj["detail"] as? JsonObject) ?: obj
-    val status = (detail["status"] as? JsonPrimitive)?.intOrNull
-    if (myUserId == null || status != READ_STATUS) return null
+    val group = isGroup ?: (detail.str("room_id") != null)
+    val conversation = myUserId
+        ?.takeIf { detail.readRung(group) == READ_STATUS }
+        ?.let { me -> detail.readConversation(group, me) }
+        ?: return null
+    return SelfRead(
+        conversationId = conversation,
+        messageIds = detail.chatMessageIds(),
+        isGroup = group,
+        projectId = detail.str("project_id") ?: obj.str("project_id"),
+    )
+}
 
-    val roomId = detail.str("room_id")
-    return when {
-        // Group: the reader is named in user_id.
-        roomId != null -> roomId.takeIf { detail.str("user_id") == myUserId }
-        // DM: the rebroadcast frames the reader as receiver, the read-from
-        // peer as sender — receiver == me is my own read from elsewhere.
-        else -> detail.str("sender").takeIf { detail.str("receiver") == myUserId }
+/** The conversation a read-untill frame reads when [me] is the reader — see [selfReadOf]. */
+private fun JsonObject.readConversation(isGroup: Boolean, me: String): String? =
+    if (isGroup) {
+        val reader = str("user_id") ?: str("emitted_sender")
+        (str("room_id") ?: str("receiver")).takeIf { reader == me }
+    } else {
+        // The reader is the receiver; the read-from peer is the sender.
+        str("sender").takeIf { str("receiver") == me }
     }
+
+/** The rung a read-untill frame reports — see [selfReadOf]. */
+private fun JsonObject.readRung(isGroup: Boolean): Int? {
+    val emitted = (this["emitted_status"] as? JsonPrimitive)?.intOrNull
+    val status = (this["status"] as? JsonPrimitive)?.intOrNull
+    return if (isGroup) emitted ?: status else status ?: emitted
+}
+
+/**
+ * `chat_message_ids` — an array, or now and then a lone string (iOS
+ * `ReadEventModel` decodes both, `ChattingApiModel.swift:698-706`).
+ */
+private fun JsonObject.chatMessageIds(): Set<String> = when (val ids = this["chat_message_ids"]) {
+    is kotlinx.serialization.json.JsonArray ->
+        ids.mapNotNullTo(linkedSetOf()) { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+    is JsonPrimitive -> setOfNotNull(ids.contentOrNull?.takeIf(String::isNotBlank))
+    else -> emptySet()
 }
 
 fun typingEnvelope(

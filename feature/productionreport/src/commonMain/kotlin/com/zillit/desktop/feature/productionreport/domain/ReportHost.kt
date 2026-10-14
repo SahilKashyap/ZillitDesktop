@@ -108,6 +108,15 @@ interface ReportBadgeSource {
     val leaves: Flow<List<BadgeLeaf>> get() = emptyFlow()
 
     fun readBadge(surface: BadgeSurface, kind: BadgeKind, reportId: String) = Unit
+
+    /**
+     * ZL-20673: marks read — on this device only, no socket emit, since a
+     * section-wide server clear is what iOS removed — the approval-unit rows
+     * [ReportBadges.isOrphanApproval] judges orphaned against [keep], every
+     * id form of every report the three approval lists hold
+     * (`ApprovalsTabView.swift:295-319`).
+     */
+    fun sweepApprovalOrphans(keep: Set<String>) = Unit
 }
 
 /** OpenWeather One Call 3.0 for a point, raw — the report stores its own shape. */

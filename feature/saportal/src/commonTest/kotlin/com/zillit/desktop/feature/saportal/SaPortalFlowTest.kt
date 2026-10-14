@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.saportal
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.saportal.domain.ArtisteQuery
@@ -16,6 +17,8 @@ import com.zillit.desktop.feature.saportal.ui.SaEvent
 import com.zillit.desktop.feature.saportal.ui.SaPortalViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -311,6 +314,85 @@ class SaPortalFlowTest {
         runCurrent()
 
         assertEquals("Any news?", vm.state.value.replyDraft)
+    }
+
+    // -- badges ----------------------------------------------------------------
+
+    /** A ledger the test fills by hand, and the reads the portal sent it. */
+    private class FakeBadges : TabBadgeSource {
+        val unit = MutableStateFlow<Map<String, Int>>(emptyMap())
+        val tree = MutableStateFlow<Map<String, Map<String, Int>>>(emptyMap())
+        val reads = mutableListOf<String>()
+        override val counts: Flow<Map<String, Int>> = unit
+        override val entityCounts: Flow<Map<String, Map<String, Int>>> = tree
+        override fun read(key: String) {
+            reads += key
+        }
+        override fun readEntity(key: String, entityId: String, kind: String?) {
+            reads += "$key/$entityId/$kind"
+        }
+    }
+
+    private fun badgeModel(repo: FakeRepo, badges: FakeBadges) = SaPortalViewModel(
+        repository = repo,
+        badges = badges,
+        viewer = { SaViewer(userId = "u1", ready = true) },
+    ).also { it.start() }
+
+    @Test
+    fun `a voucher list shown reads nothing, a voucher opened reads that day`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        repo.voucherRows = listOf(voucher(id = "v1"), voucher(id = "v2"))
+        val badges = FakeBadges()
+        badges.unit.value = mapOf("my_vouchers_label" to 2)
+        badges.tree.value = mapOf("my_vouchers_label" to mapOf("v1" to 1, "v2" to 1))
+        val vm = badgeModel(repo, badges)
+        vm.onEvent(SaEvent.WindowFocus(true))
+        runCurrent()
+
+        vm.onEvent(SaEvent.Open(SaDestination.Vouchers))
+        runCurrent()
+        // Every row keeps its own count until it is opened.
+        assertTrue(badges.reads.isEmpty())
+        assertEquals(1, vm.state.value.voucherUnread("v2"))
+
+        vm.onEvent(SaEvent.OpenVoucher("v1"))
+        runCurrent()
+        assertEquals(listOf("my_vouchers_label/v1/voucher"), badges.reads)
+    }
+
+    @Test
+    fun `a query opened reads that thread`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        repo.queryRows = listOf(ArtisteQuery(id = "q1", status = "open"))
+        val badges = FakeBadges()
+        val vm = badgeModel(repo, badges)
+        runCurrent()
+
+        vm.onEvent(SaEvent.Open(SaDestination.Queries))
+        vm.onEvent(SaEvent.OpenQuery("q1"))
+        runCurrent()
+        assertEquals(listOf("query_label/q1/query"), badges.reads)
+    }
+
+    @Test
+    fun `the profile reads the artiste's own record once it is known`() = runTest(dispatcher) {
+        val badges = FakeBadges()
+        val vm = badgeModel(FakeRepo(), badges)
+        runCurrent()
+        vm.onEvent(SaEvent.Open(SaDestination.Profile))
+        runCurrent()
+        // Nothing unread: nothing sent.
+        assertTrue(badges.reads.isEmpty())
+
+        // A change lands behind another window: it waits for somebody to look.
+        badges.unit.value = mapOf("profile_label" to 1)
+        runCurrent()
+        assertTrue(badges.reads.isEmpty())
+
+        vm.onEvent(SaEvent.WindowFocus(true))
+        runCurrent()
+        assertEquals(listOf("profile_label/a1/artiste"), badges.reads)
     }
 
     // -- access ----------------------------------------------------------------

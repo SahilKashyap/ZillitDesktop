@@ -2,6 +2,8 @@ package com.zillit.desktop
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.core.permissions.ProjectPermissions
@@ -58,10 +60,11 @@ internal fun AppGraph.Ready.buildCastBoard(
  *
  * Both of the board's lists file under their own tool (`casting_main_tool_label`
  * and `casting_background_tool_label`); every unread row of either becomes a
- * leaf keyed by stage unit, character, episode and — for a comment — the
- * entry it was made on. The entry read is the web's two reads in one: the
- * level read of the character's folder rows and the image-chat read of the
- * thread (`CommonCasting.jsx:855-910`, `LCWChatDiscussionV2.jsx:209`).
+ * leaf keyed by stage unit, character, talent or scene (`level_2`), episode,
+ * action and — for a comment — the entry it was made on. The entry read is
+ * two reads in one: the folder's rows (iOS `readToolBagdes`,
+ * `CastingFolderDetailViewController.swift:141-145`) and the image-chat read
+ * of the entry's own thread (`LCWChatDiscussionV2.jsx:209`).
  */
 private fun AppGraph.Ready.castBoardBadges(board: BoardTool): CastingBadges = object : CastingBadges {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -72,20 +75,44 @@ private fun AppGraph.Ready.castBoardBadges(board: BoardTool): CastingBadges = ob
     private fun leavesNow(): List<CastingBadgeLeaf> =
         badgeStore.unreadRows(BadgeSections.TOOLS)
             .filter { it.tool in tools }
-            .groupingBy { row -> CastLeafKey(row.tool, row.unit, row.level1, row.level3, row.chatUnitId) }
+            .groupingBy { row -> row.castLeafKey() }
             .eachCount()
-            .mapNotNull { (key, count) ->
-                val status = CastingBadges.statusOf(board, key.unit) ?: return@mapNotNull null
-                CastingBadgeLeaf(key.tool, status, key.character, key.episode, key.entryId, count)
-            }
+            .mapNotNull { (key, count) -> key.leaf(count) }
 
+    private fun NotificationRecord.castLeafKey() =
+        CastLeafKey(tool, unit, level1, level2, level3, chatUnitId, action)
+
+    private fun CastLeafKey.leaf(count: Int): CastingBadgeLeaf? {
+        val status = CastingBadges.statusOf(board, unit) ?: return null
+        return CastingBadgeLeaf(tool, status, character, episode, entryId, count, folder = folder, action = action)
+    }
+
+    /**
+     * The server hears iOS's folder read — character, talent or scene,
+     * episode — once per action it names ([CastingBadges.readActions]; the
+     * wire takes one, and iOS's REST twin sends only the first). Here the
+     * folder's own rows are read whatever their action and a sibling's
+     * comments never ([CastingBadges.readsWithEntry]), including rows that
+     * name no talent or scene, which the entry counts.
+     */
     override fun readEntry(tool: String, status: CastingStatus, entry: CastingEntry) {
+        val unit = CastingBadges.unitOf(board, status)
         scope.launch {
-            emitLevelRead(
-                tool = tool,
-                unit = CastingBadges.unitOf(board, status),
-                level1 = entry.characterName,
-                level3 = entry.episode.takeIf { it.isNotBlank() },
+            CastingBadges.readActions(board).forEach { action ->
+                emitLevelRead(
+                    tool = tool,
+                    unit = unit,
+                    level1 = entry.characterName,
+                    level2 = CastingBadges.folderOf(board, entry),
+                    level3 = entry.episode.takeIf { it.isNotBlank() },
+                    action = action,
+                )
+            }
+            badgeStore.markRead(
+                LedgerRead.Matching("${board.segment} entry ${entry.id}") { row ->
+                    row.tool == tool && row.unit == unit &&
+                        row.castLeafKey().leaf(1)?.let { CastingBadges.readsWithEntry(board, it, entry) } == true
+                },
             )
             emitRecordChatRead(tool, entry.id)
         }
@@ -96,11 +123,15 @@ private fun AppGraph.Ready.castBoardBadges(board: BoardTool): CastingBadges = ob
             if (leaf.entryId.isNotBlank()) {
                 emitRecordChatRead(leaf.tool, leaf.entryId)
             } else {
+                // Exactly the leaf: its talent or scene and its action, so an
+                // orphan read never reaches a listed entry's rows.
                 emitLevelRead(
                     tool = leaf.tool,
                     unit = CastingBadges.unitOf(board, leaf.status),
                     level1 = leaf.character,
+                    level2 = leaf.folder,
                     level3 = leaf.episode.takeIf { it.isNotBlank() },
+                    action = leaf.action,
                 )
             }
         }
@@ -111,8 +142,10 @@ private data class CastLeafKey(
     val tool: String,
     val unit: String,
     val character: String,
+    val folder: String,
     val episode: String,
     val entryId: String,
+    val action: String,
 )
 
 internal fun AppGraph.Ready.castBoardProvider(viewModel: CastingViewModel, path: String) = CastingToolProvider(

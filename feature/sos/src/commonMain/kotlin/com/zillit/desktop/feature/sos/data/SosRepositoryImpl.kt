@@ -73,21 +73,32 @@ object SosEndpoints {
      * feed fetch (`SosVM.kt:135-139` calling `BadgesHandler.markRead(SOS_LABEL,
      * now, BadgeOptions.Read)`, whose REST leg is `ApiUrl.MARK_READ_URL`,
      * `badgesHandler/BadgesHandler.kt:292`). The web does the same act over the
-     * socket instead (`emitForNotificationRead`, `SOSMain.jsx:139-149`).
+     * socket instead (`emitForNotificationRead`, `SOSMain.jsx:139-149`), and so
+     * does iOS while connected (`readMessageFromSos`,
+     * `FirebaseRealmTimeDB+Ext.swift:2949`); the host sends that socket read
+     * beside this one (see `readingLedger`), so this route is kept as the
+     * fallback a dropped socket still reaches.
      */
     fun markRead(notificationBase: String, timestampMillis: Long): String =
         "$notificationBase$MARK_READ_ROUTE/$SEGMENT/$timestampMillis"
 
     /**
-     * `DELETE markdelete/{alertId}/{timestamp}` — how both shipping clients
-     * actually delete one alert: Android passes the row's `_id` where a segment
-     * normally goes (`bottomNav/sos/view/Sos.kt:433-435` into
-     * `BadgesHandler.kt:266-268`), and the web emits `notification:delete` with
-     * `segment: record._id` (`SOSMain.jsx:236-250`), which is the same act over
-     * the socket. See [alertFallback] for the route `api.js` declares.
+     * `DELETE markdelete/sos_label/{timestamp}?referenceId={alertId}` — iOS's
+     * `deleteSosNotification` (`NotificationRequest.swift:55-62`), called from
+     * the row's delete button (`SosCallingViewController.swift:511-536`).
+     *
+     * iOS moved here from the generic delete under ZL-19904: a delete that did
+     * not name the `sos_label` segment left the row behind, and it came back on
+     * the next `?segment=sos_label` fetch. The desktop used Android's spelling,
+     * the row's `_id` where a segment normally goes (`markdelete/{alertId}/{ts}`,
+     * `Sos.kt:433-435` into `BadgesHandler.kt:266-268`) — the same shape iOS
+     * abandoned. The alert itself rides as the query, exactly as iOS sends it;
+     * the socket half (`notification:delete`, `segment` = the alert's `_id`, as
+     * the web's `SOSMain.jsx:236-250` too) is the host's — see `readingLedger`.
+     * See [alertFallback] for the route `api.js` declares.
      */
     fun deleteAlert(notificationBase: String, alertId: String, timestampMillis: Long): String =
-        "$notificationBase$DELETE_ROUTE/$alertId/$timestampMillis"
+        "$notificationBase$DELETE_ROUTE/$SEGMENT/$timestampMillis?$REFERENCE_ID=$alertId"
 
     /**
      * `DELETE markdelete/sos_label/{timestamp}` — Clear All, again as both
@@ -165,6 +176,7 @@ object SosEndpoints {
 
     private const val MARK_READ_ROUTE = "levelmarkread"
     private const val DELETE_ROUTE = "markdelete"
+    private const val REFERENCE_ID = "referenceId"
     private const val PREVIOUS = "previous"
     private const val NEXT = "next"
 }

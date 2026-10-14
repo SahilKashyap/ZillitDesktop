@@ -202,7 +202,13 @@ private fun AppGraph.Ready.continuityBadges(): ContinuityBadges = object : Conti
                         module = CONTINUITY_TOOL,
                         level1 = sceneFolder,
                         level2 = departmentId,
-                        timestamp = if (departmentId == null) System.currentTimeMillis() else 0L,
+                        // The read's time, folder or department alike — iOS
+                        // (`FirebaseRealmTimeDB+Ext.swift:1432`, `readTime: now`)
+                        // and Android (`ContinuitySceneListPage.kt:766-782`) both
+                        // send it. The web's department read sends 0
+                        // (`DepartmentList.jsx:37-41`), which this used to copy;
+                        // read as a cutoff, the epoch names no row at all.
+                        timestamp = System.currentTimeMillis(),
                     ),
                     NotificationReadDto.serializer(),
                 )

@@ -1,7 +1,7 @@
 package com.zillit.desktop
 
-import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -85,23 +85,30 @@ internal fun AppGraph.Ready.buildCostumeSetSync(permissions: () -> ProjectPermis
  * reads "production created" by its `level_1` alone, so the record-chat rows
  * filed under the same unit survive; opening a record's chat reads that
  * record's rows by `reference_id`.
+ *
+ * A row is the tool's by either key — a `tool` spelling of its three, or a
+ * unit in its namespace ([CsyncBadges.owns]) — and a read clears by unit
+ * whatever `tool` the row carries, as iOS's does (`CSSBadges.swift:99-101`):
+ * the wire read names the tool the server stamps; the local flip is the unit's.
  */
 internal fun AppGraph.Ready.costumeSetSyncBadges(): SyncBadges = object : SyncBadges {
     private val reads = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val query = BadgeDrilldownQuery(
-        groupBy = "unit",
-        section = BadgeSections.TOOLS,
-        tool = CsyncBadges.CSYNC_BADGE_TOOL,
-    )
-
     override val unread: Flow<Map<String, Int>> = badgeStore.counts
-        .map { badgeStore.split(query) }
+        .map {
+            badgeStore.unreadRows(BadgeSections.TOOLS)
+                .filter { CsyncBadges.owns(it.tool, it.unit) && it.unit.isNotBlank() }
+                .groupingBy { it.unit }
+                .eachCount()
+        }
         .distinctUntilChanged()
 
     override fun readUnit(unit: String) {
         if (unit.isBlank()) return
-        reads.launch { emitLevelRead(tool = CsyncBadges.CSYNC_BADGE_TOOL, unit = unit) }
+        reads.launch {
+            emitLevelRead(tool = CsyncBadges.CSYNC_BADGE_TOOL, unit = unit)
+            badgeStore.markRead(csyncUnitRead(unit, level1 = null))
+        }
     }
 
     override fun readProductionCreated() {
@@ -111,6 +118,7 @@ internal fun AppGraph.Ready.costumeSetSyncBadges(): SyncBadges = object : SyncBa
                 unit = CsyncBadges.GENERAL,
                 level1 = CsyncBadges.PRODUCTION_LEVEL,
             )
+            badgeStore.markRead(csyncUnitRead(CsyncBadges.GENERAL, CsyncBadges.PRODUCTION_LEVEL))
         }
     }
 
@@ -125,6 +133,17 @@ internal fun AppGraph.Ready.costumeSetSyncBadges(): SyncBadges = object : SyncBa
         }
     }
 }
+
+/**
+ * The local half of a Costumes & Set Sync read — iOS `updateMarkRead(unit:,
+ * level1:)` with no tool (`CSSBadges.swift:99-101`, `LocalNoticifationRealm
+ * .swift:5164-5186`): every unread row of the unit, and of the `level_1` when
+ * given, whichever `tool` spelling it carries. The bell's rows stay the bell's.
+ */
+private fun csyncUnitRead(unit: String, level1: String?): LedgerRead =
+    LedgerRead.Matching("csync unit $unit/${level1.orEmpty()}") { row ->
+        row.section != BadgeSections.GLOBAL && row.unit == unit && (level1 == null || row.level1 == level1)
+    }
 
 /**
  * Costume photos, clips and files: the web's two steps — the file goes to the

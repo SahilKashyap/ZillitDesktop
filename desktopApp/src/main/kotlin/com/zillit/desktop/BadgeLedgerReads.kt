@@ -20,6 +20,7 @@ import com.zillit.desktop.core.network.HeaderContext
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.NotificationReadDto
+import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.email.data.MailboxProfileSource
 import com.zillit.desktop.feature.email.ui.MailFolderSync
@@ -27,6 +28,7 @@ import com.zillit.desktop.feature.email.ui.MailRead
 import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.approvals.ApprovalsRepository
+import com.zillit.desktop.feature.settings.approvals.badgeUnit
 import com.zillit.desktop.feature.settings.approvals.PendingApproval
 import com.zillit.desktop.feature.sos.domain.SosRepository
 import kotlinx.coroutines.CoroutineScope
@@ -75,45 +77,111 @@ internal fun ApprovalsRepository.readingLedger(ready: AppGraph.Ready): Approvals
             approved: Boolean,
         ): ZillitResult<Unit> = this@readingLedger.decide(queue, request, approved).also { result ->
             if (result is ZillitResult.Success) {
-                val segment = queue.badgeSegment
+                val segment = queue.badgeUnit
                 runCatching {
-                    emitSegmentRead(ready, segment = segment, module = segment, referenceId = request.userId)
+                    // iOS `updateMarkReadByUnitAndReferenceId`: this queue's rows
+                    // for this person. Unscoped, a person's id as reference read
+                    // whatever else named them, in any section.
+                    emitSegmentRead(
+                        ready,
+                        segment = segment,
+                        module = segment,
+                        referenceId = request.userId,
+                        read = LedgerRead.Reference(request.userId, unit = segment),
+                    )
                 }.onFailure { ZillitLog.w("Approvals") { "could not clear the approval's badge: ${it.message}" } }
             }
         }
     }
 
-/** The ledger unit each queue's notifications are filed under (web `BADGE_CONSTANTS`). */
-private val ApprovalQueue.badgeSegment: String
-    get() = when (this) {
-        ApprovalQueue.NewCrew -> "project_join_user_request_label"
-        ApprovalQueue.ProfileChanges -> "project_user_profile_change_request_label"
-    }
-
 /**
- * The SOS feed's reads, applied to the ledger too.
+ * The SOS feed's reads and deletes, applied to the ledger and sent on the
+ * socket too.
  *
  * Android `SosBadge`: every `sos_label` row on a feed fetch or a clear-all;
  * one alert deleted is one row, named by its `_id`.
+ *
+ * The socket half is iOS's. A read is `notification:read {segment:"sos_label"}`
+ * (`readMessageFromSos`, `FirebaseRealmTimeDB+Ext.swift:2949`) — the act the
+ * phones and the web send while connected; the repository's REST read stays
+ * beside it for a dropped socket. A delete is `notification:delete` naming the
+ * alert's `_id` as the segment, or `sos_label` for a clear-all
+ * (`emitForSosDelete`, `SosCallingViewController.swift:212-216`, `:532-536`),
+ * sent once the REST delete has gone through — a refused delete keeps its row
+ * on screen, and must not vanish elsewhere.
  */
-internal fun SosRepository.readingLedger(store: BadgeStore): SosRepository = object : SosRepository by this {
+internal fun SosRepository.readingLedger(ready: AppGraph.Ready): SosRepository = object : SosRepository by this {
     override suspend fun markRead(timestampMillis: Long): ZillitResult<Unit> =
-        this@readingLedger.markRead(timestampMillis).also { store.markRead(LedgerRead.Section(BadgeSections.SOS)) }
+        this@readingLedger.markRead(timestampMillis).also {
+            ready.emitSectionRead(BadgeSections.SOS, timestampMillis)
+            ready.badgeStore.markRead(LedgerRead.Section(BadgeSections.SOS))
+        }
 
     override suspend fun deleteAlert(alertId: String, timestampMillis: Long): ZillitResult<Unit> =
-        this@readingLedger.deleteAlert(alertId, timestampMillis)
-            .also { store.markRead(LedgerRead.Reference(alertId)) }
+        this@readingLedger.deleteAlert(alertId, timestampMillis).also { result ->
+            if (result is ZillitResult.Success) ready.emitSosDelete(segment = alertId, timestampMillis)
+            ready.badgeStore.markRead(LedgerRead.Reference(alertId))
+        }
 
     override suspend fun deleteAllAlerts(timestampMillis: Long): ZillitResult<Unit> =
-        this@readingLedger.deleteAllAlerts(timestampMillis)
-            .also { store.markRead(LedgerRead.Section(BadgeSections.SOS)) }
+        this@readingLedger.deleteAllAlerts(timestampMillis).also { result ->
+            if (result is ZillitResult.Success) ready.emitSosDelete(segment = BadgeSections.SOS, timestampMillis)
+            ready.badgeStore.markRead(LedgerRead.Section(BadgeSections.SOS))
+        }
 }
+
+/**
+ * A whole badge section read on the socket — `notification:read` with the
+ * section as the segment, the body iOS sends for the bell and SOS
+ * (`readGlobalMsg` / `readMessageFromSos`, `FirebaseRealmTimeDB+Ext.swift:
+ * 2949`, `:2985`): `{segment, timestamp, project_id, platform}`, no module.
+ *
+ * Only the wire: the ledger is flipped by the repository decorators beside
+ * the REST read, which also stands in when this cannot be sent.
+ */
+internal suspend fun AppGraph.Ready.emitSectionRead(section: String, timestampMillis: Long) {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    val sent = runCatching {
+        socketEvents.emit(
+            ZillitSocketEvents.Badges.NotificationRead,
+            NotificationReadDto(projectId = projectId, segment = section, timestamp = timestampMillis),
+            NotificationReadDto.serializer(),
+        )
+    }.getOrNull()
+    if (sent !is ZillitResult.Success) ZillitLog.d(TAG_READS) { "$section read not on the socket; REST stands in" }
+}
+
+/**
+ * `notification:delete` — iOS `emitForSosDelete` (`ChatSocketHelper.swift:1032`),
+ * the same `{segment, timestamp, project_id, platform}` body as a read
+ * (Android's `ReadOrDeleteNotificationRequestModel` is one model for both).
+ */
+private suspend fun AppGraph.Ready.emitSosDelete(segment: String, timestampMillis: Long) {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    val sent = runCatching {
+        socketEvents.emit(
+            NOTIFICATION_DELETE,
+            NotificationReadDto(projectId = projectId, segment = segment, timestamp = timestampMillis),
+            NotificationReadDto.serializer(),
+        )
+    }.getOrNull()
+    if (sent !is ZillitResult.Success) ZillitLog.d(TAG_READS) { "SOS delete not on the socket; REST stands" }
+}
+
+/**
+ * Outbound delete. Not in `ZillitSocketEvents.Badges`, which names only the
+ * inbound delete echoes; kept beside its one caller rather than reaching into
+ * the socket module for a single name.
+ */
+private val NOTIFICATION_DELETE = SocketEventName("notification:delete")
 
 /**
  * The bell page's reads, applied to the ledger too.
  *
  * Android `GlobalRead`: every row of the segment; one row deleted is one
- * row, named by its `_id`.
+ * row, named by its `_id`. The socket half of the read — iOS's
+ * `notification:read {segment:"global_label"}` — is sent by the page's
+ * `onListRead` through [emitSectionRead], with this read's time.
  */
 internal fun NotificationsRepository.readingLedger(store: BadgeStore): NotificationsRepository =
     object : NotificationsRepository by this {
@@ -166,11 +234,15 @@ internal class MailLedger(
         return retired
     }
 
-    /** Unread per folder of one mailbox — the folder list's badges. */
+    /**
+     * Unread per folder of one mailbox — the folder list's badges, keyed by
+     * the folder's name lower-cased: the service has spelled `INBOX` both
+     * ways, and IMAP folder names compare case-insensitively.
+     */
     suspend fun folderBadges(mailbox: String?): Map<String, Int> {
         val scope = scopeOf(mailbox)
         return unreadMail().filter { it.isMailOf(scope.address, scope.ownsUntagged) }
-            .groupingBy { it.unit }.eachCount()
+            .groupingBy { it.unit.trim().lowercase() }.eachCount()
     }
 
     /**

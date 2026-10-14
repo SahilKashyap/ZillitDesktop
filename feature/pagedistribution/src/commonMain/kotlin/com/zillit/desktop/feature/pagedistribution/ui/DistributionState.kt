@@ -187,6 +187,12 @@ sealed interface DistributionEvent {
     data object ConfirmPublish : DistributionEvent
     data object CancelPublish : DistributionEvent
     data object DismissError : DistributionEvent
+
+    /**
+     * Whether anybody is looking — the tool composed and its window focused.
+     * Only then does unread landing on the list on show count as seen.
+     */
+    data class Watching(val watching: Boolean) : DistributionEvent
 }
 
 sealed interface DistributionEffect {
