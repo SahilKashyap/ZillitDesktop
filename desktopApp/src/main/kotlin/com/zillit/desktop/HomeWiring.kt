@@ -463,9 +463,11 @@ internal fun buildHomeFeed(
  * `{project_id, segment: unitId, module: "home_label"}`. This is what turns
  * into "read by" on everyone else's screens and clears the unit's badge.
  *
- * A failed emit is dropped deliberately — a receipt is a courtesy, not data,
- * and the next board view resends it; queueing reads for an offline session
- * would claim the user saw posts at a time they did not.
+ * An emit the socket cannot take is held and sent when the connection is
+ * back (`DurableEmits`), with the time it was made: the ledger has already
+ * cleared the badge here, and a read the server never heard of came back
+ * everywhere else. The held read says when the posts were seen, so it claims
+ * nothing the person did not do.
  */
 /**
  * One crew member's profile picture, as bytes — or null, which the UI answers

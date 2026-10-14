@@ -974,7 +974,25 @@ sealed interface AppGraph {
                 decrypt = cryptoEngine::decryptFromHex,
             )
 
-            val socketEvents = SocketEventBus(socketClient)
+            // Badge reads are never lost to a dropped connection: one made
+            // while the socket is down — a production switch reconnects it —
+            // is held, per person, and sent when it is back (DurableEmits).
+            val socketEvents = SocketEventBus(
+                com.zillit.desktop.core.socket.DurableEmits(
+                    delegate = socketClient,
+                    durable = setOf(
+                        ZillitSocketEvents.Badges.NotificationRead,
+                        ZillitSocketEvents.Badges.NotificationLevelRead,
+                    ),
+                    store = object : com.zillit.desktop.core.socket.HeldEmitStore {
+                        override suspend fun read() = preferences.get(ZillitPreferences.HeldBadgeReads)
+                        override suspend fun write(value: String) =
+                            preferences.set(ZillitPreferences.HeldBadgeReads, value)
+                    },
+                    scope = appScope,
+                    nowMillis = System::currentTimeMillis,
+                ),
+            )
 
             // The session decides its own mode by asking for one — there is
             // no configuration flag any more. `GET /configuration` is

@@ -237,6 +237,13 @@ object ZillitPreferences {
      */
     val BadgeResyncedLaunch = PreferenceKey.StringKey("badges.resyncedLaunch", "", PreferenceScope.User)
 
+    /**
+     * Badge reads made while the socket was down, waiting to be sent — a JSON
+     * list kept by `DurableEmits`. User-scoped: a read is this person's, and
+     * must never go out under the next person to sign in.
+     */
+    val HeldBadgeReads = PreferenceKey.StringKey("badges.heldReads", "", PreferenceScope.User)
+
     // -- per-project view settings -----------------------------------------
     //
     // Project-scoped because a user's chosen view for one production has no
@@ -295,7 +302,7 @@ object ZillitPreferences {
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
-        LastProjectId, LastUnitId, BadgeMailboxes, BadgeResyncedLaunch,
+        LastProjectId, LastUnitId, BadgeMailboxes, BadgeResyncedLaunch, HeldBadgeReads,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, EmailActiveMailbox, EmailMailboxTourSeen, ToolGroupOrder, RecentMentions, ChatFavourites,
         CallWidget, MessageWidget, CloseToTray, StartAtLogin,
