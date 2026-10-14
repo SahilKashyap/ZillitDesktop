@@ -15,9 +15,19 @@ enum class ZillitService(val configKey: String) {
     Budget("BUDGET_BASE_URL"),
 
     /**
-     * The Budget Builder service (`zillit_budget`) — the API behind the
-     * embedded budget application. A different service from [Budget], which
-     * is the older budget-chat backend; the two share nothing but a word.
+     * The Budget Builder service — the API behind the embedded budget
+     * application. Its value is the web's `VITE_BUDGET_BUILDER_API_URL` and
+     * **must carry the trailing `/api`** (`src/config.js`: "host includes the
+     * trailing /api"): the page is handed `<base>/v2/budget` as its `?api=`,
+     * and the gateway strips the `/api` the page then prefixes. For develop,
+     * `https://budgetapi-dev.zillit.com/api`.
+     *
+     * It is the **same host** as [Budget], the older budget-chat backend —
+     * different path, not a mistake. This doc used to say the two "share
+     * nothing but a word", which sent a search for the live budget host past
+     * the only host that serves it: the config pointed at
+     * `budgetbuilderapi-*.zillit.com` (undeployed) until 2026-10-14, and the
+     * tool could not load a budget at all.
      */
     BudgetBuilder("BUDGET_BUILDER_BASE_URL"),
 

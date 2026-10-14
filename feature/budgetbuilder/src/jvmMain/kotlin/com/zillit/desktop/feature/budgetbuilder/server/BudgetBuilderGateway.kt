@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The loopback origin the Budget Builder runs on.
@@ -106,6 +107,16 @@ class BudgetBuilderGateway(
 
     private var server: HttpServer? = null
     private var executor: ExecutorService? = null
+
+    /**
+     * Writes this gateway is still carrying to the budget service.
+     *
+     * Only the ones it has not answered yet: a save is counted from the
+     * moment the page's `PUT` arrives here until the service has replied and
+     * the reply has been written back. Nothing else can see that — the page
+     * is in another process, and it is about to be destroyed.
+     */
+    private val writes = AtomicInteger()
 
     private val upstream: HttpClient = HttpClient.newBuilder()
         .followRedirects(HttpClient.Redirect.NORMAL)
@@ -218,10 +229,93 @@ class BudgetBuilderGateway(
 
     /** The app's API calls, forwarded server-side to the budget service. */
     private fun proxyApi(exchange: HttpExchange) {
-        val answer = fetch(exchange, targetUrl(apiBase, exchange, stripApiPrefix = true), sendEncoding = true)
-        copyResponseHeaders(answer, exchange, dropPagePolicies = false)
-        val type = answer.headers().firstValue(CONTENT_TYPE).orElse(null)
-        respond(exchange, answer.statusCode(), type, answer.body())
+        val writing = exchange.requestMethod.uppercase() !in READ_METHODS
+        if (writing) writes.incrementAndGet()
+        val started = System.nanoTime()
+        try {
+            val target = targetUrl(apiBase, exchange, stripApiPrefix = true)
+            val sent = exchange.requestBody.readBytes()
+            val answer = fetch(exchange, target, sendEncoding = true, body = sent)
+            note(exchange, target, answer, sent.size, started)
+            copyResponseHeaders(answer, exchange, dropPagePolicies = false)
+            val type = answer.headers().firstValue(CONTENT_TYPE).orElse(null)
+            respond(exchange, answer.statusCode(), type, answer.body())
+        } finally {
+            if (writing) writes.decrementAndGet()
+        }
+    }
+
+    /**
+     * One line per API call, because this hop is otherwise invisible.
+     *
+     * The page is a web application in another process: when a save or an
+     * import fails, Kotlin sees nothing, the app log says nothing, and the
+     * only witness is a red word in a panel the user is looking at. The
+     * credential *kind* is here for the question that actually comes up —
+     * whether a call went out carrying the Bearer, the legacy blob, or
+     * nothing at all — and never the credential itself.
+     */
+    private fun note(
+        exchange: HttpExchange,
+        target: String,
+        answer: HttpResponse<ByteArray>,
+        sentBytes: Int,
+        startedAt: Long,
+    ) {
+        val millis = (System.nanoTime() - startedAt) / NANOS_PER_MILLI
+        val status = answer.statusCode()
+        val auth = when {
+            exchange.requestHeaders.getFirst(AUTHORIZATION)?.startsWith(BEARER) == true -> "bearer"
+            exchange.requestHeaders.getFirst(MODULEDATA) != null -> "moduledata"
+            else -> "none"
+        }
+        val sent = if (sentBytes > 0) ", sent $sentBytes B" else ""
+        ZillitLog.i(TAG) {
+            "${exchange.requestMethod} $target -> $status in ${millis}ms ($auth$sent, ${answer.body().size} B)"
+        }
+        // What the service actually said, when it said no. Without this a
+        // failed import or save is a bare number in the page and nothing
+        // here — and the number alone cannot tell a refusal the service
+        // meant (a 422 naming the problem with the file) from one this hop
+        // caused.
+        if (status >= HTTP_BAD_REQUEST) {
+            val body = runCatching { answer.body().decodeToString() }.getOrDefault("")
+            ZillitLog.w(TAG) { "$status body: ${body.take(ERROR_BODY_CHARS).replace('\n', ' ')}" }
+        }
+    }
+
+    /**
+     * Blocks until no write is in flight, for callers about to destroy the
+     * page — see `BudgetBuilderHost.flushPendingSave`.
+     *
+     * Two bounds rather than one, because there are two different waits here.
+     * [startMillis] is how long to wait for a save to *appear*: the page was
+     * only just asked to flush, and most of the time it owes nothing at all,
+     * so this is short. [settleMillis] is how long to let one that did appear
+     * finish, which is a round trip to the budget service.
+     *
+     * Plain blocking, no coroutines: the caller on the way out is a shutdown
+     * hook, where the class loader will refuse to load anything this process
+     * has not already used — see [com.zillit.desktop.Shutdown].
+     *
+     * @return true when nothing is left in flight.
+     */
+    fun awaitWritesSettled(startMillis: Long, settleMillis: Long): Boolean {
+        val startDeadline = System.nanoTime() + startMillis * NANOS_PER_MILLI
+        while (writes.get() == 0 && System.nanoTime() < startDeadline) {
+            if (!pause()) return writes.get() == 0
+        }
+        val settleDeadline = System.nanoTime() + settleMillis * NANOS_PER_MILLI
+        while (writes.get() > 0 && System.nanoTime() < settleDeadline) {
+            if (!pause()) return writes.get() == 0
+        }
+        return writes.get() == 0
+    }
+
+    /** One poll interval, or false if this thread is being interrupted. */
+    private fun pause(): Boolean = runCatching { Thread.sleep(POLL_MILLIS); true }.getOrElse {
+        Thread.currentThread().interrupt()
+        false
     }
 
     /**
@@ -240,15 +334,26 @@ class BudgetBuilderGateway(
         return "$base$path$query"
     }
 
-    private fun fetch(exchange: HttpExchange, url: String, sendEncoding: Boolean): HttpResponse<ByteArray> {
+    /**
+     * @param body the request body when the caller has already read it —
+     * the stream can only be drained once, and `proxyApi` needs its size for
+     * the log.
+     */
+    private fun fetch(
+        exchange: HttpExchange,
+        url: String,
+        sendEncoding: Boolean,
+        body: ByteArray = exchange.requestBody.readBytes(),
+    ): HttpResponse<ByteArray> {
         val request = HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
         exchange.requestHeaders.forEach { (name, values) ->
             val lower = name.lowercase()
-            val blocked = lower in RESTRICTED_HEADERS || (!sendEncoding && lower == ACCEPT_ENCODING)
+            val blocked = lower in RESTRICTED_HEADERS ||
+                lower in BROWSER_CONTEXT_HEADERS ||
+                (!sendEncoding && lower == ACCEPT_ENCODING)
             if (!blocked) values.forEach { value -> request.header(name, value) }
         }
-        val body = exchange.requestBody.readBytes()
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
         } else {
@@ -393,9 +498,30 @@ class BudgetBuilderGateway(
 
         private const val LOOPBACK = "127.0.0.1"
         private const val WORKER_THREADS = 8
-        private const val CONNECT_TIMEOUT_SECONDS = 10L
-        private const val REQUEST_TIMEOUT_SECONDS = 60L
 
+        /** Methods that change nothing, so a teardown need not wait for them. */
+        private val READ_METHODS = setOf("GET", "HEAD", "OPTIONS")
+
+        private const val POLL_MILLIS = 20L
+        private const val NANOS_PER_MILLI = 1_000_000L
+
+        private const val CONNECT_TIMEOUT_SECONDS = 10L
+
+        /**
+         * Generous because of one call: importing a budget is a server-side
+         * parse of the whole document. A 1.2 MB PDF measured **46 s** on
+         * develop (2026-10-14) — comfortably inside the old 60 s bound, and
+         * close enough to it that a longer budget would have been cut off and
+         * reported as a dead upstream. Nothing here waits on this but the page,
+         * which shows its own progress, and the teardown flush has bounds of
+         * its own ([awaitWritesSettled]).
+         */
+        private const val REQUEST_TIMEOUT_SECONDS = 180L
+
+        /** How much of a refusal to quote into the log. */
+        private const val ERROR_BODY_CHARS = 400
+
+        private const val HTTP_BAD_REQUEST = 400
         private const val HTTP_OK = 200
         private const val HTTP_NO_CONTENT = 204
         private const val HTTP_NOT_MODIFIED = 304
@@ -404,6 +530,9 @@ class BudgetBuilderGateway(
         private const val HTTP_UNAVAILABLE = 503
 
         private const val CONTENT_TYPE = "Content-Type"
+        private const val AUTHORIZATION = "Authorization"
+        private const val MODULEDATA = "moduledata"
+        private const val BEARER = "Bearer"
         private const val ACCEPT_ENCODING = "accept-encoding"
         private const val HTML_TYPE_MARKER = "text/html"
         private const val JS_TYPE = "text/javascript; charset=utf-8"
@@ -414,6 +543,30 @@ class BudgetBuilderGateway(
             "host", "connection", "content-length", "expect", "upgrade",
             "keep-alive", "transfer-encoding", "te", "trailer",
         )
+
+        /**
+         * The browser's account of where the request came from — meaningless
+         * past this hop, and actively harmful.
+         *
+         * The budget service keeps a CORS allowlist and answers anything from
+         * an origin not on it with `500 Not allowed by CORS`. Our origin is
+         * `http://127.0.0.1:<ephemeral>`, which no allowlist can contain. The
+         * failure is lopsided and so reads as anything but CORS: per the Fetch
+         * spec a browser attaches `Origin` to every request whose method is
+         * not GET or HEAD — **even a same-origin one** — so the boot `GET /doc`
+         * sailed through while every `POST` and `PUT` was refused. That is a
+         * budget that loads, will not save, and cannot import (seen live
+         * 2026-10-14; the web is fine because its origin *is* on the list).
+         *
+         * Forwarding them was always wrong rather than unlucky: beyond here
+         * the request is server-to-server, where no browser origin applies —
+         * the same reason this gateway exists at all. Dropping them makes the
+         * call identical to `curl`, which the service answers properly.
+         * Rewriting them to the web deployment's origin would also work and is
+         * deliberately not done: it would be a claim about another host's
+         * allowlist, per environment, that nothing here can check.
+         */
+        private val BROWSER_CONTEXT_HEADERS = setOf("origin", "referer")
 
         /** Hop-by-hop response headers; the local server frames its own. */
         private val UNFORWARDED_RESPONSE_HEADERS = setOf(

@@ -48,12 +48,22 @@ PROD_IV_ENCRYPTION_KEY=
 # -- per-service hosts --
 PROD_ACCOUNT_HUB_BASE_URL=
 PROD_BUDGET_BASE_URL=
-# Budget Builder: the zillit_budget service API, and the web deployment that
-# serves its page (the app ships with the web client, e.g. https://dev.zillit.com
-# for develop). Both unset = the tool reports itself unconfigured.
-# Production: web = https://web.zillit.com/ (the prod web bundle talks to the
-# unsuffixed *api hosts). budgetbuilderapi / -qa answered 503 on 2026-10-02 —
-# not deployed yet — and the prod web bundle carries no Budget Builder host.
+# Budget Builder: the service API, and the web deployment that serves its page
+# (the app ships with the web client, e.g. https://dev.zillit.com for develop).
+# Both unset = the tool reports itself unconfigured.
+#
+# The API host is the WEB's VITE_BUDGET_BUILDER_API_URL, and it must carry the
+# trailing /api (src/config.js: "host includes the trailing /api"), because the
+# page is handed <base>/v2/budget as its ?api= and the gateway strips the /api
+# the page then prefixes. Verified 2026-10-14 against the deployed bundles:
+#   develop https://budgetapi-dev.zillit.com/api   web https://dev.zillit.com/
+#   qa      https://budgetapi-qa.zillit.com/api    web https://qa.zillit.com/
+#   prod    https://budgetapi.zillit.com/api       web https://web.zillit.com/
+# NOT budgetbuilderapi*.zillit.com — those are a different, undeployed host that
+# this file pointed at until 2026-10-14; the symptom is a budget that never
+# loads ("Couldn't load this budget", pill stuck, imports 404). `budgetapi` also
+# carries the older budget-chat service on *_BUDGET_BASE_URL above: same host,
+# different path, not a mistake.
 PROD_BUDGET_BUILDER_BASE_URL=
 PROD_BUDGET_BUILDER_WEB_URL=
 PROD_CALENDAR_BASE_URL=

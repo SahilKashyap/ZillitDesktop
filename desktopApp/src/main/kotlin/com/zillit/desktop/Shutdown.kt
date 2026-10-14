@@ -159,6 +159,12 @@ internal object Shutdown {
         if (!done.compareAndSet(false, true)) return
         ZillitLog.i(TAG) { "shutting down" }
         finishQuitWork()
+        // While the budget application's page is still a living document: its
+        // own `pagehide` flush cannot reach the wire from a document being
+        // destroyed, so the last edits are sent from here, and waited for.
+        // See BudgetBuilderHost.flushPendingSave.
+        runCatching { budgetBuilder?.flushPendingSave() }
+            .onFailure { ZillitLog.w(TAG) { "budget flush failed: ${it::class.simpleName}" } }
         engine?.releaseHolder()
         mapEngine?.releaseHolder()
         locationPicker?.releaseHolder()
@@ -170,8 +176,9 @@ internal object Shutdown {
         KcefRuntime.stop()
         // After Chromium, deliberately: the budget application flushes an
         // unsaved budget on `pagehide`, which fires as its browser is torn
-        // down — and that save goes through this gateway. See
-        // BudgetBuilderHost.stopGateway.
+        // down — and that save goes through this gateway. It is the flush
+        // above that is relied on to land; this only keeps the door open for
+        // the page's own attempt. See BudgetBuilderHost.stopGateway.
         budgetBuilder?.stopGateway()
         // The OS frees this when the process ends, so this is only about being
         // prompt: it shortens the window in which a relaunch races the old

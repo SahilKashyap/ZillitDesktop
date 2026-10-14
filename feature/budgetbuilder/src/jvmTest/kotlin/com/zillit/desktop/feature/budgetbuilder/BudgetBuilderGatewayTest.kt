@@ -8,7 +8,11 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -44,7 +48,13 @@ class BudgetBuilderGatewayTest {
 
     private val exits = AtomicInteger()
 
+    /** Held open to keep an upstream call in flight for the whole of a test. */
+    @Volatile
+    private var apiGate: CountDownLatch? = null
+
     /** What the API upstream saw last: method, path+query, moduledata, body. */
+    private var seenOrigin: String? = null
+    private var seenReferer: String? = null
     private var seenMethod: String? = null
     private var seenPath: String? = null
     private var seenModuledata: String? = null
@@ -86,6 +96,9 @@ class BudgetBuilderGatewayTest {
         }
         apiUpstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/") { exchange ->
+                apiGate?.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                seenOrigin = exchange.requestHeaders.getFirst("Origin")
+                seenReferer = exchange.requestHeaders.getFirst("Referer")
                 seenMethod = exchange.requestMethod
                 seenPath = exchange.requestURI.toString()
                 seenModuledata = exchange.requestHeaders.getFirst("moduledata")
@@ -316,5 +329,102 @@ class BudgetBuilderGatewayTest {
 
         assertTrue(again.startsWith(origin), again)
         assertFalse(again.removePrefix(origin).contains("127.0.0.1"))
+    }
+
+    private fun putAsync(path: String): Thread = thread(name = "gateway-test-put") {
+        runCatching {
+            client.send(
+                HttpRequest.newBuilder(URI.create("$origin$path"))
+                    .PUT(HttpRequest.BodyPublishers.ofString("""{"doc":{}}"""))
+                    .build(),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+        }
+    }
+
+    /**
+     * The teardown wait, which is what gets a budget's last edits onto the
+     * wire: the page is asked to flush while it is still alive, and whoever
+     * is about to destroy it waits here for that PUT to land. A wait that
+     * returned straight away would be no better than the page's own flush.
+     */
+    @Test
+    fun `the teardown wait holds until a save has landed`() {
+        val gate = CountDownLatch(1)
+        apiGate = gate
+        val save = putAsync("/api/v2/budget/doc")
+        thread { Thread.sleep(SAVE_HOLD_MILLIS); gate.countDown() }
+
+        val settled = gateway.awaitWritesSettled(START_MILLIS, SETTLE_MILLIS)
+
+        assertTrue(settled)
+        save.join()
+        assertEquals("PUT", seenMethod)
+    }
+
+    /** Bounded, though: a quit never hangs on a service that is not answering. */
+    @Test
+    fun `the teardown wait gives up on a save that will not finish`() {
+        val gate = CountDownLatch(1)
+        apiGate = gate
+
+        val save = putAsync("/api/v2/budget/doc")
+        val settled = gateway.awaitWritesSettled(START_MILLIS, IMPATIENT_MILLIS)
+
+        assertFalse(settled)
+        gate.countDown()
+        save.join()
+    }
+
+    /** Reads change nothing, so nothing waits for them. */
+    @Test
+    fun `the teardown wait ignores a read in flight`() {
+        val gate = CountDownLatch(1)
+        apiGate = gate
+        val read = thread { runCatching { get("/api/v2/budget/doc") } }
+
+        val settled = gateway.awaitWritesSettled(START_MILLIS, SETTLE_MILLIS)
+
+        assertTrue(settled)
+        gate.countDown()
+        read.join()
+    }
+
+    private companion object {
+        const val GATE_TIMEOUT_SECONDS = 5L
+        const val START_MILLIS = 1_000L
+        const val SETTLE_MILLIS = 5_000L
+        const val IMPATIENT_MILLIS = 100L
+        const val SAVE_HOLD_MILLIS = 150L
+    }
+
+    /**
+     * The one header that must NOT travel. The budget service keeps a CORS
+     * allowlist and answers an origin it does not know with `500 Not allowed
+     * by CORS`. This gateway's origin is loopback on an ephemeral port, so it
+     * can never be on that list — and a browser attaches `Origin` to every
+     * non-GET request even same-origin, so forwarding it let the budget LOAD
+     * and then refused every save and every import (live, 2026-10-14).
+     */
+    @Test
+    fun `the browser's origin never reaches the service`() {
+        val response = client.send(
+            HttpRequest.newBuilder(URI.create("$origin/api/v2/budget/import/pdf"))
+                .header("Origin", origin.trimEnd('/'))
+                .header("Referer", "$origin/budget-builder/index.html")
+                .header("moduledata", "0abc123")
+                .POST(HttpRequest.BodyPublishers.ofString("multipart-ish"))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(200, response.statusCode())
+        assertNull(seenOrigin, "Origin reached the service")
+        assertNull(seenReferer, "Referer reached the service")
+        // Everything the service DOES need still travels.
+        assertEquals("POST", seenMethod)
+        assertEquals("/v2/budget/import/pdf", seenPath)
+        assertEquals("0abc123", seenModuledata)
+        assertEquals("multipart-ish", seenBody)
     }
 }

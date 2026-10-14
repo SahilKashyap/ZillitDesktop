@@ -67,6 +67,11 @@ import kotlin.concurrent.Volatile
  * Deliberate: the application flushes an unsaved budget on `pagehide`. Since
  * the browser is parked rather than destroyed, that fires only at process
  * exit — so the gateway stops at [Shutdown], when nothing can still be saving.
+ *
+ * That ordering is necessary and was never sufficient: a `fetch` belongs to
+ * the document that issued it and dies with it, so the page's own flush does
+ * not reach the wire on the way out. [flushPendingSave] is the other half,
+ * and it runs before anything is torn down.
  */
 class BudgetBuilderHost(
     private val ready: AppGraph.Ready,
@@ -174,15 +179,60 @@ class BudgetBuilderHost(
      * this is the reopen after one. The page must re-run its handshake for
      * the new production rather than show the previous film's budget.
      */
-    private fun followProjectSwitch() {
+    private suspend fun followProjectSwitch() {
         val current = activeProject()
         if (current == null || current == pinnedProject) return
         val target = browser ?: return
         val url = gateway?.start() ?: return
         ZillitLog.i(TAG) { "production changed; reloading budget builder" }
+        // Before the document goes: a reload destroys it, and an edit still
+        // inside the application's one-second autosave wait belongs to the
+        // production being left. See [flushPendingSave] — blocking, so off
+        // whichever thread the pane's coroutine happens to be on.
+        withContext(Dispatchers.IO) { flushPendingSave() }
         pinnedProject = current
         lastBearer = null
         SwingUtilities.invokeLater { runCatching { target.loadURL(url) } }
+    }
+
+    /**
+     * Gets the application's unsaved edits onto the wire, now, while its page
+     * is still alive — then waits for that save to land.
+     *
+     * The application already flushes on `pagehide`, and inside the web's
+     * iframe that is enough, because the frame is removed while the page
+     * around it lives on: it hands its last `PUT` to the **host window's**
+     * `fetch`, and the host outlives it (`_flushLeaving`, measured in the web
+     * repo on 2026-10-14 — from the dying document's own `fetch` only the
+     * CORS preflight ever left).
+     *
+     * Here there is no such window. The page is loaded top-level, so
+     * `window.parent === window` and that same flush falls back to the page's
+     * own `fetch` — issued by a document Chromium is in the middle of
+     * destroying, which is exactly the case the web measured as not
+     * reaching the wire. What does outlive the page here is this process, so
+     * the flush is driven from this side instead: the page is asked to run
+     * its own teardown flush, with every one of its save gates, while it is
+     * still a living document, and then this waits for the gateway to carry
+     * that `PUT` to the service and back.
+     *
+     * Dispatching the page's own `pagehide` rather than calling into its
+     * internals: that event *is* the application's documented "last chance to
+     * flush", and the handler behind it is the one the web fixed. The real
+     * `pagehide` still follows when the browser is torn down; by then the
+     * page owes nothing and sends nothing.
+     *
+     * Blocking, and deliberately not a coroutine: one caller is the shutdown
+     * hook, where the class loader refuses anything this process has not
+     * already loaded ([Shutdown]).
+     */
+    fun flushPendingSave() {
+        val target = browser ?: return
+        val carrier = gateway ?: return
+        runCatching { target.executeJavaScript(FLUSH_SCRIPT, target.url.orEmpty(), 0) }
+            .onFailure { thrown -> ZillitLog.w(TAG) { "flush refused: ${thrown::class.simpleName}" } }
+        val settled = carrier.awaitWritesSettled(FLUSH_START_MILLIS, FLUSH_SETTLE_MILLIS)
+        if (!settled) ZillitLog.w(TAG) { "a budget save was still in flight" }
     }
 
     private fun unavailableReason(): String = when (val failure = KcefRuntime.failure) {
@@ -341,6 +391,19 @@ class BudgetBuilderHost(
 
     private companion object {
         const val TAG = "BudgetBuilder"
+
+        /**
+         * The application's own last-chance flush, fired a moment early —
+         * see [flushPendingSave]. `Event` rather than `PageTransitionEvent`
+         * because the handler reads nothing off it.
+         */
+        const val FLUSH_SCRIPT = "window.dispatchEvent(new Event('pagehide'));"
+
+        /** How long to wait for a save to appear; usually none is owed. */
+        const val FLUSH_START_MILLIS = 400L
+
+        /** And how long to let one that did appear reach the service. */
+        const val FLUSH_SETTLE_MILLIS = 2_500L
 
         /** Far enough out that no arrangement of displays reaches it. */
         const val HOLDER_OFFSCREEN = -8_000
