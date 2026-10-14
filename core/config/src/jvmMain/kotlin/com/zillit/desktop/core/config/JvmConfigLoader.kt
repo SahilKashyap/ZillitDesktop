@@ -30,9 +30,7 @@ class JvmConfigLoader(
 ) : ConfigLoader {
 
     override fun load(): ZillitResult<AppConfig> {
-        val environment = Environment.fromId(
-            System.getProperty(PROPERTY_ENV) ?: System.getenv(ENV_ENV),
-        )
+        val environment = environment()
 
         val file = resolveFile()
             ?: return ZillitResult.Failure(
@@ -86,12 +84,31 @@ class JvmConfigLoader(
         File(ZillitVariant.dataDir, FILE_NAME).path,
     )
 
-    private companion object {
-        const val TAG = "ConfigLoader"
-        const val FILE_NAME = "zillit.properties"
-        const val PROPERTY_CONFIG = "zillit.config"
-        const val PROPERTY_ENV = "zillit.env"
-        const val ENV_CONFIG = "ZILLIT_CONFIG"
-        const val ENV_ENV = "ZILLIT_ENV"
+    companion object {
+        /**
+         * Which environment this launch is aimed at, decided without reading
+         * anything: the choice is the property or the variable, never the
+         * file's contents.
+         *
+         * Public because the log level has to be set before a config exists —
+         * Napier drops every line until a backend is registered, so [AppGraph]
+         * initialises logging first of all. That decision asks here rather
+         * than reading `zillit.env` for itself, because the two readings
+         * disagree on the case that matters: a packaged release bakes in no
+         * `zillit.env` at all (deliberately — see the packaging comment in
+         * `desktopApp/build.gradle.kts`), which resolves to production here
+         * and resolved to "not production" in the test it used to make. Every
+         * such build wrote debug logs, with request headers and a record of
+         * who did what and when, to a real user's disk.
+         */
+        fun environment(): Environment =
+            Environment.fromId(System.getProperty(PROPERTY_ENV) ?: System.getenv(ENV_ENV))
+
+        private const val TAG = "ConfigLoader"
+        private const val FILE_NAME = "zillit.properties"
+        private const val PROPERTY_CONFIG = "zillit.config"
+        private const val PROPERTY_ENV = "zillit.env"
+        private const val ENV_CONFIG = "ZILLIT_CONFIG"
+        private const val ENV_ENV = "ZILLIT_ENV"
     }
 }

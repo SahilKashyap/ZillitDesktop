@@ -808,7 +808,13 @@ sealed interface AppGraph {
         fun build(): AppGraph {
             // Before anything else: Napier drops every log until a backend is
             // registered, so any logging above this line goes nowhere.
-            ZillitLogging.initialise(verbose = System.getProperty("zillit.env") != "prod")
+            //
+            // The environment comes from the loader's own resolution, not from
+            // `zillit.env` read again here. A release installer bakes in no
+            // such property, which that reading took for "not production" and
+            // the loader takes for production — so every packaged build was
+            // verbose on a user's machine while talking to the live server.
+            ZillitLogging.initialise(verbose = !JvmConfigLoader.environment().isProduction)
 
             val preferences = PreferenceStoreFactory.create()
             val secureStore = KeychainSecureStore()
@@ -817,7 +823,16 @@ sealed interface AppGraph {
                 is ZillitResult.Success -> loaded.data.also {
                     // Which environment is live is the first thing anyone
                     // debugging needs to know.
-                    ZillitLog.i("Startup") { "Environment: ${it.environment.id} → ${it.baseUrl(ZillitService.Core)}" }
+                    // The build, on the banner. It was only ever said by
+                    // `Auth` ("device details sent: desktop, macOS 26.5.2,
+                    // 1.1.1"), whose INFO production does not keep and should
+                    // not — the same tag records every production opened. A
+                    // log sent in from the field with no version in it cannot
+                    // be read against a release, which is how a week of one
+                    // went unattributable (2026-10-14).
+                    ZillitLog.i("Startup") {
+                        "Zillit ${installedAppVersion()} — ${it.environment.id} → ${it.baseUrl(ZillitService.Core)}"
+                    }
                 }
                 is ZillitResult.Failure -> return Unconfigured(
                     loaded.error.technical ?: loaded.error.userMessage,
