@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -78,6 +79,7 @@ import com.zillit.desktop.feature.chat.domain.admits
 import com.zillit.desktop.feature.chat.domain.chatPeople
 import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 import com.zillit.desktop.feature.chat.domain.designationLabel
+import com.zillit.desktop.feature.chat.domain.hasStanding
 import com.zillit.desktop.feature.chat.domain.lastEntryDate
 import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
@@ -710,9 +712,11 @@ private fun RecentsList(
 
     FilterChips(chosen) { filter = it.name }
 
+    val contacts = rememberListedPeople(state, crew, selfId)
+
     val rows = recentRows(
         groups = state.groups,
-        contacts = chatPeople(state.recents, crew, selfId),
+        contacts = contacts,
         newest = state.activity,
     ).filter { row -> chosen.admits(row, state.activity, state.unread, state.favourites) }
         .searchRecents(query)
@@ -759,6 +763,46 @@ private fun RecentsList(
                     ZillitDivider()
                 }
             }
+        }
+    }
+}
+
+/**
+ * The people half of the listing, with one line saying what it lost.
+ *
+ * Two silent losses sat behind every "my conversation is missing" report and
+ * looked identical from outside. [chatPeople] discards a recents id with no
+ * card on `project/users` — a peer removed from the production, or one this
+ * roster never held — thread and all. And the All chip hides a room whose
+ * `sorting_activity` is 0 and which has no department ([hasStanding]) while
+ * the Groups chip still shows it; on a live production almost nothing is
+ * stamped (10-14: `rows=63 stamped=6`), so that half is the likelier one.
+ *
+ * Ids, never names: these rows name people, and the log is a file on disk.
+ */
+@Composable
+private fun rememberListedPeople(
+    state: ChatUiState,
+    crew: List<CrewContact>,
+    selfId: String?,
+): List<CrewContact> = remember(state.recents, crew, selfId, state.groups, state.activity) {
+    chatPeople(state.recents, crew, selfId).also { listed ->
+        val carded = listed.mapTo(mutableSetOf(), CrewContact::userId)
+        // Rooms reach `recents` too — their stamps enter the activity map,
+        // and `showRecents` unions its keys in — so they must be taken out
+        // here or every production with a stamped room reports phantom lost
+        // DMs (seen live the moment the stamp fix landed: `no-crew-card=2`,
+        // both of them rooms that were drawing correctly).
+        val rooms = state.groups.mapTo(mutableSetOf(), GroupRoom::id)
+        val noCard = state.recents.filter { it != selfId && it !in carded && it !in rooms }
+        val hidden = state.groups
+            .map(RecentRow::Group)
+            .filterNot { it.hasStanding(state.activity) }
+            .map(RecentRow::id)
+        ZillitLog.d(TAG) {
+            "listing: recents=${state.recents.size} carded=${listed.size} " +
+                "no-crew-card=${noCard.size}$noCard rooms=${state.groups.size} " +
+                "hidden-under-all=${hidden.size}$hidden"
         }
     }
 }
@@ -1451,6 +1495,7 @@ private fun PaneMessage(
     }
 }
 
+private const val TAG = "Chat"
 private val LIST_WIDTH = 320.dp
 private val HAIRLINE = 1.dp
 private val ROW_AVATAR = 48.dp

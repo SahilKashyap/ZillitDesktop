@@ -285,6 +285,12 @@ interface ChatRepository {
     suspend fun rooms(): ZillitResult<List<com.zillit.desktop.feature.chat.domain.GroupRoom>>
 
     /**
+     * The kept answer to [rooms], without going near the network — for a
+     * listing to draw while the real read is out. Empty when nothing is kept.
+     */
+    suspend fun cachedRooms(): List<com.zillit.desktop.feature.chat.domain.GroupRoom> = emptyList()
+
+    /**
      * Creates a CNC group room — `POST chat-room` with Android's
      * `ReqGroupModel` body — answering the room the server saved. Defaulted
      * to a refusal so test fakes that never create rooms need not care.
@@ -911,6 +917,24 @@ class ChatRepositoryImpl(
      * `GET private-chat/messages/{peer}/{timestamp}/previous` — the
      * window before [nowMillis], Android's own initial-load shape.
      */
+    /**
+     * The kept `chat-room` answer, read straight off disk.
+     *
+     * Every argument must match [rooms] exactly — url, module, options and
+     * the scope's query — or the key is not the one that was written and the
+     * peek silently misses. The caller draws these rows and lets the live
+     * read overwrite them; see `ChatViewModel.paintKeptListing` for why they
+     * must not count as the ledger's live room set.
+     */
+    override suspend fun cachedRooms(): List<com.zillit.desktop.feature.chat.domain.GroupRoom> =
+        apiClient.peekCached(
+            url = "${config.apiV2(ZillitService.Chat)}chat-room",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            options = scoped(),
+            queryParameters = scope.messageParameters(),
+        )?.let(::roomsFrom).orEmpty()
+
     override suspend fun rooms(): ZillitResult<List<com.zillit.desktop.feature.chat.domain.GroupRoom>> =
         apiClient.request(
             verb = HttpVerb.Get,

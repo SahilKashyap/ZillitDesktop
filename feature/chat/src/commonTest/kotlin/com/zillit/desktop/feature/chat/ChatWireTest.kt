@@ -134,6 +134,36 @@ class ChatWireTest {
     }
 
     @Test
+    fun `a room's stamp comes from last_message_posted_on, in any of its shapes`() {
+        // `chat-room` does not send `sorting_activity` at all — read live on
+        // prod 2026-10-14, where every row answered null and two of DN6's
+        // three rooms were consequently hidden from the All chip. The field
+        // the server does send is `last_message_posted_on`.
+        val rooms = roomsFrom(
+            Json.parseToJsonElement(
+                """{"data":{"chat_rooms":[
+                   {"_id":"millis","last_message_posted_on":1760000000000},
+                   {"_id":"string","last_message_posted_on":"1760000000001"},
+                   {"_id":"iso","last_message_posted_on":"2026-10-09T18:30:00Z"},
+                   {"_id":"legacy","sorting_activity":1760000000002},
+                   {"_id":"newest-wins","last_message_posted_on":5,"sorting_activity":9},
+                   {"_id":"none","created":1700000000000},
+                   {"_id":"junk","last_message_posted_on":"not a time"}]}}""",
+            ),
+        )
+        val stamps = rooms.associate { it.id to it.sortingActivity }
+        assertEquals(1760000000000L, stamps["millis"])
+        assertEquals(1760000000001L, stamps["string"])
+        assertEquals(1791570600000L, stamps["iso"])
+        assertEquals(1760000000002L, stamps["legacy"])
+        assertEquals(9L, stamps["newest-wins"])
+        // A room's birthday is not activity: `created` must not stand in, or
+        // an empty room outranks a live conversation.
+        assertEquals(0L, stamps["none"])
+        assertEquals(0L, stamps["junk"])
+    }
+
+    @Test
     fun `a room keeps its creator - the Delete affordance is theirs alone`() {
         val rooms = roomsFrom(
             Json.parseToJsonElement(

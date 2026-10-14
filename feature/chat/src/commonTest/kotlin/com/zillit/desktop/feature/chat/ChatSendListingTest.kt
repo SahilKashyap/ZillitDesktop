@@ -354,8 +354,23 @@ internal class FakeChatRepository(
         return ZillitResult.Success(Unit)
     }
 
-    override suspend fun rooms(): ZillitResult<List<GroupRoom>> =
-        ZillitResult.Success(emptyList())
+    /** What `GET chat-room` would answer, and how many times it was asked. */
+    var serverRooms: List<GroupRoom> = emptyList()
+    var roomAsks: Int = 0
+
+    /** What the kept `chat-room` answer on disk holds — see `cachedRooms`. */
+    var keptRooms: List<GroupRoom> = emptyList()
+
+    override suspend fun rooms(): ZillitResult<List<GroupRoom>> {
+        roomAsks++
+        return if (socketDown) {
+            ZillitResult.Failure(ZillitError.NoConnection("no network"))
+        } else {
+            ZillitResult.Success(serverRooms)
+        }
+    }
+
+    override suspend fun cachedRooms(): List<GroupRoom> = keptRooms
 
     override suspend fun deleteMessages(
         messageIds: List<String>,

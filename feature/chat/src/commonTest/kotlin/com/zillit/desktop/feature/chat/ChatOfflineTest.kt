@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
 import com.zillit.desktop.feature.chat.data.ChatSendHandler
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
+import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -163,6 +165,53 @@ class ChatOfflineTest {
      * The last list this production had stands in — after a restart too — and
      * a thread kept on this computer counts even if that list never named it.
      */
+    @Test
+    fun `the kept listing is drawn before the socket answers, and again when it does`() =
+        runTest(dispatcher) {
+            // The socket is down, so `user:list` can only fail — the state the
+            // kept list exists for. Before this, the rows went up only after a
+            // full ack timeout had elapsed.
+            val repository = FakeChatRepository(socketDown = true).apply {
+                keptRooms = listOf(GroupRoom(id = "r-kept", name = "Camera", sortingActivity = 7_000L))
+            }
+            val support = support(repository)
+            // A listing this production kept from an earlier, online session.
+            viewModel(repository, support).let { earlier ->
+                earlier.onEvent(ChatEvent.RefreshRecents)
+                runCurrent()
+            }
+            repository.socketDown = true
+
+            val model = viewModel(repository, support)
+            model.onEvent(ChatEvent.RefreshRecents)
+            runCurrent()
+
+            assertEquals(listOf("r-kept"), model.currentState.groups.map { it.id }, "kept rooms drawn")
+        }
+
+    @Test
+    fun `a volley of refreshes is one pass, and a trigger inside the window still gets one`() =
+        runTest(dispatcher) {
+            val repository = FakeChatRepository()
+            val model = viewModel(repository, support(repository))
+
+            // A connect, its room-change event, the tab opening and the window
+            // taking focus — all inside a second, as they arrive live.
+            repeat(4) { model.onEvent(ChatEvent.RefreshRecents) }
+            runCurrent()
+            assertEquals(1, repository.roomAsks, "the volley is one fetch, not four")
+
+            // The quiet period closes; the three that were swallowed owe one
+            // more pass between them, not three.
+            advanceUntilIdle()
+            assertEquals(2, repository.roomAsks, "one trailing pass, whatever arrived during the window")
+
+            // And a later, genuine refresh is immediate again.
+            model.onEvent(ChatEvent.RefreshRecents)
+            runCurrent()
+            assertEquals(3, repository.roomAsks)
+        }
+
     @Test
     fun `offline, the DM list is the last one this production had plus the threads kept here`() =
         runTest(dispatcher) {

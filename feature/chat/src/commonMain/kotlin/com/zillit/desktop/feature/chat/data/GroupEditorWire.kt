@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat.data
 
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
@@ -16,6 +17,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import kotlin.time.Instant
 
 /**
  * The create-group wire (QA#13), beside [ChatWire](ChatWire.kt) rather than
@@ -142,10 +144,52 @@ internal fun roomFrom(room: JsonObject): GroupRoom? {
         name = room.text("room_name") ?: str(S.group),
         ownedBy = room.text("owned_by"),
         departmentId = room.text("department_id")?.takeIf { it.isNotBlank() },
-        sortingActivity = (room["sorting_activity"] as? JsonPrimitive)
-            ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() } ?: 0L,
+        sortingActivity = room.roomStamp(id),
     )
 }
+
+/**
+ * When this room last spoke.
+ *
+ * **`chat-room` does not send `sorting_activity`.** Android reads that field
+ * off its own rooms payload and the port followed it, but the desktop's rows
+ * simply have no such key — read live on prod, 2026-10-14: every row answered
+ * `sorting_activity=null`, and what the server does send is
+ * `last_message_posted_on` (the same field the web's `fetchChatListData`
+ * sorts by). A stamp of 0 is not cosmetic: [hasStanding] hides a room with no
+ * stamp and no department from the All chip entirely, which is how two of
+ * DN6's three rooms became invisible while the Groups chip still listed them.
+ *
+ * Both spellings are read, newest wins, and each is taken as epoch millis, a
+ * numeric string, or an ISO-8601 instant — the three shapes this backend uses
+ * for a time across its tools, and guessing wrong here silently returns to 0.
+ * `created` is deliberately NOT a fallback: a room's birthday is not activity,
+ * and using it would promote an empty room above a live conversation.
+ */
+private fun JsonObject.roomStamp(id: String): Long {
+    val stamp = maxOf(instantMillis("last_message_posted_on"), instantMillis("sorting_activity"))
+    if (stamp <= 0L) {
+        // The room will sort last, and will be missing from All unless it has
+        // a department. Ids and keys only — a room row carries no message text.
+        ZillitLog.d(TAG) {
+            "room $id has no activity stamp: last_message_posted_on=${this["last_message_posted_on"]} " +
+                "sorting_activity=${this["sorting_activity"]} department_id=${this["department_id"]}"
+        }
+    }
+    return stamp
+}
+
+/** One time field, as millis, a numeric string, or an ISO-8601 instant; 0 when it is none of them. */
+private fun JsonObject.instantMillis(key: String): Long {
+    val primitive = this[key] as? JsonPrimitive ?: return 0L
+    val text = primitive.contentOrNull?.takeIf { it.isNotBlank() }
+    val millis = primitive.longOrNull
+        ?: text?.toLongOrNull()
+        ?: text?.let { runCatching { Instant.parse(it).toEpochMilliseconds() }.getOrNull() }
+    return (millis ?: 0L).coerceAtLeast(0L)
+}
+
+private const val TAG = "Chat"
 
 private fun JsonObject.text(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }

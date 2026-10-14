@@ -25,6 +25,37 @@ private fun labelOrNull(key: String): String? =
     Labels.current.exact(key, LabelKind.Messages) ?: Labels.current.exact(key, LabelKind.Labels)
 
 /**
+ * A message body the server wrote as a label key, read as its sentence.
+ *
+ * Not every system line arrives as a [GroupNotice]. A group's "created" line
+ * comes back from `chat-room`'s own history as an **ordinary message from the
+ * creator** — no `message_type`, so nothing marks it as a notice — carrying
+ * `cnc_new_chat_group_created_chat` as its words. Seen on DN6, 2026-10-14:
+ * two rooms whose listing line read `Sahil: cnc_new_chat_group_created_ch…`.
+ * Android has the same problem and answers it the same way, running every
+ * preview through `getDataFromLabelKey()`
+ * (`ChatAndGroupListingAdapter.kt:257`).
+ *
+ * Two guards keep that from touching anybody's actual words:
+ *
+ *  - **Anything with a space is left alone immediately.** A sentence is not a
+ *    key, and no lookup should see it.
+ *  - **Only an exact dictionary hit is used.** `localised()` would *humanise*
+ *    a miss — `shouldHumanise` title-cases a bare token asked for as a label —
+ *    so a one-word message "ok" would be served back as "Ok" and "snake_case"
+ *    as "Snake Case". Corrupting what somebody typed is worse than showing a
+ *    key the dictionary has not caught up with, so a miss is returned
+ *    untouched, exactly as it reads today.
+ *
+ * What this cannot tell apart: a one-word message that happens to BE a key —
+ * someone typing "approved" reads the dictionary's "Approved". Android has the
+ * same blind spot, more broadly, and the alternative is leaving every system
+ * line raw.
+ */
+fun String.asServerSentence(): String =
+    takeIf { it.isNotBlank() && none(Char::isWhitespace) }?.let(::labelOrNull) ?: this
+
+/**
  * The web's `dynamicNotificationLabel` (`multipleFunction.js:578-640`), step
  * for step, so the same wire row reads the same here: look the key up; walk
  * the sentence word by word swapping each `{{blank}}` for its element's

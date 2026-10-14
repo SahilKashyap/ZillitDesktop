@@ -91,6 +91,7 @@ import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatReplyRef
 import com.zillit.desktop.feature.chat.domain.ChatSendState
+import com.zillit.desktop.feature.chat.domain.asServerSentence
 import com.zillit.desktop.feature.chat.domain.chatDayLabel
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -1987,7 +1988,11 @@ private fun BubbleWords(
     ZillitSelectable(probe = selection) {
         if (translation == null) {
             if (message != null) {
-                MentionedBody(message.body, mentions, footer = { DisableSelection { FooterLine(message) } })
+                MentionedBody(
+                    message.body.asServerSentence(),
+                    mentions,
+                    footer = { DisableSelection { FooterLine(message) } },
+                )
             }
             return@ZillitSelectable
         }
@@ -1998,7 +2003,7 @@ private fun BubbleWords(
         // and a fillMaxWidth child would stretch every translated line to
         // the bubble's ceiling (seen in the first render).
         Column {
-            if (message != null) MentionedBody(message.body, mentions)
+            if (message != null) MentionedBody(message.body.asServerSentence(), mentions)
             DisableSelection {
                 ZillitText(
                     text = str(S.translated),

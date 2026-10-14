@@ -46,6 +46,7 @@ import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatVoice
 import com.zillit.desktop.feature.chat.domain.GroupDetail
 import com.zillit.desktop.feature.chat.domain.GroupRoom
+import com.zillit.desktop.feature.chat.domain.asServerSentence
 import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatPick
 import com.zillit.desktop.feature.chat.domain.ChatTranslator
@@ -793,45 +794,129 @@ class ChatViewModel(
             is ChatEvent.ToggleGroupAdmin -> toggleGroupAdmin(event.userId)
             ChatEvent.LeaveGroup -> leaveGroup()
             ChatEvent.DeleteGroup -> deleteGroup()
-            ChatEvent.RefreshRecents -> {
-                refreshSectionBadges()
-                // Re-read on every refresh: the production's language lands
-                // with its context, which may be after this model was built.
-                setState { copy(translateOffered = translator?.isOffered() == true) }
-                launchResult(
-                    block = { repository.rooms() },
-                    onSuccess = { rooms ->
-                        setState { copy(groups = rooms) }
-                        // The list answered, so the ledger can be told which
-                        // rooms are still open — see [onChatLedgerFacts].
-                        roomsKnown = true
-                        publishLedgerFacts()
-                        // The rooms' own newest lines, now that their ids are known.
-                        setState { copy(previews = previews + previewsFor(emptyList())) }
-                        // And the ones this computer has never downloaded. The
-                        // room list carries its own stamps, so this pass is the
-                        // only reader of them — it does not wait for a repaint
-                        // the backlog or the user list might already have done.
-                        warmPreviews()
-                    },
-                    onError = { },
-                )
-                // The per-conversation counts and stamps, from the server's
-                // backlog. A failed fetch keeps whatever the cache can say —
-                // no toast.
-                reloadBacklog()
-                launchResult(
-                    block = { repository.recentPeers() },
-                    onSuccess = { ids ->
-                        showRecents(ids)
-                        launch { rememberRecents() }
-                    },
-                    // The list comes over the socket, so with no network it
-                    // never answers: show the last list this production had,
-                    // plus every thread kept on this computer — no toast.
-                    onError = { launch { showRecents(rememberedRecents()) } },
-                )
+            ChatEvent.RefreshRecents -> refreshRecents()
+        }
+    }
+
+    /**
+     * The listing's whole refresh: rooms, the backlog, and the people this
+     * user has a thread with.
+     *
+     * Debounced, because the triggers arrive in a volley rather than one at a
+     * time — a connect, the room-change event it carries, the tab opening and
+     * the window taking focus can all land inside a second, and each one used
+     * to run the lot. Measured on DN6, 2026-10-14: **two** room fetches,
+     * **eleven** backlog reads and **fourteen** warm passes in forty seconds
+     * of one production being opened.
+     *
+     * Leading edge, not trailing: the first trigger runs **now**, so opening
+     * the tab is as immediate as it ever was, and the volley behind it is
+     * swallowed by a [REFRESH_DEBOUNCE_MILLIS] quiet period. A trigger that
+     * does arrive inside that window is not dropped — it sets [refreshAgain]
+     * and one more pass runs when the window closes, so a room created or a
+     * message arriving a moment after a refresh still reaches the list.
+     */
+    private fun refreshRecents() = throttled(refreshGate, REFRESH_WINDOW_MILLIS, ::runRefresh)
+
+    /**
+     * Runs [work] now, then swallows whatever arrives for [windowMillis].
+     *
+     * Leading edge, so the trigger a person caused — a tab click — is never
+     * delayed; the volley behind it is what gets collapsed. Anything that
+     * arrives inside the window is not dropped: it earns exactly one more
+     * pass when the window closes, however many of them there were.
+     */
+    private fun throttled(gate: Throttle, windowMillis: Long, work: () -> Unit) {
+        if (gate.running) {
+            gate.again = true
+            return
+        }
+        gate.running = true
+        launch {
+            try {
+                work()
+                kotlinx.coroutines.delay(windowMillis)
+            } finally {
+                // Cleared before the trailing pass is decided, or that pass
+                // sees this one still in flight and defers to itself for
+                // ever — nothing would run again.
+                gate.running = false
             }
+            if (gate.again) {
+                gate.again = false
+                throttled(gate, windowMillis, work)
+            }
+        }
+    }
+
+    private fun runRefresh() {
+        refreshSectionBadges()
+        // Re-read on every refresh: the production's language lands with its
+        // context, which may be after this model was built.
+        setState { copy(translateOffered = translator?.isOffered() == true) }
+        paintKeptListing()
+        launchResult(
+            block = { repository.rooms() },
+            onSuccess = { rooms ->
+                setState { copy(groups = rooms) }
+                // The list answered, so the ledger can be told which rooms are
+                // still open — see [onChatLedgerFacts]. Only the server's
+                // answer sets this; see [paintKeptListing].
+                roomsKnown = true
+                publishLedgerFacts()
+                // The rooms' own newest lines, now that their ids are known.
+                setState { copy(previews = previews + previewsFor(emptyList())) }
+                // And the ones this computer has never downloaded. The room
+                // list carries its own stamps, so this pass is the only reader
+                // of them — it does not wait for a repaint the backlog or the
+                // user list might already have done.
+                warmPreviews()
+            },
+            onError = { },
+        )
+        // The per-conversation counts and stamps, from the server's backlog. A
+        // failed fetch keeps whatever the cache can say — no toast.
+        reloadBacklog()
+        launchResult(
+            block = { repository.recentPeers() },
+            onSuccess = { ids ->
+                showRecents(ids)
+                launch { rememberRecents() }
+            },
+            // The list comes over the socket, so with no network it never
+            // answers: show the last list this production had, plus every
+            // thread kept on this computer — no toast.
+            onError = { launch { showRecents(rememberedRecents()) } },
+        )
+    }
+
+    /**
+     * Draws the listing this production had last time, at once, while the
+     * real reads are out.
+     *
+     * Only when nothing is on screen yet. `user:list` is a **socket** ack, so
+     * it cannot answer before the socket connects, and when it never answers
+     * the kept list was reached only after a full ack timeout had elapsed
+     * ("no ack for user:list: TimeoutCancellationException", twice on
+     * 2026-10-14) — the list we already had, shown after the longest possible
+     * wait. The same rows now go up immediately. A later answer can only add
+     * and reorder: [showRecents] unions the ids and takes the newest stamp per
+     * conversation, so nothing drawn here is blanked by the server's word.
+     *
+     * The rooms half is the kept `chat-room` answer, and deliberately does
+     * **not** set [roomsKnown]: that flag tells the badge ledger which rooms
+     * are live, and a stale set would keep a badge on a room this user has
+     * been removed from. Only the server's answer may claim that.
+     */
+    private fun paintKeptListing() {
+        if (currentState.recents.isNotEmpty() || currentState.groups.isNotEmpty()) return
+        launch {
+            val rooms = repository.cachedRooms()
+            if (rooms.isNotEmpty() && currentState.groups.isEmpty()) {
+                setState { copy(groups = rooms, previews = previews + previewsFor(emptyList())) }
+            }
+            val kept = rememberedRecents()
+            if (kept.isNotEmpty() && currentState.recents.isEmpty()) showRecents(kept)
         }
     }
 
@@ -1850,6 +1935,25 @@ class ChatViewModel(
     /** True while a warm pass is in flight, so repaints do not stack passes. */
     private var warming = false
 
+    /** One throttled job's state: in its window, and whether it owes a trailing pass. */
+    private class Throttle {
+        var running = false
+        var again = false
+    }
+
+    /** The whole listing refresh — rooms, backlog, people. */
+    private val refreshGate = Throttle()
+
+    /**
+     * The backlog alone, which has triggers of its own.
+     *
+     * It is re-read by every listing refresh, by each `backlogChanges` the
+     * host's ledger emits and by every silence — and the ledger emits in
+     * bursts: five reads inside 140 ms, measured on DN6 2026-10-14, none of
+     * them from a refresh. This gate is what makes that one read.
+     */
+    private val backlogGate = Throttle()
+
     /**
      * Fills the listing's last-message line for conversations whose newest
      * message this computer never downloaded.
@@ -1944,7 +2048,9 @@ class ChatViewModel(
      * order, from the notification backlog. Runs on every listing refresh and
      * after a silence, whose prunes the repository applies to the seed.
      */
-    private fun reloadBacklog() {
+    private fun reloadBacklog() = throttled(backlogGate, BACKLOG_WINDOW_MILLIS, ::readBacklog)
+
+    private fun readBacklog() {
         launchResult(
             block = { repository.conversationBacklog() },
             onSuccess = { backlog ->
@@ -2489,7 +2595,9 @@ class ChatViewModel(
             message.location != null ->
                 "📍 " + message.body.ifBlank { message.location.address }.ifBlank { str(S.location) }
             message.attachment != null -> "📎 ${message.attachment.name}"
-            else -> message.body
+            // A system line the server wrote as a label key — see
+            // [asServerSentence]; anybody's real words pass straight through.
+            else -> message.body.asServerSentence()
         },
         senderId = message.senderId,
     )
@@ -2679,6 +2787,19 @@ class ChatViewModel(
 }
 
 private const val TAG = "Chat"
+
+/**
+ * How long a listing refresh swallows its own volley.
+ *
+ * Measured rather than guessed: on DN6 the triggers of one production opening
+ * arrived 380 ms and 1.5 s apart, so a shorter window lets the same volley
+ * through as separate passes. Nothing waits on this — the first trigger has
+ * already run.
+ */
+private const val REFRESH_WINDOW_MILLIS = 2_000L
+
+/** The same, for the backlog, whose ledger bursts are tighter and far more frequent. */
+private const val BACKLOG_WINDOW_MILLIS = 1_000L
 private const val RECORDING_TICK_MILLIS = 1_000L
 
 /** Lines that exist only on this computer — never a page cursor. */
