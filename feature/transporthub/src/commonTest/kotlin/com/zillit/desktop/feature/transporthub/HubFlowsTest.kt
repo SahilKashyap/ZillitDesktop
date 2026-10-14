@@ -1249,6 +1249,52 @@ class HubFlowsTest {
         pickup = HubLocation(address = "Base"),
         dropoff = HubLocation(address = "Set"),
     )
+
+    @Test
+    fun `approve and assign approves a pending ride before assigning it`() = runTest(dispatcher) {
+        val ride = RideRequest(id = "r1", status = RideStatus.Pending)
+        val repo = FakeHubRepository(rides = listOf(ride))
+        val vm = viewModel(repo)
+        vm.start(); runCurrent()
+
+        vm.onEvent(HubEvent.AssignRide(ride)); runCurrent()
+        vm.onEvent(HubEvent.AssignEditorChanged(vm.currentState.assignEditor!!.copy(driverId = "d1")))
+        vm.onEvent(HubEvent.SubmitAssign); runCurrent()
+
+        // The web's order: the server assigns only an approved request.
+        assertEquals(listOf("approve:r1", "assign:r1"), repo.rideCalls)
+        assertNull(vm.currentState.assignEditor)
+    }
+
+    @Test
+    fun `assigning an approved ride sends no second approve`() = runTest(dispatcher) {
+        val ride = RideRequest(id = "r1", status = RideStatus.Approved)
+        val repo = FakeHubRepository(rides = listOf(ride))
+        val vm = viewModel(repo)
+        vm.start(); runCurrent()
+
+        vm.onEvent(HubEvent.AssignRide(ride)); runCurrent()
+        vm.onEvent(HubEvent.AssignEditorChanged(vm.currentState.assignEditor!!.copy(driverId = "d1")))
+        vm.onEvent(HubEvent.SubmitAssign); runCurrent()
+
+        assertEquals(listOf("assign:r1"), repo.rideCalls)
+    }
+
+    @Test
+    fun `a refused approve assigns nothing and keeps the picker open`() = runTest(dispatcher) {
+        val ride = RideRequest(id = "r1", status = RideStatus.Pending)
+        val repo = FakeHubRepository(rides = listOf(ride), rideApproveFails = "ride_request_not_pending")
+        val vm = viewModel(repo)
+        vm.start(); runCurrent()
+
+        vm.onEvent(HubEvent.AssignRide(ride)); runCurrent()
+        vm.onEvent(HubEvent.AssignEditorChanged(vm.currentState.assignEditor!!.copy(driverId = "d1")))
+        vm.onEvent(HubEvent.SubmitAssign); runCurrent()
+
+        assertEquals(listOf("approve:r1"), repo.rideCalls)
+        // Still open with the driver picked, so a retry is one click.
+        assertEquals("d1", vm.currentState.assignEditor?.driverId)
+    }
 }
 
 /**
@@ -1278,7 +1324,12 @@ private class FakeHubRepository(
     private val actionVehicles: List<ActionVehicle> = emptyList(),
     /** A server message the trip delete fails with, if any. */
     private val tripDeleteFails: String? = null,
+    /** A server message a ride approve fails with, if any. */
+    private val rideApproveFails: String? = null,
 ) : HubRepository {
+
+    /** Approves and assigns of rides, in the order they were sent. */
+    val rideCalls = mutableListOf<String>()
 
     var vehicleLoads = 0
     val rideScopes = mutableListOf<RideScope>()
@@ -1612,7 +1663,11 @@ private class FakeHubRepository(
         return ZillitResult.Success(Unit)
     }
 
-    override suspend fun approveRide(id: String) = ZillitResult.Success(Unit)
+    override suspend fun approveRide(id: String): ZillitResult<Unit> {
+        rideCalls += "approve:$id"
+        return rideApproveFails?.let { ZillitResult.Failure(ZillitError.Http(status = 200, serverMessage = it)) }
+            ?: ZillitResult.Success(Unit)
+    }
 
     override suspend fun rejectRide(id: String, reason: String): ZillitResult<Unit> {
         rejectedRides += id to reason
@@ -1625,6 +1680,7 @@ private class FakeHubRepository(
         vehicleId: String?,
     ): ZillitResult<Unit> {
         assignedRides += Triple(id, driverId, vehicleId)
+        rideCalls += "assign:$id"
         return ZillitResult.Success(Unit)
     }
 

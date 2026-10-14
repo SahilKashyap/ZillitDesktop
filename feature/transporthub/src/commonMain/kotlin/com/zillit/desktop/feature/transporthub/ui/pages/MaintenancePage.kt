@@ -19,7 +19,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
@@ -34,6 +33,8 @@ import com.zillit.desktop.feature.transporthub.domain.MaintenanceRecord
 import com.zillit.desktop.feature.transporthub.domain.MaintenanceStatus
 import com.zillit.desktop.feature.transporthub.domain.MaintenanceType
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPageHeader
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 import com.zillit.desktop.feature.transporthub.ui.MaintenanceTab
 
@@ -51,7 +52,8 @@ internal fun MaintenancePage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.Wrench,
             title = str(S.maintenance),
             description = str(
                 S.desktop_hub_maintenance_count,

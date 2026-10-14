@@ -3,15 +3,14 @@
 
 package com.zillit.desktop.feature.transporthub.ui
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,8 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
@@ -30,6 +27,10 @@ import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transporthub.domain.HubInsights
+import com.zillit.desktop.feature.transporthub.domain.HubRole
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPaddedPage
+import com.zillit.desktop.feature.transporthub.ui.kit.LocalHubThemeToggle
+import com.zillit.desktop.feature.transporthub.ui.kit.hub
 import com.zillit.desktop.feature.transporthub.ui.pages.ActionVehiclesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.AllocationsPage
 import com.zillit.desktop.feature.transporthub.ui.pages.DashboardPage
@@ -39,8 +40,10 @@ import com.zillit.desktop.feature.transporthub.ui.pages.FleetPage
 import com.zillit.desktop.feature.transporthub.ui.pages.HubDialogs
 import com.zillit.desktop.feature.transporthub.ui.pages.LiveTrackingPage
 import com.zillit.desktop.feature.transporthub.ui.pages.MaintenancePage
-import com.zillit.desktop.feature.transporthub.ui.pages.MyRidesPage
-import com.zillit.desktop.feature.transporthub.ui.pages.MyTripsPage
+import com.zillit.desktop.feature.transporthub.ui.pages.DriverRidesPage
+import com.zillit.desktop.feature.transporthub.ui.pages.DriverTripsPage
+import com.zillit.desktop.feature.transporthub.ui.pages.PassengerTripsPage
+import com.zillit.desktop.feature.transporthub.ui.pages.SelfRidesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.RidesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.ShuttlesPage
 import com.zillit.desktop.feature.transporthub.ui.pages.TripsPage
@@ -57,16 +60,6 @@ fun HubScreen(
     state: HubUiState,
     onEvent: (HubEvent) -> Unit,
     openLink: (String) -> Unit = {},
-    /** The way back out of the tool, as the web's sidebar carries. */
-    onBackToFilmTools: (() -> Unit)? = null,
-    /**
-     * Opens the older Transportation page.
-     *
-     * The rail carries a way back to it while the hub is being finished: a
-     * driver fills in their own licence details there, and the hub has no
-     * page for that — on the web a coordinator does it for them.
-     */
-    openClassicPage: (() -> Unit)? = null,
 ) {
     if (!state.viewer.canView) {
         ZillitEmptyState(
@@ -77,6 +70,24 @@ fun HubScreen(
         )
         return
     }
+    // The hub's own light/dark, when the viewer flipped it in a banner. The
+    // whole hub is re-themed, dialogs and fields included — the web swaps its
+    // antd theme the same way, so a portal never shows the other skin.
+    ZillitTheme(darkTheme = state.hubDark ?: ZillitTheme.colors.isDark, animateThemeChange = false) {
+        CompositionLocalProvider(
+            LocalHubThemeToggle provides { dark -> onEvent(HubEvent.SetHubTheme(dark)) },
+        ) {
+            HubShell(state, onEvent, openLink)
+        }
+    }
+}
+
+@Composable
+private fun HubShell(
+    state: HubUiState,
+    onEvent: (HubEvent) -> Unit,
+    openLink: (String) -> Unit,
+) {
     var collapsed by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
@@ -89,37 +100,19 @@ fun HubScreen(
                         badge = state.badge(section),
                         active = section == state.section,
                     )
-                } + listOfNotNull(
-                    openClassicPage?.let {
-                        HubRailRow(
-                            id = CLASSIC_PAGE_ID,
-                            label = str(S.desktop_hub_classic_page),
-                            icon = ZillitIcons.Expand,
-                        )
-                    },
-                ),
-                onSelect = { id ->
-                    if (id == CLASSIC_PAGE_ID) {
-                        openClassicPage?.invoke()
-                    } else {
-                        onEvent(HubEvent.SelectSection(HubSection.valueOf(id)))
-                    }
                 },
+                onSelect = { id -> onEvent(HubEvent.SelectSection(HubSection.valueOf(id))) },
                 collapsed = collapsed,
                 onToggleCollapse = { collapsed = !collapsed },
                 isTempDriver = state.viewer.isTempDriver,
-                profileName = state.viewer.fullName,
-                profileDesignation = state.viewer.designation,
-                profileUserId = state.viewer.userId,
-                profileIsAdmin = state.viewer.isAdmin,
-                onBack = onBackToFilmTools,
             )
+            // The hub's grey, edge to edge. Each page draws its own banner
+            // across the top and pads its own body, as the web's do.
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(ZillitTheme.spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                    .background(hub.bg),
             ) {
                 if (state.loading && state.isSectionEmpty) {
                     Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }
@@ -133,6 +126,7 @@ fun HubScreen(
     }
 }
 
+@Suppress("CyclomaticComplexMethod") // One branch per section, and the role picks a section's page.
 @Composable
 private fun HubSectionBody(
     state: HubUiState,
@@ -141,27 +135,30 @@ private fun HubSectionBody(
 ) {
     when (state.section) {
         HubSection.Dashboard -> DashboardPage(state, onEvent)
-        HubSection.Trips -> TripsPage(state, onEvent)
-        HubSection.RideRequests -> RidesPage(state, onEvent)
-        HubSection.Fleet -> FleetPage(state, onEvent)
-        HubSection.Drivers -> DriversPage(state, onEvent, openLink)
-        HubSection.Allocations -> AllocationsPage(state, onEvent)
-        HubSection.Maintenance -> MaintenancePage(state, onEvent)
-        HubSection.Shuttles -> ShuttlesPage(state, onEvent)
-        HubSection.ActionVehicles -> ActionVehiclesPage(state, onEvent)
-        HubSection.LiveTracking -> LiveTrackingPage(state, onEvent)
-        HubSection.MyTrips -> MyTripsPage(state, onEvent)
-        // A driver's two ride lists are one page: the rows are the same and
-        // only the scope behind them differs, which the load already applied.
-        HubSection.AssignedRides, HubSection.MyRequests, HubSection.MyRides ->
-            MyRidesPage(state, onEvent)
+        HubSection.Trips -> HubPaddedPage { TripsPage(state, onEvent) }
+        HubSection.RideRequests -> HubPaddedPage { RidesPage(state, onEvent) }
+        HubSection.Fleet -> HubPaddedPage { FleetPage(state, onEvent) }
+        HubSection.Drivers -> HubPaddedPage { DriversPage(state, onEvent, openLink) }
+        HubSection.Allocations -> HubPaddedPage { AllocationsPage(state, onEvent) }
+        HubSection.Maintenance -> HubPaddedPage { MaintenancePage(state, onEvent) }
+        HubSection.Shuttles -> HubPaddedPage { ShuttlesPage(state, onEvent) }
+        HubSection.ActionVehicles -> HubPaddedPage { ActionVehiclesPage(state, onEvent) }
+        HubSection.LiveTracking -> HubPaddedPage { LiveTrackingPage(state, onEvent) }
+        // The web's three role route sets: a driver's My Trips is an action
+        // page and a passenger's is a history; a driver's Assigned Rides is
+        // what they drive, while their Ride Requests are the passenger's page.
+        HubSection.MyTrips -> if (state.role == HubRole.Driver) {
+            DriverTripsPage(state, onEvent)
+        } else {
+            PassengerTripsPage(state, onEvent)
+        }
 
-        HubSection.DriverMap -> DriverMapPage(state, onEvent)
+        HubSection.AssignedRides -> DriverRidesPage(state, onEvent)
+        HubSection.MyRequests, HubSection.MyRides -> SelfRidesPage(state, onEvent)
+
+        HubSection.DriverMap -> HubPaddedPage { DriverMapPage(state, onEvent) }
     }
 }
-
-/** The rail id of the way back to the older page — never a [HubSection]. */
-private const val CLASSIC_PAGE_ID = "classic-transportation"
 
 /** The rail's own label for a section — the web's `NAV_BY_ROLE` labels. */
 @Suppress("CyclomaticComplexMethod") // One branch per section; a map would hide the pairing.

@@ -20,7 +20,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -38,6 +37,8 @@ import com.zillit.desktop.feature.transporthub.domain.avCategories
 import com.zillit.desktop.feature.transporthub.ui.AvTab
 import com.zillit.desktop.feature.transporthub.ui.AvFlow
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPageHeader
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 
 /**
@@ -61,7 +62,8 @@ internal fun ActionVehiclesPage(state: HubUiState, onEvent: (HubEvent) -> Unit) 
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.FilmSlate,
             title = str(S.action_vehicles),
             description = state.visibleActionVehicles.size.let { count ->
                 // The app keeps the two forms as separate keys, not a plurals

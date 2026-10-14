@@ -18,7 +18,6 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
@@ -31,6 +30,8 @@ import com.zillit.desktop.feature.transporthub.domain.PermanentState
 import com.zillit.desktop.feature.transporthub.domain.PermanentTrip
 import com.zillit.desktop.feature.transporthub.ui.AllocationTab
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPageHeader
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 
 /**
@@ -53,7 +54,8 @@ internal fun AllocationsPage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.Person,
             title = str(S.allocations),
             description = str(
                 S.desktop_hub_allocation_count,

@@ -19,7 +19,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
@@ -31,6 +30,8 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transporthub.data.hubDateTime
 import com.zillit.desktop.feature.transporthub.domain.DriverLocation
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPageHeader
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 import com.zillit.desktop.feature.transporthub.ui.TrackingTab
 
@@ -49,7 +50,8 @@ internal fun LiveTrackingPage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.MapPin,
             title = str(S.desktop_hub_live_tracking),
             description = state.trackingUpdatedMs.takeIf { it > 0 }
                 ?.let { str(S.docusign_auto_refreshed_at, it.hubDateTime()) },
@@ -92,7 +94,8 @@ internal fun DriverMapPage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.MapTrifold,
             title = str(S.desktop_hub_my_map),
             description = str(S.desktop_hub_position_from_phone),
             actions = {

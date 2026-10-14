@@ -22,7 +22,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -40,6 +39,8 @@ import com.zillit.desktop.feature.transporthub.domain.ShuttleRouteType
 import com.zillit.desktop.feature.transporthub.domain.ShuttleRun
 import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPageHeader
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 import com.zillit.desktop.feature.transporthub.ui.ShuttleTab
 
@@ -61,7 +62,8 @@ internal fun ShuttlesPage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.Car,
             title = str(S.shuttles),
             description = when (state.shuttleTab) {
                 ShuttleTab.Routes ->

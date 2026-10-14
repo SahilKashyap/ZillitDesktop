@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.transporthub
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -200,7 +201,7 @@ class HubScreenRenderTest {
             }
         }
         // Active must sum every mode, not only one-off trips.
-        onNodeWithText("ACTIVE TRIPS").assertExists()
+        onNodeWithText("Active Trips").assertExists()
         onNodeWithText("3").assertExists()
         onNodeWithText("1 in transit · 2 assigned").assertExists()
         onNodeWithText("3 of 9 in use").assertExists()
@@ -304,7 +305,8 @@ class HubScreenRenderTest {
         // The View button used to open nothing at all.
         onNodeWithText("TIMELINE").assertExists()
         onNodeWithText("Assigned to Asha Menon").assertExists()
-        onNodeWithText("Kim Wu").assertExists()
+        // On the header and in the passenger list both.
+        onAllNodesWithText("Kim Wu").onFirst().assertExists()
     }
 
     @Test
@@ -372,13 +374,16 @@ class HubScreenRenderTest {
     }
 
     @Test
-    fun `a pending ride offers approve and decline`() = runComposeUiTest {
+    fun `a pending ride offers reject, approve, and approve and assign`() = runComposeUiTest {
         setContent {
             ZillitTheme { HubScreen(state = state(HubSection.RideRequests), onEvent = {}) }
         }
         onNodeWithText("Dev Rao").assertExists()
+        onNodeWithText("Reject").assertExists()
         onNodeWithText("Approve").assertExists()
-        onNodeWithText("Decline").assertExists()
+        onNodeWithText("Approve & Assign").assertExists()
+        // A pending request is refused, not called off.
+        onAllNodesWithText("Cancel Trip").assertCountEquals(0)
     }
 
     @Test
@@ -398,7 +403,7 @@ class HubScreenRenderTest {
         onNodeWithText("No car free").assertExists()
         onAllNodesWithText("Approve").assertCountEquals(0)
         // Nothing left to call off, either.
-        onAllNodesWithText("Cancel").assertCountEquals(0)
+        onAllNodesWithText("Cancel Trip").assertCountEquals(0)
     }
 
     @Test
@@ -510,25 +515,12 @@ class HubScreenRenderTest {
         }
 
     @Test
-    fun `the rail's classic entry is not mistaken for a section`() = runComposeUiTest {
-        val picked = mutableListOf<HubSection>()
-        var openedClassic = 0
-        setContent {
-            ZillitTheme {
-                HubScreen(
-                    state = state(HubSection.Trips),
-                    onEvent = { event ->
-                        if (event is HubEvent.SelectSection) picked += event.section
-                    },
-                    openClassicPage = { openedClassic += 1 },
-                )
-            }
-        }
-        // `HubSection.valueOf` on the rail's own id would throw — the shell
-        // has to tell the bridge apart from a section before resolving it.
-        onNodeWithText("Classic Transportation").performClick()
-        assertEquals(1, openedClassic)
-        assertTrue(picked.isEmpty())
+    fun `the rail carries no Film Tools button, classic page or profile card`() = runComposeUiTest {
+        setContent { ZillitTheme { HubScreen(state = state(HubSection.Fleet), onEvent = {}) } }
+        onNodeWithText("Transportation Hub").assertExists()
+        onAllNodesWithText("Film Tools").assertCountEquals(0)
+        onAllNodesWithText("Classic Transportation").assertCountEquals(0)
+        onAllNodesWithText("(Admin)").assertCountEquals(0)
     }
 
     @Test

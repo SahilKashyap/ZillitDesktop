@@ -4,6 +4,7 @@
 package com.zillit.desktop.feature.transporthub.ui
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,36 +17,36 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitDimens
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ZillitAvatar
-import com.zillit.desktop.core.designsystem.component.ZillitBadge
-import com.zillit.desktop.core.designsystem.component.ZillitButton
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubText
+import com.zillit.desktop.feature.transporthub.ui.kit.hub
 
 /** One destination in the hub's rail. */
 internal data class HubRailRow(
@@ -57,18 +58,15 @@ internal data class HubRailRow(
 )
 
 /**
- * The hub's sidebar — the web's own (`transportationHub/common/Layout.jsx`).
+ * The hub's sidebar — the web's `transportationHub/common/Layout.jsx`.
  *
- * Four pieces, in the web's order: a way back to Film Tools, the title with
- * the TEMP DRIVER tag under it when the viewer holds that flag, the role's
- * destinations with a badge where unread work sits, and the viewer's own
- * profile card at the bottom.
- *
- * It collapses to an icon strip, as the web's does, and every row keeps a
- * tooltip while collapsed — the only thing that tells an icon apart then. The
- * generic [com.zillit.desktop.core.designsystem.component.ZillitSideNav] does
- * neither, and the hub is the one tool whose sidebar the web gives a profile
- * block and a collapse handle.
+ * A white column with a rule on its right: the title (with the TEMP DRIVER
+ * tag for anyone a coordinator made one) and the role's destinations with
+ * amber active rows. The web's Film Tools button and profile card are left
+ * out on purpose — the desktop window has its own way out, and the app shows
+ * who is signed in. It collapses to a 72dp strip through a round handle that sits
+ * astride its right edge, and every row keeps a tooltip while collapsed —
+ * the only thing that tells an icon apart then.
  */
 @Composable
 internal fun HubRail(
@@ -77,180 +75,152 @@ internal fun HubRail(
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
     isTempDriver: Boolean,
-    profileName: String,
-    profileDesignation: String,
-    profileUserId: String,
-    profileIsAdmin: Boolean,
     modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null,
 ) {
-    val colors = ZillitTheme.colors
-    val width by animateDpAsState(if (collapsed) COLLAPSED_WIDTH else EXPANDED_WIDTH)
-    Row(modifier = modifier.fillMaxHeight()) {
+    val p = hub
+    val width by animateDpAsState(
+        if (collapsed) COLLAPSED_WIDTH else EXPANDED_WIDTH,
+        animationSpec = tween(durationMillis = SLIDE_MS),
+    )
+    // Drawn above the page so the handle's outer half is not covered by it.
+    Box(modifier.fillMaxHeight().width(width).zIndex(1f)) {
         Column(
             modifier = Modifier
-                .width(width)
                 .fillMaxHeight()
-                .background(colors.surfaceSunken),
+                .fillMaxWidth()
+                .background(p.surface)
+                .drawBehind {
+                    drawRect(
+                        p.border,
+                        topLeft = Offset(size.width - 1.dp.toPx(), 0f),
+                        size = size.copy(width = 1.dp.toPx()),
+                    )
+                },
         ) {
-            RailHeader(
-                collapsed = collapsed,
-                isTempDriver = isTempDriver,
-                onBack = onBack,
-            )
+            RailHeader(collapsed = collapsed, isTempDriver = isTempDriver)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .zillitVerticalScroll()
-                    .padding(ZillitTheme.spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 rows.forEach { row ->
-                    RailRow(row = row, collapsed = collapsed, onClick = { onSelect(row.id) })
+                    RailItem(row = row, collapsed = collapsed, onClick = { onSelect(row.id) })
                 }
             }
-            RailProfile(
-                collapsed = collapsed,
-                name = profileName,
-                designation = profileDesignation,
-                userId = profileUserId,
-                isAdmin = profileIsAdmin,
-            )
         }
-        // The handle sits on the rail's own edge, as the web's circular
-        // button does, so it is reachable at either width.
-        Column(
-            modifier = Modifier.fillMaxHeight().padding(top = ZillitTheme.spacing.lg),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        CollapseHandle(
+            collapsed = collapsed,
+            onToggle = onToggleCollapse,
+            modifier = Modifier.align(Alignment.TopEnd).offset(x = HANDLE / 2, y = 28.dp),
+        )
+    }
+}
+
+/** The "• TEMP DRIVER" line under the hub's name, with why on hover. */
+@Composable
+private fun TempDriverBadge() {
+    val p = hub
+    ZillitTooltip(text = str(S.desktop_hub_temp_driver_hint)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            ZillitTooltip(
-                text = if (collapsed) {
-                    str(S.desktop_hub_expand_menu)
-                } else {
-                    str(S.desktop_hub_collapse_menu)
-                },
+            // The dot wears a 3px halo, as the web's box-shadow ring.
+            Box(
+                Modifier.size(12.dp).clip(CircleShape).background(p.accent.copy(alpha = 0.2f)),
+                Alignment.Center,
             ) {
-                ZillitIconButton(
-                    icon = if (collapsed) ZillitIcons.ChevronRight else ZillitIcons.ChevronLeft,
-                    contentDescription = if (collapsed) {
-                        str(S.desktop_hub_expand_menu)
-                    } else {
-                        str(S.desktop_hub_collapse_menu)
-                    },
-                    onClick = onToggleCollapse,
-                )
+                Box(Modifier.size(6.dp).clip(CircleShape).background(p.accent))
             }
+            HubText(
+                str(S.desktop_hub_temp_driver).uppercase(),
+                10.sp,
+                p.accentDark,
+                weight = FontWeight.Bold,
+                spacing = 0.6.sp,
+            )
         }
     }
 }
 
 @Composable
-private fun RailHeader(collapsed: Boolean, isTempDriver: Boolean, onBack: (() -> Unit)?) {
-    val colors = ZillitTheme.colors
+private fun RailHeader(collapsed: Boolean, isTempDriver: Boolean) {
+    val p = hub
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        onBack?.let { back ->
-            if (collapsed) {
-                ZillitTooltip(text = str(S.desktop_hub_back_to_film_tools)) {
-                    ZillitIconButton(
-                        icon = ZillitIcons.ArrowLeft,
-                        contentDescription = str(S.desktop_hub_back_to_film_tools),
-                        onClick = back,
-                    )
-                }
-            } else {
-                ZillitButton(
-                    text = str(S.desktop_film_tools),
-                    onClick = back,
-                    leadingIcon = ZillitIcons.ArrowLeft,
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    modifier = Modifier.fillMaxWidth(),
+            .drawBehind {
+                drawRect(
+                    p.borderLight,
+                    topLeft = Offset(0f, size.height - 1.dp.toPx()),
+                    size = size.copy(height = 1.dp.toPx()),
                 )
             }
-        }
+            .padding(
+                start = if (collapsed) 10.dp else 16.dp,
+                end = if (collapsed) 10.dp else 16.dp,
+                top = if (collapsed) 14.dp else 16.dp,
+                bottom = 14.dp,
+            ),
+        horizontalAlignment = if (collapsed) Alignment.CenterHorizontally else Alignment.Start,
+    ) {
         if (!collapsed) {
-            ZillitText(
-                text = str(S.desktop_hub_title),
-                style = ZillitTheme.typography.titleMedium,
+            HubText(
+                str(S.desktop_hub_title),
+                18.sp,
+                p.textPrimary,
+                weight = FontWeight.Bold,
+                spacing = (-0.2).sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = if (isTempDriver) 2.dp else 0.dp),
             )
-            // The web puts this tag under the title for anyone a coordinator
-            // has made a temporary driver: it is the only thing on screen
-            // that explains why the driver rows appeared in their sidebar.
-            if (isTempDriver) {
-                ZillitTooltip(text = str(S.desktop_hub_temp_driver_hint)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-                    ) {
-                        Box(
-                            Modifier
-                                .size(TEMP_DOT)
-                                .clip(ZillitTheme.shapes.pill)
-                                .background(colors.accent),
-                        )
-                        ZillitText(
-                            text = str(S.desktop_hub_temp_driver),
-                            style = ZillitTheme.typography.labelSmall,
-                            color = colors.accentText,
-                        )
-                    }
-                }
-            }
+            // The only thing on screen that explains why the driver rows
+            // appeared in this person's sidebar.
+            if (isTempDriver) TempDriverBadge()
         }
     }
 }
 
 @Composable
-private fun RailRow(row: HubRailRow, collapsed: Boolean, onClick: () -> Unit) {
-    val colors = ZillitTheme.colors
+private fun RailItem(row: HubRailRow, collapsed: Boolean, onClick: () -> Unit) {
+    val p = hub
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val background = when {
-        row.active -> colors.railActive
-        hovered -> colors.surfaceHover
-        else -> Color.Transparent
-    }
-    val content = if (row.active) colors.accentText else colors.textSecondary
+    val fg = if (row.active || hovered) p.menuActiveText else p.textPrimary
     val body = @Composable {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(ZillitTheme.shapes.medium)
-                .background(background)
+                .height(40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    when {
+                        row.active -> p.menuActiveBg
+                        hovered -> p.menuHoverBg
+                        else -> Color.Transparent
+                    },
+                )
                 .hoverable(interaction)
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.sm),
+                .padding(horizontal = if (collapsed) 0.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (collapsed) {
                 Arrangement.Center
             } else {
-                Arrangement.spacedBy(ZillitTheme.spacing.sm)
+                Arrangement.spacedBy(10.dp)
             },
         ) {
-            ZillitIcon(row.icon, tint = content, size = ZillitDimens.iconSmall)
+            ZillitIcon(row.icon, tint = fg, size = 18.dp)
             if (!collapsed) {
-                ZillitText(
-                    text = row.label,
-                    style = ZillitTheme.typography.bodyMedium.copy(
-                        fontWeight = if (row.active) FontWeight.SemiBold else FontWeight.Normal,
-                    ),
-                    color = if (row.active) colors.textPrimary else colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                HubText(row.label, 14.sp, fg, modifier = Modifier.weight(1f))
+                if (row.badge > 0) Badge(row.badge)
             }
-            if (row.badge > 0) ZillitBadge(count = row.badge)
         }
     }
-    // Collapsed, the icon is all there is — so the label becomes the tooltip,
-    // with the count in it, exactly as the web's collapsed menu does.
+    // Collapsed, the icon is all there is — so the label and its count move
+    // into the tooltip, exactly as the web's collapsed menu does.
     if (collapsed) {
         val label = if (row.badge > 0) "${row.label} (${row.badge})" else row.label
         ZillitTooltip(text = label) { body() }
@@ -259,58 +229,40 @@ private fun RailRow(row: HubRailRow, collapsed: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** antd's small badge in the hub's accent, capped at 99+. */
 @Composable
-private fun RailProfile(
-    collapsed: Boolean,
-    name: String,
-    designation: String,
-    userId: String,
-    isAdmin: Boolean,
-) {
-    if (name.isBlank()) return
-    val colors = ZillitTheme.colors
-    // The designation arrives as the untranslated label key the crew list
-    // stores (`designation_driver_transport`), so it goes through the same
-    // resolver the rest of the app reads a designation with.
-    val designationLabel = designation.localised()
-    val subtitle = listOfNotNull(
-        designationLabel.takeIf { it.isNotBlank() },
-        str(S.admin).takeIf { isAdmin },
-    ).joinToString(" · ")
-    if (collapsed) {
-        Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.sm), Alignment.Center) {
-            ZillitTooltip(text = listOf(name, subtitle).filter { it.isNotBlank() }.joinToString(" · ")) {
-                ZillitAvatar(name = name, userId = userId, size = AVATAR_COLLAPSED)
-            }
-        }
-        return
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(ZillitTheme.spacing.sm)
-            .clip(ZillitTheme.shapes.medium)
-            .background(colors.surface)
-            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
-            .padding(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitAvatar(name = name, userId = userId, size = AVATAR_EXPANDED)
-        Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = name,
-                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotBlank()) {
-                ZillitText(
-                    text = subtitle,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+private fun Badge(count: Int) {
+    HubText(
+        if (count > MAX_BADGE) "$MAX_BADGE+" else count.toString(),
+        10.sp,
+        Color.White,
+        weight = FontWeight.Bold,
+        modifier = Modifier.clip(CircleShape).background(hub.accent).padding(horizontal = 6.dp, vertical = 1.dp),
+    )
+}
+
+/** The round handle astride the rail's right edge. */
+@Composable
+private fun CollapseHandle(collapsed: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    val p = hub
+    val label = if (collapsed) str(S.desktop_hub_expand_menu) else str(S.desktop_hub_collapse_menu)
+    Box(modifier) {
+        ZillitTooltip(text = label) {
+            Box(
+                modifier = Modifier
+                    .size(HANDLE)
+                    .shadow(3.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(p.surface)
+                    .border(1.5.dp, p.accent, CircleShape)
+                    .clickable(onClick = onToggle),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitIcon(
+                    if (collapsed) HubGlyphs.CaretRight else HubGlyphs.CaretLeft,
+                    tint = p.accent,
+                    size = 14.dp,
+                    contentDescription = label,
                 )
             }
         }
@@ -319,6 +271,6 @@ private fun RailProfile(
 
 private val EXPANDED_WIDTH = 208.dp
 private val COLLAPSED_WIDTH = 72.dp
-private val AVATAR_EXPANDED = 36.dp
-private val AVATAR_COLLAPSED = 32.dp
-private val TEMP_DOT = 6.dp
+private val HANDLE = 28.dp
+private const val SLIDE_MS = 320
+private const val MAX_BADGE = 99

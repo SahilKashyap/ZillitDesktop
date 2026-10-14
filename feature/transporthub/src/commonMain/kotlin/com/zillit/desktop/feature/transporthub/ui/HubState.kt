@@ -1,7 +1,11 @@
 package com.zillit.desktop.feature.transporthub.ui
 
 import com.zillit.desktop.feature.transporthub.data.toEpochMillisOrNull
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transporthub.domain.ActiveCar
+import com.zillit.desktop.feature.transporthub.ui.kit.RideRow
+import com.zillit.desktop.feature.transporthub.ui.kit.applyRideFilters
 import com.zillit.desktop.feature.transporthub.domain.AvDraft
 import com.zillit.desktop.feature.transporthub.domain.ShuttleRunStatus
 import com.zillit.desktop.feature.transporthub.domain.ActionVehicle
@@ -522,6 +526,60 @@ data class AvDecision(
     val saving: Boolean = false,
 )
 
+/** A driver's My Trips segment: per-record rides, or shuttle runs grouped by route. */
+enum class DriverTripView { Rides, Routes }
+
+/** A driver's Assigned Rides segment. */
+enum class DriverRideTab {
+    Active,
+    Past,
+    Rejected,
+    ;
+
+    fun accepts(ride: RideRequest): Boolean = when (this) {
+        Rejected -> ride.status == RideStatus.Rejected || ride.status == RideStatus.Cancelled
+        Past -> ride.status == RideStatus.Completed
+        Active -> !Rejected.accepts(ride) && !Past.accepts(ride)
+    }
+}
+
+/**
+ * The one step a driver takes next on something they are driving.
+ *
+ * The web's `NEXT_ACTION`: a trip or a ride climbs accept → start → arrive →
+ * transit → arrive → complete, while a shuttle run has its own shorter ladder.
+ * The two share the word `in_transit` with different next steps, which is why
+ * the lookup keys on the kind and never on the status alone.
+ */
+data class DriverStep(val next: String, val label: () -> String) {
+    companion object {
+        private val TRIP: Map<String, DriverStep> = mapOf(
+            "pending" to DriverStep("assigned") { str(S.accept) },
+            "draft" to DriverStep("assigned") { str(S.accept) },
+            "approved" to DriverStep("assigned") { str(S.accept) },
+            "assigned" to DriverStep("en_route_pickup") { str(S.txt_start_trip) },
+            "en_route_pickup" to DriverStep("at_pickup") { str(S.desktop_hub_arrived_at_pickup) },
+            "at_pickup" to DriverStep("in_transit") { str(S.desktop_hub_start_transit) },
+            "in_transit" to DriverStep("at_dropoff") { str(S.desktop_hub_arrived_at_dropoff) },
+            "at_dropoff" to DriverStep("completed") { str(S.dm_action_complete) },
+        )
+
+        private val SHUTTLE: Map<String, DriverStep> = mapOf(
+            "scheduled" to DriverStep("boarding") { str(S.desktop_hub_start_boarding) },
+            "boarding" to DriverStep("in_transit") { str(S.desktop_hub_depart) },
+            "in_transit" to DriverStep("completed") { str(S.dm_action_complete) },
+        )
+
+        /** A ride request has no Accept: it reaches a driver already assigned. */
+        private val RIDE: Map<String, DriverStep> = TRIP.filterKeys { it !in setOf("pending", "draft", "approved") }
+
+        fun forTrip(trip: Trip): DriverStep? =
+            (if (trip.isShuttleRun) SHUTTLE else TRIP)[trip.status.wire]
+
+        fun forRide(ride: RideRequest): DriverStep? = RIDE[ride.status.wire]
+    }
+}
+
 /** A vehicle being created or edited, as the form holds it. */
 data class VehicleEditor(
     val id: String? = null,
@@ -623,9 +681,19 @@ data class DriverDetailsEditor(
     val saving: Boolean = false,
 )
 
-/** A ride request being raised or edited. */
+/**
+ * A ride request being raised or edited.
+ *
+ * [isSelf] is the web's two forms in one: a coordinator's "Request a Ride"
+ * raises one for anybody (`call_type: coordinator`), and a passenger's or a
+ * driver's "Call a Driver" raises their own (`call_type: self`) with the
+ * caller always the first passenger.
+ */
 data class RideEditor(
     val id: String? = null,
+    val isSelf: Boolean = false,
+    /** People with no Zillit account, typed in — `{ name, contact_number }`, no user id. */
+    val guests: List<HubPassenger> = emptyList(),
     val pickup: HubLocation = HubLocation.Empty,
     val dropoff: HubLocation = HubLocation.Empty,
     val passengers: List<HubPassenger> = emptyList(),
@@ -784,6 +852,11 @@ data class AssignEditor(
     val driverId: String? = null,
     val vehicleId: String? = null,
     val isTrip: Boolean = false,
+    /**
+     * A still-pending ride: the web's Approve & Assign approves it first,
+     * then assigns — the server assigns only an approved request.
+     */
+    val approveFirst: Boolean = false,
     val saving: Boolean = false,
 )
 
@@ -803,6 +876,13 @@ data class HubUiState(
     val loading: Boolean = false,
     /** Set while one row is mid-mutation, so only that row shows a spinner. */
     val busyRowId: String = "",
+    /**
+     * The hub's own theme, when the viewer has set one.
+     *
+     * The web's hub carries a light/dark switch of its own in every banner,
+     * independent of the rest of the app; null follows the app.
+     */
+    val hubDark: Boolean? = null,
     /**
      * The clock, as the ViewModel reads it.
      *
@@ -863,6 +943,22 @@ data class HubUiState(
     val shuttleSearch: String = "",
     /** Blank shows every route's runs — the web's "All routes". */
     val runRouteFilter: String = "",
+    /** A passenger's (and a driver's own) Ride Requests filters. */
+    val rideFilters: com.zillit.desktop.feature.transporthub.ui.kit.RideFilters =
+        com.zillit.desktop.feature.transporthub.ui.kit.RideFilters(),
+    /** A passenger's My Trips filters — read against the pickup date by default, as the web's are. */
+    val tripFilters: com.zillit.desktop.feature.transporthub.ui.kit.RideFilters =
+        com.zillit.desktop.feature.transporthub.ui.kit.RideFilters(),
+    /** Which of the two filter bars has its Advanced panel open. */
+    val filtersExpanded: Boolean = false,
+    /** A driver's My Trips segment — their rides, or their shuttle routes. */
+    val driverTripView: DriverTripView = DriverTripView.Rides,
+    /** True once the driver picked a segment, after which it no longer follows the data. */
+    val driverTripViewPicked: Boolean = false,
+    /** A driver's Assigned Rides segment. */
+    val driverRideTab: DriverRideTab = DriverRideTab.Active,
+    /** The ride whose detail is open — a passenger's or a driver's "View Details". */
+    val openRide: String? = null,
     val avTab: AvTab = AvTab.Finalized,
     /**
      * True once somebody chose a tab.
@@ -1114,6 +1210,79 @@ data class HubUiState(
     fun actionVehicle(id: String?): ActionVehicle? =
         id?.let { wanted -> actionVehicles.firstOrNull { it.id == wanted } }
 
+    /**
+     * A passenger's My Trips, filtered — the unified `/trip` feed of their
+     * ride requests, trips and standing allocations.
+     */
+    val passengerTrips: List<Trip>
+        get() = trips.applyRideFilters(tripFilters, nowMs) { it.toRideRow() }
+
+    /** A passenger's (or a driver's own) ride requests, filtered. */
+    val selfRides: List<RideRequest>
+        get() = rides.applyRideFilters(rideFilters, nowMs) { it.toRideRow() }
+
+    /**
+     * A driver's My Trips: only what they can act on.
+     *
+     * The web keeps an allow-list rather than a deny-list here on purpose —
+     * a status the server adds tomorrow stays off the driver's screen until
+     * somebody opts it in, instead of appearing with no button to move it.
+     */
+    val driverActiveTrips: List<Trip>
+        get() = trips.filter { it.status.wire in DRIVER_ACTIVE }
+
+    /** The driver's rides, with shuttle runs taken out. */
+    val driverRides: List<Trip> get() = driverActiveTrips.filterNot { it.isShuttleRun }
+
+    /**
+     * The driver's shuttle runs, one card per route.
+     *
+     * A route generates runs by the dozen, so each route shows the run to act
+     * on now — an in-flight one before a scheduled one, then the soonest —
+     * with the rest counted beside it.
+     */
+    val driverShuttleGroups: List<Pair<Trip, Int>>
+        get() = driverActiveTrips.filter { it.isShuttleRun }
+            .groupBy { it.routeId ?: it.routeName.ifBlank { it.id } }
+            .values
+            .map { runs ->
+                val head = runs.sortedWith(
+                    compareBy<Trip> { SHUTTLE_HEAD_PRIORITY[it.status.wire] ?: SHUTTLE_UNRANKED }
+                        .thenBy { it.scheduledPickupTimeMs ?: Long.MAX_VALUE },
+                ).first()
+                head to runs.size
+            }
+
+    /** How many shuttle runs the groups stand for — the banner's "· 51 runs". */
+    val driverShuttleRunCount: Int get() = driverActiveTrips.count { it.isShuttleRun }
+
+    /**
+     * The rides given to this driver to drive.
+     *
+     * The route is scoped by `driver_id`, but the web filters again by the
+     * assigned driver because the server has answered rides that were not
+     * this driver's; either the driver record's id or the user's own matches.
+     */
+    val driverAssignedRides: List<RideRequest>
+        get() = rides.filter { ride ->
+            val assigned = ride.assignedDriverId ?: return@filter false
+            assigned == myDriverId || assigned == viewer.userId
+        }
+
+    val driverRideCounts: Map<DriverRideTab, Int>
+        get() = DriverRideTab.entries.associateWith { tab -> driverAssignedRides.count { tab.accepts(it) } }
+
+    fun ride(id: String?): RideRequest? = id?.let { wanted -> rides.firstOrNull { it.id == wanted } }
+
+    /** "Driver #c45ffa" when the ride names a driver the list does not hold — the web's own fallback. */
+    fun driverLabel(id: String?, name: String): String = name.ifBlank {
+        driverName(id).ifBlank { shortRef(str(S.driver), id) }
+    }
+
+    fun vehicleLabelOrId(id: String?, label: String): String = label.ifBlank {
+        vehicleLabel(id).ifBlank { shortRef(str(S.vehicle), id) }
+    }
+
     val driverCounts: Map<DriverTab, Int>
         get() = mapOf(
             DriverTab.All to drivers.size,
@@ -1149,6 +1318,44 @@ data class HubUiState(
         return vehicles.firstOrNull { it.id == id }?.displayName.orEmpty()
     }
 }
+
+private fun Trip.toRideRow(): RideRow = RideRow(
+    // The status chips name `in_transit`; the trip vocabulary has the same word.
+    status = status.wire,
+    priority = priority.wire,
+    text = (
+        listOf(id, pickup.address, dropoff.address, notes, department, driverName, vehicleLabel, riderName) +
+            passengers.map { it.name }
+        ).joinToString(" ").lowercase(),
+    scheduledMs = scheduledPickupTimeMs ?: 0,
+    finishedMs = finishedMs,
+    createdMs = createdMs,
+)
+
+private fun RideRequest.toRideRow(): RideRow = RideRow(
+    status = status.wire,
+    priority = priority.wire,
+    text = (
+        listOf(id, pickup.address, dropoff.address, notes, department, assignedDriverName, assignedVehicleLabel) +
+            passengers.map { it.name }
+        ).joinToString(" ").lowercase(),
+    scheduledMs = scheduledPickupTimeMs ?: 0,
+    finishedMs = finishedMs,
+    createdMs = createdMs,
+)
+
+/** What a driver's My Trips keeps: the in-flight steps of both ladders. */
+private val DRIVER_ACTIVE = setOf(
+    "assigned", "en_route_pickup", "at_pickup", "in_transit", "at_dropoff",
+    "scheduled", "boarding", "departed",
+)
+
+/** Within one route, the run to act on first. */
+private val SHUTTLE_HEAD_PRIORITY = mapOf("in_transit" to 0, "departed" to 1, "boarding" to 2, "scheduled" to 3)
+private const val SHUTTLE_UNRANKED = 9
+
+/** How much of an id a card shows — the web's last six. */
+private const val SHORT_ID = 6
 
 /** One day's worth of milliseconds, for the Trips date filter. */
 private const val DAY_MS = 24L * 60 * 60 * 1000
@@ -1255,6 +1462,7 @@ sealed interface HubEvent {
     sealed interface MaintenanceEvent : HubEvent
     sealed interface TrackingEvent : HubEvent
     sealed interface ShuttleEvent : HubEvent
+    sealed interface SelfEvent : HubEvent
     sealed interface ActionVehicleEvent : HubEvent
     sealed interface DriverEvent : HubEvent
     sealed interface TripEvent : HubEvent
@@ -1265,6 +1473,9 @@ sealed interface HubEvent {
     data object Refresh : Shell
     data object DismissError : Shell
     data object DismissConfirm : Shell
+
+    /** The banner's moon/sun — the hub's own theme, apart from the app's. */
+    data class SetHubTheme(val dark: Boolean) : Shell
 
     /** Carries out the action a [HubConfirm] was asked about. */
     data class Confirmed(val action: HubEvent) : Shell
@@ -1293,6 +1504,27 @@ sealed interface HubEvent {
 
     /** Opens a driver's last reported position in the browser's map. */
     data class TrackDriver(val driverId: String) : TrackingEvent
+
+    // A passenger's and a driver's own pages
+    data class RideFiltersChanged(val filters: com.zillit.desktop.feature.transporthub.ui.kit.RideFilters) :
+        SelfEvent
+    data class TripFiltersChanged(val filters: com.zillit.desktop.feature.transporthub.ui.kit.RideFilters) :
+        SelfEvent
+    data object ToggleFiltersExpanded : SelfEvent
+
+    /** "Call a Driver" — a ride request the viewer raises for themselves. */
+    data object CallADriver : SelfEvent
+    data class DriverTripViewChanged(val view: DriverTripView) : SelfEvent
+    data class DriverRideTabChanged(val tab: DriverRideTab) : SelfEvent
+
+    /** The driver's one next step on a trip, a ride request or a shuttle run. */
+    data class AdvanceTrip(val trip: Trip) : SelfEvent
+    data class AdvanceRide(val ride: RideRequest) : SelfEvent
+    data class OpenRide(val id: String) : SelfEvent
+    data object CloseRide : SelfEvent
+
+    /** Opens a driver's position for a passenger whose car is on its way. */
+    data class TrackRideDriver(val ride: RideRequest) : SelfEvent
 
     // Shuttles
     data class ShuttleTabChanged(val tab: ShuttleTab) : ShuttleEvent
@@ -1485,3 +1717,7 @@ sealed interface HubEffect {
     data class Notice(val text: String, val success: Boolean = true) : HubEffect
     data class OpenLink(val url: String) : HubEffect
 }
+
+/** "Driver #c45ffa" — what the web shows for an id it cannot name. Blank for no id. */
+private fun shortRef(noun: String, id: String?): String =
+    id?.takeIf { it.isNotBlank() }?.let { "$noun #${it.takeLast(SHORT_ID)}" }.orEmpty()

@@ -77,9 +77,14 @@ internal fun TripStatus.tone(): StatusTone = when (this) {
     TripStatus.InTransit -> StatusTone.InTransit
     TripStatus.Completed -> StatusTone.Done
     TripStatus.Cancelled, TripStatus.Rejected -> StatusTone.Rejected
+    TripStatus.Active -> StatusTone.InTransit
+    TripStatus.Scheduled -> StatusTone.Ready
+    TripStatus.Boarding -> StatusTone.Pending
+    TripStatus.Departed -> StatusTone.Progress
     TripStatus.Unknown -> StatusTone.Neutral
 }
 
+@Suppress("CyclomaticComplexMethod") // One branch per status, nothing else.
 internal fun TripStatus.label(): String = when (this) {
     TripStatus.Draft -> str(S.draft)
     TripStatus.Pending -> str(S.pending)
@@ -92,6 +97,10 @@ internal fun TripStatus.label(): String = when (this) {
     TripStatus.Completed -> str(S.completed)
     TripStatus.Cancelled -> str(S.cancelled)
     TripStatus.Rejected -> str(S.rejected)
+    TripStatus.Active -> str(S.active)
+    TripStatus.Scheduled -> str(S.desktop_csync_when_scheduled)
+    TripStatus.Boarding -> str(S.desktop_hub_boarding)
+    TripStatus.Departed -> str(S.desktop_hub_departed)
     TripStatus.Unknown -> str(S.desktop_unknown)
 }
 

@@ -21,7 +21,6 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -37,6 +36,8 @@ import com.zillit.desktop.feature.transporthub.domain.VehicleAllocationFilter
 import com.zillit.desktop.feature.transporthub.domain.VehicleFilter
 import com.zillit.desktop.feature.transporthub.domain.VehicleOwnership
 import com.zillit.desktop.feature.transporthub.ui.HubEvent
+import com.zillit.desktop.feature.transporthub.ui.kit.HubGlyphs
+import com.zillit.desktop.feature.transporthub.ui.kit.HubPageHeader
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 
 /**
@@ -54,7 +55,8 @@ internal fun FleetPage(state: HubUiState, onEvent: (HubEvent) -> Unit) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
+        HubPageHeader(
+            icon = HubGlyphs.Truck,
             title = str(S.fleet),
             description = str(S.desktop_hub_vehicle_count, state.vehicles.size.toString()),
             actions = {

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.transporthub
 
+import com.zillit.desktop.feature.transporthub.data.hubShortDateTime
+import com.zillit.desktop.feature.transporthub.data.hubTime
+import com.zillit.desktop.feature.transporthub.data.startOfDay
 import com.zillit.desktop.feature.transporthub.domain.Driver
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeBucket
 import com.zillit.desktop.feature.transporthub.domain.HubBadgeUnits
@@ -22,9 +25,11 @@ import com.zillit.desktop.feature.transporthub.ui.HubSection
 import com.zillit.desktop.feature.transporthub.ui.HubUiState
 import com.zillit.desktop.feature.transporthub.ui.RideTab
 import com.zillit.desktop.feature.transporthub.ui.TripTab
+import com.zillit.desktop.feature.transporthub.ui.pages.listTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -387,4 +392,34 @@ class HubStateTest {
     fun `an empty location is not worth sending`() {
         assertTrue(HubLocation.Empty.isEmpty)
     }
+
+    @Test
+    fun `a trip row reads its pickup as today, tomorrow, or a date`() {
+        val now = 1_781_864_460_000L
+        val today = now.startOfDay() + 10 * HOUR
+        val tomorrow = today + 24 * HOUR
+        assertEquals("Today, ${today.hubTime()}", Trip("t", scheduledPickupTimeMs = today).listTime(now))
+        assertEquals("Tomorrow, ${tomorrow.hubTime()}", Trip("t", scheduledPickupTimeMs = tomorrow).listTime(now))
+        val later = today + 30 * 24 * HOUR
+        assertEquals(later.hubShortDateTime(), Trip("t", scheduledPickupTimeMs = later).listTime(now))
+    }
+
+    @Test
+    fun `a pickup stamped at creation is no pickup time at all`() {
+        // The server once filled a missing pickup with Date.now(); the web
+        // treats anything within five seconds of creation as that stamp.
+        val created = 1_781_864_460_000L
+        assertNull(Trip("t", scheduledPickupTimeMs = created + 2_000, createdMs = created).listTime(created))
+        // A passenger's own time outranks the trip's.
+        val own = created + 3 * HOUR
+        val trip = Trip(
+            "t",
+            scheduledPickupTimeMs = created,
+            createdMs = created,
+            passengers = listOf(HubPassenger(name = "Kim", scheduledPickupTimeMs = own)),
+        )
+        assertTrue(trip.listTime(created).orEmpty().endsWith(own.hubTime()))
+    }
 }
+
+private const val HOUR = 60L * 60 * 1000

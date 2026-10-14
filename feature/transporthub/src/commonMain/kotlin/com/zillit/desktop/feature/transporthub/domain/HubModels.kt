@@ -106,6 +106,16 @@ enum class TripStatus(val wire: String, private val aliases: List<String> = empt
     Completed("completed"),
     Cancelled("cancelled"),
     Rejected("rejected"),
+
+    /** A permanent allocation's row on `/trip` — the passenger's "Active (Permanent)". */
+    Active("active"),
+
+    // A shuttle run's own ladder, which a driver's `/trip` feed carries too.
+    Scheduled("scheduled"),
+    Boarding("boarding"),
+
+    /** The server's own step between boarding and in-transit; nobody drives it. */
+    Departed("departed"),
     Unknown(""),
     ;
 
@@ -131,6 +141,9 @@ enum class TripResourceKind(val wire: String) {
     Trip("trip"),
     RideRequest("ride_request"),
     ShuttleRun("shuttle_run"),
+
+    /** A passenger's standing allocation, which `/trip` folds into their feed. */
+    PermanentTrip("permanent_trip"),
     ;
 
     companion object {
@@ -411,8 +424,13 @@ data class RideRequest(
     val rejectionReason: String = "",
     val cancellationReason: String = "",
     val etaMinutes: Int? = null,
+    val requesterPhone: String = "",
+    val department: String = "",
+    val finishedMs: Long = 0,
+    /** The server's own count, which can exceed the passengers it lists. */
+    val serverPassengerCount: Int = 0,
 ) {
-    val passengerCount: Int get() = passengers.size
+    val passengerCount: Int get() = maxOf(passengers.size, serverPassengerCount)
 
     /** True when [userId] raised the ride or rides in it — the web's `isOwnedBy`. */
     fun isOwnedBy(userId: String?): Boolean {
@@ -442,7 +460,45 @@ data class Trip(
     val notes: String = "",
     val activeDays: List<HubDay> = emptyList(),
     val createdMs: Long = 0,
+    /** When it finished — completed, or for one that never ran, cancelled or refused. */
+    val finishedMs: Long = 0,
+    /** Who asked for it — `requester_snapshot`, the row's own name for itself. */
+    val requesterName: String = "",
+    val requesterUserId: String? = null,
+    val requesterPhone: String = "",
+    val department: String = "",
+    /** The server's own count, which can exceed the passengers it lists. */
+    val passengerCount: Int = 0,
+    // A shuttle run's route, when the feed carries one.
+    val routeId: String? = null,
+    val routeName: String = "",
+    val routeType: String = "",
+    // A permanent allocation's window, when the feed carries one.
+    val startDateMs: Long = 0,
+    val endDateMs: Long = 0,
+    val startTime: String = "",
+    val endTime: String = "",
 ) {
+    /**
+     * True for a shuttle run, however it arrived.
+     *
+     * The `/shuttles/schedule` shape sets no `resource_type`, so the
+     * structural signals count too: `trip_type: shuttle`, or a departure.
+     */
+    val isShuttleRun: Boolean
+        get() = kind == TripResourceKind.ShuttleRun || tripType == "shuttle" || routeName.isNotBlank()
+
+    /** Who to title a card with: the route for a run, else the requester, else the first rider. */
+    val riderName: String
+        get() = if (isShuttleRun) {
+            routeName.ifBlank { title }
+        } else {
+            requesterName.ifBlank { passengers.firstOrNull()?.name.orEmpty() }
+        }
+
+    /** The listed passengers, or the server's own count when it says more. */
+    val headCount: Int get() = maxOf(passengers.size, passengerCount)
+
     /**
      * True when the row cannot be deleted through `/trip` at all — a ride
      * request already past acting on. The list hides Delete for these.

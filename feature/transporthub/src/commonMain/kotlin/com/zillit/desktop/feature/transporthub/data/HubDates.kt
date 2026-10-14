@@ -57,11 +57,23 @@ private val parsers: List<(String) -> Long> = listOf(
     { raw -> Instant.parse(raw).toEpochMilliseconds() },
 )
 
-/** "Mon, Jun 15, 2026" — the web's `fmtHubDate`. Blank for an unset date. */
+/**
+ * "Fri, 19 Jun 2026" — the web's `fmtHubDate`.
+ *
+ * The web formats with the browser's locale, and the hub's users read it day
+ * first (`en-GB` / `en-IN`), which is what the screens are matched against.
+ * Blank for an unset date.
+ */
 internal fun Long.hubDate(): String {
     val at = instantOrNull()?.toLocalDateTime(zone) ?: return ""
     val day = shortDays.getOrNull(at.dayOfWeek.ordinal).orEmpty()
-    return "$day, ${shortMonths[at.month.ordinal]} ${at.day}, ${at.year}"
+    return "$day, ${at.day} ${shortMonths[at.month.ordinal]} ${at.year}"
+}
+
+/** "19 Jun 2026, 15:51" — the Dashboard row's own, weekday-less format. */
+internal fun Long.hubShortDateTime(): String {
+    val at = instantOrNull()?.toLocalDateTime(zone) ?: return ""
+    return "${at.day.pad()} ${shortMonths[at.month.ordinal]} ${at.year}, ${hubTime()}"
 }
 
 /** "HH:mm". Blank for an unset time. */

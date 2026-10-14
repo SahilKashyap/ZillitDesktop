@@ -4,6 +4,7 @@
 package com.zillit.desktop.feature.transporthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
@@ -137,6 +138,7 @@ class HubViewModel(
             HubEvent.Refresh -> refreshAll()
             HubEvent.DismissError -> setState { copy(error = null) }
             HubEvent.DismissConfirm -> setState { copy(confirm = null) }
+            is HubEvent.SetHubTheme -> setState { copy(hubDark = event.dark) }
             is HubEvent.Confirmed -> {
                 setState { copy(confirm = null) }
                 onEvent(event.action)
@@ -157,6 +159,7 @@ class HubViewModel(
             is HubEvent.MaintenanceEvent -> onMaintenanceEvent(event)
             is HubEvent.TrackingEvent -> onTrackingEvent(event)
             is HubEvent.ShuttleEvent -> onShuttleEvent(event)
+            is HubEvent.SelfEvent -> onSelfEvent(event)
             is HubEvent.ActionVehicleEvent -> onActionVehicleEvent(event)
             is HubEvent.FleetEvent -> onFleetEvent(event)
             is HubEvent.DriverEvent -> onDriverEvent(event)
@@ -359,7 +362,28 @@ class HubViewModel(
      */
     private suspend fun loadTrips() {
         val driverId = if (currentState.role == HubRole.Driver) currentState.myDriverId else null
-        repository.trips(driverId).fold(ok = { rows -> setState { copy(trips = rows) } })
+        repository.trips(driverId).fold(
+            ok = { rows ->
+                setState {
+                    val next = copy(trips = rows)
+                    // A shuttle-only driver should not open onto an empty
+                    // Rides segment: the first load lands on whichever has
+                    // something, until the driver picks one themselves.
+                    if (driverTripViewPicked) {
+                        next
+                    } else {
+                        next.copy(
+                            driverTripView = when {
+                                next.driverRides.isEmpty() && next.driverShuttleGroups.isNotEmpty() ->
+                                    DriverTripView.Routes
+
+                                else -> DriverTripView.Rides
+                            },
+                        )
+                    }
+                }
+            },
+        )
     }
 
     /**
@@ -839,6 +863,82 @@ class HubViewModel(
             return
         }
         sendEffect(HubEffect.OpenLink("$MAPS_URL${point.lat},${point.long}"))
+    }
+
+    // A passenger's and a driver's own pages ---------------------------------
+
+    private fun onSelfEvent(event: HubEvent.SelfEvent) {
+        when (event) {
+            is HubEvent.RideFiltersChanged -> setState { copy(rideFilters = event.filters) }
+            is HubEvent.TripFiltersChanged -> setState { copy(tripFilters = event.filters) }
+            HubEvent.ToggleFiltersExpanded -> setState { copy(filtersExpanded = !filtersExpanded) }
+            HubEvent.CallADriver -> setState {
+                // The caller is always the first passenger, by construction —
+                // the web's picker enforces it, and a request with nobody on it
+                // is refused.
+                val me = viewer.userId.takeIf { it.isNotBlank() }?.let { id ->
+                    HubPassenger(userId = id, name = viewer.fullName)
+                }
+                copy(rideEditor = RideEditor(isSelf = true, passengers = listOfNotNull(me)))
+            }
+
+            is HubEvent.DriverTripViewChanged -> setState {
+                copy(driverTripView = event.view, driverTripViewPicked = true)
+            }
+
+            is HubEvent.DriverRideTabChanged -> setState { copy(driverRideTab = event.tab) }
+            is HubEvent.AdvanceTrip -> advanceTrip(event.trip)
+            is HubEvent.AdvanceRide -> advanceRide(event.ride)
+            is HubEvent.OpenRide -> setState { copy(openRide = event.id) }
+            HubEvent.CloseRide -> setState { copy(openRide = null) }
+            is HubEvent.TrackRideDriver -> event.ride.assignedDriverId?.let { openDriverOnMap(it) }
+                ?: notice(str(S.desktop_hub_no_position_yet), success = false)
+        }
+    }
+
+    /**
+     * The driver's next step on one row of their My Trips.
+     *
+     * Three routes, picked by what the row is — never by its status alone,
+     * because a shuttle run and a trip both say `in_transit` and mean
+     * different next steps: a run goes to `/shuttles/runs/:id`, a ride request
+     * to `/ride-request/:id/status`, and a trip to `/trip/:id/status`.
+     */
+    private fun advanceTrip(trip: Trip) {
+        val step = DriverStep.forTrip(trip) ?: return
+        setState { copy(busyRowId = trip.id) }
+        launch {
+            val result = when {
+                trip.isShuttleRun ->
+                    repository.setShuttleRunStatus(trip.id, ShuttleRunStatus.from(step.next))
+
+                trip.kind == TripResourceKind.RideRequest ->
+                    repository.setRideStatus(trip.id, RideStatus.from(step.next))
+
+                else -> repository.setTripStatus(trip.id, TripStatus.from(step.next))
+            }
+            result.fold(
+                ok = {
+                    notice(str(S.desktop_hub_step_done, step.label()))
+                    loadTrips()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
+    }
+
+    private fun advanceRide(ride: RideRequest) {
+        val step = DriverStep.forRide(ride) ?: return
+        setState { copy(busyRowId = ride.id) }
+        launch {
+            repository.setRideStatus(ride.id, RideStatus.from(step.next)).fold(
+                ok = {
+                    notice(str(S.desktop_hub_step_done, step.label()))
+                    loadRides()
+                },
+            )
+            setState { copy(busyRowId = "") }
+        }
     }
 
     // Shuttles ---------------------------------------------------------------
@@ -1565,10 +1665,22 @@ class HubViewModel(
             ?.let { "${day}T$it".toEpochMillisOrNull() },
     )
 
+    /**
+     * Opens a trip's detail.
+     *
+     * The row in hand is shown at once — the web's passenger and driver
+     * detail is the row itself — and only a real trip is then re-read: a ride
+     * request or a shuttle run in the same list is not a `/trip/:id`, and
+     * fetching one answers `trip_not_found` over a dialog that was fine.
+     */
     private fun openTrip(id: String) {
+        val row = currentState.trips.firstOrNull { it.id == id }
+        row?.let { setState { copy(openTrip = it) } }
+        if (row != null && (row.kind != TripResourceKind.Trip || row.isShuttleRun)) return
         launch {
             repository.trip(id).fold(
-                ok = { trip -> setState { copy(openTrip = trip) } },
+                ok = { trip -> setState { copy(openTrip = trip ?: openTrip) } },
+                bad = { if (row == null) setState { copy(openTrip = null) } },
             )
             // The lifecycle log is allowed to fail on its own: a shuttle run
             // has none and the route answers 400 for its ids.
@@ -1671,7 +1783,9 @@ class HubViewModel(
 
             HubEvent.HideActiveCars -> setState { copy(showActiveCars = false) }
             HubEvent.NewRide -> setState { copy(rideEditor = RideEditor()) }
-            is HubEvent.EditRide -> setState { copy(rideEditor = event.ride.toEditor()) }
+            is HubEvent.EditRide -> setState {
+                copy(rideEditor = event.ride.toEditor().copy(isSelf = role != HubRole.Coordinator))
+            }
             is HubEvent.RideEditorChanged -> setState { copy(rideEditor = event.editor) }
             HubEvent.SaveRide -> saveRide()
             HubEvent.CloseRideEditor -> setState { copy(rideEditor = null) }
@@ -1701,6 +1815,7 @@ class HubViewModel(
                             rideId = event.ride.id,
                             driverId = event.ride.assignedDriverId,
                             vehicleId = event.ride.assignedVehicleId,
+                            approveFirst = event.ride.status == RideStatus.Pending,
                         ),
                     )
                 }
@@ -1768,7 +1883,9 @@ class HubViewModel(
         val draft = RideDraft(
             pickup = editor.pickup,
             dropoff = editor.dropoff,
-            passengers = editor.passengers,
+            // Members first, then guests — a guest row carries no user id,
+            // because the server refuses an empty one.
+            passengers = editor.passengers + editor.guests.filter { it.name.isNotBlank() },
             stops = editor.stops,
             priority = editor.priority,
             notes = editor.notes,
@@ -1776,6 +1893,12 @@ class HubViewModel(
                 nowMillis()
             } else {
                 editor.scheduledPickupTimeMs
+            },
+            callType = when {
+                // An edit sends no call type, as the web's update does not.
+                editor.id != null -> null
+                editor.isSelf -> RideDraft.CALL_SELF
+                else -> RideDraft.CALL_COORDINATOR
             },
         )
         setState { copy(rideEditor = editor.copy(saving = true)) }
@@ -1859,10 +1982,14 @@ class HubViewModel(
         }
         setState { copy(assignEditor = editor.copy(saving = true)) }
         launch {
-            val result = if (editor.isTrip) {
-                repository.assignTrip(editor.rideId, editor.driverId, editor.vehicleId)
-            } else {
-                repository.assignRide(editor.rideId, editor.driverId, editor.vehicleId)
+            val result = when {
+                editor.isTrip -> repository.assignTrip(editor.rideId, editor.driverId, editor.vehicleId)
+                // An approve that fails stops here; its error is the one shown.
+                editor.approveFirst -> repository.approveRide(editor.rideId).flatMap {
+                    repository.assignRide(editor.rideId, editor.driverId, editor.vehicleId)
+                }
+
+                else -> repository.assignRide(editor.rideId, editor.driverId, editor.vehicleId)
             }
             result.fold(
                 ok = {

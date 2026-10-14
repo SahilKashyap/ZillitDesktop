@@ -57,6 +57,8 @@ internal fun HubDialogs(state: HubUiState, onEvent: (HubEvent) -> Unit) {
     ActionVehicleDialogs(state, onEvent)
     DriverDetailsDialog(state, onEvent)
     RideDialog(state, onEvent)
+    CallDriverDialog(state, onEvent)
+    RideDetailDialog(state, onEvent)
     AllocationDialog(state, onEvent)
     SwapDialog(state, onEvent)
     StopDialog(state, onEvent)
@@ -353,7 +355,8 @@ private fun LicenceRow(frontName: String?, backName: String?, onPick: (Boolean) 
 
 @Composable
 private fun RideDialog(state: HubUiState, onEvent: (HubEvent) -> Unit) {
-    val editor = state.rideEditor ?: return
+    // A passenger's or a driver's own request is the Call a Driver form.
+    val editor = state.rideEditor?.takeUnless { it.isSelf } ?: return
     ZillitDialogShell(
         title = if (editor.isEdit) str(S.desktop_hub_edit_ride) else str(S.desktop_hub_new_ride),
         visible = true,

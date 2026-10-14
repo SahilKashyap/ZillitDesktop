@@ -121,7 +121,20 @@ data class RideDraft(
     val notes: String = "",
     /** Null means "as soon as possible"; the server is sent "now". */
     val scheduledPickupTimeMs: Long? = null,
-)
+    /**
+     * Who is asking, as `call_type` says it — or null on an edit.
+     *
+     * A passenger's or a driver's own request is `self`; one a coordinator
+     * raises for somebody else is `coordinator`. The desktop used to send
+     * `coordinator` for everyone. An edit sends none, as the web's does.
+     */
+    val callType: String? = CALL_COORDINATOR,
+) {
+    companion object {
+        const val CALL_COORDINATOR = "coordinator"
+        const val CALL_SELF = "self"
+    }
+}
 
 /** A trip being created. */
 data class TripDraft(

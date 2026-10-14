@@ -386,19 +386,33 @@ internal fun JsonObject.toRideRequest(): RideRequest? {
         assignedVehicleId = refId("assigned_vehicle", "vehicle_id"),
         assignedVehicleLabel = refVehicleLabel("assigned_vehicle", "vehicle_id"),
         scheduledPickupTimeMs = long("scheduled_pickup_time", "pickup_time").takeIf { it > 0 },
-        createdMs = long("created", "created_at"),
+        createdMs = long("created", "created_at", "createdAt"),
         rejectionReason = str("rejection_reason", "reject_reason"),
         cancellationReason = str("cancellation_reason", "cancel_reason", "reason"),
         etaMinutes = int("eta_minutes", "eta"),
+        requesterPhone = requester?.str("contact_number", "phone").orEmpty(),
+        department = departmentName(),
+        finishedMs = finishedMillis(),
+        serverPassengerCount = int("passenger_count") ?: 0,
     )
 }
 
 internal fun JsonObject.toTrip(): Trip? {
     val id = id().takeIf { it.isNotBlank() } ?: return null
+    val requester = obj("requester_snapshot", "requester")
+    // A shuttle run nests its route populated under `route_details`, or
+    // under `route` when the `/trip` union populates it.
+    val route = obj("route_details") ?: obj("route")
+    val departure = long("scheduled_departure", "scheduledDeparture")
     return Trip(
         id = id,
         title = str("title"),
-        kind = TripResourceKind.from(str("resource_type")),
+        kind = when {
+            str("resource_type").isNotBlank() -> TripResourceKind.from(str("resource_type"))
+            // The `/shuttles/schedule` shape sets no resource type.
+            departure > 0 || str("trip_type") == "shuttle" -> TripResourceKind.ShuttleRun
+            else -> TripResourceKind.Trip
+        },
         status = TripStatus.from(str("trip_status", "status")),
         priority = RidePriority.from(str("priority")),
         tripType = str("trip_type").ifBlank { "one_time" },
@@ -410,14 +424,52 @@ internal fun JsonObject.toTrip(): Trip? {
         driverName = refName("assigned_driver", "driver_id", "driver"),
         vehicleId = refId("assigned_vehicle", "vehicle_id", "vehicle"),
         vehicleLabel = refVehicleLabel("assigned_vehicle", "vehicle_id", "vehicle"),
-        scheduledPickupTimeMs = long("scheduled_pickup_time", "pickup_time").takeIf { it > 0 },
+        scheduledPickupTimeMs = departure.takeIf { it > 0 }
+            ?: long("scheduled_pickup_time", "pickup_time").takeIf { it > 0 },
         notes = str("notes"),
         // `active_days` is an integer array here (Mon=1 … Sun=0 or 7) and a
         // list of day names on the permanent-trip routes. [HubDay.from] takes
         // either, so the two never need telling apart at the call site.
         activeDays = activeDays(),
-        createdMs = long("created", "created_at"),
+        createdMs = long("created", "created_at", "createdAt"),
+        finishedMs = finishedMillis(),
+        requesterName = requester?.str("full_name", "name").orEmpty(),
+        requesterUserId = requester?.refId("user_id") ?: requester?.id()?.takeIf { it.isNotBlank() },
+        requesterPhone = requester?.str("contact_number", "phone").orEmpty(),
+        department = departmentName(),
+        passengerCount = int("passenger_count") ?: 0,
+        routeId = refId("route_id", "route"),
+        routeName = route?.str("name").orEmpty().ifBlank { str("route_name") },
+        routeType = route?.str("type").orEmpty().ifBlank { str("route_type") },
+        startDateMs = long("start_date"),
+        endDateMs = long("end_date"),
+        startTime = str("start_time"),
+        endTime = str("end_time"),
     )
+}
+
+/**
+ * When a ride stopped: completed, or — for one that never ran — cancelled or
+ * refused. The web's "Completed · Fri, 19 Jun 2026, 15:38" footer reads this.
+ */
+private fun JsonObject.finishedMillis(): Long =
+    long("completed_at", "completedAt", "completed_time")
+        .takeIf { it > 0 }
+        ?: long("cancelled_at", "rejected_at")
+
+/**
+ * The department as words.
+ *
+ * It arrives as a plain string on older rows and as `{ _id, name, identifier }`
+ * on current ones — rendering the object raw is what crashed the web's card.
+ */
+private fun JsonObject.departmentName(): String {
+    val holder = this["department"] ?: obj("requester")?.get("department")
+    return when (holder) {
+        is JsonPrimitive -> holder.content.takeIf { it != "null" }.orEmpty()
+        is JsonObject -> holder.str("name", "identifier")
+        else -> ""
+    }
 }
 
 private fun JsonObject.activeDays(): List<HubDay> {
@@ -660,7 +712,8 @@ internal fun stopBody(stop: HubStop): JsonObject = buildJsonObject {
 }
 
 internal fun rideBody(draft: RideDraft): JsonObject = buildJsonObject {
-    put("call_type", "coordinator")
+    // Who is asking. Omitted on an edit, as the web's update sends none.
+    draft.callType?.let { put("call_type", it) }
     put("priority", draft.priority.wire)
     put("pickup_location", draft.pickup.toWire())
     put("dropoff_location", draft.dropoff.toWire())
