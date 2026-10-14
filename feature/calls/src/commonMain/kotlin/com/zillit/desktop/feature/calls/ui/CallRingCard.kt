@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +49,7 @@ import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
+import com.zillit.desktop.feature.calls.domain.declineReplyTarget
 import kotlin.math.roundToInt
 
 /**
@@ -68,6 +72,10 @@ fun CallRingCard(
     loadGroupPicture: suspend (String) -> ImageBitmap? = { null },
 ) {
     val session = state.session ?: return
+    // Open only from the Message action, and only while this card is up: the
+    // ring ends with the call, and a panel that outlived it would be a reply
+    // to nobody.
+    var replying by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg),
         contentAlignment = Alignment.BottomEnd,
@@ -95,43 +103,77 @@ fun CallRingCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            session.ringContext(incoming)?.let { context ->
-                ZillitText(
-                    text = context.uppercase(),
-                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = CallPalette.muted,
-                    maxLines = 1,
+            if (replying) {
+                CallQuickReplyPanel(
+                    onSend = { text -> onEvent(CallEvent.DeclineWithMessage(text)) },
+                    onCancel = { replying = false },
                 )
+                return@Column
             }
-            PulsingAvatar(session, loadAvatar, loadGroupPicture)
-            ZillitText(
-                text = session.ringTitle,
-                style = ZillitTheme.typography.titleLarge.copy(fontSize = NAME_FONT, fontWeight = FontWeight.SemiBold),
-                color = CallPalette.text,
-                maxLines = 1,
+            RingIdentity(state, session, incoming, loadAvatar, loadGroupPicture)
+            RingActions(
+                incoming = incoming,
+                video = session.hasVideo,
+                // Nobody to reply to — a ring with no caller id on it, which
+                // Line 1's thinner roster can still produce — and the action
+                // would decline while silently sending nothing.
+                canReply = incoming && session.declineReplyTarget() != null,
+                onReply = { replying = true },
+                onEvent = onEvent,
             )
-            ZillitText(
-                text = if (incoming) session.incomingRingSubtitle() else state.outgoingStatusLine(),
-                style = ZillitTheme.typography.bodySmall,
-                color = CallPalette.muted,
-                maxLines = 1,
-            )
-            if (incoming && session.addedByName.isNotBlank()) {
-                ZillitText(
-                    text = str(S.desktop_call_added_you, session.addedByName),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = CallPalette.muted,
-                    maxLines = 1,
-                )
-            }
-            RingActions(incoming, session.hasVideo, onEvent)
         }
     }
 }
 
-/** Accept and decline, or a lone cancel — the ring's whole vocabulary. */
+/** Who is ringing, and what kind of call it is: the card above its buttons. */
 @Composable
-private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) -> Unit) {
+private fun RingIdentity(
+    state: CallUiState,
+    session: CallSession,
+    incoming: Boolean,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadGroupPicture: suspend (String) -> ImageBitmap?,
+) {
+    session.ringContext(incoming)?.let { context ->
+        ZillitText(
+            text = context.uppercase(),
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = CallPalette.muted,
+            maxLines = 1,
+        )
+    }
+    PulsingAvatar(session, loadAvatar, loadGroupPicture)
+    ZillitText(
+        text = session.ringTitle,
+        style = ZillitTheme.typography.titleLarge.copy(fontSize = NAME_FONT, fontWeight = FontWeight.SemiBold),
+        color = CallPalette.text,
+        maxLines = 1,
+    )
+    ZillitText(
+        text = if (incoming) session.incomingRingSubtitle() else state.outgoingStatusLine(),
+        style = ZillitTheme.typography.bodySmall,
+        color = CallPalette.muted,
+        maxLines = 1,
+    )
+    if (incoming && session.addedByName.isNotBlank()) {
+        ZillitText(
+            text = str(S.desktop_call_added_you, session.addedByName),
+            style = ZillitTheme.typography.bodySmall,
+            color = CallPalette.muted,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Accept, decline and reply, or a lone cancel — the ring's whole vocabulary. */
+@Composable
+private fun RingActions(
+    incoming: Boolean,
+    video: Boolean,
+    canReply: Boolean,
+    onReply: () -> Unit,
+    onEvent: (CallEvent) -> Unit,
+) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxl),
         verticalAlignment = Alignment.CenterVertically,
@@ -154,6 +196,17 @@ private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) 
                 pulsing = true,
                 onClick = { onEvent(CallEvent.Accept) },
             )
+            // Last, as on Android's ring (`layout_calling_picker_view`:
+            // decline, answer, message), and in the dock's neutral grey: it
+            // is neither of the two answers the hand is reaching for.
+            if (canReply) {
+                CaptionedAction(
+                    icon = ZillitIcons.Chat,
+                    caption = str(S.message),
+                    background = CallPalette.control,
+                    onClick = onReply,
+                )
+            }
         } else {
             CaptionedAction(
                 icon = ZillitIcons.PhoneDown,

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,14 +31,17 @@ import androidx.compose.ui.window.rememberWindowState
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.declineReplyTarget
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallViewModel
+import com.zillit.desktop.feature.calls.ui.quickReplyPresets
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.delay
@@ -78,8 +82,14 @@ internal fun ApplicationScope.IncomingCallWidget(
     val ringing = phase == CallPhase.Incoming
     var mainInFront by remember { mutableStateOf(frame.isInFront()) }
     var dismissed by remember { mutableStateOf(false) }
+    // The quick replies, when the Message button has been pressed. The card
+    // grows for them rather than opening a second window: this one is already
+    // a floating box in the corner, and a sheet over it would be two things to
+    // dismiss for one answer.
+    var replying by remember { mutableStateOf(false) }
     LaunchedEffect(ringing) {
         dismissed = false
+        replying = false
         while (ringing) {
             mainInFront = frame.isInFront()
             delay(FOCUS_POLL_MILLIS)
@@ -99,6 +109,9 @@ internal fun ApplicationScope.IncomingCallWidget(
         size = DpSize(CARD_WIDTH, CARD_HEIGHT),
         position = WindowPosition.Aligned(Alignment.TopEnd),
     )
+    LaunchedEffect(replying) {
+        windowState.size = DpSize(CARD_WIDTH, if (replying) REPLY_HEIGHT else CARD_HEIGHT)
+    }
     Window(
         onCloseRequest = { dismissed = true },
         state = windowState,
@@ -116,18 +129,37 @@ internal fun ApplicationScope.IncomingCallWidget(
                     onAccept = { calls.onEvent(CallEvent.Accept) },
                     onDecline = { calls.onEvent(CallEvent.Decline) },
                     showMain = showMain,
+                    replying = replying,
+                    canReply = current.declineReplyTarget() != null,
+                    onReply = { replying = true },
+                    onCancelReply = { replying = false },
+                    onSendReply = { text -> calls.onEvent(CallEvent.DeclineWithMessage(text)) },
                 )
             }
         }
     }
 }
 
+/**
+ * The floating card's face.
+ *
+ * [replying] swaps the two buttons for Android's ready-made decline lines. The
+ * window behind this card takes no keyboard focus — by design, so a ring never
+ * steals a keystroke — so there is no box to write your own in: that lives on
+ * the ring card inside the main window, which the header opens.
+ */
 @Composable
+@Suppress("LongParameterList") // One card, one ring, one set of answers.
 internal fun IncomingCallCard(
     current: CallSession,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
     showMain: () -> Unit,
+    replying: Boolean = false,
+    canReply: Boolean = false,
+    onReply: () -> Unit = {},
+    onCancelReply: () -> Unit = {},
+    onSendReply: (String) -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
     Column(
@@ -153,22 +185,94 @@ internal fun IncomingCallCard(
                 maxLines = 1,
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        if (replying) {
+            QuickReplyRows(onSend = onSendReply, onCancel = onCancelReply)
+            return@Column
+        }
+        RingButtons(
+            onAccept = { onAccept(); showMain() },
+            onDecline = onDecline,
+            canReply = canReply,
+            onReply = onReply,
+        )
+    }
+}
+
+/** Decline, Accept, and Message when there is anyone to send one to. */
+@Composable
+private fun RingButtons(
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+    canReply: Boolean,
+    onReply: () -> Unit,
+) {
+    // Three across a 340dp card is tight, so the row drops to the small size
+    // when the third one is there — a label that fits beats an icon with no
+    // room for the word beside it.
+    val buttonSize = if (canReply) ButtonSize.Small else ButtonSize.Medium
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        ZillitButton(
+            text = str(S.decline),
+            onClick = onDecline,
+            modifier = Modifier.weight(1f),
+            variant = ButtonVariant.Danger,
+            size = buttonSize,
+            leadingIcon = ZillitIcons.PhoneDown,
+        )
+        ZillitButton(
+            text = str(S.accept),
+            onClick = onAccept,
+            modifier = Modifier.weight(1f),
+            size = buttonSize,
+            leadingIcon = ZillitIcons.Phone,
+        )
+        if (canReply) {
             ZillitButton(
-                text = str(S.decline),
-                onClick = onDecline,
+                text = str(S.message),
+                onClick = onReply,
                 modifier = Modifier.weight(1f),
-                variant = ButtonVariant.Danger,
-                leadingIcon = ZillitIcons.PhoneDown,
+                variant = ButtonVariant.Secondary,
+                size = buttonSize,
+                leadingIcon = ZillitIcons.Chat,
             )
-            ZillitButton(
-                text = str(S.accept),
-                onClick = {
-                    onAccept()
-                    showMain()
-                },
-                modifier = Modifier.weight(1f),
-                leadingIcon = ZillitIcons.Phone,
+        }
+    }
+}
+
+/** The three presets and a way back, sized for a card this small. */
+@Composable
+private fun QuickReplyRows(onSend: (String) -> Unit, onCancel: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        quickReplyPresets().forEach { preset ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(REPLY_CORNER))
+                    .background(colors.surface)
+                    .clickable { onSend(preset) }
+                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+            ) {
+                ZillitText(
+                    text = preset,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                )
+            }
+        }
+        Box(
+            Modifier.fillMaxWidth().clickable(onClick = onCancel).padding(top = ZillitTheme.spacing.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitText(
+                text = str(S.cancel),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
             )
         }
     }
@@ -185,5 +289,9 @@ internal fun ComposeWindow?.isInFront(): Boolean = this?.isFocused == true
 
 private val CARD_WIDTH = 340.dp
 private val CARD_HEIGHT = 100.dp
+
+/** Room for the three presets and the way back out of them. */
+private val REPLY_HEIGHT = 170.dp
+private val REPLY_CORNER = 8.dp
 private val CORNER = 12.dp
 private const val FOCUS_POLL_MILLIS = 400L

@@ -328,6 +328,12 @@ data class CallSession(
     val startedAtMillis: Long = 0,
     /** Who added us to a call already under way, for the ring card; blank on a fresh call. */
     val addedByName: String = "",
+    /**
+     * [addedByName]'s user id — never displayed, and read by one thing only:
+     * [declineReplyTarget], so a "can't talk" sent from a call we were pulled
+     * into reaches whoever pulled us in. Blank on a fresh call.
+     */
+    val addedByUserId: String = "",
 ) {
     /**
      * True once we have what Agora needs to join.

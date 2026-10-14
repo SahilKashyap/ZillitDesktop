@@ -374,6 +374,12 @@ sealed interface CallEvent {
 
     data object Accept : CallEvent
     data object Decline : CallEvent
+
+    /**
+     * Decline, and send [text] to whoever rang — the ring card's Message
+     * action, Android's quick reply. Blank text declines and sends nothing.
+     */
+    data class DeclineWithMessage(val text: String) : CallEvent
     data object HangUp : CallEvent
     data object ToggleMic : CallEvent
     data object ToggleCamera : CallEvent
@@ -480,9 +486,12 @@ sealed interface CallEvent {
     /** Puts the invite link on the clipboard, and says so. */
     data object CopyInviteLink : CallEvent
 
-    /** The second-call banner's two answers. */
+    /** The second-call banner's answers. */
     data object DeclineSecondCall : CallEvent
     data object EndAndAcceptSecondCall : CallEvent
+
+    /** Decline the waiting call with a quick reply to whoever is ringing it. */
+    data class DeclineSecondCallWithMessage(val text: String) : CallEvent
 
     /** A meet's Rejoin, after its automatic attempts are spent. */
     data object RejoinMeet : CallEvent
@@ -856,6 +865,7 @@ class CallViewModel(
             is CallEvent.Place -> place(event)
             CallEvent.Accept -> coordinator.accept()
             CallEvent.Decline -> coordinator.decline()
+            is CallEvent.DeclineWithMessage -> coordinator.declineWithMessage(event.text)
             CallEvent.HangUp -> coordinator.hangUp()
             CallEvent.ToggleMic -> coordinator.toggleMicrophone()
             CallEvent.ToggleCamera -> coordinator.toggleCamera()
@@ -942,6 +952,8 @@ class CallViewModel(
             }
             CallEvent.CopyInviteLink -> copyInviteLink()
             CallEvent.DeclineSecondCall -> coordinator.declineSecondCall()
+            is CallEvent.DeclineSecondCallWithMessage ->
+                coordinator.declineSecondCallWithMessage(event.text)
             CallEvent.EndAndAcceptSecondCall -> coordinator.endAndAcceptSecondCall()
             CallEvent.RejoinMeet -> coordinator.rejoinMeet()
             else -> Unit

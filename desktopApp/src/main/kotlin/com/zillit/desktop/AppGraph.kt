@@ -1639,6 +1639,7 @@ sealed interface AppGraph {
                 // What the phones and the web do when a recording stops: the
                 // file goes to the conversation, not only to this disk.
                 share = callRecordingShare(attachmentUploader, chatRepository),
+                quickReply = callQuickReply(chatRepository),
             )
             callCoordinatorForProjectSwitch = callCoordinator
 
@@ -2074,6 +2075,7 @@ private fun buildCallCoordinator(
     selfName: () -> String?,
     preferences: PreferenceStore,
     share: com.zillit.desktop.feature.calls.domain.CallRecordingShare,
+    quickReply: com.zillit.desktop.feature.calls.domain.CallQuickReply,
     line3: LiveKitLine?,
     lineAvailable: (CallProvider, String?) -> Boolean,
 ): CallCoordinator = CallCoordinator(
@@ -2093,6 +2095,7 @@ private fun buildCallCoordinator(
     plane = buildStatusPlane(config, planeClient, selfDeviceId),
     selfName = selfName,
     share = share,
+    quickReply = quickReply,
     // Device-scoped: the headset belongs to the machine, so the choice
     // survives sign-out and the next person to use this computer.
     loadAudioDevices = {

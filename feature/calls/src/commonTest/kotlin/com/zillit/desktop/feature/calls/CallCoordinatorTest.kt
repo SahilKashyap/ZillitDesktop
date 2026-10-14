@@ -236,6 +236,7 @@ class CallCoordinatorTest {
         engine: CallEngine = NoopCallEngine(),
         now: () -> Long = { 1_000L },
         share: com.zillit.desktop.feature.calls.domain.CallRecordingShare? = null,
+        quickReply: com.zillit.desktop.feature.calls.domain.CallQuickReply? = null,
         callApi: CallApi? = null,
     ): CallCoordinator {
         val bus = SocketEventBus(socket)
@@ -265,6 +266,7 @@ class CallCoordinatorTest {
             selfDeviceId = { "my-device" },
             plane = plane ?: FakePlane(),
             share = share,
+            quickReply = quickReply,
             now = now,
         )
         coordinator.start()
@@ -467,6 +469,56 @@ class CallCoordinatorTest {
          "sender_user_id":"caller","sender_device_id":"caller-device","caller_name":"Vivek",
          "receiver_user_id":"me"}
     """.trimIndent()
+
+    /** What a decline's quick reply was handed, so a test can read it back. */
+    private class ReplySink : com.zillit.desktop.feature.calls.domain.CallQuickReply {
+        val sent = mutableListOf<Pair<com.zillit.desktop.feature.calls.domain.CallChatTarget, String>>()
+
+        override suspend fun send(
+            target: com.zillit.desktop.feature.calls.domain.CallChatTarget,
+            text: String,
+        ): ZillitResult<Unit> {
+            sent += target to text
+            return ZillitResult.Success(Unit)
+        }
+    }
+
+    @Test
+    fun `declining with a message posts it to the caller and still declines`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val sink = ReplySink()
+            val coordinator = coordinator(socket, quickReply = sink)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+
+            coordinator.declineWithMessage("  I will call you later.  ")
+            runCurrent()
+
+            assertEquals(1, sink.sent.size)
+            // Trimmed, and addressed to the person who rang — not to their
+            // device id, which chat discards in silence.
+            assertEquals("caller", sink.sent.single().first.receiverId)
+            assertEquals(false, sink.sent.single().first.isGroup)
+            assertEquals("I will call you later.", sink.sent.single().second)
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
+
+    @Test
+    fun `a blank quick reply declines and sends nothing`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val sink = ReplySink()
+            val coordinator = coordinator(socket, quickReply = sink)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+
+            coordinator.declineWithMessage("   ")
+            runCurrent()
+
+            assertEquals(0, sink.sent.size)
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
 
     @Test
     fun `a ring moves Idle to Incoming`() = runTest(StandardTestDispatcher()) {
@@ -1198,6 +1250,41 @@ class CallCoordinatorTest {
             assertNull(coordinator.secondCall.value)
             assertEquals(listOf(CallStatus.Ringing, CallStatus.Declined), plane.announced)
             assertEquals("u1", coordinator.session.value?.callUuid)
+        }
+
+    /**
+     * The quick reply on the banner answers the call that is *waiting*. Reading
+     * the live call instead is the bug Android's QA found: the reply went to
+     * whoever we were already talking to.
+     */
+    @Test
+    fun `the second call's quick reply goes to whoever is ringing in`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val sink = ReplySink()
+            val coordinator = coordinator(socket, plane = FakePlane(), quickReply = sink)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            val second = ring
+                .replace("\"u1\"", "\"u2\"")
+                .replace("\"caller\"", "\"second-caller\"")
+                .replace("caller-device", "other-device")
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, second)
+            runCurrent()
+            assertEquals("u2", coordinator.secondCall.value?.callUuid)
+
+            coordinator.declineSecondCallWithMessage("Can I call you later?")
+            runCurrent()
+
+            assertEquals("second-caller", sink.sent.single().first.receiverId)
+            assertEquals("Can I call you later?", sink.sent.single().second)
+            assertNull(coordinator.secondCall.value)
+            // The call we were on is untouched by any of it.
+            assertEquals("u1", coordinator.session.value?.callUuid)
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
         }
 
     @Test

@@ -289,6 +289,8 @@ data class LiveKitInvite(
     /** How the call started; a "private" one that grew keeps the private look. */
     val startedAs: CallMode? = null,
     val addedByName: String = "",
+    /** [addedByName]'s user id; the decline quick-reply's destination. */
+    val addedByUserId: String = "",
     val expiresAtMillis: Long? = null,
     val token: String = "",
     val url: String = "",
@@ -329,6 +331,10 @@ data class LiveKitInvite(
             livekitToken = token,
             livekitPreconnectToken = preconnectToken,
             addedByName = addedByName.ifBlank { if (grewFromPrivate) fromName else "" },
+            // Same fallback as the name above it, and for the same reason: a
+            // 1:1 that grew around us names nobody in `addedBy`, but the
+            // person who grew it is the caller, and a reply belongs with them.
+            addedByUserId = addedByUserId.ifBlank { if (grewFromPrivate) fromUserId else "" },
         )
     }
 
@@ -501,6 +507,7 @@ fun readInvite(obj: JsonObject): LiveKitInvite? {
         },
         startedAs = started?.let { CallMode.ofWire(it) },
         addedByName = (obj["addedBy"] as? JsonObject)?.text("displayName").orEmpty(),
+        addedByUserId = (obj["addedBy"] as? JsonObject)?.text("userId").orEmpty(),
         expiresAtMillis = (obj["expiresAt"] as? JsonPrimitive)?.longOrNull,
         token = livekit?.text("token").orEmpty(),
         url = livekit?.text("url").orEmpty(),

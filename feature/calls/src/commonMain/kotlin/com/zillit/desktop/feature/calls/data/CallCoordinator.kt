@@ -34,6 +34,7 @@ import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.data.protoo.toJoin
 import com.zillit.desktop.feature.calls.domain.CallChatTarget
+import com.zillit.desktop.feature.calls.domain.CallQuickReply
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallDevices
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
@@ -49,6 +50,7 @@ import com.zillit.desktop.feature.calls.domain.CallRecording
 import com.zillit.desktop.feature.calls.domain.CallRecordingShare
 import com.zillit.desktop.feature.calls.domain.CallRingState
 import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.declineReplyTarget
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -188,6 +190,11 @@ class CallCoordinator(
      * which is what a host without chat wiring can honestly offer.
      */
     private val share: CallRecordingShare? = null,
+    /**
+     * Where a decline's quick reply is posted. Null drops the text and
+     * declines anyway — a host without chat wiring can still answer the call.
+     */
+    private val quickReply: CallQuickReply? = null,
     /**
      * The audio devices this machine chose last time, and where to put a new
      * choice. A headset picked during one call is still the headset the user
@@ -527,6 +534,19 @@ class CallCoordinator(
      */
     private val _chimes = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val chimes: SharedFlow<Unit> = _chimes.asSharedFlow()
+
+    /**
+     * Decline the waiting call and say why — the banner's Message action.
+     *
+     * Addressed off the WAITING session, never the live one: the two calls
+     * have different callers, and reading the call we are on sent Android's
+     * reply to the wrong person until its own QA caught it.
+     */
+    fun declineSecondCallWithMessage(message: String) {
+        val waiting = _secondCall.value ?: return
+        postQuickReply(waiting, message)
+        declineSecondCall()
+    }
 
     fun declineSecondCall() {
         val waiting = _secondCall.value ?: return
@@ -1418,6 +1438,46 @@ class CallCoordinator(
         scope.launch { plane.announceSelf(current, CallStatus.Declined) }
         scope.launch { sendFinalStatus(current, CallStatus.Declined) }
         finish(current, CallEndReason.Declined)
+    }
+
+    /**
+     * Decline, and say why in chat — Android's quick reply, offered by the
+     * ring card's Message action.
+     *
+     * The message goes first and on its own coroutine: it is posted on the
+     * app's scope rather than the screen's, so tearing the ring down a
+     * millisecond later (which [decline] does) cannot cancel the send — the
+     * bug Android wraps in `NonCancellable` for the same reason. A failed
+     * post is logged and nothing more; the decline is what the caller is
+     * waiting on, and holding it for a chat round trip would be the wrong
+     * trade in both directions.
+     */
+    fun declineWithMessage(message: String) {
+        val current = _session.value ?: return
+        if (_phase.value != CallPhase.Incoming) return
+        postQuickReply(current, message)
+        decline()
+    }
+
+    /**
+     * Posts a decline's reply into [session]'s thread, and nothing more: the
+     * decline is the caller's own business and happens either way.
+     *
+     * On the app's scope rather than the screen's, so tearing the ring down a
+     * millisecond later cannot cancel the send — the bug Android wraps in
+     * `NonCancellable` for the same reason. Blank text, no destination or no
+     * chat wiring: nothing is sent, silently, because every one of those is a
+     * decline with no message rather than a failure the user can act on.
+     */
+    private fun postQuickReply(session: CallSession, message: String) {
+        val text = message.trim()
+        val target = session.declineReplyTarget()
+        if (text.isEmpty() || target == null || quickReply == null) return
+        scope.launch {
+            quickReply.send(target, text).onFailure { error ->
+                ZillitLog.w(TAG) { "decline reply not delivered to ${target.receiverId}: $error" }
+            }
+        }
     }
 
     // ── In-call controls ────────────────────────────────────────────────
