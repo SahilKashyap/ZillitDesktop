@@ -395,7 +395,7 @@
     <string name="desktop_choose_a_sub_type">Choose a sub-type</string>
     <string name="desktop_email_conversation_gone">This conversation is no longer open.</string>
     <string name="desktop_new_sub_type">New sub-type</string>
-    <string name="desktop_chat_text_limit_exceeded">The text limit exceeds 2000 characters.</string>
+    <string name="desktop_chat_text_limit_exceeded">The text limit exceeds 8000 characters.</string>
     <string name="desktop_choose_a_language">Choose a language</string>
     <string name="desktop_chat_media_above_70mb">The media above 70MB is not permitted to send.</string>
     <string name="desktop_email_code_helper">We\'ll send a one-time code here to confirm it.</string>

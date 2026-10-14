@@ -66,8 +66,11 @@ data class NoticeDraft(
     val showsCounter: Boolean get() = remaining <= COUNTER_THRESHOLD
 
     companion object {
-        /** `Constants.TEXT_LIMIT` on Android. */
-        const val MAX_LENGTH = 2000
+        /**
+         * 8000 characters — raised from Android's `Constants.TEXT_LIMIT`
+         * (2000), so the phones and the web still stop a notice at 2000.
+         */
+        const val MAX_LENGTH = 8000
 
         /** How close to the limit before the count is worth screen space. */
         const val COUNTER_THRESHOLD = 200

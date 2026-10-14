@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Velg en undertype</string>
     <string name="desktop_email_conversation_gone">Denne samtalen er ikke lenger åpen.</string>
     <string name="desktop_new_sub_type">Ny undertype</string>
-    <string name="desktop_chat_text_limit_exceeded">Teksten overskrider grensen på 2000 tegn.</string>
+    <string name="desktop_chat_text_limit_exceeded">Teksten overskrider grensen på 8000 tegn.</string>
     <string name="desktop_choose_a_language">Velg et språk</string>
     <string name="desktop_chat_media_above_70mb">Medier over 70 MB kan ikke sendes.</string>
     <string name="desktop_email_code_helper">Vi sender en engangskode hit for å bekrefte den.</string>

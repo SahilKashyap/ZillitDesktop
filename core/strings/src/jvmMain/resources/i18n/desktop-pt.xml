@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Escolha um subtipo</string>
     <string name="desktop_email_conversation_gone">Esta conversa já não está aberta.</string>
     <string name="desktop_new_sub_type">Novo subtipo</string>
-    <string name="desktop_chat_text_limit_exceeded">O texto excede o limite de 2000 caracteres.</string>
+    <string name="desktop_chat_text_limit_exceeded">O texto excede o limite de 8000 caracteres.</string>
     <string name="desktop_choose_a_language">Escolha um idioma</string>
     <string name="desktop_chat_media_above_70mb">Não é permitido enviar multimédia com mais de 70MB.</string>
     <string name="desktop_email_code_helper">Enviaremos um código de utilização única para aqui para o confirmar.</string>

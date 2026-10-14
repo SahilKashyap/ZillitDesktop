@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">בחירת תת-סוג</string>
     <string name="desktop_email_conversation_gone">השיחה הזו כבר לא פתוחה.</string>
     <string name="desktop_new_sub_type">תת-סוג חדש</string>
-    <string name="desktop_chat_text_limit_exceeded">הטקסט חורג ממגבלת 2000 התווים.</string>
+    <string name="desktop_chat_text_limit_exceeded">הטקסט חורג ממגבלת 8000 התווים.</string>
     <string name="desktop_choose_a_language">בחירת שפה</string>
     <string name="desktop_chat_media_above_70mb">אין אפשרות לשלוח מדיה מעל 70MB.</string>
     <string name="desktop_email_code_helper">נשלח לכאן קוד חד-פעמי כדי לאשר אותו.</string>

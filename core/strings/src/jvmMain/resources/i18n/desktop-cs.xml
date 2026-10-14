@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Vyberte podtyp</string>
     <string name="desktop_email_conversation_gone">Tato konverzace už není otevřená.</string>
     <string name="desktop_new_sub_type">Nový podtyp</string>
-    <string name="desktop_chat_text_limit_exceeded">Text překračuje limit 2000 znaků.</string>
+    <string name="desktop_chat_text_limit_exceeded">Text překračuje limit 8000 znaků.</string>
     <string name="desktop_choose_a_language">Vyberte jazyk</string>
     <string name="desktop_chat_media_above_70mb">Média větší než 70 MB nelze odeslat.</string>
     <string name="desktop_email_code_helper">Pošleme sem jednorázový kód pro potvrzení.</string>

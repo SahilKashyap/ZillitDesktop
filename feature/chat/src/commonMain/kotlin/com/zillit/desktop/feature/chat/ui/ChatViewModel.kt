@@ -1354,7 +1354,7 @@ class ChatViewModel(
         val body = bodyOverride
             ?: typed.ifEmpty { if (attachment == null) return else "" }
         // Every send funnels through here — typed line, file caption, shared
-        // place — so the web's 2000-character ceiling is stated once.
+        // place — so the 8000-character ceiling is stated once.
         if (ChatComposerRules.bodyTooLong(body)) {
             setState { copy(error = ChatComposerRules.BODY_TOO_LONG) }
             return

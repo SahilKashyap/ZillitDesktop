@@ -16,13 +16,13 @@ import com.zillit.desktop.core.strings.str
 object ChatComposerRules {
 
     /**
-     * 2000 characters, as the web counts them
-     * (`cnc_latest/components/ChatFooterCnc.jsx:202,264` on send, and
-     * `personal/MyMessage.jsx:242,347` on edit). Android has no limit of its
-     * own — it is the web that speaks for the server here, so the desktop
-     * follows the client that actually validates.
+     * 8000 characters, counted as the web counts them. Raised from the
+     * web's 2000 (`cnc_latest/components/ChatFooterCnc.jsx:202,264` on send,
+     * and `personal/MyMessage.jsx:242,347` on edit), so the web still
+     * refuses to send — or to save an edit of — anything past 2000. Android
+     * has no limit of its own.
      */
-    const val MAX_BODY_CHARS = 2000
+    const val MAX_BODY_CHARS = 8000
 
     /**
      * About 2 GB — no product cap, only the most a file can weigh and still

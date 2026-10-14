@@ -55,7 +55,7 @@ import com.zillit.desktop.feature.chat.domain.lastMessageAt
 /**
  * Rewriting one of our own lines — the web's `EditModal`
  * (`cnc_latest/components/EditModal.jsx`): the words, prefilled, and Save.
- * The 2000-character ceiling is the composer's; the dialog says so rather
+ * The 8000-character ceiling is the composer's; the dialog says so rather
  * than letting Save fail on the wire.
  */
 @Composable

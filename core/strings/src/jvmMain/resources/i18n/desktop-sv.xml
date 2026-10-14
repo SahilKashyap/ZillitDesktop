@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Välj en undertyp</string>
     <string name="desktop_email_conversation_gone">Den här konversationen är inte längre öppen.</string>
     <string name="desktop_new_sub_type">Ny undertyp</string>
-    <string name="desktop_chat_text_limit_exceeded">Texten överskrider gränsen på 2000 tecken.</string>
+    <string name="desktop_chat_text_limit_exceeded">Texten överskrider gränsen på 8000 tecken.</string>
     <string name="desktop_choose_a_language">Välj ett språk</string>
     <string name="desktop_chat_media_above_70mb">Media över 70 MB kan inte skickas.</string>
     <string name="desktop_email_code_helper">Vi skickar en engångskod hit för att bekräfta den.</string>

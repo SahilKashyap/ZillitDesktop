@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">하위 유형 선택</string>
     <string name="desktop_email_conversation_gone">이 대화는 더 이상 열려 있지 않습니다.</string>
     <string name="desktop_new_sub_type">새 하위 유형</string>
-    <string name="desktop_chat_text_limit_exceeded">텍스트가 2000자 제한을 초과했습니다.</string>
+    <string name="desktop_chat_text_limit_exceeded">텍스트가 8000자 제한을 초과했습니다.</string>
     <string name="desktop_choose_a_language">언어 선택</string>
     <string name="desktop_chat_media_above_70mb">70MB를 초과하는 미디어는 보낼 수 없습니다.</string>
     <string name="desktop_email_code_helper">확인을 위해 이 주소로 일회용 코드를 보내 드립니다.</string>

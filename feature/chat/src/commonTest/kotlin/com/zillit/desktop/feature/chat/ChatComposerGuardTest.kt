@@ -46,7 +46,7 @@ class ChatComposerGuardTest {
         model.onEvent(ChatEvent.OpenThread(aisha))
         runCurrent()
 
-        model.onEvent(ChatEvent.DraftChanged("x".repeat(2001)))
+        model.onEvent(ChatEvent.DraftChanged("x".repeat(8001)))
         model.onEvent(ChatEvent.Send)
         advanceUntilIdle()
 
@@ -62,7 +62,7 @@ class ChatComposerGuardTest {
         model.onEvent(ChatEvent.OpenThread(aisha))
         runCurrent()
 
-        model.onEvent(ChatEvent.DraftChanged("x".repeat(2000)))
+        model.onEvent(ChatEvent.DraftChanged("x".repeat(8000)))
         model.onEvent(ChatEvent.Send)
         advanceUntilIdle()
 

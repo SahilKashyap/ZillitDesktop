@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Pilih subjenis</string>
     <string name="desktop_email_conversation_gone">Perbualan ini tidak lagi dibuka.</string>
     <string name="desktop_new_sub_type">Subjenis baharu</string>
-    <string name="desktop_chat_text_limit_exceeded">Had teks melebihi 2000 aksara.</string>
+    <string name="desktop_chat_text_limit_exceeded">Had teks melebihi 8000 aksara.</string>
     <string name="desktop_choose_a_language">Pilih bahasa</string>
     <string name="desktop_chat_media_above_70mb">Media melebihi 70MB tidak dibenarkan dihantar.</string>
     <string name="desktop_email_code_helper">Kami akan menghantar kod sekali guna ke sini untuk mengesahkannya.</string>

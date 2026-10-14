@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Pilih sub-jenis</string>
     <string name="desktop_email_conversation_gone">Percakapan ini sudah tidak terbuka.</string>
     <string name="desktop_new_sub_type">Sub-jenis baru</string>
-    <string name="desktop_chat_text_limit_exceeded">Teks melebihi batas 2000 karakter.</string>
+    <string name="desktop_chat_text_limit_exceeded">Teks melebihi batas 8000 karakter.</string>
     <string name="desktop_choose_a_language">Pilih bahasa</string>
     <string name="desktop_chat_media_above_70mb">Media di atas 70MB tidak diizinkan untuk dikirim.</string>
     <string name="desktop_email_code_helper">Kami akan mengirim kode sekali pakai ke sini untuk mengonfirmasinya.</string>

@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Bir alt tür seçin</string>
     <string name="desktop_email_conversation_gone">Bu konuşma artık açık değil.</string>
     <string name="desktop_new_sub_type">Yeni alt tür</string>
-    <string name="desktop_chat_text_limit_exceeded">Metin sınırı olan 2000 karakter aşıldı.</string>
+    <string name="desktop_chat_text_limit_exceeded">Metin sınırı olan 8000 karakter aşıldı.</string>
     <string name="desktop_choose_a_language">Bir dil seçin</string>
     <string name="desktop_chat_media_above_70mb">70 MB üzerindeki medyanın gönderilmesine izin verilmez.</string>
     <string name="desktop_email_code_helper">Doğrulamak için buraya tek kullanımlık bir kod göndereceğiz.</string>

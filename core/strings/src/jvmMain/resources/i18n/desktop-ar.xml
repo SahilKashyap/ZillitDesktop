@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">اختر نوعًا فرعيًا</string>
     <string name="desktop_email_conversation_gone">لم تعد هذه المحادثة مفتوحة.</string>
     <string name="desktop_new_sub_type">نوع فرعي جديد</string>
-    <string name="desktop_chat_text_limit_exceeded">تجاوز النص حد 2000 حرف.</string>
+    <string name="desktop_chat_text_limit_exceeded">تجاوز النص حد 8000 حرف.</string>
     <string name="desktop_choose_a_language">اختر لغة</string>
     <string name="desktop_chat_media_above_70mb">لا يُسمح بإرسال وسائط يزيد حجمها عن 70MB.</string>
     <string name="desktop_email_code_helper">سنرسل رمزًا لمرة واحدة إلى هنا لتأكيده.</string>

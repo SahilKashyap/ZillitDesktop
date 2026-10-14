@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Kies een subtype</string>
     <string name="desktop_email_conversation_gone">Dit gesprek is niet meer open.</string>
     <string name="desktop_new_sub_type">Nieuw subtype</string>
-    <string name="desktop_chat_text_limit_exceeded">De tekst is langer dan de limiet van 2000 tekens.</string>
+    <string name="desktop_chat_text_limit_exceeded">De tekst is langer dan de limiet van 8000 tekens.</string>
     <string name="desktop_choose_a_language">Kies een taal</string>
     <string name="desktop_chat_media_above_70mb">Media groter dan 70 MB mogen niet worden verzonden.</string>
     <string name="desktop_email_code_helper">We sturen hierheen een eenmalige code ter bevestiging.</string>

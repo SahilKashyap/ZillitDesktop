@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">Pumili ng sub-type</string>
     <string name="desktop_email_conversation_gone">Hindi na nakabukas ang pag-uusap na ito.</string>
     <string name="desktop_new_sub_type">Bagong sub-type</string>
-    <string name="desktop_chat_text_limit_exceeded">Lumampas sa 2000 character ang limitasyon ng teksto.</string>
+    <string name="desktop_chat_text_limit_exceeded">Lumampas sa 8000 character ang limitasyon ng teksto.</string>
     <string name="desktop_choose_a_language">Pumili ng wika</string>
     <string name="desktop_chat_media_above_70mb">Hindi pinapayagang ipadala ang media na mahigit 70MB.</string>
     <string name="desktop_email_code_helper">Magpapadala kami ng one-time code dito para kumpirmahin ito.</string>

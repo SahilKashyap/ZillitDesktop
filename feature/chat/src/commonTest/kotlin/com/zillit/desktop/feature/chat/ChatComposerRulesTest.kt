@@ -16,11 +16,11 @@ import kotlin.test.assertTrue
  */
 class ChatComposerRulesTest {
 
-    /** 2000 is allowed; 2001 is not (`ChatFooterCnc.jsx:202` reads `> 2000`). */
+    /** 8000 is allowed; 8001 is not. */
     @Test
-    fun `the text ceiling is 2000 characters, inclusive`() {
-        assertFalse(ChatComposerRules.bodyTooLong("a".repeat(2000)))
-        assertTrue(ChatComposerRules.bodyTooLong("a".repeat(2001)))
+    fun `the text ceiling is 8000 characters, inclusive`() {
+        assertFalse(ChatComposerRules.bodyTooLong("a".repeat(8000)))
+        assertTrue(ChatComposerRules.bodyTooLong("a".repeat(8001)))
     }
 
     /** An ordinary line is never the thing that gets refused. */

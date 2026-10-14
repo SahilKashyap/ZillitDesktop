@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">サブタイプを選択</string>
     <string name="desktop_email_conversation_gone">この会話はもう開いていません。</string>
     <string name="desktop_new_sub_type">新しいサブタイプ</string>
-    <string name="desktop_chat_text_limit_exceeded">テキストが上限の 2000 文字を超えています。</string>
+    <string name="desktop_chat_text_limit_exceeded">テキストが上限の 8000 文字を超えています。</string>
     <string name="desktop_choose_a_language">言語を選択</string>
     <string name="desktop_chat_media_above_70mb">70MB を超えるメディアは送信できません。</string>
     <string name="desktop_email_code_helper">確認のため、このアドレスにワンタイムコードを送信します。</string>

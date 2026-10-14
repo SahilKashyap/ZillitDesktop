@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">เลือกประเภทย่อย</string>
     <string name="desktop_email_conversation_gone">การสนทนานี้ไม่ได้เปิดอยู่แล้ว</string>
     <string name="desktop_new_sub_type">ประเภทย่อยใหม่</string>
-    <string name="desktop_chat_text_limit_exceeded">ข้อความเกินขีดจำกัด 2000 ตัวอักษร</string>
+    <string name="desktop_chat_text_limit_exceeded">ข้อความเกินขีดจำกัด 8000 ตัวอักษร</string>
     <string name="desktop_choose_a_language">เลือกภาษา</string>
     <string name="desktop_chat_media_above_70mb">ไม่อนุญาตให้ส่งสื่อที่มีขนาดเกิน 70MB</string>
     <string name="desktop_email_code_helper">เราจะส่งรหัสแบบใช้ครั้งเดียวไปที่นี่เพื่อยืนยัน</string>

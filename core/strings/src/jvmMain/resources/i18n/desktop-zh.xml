@@ -385,7 +385,7 @@
     <string name="desktop_choose_a_sub_type">选择子类型</string>
     <string name="desktop_email_conversation_gone">此会话已不再打开。</string>
     <string name="desktop_new_sub_type">新子类型</string>
-    <string name="desktop_chat_text_limit_exceeded">文字超过了 2000 个字符的上限。</string>
+    <string name="desktop_chat_text_limit_exceeded">文字超过了 8000 个字符的上限。</string>
     <string name="desktop_choose_a_language">选择语言</string>
     <string name="desktop_chat_media_above_70mb">不允许发送超过 70MB 的媒体。</string>
     <string name="desktop_email_code_helper">我们将向此邮箱发送一次性验证码以进行确认。</string>
