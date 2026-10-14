@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -95,7 +96,9 @@ private fun Tab(label: String, count: Int?, on: Boolean, onClick: () -> Unit) {
     val k = TasksTheme.c
     val source = remember { MutableInteractionSource() }
     Column(
-        Modifier.clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+        // IntrinsicSize.Max, or the underline's fillMaxWidth below takes the
+        // whole bar's width and this one tab pushes the others off it.
+        Modifier.width(IntrinsicSize.Max).clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
             .clickable(interactionSource = source, indication = null, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
