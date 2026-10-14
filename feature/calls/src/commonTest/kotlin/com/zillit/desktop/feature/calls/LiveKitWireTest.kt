@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.calls.data.livekit.parseLiveKitFrame
 import com.zillit.desktop.feature.calls.data.livekit.userStateStatus
 import com.zillit.desktop.feature.calls.data.livekit.readLiveKitRoster
 import com.zillit.desktop.feature.calls.data.livekit.readLiveKitRosterSnapshot
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallProvider
@@ -327,5 +328,25 @@ class LiveKitWireTest {
         assertEquals(null, userStateStatus("on_hold"))
         val frame = parseLiveKitFrame("""{"type":"callUserStateChanged","callId":"c","userId":"u","state":"on_hold"}""")
         assertTrue(frame is LiveKitFrame.Unknown, "an unknown state is an unread event: $frame")
+    }
+
+    /**
+     * `available` is a row of the add-user list, not a status on the call:
+     * the server seeds the whole production that way as a call starts. The
+     * web merges it into the panel; dropping it left the list empty.
+     */
+    @Test
+    fun `an available delta is an add-user row, never a participant`() {
+        val added = assertIs<LiveKitEvent.Addable>(
+            event(
+                """{"type":"callUserStateChanged","callId":"c","userId":"u-5","displayName":"Sam",
+                    "state":"available","designationName":"Gaffer"}""",
+            ),
+        )
+        assertEquals("c", added.callId)
+        assertEquals(CallCrewEntry(userId = "u-5", deviceId = "", name = "Sam", designation = "Gaffer"), added.entry)
+        assertIs<LiveKitEvent.UserState>(
+            event("""{"type":"callUserStateChanged","callId":"c","userId":"u-5","state":"ringing"}"""),
+        )
     }
 }

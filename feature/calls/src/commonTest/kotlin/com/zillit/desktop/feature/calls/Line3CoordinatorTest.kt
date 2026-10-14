@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.calls
 
+import androidx.lifecycle.viewModelScope
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketClient
 import com.zillit.desktop.core.socket.SocketConfig
@@ -15,21 +16,29 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.CallJoin
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallRingState
+import com.zillit.desktop.feature.calls.ui.CallEvent
+import com.zillit.desktop.feature.calls.ui.CallViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -351,7 +360,7 @@ class Line3CoordinatorTest {
         )
         runCurrent()
 
-        val addable = h.coordinator.addableFromRoster.value
+        val addable = h.coordinator.addableFromRoster.value.orEmpty()
         assertEquals(listOf("asha"), addable.map { it.userId })
         assertEquals("Gaffer", addable.single().designation)
 
@@ -359,8 +368,122 @@ class Line3CoordinatorTest {
         runCurrent()
         h.socket.answer("leaveCall")
         runCurrent()
-        assertEquals(emptyList(), h.coordinator.addableFromRoster.value)
+        assertNull(h.coordinator.addableFromRoster.value, "the next call starts with the server silent")
     }
+
+    /**
+     * The chat's call buttons name no production. The server seeds the
+     * add-user list from the `startCall`'s `projectId` (its `fillRoster`; the
+     * web always sends it), so without it every Line 3 call placed here had
+     * an empty Users list — for us and for everyone we rang.
+     */
+    @Test
+    fun `a call placed without a production names the open one`() = runTest {
+        val h = harness()
+        h.coordinator.placeCall(
+            chatRoomId = "",
+            receiverDeviceId = "",
+            mode = com.zillit.desktop.feature.calls.domain.CallMode.Private,
+            type = com.zillit.desktop.feature.calls.domain.CallType.Audio,
+            displayName = "Vivek",
+            provider = CallProvider.LiveKit,
+            receiverUserId = "vivek",
+        )
+        runCurrent()
+
+        val start = h.socket.frames.last { it["type"]?.jsonPrimitive?.content == "startCall" }
+        assertEquals("p1", start["projectId"]?.jsonPrimitive?.content, "startCall went out with no production")
+        assertEquals("Sides Testing", start["projectName"]?.jsonPrimitive?.content)
+        assertEquals("p1", h.coordinator.session.value?.projectId)
+    }
+
+    /**
+     * The server pushes the add-user list as `available` deltas too — the
+     * whole production as a call starts, and someone whose invite was
+     * retracted. The web merges them (`applyUserState`); they were dropped.
+     */
+    @Test
+    fun `available deltas join the addable list, and any other state leaves it`() = runTest {
+        val h = harness()
+        inCall(h)
+        h.socket.answer(
+            "getCallRoster",
+            """{"states":[{"userId":"vivek","displayName":"Vivek","state":"in_call"},
+                {"userId":"asha","displayName":"Asha","state":"available","designationName":"Gaffer"}]}""",
+        )
+        runCurrent()
+
+        h.socket.push(userState("c1", "ravi", "available"))
+        // A state-only delta keeps the job title the snapshot gave.
+        h.socket.push(userState("c1", "asha", "available"))
+        // Another call's roster is not ours.
+        h.socket.push(userState("c9", "kim", "available"))
+        runCurrent()
+        val listed = h.coordinator.addableFromRoster.value.orEmpty()
+        assertEquals(setOf("asha", "ravi"), listed.map { it.userId }.toSet())
+        assertEquals("Gaffer", listed.single { it.userId == "asha" }.designation)
+
+        // Rung in by somebody else: no longer someone to add.
+        h.socket.push(userState("c1", "ravi", "ringing"))
+        runCurrent()
+        assertEquals(listOf("asha"), h.coordinator.addableFromRoster.value.orEmpty().map { it.userId })
+    }
+
+    /**
+     * Android's "userStates is empty": until the server says anything about
+     * the roster the list is null — the panel's cue to show the call's crew.
+     * An answer with no rows at all (a failed read, an older server) is not
+     * an empty list; any row, snapshot or delta, is the server speaking.
+     */
+    @Test
+    fun `the server's list is null until the roster says anything`() = runTest {
+        val h = harness()
+        inCall(h)
+        assertNull(h.coordinator.addableFromRoster.value)
+        h.socket.answer("getCallRoster", """{"states":[]}""")
+        runCurrent()
+        assertNull(h.coordinator.addableFromRoster.value, "an empty answer read as nobody to add")
+
+        h.socket.push(userState("c1", "vivek", "in_call"))
+        runCurrent()
+        assertEquals(emptyList(), h.coordinator.addableFromRoster.value, "a delta is the server speaking")
+    }
+
+    /**
+     * The fallback end to end, through the view model: the call's crew while
+     * the server is silent, and the server's own list the moment it answers.
+     */
+    @Test
+    fun `the users panel shows the crew until the server lists anyone`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val h = harness()
+        val vm = CallViewModel(
+            coordinator = h.coordinator,
+            crew = { listOf(CallCrewEntry("asha", "", "Asha"), CallCrewEntry("ravi", "", "Ravi")) },
+        )
+        try {
+            inCall(h)
+            vm.onEvent(CallEvent.ToggleRoster)
+            runCurrent()
+            assertEquals(listOf("asha", "ravi"), vm.state.value.addableCrew.map { it.userId }, "blank while silent")
+
+            h.socket.answer(
+                "getCallRoster",
+                """{"states":[{"userId":"vivek","displayName":"Vivek","state":"in_call"},
+                    {"userId":"kim","displayName":"Kim","state":"available"}]}""",
+            )
+            runCurrent()
+            assertEquals(listOf("kim"), vm.state.value.addableCrew.map { it.userId }, "the server's list wins")
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** One `callUserStateChanged`, named after the user it is about. */
+    private fun userState(callId: String, userId: String, state: String) =
+        """{"type":"callUserStateChanged","callId":"$callId","userId":"$userId",""" +
+            """"displayName":"${userId.replaceFirstChar(Char::uppercase)}","state":"$state"}"""
 
     /**
      * The Refresh button: the server is told to RE-SEED from project membership

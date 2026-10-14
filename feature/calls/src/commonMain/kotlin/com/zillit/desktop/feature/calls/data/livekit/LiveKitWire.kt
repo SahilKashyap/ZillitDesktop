@@ -108,6 +108,15 @@ sealed interface LiveKitEvent {
         val image: String = "",
     ) : LiveKitEvent
 
+    /**
+     * Somebody became someone who could be RUNG IN — a `callUserStateChanged`
+     * whose state is `available`. Not a [UserState]: it is not a status on the
+     * call (read as Left it ended every 1:1 call), it is a row of the add-user
+     * list, which the server seeds this way for the whole production when a
+     * call starts and re-sends when a ringing invite is retracted.
+     */
+    data class Addable(val callId: String, val entry: CallCrewEntry) : LiveKitEvent
+
     /** Someone threw an emoji — our own come back too, and float only then (`callReaction`). */
     data class Reaction(val callId: String, val userId: String, val emoji: String) : LiveKitEvent
 
@@ -368,14 +377,16 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
     "removedFromCall" -> obj.text("callId")?.let {
         LiveKitEvent.Removed(it, (obj["by"] as? JsonObject)?.text("displayName").orEmpty())
     }
-    "callUserStateChanged" -> LiveKitEvent.UserState(
-        callId = obj.text("callId").orEmpty(),
-        userId = obj.text("userId") ?: return null,
-        displayName = obj.text("displayName").orEmpty(),
-        status = userStateStatus(obj.text("state")) ?: return null,
-        isGuest = obj.bool("isGuest") ?: obj.text("userId").orEmpty().startsWith(GUEST_PREFIX),
-        image = obj.picture().orEmpty(),
-    )
+    "callUserStateChanged" -> obj.asAddable()
+        ?.let { LiveKitEvent.Addable(obj.text("callId").orEmpty(), it) }
+        ?: LiveKitEvent.UserState(
+            callId = obj.text("callId").orEmpty(),
+            userId = obj.text("userId") ?: return null,
+            displayName = obj.text("displayName").orEmpty(),
+            status = userStateStatus(obj.text("state")) ?: return null,
+            isGuest = obj.bool("isGuest") ?: obj.text("userId").orEmpty().startsWith(GUEST_PREFIX),
+            image = obj.picture().orEmpty(),
+        )
     "callReaction" -> LiveKitEvent.Reaction(
         callId = obj.text("callId") ?: return null,
         userId = obj.text("userId") ?: return null,
@@ -460,8 +471,8 @@ fun userStateStatus(wire: String?): CallStatus? = when (wire?.trim()?.lowercase(
     // `available` is someone NOT on the call — the roster's "could be added"
     // row, broadcast for the whole production the moment a call starts. It
     // is not a departure: read as Left it ended every 1:1 call within a
-    // second of dialling (seen on develop, 2026-09-08). Null drops it, as it
-    // drops any word this build does not know.
+    // second of dialling (seen on develop, 2026-09-08). Null here, as for any
+    // word this build does not know; `asAddable` reads it as an add-user row.
     else -> null
 }
 

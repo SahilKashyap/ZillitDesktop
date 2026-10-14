@@ -281,13 +281,15 @@ class CallCoordinator(
      * Who else the SERVER says could be rung into this call — the roster's
      * `available` rows, and on Line 3 the only list the users panel offers.
      *
-     * The open production's crew is not it: the call may belong to another
-     * production, the server seeds this list from the call's own membership,
-     * and it knows people this client never fetched. Empty until a roster
-     * answer lands, and cleared with the call.
+     * The server seeds this list from the call's own membership and knows
+     * people this client never fetched, so it wins whenever it has spoken.
+     * NULL until it has — no roster row yet, snapshot or delta — which is
+     * Android's "userStates is empty": the users panel then falls back to the
+     * call's production crew, so a failed roster read never blanks the list.
+     * Cleared back to null with the call.
      */
-    private val _addableFromRoster = MutableStateFlow<List<CallCrewEntry>>(emptyList())
-    val addableFromRoster: StateFlow<List<CallCrewEntry>> = _addableFromRoster.asStateFlow()
+    private val _addableFromRoster = MutableStateFlow<List<CallCrewEntry>?>(null)
+    val addableFromRoster: StateFlow<List<CallCrewEntry>?> = _addableFromRoster.asStateFlow()
 
     /**
      * Where each callee's ring has got to, by user id — the web's
@@ -1107,7 +1109,7 @@ class CallCoordinator(
             return
         }
         if (provider == CallProvider.LiveKit) {
-            placeLine3(chatRoomId, receiverUserId, mode, type, displayName, projectId, callerUserId)
+            placeLine3(chatRoomId, receiverUserId, mode, type, displayName, line3Project(projectId), callerUserId)
             return
         }
         _phase.value = CallPhase.Outgoing
@@ -2929,7 +2931,7 @@ class CallCoordinator(
         // Neither the ring's progress nor the server's add-user list means
         // anything outside the call they were said in.
         _ringStatuses.value = emptyMap()
-        _addableFromRoster.value = emptyList()
+        _addableFromRoster.value = null
         // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
         _onHold.value = false
@@ -3016,6 +3018,15 @@ class CallCoordinator(
     // ── Line 3 ──────────────────────────────────────────────────────────────
 
     /**
+     * The open production, for a Line 3 call placed without one — the chat's
+     * call buttons name none. A `startCall` without it leaves the server
+     * nothing to seed the add-user list from: its `fillRoster` lists the
+     * call's project, which the web always sends.
+     */
+    private fun line3Project(given: String?): String? =
+        given?.takeIf(String::isNotBlank) ?: line3?.identityNow()?.projectId?.takeIf(String::isNotBlank)
+
+    /**
      * Places a Line 3 call: a provisional session the outgoing card can show,
      * then the line's own create-and-ring, and the media join once the room is
      * known. The ring timeout and every status that follows ride the same
@@ -3074,7 +3085,9 @@ class CallCoordinator(
                     callerUserId = me,
                     callerName = selfName().orEmpty(),
                     projectId = projectId,
-                    projectName = line.identityNow()?.projectName,
+                    // Only the open production's name is known here; another
+                    // production's call goes unlabelled rather than mislabelled.
+                    projectName = line.identityNow()?.takeIf { it.projectId == projectId }?.projectName,
                 ),
             )
             when (placed) {
@@ -3256,9 +3269,34 @@ class CallCoordinator(
             finish(current, CallEndReason.MovedElsewhere)
         }
 
+        /**
+         * The add-user list moved by one row — the web's `applyUserState`: the
+         * newest word on a person wins, and a delta that names no job title
+         * keeps the one the roster snapshot gave them.
+         */
+        override fun onAddable(callId: String, entry: CallCrewEntry) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            _addableFromRoster.update { known ->
+                val listed = known.orEmpty()
+                val prior = listed.firstOrNull { it.userId == entry.userId }
+                val merged = prior?.let {
+                    entry.copy(
+                        name = entry.name.ifBlank { it.name },
+                        designation = entry.designation.ifBlank { it.designation },
+                    )
+                } ?: entry
+                listed.filterNot { it.userId == entry.userId } + merged
+            }
+        }
+
         override fun onUserState(callId: String, participant: CallParticipant) {
             val current = _session.value ?: return
             if (!callId.matches(current)) return
+            // Any other state takes them off the add-user list, as on the web
+            // where one row per person moves between the panel's sections.
+            // Either way the server has now spoken, and its list replaces the fallback.
+            _addableFromRoster.update { listed -> listed.orEmpty().filterNot { it.userId == participant.userId } }
             // A state-only delta must not lose the picture or the guest flag
             // the roster snapshot carried; merge what the event knew.
             _session.value = current.copy(
@@ -3386,10 +3424,14 @@ class CallCoordinator(
         override fun onRoster(callId: String, roster: LiveKitRoster) {
             val current = _session.value ?: return
             if (!callId.matches(current)) return
-            // The addable list is the server's and only the server's — see
+            // The addable list is the server's whenever it has one — see
             // `LiveKitRoster`. Published even when the people half is empty,
-            // which is exactly the state a call has before anyone answers.
-            _addableFromRoster.value = roster.addable
+            // which is exactly the state a call has before anyone answers. An
+            // answer with no rows at all says nothing, and leaves the list (or
+            // the panel's fallback) as it was.
+            if (roster.participants.isNotEmpty() || roster.addable.isNotEmpty()) {
+                _addableFromRoster.value = roster.addable
+            }
             line3InCall.onRoster(roster)
             val participants = roster.participants
             if (participants.isEmpty()) return

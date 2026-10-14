@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls.data.livekit
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallSession
@@ -68,6 +69,9 @@ interface LiveKitLineListener {
 
     /** One row of the roster moved (`callUserStateChanged`), with what the event knew about them. */
     fun onUserState(callId: String, participant: CallParticipant) = Unit
+
+    /** Somebody joined the add-user list (`callUserStateChanged` with `available`). */
+    fun onAddable(callId: String, entry: CallCrewEntry) = Unit
 
     /** Someone — us included — threw an emoji; floats are drawn from this and only this. */
     fun onReaction(callId: String, userId: String, emoji: String) = Unit
@@ -365,6 +369,7 @@ class LiveKitLine(
                     ),
                 )
             }
+            is LiveKitEvent.Addable -> sink.onAddable(event.callId, event.entry)
             is LiveKitEvent.Cancelled -> dismissed(event.callId, LiveKitDismissal.Cancelled, sink)
             is LiveKitEvent.HandledElsewhere -> if (event.reason == REASON_SWITCHED) {
                 markResolved(event.callId)

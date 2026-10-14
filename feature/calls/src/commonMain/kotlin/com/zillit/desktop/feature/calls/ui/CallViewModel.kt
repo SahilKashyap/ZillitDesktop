@@ -535,9 +535,19 @@ class CallViewModel(
     private val copyToClipboard: ((String) -> Unit)? = null,
 ) : ZillitViewModel<CallUiState, CallEvent, Nothing>(CallUiState()) {
 
+    // Declared ahead of `init`: its collectors write them, and an initializer
+    // placed after it would run later and wipe what they wrote.
+    /** Line 3's server add-user list for the call on screen; null until the roster has said anything. */
+    private var rosterAddable: List<com.zillit.desktop.feature.calls.domain.CallCrewEntry>? = null
+
+    /** The call's production crew, standing in on Line 3 while [rosterAddable] is null. */
+    private var directoryCrew: List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = emptyList()
+
     init {
         launch {
             coordinator.phase.collect { phase ->
+                // One call's stand-in crew is not the next call's.
+                if (phase == CallPhase.Idle) directoryCrew = emptyList()
                 setState {
                     when {
                         phase == CallPhase.Idle -> atRest(phase)
@@ -569,12 +579,15 @@ class CallViewModel(
         launch { coordinator.ringStatuses.collect { states -> setState { copy(ringStatuses = states) } } }
         // On Line 3 the addable list is the SERVER's — the roster's
         // `available` rows — and it arrives whenever the roster does, panel
-        // open or not. The other lines have no such list and keep the
-        // snapshot-at-open below.
+        // open or not. Until the server has said anything, the call's own
+        // production crew stands in: Android's fallback, so a roster read that
+        // failed never leaves the list blank. The other lines have no such
+        // list and keep the snapshot-at-open below.
         launch {
             coordinator.addableFromRoster.collect { listed ->
+                rosterAddable = listed
                 setState {
-                    if (session?.provider != CallProvider.LiveKit) this else copy(addableCrew = listed)
+                    if (session?.provider != CallProvider.LiveKit) this else copy(addableCrew = listed ?: directoryCrew)
                 }
             }
         }
@@ -651,12 +664,19 @@ class CallViewModel(
         val provider = state.session?.provider
         // Line 3 has a server-side add-user list (the roster's `available`
         // rows) and it is the authority: it knows people this client never
-        // fetched, and the call may not even belong to the open production.
-        // Asking the local crew there would list the wrong production's people
-        // — which is what it used to do. Refreshed on open so the list is not
-        // whatever was true when the call started.
+        // fetched. Refreshed on open so the list is not whatever was true when
+        // the call started. The crew is still loaded — the CALL's production's,
+        // never merely the open one — but only shows while the server has said
+        // nothing at all, as on Android (`ParticipantsPanel`'s directory rows).
         if (provider == CallProvider.LiveKit) {
             onRefreshRoster(force = false)
+            launch {
+                val listed = crew().ringableOn(provider)
+                // The call ended, or became another one, while its crew loaded.
+                if (currentState.session?.callUuid != call) return@launch
+                directoryCrew = listed
+                setState { copy(addableCrew = rosterAddable ?: listed) }
+            }
             return
         }
         launch {
