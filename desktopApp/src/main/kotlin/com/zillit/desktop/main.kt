@@ -15,6 +15,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.awt.ComposeWindow
@@ -1325,7 +1326,7 @@ private fun TokenSessionOnSignIn(ready: AppGraph.Ready, signedIn: Boolean) {
 }
 
 @Composable
-private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
+private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean, onListing: Boolean = false) {
     // Nothing to count once signed out — and the store was cleared at
     // sign-out; a collector left running would fill it back in from the next
     // socket event on the shared connection (found in QA: badges kept
@@ -1336,6 +1337,10 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     // ledger's newest, so it is cheap enough to run on every doubt. A
     // reconnect may have swallowed any number of frames, so it seeds.
     val socketState by ready.socketEvents.connectionState.collectAsState()
+    // Read inside the long-lived effect below, which is keyed on `ready` and
+    // so does not restart when the screen changes: captured by value, the tick
+    // would go on believing whatever was true when the production last opened.
+    val listing by rememberUpdatedState(onListing)
     LaunchedEffect(socketState.isConnected) {
         if (socketState.isConnected) ready.seedBadges()
     }
@@ -1374,7 +1379,15 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
         launch {
             while (true) {
                 delay(BADGE_POLL_MILLIS)
-                if (socketState.isConnected && !ready.badgeStore.counts.value.isEmpty) arrivals.trySend(Unit)
+                // With a production open the tick is a backstop for a read
+                // made on a phone, so it asks only while something is showing
+                // and the socket could have missed it. On the listing there is
+                // no socket at all — it is connected as part of opening a
+                // production — and no counts either, so neither test holds and
+                // the tick is the only thing that moves those cards.
+                val worthAsking = listing ||
+                    (socketState.isConnected && !ready.badgeStore.counts.value.isEmpty)
+                if (worthAsking) arrivals.trySend(Unit)
             }
         }
         for (@Suppress("UNUSED_VARIABLE") signal in arrivals) {
@@ -1384,10 +1397,19 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     }
 }
 
-/** The page of rows the ledger has not seen, for the open production. */
+/**
+ * The page of rows the ledger has not seen.
+ *
+ * With a production open that production's id carries the call. With none —
+ * the listing, including a launch that lands straight on it — the last
+ * production opened on this computer does, exactly as the listing's own load
+ * does ([seedFromLastProduction]): the call is user-wide, so either way it
+ * fills every production's rows. Returning early here instead left the
+ * listing with no seed at all.
+ */
 private suspend fun AppGraph.Ready.seedBadges() {
-    val projectId = badgeStore.openProjectId ?: return
-    badgeSeeder.seed(projectId)
+    val projectId = badgeStore.openProjectId
+    if (projectId == null) seedFromLastProduction(this) else badgeSeeder.seed(projectId)
 }
 
 /** Emits each time one of this app's windows becomes the active window. */
@@ -1562,7 +1584,15 @@ private fun BackgroundWork(
     EndCallOnSignOut(ready, step = auth.step)
     TokenSessionOnSignIn(ready, signedIn = auth.step == AuthStep.Complete)
     AuthEffects(authViewModel, createViewModel, joinViewModel)
-    BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
+    // Signed in covers the production listing too, not only an open
+    // production: the cards there wear counts, and keying this on `Complete`
+    // meant the whole badge machinery — socket frames, seeds, the tick — was
+    // switched off on the one screen whose numbers nothing else maintains.
+    BadgeRefresh(
+        ready,
+        signedIn = auth.step == AuthStep.Complete || auth.step == AuthStep.ProjectSelection,
+        onListing = auth.step == AuthStep.ProjectSelection,
+    )
     ToolsRefresh(ready, viewModels.home)
     DockBadge(ready, viewModels)
     ApprovalCounts(ready, viewModels)
@@ -2469,7 +2499,13 @@ private fun buildAuth(ready: AppGraph.Ready) = AuthViewModel(
     projectRepository = ready.projectRepository,
     qrLoginRepository = ready.qrLoginRepository,
     nowMillis = System::currentTimeMillis,
-    projectUnread = { fetchProjectUnread(ready) },
+    // The listing is a live screen: a load seeds and reads, and afterwards the
+    // ledger's own signal repaints the cards a message or notification moved.
+    projectUnread = com.zillit.desktop.feature.auth.ui.PickerBadges(
+        refresh = { fetchProjectUnread(ready) },
+        now = { ready.badgeStore.projectCounts(ready.deviceId()) },
+        changes = ready.badgeStore.changes,
+    ),
     projectListStore = ready.projectListCache?.let(::CachedProjectList),
     // Offline, only a production this computer has seen before can open.
     isOnline = { ready.connectivity.online.value },
@@ -4012,6 +4048,9 @@ private fun buildRegistry(
                 nowMillis = System::currentTimeMillis,
                 viewer = { ready.projectContext?.context?.value.sosViewer() },
                 crew = { ready.projectContext?.context?.value.sosCrew() },
+                // Built once for the app: without the production it would show
+                // the last shoot's alarms and read nothing on this one.
+                projectId = { ready.projectContext?.context?.value?.project?.projectId },
                 // An alarm raised on set must not wait for a refresh.
                 events = ready.socketEvents,
             ),
@@ -4048,6 +4087,10 @@ private fun buildRegistry(
                 // The same frame the badge store folds into the bell's count.
                 // Without this the count went up and the open list did not.
                 arrivals = ready.socketEvents.on(ZillitSocketEvents.Badges.Save).map { },
+                // Built once for the app, so the page has to be told which
+                // production it is showing — otherwise the bell opened on the
+                // next shoot keeps the last one's rows and reads nothing here.
+                projectId = { ready.projectContext?.context?.value?.project?.projectId },
             ),
         )
     }

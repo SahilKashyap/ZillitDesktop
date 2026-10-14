@@ -50,12 +50,14 @@ class NotificationsViewModelTest {
         var deletedAll = false
         var pageSize = 50
         var failDelete = false
+        var failPage = false
 
         // The list screen under test never decodes socket frames.
         override fun banner(payload: kotlinx.serialization.json.JsonElement?): ActivityBanner? = null
 
         override suspend fun page(beforeMillis: Long, newest: Boolean): ZillitResult<List<ProjectNotification>> {
             pageCursors += beforeMillis
+            if (failPage) return ZillitResult.Failure(ZillitError.Unknown("no page"))
             return ZillitResult.Success(
                 rows.filter { it.updatedMillis < beforeMillis }.sortedByDescending { it.updatedMillis }.take(pageSize),
             )
@@ -94,6 +96,8 @@ class NotificationsViewModelTest {
 
     private var listReads = 0
 
+    private var project: String? = "p1"
+
     private fun viewModel(
         repository: FakeRepository,
         now: Long = 1_000L,
@@ -104,6 +108,7 @@ class NotificationsViewModelTest {
         onListRead = { listReads++ },
         pageLimit = repository.pageSize,
         arrivals = arrivals,
+        projectId = { project },
     )
 
     /**
@@ -263,5 +268,67 @@ class NotificationsViewModelTest {
 
         assertEquals(listOf("call_sheet_label"), opened.map { it.tool })
         collector.cancel()
+    }
+
+    /**
+     * The page is built once for the application, so it has to notice the
+     * production under it. Reported 2026-10-14: the bell reopened on another
+     * shoot showed the first one's rows and marked nothing read, so that
+     * production's `global_label` badge could not clear.
+     */
+    @Test
+    fun `reopening on another production reloads it and reads its segment`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val model = viewModel(repository).also { it.start() }
+        advanceUntilIdle()
+        assertEquals(listOf("first"), model.state.value.rows.map { it.id })
+        assertEquals(1, repository.reads.size)
+
+        // A switch closes every window; the next visit is a fresh mount.
+        project = "p2"
+        repository.rows.clear()
+        repository.rows += row("second", 200)
+        model.start()
+        advanceUntilIdle()
+
+        assertEquals(listOf("second"), model.state.value.rows.map { it.id }, "the other production's list")
+        assertEquals(2, repository.reads.size, "and its own segment read")
+    }
+
+    /** The same production twice over is one load, as it always was. */
+    @Test
+    fun `reopening on the same production does not refetch`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val model = viewModel(repository).also { it.start() }
+        advanceUntilIdle()
+
+        model.start()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.pageCursors.size)
+        assertEquals(1, repository.reads.size)
+    }
+
+    /**
+     * A failed first page used to set `loaded`, and `start` never tried
+     * again — one 401 during a production switch left the page dead for the
+     * run, and with it the only thing that marks the segment read.
+     */
+    @Test
+    fun `a failed page is retried on the next visit`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100); failPage = true }
+        val model = viewModel(repository).also { it.start() }
+        advanceUntilIdle()
+        assertFalse(model.state.value.loaded, "nothing answered")
+        assertNull(model.state.value.rows.firstOrNull())
+        assertEquals(0, repository.reads.size)
+
+        repository.failPage = false
+        model.start()
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.loaded)
+        assertEquals(listOf("first"), model.state.value.rows.map { it.id })
+        assertEquals(1, repository.reads.size, "the read the badge waits on")
     }
 }

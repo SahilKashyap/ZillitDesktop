@@ -61,9 +61,27 @@ class SosViewModel(
     private val events: SocketEventBus? = null,
     /** The page size the backend answers; a shorter page is the last one. */
     private val pageLimit: Int = SosEndpoints.PAGE_LIMIT,
+    /**
+     * The production whose feed this is, read at each [start] — like [viewer],
+     * because this model is built once per graph. An alarm belongs to one
+     * shoot, and so does the `sos_label` read the feed sends: without this the
+     * feed reopened on another production showed the previous one's alerts and
+     * marked nothing read there (the bell page had the same fault, 2026-10-14).
+     */
+    private val projectId: () -> String? = { null },
 ) : ZillitViewModel<SosUiState, SosEvent, SosEffect>(SosUiState()) {
 
+    /** The production the alerts on screen were loaded for. */
+    private var loadedFor: String? = null
+
     fun start() {
+        val project = projectId()
+        if (currentState.loaded && loadedFor != project) {
+            // Another production's alarms. The contacts go with them — the
+            // picker lists that production's crew.
+            setState { SosUiState() }
+        }
+        loadedFor = project
         setState { copy(viewer = viewer(), contacts = contacts.copy(crew = crew())) }
         if (!currentState.loaded && !currentState.loading) refresh()
         if (!currentState.contacts.loading && currentState.contacts.rows.isEmpty()) loadContacts()
@@ -163,7 +181,10 @@ class SosViewModel(
                 }
                 markRead()
             },
-            onError = { error -> setState { copy(loading = false, loaded = true, error = error.localised()) } },
+            // `loaded` is left alone: a page that failed has not answered, and
+            // latching it would stop [start] ever trying again — the feed, and
+            // the segment read it carries, dead for the rest of the run.
+            onError = { error -> setState { copy(loading = false, error = error.localised()) } },
         )
     }
 

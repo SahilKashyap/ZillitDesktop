@@ -36,6 +36,9 @@ internal class FakeSosRepository : SosRepository {
 
     var failNext: ZillitError? = null
 
+    /** Refuses the feed page itself — [failNext] only governs the writes. */
+    var failAlerts: ZillitError? = null
+
     override suspend fun alerts(
         cursorMillis: Long,
         older: Boolean,
@@ -43,6 +46,7 @@ internal class FakeSosRepository : SosRepository {
         newest: Boolean,
     ): ZillitResult<List<SosAlert>> {
         alertCursors += cursorMillis to newest
+        failAlerts?.let { return ZillitResult.Failure(it) }
         val page = alerts
             .filter { if (older) it.updatedMillis < cursorMillis else it.updatedMillis > cursorMillis }
             .sortedByDescending { it.updatedMillis }

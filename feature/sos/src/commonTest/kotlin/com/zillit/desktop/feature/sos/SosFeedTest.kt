@@ -37,6 +37,8 @@ class SosFeedTest {
     @AfterTest
     fun tearDown() = Dispatchers.resetMain()
 
+    private var project: String? = "p1"
+
     private fun viewModel(
         repository: FakeSosRepository,
         fix: SosFix? = SosFix(lat = 51.5, long = -0.1),
@@ -48,6 +50,7 @@ class SosFeedTest {
         crew = { crew },
         locationFix = { fix },
         pageLimit = repository.pageSize,
+        projectId = { project },
     )
 
     @Test
@@ -300,5 +303,48 @@ class SosFeedTest {
         collector.cancel()
 
         assertTrue(effects.filterIsInstance<SosEffect.PlaceCall>().isEmpty())
+    }
+
+    /**
+     * The feed is built once per graph, so a visit on another production must
+     * reload — otherwise it shows the last shoot's alarms and sends its
+     * `sos_label` read there, leaving this production's badge lit (the bell
+     * page had the same fault, 2026-10-14).
+     */
+    @Test
+    fun `a visit on another production reloads the feed and reads its own segment`() = runTest(dispatcher) {
+        val repository = FakeSosRepository().apply { alerts += alert("first", at = 100) }
+        val model = viewModel(repository).also { it.start() }
+        advanceUntilIdle()
+        assertEquals(listOf("first"), model.state.value.alerts.map { it.id })
+        assertEquals(1, repository.reads.size)
+
+        project = "p2"
+        repository.alerts.clear()
+        repository.alerts += alert("second", at = 200)
+        model.start()
+        advanceUntilIdle()
+
+        assertEquals(listOf("second"), model.state.value.alerts.map { it.id })
+        assertEquals(2, repository.reads.size)
+    }
+
+    /** A page that failed has not answered, so the next visit tries again. */
+    @Test
+    fun `a failed page is retried on the next visit`() = runTest(dispatcher) {
+        val repository = FakeSosRepository().apply {
+            alerts += alert("first", at = 100)
+            failAlerts = ZillitError.Unknown("no page")
+        }
+        val model = viewModel(repository).also { it.start() }
+        advanceUntilIdle()
+
+        repository.failAlerts = null
+        model.start()
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.loaded)
+        assertEquals(listOf("first"), model.state.value.alerts.map { it.id })
+        assertEquals(1, repository.reads.size, "the read the badge waits on")
     }
 }

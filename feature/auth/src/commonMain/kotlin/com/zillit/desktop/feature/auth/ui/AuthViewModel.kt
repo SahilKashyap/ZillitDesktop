@@ -18,6 +18,8 @@ import com.zillit.desktop.feature.auth.domain.QrLoginRepository
 import com.zillit.desktop.feature.auth.domain.QrLoginSession
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * Where the user is in the sign-in flow.
@@ -183,6 +185,40 @@ sealed interface AuthEffect {
     data class OpenUrl(val url: String) : AuthEffect
 }
 
+/** Which cards changed and by how much — names where the listing has one, ids otherwise. */
+private fun movedCards(before: Map<String, Int>, after: Map<String, Int>, projects: List<Project>): String =
+    (before.keys + after.keys)
+        .filter { id -> before[id] != after[id] }
+        .joinToString { id ->
+            val name = projects.firstOrNull { it.id == id }?.name ?: id
+            "$name ${before[id] ?: 0}->${after[id] ?: 0}"
+        }
+
+/**
+ * Everything the production picker needs to put a number on a card.
+ *
+ * One seam rather than three loose lambdas because they are one concept, and
+ * because the difference between them matters:
+ *
+ *  - [refresh] seeds from the notification service and then reads — what a
+ *    list load does.
+ *  - [now] only reads the local badge ledger. The live repaint below runs off
+ *    [changes], and a seed *publishes* that signal, so refreshing from it
+ *    would answer its own event for ever.
+ *  - [changes] pulses whenever the ledger moves: a message or notification
+ *    arriving, a read landing from a phone, a page the seeder fetched.
+ *    Without it the cards were a snapshot taken when the list loaded —
+ *    everything behind them kept working, since the socket fills the ledger
+ *    while the listing is up, and nothing repainted, so a production that had
+ *    just been messaged went on showing the number it had a minute ago
+ *    (reported 2026-10-14).
+ */
+data class PickerBadges(
+    val refresh: suspend () -> Map<String, Int> = { emptyMap() },
+    val now: suspend () -> Map<String, Int> = refresh,
+    val changes: Flow<Unit> = emptyFlow(),
+)
+
 /**
  * Drives device sign-in and project selection (plan M3).
  *
@@ -200,7 +236,7 @@ class AuthViewModel(
      * (`GET device/unread`) — the one badge question that can be asked
      * before a production is open. Hosts wire it; empty keeps cards bare.
      */
-    private val projectUnread: suspend () -> Map<String, Int> = { emptyMap() },
+    private val projectUnread: PickerBadges = PickerBadges(),
     /** The last list this device was given; null when there is no local cache. */
     private val projectListStore: ProjectListStore? = null,
     /** Whether the API can be reached right now. Hosts wire the connectivity monitor; true keeps every open live. */
@@ -220,8 +256,26 @@ class AuthViewModel(
     /** True while a rejection is being checked, so a stampede asks once. */
     private var isConfirmingDevice = false
 
+
     init {
         resumeOrSignIn()
+        // Only while the listing is the screen: re-reading the ledger behind
+        // an open production would be a database pass a minute for a map
+        // nobody is looking at, and the shell draws its own counts.
+        launch {
+            projectUnread.changes.collect {
+                if (currentState.step != AuthStep.ProjectSelection) return@collect
+                val counts = projectUnread.now()
+                if (counts == currentState.projectUnread) return@collect
+                // The repaint has no other tell: `picker badges` below is the
+                // seeding path's line, so without this a card that moved and
+                // a card that never heard look identical in the log.
+                ZillitLog.d(TAG) {
+                    "picker badges moved: " + movedCards(currentState.projectUnread, counts, currentState.projects)
+                }
+                setState { copy(projectUnread = counts) }
+            }
+        }
         // Signing out anywhere — Settings, the rail's Logout — clears the
         // repository's session; this is the one place that turns that into a
         // screen change. Watched rather than wired from each button so a new
@@ -409,7 +463,7 @@ class AuthViewModel(
                 // Which production has news — asked alongside the list, not
                 // before it: cards render immediately and the counts join.
                 launch {
-                    val counts = projectUnread()
+                    val counts = projectUnread.refresh()
                     setState { copy(projectUnread = counts) }
                     // Names beside the numbers, for a comparison with a phone.
                     ZillitLog.d(TAG) {
