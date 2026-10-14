@@ -54,6 +54,22 @@ class S3NoticeMediaSource(
     private val cache = LinkedHashMap<String, ByteArray>(0, LOAD_FACTOR, true)
     private var cachedBytes = 0L
 
+    /**
+     * Keys S3 has answered 404 for — remembered, because the cache above only
+     * holds what came back.
+     *
+     * A board carrying a post whose file is gone re-composes like any other,
+     * and every composition re-signed and re-sent the fetch: one window logged
+     * 687 rejected fetches in bursts of eight and ten, which is a screenful of
+     * bubbles asking again on every scroll. An object that does not exist is
+     * the one answer worth keeping — it cannot come back without a new post,
+     * which carries a new key.
+     *
+     * Only 404. A 403 can be a signature or a clock that will come right, and
+     * a refusal for size is about this fetch rather than the object.
+     */
+    private val absent = LinkedHashSet<String>()
+
     override suspend fun fetch(
         attachment: NoticeAttachment,
         preview: Boolean,
@@ -61,6 +77,7 @@ class S3NoticeMediaSource(
         val key = if (preview) attachment.previewKey else attachment.media
 
         lock.withLock { cache[key] }?.let { return ZillitResult.Success(it) }
+        if (lock.withLock { key in absent }) return goneFailure()
 
         if (!attachment.isFetchable) {
             return ZillitResult.Failure(
@@ -72,7 +89,28 @@ class S3NoticeMediaSource(
         }
 
         return download(attachment, key, if (preview) PREVIEW_MAX_BYTES else IN_MEMORY_MAX_BYTES).also { result ->
-            if (result is ZillitResult.Success) remember(key, result.data)
+            when {
+                result is ZillitResult.Success -> remember(key, result.data)
+                result.isGone() -> rememberGone(key)
+            }
+        }
+    }
+
+    private fun ZillitResult<ByteArray>.isGone(): Boolean =
+        (this as? ZillitResult.Failure)?.error.let { it is ZillitError.Http && it.status == GONE }
+
+    private fun goneFailure(): ZillitResult<ByteArray> =
+        ZillitResult.Failure(ZillitError.Http(GONE, str(S.desktop_could_not_load_file)))
+
+    private suspend fun rememberGone(key: String) {
+        lock.withLock {
+            absent.remove(key)
+            absent += key
+            val eldest = absent.iterator()
+            while (absent.size > MAX_ABSENT_KEYS && eldest.hasNext()) {
+                eldest.next()
+                eldest.remove()
+            }
         }
     }
 
@@ -266,6 +304,12 @@ class S3NoticeMediaSource(
         const val WEBM_CONTENT_TYPE = "video/webm"
 
         const val OGG_CONTENT_TYPE = "video/ogg"
+
+        /** S3's answer for an object that is not there. */
+        const val GONE = 404
+
+        /** Keys, not bytes: a few hundred is nothing to hold and more than a board shows. */
+        const val MAX_ABSENT_KEYS = 512
 
         const val DEFAULT_CACHE_BYTES = 64L * 1024 * 1024
 

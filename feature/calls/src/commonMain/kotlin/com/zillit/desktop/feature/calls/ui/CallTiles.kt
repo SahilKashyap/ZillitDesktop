@@ -115,6 +115,7 @@ private fun personTiles(
     val selfUid = media.selfUid.takeIf { it != 0 } ?: session.localUid
     val roster = session.participants
         .filter { it.userId != session.selfUserId && it.status in ON_STAGE }
+        .oneRowPerUser(media)
     val bound = bindUids(session, roster, media, selfUid)
     val claimed = bound.values.toSet() + selfUid
     // On a 1:1 the invite names the other person even when their roster row
@@ -162,6 +163,41 @@ private fun personTiles(
                 }
             }
         }
+    }
+        // A tile's key is its person, and both consumers key by it — the stage
+        // grid and the users panel's list. Two tiles under one key is not a
+        // cosmetic fault there: `LazyColumn` throws, on the measure pass, and
+        // took the window's event queue with it (2026-10-12, "Key
+        // in-67810b989dcdb99a84298bc8 was already used"). [oneRowPerUser]
+        // settles which row speaks for a person; this is the guarantee the
+        // consumers actually rely on, including against a guest tile drawn for
+        // somebody the roster already placed.
+        .distinctBy(CallTile::key)
+}
+
+/**
+ * One tile per person, whoever they are signed in on.
+ *
+ * The roster is a list of sessions, not of people: somebody who answered on a
+ * second device, or who rejoined before the old session's close caught up, is
+ * two rows carrying one user id. A tile's key *is* that user id, so those two
+ * rows crashed the users panel outright rather than merely listing them twice.
+ *
+ * The row kept is the one that can be drawn truthfully: in the channel ahead
+ * of still ringing, and between two of those, the device whose stream the
+ * engine is really carrying — otherwise a person with a live camera on their
+ * laptop draws from the phone row that is only ringing, dark and muted.
+ */
+private fun List<CallParticipant>.oneRowPerUser(media: CallMedia): List<CallParticipant> {
+    val perUser = groupBy(CallParticipant::userId)
+    if (perUser.size == size) return this
+    // `distinctBy` keeps first-appearance order, so the stage keeps roster
+    // order — tiles that re-sort during a call are their own complaint.
+    return distinctBy(CallParticipant::userId).map { first ->
+        val rows = perUser.getValue(first.userId)
+        rows.firstOrNull { it.status in IN_CHANNEL && it.numericUid != 0 && it.numericUid in media.peers }
+            ?: rows.firstOrNull { it.status in IN_CHANNEL }
+            ?: first
     }
 }
 

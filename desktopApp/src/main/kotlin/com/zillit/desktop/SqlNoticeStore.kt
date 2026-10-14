@@ -16,7 +16,9 @@ import kotlinx.coroutines.withContext
  * cannot see — which production is open, and a thread to do the IO on.
  * SQLDelight's generated queries are blocking, and every caller here is a
  * view-model coroutine on the main dispatcher, so each call steps off it, as
- * [SqlReadCache] does.
+ * [SqlReadCache] does — the read onto [readDispatcher], the cache's own lane,
+ * because it is what a board waits on while a switch's writes are queued
+ * (see [CacheReadLane]).
  *
  * Built per board ([board] being `home`, `info`, `reports`…) because unit ids
  * are only unique within one. A call made while no production is open is
@@ -28,11 +30,12 @@ class SqlNoticeStore(
     private val board: String,
     private val projectId: () -> String?,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val readDispatcher: CoroutineDispatcher = CacheReadLane,
 ) : NoticeStore {
 
     override suspend fun newest(unitId: String): List<String> {
         val scope = scopeFor(unitId) ?: return emptyList()
-        return withContext(dispatcher) { cache.newest(scope) }
+        return withContext(readDispatcher) { cache.newest(scope) }
     }
 
     override suspend fun save(unitId: String, rows: List<NoticeWire>) {
@@ -58,6 +61,12 @@ class SqlNoticeStore(
                 cache.delete(BoardScope(project, board, unitId), noticeId)
             }
         }
+    }
+
+    /** The production open now, fixed — so a page that lands after a switch is filed where it was asked. */
+    override fun pinned(): NoticeStore {
+        val open = projectId()
+        return SqlNoticeStore(cache, board, { open }, dispatcher, readDispatcher)
     }
 
     private fun scopeFor(unitId: String): BoardScope? =

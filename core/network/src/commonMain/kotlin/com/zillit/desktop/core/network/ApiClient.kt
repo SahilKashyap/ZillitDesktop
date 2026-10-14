@@ -194,31 +194,34 @@ class ApiClient(
         queryParameters: Map<String, Any?> = emptyMap(),
         options: CallOptions = CallOptions(),
     ): ZillitResult<ApiEnvelope> {
+        // Whose answer this is is settled as it is asked, by the same identity
+        // that signs it. Worked out when the answer landed, a read still out
+        // across a production switch was kept under the next production — or,
+        // mid-switch, under nobody (seen on a real cache: a Home board page
+        // filed under a blank user and production).
+        val kept = readCache?.let { keptUnder(verb, url, module, queryParameters, options) }
         val outcome = send(verb, url, module, body, queryParameters, options)
         onOutcome((outcome as? ZillitResult.Failure)?.error)
         (outcome as? ZillitResult.Failure)?.let { onFailure(ApiFailure(verb.wire, url, it.error)) }
-        return remembered(outcome, verb, url, module, queryParameters, options)
+        return remembered(outcome, kept, url)
     }
 
     /**
      * The read cache, around a GET.
      *
-     * A good answer is kept under (user, production, url, query). When the
-     * same read cannot reach the server — no connection, a timeout — the kept
-     * answer stands in. A refusal (4xx/5xx) is *not* offline and is returned
-     * as is: showing a saved list when the server just said "forbidden" would
-     * be a lie about rights.
+     * A good answer is kept under (user, production, url, query) — [kept],
+     * taken when the call was made. When the same read cannot reach the
+     * server — no connection, a timeout — the kept answer stands in. A refusal
+     * (4xx/5xx) is *not* offline and is returned as is: showing a saved list
+     * when the server just said "forbidden" would be a lie about rights.
      */
     private suspend fun remembered(
         outcome: ZillitResult<ApiEnvelope>,
-        verb: HttpVerb,
+        kept: KeptRead?,
         url: String,
-        module: RequestModule,
-        queryParameters: Map<String, Any?>,
-        options: CallOptions,
     ): ZillitResult<ApiEnvelope> {
         val cache = readCache ?: return outcome
-        val kept = keptUnder(verb, url, module, queryParameters, options) ?: return outcome
+        if (kept == null) return outcome
         return when (outcome) {
             is ZillitResult.Success -> {
                 keep(cache, kept.key, kept.scope, outcome.data)
@@ -247,7 +250,7 @@ class ApiClient(
      *
      * The arguments must match the [request] this is the cache of, exactly, or
      * the key will not be the one that was written. [keptUnder] is shared with
-     * [remembered] so the two cannot drift.
+     * [envelope], which keys the write, so the two cannot drift.
      */
     suspend fun <T> peekCached(
         url: String,
@@ -288,19 +291,51 @@ class ApiClient(
     private fun CallOptions.isRead(verb: HttpVerb): Boolean =
         readCache && (verb == HttpVerb.Get || (verb == HttpVerb.Post && cacheAs != null))
 
+    /**
+     * Keeping an answer never fails the call that answered.
+     *
+     * The row is a convenience and the server's answer is already in hand, on
+     * its way to the caller. A store that cannot take it must not turn a
+     * successful read into a thrown exception, because the throw lands on
+     * whichever coroutine made the request — and screens read on the main one.
+     * One did: a SQLite I/O error on the write below reached
+     * `AWT-EventQueue-0` as an uncaught exception, over a row nobody would
+     * have missed.
+     */
     private suspend fun keep(cache: ReadCache, key: String, scope: ReadScope, envelope: ApiEnvelope) {
-        val json = HttpClientFactory.json.encodeToString(ApiEnvelope.serializer(), envelope)
-        if (json.length <= MAX_CACHED_BODY_CHARS) cache.put(key, scope, json, nowMillis())
+        bestEffort("keep") {
+            val json = HttpClientFactory.json.encodeToString(ApiEnvelope.serializer(), envelope)
+            if (json.length <= MAX_CACHED_BODY_CHARS) cache.put(key, scope, json, nowMillis())
+        }
     }
 
     private suspend fun recall(cache: ReadCache, key: String, url: String): ZillitResult<ApiEnvelope>? {
-        val kept = cache.get(key) ?: return null
+        val kept = bestEffort("recall") { cache.get(key) } ?: return null
         val envelope = runCatching {
             HttpClientFactory.json.decodeFromString(ApiEnvelope.serializer(), kept.body)
         }.getOrNull() ?: return null
         ZillitLog.d(TAG) { "served from cache: ${url.substringAfter("//").substringAfter('/')}" }
         return ZillitResult.Success(envelope)
     }
+
+    /**
+     * One reach into the store, as the broken thing it is allowed to be. Null
+     * on anything thrown — [CancellationException] excepted, which must
+     * propagate so coroutine cancellation keeps working.
+     *
+     * The guarantee lives here rather than in each [ReadCache]: this class is
+     * the only thing that reaches a store, so holding it once holds it for
+     * every implementation, including the ones written next.
+     */
+    private suspend fun <T> bestEffort(what: String, access: suspend () -> T): T? =
+        try {
+            access()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
+            ZillitLog.w(TAG) { "read cache $what failed: ${throwable.message}" }
+            null
+        }
 
     private suspend fun send(
         verb: HttpVerb,
@@ -382,7 +417,17 @@ class ApiClient(
             // Reached via `call` rather than the `HttpResponse.request`
             // extension, which the imported `HttpClient.request` shadows here.
             val path = call.request.url.encodedPath
-            ZillitLog.w(TAG) { "${status.value} $path" }
+            // The server's own word for the failure, which this line used to
+            // drop: a log of bare `406 /api/v2/configuration` says a call was
+            // refused and nothing about why, and the refusals that matter are
+            // told apart only by this key (`libs_module_data_invalid` is an
+            // identity the blob did not carry, `libs_invalid_token_scope` is a
+            // token the route will not take). It is a key, not content — the
+            // same one `TokenSession` already logs.
+            ZillitLog.w(TAG) {
+                val why = serverMessage?.takeIf(String::isNotBlank)?.let { " $it" }.orEmpty()
+                "${status.value} $path$why${blankPairNote(status.value, readScope())}"
+            }
             if (status.value == STATUS_UNAUTHORIZED && reportUnauthorized) onUnauthorized()
 
             return ZillitResult.Failure(
@@ -515,3 +560,35 @@ internal fun readKey(scope: ReadScope, projectId: String, url: String, query: Ma
 
 /** The failures that mean "could not reach the server", as opposed to "the server said no". */
 internal fun ZillitError.isUnreachable(): Boolean = this is ZillitError.NoConnection || this is ZillitError.Timeout
+
+/**
+ * What this client can already tell about a 406, said on the line that reports
+ * it. Empty for every other status, and for a 406 this cannot explain.
+ *
+ * A 406 is the server refusing a `moduledata` whose project-scoped pair is
+ * missing or belongs to another production. Both other clients say so: iOS
+ * calls an empty pair "a guaranteed 406" and substitutes a ringing call's
+ * identity rather than send one, and this client's own
+ * [RequestHeaderProvider.headersFor] warns that another production's user id
+ * is a call "the server answers for the wrong person (or 406s)". The pair is
+ * taken from the ambient context, so which half was blank is already known
+ * where the refusal arrives, and costs a few words to say.
+ *
+ * Worth those words because of what the field sent instead: thirty-three lines
+ * of `406 /api/v2/configuration` naming the symptom and nothing else, in a
+ * production log with no INFO in it to cross-reference (2026-10-12). No id is
+ * logged — that a production or a person is missing is the finding; which one
+ * they are is content.
+ */
+internal fun blankPairNote(status: Int, scope: ReadScope?): String {
+    if (status != STATUS_NOT_ACCEPTABLE) return ""
+    if (scope == null) return " — no session context to send"
+    val missing = listOfNotNull(
+        "production".takeIf { scope.projectId.isBlank() },
+        "person".takeIf { scope.userId.isBlank() },
+    )
+    return if (missing.isEmpty()) "" else " — moduledata named no ${missing.joinToString(" and no ")}"
+}
+
+/** The server's answer to a `moduledata` it will not accept. */
+private const val STATUS_NOT_ACCEPTABLE = 406

@@ -811,7 +811,7 @@ class StillsViewModelTest {
     }
 
     @Test
-    fun `"enrolled" is said once the headshots are checked, not when the member is made`() = runTest {
+    fun `'enrolled' is said once the headshots are checked, not when the member is made`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val check = CompletableDeferred<Unit>()

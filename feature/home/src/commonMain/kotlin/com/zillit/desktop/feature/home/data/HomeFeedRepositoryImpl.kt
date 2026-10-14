@@ -177,8 +177,9 @@ class HomeFeedRepositoryImpl(
     override suspend fun loadNotices(
         unitId: String,
         beforeMillis: Long,
-    ): ZillitResult<List<Notice>> =
-        apiClient.request(
+    ): ZillitResult<List<Notice>> {
+        val filing = disk?.pinned()
+        return apiClient.request(
             verb = HttpVerb.Get,
             url = "${chat}$unitId/$beforeMillis/previous$cabinetQuery",
             serializer = ListSerializer(JsonElement.serializer()),
@@ -186,7 +187,8 @@ class HomeFeedRepositoryImpl(
             // The cabinet's records are not that board: filing them under the
             // newest-page name would replace the live copy with archived posts.
             options = if (fileCabinet) CallOptions() else newestPage(unitId),
-        ).alsoFiled(unitId)
+        ).alsoFiled(unitId, filing)
+    }
 
     /**
      * Scrolling back: the same route, kept out of the newest-page cache.
@@ -198,13 +200,15 @@ class HomeFeedRepositoryImpl(
     override suspend fun loadOlderNotices(
         unitId: String,
         beforeMillis: Long,
-    ): ZillitResult<List<Notice>> =
-        apiClient.request(
+    ): ZillitResult<List<Notice>> {
+        val filing = disk?.pinned()
+        return apiClient.request(
             verb = HttpVerb.Get,
             url = "${chat}$unitId/$beforeMillis/previous$cabinetQuery",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
-        ).alsoFiled(unitId)
+        ).alsoFiled(unitId, filing)
+    }
 
     /**
      * The kept tab strip, for a board to draw while the real read is out.
@@ -269,12 +273,16 @@ class HomeFeedRepositoryImpl(
      * guards here: a row it refuses — deleted, or unparseable — is one the
      * board would never draw, so keeping it would only mean drawing it on the
      * next cold open.
+     *
+     * Into [store] — the board's store as it was when the read was asked
+     * ([NoticeStore.pinned]), not whichever production is open when it lands.
      */
     private suspend fun ZillitResult<List<JsonElement>>.alsoFiled(
         unitId: String,
+        store: NoticeStore?,
     ): ZillitResult<List<Notice>> = map { rows ->
         val notices = rows.toNotices()
-        disk?.let { store ->
+        if (store != null) {
             val byId = rows.associateBy { (it as? JsonObject)?.string("_id") }
             store.save(
                 unitId,

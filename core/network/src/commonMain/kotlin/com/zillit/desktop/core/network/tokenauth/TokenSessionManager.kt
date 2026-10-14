@@ -454,7 +454,7 @@ class TokenSessionManager(
             // The call falls back to `moduledata` and the route itself answers
             // the proper no-access response for the screen.
             val why = (result as SessionCallResult.Failure).serverMessage
-            ZillitLog.i(TAG) { "project token denied for $projectId: $why" }
+            ZillitLog.i(TAG) { "project token denied for ${projectId.tail()}: $why" }
             return null
         }
         if (result is SessionCallResult.Failure && result.httpStatus == STATUS_UNAUTHORIZED) {
@@ -477,7 +477,8 @@ class TokenSessionManager(
                 if (killed) killSwitch() else startMintBackoff(projectId)
                 ZillitLog.w(TAG) {
                     val quiet = if (killed) "" else "; not retrying for ${MINT_BACKOFF_MILLIS / MILLIS_PER_SECOND}s"
-                    "project token not minted for $projectId: ${result.httpStatus} ${result.serverMessage}$quiet"
+                    "project token not minted for ${projectId.tail()}: " +
+                        "${result.httpStatus} ${result.serverMessage}$quiet"
                 }
                 null
             }
@@ -502,9 +503,20 @@ class TokenSessionManager(
             projectTokens[projectId] = token
             mintBackoffUntil.remove(projectId)
         }
-        ZillitLog.i(TAG) { "project token minted for $projectId (scope=${data.scope})" }
+        ZillitLog.i(TAG) { "project token minted for ${projectId.tail()} (scope=${data.scope})" }
         return token.value
     }
+
+    /**
+     * The last few characters of a production id — enough to tell two apart in
+     * a log, not enough to be a record of which productions somebody is on.
+     *
+     * This tag's INFO is now kept in production, because the scope on the line
+     * above is what tells a refused call apart from a wrong one (see
+     * `ZillitLogging.FIELD_TAGS`). The id itself is not needed for that, and
+     * iOS prints the same line the same way (`projectId.suffix(6)`).
+     */
+    private fun String.tail(): String = if (length <= ID_TAIL) this else "…" + takeLast(ID_TAIL)
 
     private fun SessionCallResult<*>.isNoAccess(): Boolean =
         this is SessionCallResult.Failure && (serverMessage == MSG_NO_MEMBERSHIP || serverMessage == MSG_ACCESS_DENIED)
@@ -556,6 +568,9 @@ class TokenSessionManager(
         // The server's verdicts, by name.
         const val MSG_REFRESH_INVALID = "session_refresh_invalid"
         const val MSG_REFRESH_REUSE = "session_refresh_reuse_detected"
+
+        /** How much of a production id a log line keeps — see `String.tail`. */
+        private const val ID_TAIL = 6
         const val MSG_TOKEN_AUTH_DISABLED = "session_token_auth_disabled"
         const val MSG_NO_MEMBERSHIP = "session_project_no_membership"
         const val MSG_ACCESS_DENIED = "session_project_access_denied"

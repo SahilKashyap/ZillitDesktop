@@ -209,7 +209,7 @@ class UploadQueueTest {
     }
 
     @Test
-    fun `"upload anyway" sends a duplicate in a request of its own`() = runTest {
+    fun `'upload anyway' sends a duplicate in a request of its own`() = runTest {
         val queue = queue(TestScope(StandardTestDispatcher(testScheduler)))
         repository.presign = listOf(UploadLink(uniqueId = "", duplicateOf = "p9"))
         queue.add(picks("a.jpg"), shootLabel = "", types = types, maxBytes = 50_000)
@@ -277,7 +277,7 @@ class UploadQueueTest {
     }
 
     @Test
-    fun `what was turned away here never counts towards "uploaded x of y"`() {
+    fun `what was turned away here never counts towards 'uploaded x of y'`() {
         val counts = countsOf(
             listOf(
                 item("a.jpg", FileStatus.Done, 100),

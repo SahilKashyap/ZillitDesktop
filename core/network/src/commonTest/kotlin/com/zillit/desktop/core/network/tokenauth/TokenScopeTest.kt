@@ -36,8 +36,8 @@ class TokenScopeTest {
     /**
      * Except on the routes the server has actually been seen refusing a
      * device token. There the fallback would be a certain 401, so the call
-     * takes the legacy credential instead. Suffix-matched, so the host and
-     * any query string are irrelevant.
+     * takes the legacy credential instead. Matched on trailing segments, so
+     * the host and any query string are irrelevant.
      */
     @Test
     fun `the routes that insist on a project token are known by path`() {
@@ -47,6 +47,49 @@ class TokenScopeTest {
         assertFalse(requiresProjectToken("https://projectapi-dev.zillit.com/api/v2/user/profile"))
         // A near-miss must not match: /project is not /project/users.
         assertFalse(requiresProjectToken("https://projectapi-dev.zillit.com/api/v2/project"))
+    }
+
+    /**
+     * A listed route covers what sits under it.
+     *
+     * `/account-hub/project-settings` was listed for the family, but a suffix
+     * test alone matched only the bare collection — which nothing calls. Every
+     * child kept sending the device token the entry was added to stop: these
+     * five were 62 of the 144 refusals in one production log (2026-10-14).
+     */
+    @Test
+    fun `a listed family covers its children, which is what the app actually calls`() {
+        listOf("project-currencies", "companies", "tax-types", "asset-tags", "allowances-rentals").forEach { leaf ->
+            assertTrue(
+                requiresProjectToken("https://accounthubapi.zillit.com/api/v2/account-hub/project-settings/$leaf"),
+                leaf,
+            )
+        }
+        assertTrue(requiresProjectToken("https://h/api/v2/account-hub/project-settings/companies?x=1"))
+    }
+
+    /** A neighbour that merely starts the same way is a different route. */
+    @Test
+    fun `a route that only shares a prefix does not match`() {
+        assertFalse(requiresProjectToken("https://h/api/v2/account-hub/project-settings-archive"))
+        assertFalse(requiresProjectToken("https://h/api/v2/account-hub/project-settings-archive/companies"))
+        assertFalse(requiresProjectToken("https://h/api/v2/project/userscount"))
+    }
+
+    /**
+     * The mailbox, off two production logs: the folder list and the index
+     * behind it, refused 21 times with `libs_invalid_token_scope`.
+     */
+    @Test
+    fun `the mailbox routes seen refusing a device token are listed`() {
+        assertTrue(requiresProjectToken("https://emailapi.zillit.com/api/v2/imap-folders"))
+        assertTrue(requiresProjectToken("https://emailapi.zillit.com/api/v2/imap-emails/get-email-index"))
+        assertTrue(requiresProjectToken("https://emailapi.zillit.com/api/v2/imap-emails/get-folder-uids"))
+        // Not the whole collection: these have not been seen refused, and
+        // listing a route that would have worked sends `moduledata`, which
+        // develop rejects — the opposite failure.
+        assertFalse(requiresProjectToken("https://emailapi.zillit.com/api/v2/imap-emails/get-attachment"))
+        assertFalse(requiresProjectToken("https://emailapi.zillit.com/api/v2/imap-emails/empty-trash"))
     }
 
     @Test

@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
  * carries on looking at the gallery while it goes.
  */
 internal fun AppGraph.Ready.buildSelectStills(permissions: () -> ProjectPermissions): StillsViewModel {
-    val repository = StillsRepositoryImpl(apiClient, config)
+    val repository = StillsRepositoryImpl(apiClient, config, now = { System.currentTimeMillis() })
     val files = JvmStillsFileReader()
     val uploader = KtorStillsUploader(httpClient, files)
     val openProject = { projectContext?.context?.value?.project?.projectId }

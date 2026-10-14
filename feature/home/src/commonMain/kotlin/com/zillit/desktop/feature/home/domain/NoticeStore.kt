@@ -46,4 +46,16 @@ interface NoticeStore {
      * the next cold open.
      */
     suspend fun forget(unitId: String?, noticeId: String)
+
+    /**
+     * This store, fixed to the production open now.
+     *
+     * A page is filed when its answer lands, and a production switch can
+     * happen while it is on its way: resolved then, the page went to the next
+     * production — or, mid-switch, nowhere, which left the kept board a
+     * refresh behind. Taken when the read is asked, the page is filed under
+     * the production that asked for it. A store with no production to
+     * resolve is already fixed, and is itself.
+     */
+    fun pinned(): NoticeStore = this
 }

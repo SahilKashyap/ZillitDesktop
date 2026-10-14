@@ -83,15 +83,40 @@ private val PROJECT_SCOPED_PATHS = listOf(
     "/location/units",
     "/webrtc/turn-credentials",
     "/account-hub/project-settings",
+
+    // The mailbox, off two production logs (2026-10-12 and 2026-10-14): the
+    // folder list and the index behind it were refused 21 times between them,
+    // `Mailbox: could not list Trash: libs_invalid_token_scope` — the message
+    // this list exists for. The writes on the same collections have not been
+    // seen refused and are covered only because they sit under these.
+    "/imap-folders",
+    "/imap-emails/get-email-index",
+    "/imap-emails/get-folder-uids",
 )
 
 /**
  * Whether [path] must carry a project token, so a caller with only a device
  * token sends the legacy credential rather than one the route is certain to
- * refuse. Matched as a suffix, so a query string or a different host does not
- * matter.
+ * refuse.
  */
 fun requiresProjectToken(path: String): Boolean {
     val clean = path.substringBefore('?').trimEnd('/')
-    return PROJECT_SCOPED_PATHS.any { clean.endsWith(it) }
+    return PROJECT_SCOPED_PATHS.any { clean.isRouteUnder(it) }
 }
+
+/**
+ * Whether this path **is** [route] or sits under it.
+ *
+ * Both halves are load-bearing, and the second one was missing. An entry here
+ * names a route family — `/account-hub/project-settings` was listed for the
+ * family — but a suffix test alone matched only the bare collection, which
+ * nothing calls: every child went on sending the device token the entry was
+ * added to stop, and `/account-hub/project-settings/project-currencies`,
+ * `/companies`, `/tax-types`, `/asset-tags` and `/allowances-rentals` made up
+ * 62 of the 144 refusals in one production log (2026-10-14).
+ *
+ * Still matched on the trailing segments rather than from the start, so the
+ * host and the `/api/v2` prefix stay irrelevant — and on a whole segment, so a
+ * neighbour like `/project-settings-archive` is not read as the family.
+ */
+private fun String.isRouteUnder(route: String): Boolean = endsWith(route) || contains("$route/")

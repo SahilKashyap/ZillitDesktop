@@ -77,8 +77,11 @@ class BoardStoreTest {
         store: NoticeStore?,
         rows: String,
         fileCabinet: Boolean = false,
+        /** Runs while the request is out — where a test switches production. */
+        whileOut: () -> Unit = {},
     ): HomeFeedRepositoryImpl {
         val engine = MockEngine {
+            whileOut()
             respond(
                 """{"status":1,"message":"ok","data":[$rows]}""",
                 HttpStatusCode.OK,
@@ -155,6 +158,49 @@ class BoardStoreTest {
         repository(store, post("gone", 100, deleted = true)).loadNotices("u1", 9_000)
 
         assertTrue(store.ids("u1").isEmpty())
+    }
+
+    /**
+     * A store that, like the host's, answers for whichever production is
+     * open when it is called — unless pinned.
+     */
+    private class ProductionStore(var open: String?) : NoticeStore {
+        val rows = mutableMapOf<String, MutableList<String>>()
+
+        private fun filed(production: String?, unitId: String, ids: List<String>) {
+            production?.let { rows.getOrPut("$it/$unitId") { mutableListOf() } += ids }
+        }
+
+        override suspend fun newest(unitId: String) = emptyList<String>()
+        override suspend fun save(unitId: String, rows: List<NoticeWire>) =
+            filed(open, unitId, rows.map { it.noticeId })
+        override suspend fun put(unitId: String, row: NoticeWire) = filed(open, unitId, listOf(row.noticeId))
+        override suspend fun forget(unitId: String?, noticeId: String) = Unit
+
+        override fun pinned(): NoticeStore {
+            val asked = open
+            val outer = this
+            return object : NoticeStore by outer {
+                override suspend fun save(unitId: String, rows: List<NoticeWire>) =
+                    outer.filed(asked, unitId, rows.map { it.noticeId })
+            }
+        }
+    }
+
+    /**
+     * Seen on a real cache: a page still out across a switch was filed when
+     * it landed — into nobody's board, mid-switch, so the kept copy stayed a
+     * refresh behind; into the next production's, after it.
+     */
+    @Test
+    fun `a page that lands after a production switch is filed under the one that asked`() = runTest {
+        val store = ProductionStore(open = "p1")
+
+        repository(store, post("n1", 100), whileOut = { store.open = "p2" }).loadNotices("u1", 9_000)
+        repository(store, post("old", 10), whileOut = { store.open = null }).also { store.open = "p1" }
+            .loadOlderNotices("u1", 50)
+
+        assertEquals(mapOf("p1/u1" to listOf("n1", "old")), store.rows.mapValues { it.value.toList() })
     }
 
     @Test
