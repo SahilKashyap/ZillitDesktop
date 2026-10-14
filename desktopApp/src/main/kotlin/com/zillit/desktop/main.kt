@@ -623,6 +623,10 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         chat = viewModels.chat,
         email = viewModels.email,
         crewName = crewName,
+        // The frame rings only once a production is open; the same gate the
+        // floating card uses, so exactly one of the two answers for "already
+        // on screen". See [IncomingCallWidget].
+        shellShowsRing = authViewModel?.state?.collectAsState()?.value?.step == AuthStep.Complete,
     )
 
     ZillitWindows(

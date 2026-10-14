@@ -2,6 +2,8 @@ package com.zillit.desktop
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.window.TrayState
 import com.zillit.desktop.core.common.ZillitLog
@@ -36,10 +38,13 @@ import com.zillit.desktop.core.strings.str
  * thing being looked at. Everything else is fair game, because the user cannot
  * see it.
  *
- * A ringing call is the one exception: it posts whichever window has focus.
- * The in-app ring card is already on screen in that case, but a call lasts a
- * minute and then stops existing, and the cost of a duplicate is far below the
- * cost of the one that got away.
+ * A ringing call follows the same rule, read off the one surface that answers
+ * it: the ring card drawn in the frame. With that card up in a focused window
+ * the banner lands on top of the very buttons the user is reaching for, so it
+ * stands down. Everywhere else — behind another app, minimised, in the tray,
+ * on the production picker — it posts, because a call lasts a minute and then
+ * stops existing, and the cost of a duplicate is far below the cost of the one
+ * that got away.
  */
 @Composable
 fun IncomingAlerts(
@@ -50,6 +55,13 @@ fun IncomingAlerts(
     chat: ChatViewModel?,
     email: EmailViewModel?,
     crewName: (String) -> String?,
+    /**
+     * Whether the frame has the in-window ring card up — true only while the
+     * signed-in shell is on screen, matching [IncomingCallWidget]'s own gate.
+     * False on the production picker and the sign-in pages, where the frame
+     * rings for nobody and the banner is all there is.
+     */
+    shellShowsRing: Boolean,
 ) {
     val ready = graph as? AppGraph.Ready ?: return
     val notifier: Notifier = TrayNotifier(trayState)
@@ -58,7 +70,7 @@ fun IncomingAlerts(
     MailAlerts(ready, preferences, notifier, frame, email)
     EditAlerts(ready, preferences, notifier, frame, chat, crewName)
     UpdateAlerts(ready, preferences, notifier, crewName)
-    CallAlerts(ready, preferences, notifier)
+    CallAlerts(ready, preferences, notifier, frame, shellShowsRing)
     ActivityAlerts(ready, preferences, notifier)
 }
 
@@ -145,17 +157,28 @@ private fun UpdateAlerts(
  * every gate the state machine already applies — our own ring echoed back, an
  * invite arriving while another call is up, a call answered on the user's
  * phone. Re-reading `cnc:incoming-call` here would notify for all three.
+ *
+ * Stands down for the frame's own ring card, on the rule every other source
+ * here follows: the card covers the window, carries Accept and Decline, and a
+ * banner over it hides the answer rather than announcing the call.
  */
 @Composable
 private fun CallAlerts(
     ready: AppGraph.Ready,
     preferences: PreferenceStore,
     notifier: Notifier,
+    frame: ComposeWindow?,
+    shellShowsRing: Boolean,
 ) {
+    // Read through the latest composition: the shell comes and goes with the
+    // open production, and a value captured when the collector started would
+    // answer for whatever was on screen then.
+    val ringsInFrame by rememberUpdatedState(shellShowsRing)
     LaunchedEffect(ready) {
         ready.callCoordinator.phase.collect { phase ->
             if (phase != CallPhase.Incoming) return@collect
             if (!preferences.get(ZillitPreferences.NotifyCalls)) return@collect
+            if (frame.hasFocus() && ringsInFrame) return@collect
             val session = ready.callCoordinator.session.value ?: return@collect
 
             notifier.post(
