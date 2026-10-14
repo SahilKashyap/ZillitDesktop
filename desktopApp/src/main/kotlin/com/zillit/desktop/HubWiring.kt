@@ -84,7 +84,6 @@ private fun AppGraph.Ready.hubViewer(permissions: ProjectPermissions): HubViewer
         userId = userId,
         designation = profile?.designationName?.takeIf { it.isNotBlank() }
             ?: crewRow?.designation.orEmpty(),
-        // The rail's profile card, which the web's sidebar carries too.
         fullName = profile?.fullName?.takeIf { it.isNotBlank() }
             ?: crewRow?.fullName.orEmpty(),
         isAdmin = context?.isAdmin == true,
@@ -92,9 +91,23 @@ private fun AppGraph.Ready.hubViewer(permissions: ProjectPermissions): HubViewer
         // as one shows "no access" while the tools call is still in flight.
         canView = permissions.visibleTools.isEmpty() ||
             permissions.canView(HubViewer.TOOL_IDENTIFIER),
-        canPost = permissions.canPost(HubViewer.TOOL_IDENTIFIER),
+        canPost = permissions.postsAsIssued(HubViewer.TOOL_IDENTIFIER),
     )
 }
+
+/**
+ * Posting rights on [identifier] exactly as the server issued them — **no
+ * admin bypass**.
+ *
+ * [ProjectPermissions.canPost] grants an admin posting on every tool, which
+ * made every admin a coordinator here: the whole coordinator hub, for someone
+ * User Management never gave the right. The web's `resolveHubRole` reads the
+ * raw `posting_access` on `transportation_tool` and nothing else, admins
+ * included, so that the rights grid can grant and revoke coordinator access
+ * for anyone.
+ */
+internal fun ProjectPermissions.postsAsIssued(identifier: String): Boolean =
+    tools.firstOrNull { it.identifier == identifier }?.let { it.enabled && it.canPost } == true
 
 /**
  * Marks a bucket's rows read, here and on the server.

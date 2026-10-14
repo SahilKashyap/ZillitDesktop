@@ -607,7 +607,7 @@ enum class HubRole { Coordinator, Driver, Passenger }
 data class HubViewer(
     val userId: String = "",
     val designation: String = "",
-    /** For the rail's profile card, which the web's sidebar carries too. */
+    /** The caller's own name — the first passenger on a ride they request. */
     val fullName: String = "",
     val isAdmin: Boolean = false,
     val canView: Boolean = false,
