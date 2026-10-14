@@ -14,6 +14,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -53,6 +55,7 @@ import com.zillit.desktop.feature.selectstills.ui.MemberDialogState
 import com.zillit.desktop.feature.selectstills.ui.ReviewState
 import com.zillit.desktop.feature.selectstills.ui.SettingsFormState
 import com.zillit.desktop.feature.selectstills.ui.SimilarState
+import com.zillit.desktop.feature.selectstills.ui.StillsEvent
 import com.zillit.desktop.feature.selectstills.ui.StillsPage
 import com.zillit.desktop.feature.selectstills.ui.StillsPerson
 import com.zillit.desktop.feature.selectstills.ui.StillsScreen
@@ -393,6 +396,72 @@ class StillsScreenRenderTest {
             onNodeWithText("Any size").assertExists()
             onNodeWithText("2 people").assertExists()
             onNodeWithText("6 or more").assertExists()
+        }
+    }
+
+    /**
+     * The photos flow round the cast list: beside it while it lasts, the whole
+     * width once it ends — two across and then three on a 1000-wide tool. The
+     * grid used to be a LazyVerticalGrid the whole page lived in, where the list
+     * could only be a full-width row, so the first photo started under the
+     * list's last name with the page beside the list left empty.
+     */
+    @Test
+    fun `the photos sit beside the cast list, then take the whole width under it`() {
+        val cast = (1..14).map { SummaryMember("c$it", "Cast Member $it", 20 - it) }
+        val long = state(StillsPage.Photos).let {
+            it.copy(
+                gallery = it.gallery.copy(
+                    photos = (1..12).map { n -> PhotoTile(id = "f$n", status = PhotoStatus.Failed, errorCode = "too_large") },
+                    summary = it.gallery.summary!!.copy(members = cast),
+                ),
+            )
+        }
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    Box(Modifier.requiredSize(1000.dp, 3000.dp)) { StillsScreen(long, onEvent = {}) }
+                }
+            }
+            val everyone = onNodeWithText("Everyone").fetchSemanticsNode().boundsInRoot
+            val last = onNodeWithText("Cast Member 14").fetchSemanticsNode().boundsInRoot
+            // One "failed" pill in each tile's top corner.
+            val pills = onAllNodesWithText("failed").fetchSemanticsNodes().map { it.boundsInRoot }
+            assertEquals(12, pills.size)
+            val beside = pills.filter { it.top < last.top }
+            val under = pills.filter { it.top > last.bottom }
+            assertTrue(beside.isNotEmpty() && beside.all { it.left > everyone.right }, "beside the list: $beside, the list at $everyone")
+            assertTrue(under.isNotEmpty() && under.any { it.left < everyone.right }, "under the list, from the page's edge: $under")
+            assertEquals(2, beside.map { it.right.toInt() }.distinct().size, "two across beside the list: $beside")
+            assertEquals(3, under.map { it.right.toInt() }.distinct().size, "three across under it: $under")
+        }
+    }
+
+    /** `VirtuosoGrid` with `overscan={800}`: a shoot of thousands composes the rows in view, and its end loads the next page. */
+    @Test
+    fun `a long gallery composes only the rows in view, and asks for more at its end`() {
+        val many = state(StillsPage.Photos).let { base ->
+            base.copy(gallery = base.gallery.copy(photos = (1..300).map { PhotoTile(id = "p$it", status = PhotoStatus.Processing) }))
+        }
+        var asked = 0
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    Box(Modifier.requiredSize(1400.dp, 900.dp)) {
+                        StillsScreen(many, onEvent = { if (it == StillsEvent.LoadMorePhotos) asked += 1 })
+                    }
+                }
+            }
+            // Each tile says "processing…" twice: its pill and its placeholder.
+            val atTop = onAllNodesWithText("processing…").fetchSemanticsNodes().size / 2
+            assertTrue(atTop in 1..60, "$atTop of 300 tiles composed at the top")
+            assertEquals(0, asked, "nothing more is asked for while the end is out of sight")
+
+            repeat(200) { onRoot().performMouseInput { scroll(400f) } }
+            waitForIdle()
+            val atEnd = onAllNodesWithText("processing…").fetchSemanticsNodes().size / 2
+            assertTrue(atEnd in 1..60, "$atEnd of 300 tiles composed at the end")
+            assertTrue(asked > 0, "the end of the grid asks for the next page")
         }
     }
 

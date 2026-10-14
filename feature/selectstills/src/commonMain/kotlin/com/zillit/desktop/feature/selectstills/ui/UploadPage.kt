@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -28,6 +27,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitDropOverlay
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.externalPathDrop
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -61,11 +62,14 @@ internal fun UploadPage(state: StillsUiState, uploads: UploadQueueState, onEvent
     var over by remember { mutableStateOf(false) }
     val beside = stillsWide() && uploads.items.isNotEmpty()
 
+    // The rail, but not the wheel fix: the page holds the upload list, which
+    // scrolls on its own, and a wheel fix here would swallow that list's wheel.
+    val scroll = rememberScrollState()
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -95,6 +99,7 @@ internal fun UploadPage(state: StillsUiState, uploads: UploadQueueState, onEvent
                 }
             }
         }
+        ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -261,7 +266,7 @@ private fun UploadQueuePanel(uploads: UploadQueueState, onEvent: (StillsEvent) -
 
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = listMax)) {
+            ZillitLazyColumn(Modifier.fillMaxWidth().heightIn(max = listMax)) {
                 items(shown.size) { index -> QueueRow(shown[index], onEvent) }
             }
         }

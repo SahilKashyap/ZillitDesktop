@@ -12,11 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.selectstills.domain.ViewerScope
@@ -51,11 +52,12 @@ internal fun SettingsPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) 
 
     val wide = stillsWide()
 
+    val scroll = rememberScrollState()
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .zillitVerticalScroll(scroll)
                 .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -163,6 +165,7 @@ internal fun SettingsPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) 
                 }
             }
         }
+        ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
     }
 
     if (form.askingWipe) {

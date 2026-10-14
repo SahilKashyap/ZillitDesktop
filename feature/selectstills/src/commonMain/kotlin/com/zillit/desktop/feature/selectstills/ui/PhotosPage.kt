@@ -10,30 +10,31 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.selectstills.domain.PhotoKind
@@ -43,6 +44,7 @@ import com.zillit.desktop.feature.selectstills.domain.ViewerScope
 import com.zillit.desktop.feature.selectstills.domain.countFor
 import com.zillit.desktop.feature.selectstills.domain.sectionKey
 import com.zillit.desktop.feature.selectstills.domain.stateMeta
+import kotlin.math.roundToInt
 
 /**
  * The gallery, laid out as the web's: on the left the shoot, the members and
@@ -59,99 +61,104 @@ import com.zillit.desktop.feature.selectstills.domain.stateMeta
  * removes everything picked. The bar that counts and deletes stays in sight
  * while the grid scrolls.
  *
- * The grid takes the tool's whole width: four tiles across became six at 1920.
+ * One sheet scrolls, as the web's `.stk-main` does: the heading, the side
+ * column and the filters scroll away together. The photos start under the
+ * filters, beside the cast list, and take the whole width once the list ends
+ * (see [SFloatGrid]); they are windowed against that one scroll, so a shoot of
+ * thousands still composes only the rows in view.
  */
 @Composable
 internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
     val k = StillsTheme.c
     val gallery = state.gallery
     var memberQuery by remember { mutableStateOf("") }
-    val grid = rememberLazyGridState()
+    val scroll = rememberScrollState()
+    val page = remember { StillsPageCoords() }
     val ids = remember(gallery.photos) { gallery.photos.map { it.id } }
-
-    // Near the bottom: the next page.
-    val atEnd by remember {
-        derivedStateOf {
-            val last = grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= grid.layoutInfo.totalItemsCount - END_MARGIN
-        }
-    }
-    LaunchedEffect(grid) { snapshotFlow { atEnd }.collect { if (it) onEvent(StillsEvent.LoadMorePhotos) } }
 
     // Production only, and only with photos to pick from.
     val selectable = state.canPost && gallery.photos.isNotEmpty() && !gallery.failed
-    // The bar in the grid has scrolled away: a copy is pinned over the top.
-    val barGone by remember {
-        derivedStateOf { grid.layoutInfo.visibleItemsInfo.none { it.key == SELECT_KEY } }
-    }
+    // Where the bar sits on the page: once the page scrolls past its top, a
+    // copy is pinned there instead (`position: sticky; top: 0`).
+    var barAt by remember { mutableStateOf<Pair<Offset, Int>?>(null) }
+    val barGone by remember { derivedStateOf { barAt?.let { (at, _) -> scroll.value > at.y } ?: false } }
 
     SNarrow(NARROW) { narrow ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            // One sheet, as the web's page is: the heading and the filters
-            // scroll away above the tiles rather than sitting in a box of
-            // their own. So the grid IS the page, with its head spanning it.
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(if (narrow) TILE_MIN_NARROW else TILE_MIN),
-                state = grid,
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .zillitVerticalScroll(scroll)
+                    .then(page.modifier)
+                    .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                item(key = "head", span = { GridItemSpan(maxLineSpan) }) {
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SPageHead(
-                            title = str(S.desktop_stk_nav_photos),
-                            lede = if (state.me.scope == ViewerScope.Cleared) str(S.desktop_stk_photos_lede_viewer) else str(S.desktop_stk_photos_lede),
-                        )
-                        if (narrow) {
-                            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                GallerySide(state, memberQuery, { memberQuery = it }, compact = true, onEvent = onEvent)
-                                GalleryFilters(state, onEvent)
-                            }
-                        } else {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                                Column(Modifier.width(SIDE_WIDTH)) {
-                                    GallerySide(state, memberQuery, { memberQuery = it }, compact = false, onEvent = onEvent)
-                                }
-                                Column(Modifier.weight(1f)) { GalleryFilters(state, onEvent) }
-                            }
-                        }
+                SPageHead(
+                    title = str(S.desktop_stk_nav_photos),
+                    lede = if (state.me.scope == ViewerScope.Cleared) str(S.desktop_stk_photos_lede_viewer) else str(S.desktop_stk_photos_lede),
+                )
+                // The right column's top: the filters, the select bar, and
+                // whatever stands in for the photos when there are none.
+                val head: @Composable () -> Unit = {
+                    if (narrow) {
+                        GallerySide(state, memberQuery, { memberQuery = it }, compact = true, onEvent = onEvent)
+                        Spacer(Modifier.height(10.dp))
                     }
-                }
-
-                if (selectable) {
-                    item(key = SELECT_KEY, span = { GridItemSpan(maxLineSpan) }) { SelectBar(state, onEvent) }
-                }
-
-                val empty = gallery.loading && gallery.photos.isEmpty() || gallery.failed || gallery.photos.isEmpty()
-                if (empty) {
-                    item(key = "body", span = { GridItemSpan(maxLineSpan) }) { GalleryEmpty(state, onEvent) }
-                } else {
-                    items(gallery.photos, key = { it.id }) { photo ->
-                        SPhotoTile(
-                            photo = photo,
-                            onOpen = { onEvent(StillsEvent.OpenPhoto(photo.id, ids, run = false)) },
-                            picking = gallery.picking,
-                            picked = photo.id in gallery.picked,
-                            onPick = { shift -> onEvent(StillsEvent.PickPhoto(photo.id, shift)) },
+                    GalleryFilters(state, onEvent)
+                    Spacer(Modifier.height(16.dp))
+                    if (selectable) {
+                        SelectBar(
+                            state,
+                            onEvent,
+                            Modifier.onGloballyPositioned { at -> page.offsetOf(at)?.let { barAt = it to at.size.width } },
                         )
+                        Spacer(Modifier.height(12.dp))
                     }
-                    item(key = "foot", span = { GridItemSpan(maxLineSpan) }) {
+                    if (gallery.photos.isEmpty() || gallery.failed) GalleryEmpty(state, onEvent)
+                }
+                // `.stk-layout`, with the photos flowing round the cast list:
+                // beside it while it lasts, the whole width under it. Under 800
+                // the list is a dropdown over the filters and every row is whole.
+                SFloatGrid(
+                    items = if (gallery.failed) emptyList() else gallery.photos,
+                    keyOf = { it.id },
+                    scroll = scroll,
+                    page = page,
+                    side = if (narrow) null else { { GallerySide(state, memberQuery, { memberQuery = it }, compact = false, onEvent = onEvent) } },
+                    head = head,
+                    foot = {
                         SText(
                             text = if (gallery.hasMore) str(S.desktop_loading_more) else str(S.desktop_stk_thats_everything),
                             size = 13,
                             color = k.muted,
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                         )
-                    }
+                    },
+                    onEnd = { onEvent(StillsEvent.LoadMorePhotos) },
+                    layout = FloatGridSizes(side = SIDE_WIDTH, minCell = if (narrow) TILE_MIN_NARROW else TILE_MIN),
+                ) { photo ->
+                    SPhotoTile(
+                        photo = photo,
+                        onOpen = { onEvent(StillsEvent.OpenPhoto(photo.id, ids, run = false)) },
+                        picking = gallery.picking,
+                        picked = photo.id in gallery.picked,
+                        onPick = { shift -> onEvent(StillsEvent.PickPhoto(photo.id, shift)) },
+                    )
                 }
             }
 
-            // `position: sticky; top: 0` — a grid has no sticky item, so the
-            // bar is pinned over the top once its own row has scrolled away.
-            if (selectable && gallery.picking && barGone) {
-                Box(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp)) { SelectBar(state, onEvent) }
+            ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
+
+            // Pinned over the top of the grid's column, exactly where the bar
+            // was, once the page has scrolled past it.
+            val pinned = barAt?.takeIf { selectable && gallery.picking && barGone }
+            if (pinned != null) {
+                val (at, width) = pinned
+                Box(
+                    Modifier
+                        .offset { IntOffset(at.x.roundToInt(), 0) }
+                        .width(with(LocalDensity.current) { width.toDp() }),
+                ) { SelectBar(state, onEvent) }
             }
         }
     }
@@ -175,11 +182,11 @@ internal fun PhotosPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
  * what to do with it.
  */
 @Composable
-private fun SelectBar(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
+private fun SelectBar(state: StillsUiState, onEvent: (StillsEvent) -> Unit, modifier: Modifier = Modifier) {
     val k = StillsTheme.c
     val gallery = state.gallery
     if (!gallery.picking) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             SBtn(str(S.desktop_stk_select_photos), { onEvent(StillsEvent.Picking(true)) }, small = true)
         }
         return
@@ -187,7 +194,7 @@ private fun SelectBar(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
     val chosen = gallery.chosen.size
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
     FlowRow(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(shape)
             .background(k.panel)
@@ -464,9 +471,7 @@ private fun pubHint(state: PublicState) = when (state) {
 
 private val NARROW = 800.dp
 private val SIDE_WIDTH = 240.dp
-private const val SELECT_KEY = "select"
 
 /** `repeat(auto-fill, minmax(230px, 1fr))`, and 144px on a narrow window. */
 private val TILE_MIN = 230.dp
 private val TILE_MIN_NARROW = 144.dp
-private const val END_MARGIN = 12

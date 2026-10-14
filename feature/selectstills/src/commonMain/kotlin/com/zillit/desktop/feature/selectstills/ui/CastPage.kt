@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -29,7 +28,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.selectstills.domain.Member
@@ -55,11 +56,12 @@ import com.zillit.desktop.feature.selectstills.domain.sectionKey
 internal fun CastPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
     val canPost = state.canPost
     val wide = stillsWide()
+    val scroll = rememberScrollState()
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .zillitVerticalScroll(scroll)
                 .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -101,6 +103,7 @@ internal fun CastPage(state: StillsUiState, onEvent: (StillsEvent) -> Unit) {
                 }
             }
         }
+        ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
     }
 }
 

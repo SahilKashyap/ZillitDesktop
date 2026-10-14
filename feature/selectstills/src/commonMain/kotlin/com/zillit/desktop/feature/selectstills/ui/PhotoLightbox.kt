@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,9 +63,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.onBackdropTap
 import com.zillit.desktop.core.designsystem.component.swallowPresses
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.selectstills.domain.ApprovalRow
 import com.zillit.desktop.feature.selectstills.domain.Decision
@@ -429,57 +430,61 @@ private fun SidePanel(
         // The buttons are pinned: a six-hander's face list is long enough to
         // push them off the bottom, and a button you have to go looking for is
         // a button that gets missed.
-        Column(
-            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
-        ) {
-            if (done) ApprovalPanel(state, photo, box, onEvent)
+        val panel = rememberScrollState()
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Column(
+                Modifier.fillMaxWidth().zillitVerticalScroll(panel),
+            ) {
+                if (done) ApprovalPanel(state, photo, box, onEvent)
 
-            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (photo != null && !done) {
-                    SAlert(if (photo.status.isFailed) SAlertTone.Error else SAlertTone.Plain) {
-                        SText(photoStatusWords(photo.status, photo.errorCode), 13, color = alertInk(if (photo.status.isFailed) SAlertTone.Error else SAlertTone.Plain))
-                    }
-                }
-
-                if (done) {
-                    if (photo.faces.isEmpty()) SText(str(S.desktop_stk_no_faces_found), 13, color = k.muted)
-                    // With agents to wait for, the approval panel says it above.
-                    if (photo.unnamed > 0 && (box.run || photo.approvals.isEmpty())) {
-                        SText(str(S.desktop_stk_unidentified), 13, color = k.accentInk)
-                    }
-                    if (photo.truncated) SText(str(S.desktop_stk_photo_truncated), 13, color = k.accentInk)
-
-                    val taken = photo.faces.filter { it.isNamed }.mapNotNull { it.memberId }
-                    photo.faces.forEach { face ->
-                        FaceRow(state, photo, face, taken, box, readOnly = box.run, onEvent = onEvent)
+                Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (photo != null && !done) {
+                        SAlert(if (photo.status.isFailed) SAlertTone.Error else SAlertTone.Plain) {
+                            SText(photoStatusWords(photo.status, photo.errorCode), 13, color = alertInk(if (photo.status.isFailed) SAlertTone.Error else SAlertTone.Plain))
+                        }
                     }
 
-                    if (edits) {
-                        Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SText(str(S.desktop_stk_add_missed).uppercase(), 11, Bold, k.muted)
-                            SSelect(
-                                options = state.members.filter { it.id !in taken }.map { SOption(it.id, it.name, it.characterName) },
-                                value = "",
-                                onChange = { memberId -> if (memberId.isNotBlank()) onEvent(StillsEvent.AddPerson(memberId)) },
-                                placeholder = str(S.desktop_stk_face_pick),
-                                searchLabel = str(S.desktop_stk_search_members, state.members.size),
-                                enabled = !box.busy,
-                            )
-                            SHint(str(S.desktop_stk_add_missed_hint))
-                            if (photo.unnamed > 0) {
-                                SConfirmBtn(
-                                    label = str(S.desktop_stk_dismiss_unnamed),
-                                    confirmLabel = str(S.desktop_stk_click_again),
-                                    onConfirm = { onEvent(StillsEvent.DismissUnknown) },
+                    if (done) {
+                        if (photo.faces.isEmpty()) SText(str(S.desktop_stk_no_faces_found), 13, color = k.muted)
+                        // With agents to wait for, the approval panel says it above.
+                        if (photo.unnamed > 0 && (box.run || photo.approvals.isEmpty())) {
+                            SText(str(S.desktop_stk_unidentified), 13, color = k.accentInk)
+                        }
+                        if (photo.truncated) SText(str(S.desktop_stk_photo_truncated), 13, color = k.accentInk)
+
+                        val taken = photo.faces.filter { it.isNamed }.mapNotNull { it.memberId }
+                        photo.faces.forEach { face ->
+                            FaceRow(state, photo, face, taken, box, readOnly = box.run, onEvent = onEvent)
+                        }
+
+                        if (edits) {
+                            Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SText(str(S.desktop_stk_add_missed).uppercase(), 11, Bold, k.muted)
+                                SSelect(
+                                    options = state.members.filter { it.id !in taken }.map { SOption(it.id, it.name, it.characterName) },
+                                    value = "",
+                                    onChange = { memberId -> if (memberId.isNotBlank()) onEvent(StillsEvent.AddPerson(memberId)) },
+                                    placeholder = str(S.desktop_stk_face_pick),
+                                    searchLabel = str(S.desktop_stk_search_members, state.members.size),
                                     enabled = !box.busy,
                                 )
+                                SHint(str(S.desktop_stk_add_missed_hint))
+                                if (photo.unnamed > 0) {
+                                    SConfirmBtn(
+                                        label = str(S.desktop_stk_dismiss_unnamed),
+                                        confirmLabel = str(S.desktop_stk_click_again),
+                                        onConfirm = { onEvent(StillsEvent.DismissUnknown) },
+                                        enabled = !box.busy,
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                photo?.let { PhotoMeta(state, it) }
+                    photo?.let { PhotoMeta(state, it) }
+                }
             }
+            ZillitScrollRail(panel, Modifier.align(Alignment.CenterEnd))
         }
 
         // `.stk-lb-foot`

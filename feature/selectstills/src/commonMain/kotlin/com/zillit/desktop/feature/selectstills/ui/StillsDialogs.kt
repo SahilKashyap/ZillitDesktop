@@ -5,8 +5,10 @@ package com.zillit.desktop.feature.selectstills.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.onBackdropTap
 import com.zillit.desktop.core.designsystem.component.swallowPresses
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,11 +90,15 @@ internal fun SDialog(
                 Box(Modifier.weight(1f)) { head?.invoke() ?: SText(title, 19, androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1) }
                 SBtn("✕", onClose, small = true, enabled = !busy, tooltip = str(S.close))
             }
-            Column(
-                Modifier.fillMaxWidth().heightIn(max = BODY_MAX).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                content = content,
-            )
+            val body = rememberScrollState()
+            Box(Modifier.fillMaxWidth().heightIn(max = BODY_MAX)) {
+                Column(
+                    Modifier.fillMaxWidth().zillitVerticalScroll(body),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    content = content,
+                )
+                ZillitScrollRail(body, Modifier.align(Alignment.CenterEnd))
+            }
             footer?.let { foot ->
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp),

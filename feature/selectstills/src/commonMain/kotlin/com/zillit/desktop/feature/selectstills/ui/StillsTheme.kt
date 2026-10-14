@@ -481,7 +481,9 @@ internal fun SChip(
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             SText(label, 13, SemiBold, foreground, maxLines = 1)
-            if (count != null) SCount(count, active, small = true)
+            // `.stk-chip.stk-active .stk-n`: the chip's own colour on an amber
+            // wash. The tab's dark-on-amber would be dark on dark here.
+            if (count != null) SCount(count, active, small = true, activeColors = foreground to k.accent.copy(alpha = 0.22f))
         }
     }
     if (hint.isNullOrBlank()) body() else ZillitTooltip(text = hint) { body() }
@@ -520,18 +522,21 @@ internal fun STab(
     if (hint.isNullOrBlank()) body() else ZillitTooltip(text = hint) { body() }
 }
 
-/** The small number pill inside a tab or a chip. */
+/**
+ * The small number pill inside a tab or a chip. Active, it is dark on the tab's
+ * solid amber unless [activeColors] (text to wash) says otherwise.
+ */
 @Composable
-private fun SCount(count: Int, active: Boolean, small: Boolean) {
+private fun SCount(count: Int, active: Boolean, small: Boolean, activeColors: Pair<Color, Color>? = null) {
     val k = StillsTheme.c
     SText(
         text = count.toString(),
         size = if (small) 11 else 12,
         weight = Bold,
-        color = if (active) k.onAccent else k.ink,
+        color = if (active) activeColors?.first ?: k.onAccent else k.ink,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(if (active) Color.Black.copy(alpha = 0.16f) else k.countBg)
+            .background(if (active) activeColors?.second ?: Color.Black.copy(alpha = 0.16f) else k.countBg)
             .padding(horizontal = 6.dp, vertical = 1.dp),
         maxLines = 1,
     )

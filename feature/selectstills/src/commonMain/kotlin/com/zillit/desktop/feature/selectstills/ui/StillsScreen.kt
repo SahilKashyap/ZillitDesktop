@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -37,6 +36,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.selectstills.data.StillsUploadQueue
@@ -278,15 +279,17 @@ internal fun SPageBox(
     scroll: Boolean = true,
     content: @Composable ColumnScopeAlias.() -> Unit,
 ) {
+    val state = rememberScrollState()
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .then(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                .then(if (scroll) Modifier.zillitVerticalScroll(state) else Modifier)
                 .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 60.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content,
         )
+        if (scroll) ZillitScrollRail(state, Modifier.align(Alignment.CenterEnd))
     }
 }
 
