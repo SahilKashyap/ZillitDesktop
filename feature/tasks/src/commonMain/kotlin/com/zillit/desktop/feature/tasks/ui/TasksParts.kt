@@ -26,13 +26,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -43,12 +48,14 @@ import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.assignerOf
 import com.zillit.desktop.feature.tasks.domain.deptColour
 import com.zillit.desktop.feature.tasks.domain.dueLabel
 import com.zillit.desktop.feature.tasks.domain.dueTone
 import com.zillit.desktop.feature.tasks.domain.groupCrew
 import com.zillit.desktop.feature.tasks.domain.isPrivate
+import com.zillit.desktop.feature.tasks.domain.visibilityOf
 import com.zillit.desktop.feature.tasks.domain.subtaskStats
 import kotlinx.datetime.LocalDate
 
@@ -123,6 +130,68 @@ internal fun SceneChip(text: String, modifier: Modifier = Modifier) {
     if (text.isBlank()) return
     TText(text, 12, SemiBold, TasksTheme.c.chipFg, modifier.border(BorderStroke(1.dp, TasksTheme.c.line2), RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 1.dp), maxLines = 1)
 }
+
+/**
+ * The DPR a task belongs to, as a dashed chip after the scenes. Text that
+ * does not already start with "DPR" gets it in front.
+ *
+ * Nothing is drawn where the service cannot keep one: the list holds its
+ * tasks through `applyFeatures`, so [dpr] is null then.
+ */
+@Composable
+internal fun DprChip(dpr: String?, modifier: Modifier = Modifier) {
+    val text = dprText(dpr)
+    if (text.isEmpty()) return
+    val k = TasksTheme.c
+    ZillitTooltip(str(S.desktop_tasks_dpr_full)) {
+        Row(
+            modifier.dashedEdge(k.line2, DPR_RADIUS).padding(horizontal = 7.dp, vertical = 1.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ZillitIcon(ZillitIcons.File, tint = k.faint, size = 11.dp)
+            TText(text, 12, SemiBold, k.chipFg, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * "Private" after the department on a card or in the panel's header: this
+ * project task is not on everyone's Board.
+ *
+ * Only where the service keeps visibility — a task carries none otherwise, so
+ * [show] is false and the tag is gone rather than greyed out.
+ */
+@Composable
+internal fun PrivateTag(show: Boolean, modifier: Modifier = Modifier) {
+    if (!show) return
+    val k = TasksTheme.c
+    ZillitTooltip(str(S.desktop_tasks_private_tag_title)) {
+        Row(
+            modifier.clip(RoundedCornerShape(5.dp)).background(k.privateBg)
+                .border(BorderStroke(1.dp, k.privateLine), RoundedCornerShape(5.dp))
+                .padding(horizontal = 6.dp, vertical = 1.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ZillitIcon(ZillitIcons.Lock, tint = k.muted, size = 11.dp)
+            TText(str(S.desktop_hub_private), 12, SemiBold, k.chipFg, maxLines = 1)
+        }
+    }
+}
+
+/** A dashed border, for the DPR chip (Compose has no dashed `border`). */
+private fun Modifier.dashedEdge(color: Color, radius: Float): Modifier = drawBehind {
+    drawRoundRect(
+        color = color,
+        cornerRadius = CornerRadius(radius, radius),
+        style = Stroke(width = 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(DASH_ON, DASH_OFF), 0f)),
+    )
+}
+
+private const val DPR_RADIUS = 5f
+private const val DASH_ON = 3f
+private const val DASH_OFF = 3f
 
 @Composable
 internal fun DeptTag(id: String?, name: String, modifier: Modifier = Modifier) {
@@ -244,6 +313,12 @@ internal fun TaskMenu(
     onOpen: (() -> Unit)? = null,
     blockerNote: (Int) -> String = { "" },
     subtaskCount: Int = 0,
+    /**
+     * "Make private" / "Make public". Null leaves the item off, which is what
+     * the service not keeping visibility means: off is gone, not greyed out.
+     * A subtask never gets it either — it follows its main task.
+     */
+    onVisibility: ((TaskVisibility) -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
@@ -269,6 +344,21 @@ internal fun TaskMenu(
                 } else {
                     add(ZillitMenuEntry.Action(str(S.desktop_tasks_menu_reopen), icon = ZillitIcons.Reload, onClick = { onStatus(TaskStatus.Todo) }))
                 }
+            }
+            // Only a main task, and only where the server allows this viewer
+            // to switch it: its creator or whoever assigned it.
+            val canSwitch = canPost && !task.isSubtask && task.canChangeVisibility
+            if (onVisibility != null && canSwitch) {
+                val private = visibilityOf(task) == TaskVisibility.Private
+                val next = if (private) TaskVisibility.Public else TaskVisibility.Private
+                add(ZillitMenuEntry.Divider)
+                add(
+                    ZillitMenuEntry.Action(
+                        label = str(if (private) S.desktop_tasks_menu_make_public else S.desktop_tasks_menu_make_private),
+                        icon = if (private) ZillitIcons.Globe else ZillitIcons.Lock,
+                        onClick = { onVisibility(next) },
+                    ),
+                )
             }
             if (canDelete) {
                 add(ZillitMenuEntry.Divider)

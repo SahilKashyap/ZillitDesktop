@@ -170,7 +170,7 @@ class TasksRepositoryTest {
 
         val result = repo.tasks()
 
-        assertEquals(listOf("a", "b", "c"), (result as ZillitResult.Success).data.map { it.id })
+        assertEquals(listOf("a", "b", "c"), (result as ZillitResult.Success).data.tasks.map { it.id })
         assertEquals(2, sent.size)
         assertTrue("limit=1000" in sent[0].url)
     }

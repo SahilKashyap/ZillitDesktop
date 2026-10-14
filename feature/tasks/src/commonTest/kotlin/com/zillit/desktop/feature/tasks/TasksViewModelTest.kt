@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.TaskWrite
+import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksRepository
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.ui.TaskPeople
@@ -213,7 +214,7 @@ class TasksViewModelTest {
         advanceUntilIdle()
 
         assertEquals(Triple("a", mapOf<String, String?>("scenes" to "12"), 77L), repository.updates.single())
-        assertEquals(false, model.state.value.panel!!.dirty)
+        assertEquals(false, model.state.value.panelDirty)
     }
 
     /** Someone else saved first: their version is offered, mine is kept. */
@@ -485,9 +486,12 @@ class TasksViewModelTest {
         var refuseUpdates = false
         var quickCreates = 0
 
-        override suspend fun tasks(): ZillitResult<List<Task>> {
+        /** What the fake service says it can keep; off, as a service from before the fields is. */
+        var features = TasksFeatures()
+
+        override suspend fun tasks(): ZillitResult<TasksRepository.TaskList> {
             listCalls += 1
-            return ZillitResult.Success(held)
+            return ZillitResult.Success(TasksRepository.TaskList(held, features))
         }
 
         override suspend fun assignees() = ZillitResult.Success(TaskAssignees(setOf("u1"), emptySet()))
@@ -498,8 +502,11 @@ class TasksViewModelTest {
             held.firstOrNull { it.id == taskId }?.let { ZillitResult.Success(it.copy(comments = emptyList(), history = emptyList())) }
                 ?: ZillitResult.Failure(ZillitError.Http(404, "task_not_exists"))
 
-        override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean): TaskWrite {
+        val createFeatures = mutableListOf<TasksFeatures>()
+
+        override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean, features: TasksFeatures): TaskWrite {
             createAttempts += uniqueId
+            createFeatures += features
             if (quick) quickCreates += 1
             if (failNextCreate) {
                 failNextCreate = false
@@ -509,6 +516,7 @@ class TasksViewModelTest {
             val made = Task(
                 id = "new-${created.size}", title = draft.title, parentId = draft.parentId, isSelf = draft.isSelf,
                 dueDate = draft.dueDate, createdBy = "me", status = draft.status,
+                visibility = draft.visibility.takeIf { features.visibility },
             )
             held = held + made
             return TaskWrite.Saved(made, "task_created")

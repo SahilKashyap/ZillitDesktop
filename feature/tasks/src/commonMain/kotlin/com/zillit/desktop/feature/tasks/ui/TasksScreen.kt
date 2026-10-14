@@ -40,8 +40,9 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 
 /**
- * The Tasks tool, laid out as the web's: a dark sidebar with the three views,
- * the open view in a grey work area, and the task panel sliding over it.
+ * The Tasks tool, laid out as the web's: the three views as tabs across the
+ * top with Create Task at the right end, the open view under them, and the
+ * task panel sliding in over it.
  *
  * Rights gate everything. Until the tool's row has answered nothing is shown or
  * requested; a production without the tool, or a viewer without view rights,
@@ -54,6 +55,11 @@ fun TasksScreen(
     onEvent: (TasksEvent) -> Unit,
     mentionable: (Task) -> List<TaskPerson>,
     modifier: Modifier = Modifier,
+    /**
+     * The host's guarded external-URL launcher, behind a link in a description
+     * or a comment. Null leaves links as plain words rather than dead ones.
+     */
+    onOpenUrl: ((String) -> Unit)? = null,
 ) {
     TasksThemeProvider(dark = null) {
         val k = TasksTheme.c
@@ -61,9 +67,10 @@ fun TasksScreen(
         val counts = state.counts
 
         Box(modifier.fillMaxSize().background(k.bg)) {
-            Row(Modifier.fillMaxSize()) {
-                Sidebar(state, counts.mine, counts.self, onEvent)
-                Box(Modifier.weight(1f).fillMaxHeight()) {
+            Column(Modifier.fillMaxSize()) {
+                // The bar stays in place while a view scrolls.
+                if (state.viewer.canCall) TasksTabBar(state, counts, onEvent)
+                Box(Modifier.weight(1f).fillMaxWidth()) {
                     when {
                         !state.viewer.resolved -> GatePage { GateLoading() }
                         !state.viewer.enabled -> GatePage { Gate(str(S.desktop_tasks_gate_disabled_title), str(S.desktop_tasks_gate_disabled_hint), null, onEvent) }
@@ -76,7 +83,10 @@ fun TasksScreen(
                     }
                 }
             }
-            if (state.viewer.canCall) TaskPanelOverlay(state, today, onEvent, mentionable)
+            // The chooser covers the tool's area, as the panel does, and never
+            // opens over the panel's unsaved edits (the view model refuses it).
+            if (state.viewer.canCall) CreateChooser(state, onEvent)
+            if (state.viewer.canCall) TaskPanelOverlay(state, today, onEvent, mentionable, onOpenUrl = onOpenUrl)
             // A refusal from the service, or a rule the client checked first ("2 subtasks are still open");
             // otherwise what the server announced for a write it saved.
             val problem = state.error ?: state.notice
@@ -139,33 +149,3 @@ private fun Gate(title: String, hint: String, action: String?, onEvent: (TasksEv
 }
 
 private val FontWeightSemi = androidx.compose.ui.text.font.FontWeight.SemiBold
-
-/** The dark sidebar (`.zt-side`): the three views. The tool follows the app's light/dark, so it has no switch of its own. */
-@Composable
-private fun Sidebar(state: TasksUiState, mine: Int, self: Int, onEvent: (TasksEvent) -> Unit) {
-    val k = TasksTheme.c
-    Column(Modifier.width(240.dp).fillMaxHeight().background(k.side).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(
-                Triple(TasksView.Board, str(S.desktop_tasks_nav_board) to str(S.desktop_tasks_sub_board), null),
-                Triple(TasksView.Mine, str(S.desktop_tasks_nav_mine) to str(S.desktop_tasks_nav_mine_sub), mine),
-                Triple(TasksView.Self, str(S.desktop_tasks_nav_self) to str(S.desktop_tasks_nav_self_sub), self),
-            ).forEach { (view, texts, n) ->
-                val on = state.view == view
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (on) Color(0xFF2D5BE3) else Color.Transparent)
-                        .clickable { onEvent(TasksEvent.ViewChanged(view)) }.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        TText(texts.first, 14, FontWeightSemi, if (on) Color.White else k.sideFg, maxLines = 1)
-                        TText(texts.second, 12, color = if (on) Color(0xFFDBE4FB) else k.sideMuted, maxLines = 1)
-                    }
-                    if (n != null && state.loaded) {
-                        TText(n.toString(), 12, FontWeightSemi, Color.White, Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) Color.White.copy(alpha = 0.2f) else k.side2).padding(horizontal = 7.dp, vertical = 1.dp))
-                    }
-                }
-            }
-        }
-    }
-}

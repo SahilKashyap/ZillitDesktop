@@ -18,9 +18,11 @@ import com.zillit.desktop.feature.tasks.domain.DueProblem
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.TaskWrite
 import com.zillit.desktop.feature.tasks.domain.TasksRepository
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
+import com.zillit.desktop.feature.tasks.domain.applyFeatures
 import com.zillit.desktop.feature.tasks.domain.closeBlocker
 import com.zillit.desktop.feature.tasks.domain.diffDraft
 import com.zillit.desktop.feature.tasks.domain.dropTask
@@ -30,10 +32,13 @@ import com.zillit.desktop.feature.tasks.domain.mentionIds
 import com.zillit.desktop.feature.tasks.domain.mergeTask
 import com.zillit.desktop.feature.tasks.domain.rebaseDraft
 import com.zillit.desktop.feature.tasks.domain.toDraft
+import com.zillit.desktop.feature.tasks.domain.visibilityOf
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -93,20 +98,26 @@ class TasksViewModel(
             is TasksEvent.SelfQueryChanged -> setState { copy(selfQuery = event.query) }
             TasksEvent.DismissMessage -> setState { copy(error = null, notice = null, success = null) }
             is TasksEvent.SetStatus -> setStatus(event.task, event.status)
+            is TasksEvent.SetVisibility -> setVisibility(event.task, event.visibility)
             is TasksEvent.Move -> move(event.task, event.status)
             is TasksEvent.Delete -> deleteTask(event.task)
             is TasksEvent.Share -> share(event.taskId, event.assigneeId)
             is TasksEvent.QuickAdd -> quickAdd(event)
             TasksEvent.AskForRights -> askForRights()
+            is TasksEvent.OpenChooser -> openChooser(event.status)
+            TasksEvent.CloseChooser -> setState { copy(chooser = null) }
             is TasksEvent.OpenTask -> leave { openTask(event.taskId) }
-            is TasksEvent.NewTask -> newTask(event.seed)
+            is TasksEvent.NewTask -> newTask(event.seed, event.pickAssignee)
             is TasksEvent.NewSubtask -> leave { newSubtask(event.main) }
             TasksEvent.BackToParent -> leave { backToParent() }
             TasksEvent.ClosePanel -> closePanel()
             TasksEvent.CancelCreate -> cancelCreate()
             is TasksEvent.DraftChanged -> editPanel { copy(draft = event.draft, nag = false) }
             is TasksEvent.PickStatus -> pickStatus(event.status)
+            is TasksEvent.PickVisibility -> editPanel { copy(draft = draft?.copy(visibility = event.visibility), nag = false) }
             is TasksEvent.ChooseStatus -> chooseStatus(event.status)
+            is TasksEvent.ChooseVisibility -> chooseVisibility(event.visibility)
+            is TasksEvent.TabChanged -> editPanel { copy(tab = event.tab) }
             is TasksEvent.Save -> save(event.overwrite)
             TasksEvent.Create -> create()
             TasksEvent.Discard -> editPanel { copy(draft = orig, nag = false) }
@@ -187,7 +198,15 @@ class TasksViewModel(
             val answer = repository.tasks()
             setState { copy(loaded = true, loading = false) }
             when (answer) {
-                is ZillitResult.Success -> if (mine == seq) setTasks { answer.data }
+                is ZillitResult.Success -> if (mine == seq) {
+                    // What the deployment can keep comes with the list, and the
+                    // list is held that way: a task carries no `visibility` /
+                    // no `dpr` where the service cannot store one, so cards,
+                    // rows and the search need no check of their own.
+                    val said = answer.data.features
+                    setState { copy(features = said) }
+                    setTasks { answer.data.tasks.map { task -> applyFeatures(task, said) } }
+                }
                 is ZillitResult.Failure -> if (!silent) fail(answer.error)
             }
         }
@@ -231,7 +250,8 @@ class TasksViewModel(
 
     private fun upsert(task: Task) {
         seq += 1
-        setTasks { mergeTask(it, task) }
+        val kept = applyFeatures(task, currentState.features)
+        setTasks { mergeTask(it, kept) }
     }
 
     private fun remove(taskId: String) {
@@ -298,6 +318,37 @@ class TasksViewModel(
             setState { copy(moving = moving + (latest.id to status)) }
         }
         setStatus(latest, status)
+    }
+
+    /**
+     * Make a task public or private in one click (the ⋯ menu). Only where the
+     * service keeps visibility, only for a **main** task (a subtask follows
+     * its main task) and only for the people the server allows
+     * (`can_change_visibility`: its creator or whoever assigned it). The
+     * server checks all three again, and its answer is what is shown.
+     *
+     * Its subtasks follow, so the list is read again either way: saved, they
+     * changed with it; refused, the list — or what the service can keep — is
+     * not what this page thought.
+     */
+    private fun setVisibility(task: Task, visibility: TaskVisibility) {
+        val state = currentState
+        if (!state.canPost || !state.features.visibility) return
+        if (task.isSubtask || !task.canChangeVisibility || task.id in state.busy) return
+        if (visibility == visibilityOf(task)) return
+        launch {
+            busy(task.id, true)
+            writeOutcome(task.id, repository.update(task.id, mapOf("visibility" to visibility.wire)))
+            busy(task.id, false)
+            loadList(silent = true)
+        }
+    }
+
+    /** The Create Task popup. It never opens without posting rights, or over the panel's unsaved edits. */
+    private fun openChooser(status: TaskStatus?) {
+        val state = currentState
+        if (!state.canPost || state.panel != null) return
+        setState { copy(chooser = TaskChooser(status)) }
     }
 
     private fun share(taskId: String, assigneeId: String?) {
@@ -408,7 +459,7 @@ class TasksViewModel(
     /** Leaving this task for another replaces what the panel holds: never with unsaved edits. */
     private fun leave(move: () -> Unit) {
         val open = currentState.panel
-        if (open != null && open.dirty) {
+        if (open != null && open.dirty(currentState.features)) {
             editPanel { copy(nag = true) }
             return
         }
@@ -421,17 +472,37 @@ class TasksViewModel(
         fetchTask(next.key, taskId)
     }
 
-    private fun newTask(seed: TaskDraft) {
-        val draft = seed
+    /**
+     * The new-task form. A self task starts Private and a project task Public,
+     * as the server does it; [pickAssignee] ("Assign to someone") opens it with
+     * the crew picker already open.
+     */
+    private fun newTask(seed: TaskDraft, pickAssignee: Boolean = false) {
+        val draft = seed.copy(visibility = if (seed.isSelf) TaskVisibility.Private else TaskVisibility.Public)
         setState {
-            copy(panel = TaskPanel(key = ++panelKeys, creating = true, orig = draft, draft = draft, uniqueId = newId()))
+            copy(
+                chooser = null,
+                panel = TaskPanel(
+                    key = ++panelKeys, creating = true, orig = draft, draft = draft,
+                    uniqueId = newId(), pickAssignee = pickAssignee,
+                ),
+            )
         }
     }
 
-    /** The create form for a subtask of [main], starting in the main task's department. */
+    /**
+     * The create form for a subtask of [main], starting in the main task's
+     * department — and as public or private as the main task is, which is what
+     * it will follow.
+     */
     private fun newSubtask(main: Task) {
         if (main.isSubtask) return
-        val seed = TaskDraft(departmentId = main.departmentId, isSelf = main.isSelf, parentId = main.id)
+        val seed = TaskDraft(
+            departmentId = main.departmentId,
+            isSelf = main.isSelf,
+            visibility = visibilityOf(main),
+            parentId = main.id,
+        )
         setState {
             copy(
                 panel = TaskPanel(
@@ -452,7 +523,7 @@ class TasksViewModel(
 
     private fun closePanel() {
         val open = currentState.panel ?: return
-        if (open.dirty) editPanel { copy(nag = true) } else setState { copy(panel = null) }
+        if (open.dirty(currentState.features)) editPanel { copy(nag = true) } else setState { copy(panel = null) }
     }
 
     private fun cancelCreate() {
@@ -471,7 +542,7 @@ class TasksViewModel(
             if (open == null || open.key != key) return@launch
             when (answer) {
                 is ZillitResult.Success ->
-                    if (again && open.dirty) mergeComments(answer.data) else applyServer(answer.data)
+                    if (again && open.dirty(currentState.features)) mergeComments(answer.data) else applyServer(answer.data)
                 is ZillitResult.Failure -> {
                     // Deleted, or no longer visible (a self task reassigned away): say so and close.
                     if (answer.error.httpStatus == NOT_FOUND) {
@@ -550,19 +621,42 @@ class TasksViewModel(
             notice(blockerText(blocker))
             return
         }
-        if (open.dirty || open.conflict != null || open.saving) {
+        if (open.dirty(currentState.features) || open.conflict != null || open.saving) {
             editPanel { copy(draft = draft?.copy(status = status), nag = false) }
         } else if (status != task.status) {
             put(open, mapOf("status" to status.wire), expected = null)
         }
     }
 
+    /**
+     * "Make private" / "Make public" in the panel's ⋯ menu: saved at once,
+     * like the same menu on a card — unless the panel has unsaved edits, when
+     * the visibility joins them and goes with Save.
+     */
+    private fun chooseVisibility(visibility: TaskVisibility) {
+        val open = currentState.panel ?: return
+        val task = open.task ?: return
+        if (!currentState.canPost || !currentState.features.visibility) return
+        if (open.dirty(currentState.features) || open.conflict != null || open.saving) {
+            editPanel { copy(draft = draft?.copy(visibility = visibility), nag = false) }
+        } else if (visibility != visibilityOf(task)) {
+            put(open, mapOf("visibility" to visibility.wire), expected = null)
+        }
+    }
+
+    /**
+     * Says why, and answers true, when this due date is one that cannot be
+     * saved. The range can move after a date was picked (someone moves the
+     * main task, a subtask is added, or the day simply ends), so save and
+     * create check again before sending.
+     */
     private fun dueNotice(due: String?, parentId: String?, taskId: String?): Boolean {
         val state = currentState
-        val limits = dueLimits(parentId, taskId, state.byId, state.tasks)
+        val limits = dueLimits(parentId, taskId, state.byId, state.tasks, today())
         val problem = dueProblem(due, limits) ?: return false
         notice(
             when (problem) {
+                DueProblem.Past -> str(S.desktop_tasks_due_past)
                 DueProblem.AfterMain -> str(S.desktop_tasks_due_after_main, yearDayText(limits.max))
                 DueProblem.BeforeSubtasks -> str(S.desktop_tasks_due_before_subtasks, yearDayText(limits.min))
             },
@@ -577,7 +671,7 @@ class TasksViewModel(
         val draft = open.draft ?: return
         // Never write without posting rights: the 403 would bounce the user out of the project.
         if (open.saving || !currentState.canPost || draft.title.isBlank()) return
-        val changes = diffDraft(orig, draft)
+        val changes = diffDraft(orig, draft, currentState.features)
         if (changes.isEmpty()) return
         val blocker = closeBlocker(currentState.tasks, task)
         if (changes["status"] == TaskStatus.Done.wire && blocker > 0) {
@@ -596,7 +690,7 @@ class TasksViewModel(
         val sent = open.draft ?: return
         // A status change can move other tasks (a cancelled main task takes its
         // open subtasks along; a reopened subtask reopens its main task).
-        val cascades = "status" in changes
+        val cascades = "status" in changes || "visibility" in changes
         editPanel { copy(saving = true) }
         launch {
             val answer = repository.update(task.id, changes, expected)
@@ -646,7 +740,7 @@ class TasksViewModel(
         if (dueNotice(draft.dueDate, draft.parentId, null)) return
         editPanel { copy(saving = true) }
         launch {
-            val answer = repository.create(draft, open.uniqueId)
+            val answer = repository.create(draft, open.uniqueId, features = currentState.features)
             val stillOpen = currentState.panel?.key == open.key
             if (stillOpen) editPanel { copy(saving = false) }
             when (answer) {
@@ -688,7 +782,7 @@ class TasksViewModel(
                     // The server's fresh copy, never this panel's possibly stale one.
                     upsert(answer.data)
                     if (!stillOpen) return@launch
-                    if (currentState.panel?.dirty == true) mergeComments(answer.data) else applyServer(answer.data)
+                    if (currentState.panelDirty) mergeComments(answer.data) else applyServer(answer.data)
                     editPanel { copy(comment = "") }
                 }
                 is ZillitResult.Failure -> fail(answer.error)
@@ -719,6 +813,10 @@ class TasksViewModel(
             "t-${currentMillis().toString(RADIX)}-${Random.nextLong().toULong().toString(RADIX)}"
 
         fun currentMillis(): Long = kotlin.time.Clock.System.now().toEpochMilliseconds()
+
+        /** The viewer's own day, as `"YYYY-MM-DD"`: a date in the past is refused against this. */
+        fun today(): String =
+            kotlin.time.Clock.System.todayIn(TimeZone.currentSystemDefault()).toString()
         const val RADIX = 36
     }
 }

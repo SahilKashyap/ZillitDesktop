@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.tasks.domain.DueBucket
 import com.zillit.desktop.feature.tasks.domain.DueLabel
 import com.zillit.desktop.feature.tasks.domain.DueLimits
 import com.zillit.desktop.feature.tasks.domain.DueProblem
+import com.zillit.desktop.feature.tasks.domain.DueWhy
 import com.zillit.desktop.feature.tasks.domain.DueTone
 import com.zillit.desktop.feature.tasks.domain.HistoryLine
 import com.zillit.desktop.feature.tasks.domain.Task
@@ -229,7 +230,8 @@ class TaskLogicTest {
         val byId = mapOf("m" to task("m", due = "2026-10-10"))
         val limits = dueLimits(parentId = "m", taskId = null, byId = byId, tasks = byId.values.toList())
 
-        assertEquals(DueLimits(max = "2026-10-10"), limits)
+        // `why` names the limit, so the note under the calendar can explain it.
+        assertEquals(DueLimits(max = "2026-10-10", why = DueWhy.Main), limits)
         assertEquals(DueProblem.AfterMain, dueProblem("2026-10-11", limits))
         assertNull(dueProblem("2026-10-10", limits))
         assertNull(dueProblem(null, limits))

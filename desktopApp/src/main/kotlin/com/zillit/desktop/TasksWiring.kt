@@ -28,7 +28,7 @@ internal fun AppGraph.Ready.buildTasks(permissions: () -> ProjectPermissions) = 
     events = socketEvents,
 )
 
-internal fun tasksProvider(viewModel: TasksViewModel) = TasksToolProvider(viewModel)
+internal fun tasksProvider(viewModel: TasksViewModel) = TasksToolProvider(viewModel, openUrl = ::openInBrowser)
 
 /** Statuses the service's own member check refuses; the pickers match it. */
 private val INACTIVE = setOf("pending", "rejected", "removed", "left")

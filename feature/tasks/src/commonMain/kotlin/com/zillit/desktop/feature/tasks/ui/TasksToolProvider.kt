@@ -17,11 +17,18 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 /**
  * The Tasks tool, at the web's path (`/film-tools/tasks`).
  *
- * The views are the tool's own sidebar, not routes: the web nests
+ * The views are the tool's own tabs, not routes: the web nests
  * `/film-tools/tasks/mine` and `/self`, but nothing outside the tool links to
  * them, so one window owns all three.
+ *
+ * [openUrl] is the host's guarded external-URL launcher, behind a link in a
+ * description or a comment. A seam rather than a launcher of this module's
+ * own: the host is the one place that decides what may leave the app.
  */
-class TasksToolProvider(private val viewModel: TasksViewModel) : ToolProvider {
+class TasksToolProvider(
+    private val viewModel: TasksViewModel,
+    private val openUrl: ((String) -> Unit)? = null,
+) : ToolProvider {
 
     override val path: String = TASKS_PATH
     override val title: String get() = str(S.desktop_tasks_tool_label)
@@ -34,7 +41,12 @@ class TasksToolProvider(private val viewModel: TasksViewModel) : ToolProvider {
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
         LaunchedEffect(viewModel) { viewModel.onEvent(TasksEvent.Load) }
-        TasksScreen(state = state, onEvent = viewModel::onEvent, mentionable = viewModel::mentionablePeople)
+        TasksScreen(
+            state = state,
+            onEvent = viewModel::onEvent,
+            mentionable = viewModel::mentionablePeople,
+            onOpenUrl = openUrl,
+        )
     }
 }
 

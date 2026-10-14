@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.tasks.domain.TaskComment
 import com.zillit.desktop.feature.tasks.domain.TaskHistoryEntry
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
+import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -51,11 +53,15 @@ internal fun JsonObject.toTask(): Task? {
         description = text("description").orEmpty(),
         departmentId = text("department_id").blankToNull(),
         scenes = text("scenes").orEmpty(),
+        // Absent where the service cannot keep one; an empty string is "no DPR".
+        dpr = if ("dpr" in this) text("dpr").orEmpty() else null,
         dueDate = text("due_date").blankToNull()?.take(DAY_LENGTH),
         priority = TaskPriority.fromWire(text("priority")),
         status = TaskStatus.fromWire(text("status")),
         assigneeId = text("assignee_id").blankToNull(),
         isSelf = flag("is_self"),
+        // Only the two words count: anything else is "the task carries none".
+        visibility = TaskVisibility.fromWire(text("visibility")),
         parentId = text("parent_id").blankToNull(),
         parentTitle = text("parent_title").orEmpty(),
         createdBy = text("created_by").blankToNull(),
@@ -66,6 +72,7 @@ internal fun JsonObject.toTask(): Task? {
         commentCount = (this["comment_count"] as? JsonPrimitive)?.longOrNull?.toInt() ?: comments?.size ?: 0,
         canDelete = permissions?.flag("can_delete") ?: false,
         canReassign = permissions?.flag("can_reassign") ?: false,
+        canChangeVisibility = permissions?.flag("can_change_visibility") ?: false,
         comments = comments,
         history = history,
     )
@@ -98,12 +105,35 @@ private fun JsonObject.toHistoryEntry(): TaskHistoryEntry? {
     )
 }
 
-/** `{ tasks: [...], total }` — a list read. */
-internal fun JsonElement?.toTaskPage(): Pair<List<Task>, Int?> {
+/**
+ * What this deployment can keep, from the list's `data.features`.
+ *
+ * **Exactly `true` and nothing else.** No `features` at all (an older
+ * service), `false`, the string `"true"` or `1` all mean off: a service that
+ * does not keep the field ignores it in a request without a word, and a
+ * Private switch shown against one would call a task private that everybody
+ * can see.
+ */
+private fun JsonObject.strictFlag(key: String): Boolean =
+    // `isString` matters: booleanOrNull reads the *content* of `"true"` as true,
+    // and a quoted string is exactly one of the shapes that must mean "no".
+    (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull == true
+
+internal fun JsonElement?.toFeatures(): TasksFeatures {
+    val features = (this as? JsonObject)?.obj("features") ?: return TasksFeatures()
+    return TasksFeatures(visibility = features.strictFlag("visibility"), dpr = features.strictFlag("dpr"))
+}
+
+/** `{ tasks: [...], total, features }` — one page of a list read. */
+internal class TaskPage(val tasks: List<Task>, val total: Int?, val features: TasksFeatures)
+
+internal fun JsonElement?.toTaskPage(): TaskPage {
     val data = this as? JsonObject
-    val tasks = data?.list("tasks").orEmpty().mapNotNull { it.toTask() }
-    val total = (data?.get("total") as? JsonPrimitive)?.longOrNull?.toInt()
-    return tasks to total
+    return TaskPage(
+        tasks = data?.list("tasks").orEmpty().mapNotNull { it.toTask() },
+        total = (data?.get("total") as? JsonPrimitive)?.longOrNull?.toInt(),
+        features = toFeatures(),
+    )
 }
 
 private const val DAY_LENGTH = 10

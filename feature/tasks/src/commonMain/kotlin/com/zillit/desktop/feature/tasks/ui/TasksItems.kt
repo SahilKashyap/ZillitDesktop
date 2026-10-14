@@ -32,7 +32,9 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.isPrivate
+import com.zillit.desktop.feature.tasks.domain.visibilityOf
 import kotlinx.datetime.LocalDate
 
 /** The short note under a greyed-out "Mark complete". */
@@ -53,6 +55,11 @@ internal class TaskActions(
     val isBusy: (Task) -> Boolean,
     /** How many subtasks a main task has: deleting it takes them too. */
     val subtaskCountOf: (Task) -> Int = { 0 },
+    /**
+     * "Make private" / "Make public". Null where the service cannot keep
+     * visibility, which leaves the item off the ⋯ menu rather than greying it.
+     */
+    val onVisibility: ((Task, TaskVisibility) -> Unit)? = null,
 )
 
 /**
@@ -88,20 +95,23 @@ internal fun TaskCard(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.weight(1f)) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (task.isSelf) SelfTag(task, actions.me, actions.crewById) else DeptTag(task.departmentId, departmentName)
+                PrivateTag(!task.isSelf && visibilityOf(task) == TaskVisibility.Private)
             }
             PriorityChip(task.priority)
             TaskMenu(
                 task = task, canPost = actions.canPost, blocker = actions.blockerOf(task),
                 onStatus = { actions.onStatus(task, it) }, onDelete = { actions.onDelete(task) },
                 onOpen = { actions.onOpen(task) }, blockerNote = ::blockerNote, subtaskCount = actions.subtaskCountOf(task),
+                onVisibility = actions.onVisibility?.let { set -> { next: TaskVisibility -> set(task, next) } },
             )
         }
         // The whole title, wrapped, as the web's card shows it.
         TaskTitle(task, maxLines = Int.MAX_VALUE)
         MetaRow {
             SceneChip(task.scenes)
+            DprChip(task.dpr)
             DueChip(task, actions.today)
             SubtaskCount(subtasks)
             CommentCount(task.commentCount)
@@ -161,6 +171,7 @@ internal fun TaskRow(
                 task = task, canPost = actions.canPost, blocker = actions.blockerOf(task),
                 onStatus = { actions.onStatus(task, it) }, onDelete = { actions.onDelete(task) },
                 onOpen = { actions.onOpen(task) }, blockerNote = ::blockerNote, subtaskCount = actions.subtaskCountOf(task),
+                onVisibility = actions.onVisibility?.let { set -> { next: TaskVisibility -> set(task, next) } },
             )
         }
     }

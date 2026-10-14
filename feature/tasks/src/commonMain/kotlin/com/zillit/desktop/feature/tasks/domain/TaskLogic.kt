@@ -13,23 +13,69 @@ package com.zillit.desktop.feature.tasks.domain
  * silent refresh then confirms it.
  */
 
+// -- what the service can keep: Public / Private, and the DPR field --------------
+
+/**
+ * A task as this deployment really keeps it: without its `visibility` where
+ * the service cannot keep one, without its `dpr` where it cannot keep that.
+ * Everything below then falls back by itself ([visibilityOf] reads a self task
+ * as private; nothing has a DPR).
+ *
+ * The list is held this way, so cards, rows and the search need no check of
+ * their own.
+ */
+fun applyFeatures(task: Task, features: TasksFeatures): Task = when {
+    features.visibility && features.dpr -> task
+    else -> task.copy(
+        visibility = task.visibility.takeIf { features.visibility },
+        dpr = task.dpr.takeIf { features.dpr },
+    )
+}
+
+/**
+ * Who can see a task: [TaskVisibility.Public], or the task's own word. A task
+ * that carries none is what it always was — a self task private, a project
+ * task public.
+ */
+fun visibilityOf(task: Task): TaskVisibility =
+    task.visibility ?: if (task.isSelf) TaskVisibility.Private else TaskVisibility.Public
+
+/**
+ * Who can see a task: null for everyone (public), or the people on a private
+ * one — its creator, whoever assigned it and its assignee, each once, in that
+ * order. (A private subtask is also seen by the people on its main task; the
+ * caller adds those.)
+ *
+ * The server filters the list; this only says it on screen.
+ */
+fun whoCanSee(task: Task): List<String>? {
+    if (visibilityOf(task) == TaskVisibility.Public) return null
+    return listOfNotNull(task.createdBy, task.assignedBy, task.assigneeId).distinct()
+}
+
 // -- the draft the panel edits ---------------------------------------------------
 
 /**
  * The editable copy of a task, or of a new task's seed. [parentId] rides along
  * so the panel knows it is editing (or creating) a subtask; it is sent once,
  * on create, and is never part of a diff.
+ *
+ * [visibility] is always one of the two words: a new project task starts
+ * public and a new self task private, as the server does it. It reaches the
+ * wire only where the service keeps it.
  */
 data class TaskDraft(
     val title: String = "",
     val description: String = "",
     val departmentId: String? = null,
     val scenes: String = "",
+    val dpr: String = "",
     val dueDate: String? = null,
     val priority: TaskPriority = TaskPriority.Med,
     val status: TaskStatus = TaskStatus.Todo,
     val assigneeId: String? = null,
     val isSelf: Boolean = false,
+    val visibility: TaskVisibility = TaskVisibility.Public,
     val parentId: String? = null,
 )
 
@@ -38,25 +84,33 @@ fun Task.toDraft() = TaskDraft(
     description = description,
     departmentId = departmentId,
     scenes = scenes,
+    dpr = dpr.orEmpty(),
     dueDate = dueDate,
     priority = priority,
     status = status,
     assigneeId = assigneeId,
     isSelf = isSelf,
+    visibility = visibilityOf(this),
     parentId = parentId,
 )
 
-/** The wire names of the fields `PUT /v2/tasks/:id` accepts. `parent_id` is not one. */
-private fun TaskDraft.fields(): Map<String, String?> = mapOf(
-    "title" to title,
-    "description" to description,
-    "department_id" to departmentId,
-    "scenes" to scenes,
-    "due_date" to dueDate,
-    "priority" to priority.wire,
-    "status" to status.wire,
-    "assignee_id" to assigneeId,
-)
+/**
+ * The wire names of the fields `PUT /v2/tasks/:id` accepts, kept to the ones
+ * this deployment can store. `parent_id` is not one: it is sent on create and
+ * can never change.
+ */
+private fun TaskDraft.fields(features: TasksFeatures): Map<String, String?> = buildMap {
+    put("title", title)
+    put("description", description)
+    put("department_id", departmentId)
+    put("scenes", scenes)
+    if (features.dpr) put("dpr", dpr)
+    put("due_date", dueDate)
+    put("priority", priority.wire)
+    put("status", status.wire)
+    put("assignee_id", assigneeId)
+    if (features.visibility) put("visibility", visibility.wire)
+}
 
 /** The web's `norm`: an empty value is no value; text is compared trimmed (so "   " still differs from ""). */
 private fun String?.norm(): String? = if (isNullOrEmpty()) null else trim()
@@ -65,16 +119,19 @@ private fun String?.norm(): String? = if (isNullOrEmpty()) null else trim()
  * Only the fields that changed, keyed by wire name, ready to PUT. A cleared
  * description or scenes goes as `""`, as the web sends it; a cleared date,
  * person or department as null (the draft never holds `""` for those).
+ *
+ * [features] is what the service can keep: called without it — the default —
+ * neither `visibility` nor `dpr` is ever part of a diff.
  */
-fun diffDraft(orig: TaskDraft, draft: TaskDraft): Map<String, String?> {
-    val before = orig.fields()
-    return draft.fields()
+fun diffDraft(orig: TaskDraft, draft: TaskDraft, features: TasksFeatures = TasksFeatures()): Map<String, String?> {
+    val before = orig.fields(features)
+    return draft.fields(features)
         .filter { (key, value) -> before[key].norm() != value.norm() }
         .mapValues { (key, value) -> if (key == "title") value?.trim().orEmpty() else value }
 }
 
-fun isDirty(orig: TaskDraft?, draft: TaskDraft?): Boolean =
-    orig != null && draft != null && diffDraft(orig, draft).isNotEmpty()
+fun isDirty(orig: TaskDraft?, draft: TaskDraft?, features: TasksFeatures = TasksFeatures()): Boolean =
+    orig != null && draft != null && diffDraft(orig, draft, features).isNotEmpty()
 
 /**
  * After a save returns: take the server's copy, but keep any field the user
@@ -86,11 +143,13 @@ fun rebaseDraft(current: TaskDraft, sent: TaskDraft, server: TaskDraft): TaskDra
     description = if (current.description.norm() != sent.description.norm()) current.description else server.description,
     departmentId = if (current.departmentId.norm() != sent.departmentId.norm()) current.departmentId else server.departmentId,
     scenes = if (current.scenes.norm() != sent.scenes.norm()) current.scenes else server.scenes,
+    dpr = if (current.dpr.norm() != sent.dpr.norm()) current.dpr else server.dpr,
     dueDate = if (current.dueDate.norm() != sent.dueDate.norm()) current.dueDate else server.dueDate,
     priority = if (current.priority != sent.priority) current.priority else server.priority,
     status = if (current.status != sent.status) current.status else server.status,
     assigneeId = if (current.assigneeId.norm() != sent.assigneeId.norm()) current.assigneeId else server.assigneeId,
     isSelf = if (current.isSelf != sent.isSelf) current.isSelf else server.isSelf,
+    visibility = if (current.visibility != sent.visibility) current.visibility else server.visibility,
 )
 
 // -- sorting -----------------------------------------------------------------------
@@ -167,26 +226,65 @@ fun parentTitle(task: Task, byId: Map<String, Task>): String {
     return byId[parent]?.title?.takeIf { it.isNotBlank() } ?: task.parentTitle
 }
 
-/** The days a due date may take, each side `"YYYY-MM-DD"` or null for no limit. */
-data class DueLimits(val min: String? = null, val max: String? = null)
+/** Which rule set the limit, and so what the note under the calendar explains. */
+enum class DueWhy { Main, Subtasks }
 
 /**
- * A subtask is never due after its main task ([DueLimits.max]), and a main
- * task never before one of its subtasks ([DueLimits.min]). The server enforces
- * both (422 `task_subtask_due_after_main` / `task_due_before_subtasks`); the
- * date picker uses this to grey out the days it would refuse. A main task the
- * list does not hold (someone's private one) gives no limit here.
+ * The days a due date may take, each side `"YYYY-MM-DD"` or null for no limit.
+ * [today] is the viewer's own day, kept so [dueProblem] can tell a date in the
+ * past from one a relative holds back.
  */
-fun dueLimits(parentId: String?, taskId: String?, byId: Map<String, Task>, tasks: List<Task>): DueLimits = when {
-    parentId != null -> DueLimits(max = byId[parentId]?.dueDate)
-    taskId == null -> DueLimits()
-    else -> DueLimits(min = subtasksOf(tasks, taskId).mapNotNull { it.dueDate }.maxOrNull())
+data class DueLimits(
+    val min: String? = null,
+    val max: String? = null,
+    val today: String? = null,
+    val why: DueWhy? = null,
+)
+
+/**
+ * The range a task's due date may take, and why:
+ *
+ *  - **never before today** ([today], the viewer's own day). A task that is
+ *    already overdue keeps its date until someone changes it, so only a date
+ *    that is new or changed is checked;
+ *  - a subtask is never due after its main task ([DueLimits.max]);
+ *  - a main task is never due before its latest subtask ([DueLimits.min]).
+ *    **Cancelled subtasks are ignored.**
+ *
+ * The server enforces all three (422 `task_due_date_past`, with a day of
+ * leeway for timezones; `task_subtask_due_after_main`; `task_due_before_subtasks`
+ * — it still counts cancelled subtasks there, which is a backend difference).
+ * The date picker uses this to grey out the days it would refuse. A main task
+ * the list does not hold (someone's private one) gives no limit here, and the
+ * server still checks.
+ */
+fun dueLimits(
+    parentId: String?,
+    taskId: String?,
+    byId: Map<String, Task>,
+    tasks: List<Task>,
+    today: String? = null,
+): DueLimits {
+    if (parentId != null) {
+        val max = byId[parentId]?.dueDate
+        return DueLimits(min = today, max = max, today = today, why = max?.let { DueWhy.Main })
+    }
+    val latest = taskId?.let {
+        subtasksOf(tasks, it).filter { sub -> sub.status != TaskStatus.Cancelled }.mapNotNull { sub -> sub.dueDate }.maxOrNull()
+    }
+    // A subtask due today or earlier sets nothing "today" does not already.
+    if (latest != null && (today == null || latest > today)) {
+        return DueLimits(min = latest, today = today, why = DueWhy.Subtasks)
+    }
+    return DueLimits(min = today, today = today)
 }
 
-enum class DueProblem { AfterMain, BeforeSubtasks }
+enum class DueProblem { Past, AfterMain, BeforeSubtasks }
 
+/** Why a due date is out of range, or null when it is fine (or empty). */
 fun dueProblem(due: String?, limits: DueLimits): DueProblem? = when {
     due == null -> null
+    limits.today != null && due < limits.today -> DueProblem.Past
     limits.max != null && due > limits.max -> DueProblem.AfterMain
     limits.min != null && due < limits.min -> DueProblem.BeforeSubtasks
     else -> null
@@ -237,8 +335,22 @@ fun dropTask(list: List<Task>, taskId: String): List<Task> = list.filter { it.id
  */
 fun assignerOf(task: Task): String? = task.assignedBy ?: if (task.assigneeId != null) task.createdBy else null
 
-/** A self task nobody else can see yet. */
-fun isPrivate(task: Task): Boolean = task.isSelf && (task.assigneeId == null || task.assigneeId == task.createdBy)
+/**
+ * A task **only its creator can see** ("Only you"): private, with nobody else
+ * on it — no assignee but the creator, and nobody else who assigned it.
+ *
+ * It follows [Task.visibility] where the task has one. A task without one is
+ * what it was before the field existed: a self task nobody is assigned yet.
+ *
+ * Unlike the standalone app this also counts the assigner: a private task
+ * handed back to its creator by someone else is still seen by that someone
+ * (the service's rule), so it is not "only you".
+ */
+fun isPrivate(task: Task): Boolean {
+    if (task.visibility == null) return task.isSelf && (task.assigneeId == null || task.assigneeId == task.createdBy)
+    val people = whoCanSee(task) ?: return false
+    return people.all { it == task.createdBy }
+}
 
 private fun words(query: String): List<String> = query.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
 
@@ -262,9 +374,13 @@ class TaskLookup(
 )
 
 /**
- * Task search: every word typed must be in the title, scenes, description,
- * department name, or the name / designation / department of the assignee or
- * of whoever assigned it. A subtask is also found by its main task's title.
+ * Task search: every word typed must be in the title, scenes, DPR,
+ * description, department name, or the name / designation / department of the
+ * assignee or of whoever assigned it. A subtask is also found by its main
+ * task's title.
+ *
+ * The DPR is searched only where the service keeps one: the list holds its
+ * tasks through [applyFeatures], so a task carries none when it cannot.
  */
 fun matchesTask(task: Task, query: String, lookup: TaskLookup): Boolean {
     val list = words(query)
@@ -272,6 +388,7 @@ fun matchesTask(task: Task, query: String, lookup: TaskLookup): Boolean {
     val haystack = listOf(
         task.title,
         task.scenes,
+        task.dpr.orEmpty(),
         task.description,
         task.parentTitle,
         lookup.departmentName(task.departmentId),
@@ -440,6 +557,15 @@ sealed interface HistoryLine {
 
     data object DescriptionChanged : HistoryLine
 
+    /**
+     * "Made this task Private" — a sentence rather than "Field: from → to",
+     * as the standalone app writes it.
+     */
+    data class VisibilityChanged(val visibility: TaskVisibility, val isSubtask: Boolean) : HistoryLine
+
+    /** "Set / Changed the Daily Production Report to DPR 13 Oct", or removed it ([dpr] null). */
+    data class DprChanged(val dpr: String?, val wasSet: Boolean) : HistoryLine
+
     /** [from] is null where there was nothing to show before (the line then reads only [to]). */
     data class Field(val field: String, val from: String?, val to: String?, val isSubtask: Boolean) : HistoryLine
 
@@ -460,13 +586,23 @@ fun historyLines(entry: TaskHistoryEntry, isSubtask: Boolean): List<HistoryLine>
         "subtask_deleted" -> return listOf(HistoryLine.SubtaskDeleted(entry.subtaskTitle))
     }
     val lines = entry.changes.map { change ->
-        if (change.field == "description") HistoryLine.DescriptionChanged
-        else HistoryLine.Field(change.field, change.from, change.to, isSubtask)
+        when (change.field) {
+            "description" -> HistoryLine.DescriptionChanged
+            "visibility" -> HistoryLine.VisibilityChanged(
+                TaskVisibility.fromWire(change.to) ?: TaskVisibility.Public,
+                isSubtask,
+            )
+            "dpr" -> HistoryLine.DprChanged(change.to?.takeIf { it.isNotEmpty() }, wasSet = !change.from.isNullOrEmpty())
+            else -> HistoryLine.Field(change.field, change.from, change.to, isSubtask)
+        }
     }.toMutableList()
     if (lines.isEmpty()) lines += HistoryLine.Changed
-    entry.reason?.takeIf { it == "main_cancelled" || it == "subtask_open" }?.let { lines += HistoryLine.Note(it) }
+    entry.reason?.takeIf { it in HISTORY_REASONS }?.let { lines += HistoryLine.Note(it) }
     return lines
 }
+
+/** The reasons the server marks a change of its own with; anything else is not worded. */
+private val HISTORY_REASONS = setOf("main_cancelled", "subtask_open", "main_visibility")
 
 /** How many entries the panel shows before "Show all". */
 const val HISTORY_PREVIEW = 5

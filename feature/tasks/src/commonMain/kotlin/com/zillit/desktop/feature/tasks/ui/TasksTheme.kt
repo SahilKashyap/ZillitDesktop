@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -346,9 +347,15 @@ internal fun TPicker(
     avatars: Boolean = false,
     searchHint: String = str(S.dd_history_sender_picker_search_hint),
     former: String? = null,
+    /**
+     * Opens with the list already up — "Assign to someone" in the Create Task
+     * chooser, which lands in the form with the crew picker open.
+     */
+    defaultOpen: Boolean = false,
 ) {
     val k = TasksTheme.c
     var open by remember { mutableStateOf(false) }
+    LaunchedEffect(defaultOpen) { if (defaultOpen && enabled) open = true }
     val none = Pick("", emptyLabel)
     val gone = if (former != null && !value.isNullOrEmpty() && picks.none { it.id == value }) Pick(value, former, enabled = false) else null
     val chosen = picks.firstOrNull { it.id == (value ?: "") } ?: gone ?: none
@@ -500,7 +507,7 @@ internal fun TDate(
                                             ),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        TText(day.day.toString(), 13, if (on) SemiBold else Normal, if (on) k.accentFg else if (allowed) k.fg else k.line2)
+                                        TText(day.day.toString(), 13, if (on) SemiBold else Normal, if (on) k.accentFg else if (allowed) k.fg else k.line2, strike = !allowed)
                                     }
                                 }
                             }

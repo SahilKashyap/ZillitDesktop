@@ -75,12 +75,14 @@ import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.applyMention
 import com.zillit.desktop.feature.tasks.domain.assignerOf
 import com.zillit.desktop.feature.tasks.domain.closeBlocker
 import com.zillit.desktop.feature.tasks.domain.daysUntil
 import com.zillit.desktop.feature.tasks.domain.deptColour
 import com.zillit.desktop.feature.tasks.domain.dueLimits
+import com.zillit.desktop.feature.tasks.domain.DueWhy
 import com.zillit.desktop.feature.tasks.domain.dueTone
 import com.zillit.desktop.feature.tasks.domain.DueTone
 import com.zillit.desktop.feature.tasks.domain.historyLines
@@ -88,6 +90,8 @@ import com.zillit.desktop.feature.tasks.domain.isPrivate
 import com.zillit.desktop.feature.tasks.domain.mentionAt
 import com.zillit.desktop.feature.tasks.domain.mentionMatches
 import com.zillit.desktop.feature.tasks.domain.subtaskStats
+import com.zillit.desktop.feature.tasks.domain.visibilityOf
+import com.zillit.desktop.feature.tasks.domain.whoCanSee
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
@@ -109,6 +113,8 @@ internal fun TaskPanelOverlay(
     onEvent: (TasksEvent) -> Unit,
     mentionable: (Task) -> List<TaskPerson>,
     modifier: Modifier = Modifier,
+    /** The host's guarded launcher, behind a link in the description or a comment. */
+    onOpenUrl: ((String) -> Unit)? = null,
 ) {
     val panel = state.panel ?: return
     val k = TasksTheme.c
@@ -152,7 +158,7 @@ internal fun TaskPanelOverlay(
                     }
                 }
             } else {
-                PanelContent(state, panel, today, onEvent, mentionable, close)
+                PanelContent(state, panel, today, onEvent, mentionable, close, onOpenUrl)
             }
         }
     }
@@ -166,6 +172,7 @@ private fun ColumnScope.PanelContent(
     onEvent: (TasksEvent) -> Unit,
     mentionable: (Task) -> List<TaskPerson>,
     close: () -> Unit,
+    onOpenUrl: ((String) -> Unit)?,
 ) {
     val k = TasksTheme.c
     val draft = panel.draft ?: return
@@ -176,10 +183,18 @@ private fun ColumnScope.PanelContent(
     val main = draft.parentId?.let { state.byId[it] }
     val blocker = if (!creating && task != null) closeBlocker(state.tasks, task) else 0
     val mainTitle = main?.title?.takeIf { it.isNotBlank() } ?: if (creating) panel.parentTitle else task?.parentTitle.orEmpty()
-    val priv = isPrivate(Task(id = "", title = "", isSelf = draft.isSelf, assigneeId = draft.assigneeId, createdBy = task?.createdBy ?: state.me)) && (main == null || isPrivate(main))
+    // Who can see the task, as the panel's own copy has it: the switch and the
+    // assignee picker both move it, so this follows the draft rather than the server.
+    val visibilityOn = state.features.visibility
+    val shown = Task(
+        id = task?.id.orEmpty(), title = "", isSelf = draft.isSelf, assigneeId = draft.assigneeId,
+        createdBy = task?.createdBy ?: state.me, assignedBy = task?.assignedBy,
+        visibility = draft.visibility.takeIf { visibilityOn },
+    )
+    val priv = isPrivate(shown) && (main == null || isPrivate(main))
     val canReassign = creating || task?.canReassign == true
     val showComments = !creating && !priv && task != null
-    val limits = dueLimits(draft.parentId, if (creating) null else task?.id, state.byId, state.tasks)
+    val limits = dueLimits(draft.parentId, if (creating) null else task?.id, state.byId, state.tasks, today.toString())
     val cancelled = draft.status == TaskStatus.Cancelled
     val set = { next: TaskDraft -> onEvent(TasksEvent.DraftChanged(next)) }
     val titleFocus = remember(panel.key) { FocusRequester() }
@@ -191,7 +206,7 @@ private fun ColumnScope.PanelContent(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Crumb(state, panel, draft, task, main, mainTitle, priv, Modifier.weight(1f), onEvent)
+        Crumb(state, panel, draft, task, main, mainTitle, priv, visibilityOn, Modifier.weight(1f), onEvent)
         if (!creating && state.canPost && task != null) {
             val blocked = blocker > 0 && draft.status.isOpen
             val (fg, bg) = when {
@@ -231,6 +246,7 @@ private fun ColumnScope.PanelContent(
                 task = task.copy(status = draft.status), canPost = state.canPost, blocker = blocker,
                 onStatus = { onEvent(TasksEvent.ChooseStatus(it)) }, onDelete = { onEvent(TasksEvent.DeleteOpenTask) }, blockerNote = ::blockerNote,
                 subtaskCount = if (draft.parentId == null) state.subtasksOf(task.id).size else 0,
+                onVisibility = if (visibilityOn) { next -> onEvent(TasksEvent.ChooseVisibility(next)) } else null,
             )
         }
         TIconBtn(ZillitIcons.Close, str(S.close), close)
@@ -238,6 +254,8 @@ private fun ColumnScope.PanelContent(
     Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
 
     // Body -----------------------------------------------------------------------------
+    // Top to bottom, as the web's drawer has it: the name, Shared tasks, the
+    // description, the details, who created it, then the Comments | History tabs.
     ZillitScrollColumn(
         Modifier.weight(1f).fillMaxWidth(),
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 28.dp),
@@ -275,13 +293,32 @@ private fun ColumnScope.PanelContent(
                 }
             },
         )
-        if (draft.isSelf && priv) {
+        // With the Visibility row there is no note here: the row says it, and better.
+        if (draft.isSelf && priv && !visibilityOn) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitIcon(ZillitIcons.Lock, tint = k.muted, size = 12.dp)
                 TText(str(S.desktop_tasks_private_note), 13, color = k.muted)
             }
         }
 
+        // Shared tasks come before the description, and only on an existing main task.
+        if (!creating && !isSub && task != null) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+            SubtaskSection(state, task, today, onEvent)
+        }
+
+        Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+        Section(str(if (draft.isSelf) S.notes else S.description)) {
+            DescriptionField(
+                value = draft.description,
+                onChange = { set(draft.copy(description = it)) },
+                enabled = !readOnly,
+                placeholder = str(S.desktop_tasks_description_placeholder),
+                onOpenUrl = onOpenUrl,
+            )
+        }
+
+        Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Prop(ZillitIcons.User, str(S.desktop_tasks_field_assignee)) {
                 // Only the creator can reassign a self task: the picker is greyed out, and says why on hover.
@@ -291,21 +328,28 @@ private fun ColumnScope.PanelContent(
                         emptyLabel = str(if (draft.isSelf) S.desktop_tasks_self_only_me_private else S.unassigned),
                         onChange = { set(draft.copy(assigneeId = it)) }, enabled = !readOnly && canReassign, avatars = true,
                         searchHint = str(S.desktop_tasks_search_people), former = str(S.desktop_tasks_former_member),
+                        defaultOpen = panel.pickAssignee,
                     )
                 }
             }
             val assigner = if (!creating && task != null && task.assigneeId != null && draft.assigneeId == task.assigneeId) assignerOf(task) else null
             if (assigner != null && task != null) Prop(ZillitIcons.Tick, str(S.desktop_tasks_assigned_by)) { AssignedBy(task, assigner, state, today) }
+            if (visibilityOn) {
+                Prop(if (draft.visibility == TaskVisibility.Private) ZillitIcons.Lock else ZillitIcons.Globe, str(S.visibility)) {
+                    VisibilityRow(state, panel, draft, task, main, isSub, readOnly, onEvent)
+                }
+            }
             Prop(ZillitIcons.Calendar, str(S.ah_run_detail_col_due)) {
                 val due = draft.dueDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                 TDate(
                     value = draft.dueDate,
                     label = due?.let { fullDayText(it) } ?: str(S.desktop_tasks_add_due_date),
                     onChange = { set(draft.copy(dueDate = it)) }, today = today, enabled = !readOnly, min = limits.min, max = limits.max,
-                    hint = when {
-                        limits.max != null -> str(S.desktop_tasks_due_limit_main, yearDayText(limits.max))
-                        limits.min != null -> str(S.desktop_tasks_due_limit_subtasks, yearDayText(limits.min))
-                        else -> null
+                    // The note says which rule the greyed-out days come from.
+                    hint = when (limits.why) {
+                        DueWhy.Main -> str(S.desktop_tasks_due_after_main, yearDayText(limits.max))
+                        DueWhy.Subtasks -> str(S.desktop_tasks_due_note_subtasks, yearDayText(limits.min))
+                        null -> str(S.desktop_tasks_due_note_past)
                     },
                 )
                 if (due != null) DueHint(draft, today)
@@ -344,51 +388,29 @@ private fun ColumnScope.PanelContent(
                     )
                 }
                 Prop(ZillitIcons.Camera, str(S.av_scenes)) {
-                    TInput(
-                        draft.scenes, { set(draft.copy(scenes = it)) }, Modifier.fillMaxWidth(), placeholder = str(S.desktop_tasks_scenes_placeholder), maxLength = SCENES_MAX, enabled = !readOnly,
-                        decoration = { inner, focused ->
-                            Box(
-                                Modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(6.dp)).background(if (focused) k.surface else Color.Transparent)
-                                    .border(BorderStroke(1.dp, if (focused) k.accent else Color.Transparent), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp),
-                                contentAlignment = Alignment.CenterStart,
-                            ) { inner() }
-                        },
-                    )
+                    FieldInput(draft.scenes, { set(draft.copy(scenes = it)) }, str(S.desktop_tasks_scenes_placeholder), SCENES_MAX, !readOnly)
+                }
+                // The DPR, under Scenes, only where the service keeps one.
+                if (state.features.dpr) {
+                    Prop(ZillitIcons.File, str(S.desktop_tasks_field_dpr)) {
+                        FieldInput(draft.dpr, { set(draft.copy(dpr = it)) }, str(S.desktop_tasks_dpr_placeholder), DPR_MAX, !readOnly)
+                    }
                 }
             }
         }
 
-        Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
-        Section(str(if (draft.isSelf) S.notes else S.description)) {
-            TInput(
-                draft.description, { set(draft.copy(description = it)) }, Modifier.fillMaxWidth(), placeholder = str(S.desktop_tasks_description_placeholder),
-                style = txt(14, lineHeight = 22.sp), singleLine = false, maxLength = DESCRIPTION_MAX, enabled = !readOnly,
-                decoration = { inner, focused ->
-                    Box(
-                        Modifier.fillMaxWidth().heightIn(min = 104.dp).clip(RoundedCornerShape(10.dp)).background(if (focused) k.surface else k.surface2)
-                            .border(BorderStroke(1.dp, if (focused) k.accent else Color.Transparent), RoundedCornerShape(10.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
-                    ) { inner() }
-                },
+        if (!creating && task != null) {
+            TText(
+                str(S.desktop_tasks_created_by, creatorName(task, state)),
+                12, color = k.faint,
             )
         }
-
-        if (!creating && !isSub && task != null) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
-            SubtaskSection(state, task, today, onEvent)
-        }
-        if (showComments) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
-            CommentsSection(state, task)
-        }
-        if (!creating && task?.history != null) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
-            HistorySection(state, task, today, panel.key)
-        }
+        // Comments | History at the foot of the panel. A new task has neither.
         if (!creating && task != null) {
-            TText(str(S.desktop_tasks_created_by, state.crewById[task.createdBy]?.nameRole ?: str(S.desktop_tasks_former_member)), 12, color = k.faint)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+            ActivityTabs(state, panel, task, today, priv, onEvent, onOpenUrl)
         }
     }
-
     // Footer ---------------------------------------------------------------------------
     Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
     when {
@@ -407,12 +429,12 @@ private fun ColumnScope.PanelContent(
             TBtn(str(S.desktop_tasks_conflict_load_theirs), { onEvent(TasksEvent.LoadTheirs) }, kind = BtnKind.Ghost, small = true)
             if (state.canPost) TBtn(str(S.desktop_tasks_conflict_save_mine), { onEvent(TasksEvent.Save(overwrite = true)) }, small = true, enabled = !panel.saving)
         }
-        panel.dirty && state.canPost -> SaveBar(str(if (panel.nag) S.desktop_tasks_unsaved_nag else S.desktop_tasks_unsaved), danger = panel.nag) {
+        state.panelDirty && state.canPost -> SaveBar(str(if (panel.nag) S.desktop_tasks_unsaved_nag else S.desktop_tasks_unsaved), danger = panel.nag) {
             TBtn(str(S.ah_discard), { onEvent(TasksEvent.Discard) }, kind = BtnKind.Ghost, small = true, enabled = !panel.saving)
             TBtn(str(if (panel.saving) S.desktop_tasks_saving else S.dm_setup_save), { onEvent(TasksEvent.Save()) }, small = true, enabled = !panel.saving && draft.title.isNotBlank())
         }
     }
-    if (showComments && state.canPost) {
+    if (showComments && state.canPost && panel.tab == PanelTab.Comments) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
         Composer(panel, state, mentionable(task), onEvent)
     }
@@ -426,7 +448,18 @@ private fun ColumnScope.PanelContent(
 }
 
 @Composable
-private fun Crumb(state: TasksUiState, panel: TaskPanel, draft: TaskDraft, task: Task?, main: Task?, mainTitle: String, priv: Boolean, modifier: Modifier, onEvent: (TasksEvent) -> Unit) {
+private fun Crumb(
+    state: TasksUiState,
+    panel: TaskPanel,
+    draft: TaskDraft,
+    task: Task?,
+    main: Task?,
+    mainTitle: String,
+    priv: Boolean,
+    visibilityOn: Boolean,
+    modifier: Modifier,
+    onEvent: (TasksEvent) -> Unit,
+) {
     val k = TasksTheme.c
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (panel.creating) Pill(str(S.continue_new).uppercase(), k.accent, k.accentSoft, size = 11)
@@ -445,6 +478,7 @@ private fun Crumb(state: TasksUiState, panel: TaskPanel, draft: TaskDraft, task:
                 val first = { p: TaskPerson? -> p?.fullName?.substringBefore(' ') ?: str(S.desktop_tasks_former_member) }
                 TText(
                     when {
+                        visibilityOn && draft.visibility == TaskVisibility.Public -> str(S.desktop_tasks_self_public_lc)
                         priv -> str(S.desktop_tasks_self_only_you)
                         task?.assigneeId == state.me -> "${str(S.fromText)} ${first(state.crewById[task?.createdBy])}"
                         else -> "${str(S.desktop_tasks_field_assignee)} ${first(state.crewById[draft.assigneeId])}"
@@ -455,6 +489,7 @@ private fun Crumb(state: TasksUiState, panel: TaskPanel, draft: TaskDraft, task:
             else -> {
                 Dot(Color(deptColour(draft.departmentId)))
                 TText(state.departmentName(draft.departmentId).ifEmpty { str(S.desktop_tasks_no_department) }, 13, SemiBold, k.fg, maxLines = 1)
+                PrivateTag(visibilityOn && draft.visibility == TaskVisibility.Private)
             }
         }
     }
@@ -513,12 +548,9 @@ private fun DueHint(draft: TaskDraft, today: LocalDate) {
 }
 
 @Composable
-private fun Section(title: String, count: String? = null, content: @Composable () -> Unit) {
+private fun Section(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TText(title, 14, SemiBold)
-            count?.let { TText(it, 12, SemiBold, TasksTheme.c.faint) }
-        }
+        TText(title, 14, SemiBold)
         content()
     }
 }
@@ -558,115 +590,114 @@ private fun SaveBar(message: String, danger: Boolean, actions: @Composable () ->
 }
 
 /**
- * A main task's subtasks. A subtask is a task of its own, so this lists them
- * from the task list and every change here is a one-click write on the subtask.
- * Cancelled subtasks are left out of the total and of the bar.
+ * A main task's shared tasks (subtasks in the code). A subtask is a task of
+ * its own, so this lists them from the task list and every change here is a
+ * one-click write on the subtask.
+ *
+ * Laid out as the standalone app has it: the summary beside the heading with
+ * each part in its status colour, a bar that is green for done then blue for
+ * in progress, then one bordered list ending in the add row. Cancelled
+ * subtasks are left out of the total and of the bar.
  */
 @Composable
 private fun SubtaskSection(state: TasksUiState, task: Task, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
     val k = TasksTheme.c
     val subtasks = state.subtasksOf(task.id)
     val stats = subtaskStats(subtasks)
-    val summary = listOf(
-        stats.done to S.desktop_tasks_subtasks_done, stats.progress to S.desktop_tasks_subtasks_progress,
-        stats.todo to S.desktop_tasks_subtasks_todo, stats.cancelled to S.desktop_tasks_subtasks_cancelled,
-    ).filter { it.first > 0 }.joinToString(" · ") { (n, key) -> str(key, n) }
     val actions = state.actions(today, onEvent)
+    val shape = RoundedCornerShape(10.dp)
+    // Each part of the summary in its own status colour, as the demo draws it.
+    val parts = listOf(
+        Triple(stats.done, S.desktop_tasks_subtasks_done, k.doneDot),
+        Triple(stats.progress, S.desktop_tasks_subtasks_progress, k.progDot),
+        Triple(stats.todo, S.desktop_tasks_subtasks_todo, k.muted),
+        Triple(stats.cancelled, S.desktop_tasks_subtasks_cancelled, k.cncl),
+    ).filter { it.first > 0 }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TText(str(S.desktop_tasks_field_subtasks), 14, SemiBold)
-            if (stats.total > 0) TText(str(S.desktop_tasks_subtasks_count, stats.done, stats.total), 12, SemiBold, k.faint)
-        }
-        if (subtasks.isEmpty()) {
-            if (state.loaded) TText(str(S.desktop_tasks_subtasks_empty), 13, color = k.faint)
-        } else {
-            TText(summary, 13, color = k.muted)
-            if (stats.total > 0) {
-                Row(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(k.line)) {
-                    if (stats.done > 0) Box(Modifier.weight(stats.done.toFloat()).fillMaxHeight().background(k.doneDot))
-                    if (stats.progress > 0) Box(Modifier.weight(stats.progress.toFloat()).fillMaxHeight().background(k.progDot))
-                    if (stats.todo > 0) Box(Modifier.weight(stats.todo.toFloat()).fillMaxHeight())
-                }
+            Segs {
+                parts.forEach { (n, key, colour) -> TText(str(key, n), 12, Medium, colour, maxLines = 1) }
             }
-            subtasks.forEach { sub ->
+        }
+        if (stats.total > 0) {
+            Row(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(k.line)) {
+                if (stats.done > 0) Box(Modifier.weight(stats.done.toFloat()).fillMaxHeight().background(k.doneDot))
+                if (stats.progress > 0) Box(Modifier.weight(stats.progress.toFloat()).fillMaxHeight().background(k.progDot))
+                if (stats.todo > 0) Box(Modifier.weight(stats.todo.toFloat()).fillMaxHeight())
+            }
+        }
+        // Nothing to show and nothing to add: say so. For someone who can post
+        // the add row IS the list, so no empty line is needed.
+        if (subtasks.isEmpty() && !state.canPost) {
+            if (state.loaded) TText(str(S.desktop_tasks_subtasks_empty), 13, color = k.faint)
+            return@Column
+        }
+        Column(Modifier.fillMaxWidth().clip(shape).border(BorderStroke(1.dp, k.line), shape)) {
+            subtasks.forEachIndexed { at, sub ->
+                if (at > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onEvent(TasksEvent.OpenTask(sub.id)) }.padding(start = 8.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
+                    Modifier.fillMaxWidth().clickable { onEvent(TasksEvent.OpenTask(sub.id)) }
+                        .padding(start = 10.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     StatusBox(sub.status, enabled = state.canPost && sub.id !in state.busy, onToggle = { actions.onStatus(sub, it) })
-                    TaskTitle(sub, Modifier.weight(1f).padding(vertical = 5.dp), maxLines = 2)
+                    TaskTitle(sub, Modifier.weight(1f).padding(vertical = 4.dp), maxLines = 2)
+                    if (sub.dueDate != null) DueChip(sub, today)
                     StatusChip(sub.status)
                     // The avatar alone: hovering it says who (or "Unassigned" / "Former crew member").
                     val who = sub.assigneeId?.let { state.crewById[it] }
                     ZillitTooltip(
                         who?.nameRole ?: str(if (sub.assigneeId != null) S.desktop_tasks_former_member else S.unassigned),
                     ) { TAvatar(who, 22.dp) }
-                    if (sub.dueDate != null) DueChip(sub, today)
                     TaskMenu(
                         task = sub, canPost = state.canPost, blocker = 0, onStatus = { actions.onStatus(sub, it) }, onDelete = { actions.onDelete(sub) },
                         onOpen = { actions.onOpen(sub) }, blockerNote = ::blockerNote,
                     )
                 }
             }
-        }
-        if (state.canPost) {
-            Row(
-                Modifier.clip(RoundedCornerShape(6.dp)).clickable { onEvent(TasksEvent.NewSubtask(task)) }.padding(horizontal = 6.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ZillitIcon(ZillitIcons.Add, tint = k.accent, size = 16.dp)
-                TText(str(S.desktop_tasks_add_subtask), 14, SemiBold, k.accent)
+            if (state.canPost) {
+                if (subtasks.isNotEmpty()) Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+                Row(
+                    Modifier.fillMaxWidth().clickable { onEvent(TasksEvent.NewSubtask(task)) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ZillitIcon(ZillitIcons.Add, tint = k.accent, size = 16.dp)
+                    TText(str(S.desktop_tasks_add_subtask), 14, SemiBold, k.accent)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CommentsSection(state: TasksUiState, task: Task) {
+private fun CommentsSection(state: TasksUiState, task: Task, onOpenUrl: ((String) -> Unit)?) {
     val k = TasksTheme.c
     val comments = task.comments.orEmpty()
     val now = remember(task.updatedMillis, comments.size) { Clock.System.now().toEpochMilliseconds() }
-    Section(str(S.cs_comments), comments.takeIf { it.isNotEmpty() }?.size?.toString()) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (comments.isEmpty()) TText(str(S.desktop_tasks_no_comments), 13, color = k.faint)
-            comments.forEach { comment ->
-                val author = state.crewById[comment.senderId]
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TAvatar(author, 32.dp)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            PersonName(author, state.me)
-                            TText(timeAgo(comment.createdMillis, now), 12, color = k.faint)
-                        }
-                        CommentText(comment.text, comment.mentions.mapNotNull { state.crewById[it]?.fullName })
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (comments.isEmpty()) TText(str(S.desktop_tasks_no_comments), 13, color = k.faint)
+        comments.forEach { comment ->
+            val author = state.crewById[comment.senderId]
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TAvatar(author, 32.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        PersonName(author, state.me)
+                        TText(timeAgo(comment.createdMillis, now), 12, color = k.faint)
                     }
+                    // Mentions highlighted and links clickable, as the description's are.
+                    RichText(
+                        comment.text,
+                        mentionNames = comment.mentions.mapNotNull { state.crewById[it]?.fullName },
+                        onOpenUrl = onOpenUrl,
+                    )
                 }
             }
         }
     }
-}
-
-/** Comment text with each real @mention highlighted. */
-@Composable
-private fun CommentText(text: String, names: List<String>) {
-    val k = TasksTheme.c
-    val annotated = remember(text, names, k.accent) {
-        buildAnnotatedString {
-            var rest = text
-            while (rest.isNotEmpty()) {
-                val hit = names.map { "@$it" }.map { it to rest.indexOf(it) }.filter { it.second >= 0 }.minByOrNull { it.second }
-                if (hit == null) {
-                    append(rest)
-                    break
-                }
-                append(rest.substring(0, hit.second))
-                withStyle(SpanStyle(color = k.accent, fontWeight = SemiBold)) { append(hit.first) }
-                rest = rest.substring(hit.second + hit.first.length)
-            }
-        }
-    }
-    ZillitText(text = annotated, style = txt(14, lineHeight = 20.sp), color = k.fg)
 }
 
 /**
@@ -781,30 +812,28 @@ private fun HistorySection(state: TasksUiState, task: Task, today: LocalDate, ke
     var all by remember(key) { mutableStateOf(false) }
     val shown = if (all) history else history.take(HISTORY_PREVIEW)
     val now = remember(history.size) { Clock.System.now().toEpochMilliseconds() }
-    Section(str(S.history), history.takeIf { it.isNotEmpty() }?.size?.toString()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (history.isEmpty()) TText(str(S.desktop_tasks_history_empty), 13, color = k.faint)
-            shown.forEach { entry ->
-                val person = state.crewById[entry.userId]
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TAvatar(person, 24.dp)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            PersonName(person, state.me, fallback = entry.userName.ifEmpty { null })
-                            ZillitTooltip(historyWhen(entry.createdMillis)) { TText(timeAgo(entry.createdMillis, now), 12, color = k.faint) }
-                        }
-                        historyLines(entry, task.isSubtask).forEach { line ->
-                            TText(historyText(line, state.crewById, state::departmentName, today), 13, color = if (line is HistoryLine.Note) k.faint else k.muted)
-                        }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (history.isEmpty()) TText(str(S.desktop_tasks_history_empty), 13, color = k.faint)
+        shown.forEach { entry ->
+            val person = state.crewById[entry.userId]
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TAvatar(person, 24.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        PersonName(person, state.me, fallback = entry.userName.ifEmpty { null })
+                        ZillitTooltip(historyWhen(entry.createdMillis)) { TText(timeAgo(entry.createdMillis, now), 12, color = k.faint) }
+                    }
+                    historyLines(entry, task.isSubtask).forEach { line ->
+                        TText(historyText(line, state.crewById, state::departmentName, today), 13, color = if (line is HistoryLine.Note) k.faint else k.muted)
                     }
                 }
             }
-            if (history.size > HISTORY_PREVIEW) {
-                TText(
-                    if (all) str(S.desktop_tasks_history_show_less) else str(S.desktop_tasks_history_show_all, history.size), 13, SemiBold, k.accent,
-                    Modifier.clickable { all = !all }.padding(vertical = 4.dp),
-                )
-            }
+        }
+        if (history.size > HISTORY_PREVIEW) {
+            TText(
+                if (all) str(S.desktop_tasks_history_show_less) else str(S.desktop_tasks_history_show_all, history.size), 13, SemiBold, k.accent,
+                Modifier.clickable { all = !all }.padding(vertical = 4.dp),
+            )
         }
     }
 }
@@ -812,5 +841,174 @@ private fun HistorySection(state: TasksUiState, task: Task, today: LocalDate, ke
 private val PANEL_WIDTH = 640.dp
 private const val TITLE_MAX = 300
 private const val SCENES_MAX = 200
-private const val DESCRIPTION_MAX = 10000
 private val MENTION_LIST_MAX = 240.dp
+
+/** A one-line field in the details (the scenes, the DPR): a box that only shows itself when focused. */
+@Composable
+private fun FieldInput(value: String, onChange: (String) -> Unit, placeholder: String, maxLength: Int, enabled: Boolean) {
+    val k = TasksTheme.c
+    val shape = RoundedCornerShape(6.dp)
+    TInput(
+        value, onChange, Modifier.fillMaxWidth(), placeholder = placeholder, maxLength = maxLength, enabled = enabled,
+        decoration = { inner, focused ->
+            Box(
+                Modifier.fillMaxWidth().height(34.dp).clip(shape).background(if (focused) k.surface else Color.Transparent)
+                    .border(BorderStroke(1.dp, if (focused) k.accent else Color.Transparent), shape).padding(horizontal = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) { inner() }
+        },
+    )
+}
+
+/** "Created by Ravi Kapoor · Line Producer", with "(you)" after your own name. */
+private fun creatorName(task: Task, state: TasksUiState): String {
+    val person = state.crewById[task.createdBy] ?: return str(S.desktop_tasks_former_member)
+    val name = if (person.id == state.me) "${person.fullName} ${str(S.desktop_tasks_you)}" else person.fullName
+    return if (person.designation.isNotBlank()) "$name · ${person.designation}" else name
+}
+
+/**
+ * The Visibility row: a Public | Private switch, and under it who can see the
+ * task.
+ *
+ * Only the creator or whoever assigned it may switch it
+ * (`permissions.can_change_visibility`, from the server); everyone else gets
+ * it disabled, with why as its tooltip. **A subtask has no switch at all**: it
+ * follows its main task, and `visibility` is never sent for one.
+ */
+@Composable
+private fun VisibilityRow(
+    state: TasksUiState,
+    panel: TaskPanel,
+    draft: TaskDraft,
+    task: Task?,
+    main: Task?,
+    isSub: Boolean,
+    readOnly: Boolean,
+    onEvent: (TasksEvent) -> Unit,
+) {
+    val k = TasksTheme.c
+    if (isSub) {
+        // It follows its main task, so there is nothing to choose here — but it
+        // still says who can see it, counting the people on the main task.
+        val follows = main?.let { visibilityOf(it) } ?: draft.visibility
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TText(visibilityText(follows), 14, Medium, k.fg, maxLines = 1)
+                TText("· ${str(S.desktop_tasks_visibility_follows_main)}", 13, color = k.faint, maxLines = 1)
+            }
+            TText(whoCanSeeText(draft.copy(visibility = follows), task, state, isSub = true), 12, color = k.muted)
+        }
+        return
+    }
+    // A new task's switch is the creator's to set; an existing one's is the server's call.
+    val allowed = !readOnly && (panel.creating || task?.canChangeVisibility == true)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ZillitTooltip(if (allowed) "" else str(S.desktop_tasks_visibility_locked)) {
+            Segs {
+                TaskVisibility.entries.forEach { choice ->
+                    val on = draft.visibility == choice
+                    val dot = if (choice == TaskVisibility.Private) k.warn else k.ok
+                    Seg(visibilityText(choice), on, dot, if (on) dot else k.muted, if (choice == TaskVisibility.Private) k.warnBg else k.okBg, dot, enabled = allowed) {
+                        onEvent(TasksEvent.PickVisibility(choice))
+                    }
+                }
+            }
+        }
+        TText(whoCanSeeText(draft, task, state, isSub = false), 12, color = k.muted)
+    }
+}
+
+/**
+ * The line under the switch: "Everyone on the project can see this task on
+ * their Board.", "Only you can see this task.", "Only you and Sameer Khan can
+ * see this task." It follows the panel's copy, so it moves as the assignee or
+ * the switch changes.
+ */
+private fun whoCanSeeText(draft: TaskDraft, task: Task?, state: TasksUiState, isSub: Boolean): String {
+    if (draft.visibility == TaskVisibility.Public) return str(S.desktop_tasks_visibility_everyone)
+    val creator = task?.createdBy ?: state.me
+    val people = whoCanSee(
+        Task(
+            id = "", title = "", isSelf = draft.isSelf, assigneeId = draft.assigneeId,
+            createdBy = creator, assignedBy = task?.assignedBy, visibility = TaskVisibility.Private,
+        ),
+    ).orEmpty()
+    val names = people.map { id ->
+        when {
+            id == state.me -> str(S.desktop_tasks_visibility_you)
+            else -> state.crewById[id]?.fullName ?: str(S.desktop_stk_unknown_person)
+        }
+    }.distinct()
+    if (!isSub && (names.isEmpty() || (names.size == 1 && people.singleOrNull() == state.me))) {
+        return str(S.desktop_tasks_visibility_only_you)
+    }
+    val listed = when {
+        names.isEmpty() -> str(S.desktop_tasks_visibility_you)
+        names.size == 1 -> names.first()
+        else -> str(S.desktop_docdist_x_and_y, names.dropLast(1).joinToString(", "), names.last())
+    }
+    // A private subtask is also seen by the people on its main task.
+    return str(if (isSub) S.desktop_tasks_visibility_only_sub else S.desktop_tasks_visibility_only, listed)
+}
+
+/**
+ * **Comments | History** at the foot of the panel — the web's `ActivityTabs`.
+ *
+ * Every task opens on Comments, and the comment box (the panel's own, in its
+ * footer) is shown only while that tab is open, so a half-written comment
+ * survives a look at History. The History tab is there only when the server
+ * sent a history: the list's copy of a task has none.
+ */
+@Composable
+private fun ActivityTabs(
+    state: TasksUiState,
+    panel: TaskPanel,
+    task: Task,
+    today: LocalDate,
+    priv: Boolean,
+    onEvent: (TasksEvent) -> Unit,
+    onOpenUrl: ((String) -> Unit)?,
+) {
+    val k = TasksTheme.c
+    val comments = task.comments.orEmpty()
+    val hasHistory = task.history != null
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            ActivityTab(str(S.cs_comments), comments.size.takeIf { it > 0 }, panel.tab == PanelTab.Comments) {
+                onEvent(TasksEvent.TabChanged(PanelTab.Comments))
+            }
+            if (hasHistory) {
+                ActivityTab(str(S.history), null, panel.tab == PanelTab.History) {
+                    onEvent(TasksEvent.TabChanged(PanelTab.History))
+                }
+            }
+        }
+        if (panel.tab == PanelTab.History && hasHistory) {
+            HistorySection(state, task, today, panel.key)
+        } else if (priv) {
+            // Nobody else can see the task, so there is nobody to talk to yet.
+            TText(str(S.desktop_tasks_comments_private), 13, color = k.faint)
+        } else {
+            CommentsSection(state, task, onOpenUrl)
+        }
+    }
+}
+
+@Composable
+private fun ActivityTab(label: String, count: Int?, on: Boolean, onClick: () -> Unit) {
+    val k = TasksTheme.c
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        Modifier.clip(shape).background(if (on) k.chip else Color.Transparent).clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        TText(label, 14, if (on) SemiBold else FontWeight.Normal, if (on) k.fg else k.muted, maxLines = 1)
+        count?.let { TText(it.toString(), 12, SemiBold, k.faint, maxLines = 1) }
+    }
+}
+
+/** The service's own limit on the DPR field. */
+private const val DPR_MAX = 200

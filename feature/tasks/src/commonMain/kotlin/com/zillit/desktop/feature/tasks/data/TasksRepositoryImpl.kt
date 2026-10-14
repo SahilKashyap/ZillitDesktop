@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.tasks.domain.TaskAssignees
 import com.zillit.desktop.feature.tasks.domain.TaskDepartment
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskWrite
+import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksRepository
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -51,18 +52,22 @@ class TasksRepositoryImpl(
     private val root: String? get() = runCatching { config.apiV2(ZillitService.Tasks).trimEnd('/') + "/tasks" }.getOrNull()
     private val core get() = config.apiV2()
 
-    override suspend fun tasks(): ZillitResult<List<Task>> {
+    override suspend fun tasks(): ZillitResult<TasksRepository.TaskList> {
         val all = mutableListOf<Task>()
+        // What the deployment can keep comes with the list; the first page's
+        // answer is the one that counts, as the web reads it.
+        var features = TasksFeatures()
         for (page in 1..MAX_PAGES) {
             val answer = call(HttpVerb.Get, "", query = mapOf("page" to page, "limit" to PAGE_SIZE))
-            val (batch, total) = when (answer) {
+            val read = when (answer) {
                 is ZillitResult.Failure -> return ZillitResult.Failure(answer.error)
                 is ZillitResult.Success -> answer.data.data.toTaskPage()
             }
-            all += batch
-            if (batch.isEmpty() || all.size >= (total ?: all.size)) break
+            if (page == 1) features = read.features
+            all += read.tasks
+            if (read.tasks.isEmpty() || all.size >= (read.total ?: all.size)) break
         }
-        return ZillitResult.Success(all)
+        return ZillitResult.Success(TasksRepository.TaskList(all, features))
     }
 
     override suspend fun assignees(): ZillitResult<TaskAssignees> =
@@ -89,7 +94,7 @@ class TasksRepositoryImpl(
     override suspend fun task(taskId: String): ZillitResult<Task> =
         call(HttpVerb.Get, "/$taskId").mapTask()
 
-    override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean): TaskWrite {
+    override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean, features: TasksFeatures): TaskWrite {
         // The Self Tasks quick-add row sends only what it asks for, as the web's
         // does; the server fills in the rest.
         if (quick) {
@@ -115,6 +120,10 @@ class TasksRepositoryImpl(
             put("is_self", draft.isSelf)
             // Only for a subtask: a null would be refused as a malformed id.
             draft.parentId?.let { put("parent_id", it) }
+            // Neither reaches a service that does not keep it, and `visibility`
+            // never goes for a subtask: it takes its main task's, whatever the body says.
+            if (features.dpr) put("dpr", draft.dpr)
+            if (features.visibility && draft.parentId == null) put("visibility", draft.visibility.wire)
         }
         return call(HttpVerb.Post, "", body = body).asWrite()
     }

@@ -6,10 +6,12 @@ import com.zillit.desktop.feature.tasks.data.toTask
 import com.zillit.desktop.feature.tasks.data.toTaskPage
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -90,9 +92,70 @@ class TasksWireTest {
 
     @Test
     fun `a list page reports its total`() {
-        val (tasks, total) = Json.parseToJsonElement("""{"tasks":[{"_id":"a"},{"_id":"b"},{"x":1}],"total":42}""").toTaskPage()
+        val page = Json.parseToJsonElement("""{"tasks":[{"_id":"a"},{"_id":"b"},{"x":1}],"total":42}""").toTaskPage()
+        val tasks = page.tasks
+        val total = page.total
 
         assertEquals(listOf("a", "b"), tasks.map { it.id })
         assertEquals(42, total)
+    }
+
+    // -- what this deployment can keep (`data.features`) --------------------------------
+
+    @Test
+    fun `features are read only when the service says exactly true`() {
+        fun features(body: String) = Json.parseToJsonElement(body).toTaskPage().features
+
+        val on = features("""{"tasks":[],"features":{"visibility":true,"dpr":true}}""")
+        assertTrue(on.visibility)
+        assertTrue(on.dpr)
+
+        // A service from before the fields sends no `features` at all.
+        assertFalse(features("""{"tasks":[]}""").visibility)
+        assertFalse(features("""{"tasks":[]}""").dpr)
+        // And anything that is not exactly `true` is "no": it would otherwise
+        // show a Private switch against a service that ignores the field.
+        listOf(
+            """{"tasks":[],"features":{"visibility":false,"dpr":false}}""",
+            """{"tasks":[],"features":{"visibility":"true","dpr":"true"}}""",
+            """{"tasks":[],"features":{"visibility":1,"dpr":1}}""",
+            """{"tasks":[],"features":{}}""",
+        ).forEach { body ->
+            assertFalse(features(body).visibility, body)
+            assertFalse(features(body).dpr, body)
+        }
+    }
+
+    @Test
+    fun `the two features are read apart`() {
+        val one = Json.parseToJsonElement("""{"tasks":[],"features":{"visibility":true,"dpr":false}}""").toTaskPage().features
+        assertTrue(one.visibility)
+        assertFalse(one.dpr)
+    }
+
+    @Test
+    fun `visibility, the DPR and who may switch it are read off a task`() {
+        val task = parse(
+            """
+            {"_id":"t1","title":"x","visibility":"private","dpr":"DPR 12 Oct",
+             "permissions":{"can_delete":false,"can_reassign":false,"can_change_visibility":true}}
+            """.trimIndent(),
+        )!!
+        assertEquals(TaskVisibility.Private, task.visibility)
+        assertEquals("DPR 12 Oct", task.dpr)
+        assertTrue(task.canChangeVisibility)
+    }
+
+    @Test
+    fun `a task that carries neither field reads as null, not as empty`() {
+        // Null is "the service cannot keep one"; an empty string would be "no DPR".
+        val task = parse("""{"_id":"t1","title":"x"}""")!!
+        assertNull(task.visibility)
+        assertNull(task.dpr)
+        assertFalse(task.canChangeVisibility)
+        // An empty `dpr` the service did send is "no DPR", which is not the same thing.
+        assertEquals("", parse("""{"_id":"t1","title":"x","dpr":""}""")!!.dpr)
+        // A word that is neither of the two is no visibility at all.
+        assertNull(parse("""{"_id":"t1","title":"x","visibility":"secret"}""")!!.visibility)
     }
 }

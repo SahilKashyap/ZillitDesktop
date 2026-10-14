@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.tasks.domain.HistoryLine
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
@@ -25,6 +26,21 @@ fun statusText(status: TaskStatus): String = when (status) {
     TaskStatus.Progress -> str(S.desktop_tasks_status_progress)
     TaskStatus.Done -> str(S.done_text)
     TaskStatus.Cancelled -> str(S.cancelled)
+}
+
+fun visibilityText(visibility: TaskVisibility): String = when (visibility) {
+    TaskVisibility.Public -> str(S.desktop_tasks_visibility_public)
+    TaskVisibility.Private -> str(S.desktop_hub_private)
+}
+
+/**
+ * A DPR as a chip or a history line reads it: text that does not already
+ * start with "DPR" gets it in front, as the web does.
+ */
+fun dprText(dpr: String?): String {
+    val text = dpr?.trim().orEmpty()
+    if (text.isEmpty()) return ""
+    return if (text.startsWith("DPR", ignoreCase = true)) text else "DPR $text"
 }
 
 // The weather tool's "High" / "Low" are the same words; they carry the same translations.
@@ -96,6 +112,8 @@ fun fieldText(field: String, isSubtask: Boolean): String = when (field) {
     "priority" -> str(S.priority)
     "department_id" -> str(S.department)
     "scenes" -> str(S.av_scenes)
+    "dpr" -> str(S.desktop_tasks_field_dpr)
+    "visibility" -> str(S.visibility)
     else -> field
 }
 
@@ -116,6 +134,7 @@ fun historyValue(
         empty -> str(S.none)
         field == "status" -> statusText(TaskStatus.fromWire(value))
         field == "priority" -> priorityText(TaskPriority.fromWire(value))
+        field == "visibility" -> TaskVisibility.fromWire(value)?.let(::visibilityText) ?: value.orEmpty()
         field == "due_date" -> runCatching { dayText(LocalDate.parse(value.orEmpty().take(DAY)), today) }.getOrDefault(value.orEmpty())
         else -> "“$value”"
     }
@@ -135,15 +154,35 @@ fun historyText(
     is HistoryLine.SubtaskDeleted -> str(S.desktop_tasks_history_subtask_deleted, line.title)
     HistoryLine.DescriptionChanged -> str(S.desktop_tasks_history_description)
     HistoryLine.Changed -> str(S.desktop_tasks_history_changed)
-    is HistoryLine.Note -> str(
-        if (line.reason == "main_cancelled") S.desktop_tasks_history_reason_main_cancelled else S.desktop_tasks_history_reason_subtask_open,
+    // Visibility and the DPR are sentences rather than "Field: from → to",
+    // as the standalone app writes them.
+    is HistoryLine.VisibilityChanged -> str(
+        if (line.isSubtask) S.desktop_tasks_history_visibility_subtask else S.desktop_tasks_history_visibility,
+        visibilityText(line.visibility),
     )
+    is HistoryLine.DprChanged -> dprHistoryText(line)
+    is HistoryLine.Note -> noteText(line.reason)
     is HistoryLine.Field -> {
         val from = historyValue(line.field, line.from, crewById, departmentName, today)
         val to = historyValue(line.field, line.to, crewById, departmentName, today)
         "${fieldText(line.field, line.isSubtask)}: $from → $to"
     }
 }
+
+private fun dprHistoryText(line: HistoryLine.DprChanged): String = when {
+    line.dpr == null -> str(S.desktop_tasks_history_dpr_removed)
+    line.wasSet -> str(S.desktop_tasks_history_dpr_changed, dprText(line.dpr))
+    else -> str(S.desktop_tasks_history_dpr_set, dprText(line.dpr))
+}
+
+/** Why the server made a change of its own. */
+private fun noteText(reason: String): String = str(
+    when (reason) {
+        "main_cancelled" -> S.desktop_tasks_history_reason_main_cancelled
+        "main_visibility" -> S.desktop_tasks_history_reason_main_visibility
+        else -> S.desktop_tasks_history_reason_subtask_open
+    },
+)
 
 private const val SHORT = 3
 private const val DAY = 10

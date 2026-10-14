@@ -7,6 +7,8 @@ import com.zillit.desktop.feature.tasks.domain.TaskFilter
 import com.zillit.desktop.feature.tasks.domain.TaskLookup
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
+import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.domain.isDirty
 import com.zillit.desktop.feature.tasks.domain.subtasksOf as subtasksIn
@@ -51,15 +53,42 @@ data class TaskPanel(
     val seenInList: Boolean = false,
     /** One id per new task, reused if the create is retried, so a lost reply never makes two. */
     val uniqueId: String = "",
+    /** Which of the two tabs at the foot of the panel is open; a new task has neither. */
+    val tab: PanelTab = PanelTab.Comments,
+    /** A new task opened from "Assign to someone" starts with the crew picker open. */
+    val pickAssignee: Boolean = false,
 ) {
     val ready: Boolean get() = draft != null && (creating || task != null)
-    val dirty: Boolean get() = !creating && isDirty(orig, draft)
+
+    /**
+     * Whether there are unsaved edits. [features] is what the service can
+     * keep: a field it cannot store is never a change, so it never makes the
+     * save bar appear.
+     */
+    fun dirty(features: TasksFeatures): Boolean = !creating && isDirty(orig, draft, features)
 }
+
+/** The two tabs at the bottom of the panel. Every task opens on [Comments]. */
+enum class PanelTab { Comments, History }
+
+/**
+ * The "Create Task" popup: what kind of task this is to be. [status] is the
+ * Board column whose + opened it, kept so the new task starts in that column;
+ * null from the tab bar's own button.
+ */
+data class TaskChooser(val status: TaskStatus? = null)
 
 data class TasksUiState(
     val viewer: TasksViewer = TasksViewer(),
     val loading: Boolean = false,
     val loaded: Boolean = false,
+    /**
+     * What this deployment of the service can keep. Both are off until a list
+     * has answered, and **off means gone**: no Visibility row, tag or menu
+     * item without [TasksFeatures.visibility], no DPR row or chip without
+     * [TasksFeatures.dpr].
+     */
+    val features: TasksFeatures = TasksFeatures(),
     val tasks: List<Task> = emptyList(),
     val me: String? = null,
     val crew: List<TaskPerson> = emptyList(),
@@ -72,6 +101,8 @@ data class TasksUiState(
     val mineQuery: String = "",
     val selfQuery: String = "",
     val panel: TaskPanel? = null,
+    /** The "Create Task" popup; it never opens while the panel is open. */
+    val chooser: TaskChooser? = null,
     /** Tasks with a one-click write in flight. */
     val busy: Set<String> = emptySet(),
     /**
@@ -91,6 +122,9 @@ data class TasksUiState(
     val success: String? = null,
 ) {
     val canPost: Boolean get() = viewer.canPost
+
+    /** Whether the open panel has unsaved edits, judged against what the service keeps. */
+    val panelDirty: Boolean get() = panel?.dirty(features) == true
     // Looked up once per state, not once per row.
     val mainTasks: List<Task> by lazy { tasks.filter { !it.isSubtask } }
     val byId: Map<String, Task> by lazy { tasks.associateBy { it.id } }
@@ -129,6 +163,12 @@ sealed interface TasksEvent {
 
     // -- one-click writes, from a card, a row or the ⋯ menu --
     data class SetStatus(val task: Task, val status: TaskStatus) : TasksEvent
+
+    /**
+     * "Make private" / "Make public" from the ⋯ menu: a main task only, and
+     * only where the service keeps visibility and the server allows it.
+     */
+    data class SetVisibility(val task: Task, val visibility: TaskVisibility) : TasksEvent
     data class Delete(val task: Task) : TasksEvent
 
     /** A Board card dropped on another column: it waits there until the server answers. */
@@ -140,9 +180,16 @@ sealed interface TasksEvent {
     /** Ask an admin for posting rights; the panel closes first, as the web's does. */
     data object AskForRights : TasksEvent
 
+    // -- the Create Task popup --
+    /** [status] is the Board column whose + was pressed; null from the tab bar. */
+    data class OpenChooser(val status: TaskStatus? = null) : TasksEvent
+    data object CloseChooser : TasksEvent
+
     // -- the panel --
     data class OpenTask(val taskId: String) : TasksEvent
-    data class NewTask(val seed: TaskDraft = TaskDraft()) : TasksEvent
+
+    /** [pickAssignee] opens the form with the crew picker already open ("Assign to someone"). */
+    data class NewTask(val seed: TaskDraft = TaskDraft(), val pickAssignee: Boolean = false) : TasksEvent
     data class NewSubtask(val main: Task) : TasksEvent
     data object BackToParent : TasksEvent
 
@@ -156,8 +203,17 @@ sealed interface TasksEvent {
     /** The header button and the status buttons: into the editable copy. */
     data class PickStatus(val status: TaskStatus) : TasksEvent
 
+    /** The panel's Public | Private switch: into the editable copy. */
+    data class PickVisibility(val visibility: TaskVisibility) : TasksEvent
+
     /** The ⋯ menu and the cancelled banner: saved at once, unless there are unsaved edits. */
     data class ChooseStatus(val status: TaskStatus) : TasksEvent
+
+    /** The panel's ⋯ menu: saved at once, unless there are unsaved edits — then it joins them. */
+    data class ChooseVisibility(val visibility: TaskVisibility) : TasksEvent
+
+    /** Comments | History at the foot of the panel. */
+    data class TabChanged(val tab: PanelTab) : TasksEvent
     data class Save(val overwrite: Boolean = false) : TasksEvent
     data object Create : TasksEvent
     data object Discard : TasksEvent

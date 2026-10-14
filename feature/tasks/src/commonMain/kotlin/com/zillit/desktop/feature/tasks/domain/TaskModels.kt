@@ -28,6 +28,37 @@ enum class TaskStatus(val wire: String) {
     }
 }
 
+/**
+ * Who can see a task. **Not the same question as which list it belongs to**:
+ * that is [Task.isSelf], which never changes who may read the task.
+ *
+ * A task that carries none (an older service, or one that cannot keep the
+ * field) is what it always was: a self task private, a project task public —
+ * see [visibilityOf].
+ */
+enum class TaskVisibility(val wire: String) {
+    Public("public"),
+    Private("private"),
+    ;
+
+    companion object {
+        /** Only the two words count; anything else is "the task carries none". */
+        fun fromWire(value: String?): TaskVisibility? = entries.firstOrNull { it.wire == value }
+    }
+}
+
+/**
+ * What this deployment of `zillit_tasks` can keep (`GET /v2/tasks` →
+ * `data.features`).
+ *
+ * The desktop ships separately from the service, and a service from before
+ * these fields **ignores `visibility` and `dpr` in a request without a word**:
+ * a Private switch shown against it would call a task private that everybody
+ * can see. So each is on only where the service said exactly `true`, and both
+ * are off until a list has answered. Off means *gone*, not greyed out.
+ */
+data class TasksFeatures(val visibility: Boolean = false, val dpr: Boolean = false)
+
 /** Declared high-first: the order [compareTasks] sorts by. */
 enum class TaskPriority(val wire: String) {
     High("high"),
@@ -54,11 +85,15 @@ data class Task(
     val description: String = "",
     val departmentId: String? = null,
     val scenes: String = "",
+    /** The Daily Production Report this task belongs to, free text; null where the service cannot keep one. */
+    val dpr: String? = null,
     val dueDate: String? = null,
     val priority: TaskPriority = TaskPriority.Med,
     val status: TaskStatus = TaskStatus.Todo,
     val assigneeId: String? = null,
     val isSelf: Boolean = false,
+    /** Null where the service cannot keep it, and then [visibilityOf] falls back on [isSelf]. */
+    val visibility: TaskVisibility? = null,
     val parentId: String? = null,
     /** What the service sends for a subtask whose main task the caller cannot see. */
     val parentTitle: String = "",
@@ -72,6 +107,8 @@ data class Task(
     /** Worked out on the server from `hod_access` / `admin_access`; never guessed here. */
     val canDelete: Boolean = false,
     val canReassign: Boolean = false,
+    /** Only the creator or whoever assigned the task may switch Public / Private; the server decides. */
+    val canChangeVisibility: Boolean = false,
     /** Present only on a single-task read; the list's copy has neither. */
     val comments: List<TaskComment>? = null,
     val history: List<TaskHistoryEntry>? = null,

@@ -80,7 +80,7 @@ class TasksScreenRenderTest {
             val mine = state(TasksView.Mine).copy(tasks = tasks.map { it.copy(assigneeId = "me") })
             setContent { ZillitTheme(darkTheme = false) { TasksScreen(mine, onEvent = {}, mentionable = { crew }) } }
             onNodeWithText("Buy brushes").assertExists()
-            onNodeWithText("Subtask of Dress the hero set").assertExists()
+            onNodeWithText("Shared from Dress the hero set").assertExists()
         }
     }
 
@@ -105,7 +105,7 @@ class TasksScreenRenderTest {
             setContent { ZillitTheme(darkTheme = false) { TasksScreen(withPanel, onEvent = {}, mentionable = { crew }) } }
             onNodeWithText("Buy brushes").assertExists()
             onNodeWithText("Looks good").assertExists()
-            onNodeWithText("Add subtask").assertExists()
+            onNodeWithText("Share task and assign").assertExists()
         }
     }
 
@@ -118,7 +118,7 @@ class TasksScreenRenderTest {
             onNodeWithText("Open task").assertExists()
             onNodeWithText("Cancel task").performClick()
             onNodeWithText("Cancel this task?").assertExists()
-            onNodeWithText("Its 1 open subtask will be cancelled too.").assertExists()
+            onNodeWithText("Its 1 open shared task will be cancelled too.").assertExists()
             onNodeWithText("Keep it").assertExists()
         }
     }
