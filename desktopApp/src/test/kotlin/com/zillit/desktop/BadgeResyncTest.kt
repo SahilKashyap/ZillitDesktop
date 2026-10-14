@@ -3,7 +3,6 @@ package com.zillit.desktop
 import com.zillit.desktop.core.datastore.PreferenceKey
 import com.zillit.desktop.core.datastore.PreferenceScope
 import com.zillit.desktop.core.datastore.PreferenceStore
-import com.zillit.desktop.core.datastore.ZillitPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -14,25 +13,35 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** The first launch after an update: when a resync is due, and what the listing's cards wear meanwhile. */
+/** Each launch's start-over: when a resync is due, and what the listing's cards wear meanwhile. */
 class BadgeResyncTest {
 
     @Test
-    fun `a new version is due once, until its resync lands`() = runTest {
+    fun `every launch is due once, until its resync lands`() = runTest {
         val preferences = FakePreferences()
-        val resync = BadgeResync(preferences, version = "1.0.8")
-        assertTrue(resync.due(), "nothing remembered yet — the first launch with this counts as an update")
+        val resync = BadgeResync(preferences, launch = "run-1")
+        assertTrue(resync.due())
 
         resync.completed()
-        assertFalse(resync.due())
-        assertEquals("1.0.8", preferences.get(ZillitPreferences.BadgeResyncedVersion))
+        assertFalse(resync.due(), "the rest of this run seeds only what changed")
 
-        assertTrue(BadgeResync(preferences, version = "1.0.9").due(), "the next update is due again")
+        assertTrue(BadgeResync(preferences, launch = "run-2").due(), "the next start of the app is due again")
+    }
+
+    @Test
+    fun `a sign-out makes the next person's first session due again`() = runTest {
+        val preferences = FakePreferences()
+        val resync = BadgeResync(preferences, launch = "run-1")
+        resync.completed()
+
+        preferences.clear(PreferenceScope.User)
+
+        assertTrue(resync.due())
     }
 
     @Test
     fun `the cards wear the server's totals until the resync lands, and never after`() = runTest {
-        val resync = BadgeResync(FakePreferences(), version = "1.0.8")
+        val resync = BadgeResync(FakePreferences(), launch = "run-1")
         resync.showServerCards(mapOf("p1" to 40))
         assertEquals(mapOf("p1" to 40), resync.serverCards)
 
@@ -46,7 +55,7 @@ class BadgeResyncTest {
 
     @Test
     fun `an empty server answer leaves the cards to the ledger`() = runTest {
-        val resync = BadgeResync(FakePreferences(), version = "1.0.8")
+        val resync = BadgeResync(FakePreferences(), launch = "run-1")
         resync.showServerCards(emptyMap())
         assertNull(resync.serverCards)
     }

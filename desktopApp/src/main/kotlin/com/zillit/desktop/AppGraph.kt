@@ -726,7 +726,7 @@ sealed interface AppGraph {
         val badgeStore: BadgeStore,
         /** Asks the notification service for the ledger rows it has not seen. */
         val badgeSeeder: NotificationLedgerSeeder,
-        /** The first launch after an update — see [BadgeResync]. */
+        /** The badges' start-over at each launch — see [BadgeResync]. */
         val badgeResync: BadgeResync,
         /** Which mailbox the badges count mail for, per production — see [MailboxScopes]. */
         val mailboxScopes: MailboxScopes,
@@ -1025,9 +1025,9 @@ sealed interface AppGraph {
                 database?.let(::SqlNotificationLedgerStore) ?: InMemoryNotificationLedgerStore(),
             )
             val badgeDrilldown = BadgeDrilldown { query -> ZillitResult.Success(badgeStore.split(query)) }
-            // After an update the next seed starts from the top, and the
+            // Every launch, the first seed starts from the top, and the
             // listing's cards show the server's totals until it lands.
-            val badgeResync = BadgeResync(preferences, installedAppVersion())
+            val badgeResync = BadgeResync(preferences)
             val badgeSeeder = NotificationLedgerSeeder(
                 apiClient = apiClient,
                 config = config,

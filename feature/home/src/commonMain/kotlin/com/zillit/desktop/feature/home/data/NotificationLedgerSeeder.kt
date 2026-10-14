@@ -40,9 +40,10 @@ class NotificationLedgerSeeder(
     /**
      * Whether the next seed must start over — the newest page, whatever the
      * watermark says — and [onResynced] once it has answered. The host's
-     * answer is "the first launch after an update" (`BadgeResync`): rows a new
-     * version reads differently are refreshed from the server in one page,
-     * while the ledger keeps every read made here.
+     * answer is "the first seed of each launch" (`BadgeResync`): whatever
+     * moved while the app was closed, or a new version reads differently, is
+     * refreshed from the server in one page, while the ledger keeps every
+     * read made here.
      */
     private val resyncDue: suspend () -> Boolean = { false },
     private val onResynced: suspend () -> Unit = {},
@@ -99,7 +100,7 @@ class NotificationLedgerSeeder(
                     "here=${records.count { it.projectId == projectId }} " +
                     "mine=${records.count { it.receiver == me }} unread=${outcome.unread} " +
                     "newest=${records.maxOfOrNull { it.updated } ?: 0L} watermark=$watermark" +
-                    if (resync) " (resync after an update)" else ""
+                    if (resync) " (resync at launch)" else ""
             }
             outcome
         }
