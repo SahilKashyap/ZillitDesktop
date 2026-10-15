@@ -132,6 +132,8 @@ class SheetRulesTest {
         assertTrue(canPostComments(mine, "me"))
         assertFalse(canPostComments(theirs, "me"))
         assertTrue(canPostComments(theirs, "me", isInternalReceiver = true))
+        // ZL-21609/21608: and the final approver, who the thread is usually for.
+        assertTrue(canPostComments(theirs, "me", isFinalApprover = true))
         assertTrue(canPostComments(theirs.copy(createdBy = "Author"), null, userName = "Author"), "no id → the name")
         assertFalse(canPostComments(theirs, null, userName = ""))
     }

@@ -103,13 +103,21 @@ fun isListedMember(ids: List<String>, userId: String?): Boolean {
 
 /**
  * `canPostComments`: everyone who sees a row may open and read its thread;
- * only the row's creator and the project's internal-distribution recipients
- * may write in it. Matched by id only — the web's display-name fallback for a
- * viewer with no member id is deliberately not taken (people are matched by
- * id, never by name, throughout this module).
+ * the row's creator, the project's internal-distribution recipients and its
+ * final approvers may write in it. The approver was added by ZL-21609/21608:
+ * they are the one person the thread is usually FOR, and they could read the
+ * questions put to them without being able to answer. Matched by id only —
+ * the web's display-name fallback for a viewer with no member id is
+ * deliberately not taken (people are matched by id, never by name, throughout
+ * this module).
  */
-fun canPostComments(row: ReportSummary, userId: String?, isInternalReceiver: Boolean): Boolean {
-    if (isInternalReceiver) return true
+fun canPostComments(
+    row: ReportSummary,
+    userId: String?,
+    isInternalReceiver: Boolean,
+    isFinalApprover: Boolean = false,
+): Boolean {
+    if (isInternalReceiver || isFinalApprover) return true
     val me = userId?.trim().orEmpty()
     return me.isNotEmpty() && row.createdById.trim() == me
 }
@@ -311,8 +319,22 @@ fun reminderAssigneeIds(status: ReportStatus, approvals: List<ApprovalRequest>):
 /**
  * `approvalCountFor`: approved of total in the current round of the stage the
  * status names — FINAL when the report has any FINAL request otherwise.
+ *
+ * [total] is the SERVER's count ([ReportSummary.approvalTotal], the wire's
+ * `approval_summary.total`), not the number of requests: the list keeps voided
+ * SUPERSEDED rows, and counting those overstated M. Approved is DERIVED — that
+ * total less the round's PENDING and REJECTED — rather than counted, so a head
+ * the server knows about but has written no request row for reads as approved
+ * rather than quietly leaving the counter short. Without a summary (an older
+ * response) the live, non-voided requests stand in for the total. A row
+ * with no requests at all — the status-filtered Sent list ships none — counts
+ * nothing, and its caller draws no counter.
  */
-fun approvalCount(status: ReportStatus, approvals: List<ApprovalRequest>): Pair<Int, Int> {
+fun approvalCount(
+    status: ReportStatus,
+    approvals: List<ApprovalRequest>,
+    total: Int? = null,
+): Pair<Int, Int> {
     val stageRequests = when (status) {
         ReportStatus.PendingInternalApproval -> approvals.filter { it.isInternal }
         ReportStatus.PendingApproval -> approvals.filter { it.isFinalStage }
@@ -321,8 +343,14 @@ fun approvalCount(status: ReportStatus, approvals: List<ApprovalRequest>): Pair<
     if (stageRequests.isEmpty()) return 0 to 0
     val latest = stageRequests.maxOf { it.round }
     val round = stageRequests.filter { it.round == latest }
-    return round.count { it.isApproved } to round.size
+    val heads = total?.takeIf { it > 0 } ?: round.count { !it.isSuperseded }
+    val outstanding = round.count { it.isPending || it.isRejected }
+    return maxOf(0, heads - outstanding) to heads
 }
+
+/** The same count for a row, which carries the server's total. */
+fun approvalCount(row: ReportSummary): Pair<Int, Int> =
+    approvalCount(row.status, row.approvals, row.approvalTotal)
 
 /** `approvalStageForStatus`: which stage's popover a row shows. */
 fun stageForStatus(status: ReportStatus): String =
@@ -338,15 +366,34 @@ data class ApprovalStatusEntry(
     val actedOn: Long?,
     val reason: String,
     val stage: String,
+    /** They have left the production or were removed — the popover's "Left" chip. */
+    val hasLeft: Boolean = false,
 )
 
 /**
  * `approvalStatusEntries`: the current round of a stage, PENDING first, then
  * APPROVED, then REJECTED, then anything else — a missing status is shown as
  * PENDING and sorted with it (the web sorted it last while labelling it pending).
+ *
+ * Voided (SUPERSEDED) requests are left out: that approver was taken off, so
+ * they are not one to show.
+ *
+ * [members] is the FULL project crew, not the pickers' accepted-only list: an
+ * approver who has since left, or has not accepted yet, must still resolve to
+ * a name. Name and designation come from the member whose id is the request's
+ * `assignee_id`, so a rename or a new title reads current; the request's own
+ * `assignee_name` / `role` are the fallback for anyone off the list — which is
+ * what a raw member id in the popover meant (the backend writes the id into
+ * `assignee_name` for some users).
  */
-fun approvalStatusEntries(approvals: List<ApprovalRequest>, stage: String): List<ApprovalStatusEntry> =
-    approvals.latestRound(stage)
+fun approvalStatusEntries(
+    approvals: List<ApprovalRequest>,
+    stage: String,
+    members: List<SheetMember> = emptyList(),
+): List<ApprovalStatusEntry> {
+    val byId = members.associateBy { it.userId.trim() }
+    return approvals.latestRound(stage)
+        .filterNot { it.isSuperseded }
         .sortedBy { request ->
             when {
                 request.isPending || request.status.isBlank() -> 0
@@ -356,17 +403,24 @@ fun approvalStatusEntries(approvals: List<ApprovalRequest>, stage: String): List
             }
         }
         .map { request ->
+            val member = byId[request.assigneeId.trim()]
             ApprovalStatusEntry(
                 id = request.id,
                 userId = request.assigneeId,
-                name = request.assigneeName.ifBlank { request.assigneeId.ifBlank { "-" } },
-                role = request.role.ifBlank { str(S.desktop_unknown) },
+                name = member?.fullName?.ifBlank { null }
+                    ?: request.assigneeName.ifBlank { request.assigneeId.ifBlank { "-" } },
+                // The KEY, as the web keeps it — the popover translates it.
+                role = member?.designationKey?.ifBlank { null }
+                    ?: member?.designation?.ifBlank { null }
+                    ?: request.role.ifBlank { str(S.desktop_unknown) },
                 status = request.status.ifBlank { "PENDING" }.uppercase(),
                 actedOn = request.actedOn ?: request.createdOn,
                 reason = request.reason,
                 stage = if (request.isInternal) str(S.desktop_stage_internal) else str(S.final_),
+                hasLeft = member?.hasLeft == true,
             )
         }
+}
 
 private const val STATUS_RANK_OTHER = 99
 

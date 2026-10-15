@@ -257,10 +257,13 @@ data class HomeFeedUiState(
     /**
      * Whether the paperclip takes documents only — the call sheet unit, where
      * both phones' attach sheet offers nothing else and hide the microphone
-     * (Android `Home.kt:908-911`, `:403`; iOS `ProductionVC.swift:1149`).
+     * (Android `Home.kt:908-911`, `:403`; iOS `ProductionVC.swift:1149`), and
+     * the production report chat, which the web gates the same way (its attach
+     * menu shows the document row alone for `production_report_tool`, and
+     * hides the mic for `production_report_label`).
      */
     val documentsOnly: Boolean
-        get() = selectedUnit?.kind == HomeUnitKind.CallSheet
+        get() = selectedUnit?.kind?.isDocumentUpload == true
 
     /**
      * Whether the composer bar is on screen at all.
@@ -395,28 +398,47 @@ sealed interface DeletePrompt {
 data class ReadByView(val noticeId: String, val lists: ReadBy? = null, val commentId: String? = null)
 
 /**
- * The call sheet's two-step question, asked when a document is about to be
- * attached to a board that already has posts.
+ * The question asked once a document has been chosen for a board that already
+ * has posts — the call sheet's and the production report chat's, the web's
+ * `ContinuationModal`.
  *
- * Step one: "in continuation of the existing call sheet, or a new one?" —
- * *Continuation* appends; *New* asks step two, "this sends everything here to
- * History; proceed?" — and only a *Yes* there marks the upload as a
- * replacement. Both phones ask exactly this, in this order (Android
- * `Home.kt:862-903`, iOS `ProductionVC.swift:1087-1123`).
+ * Three answers, as cards: *Continuation* appends; *New* replaces every live
+ * message with this upload and sends the rest to History; *Replace* swaps one
+ * live document, which moves to History with its comments. *New* then asks
+ * once more ("everything here goes to History; proceed?") — the phones' second
+ * step (Android `Home.kt:889-903`, iOS `ProductionVC.swift:1105-1118`), kept
+ * because it is the one irreversible answer.
  *
- * [dropped] carries a file that arrived by drag rather than the picker, so
- * the answer can attach it without asking the OS again.
+ * [files] are the documents already in hand, waiting for the answer so they
+ * can be attached without asking the OS again.
  */
 data class CallSheetPrompt(
     val confirmingReplace: Boolean = false,
-    val dropped: List<PickedMedia> = emptyList(),
-    /** Which kind was chosen on the sheet, so the answer opens the right dialog. */
-    val kind: PreviewKind? = null,
-    /** The "Replace one document" picker is showing. */
-    val picking: Boolean = false,
-    /** What that picker offers — see [replaceTargets]. */
+    /** The picked or dropped documents this answer applies to. */
+    val files: List<PickedMedia> = emptyList(),
+    /** The card ticked so far; null until one is. */
+    val choice: UploadChoice? = null,
+    /** The live document Replace will retire. Seeded with the newest. */
+    val replaceNoticeId: String? = null,
+    /** The documents Replace may swap — see [replaceTargets]. */
     val targets: List<Notice> = emptyList(),
-)
+) {
+    /** Replace is the one answer that needs a second decision before Send means anything. */
+    val canSend: Boolean
+        get() = choice != null && (choice != UploadChoice.Replace || !replaceNoticeId.isNullOrBlank())
+}
+
+/** The three answers to the upload question — the web's `ContinuationModal` cards. */
+enum class UploadChoice {
+    /** Append beside what is already on the board. */
+    Continuation,
+
+    /** This upload replaces every live message; the rest go to History. */
+    New,
+
+    /** One live document is swapped and moves to History with its comments. */
+    Replace,
+}
 
 /**
  * A file the host should save and open. [nonce] makes two opens of the same
@@ -611,15 +633,15 @@ sealed interface HomeFeedEvent {
     data class MentionPicked(val name: String) : HomeFeedEvent
 
     /**
-     * The call sheet's question, answered — see [CallSheetPrompt].
-     * Continuation and a confirmed replace both go on to attach; New asks
-     * the second question; Dismiss drops the whole thing.
+     * The upload question — see [CallSheetPrompt]. A card is ticked, then
+     * Send acts on it: Continuation and Replace attach straight away, New
+     * asks once more and only [CallSheetReplaceConfirmed] goes through.
+     * Dismiss drops the whole thing, documents included.
      */
-    data object CallSheetContinuation : HomeFeedEvent
-    /** "Replace one document": show the live documents to pick from. */
-    data object CallSheetPickReplacement : HomeFeedEvent
+    data class CallSheetChoice(val choice: UploadChoice) : HomeFeedEvent
+    /** Which live document a Replace retires. */
     data class CallSheetReplaceOne(val noticeId: String) : HomeFeedEvent
-    data object CallSheetNew : HomeFeedEvent
+    data object CallSheetSend : HomeFeedEvent
     data object CallSheetReplaceConfirmed : HomeFeedEvent
     data object CallSheetDismiss : HomeFeedEvent
 
@@ -1002,14 +1024,23 @@ class HomeFeedViewModel(
             is HomeFeedEvent.OpenAttachment -> open(event.noticeId, event.attachment, event.download)
             HomeFeedEvent.OpenHandled -> setState { copy(pendingOpen = null) }
             is HomeFeedEvent.JumpToPost -> setState { copy(jumpTo = JumpTarget(event.noticeId, ++openCounter)) }
-            HomeFeedEvent.CallSheetContinuation -> answerCallSheet(replace = false)
-            HomeFeedEvent.CallSheetPickReplacement -> setState {
-                copy(callSheetPrompt = callSheetPrompt?.copy(picking = true))
+            is HomeFeedEvent.CallSheetChoice -> setState {
+                // Replace seeds the newest document, so the common case
+                // ("fix the one I just posted") is one click, as on the web.
+                val prompt = callSheetPrompt ?: return@setState this
+                copy(
+                    callSheetPrompt = prompt.copy(
+                        choice = event.choice,
+                        replaceNoticeId = prompt.replaceNoticeId ?: prompt.targets.firstOrNull()?.id,
+                    ),
+                )
             }
-            is HomeFeedEvent.CallSheetReplaceOne -> answerCallSheet(replace = false, replaceChatId = event.noticeId)
-            HomeFeedEvent.CallSheetNew -> setState {
-                copy(callSheetPrompt = callSheetPrompt?.copy(confirmingReplace = true))
+            is HomeFeedEvent.CallSheetReplaceOne -> setState {
+                val prompt = callSheetPrompt ?: return@setState this
+                val known = prompt.targets.any { it.id == event.noticeId }
+                copy(callSheetPrompt = if (known) prompt.copy(replaceNoticeId = event.noticeId) else prompt)
             }
+            HomeFeedEvent.CallSheetSend -> sendWithAnswer()
             HomeFeedEvent.CallSheetReplaceConfirmed -> answerCallSheet(replace = true)
             HomeFeedEvent.CallSheetDismiss -> setState { copy(callSheetPrompt = null) }
             is HomeFeedEvent.StartPublish -> startPublish(event.noticeId)
@@ -1253,22 +1284,27 @@ class HomeFeedViewModel(
         if (media.upload == null || currentState.replyTo != null) return
         val unit = currentState.selectedUnit ?: return
 
-        // A call sheet with posts on it asks first — continuation of what is
-        // there, or a new sheet that sends the rest to History? Both phones
-        // put the question before the picker opens; dropped files wait in
-        // the prompt so the answer can attach them.
-        if (replace == null && callSheetAsksFirst(unit)) {
-            setState {
-                val prompt = CallSheetPrompt(dropped = dropped, kind = kind, targets = replaceTargets(notices))
-                copy(callSheetPrompt = prompt)
-            }
-            return
-        }
-
         launch {
             val files = dropped.ifEmpty { if (kind == null) media.pick() else media.pickOf(kind) }
-                .filterNot { refusedByCallSheet(unit, it) }
+                .filterNot { refusedByUnit(unit, it) }
             if (files.isEmpty()) return@launch
+
+            // A call sheet or a production report chat with posts on it asks
+            // once the document is in hand — continuation of what is there, a
+            // new one that sends the rest to History, or one live document
+            // swapped. The web asks in exactly this order: the file is chosen,
+            // then `changeHandler` blocks on the modal before the upload is
+            // built (`UnitChatMessageBox.jsx`). Asking first, as this used to,
+            // made people answer a question about a file they had not picked.
+            if (replace == null && uploadAsksFirst(unit)) {
+                setState {
+                    copy(
+                        callSheetPrompt = CallSheetPrompt(files = files, targets = replaceTargets(notices)),
+                        error = null,
+                    )
+                }
+                return@launch
+            }
 
             // Straight into the preview, not the draft: the phones put their
             // gallery viewer between the picker and the composer, and a
@@ -1309,7 +1345,12 @@ class HomeFeedViewModel(
             val draft = NoticeDraft(
                 text = if (index == 0) caption else "",
                 media = picked,
+                // BOTH halves of the answer, or Replace quietly appends and
+                // the document it was told to retire stays live. The web
+                // carries `replacePreviousChats` and `replaceChatId` together
+                // on every file of the burst, ungated by index.
                 replacePrevious = pending?.replace,
+                replaceChatId = pending?.replaceChatId,
             )
             // Videos get a frame, PDFs their first page — the web's pair.
             // Before the post, so the card and the upload carry the poster.
@@ -1323,18 +1364,26 @@ class HomeFeedViewModel(
         }
     }
 
-    /** The call sheet's question is owed once the board has anything on it. */
-    private fun callSheetAsksFirst(unit: HomeUnit): Boolean =
-        unit.kind == HomeUnitKind.CallSheet &&
+    /**
+     * The upload question is owed once the board has anything on it — on the
+     * call sheet and on the production report chat, the web's two
+     * `needsContinuationPrompt` units. An empty board has nothing to continue,
+     * so it never asks (the phones' rule; the web asks regardless, and the
+     * question reads as nonsense there).
+     */
+    private fun uploadAsksFirst(unit: HomeUnit): Boolean =
+        unit.kind.isDocumentUpload &&
             currentState.notices.any { it.sendState == NoticeSendState.Sent }
 
     /**
-     * The call sheet unit takes documents only — iOS's attach sheet offers
-     * nothing else there, Android's picker set is `PICKER_ITEM_DOCUMENT`
-     * alone. Anything else is refused with a sentence, not silently dropped.
+     * The call sheet and production report units take documents only — iOS's
+     * attach sheet offers nothing else there, Android's picker set is
+     * `PICKER_ITEM_DOCUMENT` alone, and the web's attach menu drops every
+     * other row for both. Anything else is refused with a sentence, not
+     * silently dropped.
      */
-    private fun refusedByCallSheet(unit: HomeUnit, picked: PickedMedia): Boolean {
-        if (unit.kind != HomeUnitKind.CallSheet || picked.kind == NoticeKind.Document) return false
+    private fun refusedByUnit(unit: HomeUnit, picked: PickedMedia): Boolean {
+        if (!unit.kind.isDocumentUpload || picked.kind == NoticeKind.Document) return false
         setState { copy(error = str(S.desktop_board_only_documents_to, unit.label)) }
         return true
     }
@@ -1463,14 +1512,30 @@ class HomeFeedViewModel(
     }
 
     /**
-     * The call sheet's answer arrives: the prompt closes and attaching goes
-     * ahead with the flag — from the picker, or with the file that was
-     * dropped and has been waiting in the prompt.
+     * The answer arrives: the prompt closes and the documents that have been
+     * waiting in it go on to the preview, carrying the flag. Nothing is picked
+     * again — the files were chosen before the question was put.
      */
+    /**
+     * Send, with the card that is ticked: Continuation appends and Replace
+     * swaps the chosen document, both straight away; New is the one
+     * irreversible answer, so it asks once more before anything is sent.
+     */
+    private fun sendWithAnswer() {
+        val prompt = currentState.callSheetPrompt ?: return
+        if (!prompt.canSend) return
+        when (prompt.choice) {
+            UploadChoice.Continuation -> answerCallSheet(replace = false)
+            UploadChoice.Replace -> answerCallSheet(replace = false, replaceChatId = prompt.replaceNoticeId)
+            UploadChoice.New -> setState { copy(callSheetPrompt = prompt.copy(confirmingReplace = true)) }
+            null -> Unit
+        }
+    }
+
     private fun answerCallSheet(replace: Boolean, replaceChatId: String? = null) {
         val prompt = currentState.callSheetPrompt ?: return
         setState { copy(callSheetPrompt = null) }
-        attach(dropped = prompt.dropped, replace = replace, kind = prompt.kind, replaceChatId = replaceChatId)
+        attach(dropped = prompt.files, replace = replace, replaceChatId = replaceChatId)
     }
 
     /**
@@ -2069,7 +2134,7 @@ class HomeFeedViewModel(
     private fun unitRefusal(target: HomeUnit, notice: Notice): String? {
         if (!target.canPost && !isAdmin()) return noPostingRights(target)
         val callSheetTakes = notice.kind == NoticeKind.Text || notice.kind == NoticeKind.Document
-        if (target.kind == HomeUnitKind.CallSheet && !callSheetTakes) {
+        if (target.kind.isDocumentUpload && !callSheetTakes) {
             return str(S.desktop_board_only_text_and_documents_to, target.label)
         }
         return null

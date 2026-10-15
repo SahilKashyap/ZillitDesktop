@@ -70,6 +70,7 @@ data class ReportSyncEvent(
     companion object {
         const val DELETED = "production_report:previous_report:deleted"
         const val VOIDED = "productionreport:approval:voided"
+        const val METADATA = "productionreport:metadata:updated"
     }
 }
 

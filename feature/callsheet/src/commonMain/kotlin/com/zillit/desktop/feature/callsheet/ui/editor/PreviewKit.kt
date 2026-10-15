@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import com.zillit.desktop.core.localization.localised
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -184,6 +185,16 @@ internal enum class BarAlign { Start, Center }
 /**
  * A section's dark title bar, with the edit badge on the right: "Editing"
  * (or "Editing: Row 2 → Name") when selected, "Click to edit" otherwise.
+ *
+ * ZL-21602: [title] may be a department LABEL KEY rather than a name. The web
+ * bakes the name in at creation, and its helper hands the key back unchanged
+ * whenever the preset labels had not loaded yet; mobile writes the key
+ * outright. So the title is resolved HERE, at view time — nothing is rewritten
+ * on save, which means sheets already on disk read correctly with no migration
+ * and a label arriving later from any client still resolves. A title that is
+ * already a name carries whitespace, and `localised()` returns those verbatim
+ * (the web had to compare against the key because its own helper lower-cased
+ * on a miss; ours does not).
  */
 @Composable
 internal fun SectionBar(
@@ -214,7 +225,7 @@ internal fun SectionBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            title.uppercase(),
+            title.localised().uppercase(),
             style = sheetText(fontSize, weight, (fontSize.value * 1.25f).sp).copy(letterSpacing = letterSpacing),
             color = Color.White,
             maxLines = 3,

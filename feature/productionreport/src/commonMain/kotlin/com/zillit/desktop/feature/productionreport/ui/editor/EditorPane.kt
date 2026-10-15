@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import com.zillit.desktop.core.localization.localised
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -1138,23 +1139,31 @@ private fun CellPanel(
             )
             CloseSquare({ onEvent(EditorEvent.Select(null)) }, str(S.desktop_close_editor))
         }
-        val required = cell.systemDefault
-        val missing = required && cell.title.isBlank()
-        ReportInput(
-            cell.title,
-            { onEvent(DocumentEvent.SetTitle(address.row, address.cell, it)) },
-            Modifier.fillMaxWidth(),
-            placeholder = if (required) str(S.desktop_section_title_required) else str(S.desktop_section_title),
-            autoFocus = true,
-            error = missing,
-            textStyle = reportText(14.sp, FontWeight.SemiBold),
-        )
-        if (missing) Text(
-            str(S.desktop_section_name_required_for_defaults),
-            style = reportText(11.sp),
-            color = colors.red,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+        // ZL-21602: a department section takes its name from the project, so
+        // it is shown, not typed — the call sheet's editor already does this.
+        // A name that is not typed can never be "missing" in the sense the
+        // system-default validation means, so that check goes with the field.
+        if (cell.renderAs == RenderKind.Employee) {
+            ReadOnlyTitle(cell.title.localised().ifBlank { str(S.department) })
+        } else {
+            val required = cell.systemDefault
+            val missing = required && cell.title.isBlank()
+            ReportInput(
+                cell.title,
+                { onEvent(DocumentEvent.SetTitle(address.row, address.cell, it)) },
+                Modifier.fillMaxWidth(),
+                placeholder = if (required) str(S.desktop_section_title_required) else str(S.desktop_section_title),
+                autoFocus = true,
+                error = missing,
+                textStyle = reportText(14.sp, FontWeight.SemiBold),
+            )
+            if (missing) Text(
+                str(S.desktop_section_name_required_for_defaults),
+                style = reportText(11.sp),
+                color = colors.red,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         Box(Modifier.fillMaxWidth().padding(top = 12.dp)) { Divider() }
     }
     editor.undo?.let { UndoBar(it, onEvent, Modifier.padding(bottom = 16.dp)) }
@@ -1208,5 +1217,46 @@ private fun CellPanel(
         cell.kind == CellKind.Notes -> NotesEditor(cell, address, onEvent)
         cell.renderAs == RenderKind.Employee -> CrewEditor(cell, address, state.members, onEvent)
         else -> TableEditor(cell, address, state.members, onEvent)
+    }
+}
+
+/**
+ * A department section's name: shown with a "read only" chip, because the
+ * project owns it. The call sheet's editor's own [ReadOnlyTitle] in this
+ * module's words.
+ */
+@Composable
+private fun ReadOnlyTitle(name: String) {
+    val colors = ReportTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.elevated)
+            .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            name,
+            style = reportText(14.sp, FontWeight.SemiBold),
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitTooltip(str(S.desktop_department_name_managed)) {
+            Text(
+                str(S.desktop_read_only_upper),
+                style = reportText(10.sp, FontWeight.Medium, 13.sp).copy(letterSpacing = 0.5.sp),
+                color = colors.textTertiary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(colors.surface)
+                    .border(1.dp, colors.border, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
     }
 }

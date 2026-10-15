@@ -84,6 +84,13 @@ data class ReportSummary(
      * `ProductionReportBadgeViewModel.swift:105-109`).
      */
     val uuid: String = "",
+    /**
+     * `approval_summary.total` — how many approvers the server counts for the
+     * current round. The request list keeps voided rows, so its length is not
+     * that number; null when the response carries no summary, and
+     * [approvalCount] then falls back to the live requests.
+     */
+    val approvalTotal: Int? = null,
 ) {
     val statusLabel: String get() = if (status == ReportStatus.Unknown) rawStatus.ifBlank { "-" } else status.label
 
@@ -129,6 +136,13 @@ data class ApprovalRequest(
     val isPending: Boolean get() = status.equals("PENDING", ignoreCase = true)
     val isApproved: Boolean get() = status.equals("APPROVED", ignoreCase = true)
     val isRejected: Boolean get() = status.equals("REJECTED", ignoreCase = true)
+
+    /**
+     * Voided: the approver was taken off, or the request withdrawn. The server
+     * keeps the row in the list, so it is neither an approver to show nor a
+     * head to count — counting it is what overstated "N/M approved".
+     */
+    val isSuperseded: Boolean get() = status.equals("SUPERSEDED", ignoreCase = true)
     val isInternal: Boolean get() = stage.equals("INTERNAL", ignoreCase = true)
     val isFinalStage: Boolean get() = !isInternal
 }
@@ -240,6 +254,14 @@ data class SheetMember(
     val isAccepted: Boolean
         get() = status.isNullOrBlank() || status.equals("accepted", ignoreCase = true) ||
             status.equals("approved", ignoreCase = true)
+
+    /**
+     * Off the production — left of their own accord or removed. Narrower than
+     * `!isAccepted`, which also covers someone who simply has not accepted the
+     * invitation yet: only these two earn the Approval Status "Left" chip.
+     */
+    val hasLeft: Boolean
+        get() = status.equals("left", ignoreCase = true) || status.equals("removed", ignoreCase = true)
 }
 
 /**

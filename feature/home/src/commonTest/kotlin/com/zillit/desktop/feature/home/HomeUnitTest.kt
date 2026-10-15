@@ -42,6 +42,26 @@ class HomeUnitTest {
     }
 
     @Test
+    fun `the production report chat is matched by identifier or name`() {
+        // The report tool and its chat, by either spelling the wire uses.
+        listOf("production_report_tool", "production_report_chat_tool").forEach {
+            assertEquals(HomeUnitKind.ProductionReport, unit(it).kind, "not recognised: $it")
+        }
+        assertEquals(
+            HomeUnitKind.ProductionReport,
+            unit("anything", name = "production_report_tool_chat_label").kind,
+        )
+    }
+
+    @Test
+    fun `the call sheet and the report chat both take documents, a notice board does not`() {
+        assertTrue(HomeUnitKind.CallSheet.isDocumentUpload)
+        assertTrue(HomeUnitKind.ProductionReport.isDocumentUpload)
+        assertFalse(HomeUnitKind.Notices.isDocumentUpload)
+        assertFalse(HomeUnitKind.Calendar.isDocumentUpload)
+    }
+
+    @Test
     fun `anything else is a notice board`() {
         assertEquals(HomeUnitKind.Notices, unit("general_tool").kind)
         assertEquals(HomeUnitKind.Notices, unit("").kind)

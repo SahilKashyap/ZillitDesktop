@@ -20,7 +20,24 @@ enum class HomeUnitKind {
 
     /** A call sheet — a notice board that also has a history view. */
     CallSheet,
+
+    /**
+     * The production report tool's own chat. A notice board like the call
+     * sheet's, and uploaded to the same way: documents only, and the
+     * continuation question before anything is posted (the web's
+     * `needsContinuationPrompt` names `production_report` beside
+     * `call_sheet`, and its attach menu offers the document row alone for
+     * `production_report_tool`).
+     */
+    ProductionReport,
     ;
+
+    /**
+     * Whether this unit takes DOCUMENTS only and owes the "continuation or
+     * new?" question before an upload — the call sheet and the production
+     * report chat, the web's two `needsContinuationPrompt` units.
+     */
+    val isDocumentUpload: Boolean get() = this == CallSheet || this == ProductionReport
 
     companion object {
         fun of(identifier: String, unitName: String): HomeUnitKind = when {
@@ -32,11 +49,17 @@ enum class HomeUnitKind {
             // `call_sheet_label` and per-unit variants.
             identifier.contains(CALL_SHEET, ignoreCase = true) -> CallSheet
 
+            // Likewise `production_report_tool`, `production_report_chat_tool`
+            // and `production_report_label` / `production_report_tool_chat_label`.
+            identifier.contains(PRODUCTION_REPORT, ignoreCase = true) ||
+                unitName.contains(PRODUCTION_REPORT, ignoreCase = true) -> ProductionReport
+
             else -> Notices
         }
 
         const val CALENDAR_UNIT = "calendar_label"
         const val CALL_SHEET = "call_sheet"
+        const val PRODUCTION_REPORT = "production_report"
     }
 }
 

@@ -272,6 +272,12 @@ internal fun HomeFeedScreen(
     crewNames: () -> List<String> = { emptyList() },
     /** Unread count for one unit's tab; zero draws nothing. */
     unitBadge: (String) -> Int = { 0 },
+    /**
+     * A tool's own action in the tab strip — the report chat's "Create
+     * Production Report" (ZL-21828), which opens the creation tool's window.
+     * Null on Home and on a board that has no such action.
+     */
+    headerAction: (@Composable () -> Unit)? = null,
 ) {
     // Screen-level so a viewer covers the whole board, not one bubble.
     var viewer by remember { mutableStateOf<BoardViewer?>(null) }
@@ -286,7 +292,7 @@ internal fun HomeFeedScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-        BoardHeader(state, onEvent, unitBadge, resolveAuthor)
+        BoardHeader(state, onEvent, unitBadge, resolveAuthor, headerAction)
 
         // weight, NOT fillMaxSize: a fillMaxSize child of a Column consumes
         // every remaining pixel, which measured the composer below at zero
@@ -355,8 +361,9 @@ private fun BoardHeader(
     onEvent: (HomeFeedEvent) -> Unit,
     unitBadge: (String) -> Int,
     resolveAuthor: (String?) -> String?,
+    headerAction: (@Composable () -> Unit)? = null,
 ) {
-    UnitTabs(state, onEvent, unitBadge)
+    UnitTabs(state, onEvent, unitBadge, headerAction)
 
     if (state.searchQuery != null) {
         BoardSearchBar(state, onEvent)
@@ -728,125 +735,207 @@ private fun PublishPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent)
 }
 
 /**
- * The call sheet's two-step question — see [CallSheetPrompt].
+ * The upload question — see [CallSheetPrompt].
  *
- * The phones' exact words, because the crew already knows them: "Alert" over
- * "Are you uploading document in continuation…" with *Continuation* / *New*
- * / *Cancel* (Android `Home.kt:862-882`, iOS `ProductionVC.swift:1087-1130`),
- * then on *New* the warning that everything here goes to History, *No* /
- * *Yes* (Android `Home.kt:889-903`, iOS `:1105-1118`). Only *Yes* replaces.
+ * The web's `ContinuationModal`, card for card: the question over the unit's
+ * name, then *Continuation* / *New* / *Replace* as tick-able cards with a
+ * line each saying what they do, and one button that stays "Select an option
+ * to send" until one is ticked. Replace expands to the live documents it may
+ * swap, newest first and seeded.
+ *
+ * *New* then asks once more — everything here goes to History, *No* / *Yes*
+ * (Android `Home.kt:889-903`, iOS `ProductionVC.swift:1105-1118`). It is the
+ * one answer that cannot be taken back, so the phones' second step stays.
  */
 @Composable
 private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
     val prompt = state.callSheetPrompt
     val unitLabel = state.selectedUnit?.label ?: str(S.cs_app_name)
     // Remembered across the exit so the fading card keeps its last words.
-    var confirming by remember { mutableStateOf(false) }
-    var picking by remember { mutableStateOf(false) }
-    if (prompt != null) {
-        confirming = prompt.confirmingReplace
-        picking = prompt.picking
-    }
+    var shown by remember { mutableStateOf(CallSheetPrompt()) }
+    if (prompt != null) shown = prompt
     ZillitDialogShell(
-        title = if (picking) str(S.desktop_board_replace_which_document) else str(S.alert),
+        title = str(S.alert),
         icon = ZillitIcons.Warning,
         visible = prompt != null,
         onDismiss = { onEvent(HomeFeedEvent.CallSheetDismiss) },
         width = CALL_SHEET_PROMPT_WIDTH,
-        actions = { PromptActions(prompt, confirming, picking, onEvent) },
+        actions = { PromptActions(shown, onEvent) },
     ) {
-        when {
-            picking -> ReplaceTargetList(prompt?.targets.orEmpty(), onEvent)
-            else -> ZillitText(
-                text = if (!confirming) {
-                    str(S.desktop_board_callsheet_continuation_question, unitLabel)
-                } else {
-                    str(S.desktop_board_callsheet_new_warning)
-                },
+        if (shown.confirmingReplace) {
+            ZillitText(
+                text = str(S.desktop_board_callsheet_new_warning),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textPrimary,
             )
+            return@ZillitDialogShell
         }
-    }
-}
-
-
-/** The prompt's buttons per mode: the three answers, the "New" confirmation, or the picker's Cancel. */
-@Composable
-private fun RowScope.PromptActions(
-    prompt: CallSheetPrompt?,
-    confirming: Boolean,
-    picking: Boolean,
-    onEvent: (HomeFeedEvent) -> Unit,
-) {
-        Spacer(Modifier.weight(1f))
-        when {
-            picking -> ZillitButton(
-                text = str(S.cancel),
-                variant = ButtonVariant.Tertiary,
-                onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
-            )
-            !confirming -> {
-                ZillitButton(
-                    text = str(S.cancel),
-                    variant = ButtonVariant.Tertiary,
-                    onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
-                )
-                ZillitButton(
-                    text = str(S.continuation),
-                    variant = ButtonVariant.Secondary,
-                    onClick = { onEvent(HomeFeedEvent.CallSheetContinuation) },
-                )
-                // "Replace one document" — the phones' third answer: swap a
-                // single live document rather than send the whole unit to
-                // History. Only offered when there is something to swap.
-                ZillitButton(
-                    text = str(S.desktop_board_replace_one),
-                    variant = ButtonVariant.Secondary,
-                    enabled = prompt?.targets?.isNotEmpty() == true,
-                    onClick = { onEvent(HomeFeedEvent.CallSheetPickReplacement) },
-                )
-                ZillitButton(text = str(S.ah_txn_filter_new), onClick = { onEvent(HomeFeedEvent.CallSheetNew) })
-            }
-            else -> {
-                ZillitButton(
-                    text = str(S.no),
-                    variant = ButtonVariant.Secondary,
-                    onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
-                )
-                ZillitButton(
-                    text = str(S.yes),
-                    variant = ButtonVariant.Danger,
-                    onClick = { onEvent(HomeFeedEvent.CallSheetReplaceConfirmed) },
-                )
-            }
-        }
-}
-
-/** The live documents a "Replace one" upload may retire — a click is the answer. */
-@Composable
-private fun ReplaceTargetList(targets: List<Notice>, onEvent: (HomeFeedEvent) -> Unit) {
-    Column(
-        Modifier.heightIn(max = REPLACE_LIST_HEIGHT).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
         ZillitText(
-            text = str(S.desktop_board_replace_one_hint),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
+            text = str(S.desktop_board_callsheet_continuation_question, unitLabel),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
-        targets.forEach { target ->
-            ZillitButton(
-                text = target.attachment?.fileName?.ifBlank { null } ?: target.body.ifBlank { str(S.document) },
-                variant = ButtonVariant.Secondary,
-                onClick = { onEvent(HomeFeedEvent.CallSheetReplaceOne(target.id)) },
-                modifier = Modifier.fillMaxWidth(),
+        Spacer(Modifier.height(ZillitTheme.spacing.md))
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            UploadChoiceCard(
+                title = str(S.continuation),
+                hint = str(S.um_continuation_body),
+                selected = shown.choice == UploadChoice.Continuation,
+                onClick = { onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.Continuation)) },
             )
+            UploadChoiceCard(
+                title = str(S.continue_new),
+                hint = str(S.um_new_body),
+                selected = shown.choice == UploadChoice.New,
+                onClick = { onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.New)) },
+            )
+            // Hidden, not disabled, when there is nothing to swap: a first
+            // upload must not be offered an empty picker (the web's `canReplace`).
+            if (shown.targets.isNotEmpty()) {
+                UploadChoiceCard(
+                    title = str(S.replace),
+                    hint = str(S.um_replace_body),
+                    selected = shown.choice == UploadChoice.Replace,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.Replace)) },
+                ) {
+                    ReplaceTargetList(shown.targets, shown.replaceNoticeId, onEvent)
+                }
+            }
         }
     }
 }
 
-private val REPLACE_LIST_HEIGHT = 320.dp
+/**
+ * One answer: a radio dot, its name and the line that says what it does, in a
+ * card that rims itself when ticked. [expanded] is drawn inside the card once
+ * it is — Replace's document list.
+ */
+@Composable
+private fun UploadChoiceCard(
+    title: String,
+    hint: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    expanded: (@Composable () -> Unit)? = null,
+) {
+    val colors = ZillitTheme.colors
+    val shape = ZillitTheme.shapes.medium
+    val rim = if (selected) colors.accent else colors.border
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (selected) colors.accentSoft else colors.surface)
+            .border(if (selected) CHOICE_RIM_ON else CHOICE_RIM_OFF, rim, shape)
+            .clickable(onClick = onClick)
+            .padding(ZillitTheme.spacing.md),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(RADIO_SIZE)
+                    .clip(CircleShape)
+                    .border(CHOICE_RIM_ON, rim, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) Box(Modifier.size(RADIO_DOT).clip(CircleShape).background(colors.accent))
+            }
+            Spacer(Modifier.width(ZillitTheme.spacing.sm))
+            Column(Modifier.weight(1f)) {
+                ZillitText(
+                    text = title,
+                    style = ZillitTheme.typography.label,
+                    color = colors.textPrimary,
+                )
+                ZillitText(
+                    text = hint,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
+            }
+        }
+        if (selected && expanded != null) {
+            Spacer(Modifier.height(ZillitTheme.spacing.sm))
+            expanded()
+        }
+    }
+}
+
+/** The prompt's buttons: Send over Cancel, or the "New" confirmation. */
+@Composable
+private fun RowScope.PromptActions(prompt: CallSheetPrompt, onEvent: (HomeFeedEvent) -> Unit) {
+    Spacer(Modifier.weight(1f))
+    if (prompt.confirmingReplace) {
+        ZillitButton(
+            text = str(S.no),
+            variant = ButtonVariant.Secondary,
+            onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+        )
+        ZillitButton(
+            text = str(S.yes),
+            variant = ButtonVariant.Danger,
+            onClick = { onEvent(HomeFeedEvent.CallSheetReplaceConfirmed) },
+        )
+        return
+    }
+    ZillitButton(
+        text = str(S.cancel),
+        variant = ButtonVariant.Tertiary,
+        onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+    )
+    // The web's one button, which says what it is waiting for until it has it.
+    ZillitButton(
+        text = if (prompt.canSend) str(S.send) else str(S.desktop_board_select_option_to_send),
+        enabled = prompt.canSend,
+        onClick = { onEvent(HomeFeedEvent.CallSheetSend) },
+    )
+}
+
+/** The live documents a Replace may retire — inside the card, a click is the choice. */
+@Composable
+private fun ReplaceTargetList(targets: List<Notice>, chosenId: String?, onEvent: (HomeFeedEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitText(
+            text = str(S.um_document_to_replace),
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textSecondary,
+        )
+        Column(
+            Modifier.heightIn(max = REPLACE_LIST_HEIGHT).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            targets.forEach { target ->
+                val chosen = target.id == chosenId
+                ZillitText(
+                    text = target.attachment?.fileName?.ifBlank { null } ?: target.body.ifBlank { str(S.document) },
+                    style = ZillitTheme.typography.bodySmall,
+                    color = if (chosen) colors.textPrimary else colors.textSecondary,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(ZillitTheme.shapes.small)
+                        .background(if (chosen) colors.surface else Color.Transparent)
+                        .border(
+                            CHOICE_RIM_OFF,
+                            if (chosen) colors.accent else colors.border,
+                            ZillitTheme.shapes.small,
+                        )
+                        .clickable { onEvent(HomeFeedEvent.CallSheetReplaceOne(target.id)) }
+                        .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+                )
+            }
+        }
+    }
+}
+
+private val REPLACE_LIST_HEIGHT = 220.dp
+private val RADIO_SIZE = 20.dp
+private val RADIO_DOT = 10.dp
+private val CHOICE_RIM_ON = 2.dp
+private val CHOICE_RIM_OFF = 1.dp
 
 /**
  * Who has and hasn't read a post — the web's `ReadByUsersModal`, as a card
@@ -1785,6 +1874,7 @@ private fun UnitTabs(
     state: HomeFeedUiState,
     onEvent: (HomeFeedEvent) -> Unit,
     unitBadge: (String) -> Int = { 0 },
+    headerAction: (@Composable () -> Unit)? = null,
 ) {
     val colors = ZillitTheme.colors
     val selected = state.selectedUnit
@@ -1821,6 +1911,11 @@ private fun UnitTabs(
         }
     }
     }
+
+    // The tool's own action sits before the board's own buttons, where the
+    // web's header puts its "Create Production Report" — the way out of a
+    // chat and into the tool it is about.
+    headerAction?.invoke()
 
     // In the tab strip, not the composer: find works in history and on
     // read-only boards too, where the composer has other rules.
@@ -3217,6 +3312,7 @@ private fun CalendarPlaceholder(unit: HomeUnit) {
 private fun HomeUnitKind.icon() = when (this) {
     HomeUnitKind.Calendar -> ZillitIcons.Calendar
     HomeUnitKind.CallSheet -> ZillitIcons.Tools
+    HomeUnitKind.ProductionReport -> ZillitIcons.Chat
     HomeUnitKind.Notices -> ZillitIcons.Chat
 }
 

@@ -30,11 +30,33 @@ class BoardToolProvider(
     private val feedViewModel: HomeFeedViewModel,
     private val board: HomeBoardContext = HomeBoardContext(),
     private val badges: StateFlow<BadgeCounts>? = null,
+    /**
+     * The tool's name as the PRODUCTION calls it, when the server names it at
+     * all. A board tool is named twice — by the constant the client was built
+     * with, and by the `unit_name` the rights carry — and the two need not
+     * agree: the report chat ships as `production_report_tool_chat_label` and
+     * a production may call it "Daily Production Report". The board shows the
+     * production's name inside, so a tab reading anything else is the wrong
+     * window. Null (or blank) falls back to [title].
+     */
+    private val unitTitle: (() -> String?)? = null,
+    /**
+     * The tool's own action in the board's tab strip. The report chat's
+     * "Create Production Report" (ZL-21828): the web gave that chat the
+     * creation tool's header so the one leads to the other, and this is the
+     * half of that header the desktop does not already have — the window
+     * frame is the way back, the tab carries the title, and the theme is the
+     * whole app's rather than one tool's.
+     */
+    private val headerAction: (@Composable () -> Unit)? = null,
 ) : ToolProvider {
 
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
     override val defaultSize: DpSize = DpSize(1180.dp, 820.dp)
+
+    override fun titleFor(route: WorkspaceRoute): String =
+        unitTitle?.invoke()?.takeIf { it.isNotBlank() } ?: title
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
@@ -57,6 +79,7 @@ class BoardToolProvider(
             loadAvatar = board.loadAvatar,
             crewNames = board.crewNames,
             unitBadge = { unitId -> counts.unit(unitId) },
+            headerAction = headerAction,
         )
     }
 

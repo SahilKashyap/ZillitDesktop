@@ -58,7 +58,9 @@ internal class WorkflowController(private val ctx: ReportContext) {
             WorkflowEvent.ConfirmReject -> reject()
             is WorkflowEvent.OpenReminder -> {
                 ctx.lists.readRowBadge(event.report, BadgeKind.Report)
-                ctx.update { copy(dialog = ReportDialog.ReminderCompose(event.report)) }
+                // Seeded, not blank: the sender must SEE the message that
+                // would go out, and be able to edit it before sending.
+                ctx.update { copy(dialog = ReportDialog.ReminderCompose(event.report, message = DEFAULT_REMINDER)) }
             }
             is WorkflowEvent.EditReminder -> ctx.update {
                 copy(dialog = (dialog as? ReportDialog.ReminderCompose)?.copy(message = event.message) ?: dialog)

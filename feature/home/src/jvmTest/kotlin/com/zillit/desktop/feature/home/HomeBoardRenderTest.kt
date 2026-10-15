@@ -22,6 +22,7 @@ import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeKind
 import com.zillit.desktop.feature.home.ui.BoardSelection
 import com.zillit.desktop.feature.home.ui.CallSheetPrompt
+import com.zillit.desktop.feature.home.ui.UploadChoice
 import com.zillit.desktop.feature.home.ui.DeletePrompt
 import com.zillit.desktop.feature.home.ui.SelectionAction
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
@@ -306,6 +307,40 @@ class HomeBoardRenderTest {
         onNodeWithText("Continuation").assertExists()
         onNodeWithText("New").assertExists()
         onNodeWithText("Cancel").assertExists()
+        // Nothing is ticked, so the one action says what it is waiting for.
+        onNodeWithText("Select an option to send").assertExists()
+        // Replace is hidden until there is a live document to swap.
+        onNodeWithText("Replace").assertDoesNotExist()
+    }
+
+    @Test
+    fun `ticking Replace offers the live documents to swap`() = runComposeUiTest {
+        val target = myOldPost.copy(
+            id = "doc-1",
+            kind = NoticeKind.Document,
+            attachment = NoticeAttachment(media = "home/sheet.pdf", fileName = "Day 12 sheet.pdf"),
+        )
+        setContent {
+            ZillitTheme {
+                HomeFeedScreen(
+                    state = board(callSheet, target).copy(
+                        callSheetPrompt = CallSheetPrompt(
+                            choice = UploadChoice.Replace,
+                            replaceNoticeId = "doc-1",
+                            targets = listOf(target),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+
+        onNodeWithText("Replace").assertExists()
+        onNodeWithText("Document to replace").assertExists()
+        // Twice: the post on the board behind, and the row offering to swap it.
+        onAllNodesWithText("Day 12 sheet.pdf").assertCountEquals(2)
+        // A target is chosen, so the action is live and says Send.
+        onNodeWithText("Send").assertExists()
     }
 
     @Test
