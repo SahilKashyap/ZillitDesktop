@@ -223,6 +223,22 @@ class HomeViewModel(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * The production whose grid is on screen.
+     *
+     * Held because a load cannot otherwise tell a refresh of the open
+     * production (keep what is drawn) from a project switch (draw the new
+     * production's own copy instead) — see [load].
+     */
+    private var gridProject: String? = null
+
+    /**
+     * Whether the grid on screen is the stand-in [publishCachedGrid] put up
+     * rather than something the server issued. A refusal drops a stand-in and
+     * leaves a server-issued grid alone — see the failure branch of [load].
+     */
+    private var standingIn = false
+
     // Deliberately no eager load. The tools call carries project and user in
     // its `moduledata`, so firing it at construction — before a production is
     // open — sends an empty context and the server answers 406. The host calls
@@ -408,6 +424,18 @@ class HomeViewModel(
     private fun load() {
         val admin = isAdmin()
         setState { copy(isBusy = true, error = null, isAdmin = admin) }
+        // A load for a *different* production than the grid on screen is a
+        // project switch, and the grid on screen is the previous production's.
+        // Keeping it until the tools call answers showed one production's tools
+        // under another production's name for as long as that took — most of a
+        // second on a shoot with forty tools. So this production's own last
+        // answer goes up at once instead, from the per-production copy kept for
+        // offline, and a production never opened here gets the skeleton. The
+        // network's answer lands on top either way.
+        offline?.currentScope()?.projectId?.takeIf { it != gridProject }?.let { opened ->
+            gridProject = opened
+            launch { publishCachedGrid() }
+        }
 
         // The Remote Config switch, asked on each load so a rollout (or a
         // pull-back) reaches an open grid; losing it closes the mode.
@@ -439,36 +467,89 @@ class HomeViewModel(
                 is ZillitResult.Success -> {
                     // The server's word now includes every move made here, so
                     // the painted-ahead overrides have nothing left to say.
+                    standingIn = false
                     setState { copy(isBusy = false, permissions = loaded.data, staleSince = null, moves = emptyMap()) }
                     rememberGrid()
                 }
 
-                is ZillitResult.Failure -> {
-                    // Permissions are not partially applied on failure: the state
-                    // keeps whatever it had, which for a first load is Empty. A
-                    // failed rights call must never widen access. The one thing
-                    // that may stand in is this production's own last answer,
-                    // and only when the failure is the network, not the server.
-                    val saved = recallGrid(loaded.error)
-                    if (saved != null) {
-                        setState {
-                            copy(
-                                isBusy = false,
-                                permissions = saved.first.permissions(),
-                                groups = groups.ifEmpty { saved.first.toolGroups() },
-                                groupOrder = groupOrder.ifEmpty { saved.first.groupOrder },
-                                staleSince = saved.second,
-                            )
-                        }
-                    } else {
-                        setState { copy(isBusy = false, error = loaded.error.localised()) }
-                    }
-                }
+                is ZillitResult.Failure -> gridFailed(loaded.error)
             }
         }
     }
 
+    /**
+     * The tools call did not answer.
+     *
+     * Permissions are not partially applied on failure: the state keeps
+     * whatever it had, which for a first load is Empty. A failed rights call
+     * must never widen access. The one thing that may stand in is this
+     * production's own last answer, and only when the failure is the network,
+     * not the server.
+     */
+    private suspend fun gridFailed(error: ZillitError) {
+        val saved = recallGrid(error)
+        val drop = standingIn
+        standingIn = false
+        if (saved != null) {
+            setState {
+                copy(
+                    isBusy = false,
+                    permissions = saved.first.permissions(),
+                    groups = groups.ifEmpty { saved.first.toolGroups() },
+                    groupOrder = groupOrder.ifEmpty { saved.first.groupOrder },
+                    staleSince = saved.second,
+                )
+            }
+            return
+        }
+        // The stand-in [publishCachedGrid] put up goes with the refusal: it was
+        // there to fill the moment before the answer, and the answer says no. A
+        // grid the *server* once issued is left alone — keeping that is not this
+        // call widening access, it is the last thing the server actually said
+        // about this production.
+        setState {
+            copy(
+                isBusy = false,
+                error = error.localised(),
+                permissions = if (drop) ProjectPermissions.Empty else permissions,
+                groups = if (drop) emptyList() else groups,
+                groupOrder = if (drop) emptyList() else groupOrder,
+            )
+        }
+    }
+
     // -- the grid, kept for offline ---------------------------------------------
+
+    /**
+     * Swaps the grid to the production just opened, from what was kept here
+     * last time it was open — the cache-first half of a project switch.
+     *
+     * Unconditional on the error kind, unlike [recallGrid]: this is not a
+     * fallback for a call that failed, it is what stands in the moment before
+     * the call is made. Nothing cached means the state is emptied rather than
+     * left — the previous production's rights must not answer a question asked
+     * inside this one, which is the rule the whole cache is built on
+     * (`ProjectCache.clearProject`).
+     */
+    private suspend fun publishCachedGrid() {
+        val scope = offline?.currentScope()
+        val cached = scope?.let { offline?.cache?.get(it, GRID_CACHE) }
+        val kept = cached?.let {
+            runCatching { json.decodeFromString(ToolsOfflineCopy.serializer(), it.json) }.getOrNull()
+        }
+        standingIn = true
+        setState {
+            copy(
+                permissions = kept?.permissions() ?: ProjectPermissions.Empty,
+                groups = kept?.toolGroups().orEmpty(),
+                groupOrder = kept?.groupOrder.orEmpty(),
+                moves = emptyMap(),
+                // Not stale in the sense the banner means: a load is in flight
+                // behind this and will say so itself if it fails.
+                staleSince = null,
+            )
+        }
+    }
 
     /** Kept a moment after the answer, so the sections and order have usually landed too. */
     private suspend fun rememberGrid() {

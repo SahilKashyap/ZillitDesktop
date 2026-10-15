@@ -1,6 +1,8 @@
 package com.zillit.desktop.core.badges
 
 import com.zillit.desktop.core.common.ZillitLog
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -10,6 +12,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 
 /**
@@ -29,6 +32,8 @@ import kotlinx.serialization.json.JsonArray
 class BadgeStore(
     private val storage: NotificationLedgerStore = InMemoryNotificationLedgerStore(),
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /** Where the whole-ledger read in [projectCounts] runs; tests pass their own. */
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     private val lock = Mutex()
@@ -148,11 +153,20 @@ class BadgeStore(
      * device's rows the same way (`calculateAllProjectsBadges`): rows for
      * this device when the ledger has any, else every row — a listing that
      * never names devices must not read as empty.
+     *
+     * Suspending, and on [dispatcher]: this is the one read here that is not
+     * scoped to a production. It selects every unread row the ledger holds, of
+     * every production, and folds them — so it costs more the more productions
+     * the device has been in. It used to run wherever it was called, which
+     * included the production listing's badge collector on the UI thread, on
+     * every ledger publish; a switch publishes several (the ledger swap, the
+     * seed, each socket frame), so choosing a production ran that whole scan
+     * two or three times over on the thread that had to draw the next frame.
      */
-    fun projectCounts(deviceId: String? = null): Map<String, Int> {
+    suspend fun projectCounts(deviceId: String? = null): Map<String, Int> = withContext(dispatcher) {
         val own = deviceId?.takeIf { it.isNotBlank() }?.let { storage.unreadAcrossProductions(it) }.orEmpty()
         val rows = own.ifEmpty { storage.unreadAcrossProductions("") }
-        return tallyByProject(rows.filter { it.isShown(mailboxes, chatRooms) })
+        tallyByProject(rows.filter { it.isShown(mailboxes, chatRooms) })
             .mapValues { (_, counts) -> counts.total }
             .filterValues { it > 0 }
     }

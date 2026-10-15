@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -1159,9 +1160,12 @@ private fun DockBadge(ready: AppGraph.Ready) {
     val elsewhere by androidx.compose.runtime.produceState(0, ready) {
         ready.badgeStore.changes.onStart { emit(Unit) }.collect {
             val open = ready.badgeStore.openProjectId
-            value = withContext(Dispatchers.IO) {
-                ready.badgeStore.projectCounts(ready.deviceId()).filterKeys { it != open }.values.sum()
-            }
+            // No dispatcher hop here any more: the whole-ledger read is the
+            // store's own, and it does the hop itself for every caller.
+            value = ready.badgeStore.projectCounts(ready.deviceId())
+                .filterKeys { it != open }
+                .values
+                .sum()
         }
     }
     val here = if (ready.badgeStore.openProjectId == null) 0 else counts.total
@@ -1457,6 +1461,18 @@ private const val BADGE_EVENT_SETTLE_MILLIS = 600L
 /** How often a lit badge is re-asked about, in case a read elsewhere was never announced. */
 private const val BADGE_POLL_MILLIS = 60_000L
 
+/** The tool every production opens on — `HomeToolProvider.path`. */
+private const val HOME_PATH = "/home"
+
+/**
+ * The two lines that say how long a project switch took.
+ *
+ * Kept at info rather than debug, and in production as well: "switching is
+ * slow" is otherwise a report nobody can put a number to, and the numbers are
+ * two lines per switch.
+ */
+private const val SWITCH_TAG = "ProjectSwitch"
+
 /**
  * Rereads the tool grid when the production's tool set moves under it — a
  * switch flipped in Admin Settings (here or on another device), a group made
@@ -1489,17 +1505,68 @@ private fun ToolsRefresh(ready: AppGraph.Ready, home: HomeViewModel?) {
  * Keyed on the production id, so switching reloads rather than carrying the
  * previous one's rights and board.
  *
- * [onLanded] is told once all of that is done — Home placed, every board told
- * — which is what the shell waits for before it draws (see [ZillitContent]).
+ * ## Why this is two effects and not one
+ *
+ * It used to be one, and the shell was held off-screen — a plain filled box,
+ * no rail, no tabs, nothing — until the whole of it had run. That is the blank
+ * screen on a project switch: every one of two dozen view models is told here,
+ * each `onEvent` launches on `Dispatchers.Main.immediate` and so runs **inline
+ * on the UI thread** until its first real suspension, and each of those loads
+ * then lands back on the same thread. Compose cannot paint a frame while that
+ * is going on, so the box stayed up for as long as the fan-out and the storm it
+ * sets off took — a second and more, and longer the more there is on the
+ * device. Nobody needs to look at a blank screen to learn that.
+ *
+ * So the landing is split from the loads. [LandOnTheProduction] is what the
+ * shell waits for: it places Home and nothing else. Everything that fetches
+ * waits for the first frame of the new production ([TellTheToolsAbout]) and
+ * runs behind it, where a slow tool costs that tool's own screen a skeleton
+ * rather than costing the whole app its pixels.
  */
-@Suppress("LongMethod") // One reset or re-read per tool, a line each.
 @Composable
 private fun ProjectScopedLoads(
     projectId: String?,
     viewModels: AppViewModels,
     workspace: WorkspaceViewModel,
-    onLanded: (projectId: String?) -> Unit,
 ) {
+    LandOnTheProduction(projectId, workspace)
+    TellTheToolsAbout(projectId, viewModels)
+    SwapInRealRights(projectId, viewModels)
+}
+
+/**
+ * The landing: Home in place, and that is all.
+ *
+ * Deliberately the shortest possible path from "a production was chosen" to
+ * "there is something on screen". `onSwitchProject` already places Home as it
+ * closes the previous production's windows, so this is the first sign-in and
+ * the restored session — the two cases where nothing is open yet.
+ */
+@Composable
+private fun LandOnTheProduction(projectId: String?, workspace: WorkspaceViewModel) {
+    LaunchedEffect(projectId) {
+        if (projectId == null) return@LaunchedEffect
+        // A production opens on its Home board, not on "Nothing open" — the
+        // same landing every other client gives. Guarded so a restored
+        // workspace (or anything already open) is never stomped.
+        if (workspace.currentState.windows.isEmpty()) {
+            workspace.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool(HOME_PATH)))
+        }
+    }
+}
+
+/**
+ * The loads, behind the first frame of the new production.
+ *
+ * [withFrameNanos] is the whole point of this function: it suspends until
+ * Compose has produced a frame, so the rail, the tabs and the new
+ * production's name are on screen *before* anything below runs. Without it
+ * the two effects run back to back in the same apply pass and the fan-out
+ * is once again between the user and their pixels.
+ */
+@Suppress("LongMethod") // One reset or re-read per tool, a line each.
+@Composable
+private fun TellTheToolsAbout(projectId: String?, viewModels: AppViewModels) {
     // Counts belong to a production, and the graph's open sequence swaps the
     // ledger to the new one's rows (`BadgeStore.open`). Not cleared here as
     // well: a clear that landed after that swap emptied the rail until the
@@ -1509,17 +1576,13 @@ private fun ProjectScopedLoads(
     // than only the two that used to be, which left the previous production's
     // mail and conversations on screen under the new production's name.
     LaunchedEffect(projectId) {
-        // Nothing open lands nothing: the same production picked again after
-        // "Switch Project" must wait for its loads like any other.
-        if (projectId == null) {
-            onLanded(null)
-            return@LaunchedEffect
-        }
-        // A production opens on its Home board, not on "Nothing open" — the
-        // same landing every other client gives. Guarded so a restored
-        // workspace (or anything already open) is never stomped.
-        if (workspace.currentState.windows.isEmpty()) {
-            workspace.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool("/home")))
+        if (projectId == null) return@LaunchedEffect
+        val chosenAt = System.currentTimeMillis()
+        // The frame first, the fetching after. See this function's doc.
+        withFrameNanos { }
+        ZillitLog.i(SWITCH_TAG) {
+            "the production's shell was on screen ${System.currentTimeMillis() - chosenAt}ms " +
+                "after it was chosen; telling the tools now"
         }
         viewModels.home?.onEvent(HomeEvent.Reload)
         // Every notice board forgets the last production — its posts, its
@@ -1567,17 +1630,25 @@ private fun ProjectScopedLoads(
         // without this a reopened console shows the previous production's.
         viewModels.accountHub?.onProjectChanged()
         viewModels.dealMemoApprovers?.onProjectChanged()
-        onLanded(projectId)
+        ZillitLog.i(SWITCH_TAG) {
+            "every tool told, ${System.currentTimeMillis() - chosenAt}ms after the production was chosen"
+        }
     }
+}
 
-    // The calls above run while the tool grid is still out — `projectId` flips
-    // when the production is chosen, but rights arrive with the Home load this
-    // very effect kicks off. Every viewer resolved up there is therefore the
-    // "rights not yet known" one, and nothing replaced it: Document
-    // Distribution offered no publish destination at all on a production with
-    // 42 tools switched on (seen live 2026-08-27). Keyed on the arrival, so it
-    // fires once per production and swaps in the real rights without
-    // re-fetching a thing.
+/**
+ * The real rights, once the tool grid has answered.
+ *
+ * [TellTheToolsAbout]'s calls run while the tool grid is still out —
+ * `projectId` flips when the production is chosen, but rights arrive with the
+ * Home load that effect kicks off. Every viewer resolved up there is therefore
+ * the "rights not yet known" one, and nothing replaced it: Document
+ * Distribution offered no publish destination at all on a production with 42
+ * tools switched on (seen live 2026-08-27). Keyed on the arrival, so it fires
+ * once per production and swaps in the real rights without re-fetching a thing.
+ */
+@Composable
+private fun SwapInRealRights(projectId: String?, viewModels: AppViewModels) {
     val rights = viewModels.home?.state?.collectAsState()?.value?.permissions
     LaunchedEffect(projectId, rights) {
         if (projectId == null || rights == null || rights === ProjectPermissions.Empty) {
@@ -1741,8 +1812,7 @@ private fun ZillitContent(
 
     // Rights are per production. Reloading on switch rather than rebuilding the
     // ViewModel keeps one owner of the permission set for the session.
-    var landedProject by remember { mutableStateOf<String?>(null) }
-    ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel) { landedProject = it }
+    ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel)
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
@@ -1757,7 +1827,7 @@ private fun ZillitContent(
             SignedInShell(
                 ready, registry, viewModels, workspaceViewModel, authViewModel,
                 themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
-                updateStatus, updateNotice, landedProject,
+                updateStatus, updateNotice,
             )
         } else {
             SignedOutShell(
@@ -1858,21 +1928,18 @@ private fun SignedInShell(
     /** Computed once in [ZillitContent], so every screen shares one poll. */
     updateStatus: UpdateStatus,
     updateNotice: UpdateNotice?,
-    /** The production [ProjectScopedLoads] has finished opening; see below. */
-    landedProject: String?,
 ) {
     val authState by authViewModel.state.collectAsState()
-    // A production picked but not yet opened: the picker has gone, and the
-    // loads that open it have not run — they are an effect, and an effect
-    // runs after the frame that keyed it. "Switch Project" closed every
-    // window, so a shell drawn now showed "Nothing open" until Home was placed
-    // a frame later. Held back for that frame instead, the workspace and the
-    // boards are composed for the first time with Home in place and the board
-    // already told which production it is in.
-    if (authState.activeProject?.id.let { it != null && it != landedProject }) {
-        Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas))
-        return
-    }
+    // This frame is drawn the moment a production is chosen, and it is drawn
+    // whole: rail, tabs, the production's name, Home. There was a gate here
+    // once — `if (activeProject != landedProject) Box(fillMaxSize); return` —
+    // to spare the user one frame of "Nothing open" while an effect placed
+    // Home. It cost them several *seconds* of a blank screen instead, because
+    // what it really waited for was two dozen view models being told about the
+    // switch on the UI thread. "Nothing open" is now impossible by
+    // construction — `onSwitchProject` places Home as it closes the old
+    // production's windows — so there is nothing left to hide, and a screen
+    // with its own skeleton on it beats a screen with nothing on it.
     val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
     val badges by ready.badgeStore.counts.collectAsState()
     val socketState by ready.socketEvents.connectionState.collectAsState()
@@ -1974,6 +2041,14 @@ private fun SignedInShell(
             // Windows are project-scoped (plan M3). Leaving them open would
             // carry one production's content into another's workspace.
             workspaceViewModel.onEvent(WorkspaceEvent.CloseAllForProjectSwitch)
+            // And land on Home in the same breath, so the workspace is never
+            // empty. It used to be reopened by [ProjectScopedLoads] once the
+            // next production was chosen — an effect, a frame later — and the
+            // frame in between showed "Nothing open", which is what the shell
+            // used to hide behind a blank screen. Placed here, there is no gap
+            // to hide: the next production's shell is composed with Home
+            // already in it.
+            workspaceViewModel.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool(HOME_PATH)))
             authViewModel.onEvent(AuthEvent.SwitchProject)
         },
         )
@@ -2575,7 +2650,14 @@ private fun buildAuth(ready: AppGraph.Ready) = AuthViewModel(
     // The listing is a live screen: a load seeds and reads, and afterwards the
     // ledger's own signal repaints the cards a message or notification moved.
     projectUnread = com.zillit.desktop.feature.auth.ui.PickerBadges(
-        refresh = { fetchProjectUnread(ready) },
+        // On IO, because the view model's own scope is the UI thread and this
+        // is the one badge read that is not scoped to a production: it restores
+        // the remembered mailboxes production by production, writes a backlog
+        // page to the ledger, and folds every unread row the device holds. All
+        // of that grows with the number of productions on the computer, and it
+        // used to grow on the thread drawing the listing — which is why
+        // choosing a production got slower the more productions there were.
+        refresh = { withContext(Dispatchers.IO) { fetchProjectUnread(ready) } },
         // The server's totals until the launch's resync lands, then the ledger.
         now = { ready.badgeResync.serverCards ?: ready.badgeStore.projectCounts(ready.deviceId()) },
         changes = ready.badgeStore.changes,
