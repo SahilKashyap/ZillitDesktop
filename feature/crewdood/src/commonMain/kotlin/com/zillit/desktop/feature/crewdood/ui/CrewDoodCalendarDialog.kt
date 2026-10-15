@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -407,6 +408,10 @@ private fun MonthGrid(
                     color = colors.textMuted,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
+                    // Centred over its column, as the day numbers are: left in
+                    // the cell, each heading sat a third of a column to the
+                    // left of the days it names.
+                    textAlign = TextAlign.Center,
                 )
             }
         }

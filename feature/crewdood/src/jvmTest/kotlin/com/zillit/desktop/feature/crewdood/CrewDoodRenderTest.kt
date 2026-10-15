@@ -105,7 +105,9 @@ class CrewDoodRenderTest {
             onNodeWithText("SW · Start work").assertExists()
             onNodeWithText("HOL · Holiday").assertExists()
             onNodeWithText("Days off & holidays").assertExists()
-            onNodeWithText("Jump to").assertExists()
+            // The Jump to buttons, not the group label: the toolbar drops its
+            // labels under 1280dp, and the test surface is 1024 wide.
+            onNodeWithText("Shoot").assertExists()
             onNodeWithText("Number of Crew on each day").assertExists()
             // Frozen columns and a department's tally.
             onNodeWithText("Ann Okafor").assertExists()

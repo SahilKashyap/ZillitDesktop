@@ -47,7 +47,9 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -165,6 +167,7 @@ internal fun CrewDoodGrid(
         Column(Modifier.fillMaxSize().background(colors.surface)) {
             GridHeader(chart, across, pointer.lit, cellWidth) { index, at -> pointer.report(index, null, at) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
+                FillerBackdrop(chart, across)
                 GridRows(state, onEvent, chart, across, down, pointer, cellWidth)
                 ZillitScrollRail(down, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
             }
@@ -219,10 +222,31 @@ private fun GridRows(
                 )
             }
         }
-        // Takes the slack between the last row and the footer, so the footer
-        // sits on the grid's bottom edge even with a handful of rows — the
-        // web's `tr.cd-filler`.
-        item(key = "filler") { Box(Modifier.fillMaxWidth().height(FILLER_HEIGHT)) }
+    }
+}
+
+/**
+ * The columns carried on down to the footer — the web's `tr.cd-filler`.
+ *
+ * With a handful of rows the chart used to stop dead at the last one: the day
+ * shading, the holiday hatch and the column lines ended mid-air over white,
+ * with the footer alone at the bottom edge. This paints the backgrounds behind
+ * the rows over the whole area, so what the rows do not cover still reads as
+ * the chart. It draws at the scroll's offset rather than inside it, so there
+ * is no second scrollable to compete for the wheel.
+ */
+@Composable
+private fun FillerBackdrop(chart: DoodChart, across: ScrollState) {
+    Row(Modifier.fillMaxSize()) {
+        Box(Modifier.width(DESIGNATION_WIDTH + NAME_WIDTH + DAYS_WIDTH).fillMaxHeight())
+        Canvas(Modifier.weight(1f).fillMaxHeight()) {
+            val scroll = across.value.toFloat()
+            val range = chart.visible(across.value, across.viewportSize)
+            if (!range.isEmpty()) {
+                DoodPainter(this, chart, litColumn = -1, offsetX = scroll)
+                    .drawColumnBackgrounds(range, size.height, dim = false)
+            }
+        }
     }
 }
 
@@ -277,7 +301,10 @@ private fun GridHeader(
 private fun FrozenHeaderCell(text: String, width: Dp, center: Boolean = false) {
     Box(
         Modifier.width(width).fillMaxHeight().padding(horizontal = CELL_PADDING),
-        contentAlignment = if (center) Alignment.Center else Alignment.BottomStart,
+        // All three sit on the header's bottom line — the web's
+        // `.cd-hl { vertical-align: bottom }`. Centring Days instead left it
+        // floating two rows above Designation and Name.
+        contentAlignment = if (center) Alignment.BottomCenter else Alignment.BottomStart,
     ) {
         ZillitText(
             text = text,
@@ -487,7 +514,7 @@ private fun RowScope.DayStrip(
         ) {
             val range = chart.visible(across.value, across.viewportSize)
             if (!range.isEmpty()) {
-                DoodPainter(this, chart, litColumn.value).paint(range)
+                DoodPainter(this, chart, litColumn.value, viewLeft = across.value.toFloat()).paint(range)
             }
         }
     }
@@ -501,6 +528,10 @@ private class DoodPainter(
     private val scope: DrawScope,
     private val chart: DoodChart,
     private val litColumn: Int,
+    /** Subtracted from every chart coordinate: 0 on a scrolling strip, the scroll on a fixed one. */
+    private val offsetX: Float = 0f,
+    /** Where the viewport's left edge falls in this canvas, for [leading]. */
+    private val viewLeft: Float = 0f,
 ) : DrawScope by scope {
 
     /** The day-off grey, the holiday hatch, the hovered column's wash and the hairlines. */
@@ -508,7 +539,7 @@ private class DoodPainter(
         val palette = chart.palette
         for (index in range) {
             val column = chart.columns[index]
-            val x = chart.x(index)
+            val x = xOf(index)
             if (column.off || column.holiday != null) {
                 drawRect(palette.weekend, Offset(x, 0f), Size(chart.cellPx, height))
             } else if (dim) {
@@ -551,7 +582,7 @@ private class DoodPainter(
             val column = chart.columns[index]
             val cell = DoodCalc.cellOf(person.cells, column)
             if (cell.code == DayCode.Blank) continue
-            val x = chart.x(index)
+            val x = xOf(index)
             val fill = palette.fill(cell.code)
             if (fill != null) {
                 drawRect(fill, Offset(x + chart.barInset, chart.barInset),
@@ -577,7 +608,7 @@ private class DoodPainter(
     fun drawCounts(range: IntRange, counts: List<Int>, peak: Int) {
         for (index in range) {
             val value = counts.getOrElse(index) { 0 }
-            val x = chart.x(index)
+            val x = xOf(index)
             if (value == 0) {
                 centred("·", chart.styles.bar(chart.palette.dim), x, chart.cellPx)
                 continue
@@ -601,7 +632,10 @@ private class DoodPainter(
         drawMonthRow(range)
         val rows = chart.header
         var top = rows.band + rows.month
-        drawPerColumn(range, top, rows.label) { column ->
+        // Two lines, like the web's `.cd-dt { white-space: normal }`: "Shoot
+        // Day 18" is half again wider than a 48dp column, and on one line the
+        // clip ate both ends of it — the whole shoot band read "hoot Day 1".
+        drawPerColumn(range, top, rows.label, lines = LABEL_LINES) { column ->
             DoodWords.label(column.label) to chart.styles.label(labelInk(column))
         }
         top += rows.label
@@ -630,7 +664,7 @@ private class DoodPainter(
     private fun drawBandRow(range: IntRange) {
         chart.bandRuns.forEach { run ->
             if (run.from > range.last || run.from + run.count - 1 < range.first) return@forEach
-            val x = chart.x(run.from)
+            val x = xOf(run.from)
             val width = chart.cellPx * run.count
             val band = run.value
             drawRect(
@@ -651,7 +685,7 @@ private class DoodPainter(
                 str(S.desktop_payroll_days_count, days)
             }
             val ink = chart.palette.bandInk(band, chart.colors.textPrimary)
-            centred(
+            leading(
                 "${DoodWords.band(band)}  $count",
                 chart.styles.band(ink),
                 x,
@@ -665,9 +699,9 @@ private class DoodPainter(
     private fun drawMonthRow(range: IntRange) {
         chart.monthRuns.forEach { run ->
             if (run.from > range.last || run.from + run.count - 1 < range.first) return@forEach
-            val x = chart.x(run.from)
+            val x = xOf(run.from)
             val width = chart.cellPx * run.count
-            centred(
+            leading(
                 DoodWords.monthYear(chart.columns[run.from].start),
                 chart.styles.label(chart.colors.textSecondary),
                 x,
@@ -682,16 +716,17 @@ private class DoodPainter(
         range: IntRange,
         top: Float,
         rowHeight: Float,
+        lines: Int = 1,
         text: (DoodColumn) -> Pair<String, TextStyle>,
     ) {
         for (index in range) {
             val (label, style) = text(chart.columns[index])
             if (label.isEmpty()) continue
-            centred(label, style, chart.x(index), chart.cellPx, top, rowHeight)
+            centred(label, style, xOf(index), chart.cellPx, top, rowHeight, lines)
         }
     }
 
-    /** Text in the middle of a cell, clipped to it so a long label cannot bleed. */
+    /** Text in the middle of a cell, wrapped and clipped to it. */
     private fun centred(
         text: String,
         style: TextStyle,
@@ -699,8 +734,9 @@ private class DoodPainter(
         width: Float,
         top: Float = 0f,
         rowHeight: Float = size.height,
+        lines: Int = 1,
     ) {
-        val layout = chart.text.layout(text, style)
+        val layout = chart.text.layout(text, style, (width - chart.labelPad * 2).toInt(), lines)
         clipRect(left = x, top = top, right = x + width, bottom = top + rowHeight) {
             drawText(
                 layout,
@@ -711,6 +747,37 @@ private class DoodPainter(
             )
         }
     }
+
+    /**
+     * A run's label at its left edge — the web's `.cd-ph` / `.cd-sub`, which
+     * are `text-align: left`.
+     *
+     * Held inside the viewport as well: a 60-day shoot band is several
+     * screenfuls wide, and a label pinned to a left edge that is miles behind
+     * the scroll is a band with no name on it. It never leaves its own run.
+     */
+    private fun leading(
+        text: String,
+        style: TextStyle,
+        x: Float,
+        width: Float,
+        top: Float,
+        rowHeight: Float,
+    ) {
+        val layout = chart.text.layout(text, style)
+        val pad = chart.labelPad
+        val rightmost = (x + width - layout.size.width - pad * 2).coerceAtLeast(x)
+        val left = viewLeft.coerceIn(x, rightmost)
+        clipRect(left = x, top = top, right = x + width, bottom = top + rowHeight) {
+            drawText(
+                layout,
+                topLeft = Offset(left + pad, top + (rowHeight - layout.size.height) / 2f),
+            )
+        }
+    }
+
+    /** A column's left edge in this canvas — [offsetX] is 0 for a scrolling strip. */
+    private fun xOf(index: Int): Float = chart.x(index) - offsetX
 }
 
 // ── The hover card ──────────────────────────────────────────────────────────
@@ -876,6 +943,7 @@ private class DoodChart(
     val hatchGap: Float get() = HATCH_GAP_DP * scale
     val hatchStroke: Float get() = scale
     val heatInset: Float get() = HEAT_INSET_DP * scale
+    val labelPad: Float get() = LABEL_PAD_DP * scale
 
     val styles = DoodStyles()
 
@@ -908,9 +976,22 @@ private class DoodChart(
 private class DoodText(private val measurer: TextMeasurer) {
     private val cache = HashMap<String, TextLayoutResult>()
 
-    fun layout(text: String, style: TextStyle): TextLayoutResult =
-        cache.getOrPut("${style.color.value}|${style.fontSize.value}|${style.fontWeight?.weight}|$text") {
-            measurer.measure(AnnotatedString(text), style)
+    fun layout(
+        text: String,
+        style: TextStyle,
+        maxWidth: Int = Int.MAX_VALUE,
+        lines: Int = 1,
+    ): TextLayoutResult =
+        cache.getOrPut(
+            "${style.color.value}|${style.fontSize.value}|${style.fontWeight?.weight}|$maxWidth|$lines|$text",
+        ) {
+            measurer.measure(
+                text = AnnotatedString(text),
+                style = style,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = lines,
+                constraints = Constraints(maxWidth = maxWidth.coerceAtLeast(1)),
+            )
         }
 }
 
@@ -944,7 +1025,6 @@ private val WEEK_CELL = 96.dp
 private val ROW_HEIGHT = 36.dp
 private val DEPARTMENT_HEIGHT = 34.dp
 private val FOOTER_HEIGHT = 40.dp
-private val FILLER_HEIGHT = 1.dp
 private val HAIRLINE = 1.dp
 private val CELL_PADDING = 8.dp
 private val CHEVRON_SIZE = 14.dp
@@ -953,7 +1033,8 @@ private val AVATAR_SIZE = 28.dp
 /** The five header rows. The canvas draws them itself, from [DoodChart.header]. */
 private val BAND_ROW_HEIGHT = 30.dp
 private val MONTH_ROW_HEIGHT = 22.dp
-private val LABEL_ROW_HEIGHT = 26.dp
+// Two lines of the day label, as the web's `.cd-dt` wraps it.
+private val LABEL_ROW_HEIGHT = 30.dp
 private val DAYNUM_ROW_HEIGHT = 24.dp
 private val WEEKDAY_ROW_HEIGHT = 20.dp
 private val HEADER_HEIGHT =
@@ -965,6 +1046,8 @@ private val LABEL_FONT = 10.sp
 private val DAY_FONT = 12.sp
 
 private const val HATCH_GAP_DP = 7f
+private const val LABEL_PAD_DP = 4f
+private const val LABEL_LINES = 2
 private const val HEAT_INSET_DP = 4f
 private const val HEAT_FLOOR = 0.10f
 private const val HEAT_RANGE = 0.80f

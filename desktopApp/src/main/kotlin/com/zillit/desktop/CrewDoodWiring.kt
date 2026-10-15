@@ -15,6 +15,7 @@ import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import java.net.URLDecoder
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -91,11 +92,19 @@ private fun AppGraph.Ready.crewDoodExport(): CrewDoodExport = CrewDoodExport {
     )
 }
 
-/** `filename=…` / `filename*=UTF-8''…` out of a Content-Disposition header. */
+/**
+ * `filename=…` / `filename*=UTF-8''…` out of a Content-Disposition header.
+ *
+ * Percent-decoded, as the web's `filenameOf` does: the `filename*` form is
+ * percent-encoded by definition, so without this a workbook came down named
+ * `crew%20dood.xlsx`.
+ */
 private fun filenameOf(disposition: String?): String? {
     val header = disposition?.takeIf { it.isNotBlank() } ?: return null
     val match = FILENAME.find(header) ?: return null
-    return match.groupValues[1].trim().trim('"').takeIf { it.isNotBlank() }
+    val raw = match.groupValues[1].trim().trim('"').takeIf { it.isNotBlank() } ?: return null
+    // Only %XX escapes: a literal `+` in a filename is a plus, not a space.
+    return runCatching { URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8") }.getOrDefault(raw)
 }
 
 /** The web's fallback: `crew-dood_<date>_<time>.xlsx`. */

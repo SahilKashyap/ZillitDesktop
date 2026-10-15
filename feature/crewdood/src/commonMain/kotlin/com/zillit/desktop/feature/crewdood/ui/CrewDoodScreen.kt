@@ -1,9 +1,12 @@
 package com.zillit.desktop.feature.crewdood.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -178,39 +181,57 @@ private fun LegendItem(color: Color, text: String, half: Color? = null) {
     }
 }
 
+/**
+ * Find, the department picker, Days / Weeks, Jump to, All / Booked, the
+ * calendar editor and Export.
+ *
+ * The toolbar never shrinks a control, which is the web's rule too
+ * (`.cd-bar > * { flex: none }`): under 1280dp it drops the group labels
+ * (`@media (max-width: 1280px) { .cd-gl { display: none } }`) and under that it
+ * scrolls sideways (`overflow-x: auto`). As one plain Row it did neither — at
+ * the workspace window's own 1024dp the trailing buttons were squeezed until
+ * "Days off & holidays" wrapped to a letter a line, three hundred dp tall, and
+ * Export was pushed off the edge altogether.
+ */
 @Composable
 private fun Toolbar(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(colors.surface)
-                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            GroupLabel(str(S.desktop_cr_find))
-            ZillitSearchField(
-                value = state.query,
-                onValueChange = { onEvent(CrewDoodEvent.Search(it)) },
-                placeholder = str(S.desktop_cdood_search_placeholder),
-                modifier = Modifier.width(SEARCH_WIDTH),
-            )
-            DepartmentPicker(state, onEvent)
-            Spacer(Modifier.weight(1f))
-            ViewSwitch(state, onEvent)
-            if (state.model.hasPhases) JumpTo(state, onEvent)
-            FilterSwitch(state, onEvent)
-            ToolbarActions(state, onEvent)
+        BoxWithConstraints(Modifier.fillMaxWidth().background(colors.surface)) {
+            val labels = maxWidth >= LABELS_FROM
+            val fits = maxWidth >= if (labels) FITS_WITH_LABELS else FITS_WITHOUT_LABELS
+            val bar = Modifier
+                .then(if (fits) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()))
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm)
+            Row(
+                bar,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                if (labels) GroupLabel(str(S.desktop_cr_find))
+                ZillitSearchField(
+                    value = state.query,
+                    onValueChange = { onEvent(CrewDoodEvent.Search(it)) },
+                    placeholder = str(S.desktop_cdood_search_placeholder),
+                    modifier = Modifier.width(SEARCH_WIDTH),
+                )
+                DepartmentPicker(state, onEvent)
+                // A weight has no meaning inside a horizontal scroll, where the
+                // row is measured against an unbounded width.
+                if (fits) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(ZillitTheme.spacing.md))
+                ViewSwitch(state, onEvent, labels)
+                if (state.model.hasPhases) JumpTo(state, onEvent, labels)
+                FilterSwitch(state, onEvent, labels)
+                ToolbarActions(state, onEvent)
+            }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
     }
 }
 
 @Composable
-private fun ViewSwitch(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit) {
-    GroupLabel(str(S.view))
+private fun ViewSwitch(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit, labels: Boolean) {
+    if (labels) GroupLabel(str(S.view))
     DoodSegmented(
         options = listOf(false to str(S.dm_ds_unit_days), true to str(S.dm_ds_unit_weeks)),
         selected = state.weeks,
@@ -220,8 +241,8 @@ private fun ViewSwitch(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit)
 
 /** Prep / Shoot / Post. A band the chart has none of is dead, so it is disabled. */
 @Composable
-private fun JumpTo(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit) {
-    GroupLabel(str(S.desktop_cdood_jump_to))
+private fun JumpTo(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit, labels: Boolean) {
+    if (labels) GroupLabel(str(S.desktop_cdood_jump_to))
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         DoodBand.entries.forEach { band ->
             ZillitButton(
@@ -236,8 +257,8 @@ private fun JumpTo(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit) {
 }
 
 @Composable
-private fun FilterSwitch(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit) {
-    GroupLabel(str(S.filter))
+private fun FilterSwitch(state: CrewDoodUiState, onEvent: (CrewDoodEvent) -> Unit, labels: Boolean) {
+    if (labels) GroupLabel(str(S.filter))
     DoodSegmented(
         options = listOf(false to str(S.all), true to str(S.desktop_ad_attendance_booked)),
         selected = state.bookedOnly,
@@ -354,6 +375,11 @@ private fun LoadingRows() {
 
 private val SWATCH = 12.dp
 private val SEARCH_WIDTH = 220.dp
+/** The web's own breakpoint for the group labels. */
+private val LABELS_FROM = 1280.dp
+/** What the bar needs before the trailing controls can hug the right edge. */
+private val FITS_WITH_LABELS = 1280.dp
+private val FITS_WITHOUT_LABELS = 1100.dp
 private val DEPARTMENT_WIDTH = 200.dp
 private val SEGMENT_PAD = 3.dp
 private val SEGMENT_HEIGHT_PAD = 5.dp
