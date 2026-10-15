@@ -21,13 +21,19 @@ internal class CommentsController(private val ctx: ReportContext) {
     private var readSerial = 0L
 
     /**
-     * Everyone who can see the row may read the thread; only its creator and
-     * the project's comment recipients may post (`canPostComments`) — decided
-     * here, whatever [readOnly] the screen asked for.
+     * Everyone who can see the row may read the thread; its creator, the
+     * project's comment recipients and its final approvers may post
+     * (`canPostComments`) — decided here, whatever [readOnly] the screen
+     * asked for.
      */
     fun open(report: ReportSummary, readOnly: Boolean) {
         ctx.lists.readRowBadge(report, BadgeKind.Comment)
-        val mayPost = canPostComments(report, ctx.state.me, ctx.state.isInternalReceiver)
+        val mayPost = canPostComments(
+            report,
+            ctx.state.me,
+            ctx.state.isInternalReceiver,
+            ctx.state.isFinalApprover,
+        )
         val closedNote = if (!readOnly && !report.status.locked && !mayPost) READ_ONLY_NOTE else LOCKED_NOTE
         ctx.update {
             copy(

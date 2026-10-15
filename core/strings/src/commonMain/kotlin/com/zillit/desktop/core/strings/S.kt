@@ -3371,6 +3371,7 @@ object S {
     const val desktop_board_rewrite_reply_placeholder: String = "desktop_board_rewrite_reply_placeholder"
     const val desktop_board_search_this_board: String = "desktop_board_search_this_board"
     const val desktop_board_search_this_board_ellipsis: String = "desktop_board_search_this_board_ellipsis"
+    const val desktop_board_select_option_to_send: String = "desktop_board_select_option_to_send"
     const val desktop_board_send_the_reply: String = "desktop_board_send_the_reply"
     const val desktop_board_showing_published_history: String = "desktop_board_showing_published_history"
     const val desktop_board_this_unit: String = "desktop_board_this_unit"

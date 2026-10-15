@@ -210,9 +210,9 @@ data class SheetUiState(
     /** Unread report rows on a row of the list on screen — the number beside its name. */
     fun unreadReports(sheetId: String): Int = badges.count(surface, BadgeKind.Report, sheetId)
 
-    /** May I write in this row's thread — its creator, or an internal-distribution recipient. */
+    /** May I write in this row's thread — its creator, an internal-distribution recipient, or a final approver. */
     fun canPostComments(row: CallSheetSummary): Boolean =
-        canPostComments(row, me, viewer.displayName, isInternalReceiver)
+        canPostComments(row, me, viewer.displayName, isInternalReceiver, isFinalApprover)
 
     fun member(userId: String?): SheetMember? = members.memberById(userId)
 

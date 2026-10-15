@@ -7,6 +7,9 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
@@ -16,6 +19,7 @@ import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.feature.productionreport.ui.PRODUCTION_REPORT_PATH
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
@@ -23,7 +27,6 @@ import com.zillit.desktop.feature.documentdistribution.data.FromToolFile
 import com.zillit.desktop.feature.documentdistribution.data.FromToolPublisher
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
-import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.email.domain.StoredFile
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
@@ -177,11 +180,18 @@ internal fun reportToolProvider(viewModel: ReportViewModel, graph: AppGraph): Pr
 /**
  * Production Report Chat's window — the web's `/film-tools/production-report-chat`,
  * which mounts the chat that used to be the report window's Chat view.
+ *
+ * The tab takes the name the PRODUCTION gives the chat tool, which is the name
+ * the board itself shows on its unit pill ("Daily Production Report" on one
+ * production). `production_report_tool_chat_label` is only the fallback: no
+ * language ships that key, so it humanised to "Production Report Tool Chat"
+ * and the tab disagreed with everything inside it.
  */
 internal fun productionReportChatProvider(
     feed: HomeFeedViewModel,
     graph: AppGraph,
     boardContext: HomeBoardContext,
+    permissions: () -> ProjectPermissions,
 ): BoardToolProvider =
     BoardToolProvider(
         path = ToolCatalogue.PRODUCTION_REPORT_CHAT_PATH,
@@ -190,6 +200,27 @@ internal fun productionReportChatProvider(
         feedViewModel = feed,
         board = boardContext,
         badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
+        // The same name, and the same fallback, the board's unit is built with
+        // in [productionReportChatFeed] — so the tab and the unit pill agree.
+        unitTitle = {
+            val rights = permissions()
+            val chat = rights.access(ReportViewer.CHAT_TOOL_IDENTIFIER).unitName?.takeIf { it.isNotBlank() }
+            (chat ?: rights.access(PRODUCTION_REPORT_TOOL).unitName)?.localised()
+        },
+        // ZL-21828: the chat and the creation tool are two windows now, so the
+        // chat carries the way into the other one — the web put the same
+        // button in the header it gave this page. Hidden without posting
+        // rights on the report tool, as the web gates it on `hasPostingAccess`.
+        headerAction = {
+            if (permissions().access(PRODUCTION_REPORT_TOOL).canPost) {
+                ZillitButton(
+                    text = str(S.txt_create_production_rpt),
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    onClick = { toolOpener.get()?.invoke(PRODUCTION_REPORT_PATH) },
+                )
+            }
+        },
     )
 
 private fun AppGraph.Ready.productionReportViewer(permissions: ProjectPermissions, kind: ReportKind): ReportViewer {
@@ -390,19 +421,20 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
         ): ZillitResult<Unit> =
             postDocument(fileName, PDF_TYPE, pdf, replacePrevious, replaceChatId)
 
+        /**
+         * "Attach Document" on Published. A PDF, one of them — the web's
+         * picker is `accept=".pdf"` on a single-file input and the call sheet
+         * picks the same way; the any-file, any-number dialog this used to
+         * open let a photo into a unit that takes documents only.
+         */
         override suspend fun attachDocuments(replacePrevious: Boolean): ZillitResult<Int> {
-            val files = FilePicker().pick()
-            files.forEachIndexed { index, file ->
-                val posted = postDocument(
-                    file.name,
-                    file.contentType,
-                    file.bytes,
-                    replacePrevious = replacePrevious && index == 0,
-                    replaceChatId = null,
-                )
-                if (posted is ZillitResult.Failure) return posted
+            val (name, bytes) = pickPdf() ?: return ZillitResult.Success(0)
+            return when (
+                val posted = postDocument(name, PDF_TYPE, bytes, replacePrevious, replaceChatId = null)
+            ) {
+                is ZillitResult.Failure -> posted
+                is ZillitResult.Success -> ZillitResult.Success(1)
             }
-            return ZillitResult.Success(files.size)
         }
 
         /**

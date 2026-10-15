@@ -13266,4 +13266,5 @@
     <string name="desktop_hub_no_tab_requests">No %1$s requests</string>
     <string name="desktop_hub_n_stops">%1$s Stops</string>
     <string name="desktop_hub_n_passengers">%1$s Passengers</string>
+    <string name="desktop_board_select_option_to_send">Select an option to send</string>
 </resources>

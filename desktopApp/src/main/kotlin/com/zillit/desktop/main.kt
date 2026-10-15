@@ -4388,7 +4388,12 @@ private fun buildRegistry(
     }
     val productionReport = viewModels.productionReport?.let { reportToolProvider(it, graph) }
     val productionReportChat = viewModels.productionReportChat?.let {
-        productionReportChatProvider(it, graph, boardContext)
+        productionReportChatProvider(
+            it,
+            graph,
+            boardContext,
+            permissions = { homeViewModel?.state?.value?.permissions ?: ProjectPermissions.Empty },
+        )
     }
     val adReport = viewModels.adReport?.let { reportToolProvider(it, graph) }
     val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph) }

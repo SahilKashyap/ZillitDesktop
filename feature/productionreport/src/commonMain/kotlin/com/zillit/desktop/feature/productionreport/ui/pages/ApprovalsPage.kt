@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import com.zillit.desktop.core.localization.localised
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +31,7 @@ import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.approvalCount
+import com.zillit.desktop.feature.productionreport.domain.ApprovalStatusEntry
 import com.zillit.desktop.feature.productionreport.domain.approvalStatusEntries
 import com.zillit.desktop.feature.productionreport.domain.approverIdsOf
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
@@ -163,7 +165,7 @@ private fun SectionTable(
                 state,
                 row,
             ) else StatusBadge(row.status, row.statusLabel)
-            "Approval" -> if (!isInternalOnly(row, state.me)) ApprovalLink(row)
+            "Approval" -> if (!isInternalOnly(row, state.me)) ApprovalLink(state, row)
             else -> ActionMenu(menuFor(state, section, row, onEvent), badge = unreadFor(state, row))
         }
     }
@@ -184,7 +186,7 @@ private fun menuFor(
 /** Sent's status: the approval popover when the row carries requests, else a names tooltip. */
 @Composable
 private fun SentStatusPill(state: ReportUiState, row: ReportSummary) {
-    val (_, total) = approvalCount(row.status, row.approvals)
+    val (_, total) = approvalCount(row)
     if (total > 0) {
         HoverCard(str(S.onboarding_status), trigger = { StatusBadge(row.status, row.statusLabel) }) {
             ApprovalStatusList(state, row)
@@ -204,8 +206,8 @@ private fun SentStatusPill(state: ReportUiState, row: ReportSummary) {
 }
 
 @Composable
-private fun ApprovalLink(row: ReportSummary) {
-    val (approved, total) = approvalCount(row.status, row.approvals)
+private fun ApprovalLink(state: ReportUiState, row: ReportSummary) {
+    val (approved, total) = approvalCount(row)
     HoverCard(
         str(S.onboarding_status),
         trigger = {
@@ -215,14 +217,17 @@ private fun ApprovalLink(row: ReportSummary) {
                 color = ReportTheme.colors.blue,
             )
         },
-    ) { ApprovalStatusList(null, row) }
+    ) { ApprovalStatusList(state, row) }
 }
 
 /** The "Approval Status" popover body — the current round, pending first. */
 @Composable
 internal fun ApprovalStatusList(state: ReportUiState?, row: ReportSummary) {
     val colors = ReportTheme.colors
-    val entries = approvalStatusEntries(row.approvals, stageForStatus(row.status))
+    // The FULL crew, not the pickers' accepted-only list: an approver who has
+    // since left, or has not accepted yet, must still resolve to a name rather
+    // than show the raw member id the backend sometimes writes as assignee_name.
+    val entries = approvalStatusEntries(row.approvals, stageForStatus(row.status), state?.members.orEmpty())
     if (entries.isEmpty()) {
         Text(str(S.desktop_no_approvers_dot), style = reportText(12.sp), color = colors.textMuted)
         return
@@ -232,44 +237,77 @@ internal fun ApprovalStatusList(state: ReportUiState?, row: ReportSummary) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         entries.forEach { entry ->
+            ApprovalStatusRow(entry, state?.member(entry.userId)?.fullName)
+        }
+    }
+}
+
+/** One approver in the popover: face, name (with the "Left" chip), role, and where they stand. */
+@Composable
+private fun ApprovalStatusRow(entry: ApprovalStatusEntry, crewName: String?) {
+    val colors = ReportTheme.colors
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(colors.surface)
+            .border(1.dp, colors.border, RoundedCornerShape(6.dp)).padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Face(entry.userId, crewName ?: entry.name, 36.dp)
+        Column(Modifier.weight(1f)) {
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(colors.surface)
-                    .border(1.dp, colors.border, RoundedCornerShape(6.dp)).padding(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Face(entry.userId, state?.member(entry.userId)?.fullName ?: entry.name, 36.dp)
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        entry.name,
-                        style = reportText(14.sp, FontWeight.SemiBold),
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                    )
-                    Text(entry.role, style = reportText(12.sp), color = colors.textTertiary, maxLines = 1)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
-                        Text("${entry.stage} •", style = reportText(11.sp), color = colors.textMuted)
-                        Text(
-                            entry.status,
-                            style = reportText(11.sp, FontWeight.SemiBold),
-                            color = statusColor(entry.status),
-                        )
-                        if (entry.actedOn != null) Text(
-                            "• ${formatDateTime(entry.actedOn)}",
-                            style = reportText(11.sp),
-                            color = colors.textMuted,
-                        )
-                    }
-                    if (entry.reason.isNotBlank()) {
-                        Text(
-                            str(S.docusign_recipient_timeline_declined_reason, entry.reason),
-                            style = reportText(11.sp).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
-                            color = colors.red,
-                        )
-                    }
-                }
+                Text(
+                    entry.name,
+                    style = reportText(14.sp, FontWeight.SemiBold),
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // They are off the production: the request still stands, but
+                // nobody should wait on it without knowing why.
+                if (entry.hasLeft) LeftChip()
+            }
+            // A designation KEY — translated here, raw when unknown.
+            Text(entry.role.localised(), style = reportText(12.sp), color = colors.textTertiary, maxLines = 1)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
+                Text("${entry.stage} •", style = reportText(11.sp), color = colors.textMuted)
+                Text(
+                    entry.status,
+                    style = reportText(11.sp, FontWeight.SemiBold),
+                    color = statusColor(entry.status),
+                )
+                if (entry.actedOn != null) Text(
+                    "• ${formatDateTime(entry.actedOn)}",
+                    style = reportText(11.sp),
+                    color = colors.textMuted,
+                )
+            }
+            if (entry.reason.isNotBlank()) {
+                Text(
+                    str(S.docusign_recipient_timeline_declined_reason, entry.reason),
+                    style = reportText(11.sp).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                    color = colors.red,
+                )
             }
         }
     }
+}
+
+/** "Left" beside an approver who is no longer on the production. */
+@Composable
+private fun LeftChip() {
+    val colors = ReportTheme.colors
+    Text(
+        str(S.left),
+        style = reportText(10.sp, FontWeight.SemiBold),
+        color = colors.textTertiary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(colors.sunken)
+            .border(1.dp, colors.border, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
@@ -299,7 +337,7 @@ private fun SectionCard(
     val approvals = if (section == ApprovalSection.Finalized) {
         null
     } else {
-        val (approved, total) = approvalCount(row.status, row.approvals)
+        val (approved, total) = approvalCount(row)
         CardApprovals(approved, total) { ApprovalStatusList(state, row) }
     }
     ReportGridCard(

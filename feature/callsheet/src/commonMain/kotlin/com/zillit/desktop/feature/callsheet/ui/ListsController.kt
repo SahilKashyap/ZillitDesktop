@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.callsheet.domain.initialLanding
 import com.zillit.desktop.feature.callsheet.domain.mergeApprovalRequests
 import com.zillit.desktop.feature.callsheet.domain.receivedRows
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 
@@ -50,6 +51,9 @@ internal class ListsController(private val ctx: SheetContext) {
 
     /** Comment frames go to the open thread; the VM sets this. */
     var onCommentEvent: (SheetSyncEvent) -> Unit = {}
+
+    /** The pending debounced metadata re-read; a newer frame replaces it. */
+    private var metadataRefresh: Job? = null
 
     /** The Permission tab loads its own page; the VM sets this. */
     var onPermissionTab: () -> Unit = {}
@@ -356,8 +360,21 @@ internal class ListsController(private val ctx: SheetContext) {
             return
         }
         when (event.name) {
+            // ZL-21599: project metadata changed under us. Its approver and
+            // receiver lists decide the tab set and Received, so re-reading it
+            // IS the update. Debounced, because every draft save PUTs metadata.
+            SheetSyncEvent.METADATA -> scheduleMetadataRefresh()
             REMINDER -> loadReceived()
             else -> if (ctx.state.editor == null) refreshCurrent()
+        }
+    }
+
+    /** The metadata re-read a `metadata:updated` frame asks for, coalesced. */
+    private fun scheduleMetadataRefresh() {
+        metadataRefresh?.cancel()
+        metadataRefresh = ctx.launchWork {
+            delay(METADATA_DEBOUNCE_MS)
+            refreshMetadata()
         }
     }
 
@@ -479,5 +496,8 @@ internal class ListsController(private val ctx: SheetContext) {
         const val REMINDER = "callsheet:approval:reminder:sent"
         const val RIGHTS_POLLS = 30
         const val RIGHTS_POLL_MS = 1_000L
+
+        /** The web's `scheduleSocketRefetch("metadata", …)` window. */
+        const val METADATA_DEBOUNCE_MS = 500L
     }
 }

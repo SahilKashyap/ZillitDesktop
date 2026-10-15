@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
 import com.zillit.desktop.feature.productionreport.domain.receivedRows
 import com.zillit.desktop.feature.productionreport.domain.resolveSection
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 
@@ -46,6 +47,9 @@ internal class ListsController(private val ctx: ReportContext) {
 
     /** Comment frames go to the open thread; the VM sets this. */
     var onCommentEvent: (ReportSyncEvent) -> Unit = {}
+
+    /** The pending debounced metadata re-read; a newer frame replaces it. */
+    private var metadataRefresh: Job? = null
 
     fun start() {
         val viewer = ctx.viewer()
@@ -169,6 +173,17 @@ internal class ListsController(private val ctx: ReportContext) {
         request.complete(meta)
         metadataRequest = null
         return meta
+    }
+
+    /** The metadata re-read a `metadata:updated` frame asks for, coalesced. */
+    private fun scheduleMetadataRefresh() {
+        metadataRefresh?.cancel()
+        metadataRefresh = ctx.launchWork {
+            delay(METADATA_DEBOUNCE_MS)
+            // The tab set may widen or narrow, so let the tab on screen reload.
+            lastLoadKey = null
+            refreshMetadata()
+        }
     }
 
     /** E10: load the tab on screen, once per tab + section + rights answer. */
@@ -348,6 +363,20 @@ internal class ListsController(private val ctx: ReportContext) {
             return
         }
         when (event.name) {
+            // ZL-21599: project metadata changed under us — an approver added
+            // mid-session never got Approvals → Received, and a new internal
+            // receiver never got Drafts, until the window was reopened. The
+            // two lists it carries decide the tabs, Received, the badges and
+            // comment rights, so re-reading the metadata IS the update; a tab
+            // that appears loads on entry. Debounced: every draft save PUTs
+            // metadata (total_days), so a burst is one read.
+            //
+            // The web additionally keeps the old array when the new one is
+            // equal, because its Send-for-Comments picker re-seeds off a React
+            // dependency that compares by reference. Here the picker is seeded
+            // once in RecipientPicker.open and keeps its own selection, and
+            // Kotlin lists compare by value, so there is nothing to guard.
+            ReportSyncEvent.METADATA -> scheduleMetadataRefresh()
             ReportSyncEvent.DELETED -> event.reportId?.let { id ->
                 ctx.update { copy(lists = lists.without(id)) }
                 closeGone(reportId = id, requestIds = emptyList(), notice = REPORT_DELETED_NOTICE)
@@ -550,6 +579,9 @@ internal class ListsController(private val ctx: ReportContext) {
         const val REJECTED = "productionreport:approval:rejected"
         const val RIGHTS_POLLS = 30
         const val RIGHTS_POLL_MS = 1_000L
+
+        /** The web's `scheduleSocketRefetch("metadata", …)` window. */
+        const val METADATA_DEBOUNCE_MS = 500L
         val REPORT_DELETED_NOTICE: String get() = str(S.desktop_pr_report_deleted_notice)
         val REQUEST_VOIDED_NOTICE: String get() = str(S.desktop_approval_request_no_longer_active)
     }

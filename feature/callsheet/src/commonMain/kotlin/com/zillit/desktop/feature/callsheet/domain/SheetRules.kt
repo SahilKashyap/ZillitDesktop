@@ -105,17 +105,21 @@ fun initialLanding(isPoster: Boolean, tabs: List<SheetTab>): SheetTab? = when {
 
 /**
  * `canPostComments` (`shared/workflow/sendActions.js`): everyone who can see
- * a row opens its thread and reads it; only the row's CREATOR and the
- * project's internal-distribution recipients may write. With no member id,
- * the creator's display NAME is the only handle left.
+ * a row opens its thread and reads it; the row's CREATOR, the project's
+ * internal-distribution recipients and its FINAL APPROVERS may write. The
+ * approver was added by ZL-21609/21608: they are the one person the thread is
+ * usually for, and they could read the questions put to them without being
+ * able to answer. With no member id, the creator's display NAME is the only
+ * handle left.
  */
 fun canPostComments(
     row: CallSheetSummary,
     userId: String?,
     userName: String = "",
     isInternalReceiver: Boolean = false,
+    isFinalApprover: Boolean = false,
 ): Boolean {
-    if (isInternalReceiver) return true
+    if (isInternalReceiver || isFinalApprover) return true
     val me = userId?.trim().orEmpty()
     if (me.isNotEmpty()) return row.createdById.trim() == me
     return userName.isNotBlank() && row.createdBy == userName

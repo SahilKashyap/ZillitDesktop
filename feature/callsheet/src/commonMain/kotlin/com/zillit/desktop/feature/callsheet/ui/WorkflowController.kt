@@ -64,7 +64,9 @@ internal class WorkflowController(private val ctx: SheetContext) {
             }
             WorkflowEvent.ConfirmReject -> reject()
             is WorkflowEvent.OpenReminder -> if (ctx.state.isPoster) {
-                ctx.update { copy(dialog = SheetDialog.ReminderCompose(event.sheet)) }
+                // Seeded, not blank: the sender must SEE the message that
+                // would go out, and be able to edit it before sending.
+                ctx.update { copy(dialog = SheetDialog.ReminderCompose(event.sheet, message = DEFAULT_REMINDER)) }
             }
             is WorkflowEvent.EditReminder -> ctx.update {
                 copy(dialog = (dialog as? SheetDialog.ReminderCompose)?.copy(message = event.message) ?: dialog)
