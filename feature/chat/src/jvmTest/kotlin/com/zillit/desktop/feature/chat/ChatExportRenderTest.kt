@@ -4,8 +4,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runSkikoComposeUiTest
@@ -32,14 +32,15 @@ class ChatExportRenderTest {
 
     @Test
     fun `with nothing exported the sheet still says what an export is`() = render(ChatExportUiState()) { events ->
-        onNodeWithText("You have not exported your chats yet.").assertIsDisplayed()
+        onNodeWithText("No exports yet.").assertIsDisplayed()
         onNodeWithText("Include photos, videos and files").assertIsDisplayed()
         assertTrue(
-            onAllNodesWithText("index.html", substring = true).fetchSemanticsNodes().isNotEmpty(),
-            "the ZIP is useless without that one instruction",
+            onAllNodesWithText("Covers this project only", substring = true).fetchSemanticsNodes().isNotEmpty(),
+            "an export is one production's chats, and the card says so before it starts",
         )
 
-        onNodeWithText("Export").performClick()
+        // The header carries the same words, so the button is the later node.
+        onAllNodesWithText("Export chats").onLast().performClick()
         waitForIdle()
         assertEquals(listOf<ChatExportEvent>(ChatExportEvent.Start), events.toList())
     }
@@ -53,10 +54,14 @@ class ChatExportRenderTest {
             ),
         ),
     ) { events ->
-        onNodeWithText("17 of 42 conversations").assertIsDisplayed()
-        // The choice belongs to the next export; this one's was settled when
-        // it was asked for.
-        onNodeWithText("Include photos, videos and files").assertIsNotEnabled()
+        assertTrue(
+            onAllNodesWithText("17 of 42 conversations", substring = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+        // The choice card is replaced by the running one, so the box that
+        // belongs to the *next* export is not on screen at all.
+        assertTrue(
+            onAllNodesWithText("Include photos, videos and files").fetchSemanticsNodes().isEmpty(),
+        )
 
         onNodeWithText("Cancel").assertIsDisplayed().performClick()
         waitForIdle()
@@ -88,6 +93,14 @@ class ChatExportRenderTest {
             "the size decides whether the click is a good idea",
         )
         assertTrue(onAllNodesWithText("Available until", substring = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(
+            onAllNodesWithText("Kept for 7 days", substring = true).fetchSemanticsNodes().isNotEmpty(),
+            "how long it lasts is said once, over the list",
+        )
+        assertTrue(
+            onAllNodesWithText("index.html", substring = true).fetchSemanticsNodes().isNotEmpty(),
+            "the ZIP is useless without that one instruction",
+        )
 
         onNodeWithText("Download").assertIsDisplayed().performClick()
         waitForIdle()
@@ -102,7 +115,7 @@ class ChatExportRenderTest {
             ),
         ),
     ) { events ->
-        onNodeWithText("Failed").assertIsDisplayed()
+        onNodeWithText("Export failed").assertIsDisplayed()
         // The key humanises when the server dictionary is not loaded, which
         // is what a test and a cold start both see.
         assertTrue(onAllNodesWithText("Chats", substring = true).fetchSemanticsNodes().isNotEmpty())
@@ -113,17 +126,19 @@ class ChatExportRenderTest {
     }
 
     @Test
-    fun `a text-only export says so, beside a media one that does too`() = render(
+    fun `a text-only export says so on its own row`() = render(
         ChatExportUiState(
             exports = listOf(
-                export("e1", ChatExportStatus.Completed).copy(includeMedia = false),
-                export("e0", ChatExportStatus.Completed),
+                export("e1", ChatExportStatus.Completed).copy(includeMedia = false, sizeBytes = 48_213_377),
+                export("e0", ChatExportStatus.Completed).copy(sizeBytes = 48_213_377),
             ),
         ),
     ) { _ ->
-        onNodeWithText("Text only").assertIsDisplayed()
-        onNodeWithText("With photos, videos and files").assertIsDisplayed()
-        onNodeWithText("Earlier exports").assertIsDisplayed()
+        // Both rows carry the same size, so the words are what tell them apart.
+        assertTrue(
+            onAllNodesWithText("text only", substring = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+        assertEquals(2, onAllNodesWithText("Download").fetchSemanticsNodes().size, "both are downloadable")
     }
 
     @Test
@@ -132,11 +147,14 @@ class ChatExportRenderTest {
             exports = listOf(export("e1", ChatExportStatus.Completed)),
             pendingRemoval = export("e1", ChatExportStatus.Completed),
         ),
-    ) { _ ->
+    ) { events ->
+        // Inline in the row: a dialog composed inside this sheet's scroller
+        // would be clipped by it.
         onNodeWithText("Remove this export?").assertIsDisplayed()
-        assertTrue(
-            onAllNodesWithText("can no longer be downloaded", substring = true).fetchSemanticsNodes().isNotEmpty(),
-        )
+        onNodeWithText("Keep").assertIsDisplayed()
+        onNodeWithText("Delete").assertIsDisplayed().performClick()
+        waitForIdle()
+        assertTrue(events.contains(ChatExportEvent.ConfirmRemove))
     }
 
     // -- plumbing ------------------------------------------------------------

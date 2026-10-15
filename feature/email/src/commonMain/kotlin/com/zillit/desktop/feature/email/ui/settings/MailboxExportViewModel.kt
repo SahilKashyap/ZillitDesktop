@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.email.data.MailboxExportUpdate
 import com.zillit.desktop.feature.email.domain.MailboxExport
 import com.zillit.desktop.feature.email.domain.MailboxExportPart
 import com.zillit.desktop.feature.email.domain.MailboxExportRepository
+import com.zillit.desktop.feature.email.domain.MailboxExportStatus
 import com.zillit.desktop.feature.email.domain.MailboxScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,6 +39,24 @@ data class MailboxExportUiState(
 
     /** One export per mailbox at a time — asking again while one runs does nothing new. */
     val canStart: Boolean get() = !isStarting && exports.none { it.isInProgress }
+
+    /** The export being built, if any: the card the sheet leads with. */
+    val running: MailboxExport? get() = exports.firstOrNull { it.isInProgress }
+
+    /**
+     * A failure, shown only while it is the newest export — as the web's
+     * `visibleExports` does. An older failure under a newer export is history
+     * nobody can act on, and the list below holds what can be downloaded.
+     */
+    val failed: MailboxExport?
+        get() = exports.firstOrNull()?.takeIf { it.status == MailboxExportStatus.Failed }
+
+    /** The downloadable exports, newest first — what the list under the card holds. */
+    val ready: List<MailboxExport> get() = exports.filter { it.status == MailboxExportStatus.Completed }
+
+    /** Which mailbox these are, for the header; blank until the list has answered. */
+    val mailboxEmail: String
+        get() = exports.firstOrNull { it.mailboxEmail.isNotBlank() }?.mailboxEmail.orEmpty()
 }
 
 sealed interface MailboxExportEvent {

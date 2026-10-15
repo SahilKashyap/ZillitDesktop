@@ -210,7 +210,13 @@ import com.zillit.desktop.feature.email.ui.EmailContactsToolProvider
 import com.zillit.desktop.feature.email.ui.contacts.EmailContactsViewModel
 import com.zillit.desktop.feature.email.data.ContactRepositoryImpl
 import com.zillit.desktop.feature.home.ui.CalendarPane
+import com.zillit.desktop.feature.chat.ui.CNC_PATH
+import com.zillit.desktop.feature.email.ui.EMAIL_SETTINGS_PATH
 import com.zillit.desktop.feature.email.ui.EmailSettingsToolProvider
+import com.zillit.desktop.feature.email.data.MailboxExportRealtimeSource
+import com.zillit.desktop.feature.email.data.MailboxExportRepositoryImpl
+import com.zillit.desktop.feature.email.domain.MailboxScope
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportViewModel
 import com.zillit.desktop.feature.email.ui.EmailToolProvider
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.ui.HomeViewModel
@@ -2073,8 +2079,75 @@ private fun SignedInShell(
         // flow, hosted once here because no tool window can float a dialog
         // over the frame or reach the chat socket.
         RightsRequestSurface(ready, ready.rightsRequests)
+        // "Your chat export is ready", on whatever screen they are on. An
+        // export runs on the server for minutes — an hour for a big mailbox —
+        // and both dialogs invite the user to close them meanwhile, so the
+        // answer has to arrive here rather than in a window nobody is
+        // watching. The web mounts the same notice app-wide.
+        ExportNoticeSurface(
+            chatUpdates = remember(ready) {
+                ChatExportRealtimeSource(
+                    ready.socketEvents,
+                    projectId = { ready.projectContext?.context?.value?.project?.projectId },
+                ).stream
+            },
+            mailboxUpdates = remember(ready) { MailboxExportRealtimeSource(ready.socketEvents).stream },
+            chatLink = { exportId -> chatExportLink(ready, exportId) },
+            mailboxLink = { exportId, accounts -> mailboxExportLink(ready, exportId, accounts) },
+            onOpenUrl = ::openInBrowser,
+            onOpenChatExports = {
+                workspaceViewModel.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool(CNC_PATH)))
+                // The window may already be open at that route, so the sheet
+                // is asked for separately rather than carried in the path.
+                (registry.resolve(WorkspaceRoute.Tool(CNC_PATH)) as? ChatToolProvider)?.requestExport()
+            },
+            onOpenMailboxExports = {
+                workspaceViewModel.onEvent(
+                    WorkspaceEvent.Open(WorkspaceRoute.Tool("$EMAIL_SETTINGS_PATH/export")),
+                )
+            },
+        )
         ready.syncEngine?.let { engine -> SyncFailureToast(engine) }
     }
+}
+
+/**
+ * A fresh link for one chat export, or null when there is none to hand out.
+ *
+ * Asked on the click and never stored: the signed links live about an hour,
+ * so one kept from the moment the export finished is the one that will have
+ * expired by the time it is used.
+ */
+private suspend fun chatExportLink(ready: AppGraph.Ready, exportId: String): String? =
+    (ChatExportRepositoryImpl(ready.apiClient, ready.config).downloadLink(exportId) as? ZillitResult.Success)
+        ?.data
+        ?.url
+        ?.takeIf { it.isNotBlank() }
+
+/**
+ * The same for a mailbox export, addressed at the mailbox the export belongs
+ * to rather than the one the mail window happens to have open — the notice can
+ * arrive while the user is looking at the other one, or at no mailbox at all.
+ *
+ * A multi-part export hands back its first ZIP; the window is where the rest
+ * are, and it says so.
+ */
+private suspend fun mailboxExportLink(
+    ready: AppGraph.Ready,
+    exportId: String,
+    isAccountsMailbox: Boolean,
+): String? {
+    val repository = MailboxExportRepositoryImpl(
+        ready.apiClient,
+        ready.config,
+        MailboxScope { isAccountsMailbox },
+    )
+    return (repository.downloadLinks(exportId) as? ZillitResult.Success)
+        ?.data
+        ?.parts
+        ?.minByOrNull { it.partNo }
+        ?.url
+        ?.takeIf { it.isNotBlank() }
 }
 
 /**
@@ -2501,6 +2574,18 @@ private val appAttachmentScope =
 // `ready` is not nullable here: the mailbox view model is itself built from a
 // ready graph, so there is no state in which this is called without one — and
 // the composer's repositories have no sensible null form.
+/**
+ * The Export mailbox modal's view model, built like the settings window's own:
+ * the mailbox the Email tool has open is the scope, and the socket carries the
+ * progress the 45-second fallback poll otherwise has to ask for.
+ */
+private fun mailboxExportViewModel(ready: AppGraph.Ready) = MailboxExportViewModel(
+    repository = MailboxExportRepositoryImpl(ready.apiClient, ready.config, ready.activeMailbox),
+    updates = MailboxExportRealtimeSource(ready.socketEvents).stream,
+    scope = ready.activeMailbox,
+    isSocketConnected = { ready.socketEvents.connectionState.value.isConnected },
+)
+
 private fun mailProvider(
     viewModel: EmailViewModel,
     ready: AppGraph.Ready,
@@ -2563,6 +2648,7 @@ private fun mailProvider(
                 events = ready.socketEvents,
             )
         },
+        mailboxExport = { mailboxExportViewModel(ready) },
         readBy = { messageId -> readByForSentMail(ready, messageId) },
         isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
         canAttach = true,
@@ -2897,6 +2983,8 @@ private fun chatProvider(
         projectId = { ready.projectContext?.context?.value?.project?.projectId },
     ).stream,
     isSocketConnected = { ready.socketEvents.connectionState.value.isConnected },
+    // An export covers one production, and the sheet says which.
+    projectName = { ready.projectContext?.context?.value?.project?.name.orEmpty() },
 )
 
 /**

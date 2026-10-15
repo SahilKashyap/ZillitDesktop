@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,34 +14,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitProgressBar
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatExport
-import com.zillit.desktop.feature.chat.domain.ChatExportStatus
 import com.zillit.desktop.feature.chat.domain.chatExportSizeLabel
 import com.zillit.desktop.feature.chat.domain.lastEntryDate
-import com.zillit.desktop.feature.chat.domain.lastMessageAt
 
 /**
- * Export chats — the contract's request dialog and export screen as one
- * sheet, because on a desktop they are one thing: what the next export will
- * hold, what the current one is doing, and the last few before it.
+ * Export chats — the web's `ChatExportWindow`, screen for screen.
  *
- * The export runs on the server and survives this dialog being closed, so
- * nothing here is a wizard — it opens on whatever state the server is in
- * and says so.
+ * One card at the top says what can be done *now*: ask for an export, watch
+ * the one running, or read why the last one failed. Under it, "Your exports":
+ * the ZIPs that can still be downloaded. Cancelled and expired exports are not
+ * listed — nothing can be done with them.
+ *
+ * The export runs on the server and keeps running with this closed, so nothing
+ * here is a wizard: it opens on whatever state the server is in and says so.
  */
 @Composable
 fun ChatExportDialog(
@@ -48,63 +50,105 @@ fun ChatExportDialog(
     onEvent: (ChatExportEvent) -> Unit,
     visible: Boolean,
     onDismiss: () -> Unit,
+    /** The production these chats belong to — an export covers one, and says so. */
+    projectName: String = "",
 ) {
     ZillitDialogShell(
         title = str(S.desktop_chat_export_title),
-        subtitle = str(S.desktop_chat_export_subtitle),
-        icon = ZillitIcons.Download,
+        subtitle = projectName.ifBlank { str(S.desktop_chat_export_subtitle) },
+        icon = ZillitIcons.Inbox,
         onDismiss = onDismiss,
         visible = visible,
-        actions = {
-            ZillitButton(
-                text = str(S.close),
-                onClick = onDismiss,
-                variant = ButtonVariant.Tertiary,
-            )
-            ZillitButton(
-                text = str(S.asset_export),
-                enabled = state.canStart && !state.isLoading,
-                loading = state.isStarting,
-                onClick = { onEvent(ChatExportEvent.Start) },
-            )
-        },
+        width = EXPORT_DIALOG_WIDTH,
     ) {
-        ChatExportBody(state, onEvent)
+        ChatExportBody(state, onEvent, projectName)
+    }
+}
+
+/** The card, the list, the help line — and the messages over all of it. */
+@Composable
+private fun ColumnScope.ChatExportBody(
+    state: ChatExportUiState,
+    onEvent: (ChatExportEvent) -> Unit,
+    projectName: String,
+) {
+    state.error?.let { ExportMessage(it, StatusTone.Rejected, onEvent) }
+    state.info?.let { ExportMessage(it, StatusTone.Done, onEvent) }
+
+    val running = state.running
+    val failed = state.failed
+    when {
+        running != null -> RunningCard(running, state, onEvent)
+        failed != null -> FailedCard(failed, state, onEvent)
+        else -> StartCard(state, onEvent, projectName)
     }
 
-    // Composed beside the sheet rather than inside it: a confirmation drawn
-    // within a dialog's own scroller is clipped by it.
-    if (visible) {
-        state.pendingRemoval?.let {
-            ChatExportRemovalDialog(
-                onConfirm = { onEvent(ChatExportEvent.ConfirmRemove) },
-                onDismiss = { onEvent(ChatExportEvent.DismissRemove) },
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            text = str(S.desktop_chat_export_list_title).uppercase(),
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitText(
+            text = str(S.desktop_email_export_kept),
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+    }
+
+    when {
+        state.ready.isNotEmpty() -> state.ready.forEach { export -> ExportRow(export, state, onEvent) }
+        state.isLoading -> EmptyBox(str(S.ah_loading))
+        // Never "No exports yet" over a live progress bar: the two contradict
+        // each other on screen, which is the web's own note on this page.
+        running != null -> EmptyBox(str(S.desktop_chat_export_empty_running))
+        else -> EmptyBox(str(S.desktop_email_export_empty))
+    }
+
+    if (state.ready.isNotEmpty()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Check,
+                contentDescription = null,
+                tint = ZillitTheme.colors.textMuted,
+                size = HINT_ICON,
+            )
+            ZillitText(
+                text = str(S.desktop_chat_export_how_to_open),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textSecondary,
             )
         }
     }
 }
 
-/** What the sheet holds: the messages, the options, the exports, the help. */
+/**
+ * Nothing is running: what an export holds, the one choice, and the button.
+ *
+ * The choice belongs to the *next* export, so it is locked while one runs —
+ * the server settled it when that one was asked for, and a box that moves
+ * without changing anything is a lie.
+ */
 @Composable
-private fun ChatExportBody(state: ChatExportUiState, onEvent: (ChatExportEvent) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        state.error?.let { ExportMessage(it, StatusTone.Rejected, onEvent) }
-        state.info?.let { ExportMessage(it, StatusTone.Done, onEvent) }
-
+private fun StartCard(
+    state: ChatExportUiState,
+    onEvent: (ChatExportEvent) -> Unit,
+    projectName: String,
+) {
+    ExportCard {
         ZillitText(
-            text = str(S.desktop_chat_export_what),
+            text = str(S.desktop_chat_export_intro),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
-        ZillitText(
-            text = str(S.desktop_chat_export_excluded),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
 
-        // The choice belongs to the *next* export, so it is locked while one
-        // is running — the server settled it when that one was asked for,
-        // and a box that moves without changing anything is a lie.
         ZillitCheckbox(
             checked = state.includeMedia,
             onCheckedChange = { onEvent(ChatExportEvent.IncludeMedia(it)) },
@@ -112,126 +156,113 @@ private fun ChatExportBody(state: ChatExportUiState, onEvent: (ChatExportEvent) 
             enabled = state.canStart,
         )
         ZillitText(
-            text = str(S.desktop_chat_export_include_media_hint),
+            // What ticking it costs, or what unticking it leaves out: the hint
+            // answers the box as it stands, not in general.
+            text = if (state.includeMedia) {
+                str(S.desktop_chat_export_media_on_hint)
+            } else {
+                str(S.desktop_chat_export_media_off_hint)
+            },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
+            modifier = Modifier.padding(start = CHOICE_INDENT),
         )
 
-        when {
-            state.isLoading && state.exports.isEmpty() -> ExportHint(str(S.ah_loading))
-            state.exports.isEmpty() -> ExportHint(str(S.desktop_chat_export_none))
-            else -> Unit
-        }
-
-        state.latest?.let { export -> ExportCard(export, state, onEvent) }
-
-        if (state.earlier.isNotEmpty()) {
-            ZillitText(
-                // The mailbox export's own heading — the same words, already
-                // translated, for the same list.
-                text = str(S.desktop_email_export_history),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-            state.earlier.forEach { export -> ExportCard(export, state, onEvent) }
-        }
-
-        ZillitText(
-            text = str(S.desktop_chat_export_how_to_open),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-    }
-}
-
-/** One export: its status, its progress or its size, and what can be done to it. */
-@Composable
-private fun ExportCard(
-    export: ChatExport,
-    state: ChatExportUiState,
-    onEvent: (ChatExportEvent) -> Unit,
-) {
-    val colors = ZillitTheme.colors
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(colors.surface)
-            .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitStatusPill(label = export.status.label, tone = export.status.tone)
-                ZillitText(
-                    text = lastMessageAt(export.requestedOnMillis),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-
-            // Which kind of export this is. On the row because a text-only
-            // ZIP and a media one are the same name at a tenth of the size,
-            // and the history is where someone picks between them.
             ZillitText(
-                text = if (export.includeMedia) {
-                    str(S.desktop_chat_export_with_media)
-                } else {
-                    str(S.desktop_chat_export_text_only)
-                },
+                text = projectNote(projectName),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
+                modifier = Modifier.weight(1f),
             )
-
-            ExportDetail(export)
-            if (export.isInProgress) ExportProgress(export)
+            ZillitButton(
+                text = str(S.desktop_chat_export_title),
+                leadingIcon = ZillitIcons.Download,
+                enabled = state.canStart && !state.isLoading,
+                loading = state.isStarting,
+                onClick = { onEvent(ChatExportEvent.Start) },
+            )
         }
-
-        ExportActions(export, state, onEvent)
-    }
-}
-
-/** The line under the pill: what this status means for this export. */
-@Composable
-private fun ExportDetail(export: ChatExport) {
-    val detail = when (export.status) {
-        ChatExportStatus.Queued -> str(S.desktop_email_export_preparing)
-        ChatExportStatus.Processing -> export.countsLine()
-        ChatExportStatus.Completed -> export.readyLine()
-        // A failure arrives as a message key, which the dictionary turns
-        // into a sentence — `cnc_chat_export_no_chats` and the rest of §6.
-        ChatExportStatus.Failed -> export.error.takeIf { it.isNotBlank() }?.localisedMessage().orEmpty()
-        ChatExportStatus.Cancelled, ChatExportStatus.Expired -> ""
-    }
-    if (detail.isNotBlank()) {
-        ZillitText(text = detail, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textSecondary)
-    }
-    if (export.skippedMedia > 0) {
-        ZillitText(
-            text = str(S.desktop_chat_export_skipped, export.skippedMedia),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
     }
 }
 
 /**
- * The bar, and the conversation count under it.
+ * The export being built.
  *
- * Indeterminate until the server has counted the conversations —
- * `total_conversations` is `0` until then, and a bar pinned at zero reads as
- * stuck.
+ * Indeterminate until the server has counted the conversations
+ * (`total_conversations` is 0 until then): the line that says it takes a while
+ * stands in for a bar pinned at zero, which reads as stuck.
  */
 @Composable
-private fun ExportProgress(export: ChatExport) {
+private fun RunningCard(
+    export: ChatExport,
+    state: ChatExportUiState,
+    onEvent: (ChatExportEvent) -> Unit,
+) {
+    ExportCard(tone = CardTone.Brand) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitText(
+                text = if (export.progress == null) {
+                    str(S.desktop_email_export_preparing)
+                } else {
+                    str(S.desktop_chat_export_running)
+                },
+                style = ZillitTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            export.progress?.let {
+                ZillitText(
+                    text = "${(it * PERCENT).toInt()}%",
+                    style = ZillitTheme.typography.label,
+                    color = ZillitTheme.colors.accentText,
+                )
+            }
+        }
+
+        RunningProgress(export)
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                ZillitText(
+                    text = str(S.desktop_chat_export_running_note),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+                // Say what happens next, not only that leaving is safe: the
+                // notice reaches them wherever they are in the app.
+                ZillitText(
+                    text = str(S.desktop_chat_export_running_notify),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+            ZillitButton(
+                text = str(S.cancel),
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                enabled = state.busyExportId.isBlank(),
+                loading = state.busyExportId == export.exportId,
+                onClick = { onEvent(ChatExportEvent.Cancel(export.exportId)) },
+            )
+        }
+    }
+}
+
+/** The bar and its counters, or the line that stands in for a bar nobody can read yet. */
+@Composable
+private fun RunningProgress(export: ChatExport) {
     val progress = export.progress
     if (progress == null) {
         ZillitText(
@@ -247,58 +278,53 @@ private fun ExportProgress(export: ChatExport) {
             S.desktop_chat_export_progress,
             export.exportedConversations,
             export.totalConversations,
-        ),
+        ) + SEPARATOR + export.countsLine(),
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.textMuted,
     )
 }
 
-/** Download while it is there, Cancel while it runs, Export again when it is not. */
+/**
+ * The last export failed.
+ *
+ * `error` is a server message key: the sentence comes from the dictionary the
+ * backend ships, with no copy written here.
+ */
 @Composable
-private fun ExportActions(
+private fun FailedCard(
     export: ChatExport,
     state: ChatExportUiState,
     onEvent: (ChatExportEvent) -> Unit,
 ) {
-    // Cancel and Remove are the same route and run one at a time: this
-    // export's button spins, every other one is disabled.
-    val busy = state.busyExportId == export.exportId
-    val blocked = state.busyExportId.isNotBlank()
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        when {
-            export.isInProgress -> ZillitButton(
-                text = str(S.cancel),
-                variant = ButtonVariant.Tertiary,
-                enabled = !blocked,
-                loading = busy,
-                onClick = { onEvent(ChatExportEvent.Cancel(export.exportId)) },
+    ExportCard(tone = CardTone.Danger) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Warning,
+                contentDescription = null,
+                tint = ZillitTheme.colors.danger,
+                size = CARD_ICON,
             )
-
-            export.canDownload -> {
-                ZillitButton(
-                    text = str(S.download),
-                    variant = ButtonVariant.Secondary,
-                    // One link request at a time, so a second click cannot
-                    // open two downloads of the same ZIP.
-                    enabled = state.linkingExportId.isBlank(),
-                    loading = state.linkingExportId == export.exportId,
-                    onClick = { onEvent(ChatExportEvent.Download(export.exportId)) },
-                )
-                ZillitButton(
-                    text = str(S.remove),
-                    variant = ButtonVariant.Tertiary,
-                    enabled = !blocked,
-                    loading = busy,
-                    onClick = { onEvent(ChatExportEvent.AskRemove(export)) },
-                )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                ZillitText(text = str(S.asset_export_failed), style = ZillitTheme.typography.titleSmall)
+                export.error.takeIf { it.isNotBlank() }?.let { key ->
+                    ZillitText(
+                        text = key.localisedMessage(),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = ZillitTheme.colors.textSecondary,
+                    )
+                }
             }
-
-            // Failed, cancelled or expired: there is nothing to download and
-            // nothing to remove, so the only move left is a new export.
-            else -> ZillitButton(
+            ZillitButton(
                 text = str(S.desktop_chat_export_again),
-                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Reload,
                 enabled = state.canStart,
+                loading = state.isStarting,
                 onClick = { onEvent(ChatExportEvent.Start) },
             )
         }
@@ -306,26 +332,106 @@ private fun ExportActions(
 }
 
 /**
- * Asks before removing a finished export.
+ * One downloadable export: the size first, since it decides the click.
  *
- * It cannot be undone — only requested again, and a long history with media
- * takes many minutes to rebuild.
+ * Removing asks inline rather than in a dialog of its own — a confirmation
+ * composed inside this sheet's scroller is clipped by it.
  */
 @Composable
-private fun ChatExportRemovalDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    ZillitDialogShell(
-        title = str(S.desktop_email_export_remove_title),
-        onDismiss = onDismiss,
-        visible = true,
-        actions = {
-            ZillitButton(text = str(S.cancel), variant = ButtonVariant.Tertiary, onClick = onDismiss)
-            ZillitButton(text = str(S.remove), variant = ButtonVariant.Danger, onClick = onConfirm)
-        },
+private fun ExportRow(
+    export: ChatExport,
+    state: ChatExportUiState,
+    onEvent: (ChatExportEvent) -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    val asking = state.pendingRemoval?.exportId == export.exportId
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(colors.surface)
+            .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
+            .padding(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitText(
-            text = str(S.desktop_chat_export_remove_confirm),
-            style = ZillitTheme.typography.bodyMedium,
-            color = ZillitTheme.colors.textSecondary,
+        ZillitIcon(
+            icon = ZillitIcons.File,
+            contentDescription = null,
+            tint = colors.textMuted,
+            size = ROW_ICON,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitText(text = export.sizeLine(), style = ZillitTheme.typography.bodyMedium)
+            ZillitText(
+                text = export.availabilityLine(),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
+            if (export.skippedMedia > 0) {
+                ZillitText(
+                    text = str(S.desktop_chat_export_skipped, export.skippedMedia),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.warning,
+                )
+            }
+        }
+
+        ExportRowActions(export, state, onEvent, asking)
+    }
+}
+
+/** Delete and Download — or, once Delete is asked, the question and its two answers. */
+@Composable
+private fun ExportRowActions(
+    export: ChatExport,
+    state: ChatExportUiState,
+    onEvent: (ChatExportEvent) -> Unit,
+    asking: Boolean,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        if (asking) {
+            ZillitText(
+                text = str(S.desktop_email_export_remove_title),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textSecondary,
+            )
+            ZillitButton(
+                text = str(S.asset_cat_keep),
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                enabled = state.busyExportId.isBlank(),
+                onClick = { onEvent(ChatExportEvent.DismissRemove) },
+            )
+            ZillitButton(
+                text = str(S.delete),
+                variant = ButtonVariant.Danger,
+                size = ButtonSize.Small,
+                loading = state.busyExportId == export.exportId,
+                onClick = { onEvent(ChatExportEvent.ConfirmRemove) },
+            )
+            return@Row
+        }
+        ZillitIconButton(
+            icon = ZillitIcons.Trash,
+            contentDescription = str(S.delete),
+            onClick = { onEvent(ChatExportEvent.AskRemove(export)) },
+        )
+        ZillitButton(
+            text = str(S.download),
+            leadingIcon = ZillitIcons.Download,
+            size = ButtonSize.Small,
+            // One link request at a time, so a second click cannot open two
+            // downloads of the same ZIP.
+            enabled = state.linkingExportId.isBlank(),
+            loading = state.linkingExportId == export.exportId,
+            onClick = { onEvent(ChatExportEvent.Download(export.exportId)) },
         )
     }
 }
@@ -346,17 +452,73 @@ private fun ExportMessage(text: String, tone: StatusTone, onEvent: (ChatExportEv
     )
 }
 
+/** The well in place of the list: nothing to download, and why. */
 @Composable
-private fun ExportHint(text: String) {
-    ZillitText(
-        text = text,
-        style = ZillitTheme.typography.bodyMedium,
-        color = ZillitTheme.colors.textMuted,
-        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+private fun EmptyBox(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(ZillitTheme.colors.surfaceSunken)
+            .padding(vertical = ZillitTheme.spacing.lg),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        ZillitText(
+            text = text,
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textMuted,
+        )
+    }
+}
+
+/** The one card at the top: neutral, the brand tint while it runs, danger when it failed. */
+private enum class CardTone { Neutral, Brand, Danger }
+
+@Composable
+private fun ExportCard(tone: CardTone = CardTone.Neutral, content: @Composable ColumnScope.() -> Unit) {
+    val colors = ZillitTheme.colors
+    val background = when (tone) {
+        CardTone.Neutral -> colors.surfaceSunken
+        CardTone.Brand -> colors.accentSoft
+        CardTone.Danger -> colors.dangerSoft
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(background)
+            .padding(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        content = content,
     )
 }
 
+/** "Covers this project only · SG Document Distribution" — the name only where there is one. */
+@Composable
+private fun projectNote(projectName: String): String {
+    val note = str(S.desktop_chat_export_project_note)
+    return if (projectName.isBlank()) note else note + SEPARATOR + projectName
+}
+
+/** "46 MB" on its own, or with "· text only" when the media was left out. */
+@Composable
+private fun ChatExport.sizeLine(): String {
+    val size = chatExportSizeLabel(sizeBytes)
+    return if (includeMedia) size else listOf(size, str(S.desktop_chat_export_text_only_short))
+        .filter { it.isNotBlank() }
+        .joinToString(SEPARATOR)
+}
+
+/** "Available until Oct 22, 2026", or just that it is ready when the server named no date. */
+@Composable
+private fun ChatExport.availabilityLine(): String =
+    expiresOnMillis
+        .takeIf { it > 0 }
+        ?.let { str(S.desktop_email_export_available_until, lastEntryDate(it)) }
+        ?: str(S.completed)
+
 /** "8190 messages, 312 files" — the live counters, and no files line without media. */
+@Composable
 private fun ChatExport.countsLine(): String =
     if (includeMedia) {
         str(S.desktop_chat_export_counts, exportedMessages, exportedMedia)
@@ -364,36 +526,11 @@ private fun ChatExport.countsLine(): String =
         str(S.desktop_chat_export_message_count, exportedMessages)
     }
 
-/** "46 MB · Available until Oct 21, 2026" — the size first, since it decides the click. */
-private fun ChatExport.readyLine(): String {
-    val size = chatExportSizeLabel(sizeBytes)
-    val until = expiresOnMillis
-        .takeIf { it > 0 }
-        ?.let { str(S.desktop_email_export_available_until, lastEntryDate(it)) }
-        .orEmpty()
-    return listOf(size, until).filter { it.isNotBlank() }.joinToString(SEPARATOR)
-}
-
-private val ChatExportStatus.label: String
-    get() = when (this) {
-        // Queued and processing are one state to the user: a retry puts a
-        // running export back to `queued` and that must not look like a stall.
-        ChatExportStatus.Queued, ChatExportStatus.Processing -> str(S.in_progress)
-        ChatExportStatus.Completed -> str(S.completed)
-        // The app's own "Failed", already translated in 22 languages; a new
-        // key for one word would read English in every other one.
-        ChatExportStatus.Failed -> str(S.dd_status_failed)
-        ChatExportStatus.Cancelled -> str(S.cancelled)
-        ChatExportStatus.Expired -> str(S.expired)
-    }
-
-private val ChatExportStatus.tone: StatusTone
-    get() = when (this) {
-        ChatExportStatus.Queued, ChatExportStatus.Processing -> StatusTone.Progress
-        ChatExportStatus.Completed -> StatusTone.Done
-        ChatExportStatus.Failed -> StatusTone.Rejected
-        ChatExportStatus.Cancelled, ChatExportStatus.Expired -> StatusTone.Neutral
-    }
-
 private const val SEPARATOR = " · "
+private const val PERCENT = 100
 private val HAIRLINE = 1.dp
+private val ROW_ICON = 20.dp
+private val CARD_ICON = 20.dp
+private val HINT_ICON = 15.dp
+private val CHOICE_INDENT = 28.dp
+private val EXPORT_DIALOG_WIDTH = 640.dp

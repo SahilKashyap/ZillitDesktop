@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +33,7 @@ import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.EmailMessage
+import com.zillit.desktop.feature.email.domain.MailboxKind
 import com.zillit.desktop.feature.email.domain.SavedContact
 import com.zillit.desktop.feature.email.domain.SignatureRepository
 import com.zillit.desktop.feature.email.domain.printableHtml
@@ -39,6 +41,10 @@ import com.zillit.desktop.feature.email.ui.contacts.EmailContactsDialog
 import com.zillit.desktop.feature.email.ui.contacts.EmailContactsEffect
 import com.zillit.desktop.feature.email.ui.contacts.EmailContactsEvent
 import com.zillit.desktop.feature.email.ui.contacts.EmailContactsViewModel
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportDialog
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportEffect
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportEvent
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -70,6 +76,12 @@ data class EmailHost(
      * to the address book's own window.
      */
     val contacts: (() -> EmailContactsViewModel)? = null,
+    /**
+     * A fresh export view model for the Export mailbox modal. Null falls back
+     * to the Email Settings window's own page. A download from it is handed to
+     * [onOpenLink], the same guarded launcher a link in a body goes through.
+     */
+    val mailboxExport: (() -> MailboxExportViewModel)? = null,
     /** Read receipts for a sent message; null hides "Read By User". */
     val readBy: (suspend (messageId: String) -> MailReadBy?)? = null,
     /** Whether the signed-in user is an admin here — the Email Group entry is admin-only. */
@@ -132,6 +144,18 @@ class EmailToolProvider(
         } else {
             val suffix = address?.let { "/new/$it" }.orEmpty()
             navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_CONTACTS_PATH$suffix"))
+        }
+    }
+
+    /** Whether the export modal stands over the mailbox. */
+    private val exportOpen = mutableStateOf(false)
+
+    /** The same two doors as the address book: over the mailbox, or the settings page. */
+    private fun openExport(navigator: WindowNavigator) {
+        if (host.mailboxExport != null) {
+            exportOpen.value = true
+        } else {
+            navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_SETTINGS_PATH/export"))
         }
     }
 
@@ -210,6 +234,9 @@ class EmailToolProvider(
             contactsOpen.value?.let { request ->
                 ContactsModal(request, onClose = { contactsOpen.value = null })
             }
+            if (exportOpen.value) {
+                MailboxExportModal(state.mailboxes.active, onClose = { exportOpen.value = false })
+            }
             AttachmentPreviewDialog(
                 preview = preview,
                 download = preview?.let { downloads[it.attachment.id] },
@@ -240,6 +267,36 @@ class EmailToolProvider(
             }
         }
         EmailContactsDialog(state = state, onEvent = viewModel::onEvent, onDismiss = onClose)
+    }
+
+    /**
+     * Export mailbox over the mailbox rather than in the settings window.
+     *
+     * Keyed on the active mailbox, as the settings window's sections are: the
+     * personal and the shared Accounts mailbox keep their own exports, and a
+     * view model built for one would go on addressing it after a flip of the
+     * switcher behind the modal.
+     */
+    @Composable
+    private fun MailboxExportModal(mailbox: MailboxKind, onClose: () -> Unit) {
+        val export = remember(mailbox) { host.mailboxExport?.invoke() } ?: return
+        val state by export.state.collectAsState()
+        LaunchedEffect(export) {
+            export.onEvent(MailboxExportEvent.Load)
+            export.effects.collect { effect ->
+                when (effect) {
+                    // About a gigabyte a part, served under its own name: the
+                    // browser saves it, the app never holds it.
+                    is MailboxExportEffect.OpenDownload -> host.onOpenLink?.invoke(effect.url)
+                }
+            }
+        }
+        // The poll outlives the composition otherwise, for as long as an
+        // export takes — which can be over an hour.
+        DisposableEffect(export) {
+            onDispose { export.stopWatching() }
+        }
+        MailboxExportDialog(state = state, onEvent = export::onEvent, onDismiss = onClose)
     }
 
     /** Loading, the requests other screens make, and the mailbox's one-shot effects. */
@@ -361,6 +418,9 @@ class EmailToolProvider(
                 MailSettingsEntry.ImportContacts -> !pending
                 MailSettingsEntry.EmailGroup -> host.isAdmin() && !pending
                 MailSettingsEntry.Credentials -> !pending && !accounts
+                // Both mailboxes export — the shared one rides the query flag
+                // — but a mailbox still being provisioned has nothing to zip.
+                MailSettingsEntry.Export -> !pending
                 MailSettingsEntry.MailboxTour -> state.mailboxes.hasAccounts
                 else -> true
             }
@@ -380,6 +440,7 @@ class EmailToolProvider(
             MailSettingsEntry.Forwarding ->
                 navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_SETTINGS_PATH/forwarding"))
             MailSettingsEntry.Rules -> navigator.openInNewWindow(WorkspaceRoute.Tool("$EMAIL_SETTINGS_PATH/rules"))
+            MailSettingsEntry.Export -> openExport(navigator)
             MailSettingsEntry.MailboxTour -> viewModel.onEvent(EmailEvent.ShowTour)
         }
     }

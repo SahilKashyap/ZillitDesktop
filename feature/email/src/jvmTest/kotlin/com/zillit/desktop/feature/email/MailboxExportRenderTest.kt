@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runSkikoComposeUiTest
@@ -31,7 +32,7 @@ import kotlin.test.assertTrue
 class MailboxExportRenderTest {
 
     @Test
-    fun `a running export shows its count and offers Cancel`() = render(
+    fun `a running export shows its count and asks before stopping`() = render(
         MailboxExportUiState(
             exports = listOf(
                 export("e1", MailboxExportStatus.Processing, exported = 1200, total = 6087),
@@ -39,7 +40,22 @@ class MailboxExportRenderTest {
         ),
     ) { events ->
         onNodeWithText("1200 of 6087 emails").assertIsDisplayed()
+        // Cancel asks first, inline — the stop itself is the answer to it.
         onNodeWithText("Cancel").assertIsDisplayed().performClick()
+        waitForIdle()
+        assertTrue(events.any { it is MailboxExportEvent.AskRemove }, "cancelling asks first")
+    }
+
+    @Test
+    fun `the stop question stands in the running card`() = render(
+        MailboxExportUiState(
+            exports = listOf(export("e1", MailboxExportStatus.Processing, exported = 1200, total = 6087)),
+            pendingRemoval = export("e1", MailboxExportStatus.Processing),
+        ),
+    ) { events ->
+        onNodeWithText("Stop this export?").assertIsDisplayed()
+        onNodeWithText("Keep running").assertIsDisplayed()
+        onNodeWithText("Stop").assertIsDisplayed().performClick()
         waitForIdle()
         assertEquals(listOf<MailboxExportEvent>(MailboxExportEvent.Cancel("e1")), events.toList())
     }
@@ -60,14 +76,17 @@ class MailboxExportRenderTest {
             ),
         ),
     ) { events ->
-        onNodeWithText("Part 1 of 2 · 965 MB").assertIsDisplayed()
-        onNodeWithText("Part 2 of 2 · 379 MB").assertIsDisplayed()
-        assertEquals(2, onAllNodesWithText("Download").fetchSemanticsNodes().size, "the user needs both ZIPs")
+        onNodeWithText("Part 1").assertIsDisplayed()
+        onNodeWithText("Part 2").assertIsDisplayed()
         assertTrue(
-            onAllNodesWithText("Available until", substring = true).fetchSemanticsNodes().isNotEmpty(),
+            onAllNodesWithText("2 ZIP files", substring = true).fetchSemanticsNodes().isNotEmpty(),
+            "the row says how many ZIPs there are",
+        )
+        assertTrue(
+            onAllNodesWithText("Expires", substring = true).fetchSemanticsNodes().isNotEmpty(),
         )
 
-        onNodeWithText("Remove").performClick()
+        onNodeWithContentDescription("Remove this export?").performClick()
         waitForIdle()
         assertTrue(events.any { it is MailboxExportEvent.AskRemove }, "removing a finished export asks first")
     }
@@ -96,11 +115,21 @@ class MailboxExportRenderTest {
             exports = listOf(export("e1", MailboxExportStatus.Completed)),
             pendingRemoval = export("e1", MailboxExportStatus.Completed),
         ),
-    ) { _ ->
+    ) { events ->
+        // Inline in the row, not a dialog over the sheet: a dialog composed
+        // inside this scroller is clipped by it.
         onNodeWithText("Remove this export?").assertIsDisplayed()
-        assertTrue(
-            onAllNodesWithText("can no longer be downloaded", substring = true).fetchSemanticsNodes().isNotEmpty(),
-        )
+        onNodeWithText("Keep").assertIsDisplayed()
+        onNodeWithText("Remove").assertIsDisplayed().performClick()
+        waitForIdle()
+        assertTrue(events.contains(MailboxExportEvent.ConfirmRemove))
+    }
+
+    @Test
+    fun `an empty mailbox says so under the heading`() = render(MailboxExportUiState()) { _ ->
+        onNodeWithText("Exports".uppercase()).assertIsDisplayed()
+        onNodeWithText("Kept for 7 days").assertIsDisplayed()
+        onNodeWithText("No exports yet.").assertIsDisplayed()
     }
 
     // -- plumbing ------------------------------------------------------------

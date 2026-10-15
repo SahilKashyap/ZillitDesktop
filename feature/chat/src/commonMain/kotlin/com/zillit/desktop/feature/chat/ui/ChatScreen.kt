@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.LocalAvatarLoader
@@ -162,6 +163,10 @@ fun ChatScreen(
      * one, which is what a build with no C&C host does.
      */
     export: ChatExportViewModel? = null,
+    /** The open production's name, for the export sheet's header and its "covers this project only". */
+    projectName: String = "",
+    /** Asks for the Export chats sheet from outside the window — see [ChatToolProvider.requestExport]. */
+    openExportRequests: Flow<Unit>? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
     // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
@@ -185,6 +190,8 @@ fun ChatScreen(
     // Built only while the tab is open, as the old slot composed only then:
     // the history is fetched when it is looked at, not when chat opens.
     val calls = if (tab == DirectoryTab.Calls.name) callPanes?.invoke() else null
+
+    ExportSheetRequests(openExportRequests, enabled = export != null) { sheet = ChatSheet.Export.name }
 
     val showTab: (String) -> Unit = {
         tab = it
@@ -238,7 +245,18 @@ fun ChatScreen(
             }
         }
 
-        ChatSheets(crew, selfId, createRoom, viewModel, export, sheet) { sheet = ChatSheet.None.name }
+        ChatSheets(crew, selfId, createRoom, viewModel, export, projectName, sheet) { sheet = ChatSheet.None.name }
+    }
+}
+
+/**
+ * The export-ready notice's View exports, raised on whatever screen the user
+ * was on: the frame opens this window first, and this puts its sheet up.
+ */
+@Composable
+private fun ExportSheetRequests(requests: Flow<Unit>?, enabled: Boolean, onOpen: () -> Unit) {
+    LaunchedEffect(requests, enabled) {
+        if (enabled) requests?.collect { onOpen() }
     }
 }
 
@@ -257,6 +275,7 @@ private fun ChatSheets(
     createRoom: (suspend (name: String, memberIds: List<String>) -> ZillitResult<GroupRoom>)?,
     viewModel: ChatViewModel?,
     export: ChatExportViewModel?,
+    projectName: String,
     /** The open sheet's [ChatSheet] name — see the caller on why it is a name. */
     open: String,
     onClose: () -> Unit,
@@ -264,7 +283,7 @@ private fun ChatSheets(
     if (createRoom != null) {
         NewGroupLayer(crew, selfId, createRoom, open == ChatSheet.NewGroup.name, viewModel, onClose)
     }
-    export?.let { ChatExportLayer(it, open == ChatSheet.Export.name, onClose) }
+    export?.let { ChatExportLayer(it, projectName, open == ChatSheet.Export.name, onClose) }
 }
 
 /**
@@ -275,10 +294,21 @@ private fun ChatSheets(
  * says nothing about where it has got to.
  */
 @Composable
-private fun ChatExportLayer(export: ChatExportViewModel, visible: Boolean, onClose: () -> Unit) {
+private fun ChatExportLayer(
+    export: ChatExportViewModel,
+    projectName: String,
+    visible: Boolean,
+    onClose: () -> Unit,
+) {
     val state by export.state.collectAsState()
     LaunchedEffect(visible) { if (visible) export.onEvent(ChatExportEvent.Load) }
-    ChatExportDialog(state = state, onEvent = export::onEvent, visible = visible, onDismiss = onClose)
+    ChatExportDialog(
+        state = state,
+        onEvent = export::onEvent,
+        visible = visible,
+        onDismiss = onClose,
+        projectName = projectName,
+    )
 }
 
 /**
@@ -502,7 +532,13 @@ private fun DirectoryHeading(
     }
 }
 
-/** The heading's three dots, and the menu they open. */
+/**
+ * The heading's three dots, and the menu they open.
+ *
+ * Inked at the title's own weight rather than the secondary grey the pane's
+ * other glyphs wear: three small dots beside a bold heading disappear at
+ * anything lighter, on light paper especially.
+ */
 @Composable
 private fun DirectoryHeadingMenu(entries: List<ZillitMenuEntry>) {
     var open by remember { mutableStateOf(false) }
@@ -511,7 +547,7 @@ private fun DirectoryHeadingMenu(entries: List<ZillitMenuEntry>) {
             icon = ZillitIcons.MoreVertical,
             contentDescription = str(S.more),
             onClick = { open = true },
-            tint = ZillitTheme.colors.textSecondary,
+            tint = ZillitTheme.colors.textPrimary,
             modifier = Modifier.testTag(HEADING_MENU_TAG),
         )
         ZillitActionMenu(expanded = open, onDismissRequest = { open = false }, entries = entries)

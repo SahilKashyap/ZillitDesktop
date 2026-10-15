@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.chat.ui
 
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -124,7 +125,24 @@ class ChatToolProvider(
     private val exportUpdates: Flow<ChatExportUpdate>? = null,
     /** Whether the socket is up: the export's poll only asks when it is not. */
     private val isSocketConnected: () -> Boolean = { false },
+    /** The open production's name, for the export sheet's header. */
+    private val projectName: () -> String = { "" },
 ) : ToolProvider {
+
+    /**
+     * "Open the Export chats sheet", asked from outside this window.
+     *
+     * The export-ready notice stands app-wide, over whatever is on screen, and
+     * its View exports opens the tool and this sheet in one move. A flow
+     * rather than a route tail because the ask repeats: a second notice has to
+     * raise the sheet again on a window that is already open at that route.
+     */
+    private val exportRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Raises the Export chats sheet; does nothing in a build with no export repository. */
+    fun requestExport() {
+        exportRequests.tryEmit(Unit)
+    }
 
     override val path: String = CNC_PATH
     override val title: String get() = str(S.desktop_chat_calls)
@@ -169,6 +187,8 @@ class ChatToolProvider(
                 onOpenWidget = onOpenWidget,
                 lines = lines,
                 export = export,
+                projectName = projectName(),
+                openExportRequests = exportRequests,
             )
         }
     }

@@ -9,6 +9,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.data.ChatExportUpdate
 import com.zillit.desktop.feature.chat.domain.ChatExport
 import com.zillit.desktop.feature.chat.domain.ChatExportRepository
+import com.zillit.desktop.feature.chat.domain.ChatExportStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,20 @@ data class ChatExportUiState(
 
     /** One export per user per production — asking again while one runs does nothing new. */
     val canStart: Boolean get() = !isStarting && exports.none { it.isInProgress }
+
+    /** The export being built, if any: the card the sheet leads with. */
+    val running: ChatExport? get() = exports.firstOrNull { it.isInProgress }
+
+    /**
+     * A failure, shown only while it is the newest export — the web's
+     * `visibleExports` rule. An older failure under a newer export is history
+     * nobody can act on.
+     */
+    val failed: ChatExport?
+        get() = exports.firstOrNull()?.takeIf { it.status == ChatExportStatus.Failed }
+
+    /** The downloadable exports, newest first — what the list under the card holds. */
+    val ready: List<ChatExport> get() = exports.filter { it.status == ChatExportStatus.Completed }
 }
 
 sealed interface ChatExportEvent {

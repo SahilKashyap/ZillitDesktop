@@ -58,8 +58,11 @@ import com.zillit.desktop.feature.email.domain.isDeletable
 
 /**
  * The web's Settings popover, item for item (`NewEmailSidebar.jsx`
- * `settings`). Each opens a page of the Email Settings window, a dialog
- * over the mailbox, or the tour; the host decides what an entry opens.
+ * `settings`), plus `Export` — the mailbox export is desktop-first and has
+ * no web entry to mirror, and without a row here the page it opens is only
+ * reachable by backing out of another section. Each opens a page of the
+ * Email Settings window, a dialog over the mailbox, or the tour; the host
+ * decides what an entry opens.
  */
 enum class MailSettingsEntry(private val labelKey: String) {
     Signatures(S.signatures),
@@ -70,6 +73,7 @@ enum class MailSettingsEntry(private val labelKey: String) {
     Credentials(S.email_credentials),
     Forwarding(S.desktop_email_forwarding),
     Rules(S.email_rules_title),
+    Export(S.desktop_email_export_title),
     MailboxTour(S.desktop_email_mailbox_tour),
     ;
 
@@ -399,6 +403,7 @@ private fun MailSettingsEntry.icon(): ImageVector = when (this) {
     MailSettingsEntry.Credentials -> ZillitIcons.Info
     MailSettingsEntry.Forwarding -> ZillitIcons.Forward
     MailSettingsEntry.Rules -> ZillitIcons.Filter
+    MailSettingsEntry.Export -> ZillitIcons.Download
     MailSettingsEntry.MailboxTour -> ZillitIcons.Help
 }
 
