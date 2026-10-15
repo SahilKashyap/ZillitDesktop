@@ -239,6 +239,9 @@ class HomeViewModel(
      */
     private var standingIn = false
 
+    /** Whether the tools call of the current [load] has already been answered — see [publishCachedGrid]. */
+    private var answered = false
+
     // Deliberately no eager load. The tools call carries project and user in
     // its `moduledata`, so firing it at construction — before a production is
     // open — sends an empty context and the server answers 406. The host calls
@@ -432,6 +435,7 @@ class HomeViewModel(
         // answer goes up at once instead, from the per-production copy kept for
         // offline, and a production never opened here gets the skeleton. The
         // network's answer lands on top either way.
+        answered = false
         offline?.currentScope()?.projectId?.takeIf { it != gridProject }?.let { opened ->
             gridProject = opened
             launch { publishCachedGrid() }
@@ -467,6 +471,7 @@ class HomeViewModel(
                 is ZillitResult.Success -> {
                     // The server's word now includes every move made here, so
                     // the painted-ahead overrides have nothing left to say.
+                    answered = true
                     standingIn = false
                     setState { copy(isBusy = false, permissions = loaded.data, staleSince = null, moves = emptyMap()) }
                     rememberGrid()
@@ -487,6 +492,7 @@ class HomeViewModel(
      * not the server.
      */
     private suspend fun gridFailed(error: ZillitError) {
+        answered = true
         val saved = recallGrid(error)
         val drop = standingIn
         standingIn = false
@@ -534,6 +540,13 @@ class HomeViewModel(
     private suspend fun publishCachedGrid() {
         val scope = offline?.currentScope()
         val cached = scope?.let { offline?.cache?.get(it, GRID_CACHE) }
+        // The cache read suspends, so the tools call can beat it home — rarely,
+        // but a stand-in written over the server's own answer would be a grid
+        // from the last time this production was open shown as if it were
+        // current, and `standingIn` would then be true over it, so the next
+        // refusal would wipe a grid the server had issued. Both coroutines are
+        // this view model's, on one thread, so the flag settles it.
+        if (answered) return
         val kept = cached?.let {
             runCatching { json.decodeFromString(ToolsOfflineCopy.serializer(), it.json) }.getOrNull()
         }

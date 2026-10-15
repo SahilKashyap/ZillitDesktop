@@ -119,6 +119,30 @@ class ProjectSwitchGridTest {
         )
     }
 
+    /**
+     * The stand-in reads the cache, which suspends, so the tools call can beat
+     * it home. It must lose that race rather than paint the last visit's grid
+     * over the answer that just arrived.
+     */
+    @Test
+    fun `the stand-in does not overwrite an answer that arrived first`() = runTest(dispatcher) {
+        val support = support()
+        openAndCache(support, "p1", "purchase_order_tool")
+
+        // p1 again on a fresh owner, and this time the server answers at once
+        // with a grid that has *moved on* from the copy on disk.
+        openProject = "p1"
+        val cut = HomeViewModel(Answering(ZillitResult.Success(grid("payroll_tool"))), support, nowMillis = { now })
+        cut.onEvent(HomeEvent.Reload)
+        runCurrent()
+
+        assertTrue(cut.currentState.permissions.canView("payroll_tool"), "the server's answer stands")
+        assertFalse(
+            cut.currentState.permissions.canView("purchase_order_tool"),
+            "the saved copy was painted over the answer that had already arrived",
+        )
+    }
+
     @Test
     fun `a production never opened here gets nothing to look at rather than the last one's tools`() =
         runTest(dispatcher) {
