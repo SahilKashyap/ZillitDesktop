@@ -359,5 +359,10 @@ val Notice.pageStamp: Long get() = orderingTimestamp
  */
 fun replaceTargets(notices: List<Notice>): List<Notice> = notices
     .filter { it.kind == NoticeKind.Document && !it.attachment?.media.isNullOrBlank() }
-    .filter { it.localId == null && it.id.isNotBlank() }
+    // Acknowledged, by the two things that say so: the server gave it an id,
+    // and it is not still going up. NOT `localId == null` — a post keeps its
+    // local id after the server answers, so that rule hid every document
+    // uploaded in this session from its own Replace picker until the board was
+    // read again. The web asks only for an `_id` (`replaceableMessages`).
+    .filter { it.id.isNotBlank() && it.sendState == NoticeSendState.Sent }
     .sortedByDescending { maxOf(it.updatedAtMillis, it.createdAtMillis) }
