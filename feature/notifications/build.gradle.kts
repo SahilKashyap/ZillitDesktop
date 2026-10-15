@@ -14,6 +14,7 @@ kotlin {
             implementation(project(":core:config"))
             implementation(project(":core:network"))
             implementation(project(":core:localization"))
+            implementation(project(":core:badges"))
             implementation(project(":core:workspace"))
             implementation(libs.kotlinx.serialization.json)
         }

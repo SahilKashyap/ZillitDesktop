@@ -96,7 +96,7 @@ class EmailToolProvider(
     private val host: EmailHost = EmailHost(),
 ) : ToolProvider {
 
-    override val path: String = "/email"
+    override val path: String = EMAIL_PATH
     override val title: String get() = str(S.email)
     override val icon = ZillitIcons.Mail
 
@@ -566,3 +566,6 @@ class SignatureToolProvider(
 
 const val SIGNATURES_PATH = "/email/signatures"
 const val THREAD_POPOUT_PATH = "/email/message"
+
+/** The mailbox, as the workspace addresses it. */
+const val EMAIL_PATH = "/email"

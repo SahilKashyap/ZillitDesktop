@@ -10,6 +10,7 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,6 +67,7 @@ import com.zillit.desktop.core.workspace.WorkspaceShortcuts
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.home.domain.ToolCatalogue
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 import com.zillit.desktop.feature.home.ui.ToolSection
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
@@ -108,6 +110,9 @@ import com.zillit.desktop.feature.sos.domain.SosCrewMember
 import com.zillit.desktop.feature.sos.domain.SosViewer
 import com.zillit.desktop.feature.sos.ui.SosToolProvider
 import com.zillit.desktop.feature.sos.ui.SosViewModel
+import com.zillit.desktop.feature.notifications.domain.NotificationDestination
+import com.zillit.desktop.feature.notifications.domain.NotificationTarget
+import com.zillit.desktop.feature.notifications.domain.matchNotificationRoute
 import com.zillit.desktop.feature.notifications.ui.NotificationsViewModel
 import com.zillit.desktop.feature.notifications.ui.NOTIFICATIONS_PATH
 import com.zillit.desktop.feature.notifications.ui.NotificationsToolProvider
@@ -548,6 +553,11 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         mainVisible = true
         showMainWindow(mainFrame, windowState)
     }
+    // A bell row opens its module in the frame, which may be behind the
+    // torn-off window the row was clicked in, or in the tray. Re-set on every
+    // composition rather than remembered: `showMain` closes over the frame,
+    // and the frame arrives after the first one.
+    SideEffect { mainWindowRaiser.set(showMain) }
     val closeToTray by preferences.observe(ZillitPreferences.CloseToTray).collectAsState(initial = true)
     val crewName: (String) -> String? = { id ->
         (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
@@ -4293,6 +4303,10 @@ private fun buildRegistry(
                 // next shoot keeps the last one's rows and reads nothing here.
                 projectId = { ready.projectContext?.context?.value?.project?.projectId },
             ),
+            // Android's row tap does nothing and nothing here was wired, so
+            // every bell row was a dead card. The web routes the same fields
+            // (`notificationRouteMatcher`); see [openNotificationTarget].
+            onOpen = ::openNotificationTarget,
         )
     }
     val help = HelpToolProvider(
@@ -4517,6 +4531,44 @@ private class AppTools(
     val chatWidget: ToolProvider?,
     val crewWidget: ToolProvider?,
 )
+
+/**
+ * Raises and focuses the main frame. Left here by the frame once it exists —
+ * the same trick [toolOpener] and [driveHolder] use, for the same reason: the
+ * registry is built before the window it will be shown in.
+ */
+internal val mainWindowRaiser = java.util.concurrent.atomic.AtomicReference<(() -> Unit)?>(null)
+
+/**
+ * A bell row clicked: the module it came from, in front.
+ *
+ * The matcher decides *what* a row points at from the wire's own fields
+ * ([matchNotificationRoute]); this decides where that is in this build, which
+ * for a film tool is the catalogue's business — and the catalogue is the only
+ * place that knows whether this build can draw the tool at all.
+ *
+ * Quiet at every step a row cannot be placed: a section this build does not
+ * know, a `tools_label` row naming no tool, a tool with no route here. The
+ * workspace is quiet too for a route no provider claims — `open` sends
+ * `UnknownTool` and nothing listens — so a tool with a route but no screen
+ * yet leaves the person where they were rather than on a placeholder.
+ *
+ * The frame comes forward first because the bell can be torn off into an OS
+ * window of its own, and the tool opens in the frame behind it; from the
+ * tray, there is nothing on screen to open into at all.
+ */
+private fun openNotificationTarget(target: NotificationTarget) {
+    val path = when (val destination = matchNotificationRoute(target)) {
+        is NotificationDestination.Section -> destination.path
+        is NotificationDestination.FilmTool -> ToolCatalogue.routeFor(destination.identifier)?.path
+        null -> null
+    } ?: run {
+        ZillitLog.d("Notifications") { "nothing to open for ${target.section}/${target.tool}" }
+        return
+    }
+    mainWindowRaiser.get()?.invoke()
+    toolOpener.get()?.invoke(path)
+}
 
 /**
  * The C&C tool's download right (Android gates saves with `msg_download_right`

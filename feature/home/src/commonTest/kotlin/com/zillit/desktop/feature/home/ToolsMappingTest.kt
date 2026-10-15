@@ -110,6 +110,16 @@ class ToolsMappingTest {
     }
 
     @Test
+    fun `a name alone resolves only to a tool this build can draw`() {
+        // What a notification row has: a tool's name and no tile. The
+        // placeholder route `present` derives for an unknown tool would open
+        // an empty window, so this answers null instead and the caller stays
+        // where it was.
+        assertEquals(WorkspaceRoute.Tool("/film-tools/call-sheet"), ToolCatalogue.routeFor("callsheet_tool"))
+        assertNull(ToolCatalogue.routeFor("weather_pro_tool"))
+    }
+
+    @Test
     fun `two unknown tools do not collide on one window`() {
         val a = ToolCatalogue.present(ToolAccess("recce_tool"))
         val b = ToolCatalogue.present(ToolAccess("casting_tool"))

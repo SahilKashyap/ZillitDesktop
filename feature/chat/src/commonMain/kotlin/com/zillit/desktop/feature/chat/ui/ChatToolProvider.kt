@@ -104,7 +104,7 @@ class ChatToolProvider(
     )? = null,
 ) : ToolProvider {
 
-    override val path: String = "/cnc"
+    override val path: String = CNC_PATH
     override val title: String get() = str(S.desktop_chat_calls)
     override val icon = ZillitIcons.Chat
     override val openMode: OpenMode = OpenMode.Maximized
@@ -149,3 +149,6 @@ class ChatToolProvider(
         }
     }
 }
+
+/** Chat & Calls, as the workspace addresses it. */
+const val CNC_PATH = "/cnc"
