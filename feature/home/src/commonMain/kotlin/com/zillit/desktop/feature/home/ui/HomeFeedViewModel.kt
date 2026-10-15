@@ -2437,12 +2437,26 @@ class HomeFeedViewModel(
                 uploadProgress = uploadProgress - localId,
             )
         }
-        // A "New" call sheet moved every earlier post to History on
-        // the server; the board on screen still shows them until it
-        // is read again. Android learns this from a socket
-        // multi-delete and refetches — the refetch is the part that
-        // matters.
+        // A "New" upload moved every earlier post to History on the server,
+        // so the board is now this one document. The web says exactly that —
+        // `replacePreviousChatsInUnitChatState` sets the unit's bucket to
+        // `[newMessage]` — and saying it here is what makes the old rows go.
+        //
+        // A refetch alone did NOT: the answer carries only the upload, which
+        // is the NEWEST post, so every retired row sits behind its boundary
+        // and `pagesBehind` keeps them as "a page that was not asked for".
+        // That is right for an ordinary refresh and wrong for this, the one
+        // case where the client already knows the rest is gone.
+        //
+        // Posts still going up are kept: a second upload started while this
+        // one was in flight is nobody's history. The read still follows, to
+        // pick up the server's own copy and anything that arrived with it.
         if (replacePrevious == true) {
+            setState {
+                val inFlight = notices.filter { it.sendState != NoticeSendState.Sent && it.id != saved.id }
+                copy(notices = listOf(saved) + inFlight)
+            }
+            boards[unitId] = currentState.notices
             currentState.selectedUnit?.takeIf { it.id == unitId }?.let(::loadNotices)
         }
     }

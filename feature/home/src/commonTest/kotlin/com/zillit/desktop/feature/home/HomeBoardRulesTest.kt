@@ -90,15 +90,19 @@ class HomeBoardRulesTest {
         ): ZillitResult<Notice> {
             posted += Triple(text, attachment, replacePrevious)
             replacedIds += replaceChatId
-            return ZillitResult.Success(
-                Notice(
-                    id = "server-${posted.size}",
-                    body = text,
-                    authorName = "You",
-                    kind = attachment?.kind ?: NoticeKind.Text,
-                    localId = localId,
-                ),
+            // What the server does on a wipe: every earlier post moves to
+            // History, so the next read answers with this upload alone.
+            val saved = Notice(
+                id = "server-${posted.size}",
+                body = text,
+                authorName = "You",
+                authorId = "me",
+                createdAtMillis = NOW,
+                kind = attachment?.kind ?: NoticeKind.Text,
+                localId = localId,
             )
+            if (replacePrevious == true) notices = listOf(saved)
+            return ZillitResult.Success(saved)
         }
 
         override suspend fun watermarkedAttachment(noticeId: String): ZillitResult<NoticeAttachment> {
@@ -443,6 +447,38 @@ class HomeBoardRulesTest {
         // Both halves, or the post appends and the chosen document stays live.
         assertEquals(false, board.posted.single().third)
         assertEquals("older", board.replacedIds.single())
+    }
+
+    @Test
+    fun `a New upload leaves only itself on the board`() = runTest(dispatcher) {
+        val doc = PickedMedia("day-13.pdf", "application/pdf", ByteArray(4))
+        // What the server does on a New: everything else moves to History, so
+        // the refetch answers with the upload alone.
+        val older = listOf(
+            post("old-1", "them", NOW - 7_200_000, NoticeKind.Document, pdf),
+            post("old-2", "them", NOW - 3_600_000, NoticeKind.Document, pdf),
+        )
+        val board = FakeBoard(listOf(callSheet), older)
+        val model = viewModel(board, picked = doc)
+        advanceUntilIdle()
+        assertEquals(2, model.state.value.notices.size)
+
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.New))
+        model.onEvent(HomeFeedEvent.CallSheetSend)
+        model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
+        confirmPreview(model)
+        advanceUntilIdle()
+
+        assertEquals(true, board.posted.single().third, "the wipe flag went up")
+        // The retired rows are gone from the screen, not merely re-read behind
+        // the upload: they are what the user watched the New replace.
+        assertEquals(
+            emptyList(),
+            model.state.value.notices.filter { it.id.startsWith("old-") }.map { it.id },
+        )
+        assertEquals(1, model.state.value.notices.size)
     }
 
     @Test
