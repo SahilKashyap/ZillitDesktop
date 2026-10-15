@@ -7,13 +7,19 @@ import kotlinx.serialization.json.JsonElement
  * One `notification:save` record, ready to show as an OS banner.
  *
  * [area] is the decoded path label ("Tools : Call Sheet") — the closest thing
- * the wire has to a title — and [body] the decoded sentence. [section] is the
- * raw wire section (`cnc_label`, `tools_label`, ...) so the caller can leave
- * out the areas a dedicated alert already covers.
+ * the wire has to a title — and [body] the decoded sentence.
+ *
+ * [section], [tool] and [action] are carried raw, as the wire spells them, so
+ * the caller can leave out what a dedicated alert already covers. All three
+ * are needed for that: the wire has only seven sections (`BadgeSections`), so
+ * "the budget's own chat" and "a new notice" are a tool and an action, not
+ * sections — a rule written against `section` alone cannot name them.
  */
 data class ActivityBanner(
     val id: String,
     val section: String,
+    val tool: String,
+    val action: String,
     val area: String,
     val body: String,
 )
