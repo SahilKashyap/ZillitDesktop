@@ -33,6 +33,7 @@ import com.zillit.desktop.feature.email.domain.MailboxExportPart
 import com.zillit.desktop.feature.email.domain.exportSizeLabel
 import com.zillit.desktop.feature.email.domain.mailDate
 import com.zillit.desktop.feature.email.domain.mailFullTimeLabel
+import kotlin.time.Clock
 
 /**
  * Export mailbox — the web's `MailboxExportModal`, screen for screen.
@@ -126,13 +127,22 @@ private fun ColumnScope.MailboxExportBody(state: MailboxExportUiState, onEvent: 
     }
 
     when {
-        state.ready.isNotEmpty() ->
-            state.ready.forEachIndexed { index, export -> ExportRow(export, index == 0, state, onEvent) }
+        state.ready.isNotEmpty() -> {
+            // "New" means finished in the last day, as the web's own badge
+            // does — the newest row is otherwise marked new for ever, and a
+            // month-old export wears it.
+            val now = Clock.System.now().toEpochMilliseconds()
+            state.ready.forEachIndexed { index, export ->
+                ExportRow(export, isNew = index == 0 && export.completedOnMillis > now - NEW_FOR_MILLIS, state, onEvent)
+            }
+        }
         state.isLoading -> EmptyBox(str(S.ah_loading))
         // Never "No exports yet" while one is running: this page used to say
         // exactly that over a live progress bar, and the web's own comment
-        // names it as the mistake not to repeat.
-        running != null -> EmptyBox(str(S.desktop_email_export_preparing))
+        // names it as the mistake not to repeat. The chat export's wording,
+        // which is about any export and already says the right thing — the
+        // card above is the one that says "Preparing your export…".
+        running != null -> EmptyBox(str(S.desktop_chat_export_empty_running))
         else -> EmptyBox(str(S.desktop_email_export_empty))
     }
 }
@@ -328,7 +338,7 @@ private fun FailedCard(
 @Composable
 private fun ExportRow(
     export: MailboxExport,
-    isNewest: Boolean,
+    isNew: Boolean,
     state: MailboxExportUiState,
     onEvent: (MailboxExportEvent) -> Unit,
 ) {
@@ -349,6 +359,9 @@ private fun ExportRow(
             contentDescription = null,
             tint = colors.textMuted,
             size = ROW_ICON,
+            // Beside the date, not halfway down a row that has grown parts
+            // and a warning under it.
+            modifier = Modifier.align(Alignment.Top).padding(top = ZillitTheme.spacing.xxs),
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -359,7 +372,7 @@ private fun ExportRow(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitText(text = mailDate(export.requestedOnMillis), style = ZillitTheme.typography.bodyMedium)
-                if (isNewest) ZillitStatusPill(label = str(S.mtg_new), tone = StatusTone.Done)
+                if (isNew) ZillitStatusPill(label = str(S.mtg_new), tone = StatusTone.Done)
             }
             ZillitText(
                 text = export.metaLine(),
@@ -521,6 +534,9 @@ private fun ExportCard(tone: CardTone = CardTone.Neutral, content: @Composable C
 
 private const val SEPARATOR = " · "
 private const val PERCENT = 100
+
+/** A finished export wears "New" for its first day, as the web's does. */
+private const val NEW_FOR_MILLIS = 24L * 60 * 60 * 1000
 private val ROW_HAIRLINE = 1.dp
 private val ROW_ICON = 20.dp
 private val CARD_ICON = 20.dp

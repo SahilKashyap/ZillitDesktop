@@ -159,39 +159,59 @@ private fun ExportNoticeCard(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             ZillitText(text = notice.title, style = ZillitTheme.typography.titleSmall)
-            notice.detail.takeIf { it.isNotBlank() }?.let {
-                ZillitText(
-                    text = it,
-                    style = ZillitTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-            }
-            Row(
-                modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (!notice.failed) {
-                    ZillitButton(
-                        text = str(S.download),
-                        leadingIcon = ZillitIcons.Download,
-                        size = ButtonSize.Small,
-                        loading = busy,
-                        onClick = onDownload,
+            // Two lines rather than one joined by "·": the card is narrow, and
+            // a separator left hanging at a wrap reads as a typo.
+            listOfNotNull(notice.detail, notice.footnote)
+                .filter { it.isNotBlank() }
+                .forEach { line ->
+                    ZillitText(
+                        text = line,
+                        style = ZillitTheme.typography.bodySmall,
+                        color = colors.textSecondary,
                     )
                 }
-                ZillitButton(
-                    text = if (notice.failed) str(S.dd_action_open) else str(S.desktop_chat_export_view),
-                    variant = if (notice.failed) ButtonVariant.Primary else ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                    onClick = onOpen,
-                )
-            }
+            NoticeActions(notice, busy, onOpen, onDownload)
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = str(S.sync_action_dismiss),
             onClick = onDismiss,
+        )
+    }
+}
+
+/**
+ * Download, then the way into the window.
+ *
+ * Download is the primary action on a finished export because it is what the
+ * wait was for; a failed one has nothing to download, so Open leads.
+ */
+@Composable
+private fun NoticeActions(
+    notice: ExportNotice,
+    busy: Boolean,
+    onOpen: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!notice.failed) {
+            ZillitButton(
+                text = str(S.download),
+                leadingIcon = ZillitIcons.Download,
+                size = ButtonSize.Small,
+                loading = busy,
+                onClick = onDownload,
+            )
+        }
+        ZillitButton(
+            text = if (notice.failed) str(S.dd_action_open) else str(S.desktop_chat_export_view),
+            variant = if (notice.failed) ButtonVariant.Primary else ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            onClick = onOpen,
         )
     }
 }
@@ -203,6 +223,8 @@ private data class ExportNotice(
     val failed: Boolean,
     val title: String,
     val detail: String,
+    /** A second line under [detail] — how long it lasts, or how big it is. */
+    val footnote: String = "",
     val isAccountsMailbox: Boolean = false,
 )
 
@@ -217,23 +239,19 @@ private fun List<ExportNotice>.put(notice: ExportNotice): List<ExportNotice> =
 private fun com.zillit.desktop.feature.chat.domain.ChatExport.asNotice(): ExportNotice? {
     val failed = status == ChatExportStatus.Failed
     if (status != ChatExportStatus.Completed && !failed) return null
+    // Say WHAT is ready: a 47 KB text file and a 1 GB media one are the same
+    // sentence otherwise, and the difference decides whether the user wants it
+    // now, on this connection. On a failure `error` is a server message key,
+    // so the sentence is the backend dictionary's.
+    val kind = if (includeMedia) {
+        str(S.desktop_chat_export_media_included)
+    } else {
+        str(S.desktop_chat_export_text_only_short)
+    }
     val detail = if (failed) {
-        // A server message key: the sentence is the backend dictionary's.
         error.takeIf { it.isNotBlank() }?.localisedMessage().orEmpty()
     } else {
-        // Say WHAT is ready: a 47 KB text file and a 1 GB media one are the
-        // same sentence otherwise, and the difference decides whether the
-        // user wants it now, on this connection.
-        val kind = if (includeMedia) {
-            str(S.desktop_chat_export_media_included)
-        } else {
-            str(S.desktop_chat_export_text_only_short)
-        }
-        val until = expiresOnMillis
-            .takeIf { it > 0 }
-            ?.let { str(S.desktop_email_export_available_until, lastEntryDate(it)) }
-            .orEmpty()
-        listOf(chatExportSizeLabel(sizeBytes), kind, until).filter { it.isNotBlank() }.joinToString(SEPARATOR)
+        listOf(chatExportSizeLabel(sizeBytes), kind).filter { it.isNotBlank() }.joinToString(SEPARATOR)
     }
     return ExportNotice(
         exportId = exportId,
@@ -241,26 +259,36 @@ private fun com.zillit.desktop.feature.chat.domain.ChatExport.asNotice(): Export
         failed = failed,
         title = if (failed) str(S.desktop_chat_export_failed_notice) else str(S.desktop_chat_export_ready_notice),
         detail = detail,
+        footnote = if (failed) {
+            ""
+        } else {
+            expiresOnMillis
+                .takeIf { it > 0 }
+                ?.let { str(S.desktop_email_export_available_until, lastEntryDate(it)) }
+                .orEmpty()
+        },
     )
 }
 
 private fun MailboxExportUpdate.asNotice(): ExportNotice? {
     val failed = export.status == MailboxExportStatus.Failed
     if (export.status != MailboxExportStatus.Completed && !failed) return null
-    val detail = if (failed) {
-        export.error.takeIf { it.isNotBlank() }?.localisedMessage() ?: export.mailboxEmail
-    } else {
-        val size = exportSizeLabel(
-            if (export.totalSizeBytes > 0) export.totalSizeBytes else export.parts.sumOf { it.sizeBytes },
-        )
-        listOf(export.mailboxEmail, size).filter { it.isNotBlank() }.joinToString(SEPARATOR)
-    }
+    val size = exportSizeLabel(
+        if (export.totalSizeBytes > 0) export.totalSizeBytes else export.parts.sumOf { it.sizeBytes },
+    )
+    // The address first: the personal and the shared Accounts mailbox export
+    // separately, and the notice can arrive while neither is on screen.
     return ExportNotice(
         exportId = export.exportId,
         isChat = false,
         failed = failed,
         title = if (failed) str(S.desktop_email_export_failed_notice) else str(S.desktop_email_export_ready_notice),
-        detail = detail,
+        detail = if (failed) {
+            export.error.takeIf { it.isNotBlank() }?.localisedMessage() ?: export.mailboxEmail
+        } else {
+            export.mailboxEmail
+        },
+        footnote = if (failed) "" else size,
         isAccountsMailbox = isAccountsMailbox,
     )
 }
