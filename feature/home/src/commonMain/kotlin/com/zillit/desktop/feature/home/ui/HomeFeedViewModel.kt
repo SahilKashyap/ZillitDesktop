@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.home.ui
 import com.zillit.desktop.core.permissions.RightsArea
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.common.SentenceCase
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -875,7 +876,10 @@ class HomeFeedViewModel(
                 // was attached beside the media — a shared place lost its
                 // pin the moment a caption was typed and posted as a plain
                 // map picture (seen live, 2026-08-25).
-                copy(draft = draft.copy(text = event.text), error = null)
+                copy(
+                    draft = draft.copy(text = SentenceCase.applied(draft.text, event.text)),
+                    error = null,
+                )
             }
             HomeFeedEvent.Send -> send()
             is HomeFeedEvent.Retry -> retry(event.localId)

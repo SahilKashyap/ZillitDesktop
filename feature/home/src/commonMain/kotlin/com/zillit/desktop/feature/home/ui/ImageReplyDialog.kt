@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.SentenceCase
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
@@ -115,7 +116,7 @@ internal fun ImageReplyDialog(
         EditableImageCanvas(editor, EditTool.Draw, Modifier.weight(1f), measurer)
         ZillitTextField(
             value = caption,
-            onValueChange = { caption = it },
+            onValueChange = { caption = SentenceCase.applied(caption, it) },
             placeholder = str(S.desktop_media_add_caption),
             singleLine = false,
             maxLength = NoticeDraft.MAX_LENGTH,

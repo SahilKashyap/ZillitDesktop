@@ -38,6 +38,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.SentenceCase
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -246,7 +247,9 @@ private fun CaptionBar(session: MediaPreviewSession, captionLimit: Int, sending:
     ) {
         ZillitTextField(
             value = session.caption,
-            onValueChange = { session.caption = it },
+            // A caption is a message: it reads as the line under the picture
+            // in the thread, so it is capitalised like one.
+            onValueChange = { session.caption = SentenceCase.applied(session.caption, it) },
             placeholder = str(S.desktop_media_add_caption),
             singleLine = false,
             // The counter only once it matters: an always-on "0/2000" is

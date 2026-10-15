@@ -79,7 +79,16 @@ fun ZillitTextField(
     // offset and the next keystrokes splice into the middle of the new text.
     var fieldValue by remember { mutableStateOf(TextFieldValue(value)) }
     if (fieldValue.text != value) {
-        fieldValue = TextFieldValue(value, TextRange(value.length))
+        // Same letters, different case — the caller correcting the keystroke
+        // it was just handed (a composer capitalising the first letter of a
+        // sentence), not a replacement from outside. The caret stays where
+        // the typing left it; sending it to the end would throw the typist
+        // out of the middle of the line they were editing.
+        fieldValue = if (value.equals(fieldValue.text, ignoreCase = true)) {
+            fieldValue.copy(text = value)
+        } else {
+            TextFieldValue(value, TextRange(value.length))
+        }
     }
     ZillitTextField(
         value = fieldValue,
