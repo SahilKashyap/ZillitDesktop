@@ -364,6 +364,13 @@ fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onB
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
+            // Everyone's mailbox goes with the production, and nobody can
+            // reach an export once it has gone.
+            ZillitText(
+                text = str(S.desktop_export_mailbox_reminder),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
         }
 
         ZillitSectionCard(title = str(S.desktop_schedule_it)) {

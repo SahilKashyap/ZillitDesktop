@@ -16,6 +16,9 @@ enum class EmailSettingsSection {
     BccPresets,
     Forwarding,
     Credentials,
+
+    /** Export mailbox — `/v2/email-export`; last, as the heaviest thing here. */
+    Export,
 }
 
 data class EmailSettingsUiState(

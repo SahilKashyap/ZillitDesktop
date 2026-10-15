@@ -360,6 +360,17 @@ object ZillitSocketEvents {
         val FolderUpdated = SocketEventName("email:folder:updated")
         val FolderDeleted = SocketEventName("email:folder:deleted")
 
+        /**
+         * A mailbox export was started, made progress, finished or failed.
+         *
+         * Deliberately **outside** [All]: that list feeds the mailbox's
+         * folder/draft mapping, which treats anything it does not recognise
+         * as "this folder changed" and re-syncs. An export touches no mail,
+         * so routing it there would make every 30-second progress push cost
+         * a folder refresh. The export screen subscribes to this one name.
+         */
+        val ExportUpdated = SocketEventName("email:export:updated")
+
         /** Mail appeared or disappeared — the open folder needs re-syncing. */
         val Mail = listOf(
             InboundReceived, OutboundSent, InboundDeleted, OutboundDeleted,
@@ -415,5 +426,6 @@ object ZillitSocketEvents {
         Email.Moved, Email.MovedPlural, Email.Move,
         Email.FolderSaved, Email.FolderUpdated, Email.FolderDeleted,
         Email.DraftSaved, Email.DraftUpdated, Email.DraftDeleted,
+        Email.ExportUpdated,
     )
 }

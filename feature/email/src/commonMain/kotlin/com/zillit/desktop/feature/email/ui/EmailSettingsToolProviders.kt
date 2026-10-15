@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.email.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,14 +23,18 @@ import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import kotlinx.coroutines.flow.StateFlow
 import com.zillit.desktop.feature.email.data.BccPresetRepositoryImpl
 import com.zillit.desktop.feature.email.data.ContactRepositoryImpl
 import com.zillit.desktop.feature.email.data.ConversationViewRepositoryImpl
 import com.zillit.desktop.feature.email.data.EmailForwardingRepositoryImpl
 import com.zillit.desktop.feature.email.data.EmailGroupRepositoryImpl
 import com.zillit.desktop.feature.email.data.MailboxCredentialsRepositoryImpl
+import com.zillit.desktop.feature.email.data.MailboxExportRealtimeSource
+import com.zillit.desktop.feature.email.data.MailboxExportRepositoryImpl
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.MailboxDirectory
+import com.zillit.desktop.feature.email.domain.MailboxKind
 import com.zillit.desktop.feature.email.domain.MailboxScope
 import com.zillit.desktop.feature.email.domain.SavedContact
 import com.zillit.desktop.feature.email.ui.contacts.EmailContactsEffect
@@ -48,6 +53,9 @@ import com.zillit.desktop.feature.email.ui.settings.EmailSettingsSection
 import com.zillit.desktop.feature.email.ui.settings.EmailSettingsViewModel
 import com.zillit.desktop.feature.email.ui.settings.MailboxCredentialsEvent
 import com.zillit.desktop.feature.email.ui.settings.MailboxCredentialsViewModel
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportEffect
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportEvent
+import com.zillit.desktop.feature.email.ui.settings.MailboxExportViewModel
 import com.zillit.desktop.feature.email.ui.settings.SectionBinding
 
 /**
@@ -82,6 +90,23 @@ class EmailSettingsToolProvider(
      */
     private val scope: MailboxScope = MailboxScope.Personal,
     private val directory: MailboxDirectory? = null,
+    /**
+     * Which mailbox is active, as state rather than a question.
+     *
+     * [scope] answers "which mailbox is this call for?" and is read per
+     * call — so when the switcher flips while this window is open, every
+     * section is suddenly *addressing* the other mailbox while still
+     * *showing* the first one's rules, presets, forwarding and exports.
+     * Watching the kind is what re-reads them. Null on a build with no
+     * switcher, where it never changes.
+     */
+    private val activeMailbox: StateFlow<MailboxKind>? = null,
+    /**
+     * Hands a signed export link to the user's browser. A part can be about
+     * a gigabyte, so it is never fetched into the app — the host opens the
+     * URL and the browser saves the file under its own name.
+     */
+    private val onOpenUrl: (String) -> Unit = {},
 ) : ToolProvider {
 
     override val path: String = EMAIL_SETTINGS_PATH
@@ -91,6 +116,13 @@ class EmailSettingsToolProvider(
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
+        // Read first: every section's load below is keyed on it, because the
+        // shared Accounts mailbox keeps its own rules, presets, forwarding,
+        // conversation view and exports. A flip of the switcher while this
+        // window is open has to re-read all of them, or one mailbox's
+        // settings stay on screen while the calls address the other's.
+        val mailboxKind = activeMailbox?.collectAsState()?.value
+
         val settings = remember {
             EmailSettingsViewModel(
                 repository = ConversationViewRepositoryImpl(apiClient, config, scope = scope, directory = directory),
@@ -113,6 +145,7 @@ class EmailSettingsToolProvider(
         val rules = remember {
             EmailRulesViewModel(EmailRulesRepositoryImpl(apiClient, config, scope), folders, driveFolders)
         }
+        val export = rememberMailboxExport(apiClient, config, scope, events, onOpenUrl, mailboxKind)
 
         // A route with a tail opens straight onto that page — the mailbox's
         // Settings menu deep-links each entry (`/email/settings/rules`).
@@ -126,11 +159,13 @@ class EmailSettingsToolProvider(
         val forwardingState by forwarding.state.collectAsState()
         val credentialsState by credentials.state.collectAsState()
         val rulesState by rules.state.collectAsState()
+        val exportState by export.state.collectAsState()
 
         // Each section loads when the window opens rather than when its card
         // is opened: the cards say what is configured, and a card that reads
-        // "loading" every time it is looked at is worse than one fetch.
-        LaunchedEffect(Unit) {
+        // "loading" every time it is looked at is worse than one fetch. The
+        // key is the active mailbox, not `Unit` — see above.
+        LaunchedEffect(mailboxKind) {
             settings.onEvent(EmailSettingsEvent.Load)
             groups.onEvent(EmailGroupsEvent.Load)
             presets.onEvent(BccPresetsEvent.Load)
@@ -147,10 +182,52 @@ class EmailSettingsToolProvider(
             forwarding = SectionBinding(forwardingState, forwarding::onEvent),
             credentials = SectionBinding(credentialsState, credentials::onEvent),
             rules = SectionBinding(rulesState, rules::onEvent),
+            export = SectionBinding(exportState, export::onEvent),
             onOpenSignatures = onOpenSignatures,
             onCopy = onCopy,
         )
     }
+}
+
+/**
+ * The Export mailbox page's view model, with its two pieces of plumbing:
+ * a signed download link goes to the browser, and the fallback poll is
+ * stopped when the window's content goes away (it otherwise keeps a timer
+ * alive for as long as the export takes, which can be over an hour).
+ */
+@Composable
+private fun rememberMailboxExport(
+    apiClient: ApiClient,
+    config: AppConfig,
+    scope: MailboxScope,
+    events: SocketEventBus?,
+    onOpenUrl: (String) -> Unit,
+    /** Re-reads the list when the switcher flips; see [EmailSettingsToolProvider]. */
+    mailboxKind: MailboxKind?,
+): MailboxExportViewModel {
+    val export = remember {
+        MailboxExportViewModel(
+            repository = MailboxExportRepositoryImpl(apiClient, config, scope),
+            updates = events?.let { MailboxExportRealtimeSource(it).stream },
+            scope = scope,
+            isSocketConnected = { events?.connectionState?.value?.isConnected == true },
+        )
+    }
+
+    LaunchedEffect(export, mailboxKind) {
+        export.onEvent(MailboxExportEvent.Load)
+        export.effects.collect { effect ->
+            when (effect) {
+                is MailboxExportEffect.OpenDownload -> onOpenUrl(effect.url)
+            }
+        }
+    }
+
+    DisposableEffect(export) {
+        onDispose { export.stopWatching() }
+    }
+
+    return export
 }
 
 /** The mailbox's own address book — Android's `ContactListActivity`, the web's `ContactListModal`. */
@@ -205,6 +282,7 @@ internal fun sectionFor(path: String): EmailSettingsSection? = when (path.remove
     "bcc" -> EmailSettingsSection.BccPresets
     "forwarding" -> EmailSettingsSection.Forwarding
     "credentials" -> EmailSettingsSection.Credentials
+    "export" -> EmailSettingsSection.Export
     else -> null
 }
 

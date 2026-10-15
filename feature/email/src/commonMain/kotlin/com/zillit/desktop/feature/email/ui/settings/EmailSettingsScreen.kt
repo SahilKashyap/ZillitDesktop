@@ -39,6 +39,7 @@ internal fun EmailSettingsScreen(
     forwarding: SectionBinding<EmailForwardingUiState, EmailForwardingEvent>,
     credentials: SectionBinding<MailboxCredentialsUiState, MailboxCredentialsEvent>,
     rules: SectionBinding<EmailRulesUiState, EmailRulesEvent>,
+    export: SectionBinding<MailboxExportUiState, MailboxExportEvent>,
     onOpenSignatures: () -> Unit,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -53,6 +54,7 @@ internal fun EmailSettingsScreen(
             EmailSettingsSection.Forwarding -> EmailForwardingPage(forwarding.state, forwarding.onEvent, back)
             EmailSettingsSection.Credentials ->
                 MailboxCredentialsPage(credentials.state, credentials.onEvent, onCopy, back)
+            EmailSettingsSection.Export -> MailboxExportPage(export.state, export.onEvent, back)
         }
     }
 }
@@ -95,7 +97,10 @@ private fun SettingsCards(
     }
 }
 
-/** The six cards, in Android's order (`email_fragment_settings.xml`). */
+/**
+ * The cards, in Android's order (`email_fragment_settings.xml`), with
+ * Export mailbox added at the foot — it has no phone equivalent yet.
+ */
 @Composable
 private fun SettingsCardList(
     state: EmailSettingsUiState,
@@ -154,5 +159,11 @@ private fun SettingsCardList(
         title = str(S.email_credentials),
         detail = str(S.desktop_email_credentials_subtitle),
         onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Credentials)) },
+    )
+    SettingsCard(
+        icon = ZillitIcons.Download,
+        title = str(S.desktop_email_export_title),
+        detail = str(S.desktop_email_export_subtitle),
+        onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Export)) },
     )
 }

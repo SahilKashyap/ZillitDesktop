@@ -430,6 +430,15 @@ fun LeaveProductionDialog(
             color = ZillitTheme.colors.textSecondary,
         )
 
+        // The production mailbox goes too, and a member who has left cannot
+        // reach the export routes any more — so the reminder belongs here,
+        // while there is still time to take the mail.
+        ZillitText(
+            text = str(S.desktop_export_mailbox_reminder),
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+
         if (isAdmin) {
             // The one case the other clients warn about, because a production
             // whose last admin leaves cannot approve anyone back in.

@@ -4137,14 +4137,22 @@ private fun buildRegistry(
             folders = { ready.emailRepository.folders() },
             driveFolders = DriveFolderSource { parent -> ready.driveFolderOptions(parent) },
             events = ready.socketEvents,
-            // The settings follow the mailbox the Email tool has open.
+            // The settings follow the mailbox the Email tool has open — the
+            // scope for each call, and the kind so a flip of the switcher
+            // re-reads every section rather than leaving the other
+            // mailbox's settings on screen.
             scope = ready.activeMailbox,
+            activeMailbox = ready.activeMailbox.kind,
             directory = MailboxDirectoryImpl(
                 ready.apiClient,
                 ready.config,
                 projectId = { ready.projectContext?.context?.value?.project?.projectId },
                 userName = { ready.projectContext?.context?.value?.profile?.fullName.orEmpty() },
             ),
+            // A mailbox export part runs to about a gigabyte and is served as
+            // an attachment under its own name, so the browser takes it — the
+            // same handoff the Drive's download uses.
+            onOpenUrl = ::openInBrowser,
         )
     }
     val mailContacts = (graph as? AppGraph.Ready)?.let { ready ->

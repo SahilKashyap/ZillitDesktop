@@ -13266,4 +13266,25 @@
     <string name="desktop_hub_no_tab_requests">No %1$s requests</string>
     <string name="desktop_hub_n_stops">%1$s Stops</string>
     <string name="desktop_hub_n_passengers">%1$s Passengers</string>
+    <string name="desktop_email_export_title">Export mailbox</string>
+    <string name="desktop_email_export_subtitle">Download every email in this mailbox as mbox files</string>
+    <string name="desktop_email_export_what">An export is a copy of every email in this mailbox: one .mbox file per folder, inside a ZIP.</string>
+    <string name="desktop_email_export_preparing">Preparing your export…</string>
+    <string name="desktop_email_export_progress">%1$d of %2$d emails</string>
+    <string name="desktop_email_export_available_until">Available until %1$s</string>
+    <string name="desktop_email_export_takes_a_while">This can take a while for a large mailbox. You can close this window and come back to it.</string>
+    <string name="desktop_email_export_skipped">%1$d emails could not be exported.</string>
+    <string name="desktop_email_export_remove_title">Remove this export?</string>
+    <string name="desktop_email_export_remove_confirm">The files will be deleted and can no longer be downloaded. You can request a new export at any time.</string>
+    <string name="desktop_email_export_how_to_open">How to open it</string>
+    <string name="desktop_email_export_open_apple_mail">Apple Mail: unzip, then File → Import Mailboxes… → Files in mbox format.</string>
+    <string name="desktop_email_export_open_windows">Windows: unzip, then open the folder in the free MBox Viewer app.</string>
+    <string name="desktop_email_export_open_several">If there are several ZIPs, unzip all of them into the same folder first.</string>
+    <string name="desktop_email_export_readme_note">Every ZIP holds a README.txt with these same steps.</string>
+    <string name="desktop_email_export_none">You have not exported this mailbox yet.</string>
+    <string name="desktop_email_export_history">Earlier exports</string>
+    <string name="desktop_email_export_all_parts">You need all of the parts to open the export.</string>
+    <string name="desktop_email_export_download_started">The download has started in your browser.</string>
+    <string name="desktop_export_mailbox_reminder">Mail goes with the production. Export the mailbox from Email → Settings → Export mailbox first; it cannot be reached afterwards.</string>
+    <string name="desktop_email_export_no_link">The server did not return a link for that part. Ask for the export again.</string>
 </resources>
