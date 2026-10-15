@@ -1059,8 +1059,11 @@ sealed interface AppGraph {
             )
             val badgeDrilldown = BadgeDrilldown { query -> ZillitResult.Success(badgeStore.split(query)) }
             // Every launch, the first seed starts from the top, and the
-            // listing's cards show the server's totals until it lands.
-            val badgeResync = BadgeResync(preferences)
+            // listing's cards show the server's totals until it lands. The
+            // first seed of a newly installed version also prunes the rows the
+            // server no longer serves — the badges a resync alone can never
+            // clear, because a seed only ever adds.
+            val badgeResync = BadgeResync(preferences, installedAppVersion())
             val badgeSeeder = NotificationLedgerSeeder(
                 apiClient = apiClient,
                 config = config,
@@ -1068,6 +1071,8 @@ sealed interface AppGraph {
                 myUserId = { headerContext.value.userId },
                 resyncDue = badgeResync::due,
                 onResynced = badgeResync::completed,
+                pruneDue = badgeResync::pruneDue,
+                onPruned = badgeResync::pruned,
             )
             // The email rows are tagged with their mailbox; the ledger counts
             // only the one this desktop can open, which the profile names.

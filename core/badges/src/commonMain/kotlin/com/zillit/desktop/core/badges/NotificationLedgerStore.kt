@@ -29,6 +29,16 @@ interface NotificationLedgerStore {
      * the two drifted.
      */
     fun unreadAcrossProductions(deviceId: String = ""): List<NotificationRecord>
+
+    /**
+     * Retires rows outright — the update prune ([BadgeStore.pruneUnserved]),
+     * which is the only writer that deletes anything short of a wipe.
+     *
+     * Deleted, not flipped read: a row the server no longer serves was never
+     * read by anyone, and recording a read for it would be a false record —
+     * the ledger's read flags are what the phones trust over the server.
+     */
+    fun delete(ids: Collection<String>)
     fun deleteProject(projectId: String)
     fun deleteAll()
 }
@@ -48,6 +58,9 @@ class InMemoryNotificationLedgerStore : NotificationLedgerStore {
             .maxOfOrNull { it.updated } ?: 0L
     override fun unreadAcrossProductions(deviceId: String): List<NotificationRecord> =
         rows.values.filter { it.counts && (deviceId.isBlank() || it.deviceId == deviceId) }
+    override fun delete(ids: Collection<String>) {
+        ids.forEach(rows::remove)
+    }
     override fun deleteProject(projectId: String) {
         rows.values.removeAll { it.projectId == projectId }
     }
@@ -81,6 +94,12 @@ class SqlNotificationLedgerStore(database: ZillitDatabase) : NotificationLedgerS
 
     override fun unreadAcrossProductions(deviceId: String): List<NotificationRecord> =
         queries.selectUnread(deviceId).executeAsList().map(::toRecord)
+
+    override fun delete(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        // Chunked for the same reason as [markRead]: SQLite's bound-variable limit.
+        queries.transaction { ids.chunked(CHUNK).forEach { queries.deleteIds(it) } }
+    }
 
     override fun deleteProject(projectId: String) {
         queries.deleteProject(projectId)
