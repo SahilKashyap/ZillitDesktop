@@ -35,6 +35,11 @@ class NotificationBannerTest {
         val banner = banner(record)!!
         assertEquals("n1", banner.id)
         assertEquals("tools_label", banner.section)
+        // Carried raw beside the section: the caller's "has its own alert"
+        // rule needs the tool and the action too, because the wire names a
+        // budget's chat and a post on a board with those, not with a section.
+        assertEquals("call_sheet_label", banner.tool)
+        assertEquals("call_sheet_shared", banner.action)
         assertEquals("tools_label : call_sheet_label", banner.area)
         assertEquals("call_sheet_shared_message", banner.body)
     }

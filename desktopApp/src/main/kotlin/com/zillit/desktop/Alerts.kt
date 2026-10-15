@@ -8,6 +8,7 @@ import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.window.TrayState
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.datastore.PreferenceKey
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.notifications.DesktopNotification
@@ -21,6 +22,7 @@ import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailRealtimeEvent
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
+import com.zillit.desktop.feature.notifications.domain.ActivityBanner
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -280,10 +282,11 @@ private suspend fun com.zillit.desktop.feature.email.domain.EmailRepository.inbo
  * (plan risk 15), so the same record is decoded off the socket instead — the
  * banner that on every other platform the server composes remotely.
  *
- * Sections a dedicated alert above already covers are left out, or one chat
- * message would banner twice — once from `private_chat`, once from its
- * bell-list record. Not focus-suppressed, for UpdateAlerts' reason: there is
- * no one screen that marks this activity "already seen".
+ * What a dedicated alert above already covers is left out — see
+ * [coveredByItsOwnAlert] — or one chat message would banner twice, once from
+ * `private_chat` and once from its bell-list record. Not focus-suppressed, for
+ * UpdateAlerts' reason: there is no one screen that marks this activity
+ * "already seen".
  */
 @Composable
 private fun ActivityAlerts(
@@ -297,10 +300,15 @@ private fun ActivityAlerts(
         val recent = ArrayDeque<String>()
 
         ready.socketEvents.on(ZillitSocketEvents.Badges.Save).collect { message ->
-            if (!preferences.get(ZillitPreferences.NotifyActivity)) return@collect
-
+            // The decode comes before the switch, unlike every other alert
+            // here: which switch this record answers to is written inside it
+            // (see [switch]), so there is nothing to check until it is read.
             val banner = ready.notificationsRepository.banner(message.payload) ?: return@collect
-            if (banner.section in SECTIONS_WITH_OWN_ALERTS) {
+            if (!preferences.get(banner.switch())) {
+                ZillitLog.d(ACTIVITY_TAG) { "${banner.section} banners are switched off" }
+                return@collect
+            }
+            if (coveredByItsOwnAlert(banner)) {
                 ZillitLog.d(ACTIVITY_TAG) { "left to the ${banner.section} alert" }
                 return@collect
             }
@@ -319,22 +327,146 @@ private fun ActivityAlerts(
 }
 
 /**
- * The wire sections whose banners already come from a dedicated alert above:
- * chat and calls ride `cnc_label`, mail `email_label`, notice boards
- * `home_label` — and the two budget sections, because a budget chat message
- * travels the same `private_chat`/`group_chat` events MessageAlerts banners
- * (iOS handles budget tools inside its private_chat handler, and its bell
- * records for them carry these sections), so letting them through here would
- * banner one message twice. `group_refresh` is the server's own refresh
- * marker, not an event anyone needs told about.
+ * The switch this record answers to.
+ *
+ * Not always [ZillitPreferences.NotifyActivity], because this one collector
+ * now carries records that belong to three of the alerts above. A comment on a
+ * notice, a unit renamed and a calendar invite are all `home_label`, and
+ * someone who turned Home updates off meant those too. A missed call is a
+ * call, and a room created or left is chat — the switches their siblings
+ * already use, or Settings would say "calls" and still ring about one.
  */
+internal fun ActivityBanner.switch(): PreferenceKey.BooleanKey = when {
+    section == HOME_SECTION -> ZillitPreferences.NotifyUpdates
+    action in MISSED_CALL_ACTIONS -> ZillitPreferences.NotifyCalls
+    section == CNC_SECTION -> ZillitPreferences.NotifyMessages
+    else -> ZillitPreferences.NotifyActivity
+}
+
+/**
+ * Whether one of the dedicated alerts above already banners this record.
+ *
+ * Three different wire fields answer that, which is the whole point of reading
+ * it off the record rather than off the section alone:
+ *
+ *  - **Section**, where a whole area has its own alert: mail rides
+ *    `email_label`. `group_refresh` is not an area at all but the server's own
+ *    refresh marker, and nobody needs telling.
+ *  - **Tool**, for the budget's chat. A budget message travels the same
+ *    `private_chat`/`group_chat` events [MessageAlerts] banners, so its
+ *    bell-list record must not banner a second time — and that record is
+ *    `section = tools_label`, `tool = *_budget_tool_chat_label`. This used to
+ *    be written as the sections `main_budget_label` /
+ *    `department_budget_label`, which are TOOL names (`ToolWireNames`
+ *    `WIRE_TOOL_LABELS`): the wire has only the seven sections in
+ *    `BadgeSections`, so neither value could ever match and every budget chat
+ *    message bannered twice.
+ *  - **Action**, for Home. [UpdateAlerts] banners a *post on a board* and
+ *    nothing else, so only the post's own actions are covered here. Excluding
+ *    the whole `home_label` section also swallowed comments and replies, units
+ *    created, renamed and deleted, and every calendar invite, update and
+ *    reply — all of which the web banners (`notificationRouteMatcher.js:86`).
+ *  - **Action** again for `cnc_label`, the other way round: there the alerts
+ *    above read nearly everything, so only the listed exceptions come through
+ *    (see [CNC_ACTIONS_WITHOUT_AN_ALERT]). An allow-list rather than a
+ *    deny-list because the chat vocabulary is long and an unrecognised message
+ *    action must stay quiet here — getting it wrong the other way would
+ *    double-banner the most frequent event in the app.
+ */
+internal fun coveredByItsOwnAlert(banner: ActivityBanner): Boolean = when {
+    banner.tool in BUDGET_CHAT_TOOLS -> true
+    banner.section == CNC_SECTION -> banner.action !in CNC_ACTIONS_WITHOUT_AN_ALERT
+    banner.section == HOME_SECTION -> banner.action in NOTICE_ACTIONS
+    banner.section in SECTIONS_WITH_OWN_ALERTS -> true
+    else -> false
+}
+
+/** Areas whose every record is bannered by an alert above. */
 private val SECTIONS_WITH_OWN_ALERTS = setOf(
-    "cnc_label",
     "email_label",
-    "home_label",
     "group_refresh",
-    "main_budget_label",
-    "department_budget_label",
+)
+
+/** Chat, calls and everything else that travels the chat socket. */
+private const val CNC_SECTION = "cnc_label"
+
+/**
+ * A call that was not answered — the one `cnc_label` record [CallAlerts]
+ * cannot raise, because the phase it watches has ended by then.
+ *
+ * The web banners these from the push and rewrites its ring notification into
+ * one (`firebase-messaging-sw.js:127`, `CloudMessage.jsx:310`). Here the
+ * ring banner was transient to begin with, so this is simply the record
+ * arriving on its own.
+ */
+private val MISSED_CALL_ACTIONS = setOf(
+    "cnc_missed_call_private",
+    "cnc_missed_call_group",
+)
+
+/**
+ * The `cnc_label` records no alert above reads: a missed call, and the life of
+ * a room — created, renamed, members added or removed, somebody left, deleted,
+ * an admin made or unmade.
+ *
+ * [MessageAlerts] and [EditAlerts] read `private_chat`, `group_chat`,
+ * `update_reaction` and the two edit events, and [CallAlerts] the coordinator's
+ * ringing phase; none of them carries any of these. The room's own socket
+ * events reach the desktop as `ChatRepository.roomChanges`, which is a bare
+ * pulse with no payload — there is nothing in it to word a banner from, so the
+ * bell record is the only thing that can say what happened, in the server's own
+ * wording ("A new chat group {{group_name}} has been created",
+ * `zillit_web src/utils/language/en.js:4981`).
+ *
+ * Names from the web's own `cnc_label` list (`notificationRouteMatcher.js:
+ * 183-195`) and its missed-call handler. The admin pair and the rename are the
+ * `_message` keys at `en.js:4971-4987` with that suffix dropped: unverified
+ * spellings, and deliberately harmless either way — a name no record carries
+ * leaves that record exactly as quiet as it was before.
+ */
+private val CNC_ACTIONS_WITHOUT_AN_ALERT: Set<String> = MISSED_CALL_ACTIONS + setOf(
+    "cnc_new_chat_group_created",
+    "cnc_updated_chat_group",
+    "cnc_chat_room_member_leaving",
+    "cnc_chat_room_removed",
+    "cnc_chat_group_name_change",
+    "cnc_added_admin_chat_group",
+    "cnc_removed_admin_chat_group",
+)
+
+/** The notice boards, where only some actions have an alert of their own. */
+private const val HOME_SECTION = "home_label"
+
+/**
+ * A post on a board — what [UpdateAlerts] banners off `home:message:added`,
+ * with or without the attachment that came instead of words ("New message
+ * received", "New attachment has been shared by …", "A new attachment has been
+ * posted in the home", `zillit_web src/utils/language/en.js:4436,4449,5159`).
+ *
+ * Each in both spellings, because the backend is not consistent about the
+ * suffix and the web's own matcher hedges the same way
+ * (`notificationRouteMatcher.js:94-99` tests `home_new_unit_created` and
+ * `home_new_unit_created_message` side by side). Either spelling names the
+ * same event, so covering both can only prevent a double banner.
+ */
+private val NOTICE_ACTIONS = setOf(
+    "home_new_unit_chat",
+    "home_new_unit_chat_message",
+    "home_new_unit_chat_file_received",
+    "home_new_unit_chat_file_received_message",
+    "home_new_unit_file_received",
+    "home_new_unit_file_received_message",
+)
+
+/**
+ * The budget's own chat, as the rows carry it (the web reads the same name off
+ * live rows: `badgeUtils.js:1541`, `TabsComponents.jsx:619`). Deliberately not
+ * the budget tools themselves — a budget notification that is not a chat
+ * message has no alert above and must banner here.
+ */
+private val BUDGET_CHAT_TOOLS = setOf(
+    "main_budget_tool_chat_label",
+    "department_budget_tool_chat_label",
 )
 
 /** Enough ids to outlive any reconnect replay without growing forever. */

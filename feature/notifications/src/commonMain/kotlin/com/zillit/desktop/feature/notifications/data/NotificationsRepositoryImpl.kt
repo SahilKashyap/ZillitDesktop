@@ -187,6 +187,8 @@ internal fun bannerFrom(payload: JsonElement?, decoder: NotificationDecoder): Ac
     return ActivityBanner(
         id = record.id,
         section = record.target.section,
+        tool = record.target.tool,
+        action = record.target.action,
         area = record.pathLabel,
         body = record.text,
     )
