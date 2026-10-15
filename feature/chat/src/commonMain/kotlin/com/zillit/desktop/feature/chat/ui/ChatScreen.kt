@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.ZillitLog
@@ -55,6 +56,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.LocalAvatarLoader
 import com.zillit.desktop.core.designsystem.component.TagTone
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
@@ -64,6 +66,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
@@ -462,6 +465,9 @@ private fun RowScope.DetailSide(
  *
  * Not shown in the widget: its bar already names the tool, and a second
  * heading in a 420px window is a line of chrome where a conversation could be.
+ *
+ * The heading's verbs live behind one three-dot button: named rows say what
+ * each does, where three bare glyphs left the reader guessing.
  */
 @Composable
 private fun DirectoryHeading(
@@ -479,33 +485,36 @@ private fun DirectoryHeading(
             style = ZillitTheme.typography.titleLarge,
             modifier = Modifier.weight(1f),
         )
-        // The heading's glyphs, WhatsApp's: new chat first, then the way out.
-        if (onNewGroup != null) {
-            ZillitIconButton(
-                icon = ZillitIcons.UserPlus,
-                contentDescription = str(S.desktop_new_group),
-                onClick = onNewGroup,
-                tint = ZillitTheme.colors.textSecondary,
-            )
+        // WhatsApp's order, kept as rows: new chat first, then export, then
+        // the way out of the pane.
+        val entries = buildList {
+            onNewGroup?.let {
+                add(ZillitMenuEntry.Action(str(S.desktop_new_group), ZillitIcons.UserPlus, onClick = it))
+            }
+            onExport?.let {
+                add(ZillitMenuEntry.Action(str(S.desktop_chat_export_title), ZillitIcons.Download, onClick = it))
+            }
+            onOpenWidget?.let {
+                add(ZillitMenuEntry.Action(str(S.desktop_open_chat_widget), ZillitIcons.Detach, onClick = it))
+            }
         }
-        // Export chats sits between them: it is about the conversations
-        // this pane lists, not about the window.
-        if (onExport != null) {
-            ZillitIconButton(
-                icon = ZillitIcons.Download,
-                contentDescription = str(S.desktop_chat_export_title),
-                onClick = onExport,
-                tint = ZillitTheme.colors.textSecondary,
-            )
-        }
-        if (onOpenWidget != null) {
-            ZillitIconButton(
-                icon = ZillitIcons.Detach,
-                contentDescription = str(S.desktop_open_chat_widget),
-                onClick = onOpenWidget,
-                tint = ZillitTheme.colors.textSecondary,
-            )
-        }
+        if (entries.isNotEmpty()) DirectoryHeadingMenu(entries)
+    }
+}
+
+/** The heading's three dots, and the menu they open. */
+@Composable
+private fun DirectoryHeadingMenu(entries: List<ZillitMenuEntry>) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ZillitIconButton(
+            icon = ZillitIcons.MoreVertical,
+            contentDescription = str(S.more),
+            onClick = { open = true },
+            tint = ZillitTheme.colors.textSecondary,
+            modifier = Modifier.testTag(HEADING_MENU_TAG),
+        )
+        ZillitActionMenu(expanded = open, onDismissRequest = { open = false }, entries = entries)
     }
 }
 
@@ -1666,6 +1675,9 @@ private fun PaneMessage(
 }
 
 private const val TAG = "Chat"
+
+/** The heading's overflow button, for tests. */
+private const val HEADING_MENU_TAG = "chat-heading-menu"
 private val LIST_WIDTH = 320.dp
 private val HAIRLINE = 1.dp
 private val ROW_AVATAR = 48.dp

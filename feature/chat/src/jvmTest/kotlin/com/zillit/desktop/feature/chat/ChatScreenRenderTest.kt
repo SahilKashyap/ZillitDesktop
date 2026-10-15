@@ -570,7 +570,10 @@ class ChatsTabSearchAndGroupsTest {
         }
 
         val before = repository.roomsCalls
-        onNodeWithContentDescription("New group").performClick()
+        // The heading's verbs live behind its three dots now.
+        onNodeWithContentDescription("More").performClick()
+        waitForIdle()
+        onNodeWithText("New group").performClick()
         waitForIdle()
 
         // Field order in the tree: the Chats search, then the dialog's name
