@@ -158,6 +158,20 @@ object ZillitSocketEvents {
     }
 
     /**
+     * A chat export was started, made progress, finished or failed.
+     *
+     * Its own object rather than a name inside [ChatRoom]: nothing about it
+     * is a room, and the export dialog is the only thing in the app that
+     * subscribes to it. The payload is the whole export under `data`, with
+     * the production it belongs to in the envelope — the user's socket room
+     * spans productions, so the gate is not optional
+     * (`ChatExportRealtimeSource`).
+     */
+    object ChatExport {
+        val Updated = SocketEventName("chat:export:updated")
+    }
+
+    /**
      * Calling.
      *
      * The ring arrives on [Incoming] as a flat call object. On Android the
@@ -412,6 +426,7 @@ object ZillitSocketEvents {
         GroupChat.Edit, GroupChat.Typing, GroupChat.Expired,
         ChatRoom.Create, ChatRoom.Remove, ChatRoom.Updated, ChatRoom.Blocked,
         ChatRoom.UpdateReaction, ChatRoom.PendingMessages,
+        ChatExport.Updated,
         Calls.Incoming, Calls.Update, Calls.Response, Calls.Ended, Calls.GroupCallEnded,
         Calls.Timeout, Calls.MissedCall, Calls.InCallData, Calls.Relay,
         Calls.Handoff, Calls.HandoffDone, Calls.HandoffEvict,

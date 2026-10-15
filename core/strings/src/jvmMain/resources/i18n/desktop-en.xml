@@ -13287,4 +13287,21 @@
     <string name="desktop_email_export_download_started">The download has started in your browser.</string>
     <string name="desktop_export_mailbox_reminder">Mail goes with the production. Export the mailbox from Email → Settings → Export mailbox first; it cannot be reached afterwards.</string>
     <string name="desktop_email_export_no_link">The server did not return a link for that part. Ask for the export again.</string>
+    <string name="desktop_chat_export_title">Export chats</string>
+    <string name="desktop_chat_export_subtitle">Download your chats as a file you can open in any browser</string>
+    <string name="desktop_chat_export_what">An export holds every private chat and every group you are in, as web pages that work offline.</string>
+    <string name="desktop_chat_export_excluded">Messages deleted for everyone, and groups you have left, are not in it.</string>
+    <string name="desktop_chat_export_include_media">Include photos, videos and files</string>
+    <string name="desktop_chat_export_include_media_hint">A much larger download, and longer to prepare.</string>
+    <string name="desktop_chat_export_progress">%1$d of %2$d conversations</string>
+    <string name="desktop_chat_export_counts">%1$d messages, %2$d files</string>
+    <string name="desktop_chat_export_message_count">%1$d messages</string>
+    <string name="desktop_chat_export_takes_a_while">This can take a while for a long history. You can close this window and come back to it.</string>
+    <string name="desktop_chat_export_skipped">%1$d files could not be included.</string>
+    <string name="desktop_chat_export_text_only">Text only</string>
+    <string name="desktop_chat_export_with_media">With photos, videos and files</string>
+    <string name="desktop_chat_export_remove_confirm">The file will be deleted and can no longer be downloaded. You can export again at any time.</string>
+    <string name="desktop_chat_export_how_to_open">Unzip the file and open index.html in any browser.</string>
+    <string name="desktop_chat_export_none">You have not exported your chats yet.</string>
+    <string name="desktop_chat_export_again">Export again</string>
 </resources>

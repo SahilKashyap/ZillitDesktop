@@ -87,6 +87,9 @@ import com.zillit.desktop.feature.chat.domain.lastEntryDate
 import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
 import com.zillit.desktop.feature.chat.domain.searchRecents
+import com.zillit.desktop.feature.chat.ui.export.ChatExportDialog
+import com.zillit.desktop.feature.chat.ui.export.ChatExportEvent
+import com.zillit.desktop.feature.chat.ui.export.ChatExportViewModel
 import kotlinx.coroutines.launch
 
 /**
@@ -150,6 +153,12 @@ fun ChatScreen(
     compact: Boolean = false,
     /** Opens the Chat widget; null inside the widget itself, and in tests. */
     onOpenWidget: (() -> Unit)? = null,
+    /**
+     * Export chats — `/v2/chat-export`, the whole dialog's state. Null
+     * leaves the affordance off the heading rather than offering a dead
+     * one, which is what a build with no C&C host does.
+     */
+    export: ChatExportViewModel? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
     // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
@@ -158,7 +167,11 @@ fun ChatScreen(
     var tab by rememberSaveable { mutableStateOf(DirectoryTab.Chats.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
-    var groupEditorOpen by rememberSaveable { mutableStateOf(false) }
+    // Which sheet is up, if any. One variable rather than a flag each: they
+    // are mutually exclusive, and two booleans can show both at once. Its
+    // *name* is what is saved, as the tab's is — an enum is not something a
+    // saveable registry can store.
+    var sheet by rememberSaveable { mutableStateOf(ChatSheet.None.name) }
 
     // A Box rather than the Row alone so the create-group dialog's scrim
     // covers the whole screen, not just the 320dp pane its button lives in.
@@ -198,10 +211,11 @@ fun ChatScreen(
                 hasCalls = callPanes != null,
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
-                onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
+                onNewGroup = ({ sheet = ChatSheet.NewGroup.name }).takeIf { createRoom != null },
                 modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(LIST_WIDTH),
                 compact = compact,
                 onOpenWidget = onOpenWidget,
+                onExport = ({ sheet = ChatSheet.Export.name }).takeIf { export != null },
             )
 
             if (!showDirectory || !compact) {
@@ -221,10 +235,47 @@ fun ChatScreen(
             }
         }
 
-        if (createRoom != null) {
-            NewGroupLayer(crew, selfId, createRoom, groupEditorOpen, viewModel) { groupEditorOpen = false }
-        }
+        ChatSheets(crew, selfId, createRoom, viewModel, export, sheet) { sheet = ChatSheet.None.name }
     }
+}
+
+/** The sheets the directory's heading opens, one at a time. */
+private enum class ChatSheet { None, NewGroup, Export }
+
+/**
+ * Both sheets, over the whole screen — a Box child rather than a pane child
+ * so the scrim covers the window and not the 320dp column the glyph sits in.
+ */
+@Composable
+@Suppress("LongParameterList") // One sheet's inputs each, passed once.
+private fun ChatSheets(
+    crew: List<CrewContact>,
+    selfId: String?,
+    createRoom: (suspend (name: String, memberIds: List<String>) -> ZillitResult<GroupRoom>)?,
+    viewModel: ChatViewModel?,
+    export: ChatExportViewModel?,
+    /** The open sheet's [ChatSheet] name — see the caller on why it is a name. */
+    open: String,
+    onClose: () -> Unit,
+) {
+    if (createRoom != null) {
+        NewGroupLayer(crew, selfId, createRoom, open == ChatSheet.NewGroup.name, viewModel, onClose)
+    }
+    export?.let { ChatExportLayer(it, open == ChatSheet.Export.name, onClose) }
+}
+
+/**
+ * The export sheet.
+ *
+ * The list is re-read each time it opens: an export runs on the server and
+ * keeps running with the dialog closed, so what was on screen an hour ago
+ * says nothing about where it has got to.
+ */
+@Composable
+private fun ChatExportLayer(export: ChatExportViewModel, visible: Boolean, onClose: () -> Unit) {
+    val state by export.state.collectAsState()
+    LaunchedEffect(visible) { if (visible) export.onEvent(ChatExportEvent.Load) }
+    ChatExportDialog(state = state, onEvent = export::onEvent, visible = visible, onDismiss = onClose)
 }
 
 /**
@@ -413,7 +464,11 @@ private fun RowScope.DetailSide(
  * heading in a 420px window is a line of chrome where a conversation could be.
  */
 @Composable
-private fun DirectoryHeading(onOpenWidget: (() -> Unit)?, onNewGroup: (() -> Unit)? = null) {
+private fun DirectoryHeading(
+    onOpenWidget: (() -> Unit)?,
+    onNewGroup: (() -> Unit)? = null,
+    onExport: (() -> Unit)? = null,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -430,6 +485,16 @@ private fun DirectoryHeading(onOpenWidget: (() -> Unit)?, onNewGroup: (() -> Uni
                 icon = ZillitIcons.UserPlus,
                 contentDescription = str(S.desktop_new_group),
                 onClick = onNewGroup,
+                tint = ZillitTheme.colors.textSecondary,
+            )
+        }
+        // Export chats sits between them: it is about the conversations
+        // this pane lists, not about the window.
+        if (onExport != null) {
+            ZillitIconButton(
+                icon = ZillitIcons.Download,
+                contentDescription = str(S.desktop_chat_export_title),
+                onClick = onExport,
                 tint = ZillitTheme.colors.textSecondary,
             )
         }
@@ -455,6 +520,7 @@ private fun DirectoryTop(
     onTab: (String) -> Unit,
     onOpenWidget: (() -> Unit)?,
     onNewGroup: (() -> Unit)?,
+    onExport: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier.padding(
@@ -464,7 +530,9 @@ private fun DirectoryTop(
         ),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        if (heading) DirectoryHeading(onOpenWidget = onOpenWidget, onNewGroup = onNewGroup)
+        if (heading) {
+            DirectoryHeading(onOpenWidget = onOpenWidget, onNewGroup = onNewGroup, onExport = onExport)
+        }
         DirectoryTabs(tab, chatState, hasCallLog, onTab)
     }
 }
@@ -656,6 +724,8 @@ private fun DirectoryPane(
     compact: Boolean = false,
     /** Opens the Chat widget, beside the heading. */
     onOpenWidget: (() -> Unit)? = null,
+    /** Opens the Export chats sheet; null hides the affordance. */
+    onExport: (() -> Unit)? = null,
 ) {
     // WhatsApp's listing: the heading, tabs, search and chips sit in a
     // padded block; the rows under them run edge to edge, each closed by a
@@ -674,6 +744,7 @@ private fun DirectoryPane(
             onTab = onTab,
             onOpenWidget = onOpenWidget,
             onNewGroup = onNewGroup.takeIf { tab == DirectoryTab.Chats.name && chatState != null },
+            onExport = onExport,
         )
 
         if (tab == DirectoryTab.Calls.name && calls != null) {

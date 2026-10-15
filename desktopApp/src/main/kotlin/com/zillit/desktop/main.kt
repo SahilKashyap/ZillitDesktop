@@ -178,6 +178,8 @@ import com.zillit.desktop.feature.castboard.ui.CastingViewModel
 import com.zillit.desktop.feature.castboard.domain.BoardTool
 import com.zillit.desktop.feature.castboard.ui.WARDROBE_BACKGROUND_PATH
 import com.zillit.desktop.feature.castboard.ui.WARDROBE_MAIN_PATH
+import com.zillit.desktop.feature.chat.data.ChatExportRealtimeSource
+import com.zillit.desktop.feature.chat.data.ChatExportRepositoryImpl
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
@@ -2786,9 +2788,20 @@ private fun chatProvider(
     loadFullImage = { file -> fetchChatImage(ready, file, preview = false) },
     // A clip's address rather than its bytes — the viewer's player streams it.
     videoUrl = { file -> chatStreamUrl(ready, file) },
-    // "Open in Maps" on a shared location — the same guarded launcher the
-    // map, sides and distribution tools take (https only).
+    // "Open in Maps" on a shared location, and the export's signed ZIP link
+    // — the same guarded launcher the map, sides and distribution tools take
+    // (https only).
     onOpenUrl = ::openInBrowser,
+    // Export chats. The event gate reads the open production per event
+    // rather than capturing it: the user's socket room spans every
+    // production this device is signed in to, and an export started in
+    // another one must not drive this window.
+    chatExport = ChatExportRepositoryImpl(ready.apiClient, ready.config),
+    exportUpdates = ChatExportRealtimeSource(
+        ready.socketEvents,
+        projectId = { ready.projectContext?.context?.value?.project?.projectId },
+    ).stream,
+    isSocketConnected = { ready.socketEvents.connectionState.value.isConnected },
 )
 
 /**

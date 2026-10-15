@@ -1,8 +1,12 @@
 package com.zillit.desktop.feature.chat.ui
 
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
@@ -11,7 +15,11 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.feature.chat.data.ChatExportUpdate
+import com.zillit.desktop.feature.chat.domain.ChatExportRepository
 import com.zillit.desktop.feature.chat.domain.CrewContact
+import com.zillit.desktop.feature.chat.ui.export.ChatExportEffect
+import com.zillit.desktop.feature.chat.ui.export.ChatExportViewModel
 
 /**
  * The `/cnc` rail destination. The host hands in the crew (already stripped
@@ -102,6 +110,20 @@ class ChatToolProvider(
     private val shareAsEmail: (
         (message: com.zillit.desktop.feature.chat.domain.ChatMessage, navigator: WindowNavigator) -> String?
     )? = null,
+    /**
+     * `/v2/chat-export` — the whole Export chats sheet. Null leaves the
+     * affordance off the heading, which is what a build with no C&C host
+     * does; the widget never shows one, having no heading.
+     */
+    private val chatExport: ChatExportRepository? = null,
+    /**
+     * `chat:export:updated` for the open production, already gated — see
+     * [com.zillit.desktop.feature.chat.data.ChatExportRealtimeSource]. Null
+     * leans on the dialog's fallback poll instead.
+     */
+    private val exportUpdates: Flow<ChatExportUpdate>? = null,
+    /** Whether the socket is up: the export's poll only asks when it is not. */
+    private val isSocketConnected: () -> Boolean = { false },
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -128,6 +150,7 @@ class ChatToolProvider(
         ) {
             // Read so this recomposes when the crew is re-fetched; see [crewChanges].
             crewChanges?.collectAsState()?.value
+            val export = rememberChatExport()
             ChatScreen(
                 crew = crew(),
                 selfId = selfId(),
@@ -145,7 +168,46 @@ class ChatToolProvider(
                 compact = compact,
                 onOpenWidget = onOpenWidget,
                 lines = lines,
+                export = export,
             )
         }
+    }
+
+    /**
+     * The Export chats view model, with its two pieces of plumbing: a signed
+     * link goes to the browser, and the fallback poll is stopped when this
+     * content goes away (it otherwise keeps a timer alive for as long as the
+     * export takes, which on a long history is many minutes).
+     *
+     * Null when the host gave no repository — the heading then has no Export
+     * glyph at all.
+     */
+    @Composable
+    private fun rememberChatExport(): ChatExportViewModel? {
+        val repository = chatExport ?: return null
+        val export = remember(repository) {
+            ChatExportViewModel(
+                repository = repository,
+                updates = exportUpdates,
+                isSocketConnected = isSocketConnected,
+            )
+        }
+
+        LaunchedEffect(export) {
+            export.effects.collect { effect ->
+                when (effect) {
+                    // Never fetched into the app: a media export is hundreds
+                    // of megabytes and S3 serves it as an attachment, so the
+                    // browser saves it under its own name.
+                    is ChatExportEffect.OpenDownload -> onOpenUrl?.invoke(effect.url)
+                }
+            }
+        }
+
+        DisposableEffect(export) {
+            onDispose { export.stopWatching() }
+        }
+
+        return export
     }
 }
