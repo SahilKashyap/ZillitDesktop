@@ -77,6 +77,8 @@ internal object ReportWire {
                 .elements().mapNotNull { approval(it as? JsonObject) },
             reminders = (obj.firstOf("reminders") as? JsonArray).elements().mapNotNull { reminder(it as? JsonObject) },
             uuid = obj.text("id").takeIf { it != id }.orEmpty(),
+            approvalTotal = (obj.firstOf("approval_summary", "approvalSummary") as? JsonObject)
+                ?.long("total")?.toInt(),
         )
     }
 

@@ -133,8 +133,12 @@ class ReportRulesTest {
     fun `only the creator and a comment recipient may post in a thread, by id never by name`() {
         val mine = row(ReportStatus.PendingApproval, createdById = "me")
         assertTrue(canPostComments(mine, "me", isInternalReceiver = false))
-        assertFalse(canPostComments(mine, "other", isInternalReceiver = false), "an approver reads, never writes")
+        assertFalse(canPostComments(mine, "other", isInternalReceiver = false), "a bystander reads, never writes")
         assertTrue(canPostComments(mine, "other", isInternalReceiver = true))
+        // ZL-21609/21608: the final approver writes too — they are who the
+        // thread is for, and they could read the questions put to them
+        // without being able to answer.
+        assertTrue(canPostComments(mine, "other", isInternalReceiver = false, isFinalApprover = true))
         assertFalse(canPostComments(mine, null, isInternalReceiver = false), "no id, no name fallback")
     }
 
@@ -301,6 +305,66 @@ class ReportRulesTest {
         assertEquals(1 to 2, approvalCount(ReportStatus.PendingApproval, approvals))
         assertEquals(1 to 1, approvalCount(ReportStatus.PendingInternalApproval, approvals))
         assertEquals(0 to 0, approvalCount(ReportStatus.Draft, emptyList()))
+    }
+
+    @Test
+    fun `the total is the server's, and approved is what is not still out`() {
+        // Four heads this round; one of them voided, which the list still carries.
+        val approvals = listOf(
+            request("a", "w", status = "APPROVED"),
+            request("b", "x", status = "PENDING"),
+            request("c", "y", status = "REJECTED"),
+            request("d", "z", status = "SUPERSEDED"),
+        )
+        // With the summary: 3 heads, 2 of them still out.
+        assertEquals(
+            1 to 3,
+            approvalCount(ReportStatus.PendingApproval, approvals, total = 3),
+        )
+        // Without it, the live requests stand in — the voided one never counts.
+        assertEquals(1 to 3, approvalCount(ReportStatus.PendingApproval, approvals))
+        // A row carries its own total.
+        assertEquals(1 to 3, approvalCount(row(ReportStatus.PendingApproval, approvals).copy(approvalTotal = 3)))
+        // Approved is DERIVED — total less what is still out — so a head the
+        // server counts but has written no request row for reads as approved.
+        assertEquals(3 to 5, approvalCount(ReportStatus.PendingApproval, approvals, total = 5))
+    }
+
+    @Test
+    fun `the popover leaves out voided requests and reads names off the crew`() {
+        val approvals = listOf(
+            // What the backend wrote for this one: the id in the name field.
+            request("a", "u1", status = "PENDING").copy(assigneeName = "u1", role = "member_label"),
+            request("b", "u2", status = "SUPERSEDED"),
+            request("c", "u3", status = "APPROVED").copy(assigneeName = "Off The List", role = "accountant_label"),
+        )
+        val crew = listOf(
+            SheetMember("u1", "Pending Person", designationKey = "first_ad_label", status = "pending"),
+            SheetMember("u4", "Gone", status = "left"),
+        )
+        val entries = approvalStatusEntries(approvals, "FINAL", crew)
+
+        assertEquals(listOf("a", "c"), entries.map { it.id })
+        // On the crew: their current name and designation key win over the request.
+        assertEquals("Pending Person" to "first_ad_label", entries[0].name to entries[0].role)
+        // Off it: the request's own words are the fallback.
+        assertEquals("Off The List" to "accountant_label", entries[1].name to entries[1].role)
+        // Pending is not gone — only left or removed earns the chip.
+        assertFalse(entries.any { it.hasLeft })
+    }
+
+    @Test
+    fun `only a member who left or was removed is flagged`() {
+        val approvals = listOf("l", "r", "p", "?").mapIndexed { i, _ -> request("q$i", "u$i") }
+        val crew = listOf(
+            SheetMember("u0", "A", status = "left"),
+            SheetMember("u1", "B", status = "Removed"),
+            SheetMember("u2", "C", status = "pending"),
+        )
+        assertEquals(
+            listOf(true, true, false, false),
+            approvalStatusEntries(approvals, "FINAL", crew).map { it.hasLeft },
+        )
     }
 
     @Test

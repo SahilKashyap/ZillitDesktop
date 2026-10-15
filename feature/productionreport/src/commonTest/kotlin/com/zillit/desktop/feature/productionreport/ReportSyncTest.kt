@@ -47,6 +47,26 @@ class ReportSyncTest {
     private fun draftLoads() = repository.queries.count { ReportStatus.Draft in it.statuses }
 
     @Test
+    fun `metadata colon updated re-reads the metadata, once for a burst`() = runTest(dispatcher) {
+        val vm = harness.start(this)
+        settle()
+        val readsAfterStart = repository.metadataReads
+
+        // Every draft save PUTs metadata, so frames arrive in bursts — one read.
+        repeat(3) { repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.METADATA)) }
+        settle()
+        assertEquals(readsAfterStart + 1, repository.metadataReads)
+
+        // The new lists land, so a viewer who was just made an approver gets
+        // the tab they could not see.
+        repository.metadata = repository.metadata.copy(finalApproverIds = listOf("me"))
+        repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.METADATA))
+        settle()
+        assertEquals(listOf("me"), vm.currentState.metadata.finalApproverIds)
+        assertEquals(readsAfterStart + 2, repository.metadataReads)
+    }
+
+    @Test
     fun `a frame names its report and status however the server wraps it`() {
         val wrapped = Json.parseToJsonElement(
             """{"message":"ok","data":{"production_report":{"_id":"r1","status":"PENDING_APPROVAL"}}}""",

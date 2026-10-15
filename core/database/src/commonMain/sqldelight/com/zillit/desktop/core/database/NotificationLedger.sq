@@ -72,6 +72,15 @@ SELECT * FROM notificationLedger
 WHERE messageRead = 0 AND ignored = 0 AND deleted = 0 AND silent = 0 AND isSelf = 0
   AND (:deviceId = '' OR deviceId = :deviceId);
 
+-- Rows retired outright, by id. The first-launch-after-an-update prune
+-- (`BadgeStore.pruneUnserved`): an unread row inside the span a resync page
+-- covers that the page did not carry is a row the server no longer serves, so
+-- no read will ever reach it and no page will ever flip it. Deleted rather
+-- than flipped read, because a row the server has forgotten is not something
+-- this ledger read.
+deleteIds:
+DELETE FROM notificationLedger WHERE id IN ?;
+
 deleteProject:
 DELETE FROM notificationLedger WHERE projectId = ?;
 

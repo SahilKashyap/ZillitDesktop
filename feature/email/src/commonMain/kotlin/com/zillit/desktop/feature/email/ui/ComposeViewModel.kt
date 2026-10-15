@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.email.ui
 
+import com.zillit.desktop.core.common.SentenceCase
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -441,8 +442,15 @@ class ComposeViewModel(
     private fun onField(event: ComposeEvent.Field) {
         when (event) {
             is ComposeEvent.RecipientsChanged -> setRecipients(event.field, event.tokens, event.input)
-            is ComposeEvent.SubjectChanged -> setState { copy(draft = draft.copy(subject = event.value)) }
-            is ComposeEvent.BodyChanged -> setState { copy(body = event.value) }
+            is ComposeEvent.SubjectChanged -> setState {
+                copy(draft = draft.copy(subject = SentenceCase.applied(draft.subject, event.value)))
+            }
+            // `copy` on the body the editor built, not a fresh one: the marks
+            // came with it, and a capital is the same length as the letter it
+            // replaces, so every one of them still covers its own words.
+            is ComposeEvent.BodyChanged -> setState {
+                copy(body = event.value.copy(text = SentenceCase.applied(body.text, event.value.text)))
+            }
             is ComposeEvent.FocusChanged -> setState { copy(focusedField = event.field) }
             is ComposeEvent.ContactPicked -> pick(event.contact)
             is ComposeEvent.AttachFile -> attach(event.file)

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.home.data
 
 import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.badges.notificationRecordFrom
 import com.zillit.desktop.core.badges.wireRecords
 import com.zillit.desktop.core.common.ZillitLog
@@ -47,6 +48,16 @@ class NotificationLedgerSeeder(
      */
     private val resyncDue: suspend () -> Boolean = { false },
     private val onResynced: suspend () -> Unit = {},
+    /**
+     * Whether this seed must also retire the unread rows its page proves the
+     * server no longer serves ([BadgeStore.pruneUnserved]), and [onPruned]
+     * once a page has been judged. The host's answer is "the first seed of a
+     * newly installed version" (`BadgeResync.pruneDue`) — a resync alone
+     * cannot clear a row the server has forgotten, because a seed only ever
+     * adds.
+     */
+    private val pruneDue: suspend () -> Boolean = { false },
+    private val onPruned: suspend () -> Unit = {},
 ) {
 
     /**
@@ -73,42 +84,148 @@ class NotificationLedgerSeeder(
         // production's rows since.
         val watermark = store.watermark("")
         val resync = resyncDue()
-        val (cursor, direction) = if (resync || watermark <= 0L) nowMillis() to PREVIOUS else watermark to NEXT
-        return apiClient.request(
-            verb = HttpVerb.Get,
-            url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/$cursor/$direction",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-            options = if (userId == null) CallOptions() else CallOptions(projectId = projectId, userId = userId),
-        ).map { payload ->
-            val records = payload.wireRecords()
-                .mapNotNull { notificationRecordFrom(it, fromApi = true, fallbackProjectId = projectId) }
-            // Before the rows land: their publish is what repaints the
-            // listing's cards, and those must stop showing the server's totals
-            // by then.
-            if (resync) onResynced()
-            val outcome = store.seed(records)
-            val me = myUserId()
-            // The one line that says where a badge came from — read it before
-            // believing a count. `mine` is how many rows name this person as
-            // receiver; the phones count every row regardless.
-            ZillitLog.d(TAG) {
-                "ledger seed $direction $cursor: rows=${records.size} " +
-                    "productions=${records.distinctBy { it.projectId }.size} " +
-                    "devices=${records.distinctBy { it.deviceId }.size} " +
-                    "perProduction=${records.filter { it.counts }.groupingBy { it.projectId }.eachCount()} " +
-                    "here=${records.count { it.projectId == projectId }} " +
-                    "mine=${records.count { it.receiver == me }} unread=${outcome.unread} " +
-                    "newest=${records.maxOfOrNull { it.updated } ?: 0L} watermark=$watermark" +
-                    if (resync) " (resync at launch)" else ""
-            }
-            outcome
-        }
+        // A prune wants the widest span it can get, so it asks from the top
+        // too — its judgement only reaches as far back as the page it is given.
+        val prune = pruneDue()
+        val askedAt = nowMillis()
+        val (cursor, direction) =
+            if (resync || prune || watermark <= 0L) askedAt to PREVIOUS else watermark to NEXT
+
+        val first = fetch(projectId, userId, cursor, direction, watermark, announceResync = resync)
+        if (!prune) return first.map { it.outcome }
+        val landed = (first as? ZillitResult.Success)?.data ?: return first.map { it.outcome }
+        // A listing that answered nothing at all proves nothing. An endpoint
+        // having a bad minute must not cost every badge on the machine, so the
+        // version stays due and the next seed — a reconnect, the minute tick —
+        // tries again.
+        if (landed.records.isNotEmpty()) walkBackAndPrune(projectId, userId, askedAt, landed.records)
+        return first.map { it.outcome }
     }
+
+    /**
+     * Retires the unread rows no page carried, having first walked the listing
+     * back far enough to be entitled to say so.
+     *
+     * One page only proves what sits inside it, and a stuck row is usually
+     * *older* than the newest page — the server dropped it long ago, so nothing
+     * has moved it since. The walk therefore keeps asking `previous` until
+     * either the span reaches the oldest unread row this ledger holds, or the
+     * listing runs out: an empty page means there is nothing older to have,
+     * which is the strongest answer available and the one that clears a years-old
+     * orphan. [MAX_PRUNE_PAGES] bounds the cost; short of it, the prune simply
+     * judges the span it did cover.
+     *
+     * Every page it walks is seeded like any other, so the walk also refreshes
+     * what it passes.
+     */
+    private suspend fun walkBackAndPrune(
+        projectId: String,
+        userId: String?,
+        askedAt: Long,
+        firstPage: List<NotificationRecord>,
+    ) {
+        val oldestHeld = store.oldestUnreadUpdated
+        if (oldestHeld <= 0L) {
+            // Nothing unread to judge. The version is done rather than left to
+            // ask again on every launch for a ledger with no badges in it.
+            onPruned()
+            return
+        }
+        val carried = firstPage.mapTo(mutableSetOf()) { it.id }
+        var cursor = firstPage.minOf { it.updated }
+        // Strictly inside the page: rows sharing the oldest row's stamp may sit
+        // just past the page's edge, and those are not ours to judge.
+        var coveredFrom = cursor + 1
+        var exhausted = false
+        var failed = false
+        var walking = true
+        var pages = 1
+        while (walking && coveredFrom > oldestHeld && pages < MAX_PRUNE_PAGES) {
+            val page = (fetch(projectId, userId, cursor, PREVIOUS, watermark = 0L) as? ZillitResult.Success)?.data
+            pages++
+            val records = page?.records.orEmpty()
+            failed = page == null
+            // An empty page is the listing's floor: there is nothing older to
+            // have, so everything older than what we carried is unserved.
+            exhausted = !failed && records.isEmpty()
+            walking = !failed && !exhausted
+            if (walking) {
+                val fresh = records.count { carried.add(it.id) }
+                val oldest = records.minOf { it.updated }
+                coveredFrom = minOf(coveredFrom, oldest + 1)
+                // Nothing new, or a cursor that will not move: the listing has
+                // no more to say, and asking again would repeat this page.
+                walking = fresh > 0 && oldest < cursor
+                cursor = oldest
+            }
+        }
+        val retired = store.pruneUnserved(
+            coveredFrom = if (exhausted) 0L else coveredFrom,
+            askedAt = askedAt,
+            carried = carried,
+        )
+        ZillitLog.i(TAG) {
+            "update prune: $pages page(s), " +
+                (if (exhausted) "the whole listing" else "back to $coveredFrom") +
+                ", oldest unread held $oldestHeld, retired $retired" +
+                if (failed) " (a page failed: this version stays due)" else ""
+        }
+        // What it covered was judged honestly, but a walk cut short by a failed
+        // page leaves the version due, so a later launch reaches further.
+        if (!failed) onPruned()
+    }
+
+    /** One page of the listing, seeded as it lands. */
+    private suspend fun fetch(
+        projectId: String,
+        userId: String?,
+        cursor: Long,
+        direction: String,
+        watermark: Long,
+        announceResync: Boolean = false,
+    ): ZillitResult<Page> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/$cursor/$direction",
+        serializer = JsonElement.serializer(),
+        module = RequestModule.ProjectUser,
+        options = if (userId == null) CallOptions() else CallOptions(projectId = projectId, userId = userId),
+    ).map { payload ->
+        val records = payload.wireRecords()
+            .mapNotNull { notificationRecordFrom(it, fromApi = true, fallbackProjectId = projectId) }
+        // Before the rows land: their publish is what repaints the
+        // listing's cards, and those must stop showing the server's totals
+        // by then.
+        if (announceResync) onResynced()
+        val outcome = store.seed(records)
+        val me = myUserId()
+        // The one line that says where a badge came from — read it before
+        // believing a count. `mine` is how many rows name this person as
+        // receiver; the phones count every row regardless.
+        ZillitLog.d(TAG) {
+            "ledger seed $direction $cursor: rows=${records.size} " +
+                "productions=${records.distinctBy { it.projectId }.size} " +
+                "devices=${records.distinctBy { it.deviceId }.size} " +
+                "perProduction=${records.filter { it.counts }.groupingBy { it.projectId }.eachCount()} " +
+                "here=${records.count { it.projectId == projectId }} " +
+                "mine=${records.count { it.receiver == me }} unread=${outcome.unread} " +
+                "newest=${records.maxOfOrNull { it.updated } ?: 0L} watermark=$watermark" +
+                if (announceResync) " (resync at launch)" else ""
+        }
+        Page(records, outcome)
+    }
+
+    private data class Page(val records: List<NotificationRecord>, val outcome: BadgeStore.SeedOutcome)
 
     private companion object {
         const val TAG = "Badges"
         const val PREVIOUS = "previous"
         const val NEXT = "next"
+
+        /**
+         * How far the prune will walk. Ten pages of the listing reach years
+         * back on any real account; past that the span it covered is judged
+         * and the rest is left alone.
+         */
+        const val MAX_PRUNE_PAGES = 10
     }
 }

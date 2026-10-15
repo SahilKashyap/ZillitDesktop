@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat.ui
 
+import com.zillit.desktop.core.common.SentenceCase
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -759,11 +760,14 @@ class ChatViewModel(
                 }
             }
             is ChatEvent.DraftChanged -> {
+                // Capitalised first, so the draft the typing-signal and the
+                // send both read is the one the field shows.
+                val text = SentenceCase.applied(currentState.draft, event.text)
                 // The transition is the signal: empty→writing says "start",
                 // writing→empty says "end". Every keystroke would be noise.
                 val was = currentState.draft.isNotBlank()
-                val now = event.text.isNotBlank()
-                setState { copy(draft = event.text) }
+                val now = text.isNotBlank()
+                setState { copy(draft = text) }
                 val peer = currentState.peer
                 if (peer != null && was != now) {
                     val group = currentState.peerIsGroup
@@ -802,7 +806,9 @@ class ChatViewModel(
             is ChatEvent.Deleted -> dropDeleted(event.messageIds)
             is ChatEvent.React -> react(event.messageId, event.emoji)
             is ChatEvent.StartEdit -> startEdit(event.messageId)
-            is ChatEvent.EditDraftChanged -> setState { copy(editDraft = event.text) }
+            is ChatEvent.EditDraftChanged -> setState {
+                copy(editDraft = SentenceCase.applied(editDraft, event.text))
+            }
             ChatEvent.SubmitEdit -> submitEdit()
             ChatEvent.CancelEdit -> setState { copy(editing = null, editDraft = "") }
             is ChatEvent.Edited -> applyEdit(event.message)

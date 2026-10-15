@@ -13365,4 +13365,5 @@
     <string name="desktop_cdood_sum_holiday_many">holiday days</string>
     <string name="desktop_cdood_range_too_long">A range can be at most %1$s days.</string>
     <string name="desktop_cdood_range_exists">Every day in that range is already a holiday.</string>
+    <string name="desktop_board_select_option_to_send">Select an option to send</string>
 </resources>

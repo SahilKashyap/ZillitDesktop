@@ -1,6 +1,8 @@
 package com.zillit.desktop.core.badges
 
 import com.zillit.desktop.core.common.ZillitLog
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -10,6 +12,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 
 /**
@@ -26,9 +29,12 @@ import kotlinx.serialization.json.JsonArray
  * and the dock badge all show the same numbers, and three copies would
  * disagree the moment one missed an update.
  */
+@Suppress("TooManyFunctions") // One operation per thing the ledger does; they share one mutex and cannot be split.
 class BadgeStore(
     private val storage: NotificationLedgerStore = InMemoryNotificationLedgerStore(),
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /** Where the whole-ledger read in [projectCounts] runs; tests pass their own. */
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     private val lock = Mutex()
@@ -148,17 +154,34 @@ class BadgeStore(
      * device's rows the same way (`calculateAllProjectsBadges`): rows for
      * this device when the ledger has any, else every row — a listing that
      * never names devices must not read as empty.
+     *
+     * Suspending, and on [dispatcher]: this is the one read here that is not
+     * scoped to a production. It selects every unread row the ledger holds, of
+     * every production, and folds them — so it costs more the more productions
+     * the device has been in. It used to run wherever it was called, which
+     * included the production listing's badge collector on the UI thread, on
+     * every ledger publish; a switch publishes several (the ledger swap, the
+     * seed, each socket frame), so choosing a production ran that whole scan
+     * two or three times over on the thread that had to draw the next frame.
      */
-    fun projectCounts(deviceId: String? = null): Map<String, Int> {
+    suspend fun projectCounts(deviceId: String? = null): Map<String, Int> = withContext(dispatcher) {
         val own = deviceId?.takeIf { it.isNotBlank() }?.let { storage.unreadAcrossProductions(it) }.orEmpty()
         val rows = own.ifEmpty { storage.unreadAcrossProductions("") }
-        return tallyByProject(rows.filter { it.isShown(mailboxes, chatRooms) })
+        tallyByProject(rows.filter { it.isShown(mailboxes, chatRooms) })
             .mapValues { (_, counts) -> counts.total }
             .filterValues { it > 0 }
     }
 
     /** The seed watermark for [projectId] — see [NotificationLedgerStore.watermark]. */
     fun watermark(projectId: String): Long = storage.watermark(projectId)
+
+    /**
+     * The oldest `updated` among the unread rows of every production — how far
+     * back a prune has to reach to have judged all of them. 0 when nothing is
+     * unread, which is a prune with nothing to do.
+     */
+    val oldestUnreadUpdated: Long
+        get() = storage.unreadAcrossProductions().minOfOrNull { it.updated } ?: 0L
 
     /**
      * Rows the API handed over (a `previous` page, or `next` since the
@@ -177,6 +200,51 @@ class BadgeStore(
         merged.filter { it.projectId == projectId }.forEach { rows[it.id] = it }
         publish()
         SeedOutcome(rows = merged.size, unread = merged.count { it.counts })
+    }
+
+    /**
+     * Retires the unread rows a resync page proves the server no longer
+     * serves — the first seed after an update ([NotificationLedgerSeeder],
+     * gated by `BadgeResync.pruneDue`).
+     *
+     * **Why a page's silence can be trusted here and nowhere else.** A seed is
+     * otherwise additive, and rightly: a row missing from one page means
+     * nothing, because the page is a window. But the listing is contiguous by
+     * `updated`, so inside the span the page covers — from its oldest row's
+     * `updated` up to the moment it was asked for — the page IS the server's
+     * whole answer. An unread row of ours sitting in that span that the page
+     * did not carry is one the server has dropped or read elsewhere: nothing
+     * will ever flip it, and it badges a screen that can never clear it.
+     * Outside the span nothing is concluded, which is why this takes a window
+     * rather than a cutoff someone has to guess.
+     *
+     * Reads are untouched: only unread rows are considered, so every local
+     * read survives, and with them the watermark and the "local read wins"
+     * rule the whole ledger rests on.
+     *
+     * @param coveredFrom the oldest `updated` the page carried.
+     * @param askedAt when the page was requested — rows updated after it are
+     *   out of its reach (a `notification:save` that landed mid-request),
+     *   so they are never judged by it.
+     * @param carried the ids the page carried.
+     * @return how many rows were retired.
+     */
+    suspend fun pruneUnserved(coveredFrom: Long, askedAt: Long, carried: Set<String>): Int = lock.withLock {
+        val stale = storage.unreadAcrossProductions()
+            .filter { it.updated in coveredFrom..askedAt && it.id !in carried }
+        if (stale.isEmpty()) return@withLock 0
+        val ids = stale.map { it.id }
+        storage.delete(ids)
+        ids.forEach(rows::remove)
+        ZillitLog.i(TAG) {
+            "update prune: retired ${ids.size} unread rows the listing no longer serves " +
+                "(span $coveredFrom..$askedAt) " +
+                stale.take(PRUNE_LOG_ROWS).joinToString(prefix = "[", postfix = "]") {
+                    "${it.section}/${it.tool}/${it.unit}@${it.updated}"
+                }
+        }
+        publish()
+        ids.size
     }
 
     /**
@@ -316,6 +384,9 @@ class BadgeStore(
     private companion object {
         const val TAG = "Badges"
         const val DOCUMENT_DISTRIBUTION = "document_distribution_label"
+
+        /** How many retired rows the prune line names before it gets unreadable. */
+        const val PRUNE_LOG_ROWS = 10
     }
 }
 

@@ -53,6 +53,46 @@ class BadgeResyncTest {
         assertNull(resync.serverCards)
     }
 
+    /**
+     * The prune runs per installed version, not per launch: it is the pass
+     * that takes rows away, and an ordinary restart has no reason to pay for
+     * it or to risk it.
+     */
+    @Test
+    fun `a newly installed version prunes once`() = runTest {
+        val preferences = FakePreferences()
+        val resync = BadgeResync(preferences, installedVersion = "1.0.3", launch = "run-1")
+        assertTrue(resync.pruneDue())
+
+        resync.pruned()
+        assertFalse(resync.pruneDue(), "the rest of this run leaves the ledger alone")
+        assertFalse(
+            BadgeResync(preferences, installedVersion = "1.0.3", launch = "run-2").pruneDue(),
+            "a restart of the same build is not an update",
+        )
+        assertTrue(
+            BadgeResync(preferences, installedVersion = "1.0.4", launch = "run-2").pruneDue(),
+            "the next installed version is due one",
+        )
+    }
+
+    /** A resync that fails must not record the version, or the prune is skipped for this build for good. */
+    @Test
+    fun `a version is due until its prune has judged a page`() = runTest {
+        val preferences = FakePreferences()
+        val resync = BadgeResync(preferences, installedVersion = "1.0.3", launch = "run-1")
+
+        resync.completed()
+
+        assertTrue(resync.pruneDue(), "the resync landing is not the prune landing")
+    }
+
+    /** Unpackaged, or a build that cannot name itself: pruning on every launch would be worse than not at all. */
+    @Test
+    fun `a build with no version never prunes`() = runTest {
+        assertFalse(BadgeResync(FakePreferences(), launch = "run-1").pruneDue())
+    }
+
     @Test
     fun `an empty server answer leaves the cards to the ledger`() = runTest {
         val resync = BadgeResync(FakePreferences(), launch = "run-1")

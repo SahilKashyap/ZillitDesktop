@@ -7,6 +7,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -473,6 +475,77 @@ class BadgeStoreTest {
 
         assertTrue(store.projectCounts(null).isEmpty(), "both productions' rows are pruned")
         assertTrue(storage.rows("p2").all { it.messageRead }, "and it stuck on disk")
+    }
+
+    /**
+     * The update prune. Inside the span a page covers, the page is the
+     * server's whole answer, so an unread row of ours it did not carry is one
+     * the server has dropped — nothing will flip it and no screen can clear it.
+     */
+    @Test
+    fun `a prune retires the unread rows the page no longer carries`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("stale", updated = 150L), row("live", updated = 200L)))
+
+        val retired = store.pruneUnserved(coveredFrom = 100L, askedAt = 1_000L, carried = setOf("live"))
+
+        assertEquals(1, retired)
+        assertEquals(1, store.counts.value.section(BadgeSections.TOOLS))
+        assertNull(storage.row("stale"), "gone from disk, not merely uncounted")
+        assertNotNull(storage.row("live"))
+    }
+
+    /** A read is this ledger's own record, and worth more than the server's word; a prune cannot spend it. */
+    @Test
+    fun `a prune leaves read rows alone`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("read-here", updated = 150L, read = true)))
+
+        assertEquals(0, store.pruneUnserved(coveredFrom = 100L, askedAt = 1_000L, carried = emptySet()))
+        assertNotNull(storage.row("read-here"), "the read survives, and with it the watermark")
+    }
+
+    /** A page is a window, not a census: older than its oldest row, it says nothing. */
+    @Test
+    fun `a prune judges nothing older than the span the page covers`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("older", updated = 50L)))
+
+        assertEquals(0, store.pruneUnserved(coveredFrom = 100L, askedAt = 1_000L, carried = emptySet()))
+        assertNotNull(storage.row("older"))
+    }
+
+    /** A `notification:save` that landed while the page was in flight is newer than the ask. */
+    @Test
+    fun `a row that arrived after the page was asked for survives the prune`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("mid-flight", updated = 2_000L)))
+
+        assertEquals(0, store.pruneUnserved(coveredFrom = 100L, askedAt = 1_000L, carried = emptySet()))
+        assertNotNull(storage.row("mid-flight"), "the page never had a chance to carry it")
+    }
+
+    /** The listing is user-wide, so the prune is too — the picker's cards count every production. */
+    @Test
+    fun `a prune reaches rows of productions that are not open`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("here", updated = 150L), row("elsewhere", projectId = "p2", updated = 150L)))
+        assertEquals(mapOf(project to 1, "p2" to 1), store.projectCounts(null))
+
+        assertEquals(2, store.pruneUnserved(coveredFrom = 100L, askedAt = 1_000L, carried = emptySet()))
+
+        assertTrue(store.projectCounts(null).isEmpty(), "both productions' stale rows are gone")
+        assertTrue(storage.rows("p2").isEmpty())
     }
 
     private fun dm(id: String, created: Long = 100L) =

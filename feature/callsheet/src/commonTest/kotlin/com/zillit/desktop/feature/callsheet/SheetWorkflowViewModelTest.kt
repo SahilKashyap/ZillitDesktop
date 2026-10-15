@@ -615,9 +615,10 @@ class SheetWorkflowViewModelTest {
     }
 
     @Test
-    fun `everyone reads a thread, only the creator and the internal recipients may post`() = runTest(dispatcher) {
+    fun `everyone reads a thread — the creator, the recipients and the approver write`() = runTest(dispatcher) {
+        // A bystander: on neither list, and not the creator.
         repository.rows = { query -> if (query.approverId == "me") listOf(awaitingMySignature()) else emptyList() }
-        repository.metadata = SheetMetadata(finalApproverIds = listOf("me"))
+        repository.metadata = SheetMetadata()
         val vm = harness.start(this, Samples.author.copy(canPost = false))
         vm.onEvent(ListEvent.OpenComments(awaitingMySignature(), readOnly = false))
         settle()
@@ -639,6 +640,16 @@ class SheetWorkflowViewModelTest {
         recipient.onEvent(ListEvent.OpenComments(awaitingMySignature(), readOnly = false))
         settle()
         assertFalse(assertIs<SheetDialog.Comments>(recipient.currentState.dialog).readOnly, "a recipient writes")
+
+        // ZL-21609/21608: the final approver writes too — they are who the
+        // thread is for, and they could read the questions put to them
+        // without being able to answer.
+        val approverHarness = SheetHarness(dispatcher)
+        approverHarness.repository.metadata = SheetMetadata(finalApproverIds = listOf("me"))
+        val approver = approverHarness.start(this, Samples.author.copy(canPost = false))
+        approver.onEvent(ListEvent.OpenComments(awaitingMySignature(), readOnly = false))
+        settle()
+        assertFalse(assertIs<SheetDialog.Comments>(approver.currentState.dialog).readOnly, "the approver writes")
     }
 
     @Test

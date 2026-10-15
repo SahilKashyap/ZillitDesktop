@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
 import com.zillit.desktop.feature.home.ui.MediaCapture
+import com.zillit.desktop.feature.home.ui.UploadChoice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -55,6 +56,9 @@ class HomeBoardRulesTest {
         var stamped: NoticeAttachment? = null,
     ) : HomeFeedRepository {
         val posted = mutableListOf<Triple<String, UploadedNoticeMedia?, Boolean?>>()
+
+        /** The `replace_chat_id` each post carried — Replace's half of the answer. */
+        val replacedIds = mutableListOf<String?>()
         val deletedNotices = mutableListOf<String>()
         val deletedComments = mutableListOf<String>()
         var loads = 0
@@ -85,15 +89,20 @@ class HomeBoardRulesTest {
             replaceChatId: String?,
         ): ZillitResult<Notice> {
             posted += Triple(text, attachment, replacePrevious)
-            return ZillitResult.Success(
-                Notice(
-                    id = "server-${posted.size}",
-                    body = text,
-                    authorName = "You",
-                    kind = attachment?.kind ?: NoticeKind.Text,
-                    localId = localId,
-                ),
+            replacedIds += replaceChatId
+            // What the server does on a wipe: every earlier post moves to
+            // History, so the next read answers with this upload alone.
+            val saved = Notice(
+                id = "server-${posted.size}",
+                body = text,
+                authorName = "You",
+                authorId = "me",
+                createdAtMillis = NOW,
+                kind = attachment?.kind ?: NoticeKind.Text,
+                localId = localId,
             )
+            if (replacePrevious == true) notices = listOf(saved)
+            return ZillitResult.Success(saved)
         }
 
         override suspend fun watermarkedAttachment(noticeId: String): ZillitResult<NoticeAttachment> {
@@ -137,6 +146,14 @@ class HomeBoardRulesTest {
         "cs",
         "call_sheet_tool",
         "call_sheet_label",
+        canView = true,
+        canPost = true,
+        canDownload = true,
+    )
+    private val reportChat = HomeUnit(
+        "pr",
+        "production_report_chat_tool",
+        "production_report_tool_chat_label",
         canView = true,
         canPost = true,
         canDownload = true,
@@ -316,10 +333,10 @@ class HomeBoardRulesTest {
         assertEquals("You have no permission to delete other users' messages.", model.state.value.error)
     }
 
-    // -- the call sheet's question ---------------------------------------------
+    // -- the upload question --------------------------------------------------
 
     @Test
-    fun `attaching to a call sheet with posts asks first, and Continuation appends`() =
+    fun `attaching to a call sheet with posts asks after the pick, and Continuation appends`() =
         runTest(dispatcher) {
             val doc = PickedMedia("sheet.pdf", "application/pdf", ByteArray(4))
             val board = FakeBoard(listOf(callSheet), listOf(post("n1", "them", NOW, NoticeKind.Document, pdf)))
@@ -327,16 +344,24 @@ class HomeBoardRulesTest {
             advanceUntilIdle()
 
             model.onEvent(HomeFeedEvent.Attach)
-           confirmPreview(model)
             confirmPreview(model)
             advanceUntilIdle()
-            // The picker did not open; the question did.
-            assertNull(model.state.value.draft.media)
+            // The picker ran first; the question holds the document it returned.
             val prompt = assertNotNull(model.state.value.callSheetPrompt)
-            assertTrue(!prompt.confirmingReplace)
+            assertEquals(listOf(doc), prompt.files)
+            assertNull(prompt.choice)
+            assertTrue(!prompt.canSend)
+            assertNull(model.state.value.draft.media)
+            assertTrue(board.posted.isEmpty())
 
-            model.onEvent(HomeFeedEvent.CallSheetContinuation)
-           confirmPreview(model)
+            // Send does nothing until a card is ticked.
+            model.onEvent(HomeFeedEvent.CallSheetSend)
+            advanceUntilIdle()
+            assertNotNull(model.state.value.callSheetPrompt)
+
+            model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.Continuation))
+            assertTrue(assertNotNull(model.state.value.callSheetPrompt).canSend)
+            model.onEvent(HomeFeedEvent.CallSheetSend)
             confirmPreview(model)
             advanceUntilIdle()
             assertNull(model.state.value.callSheetPrompt)
@@ -345,6 +370,26 @@ class HomeBoardRulesTest {
             assertNull(model.state.value.draft.media)
             assertEquals(false, board.posted.single().third)
         }
+
+    @Test
+    fun `the production report chat asks the same question`() = runTest(dispatcher) {
+        val doc = PickedMedia("report.pdf", "application/pdf", ByteArray(4))
+        val board = FakeBoard(listOf(reportChat), listOf(post("n1", "them", NOW, NoticeKind.Document, pdf)))
+        val model = viewModel(board, picked = doc)
+        advanceUntilIdle()
+        assertTrue(model.state.value.documentsOnly)
+
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
+        advanceUntilIdle()
+        assertEquals(listOf(doc), assertNotNull(model.state.value.callSheetPrompt).files)
+
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.Continuation))
+        model.onEvent(HomeFeedEvent.CallSheetSend)
+        confirmPreview(model)
+        advanceUntilIdle()
+        assertEquals(false, board.posted.single().third)
+    }
 
     @Test
     fun `New asks again, and only Yes replaces — then the board is read afresh`() = runTest(dispatcher) {
@@ -356,10 +401,12 @@ class HomeBoardRulesTest {
 
         model.onEvent(HomeFeedEvent.Attach)
         confirmPreview(model)
-        model.onEvent(HomeFeedEvent.CallSheetNew)
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.New))
+        model.onEvent(HomeFeedEvent.CallSheetSend)
         assertTrue(model.state.value.callSheetPrompt?.confirmingReplace == true)
         // Nothing attached yet — "No" here must leave the board untouched.
         assertNull(model.state.value.draft.media)
+        assertTrue(board.posted.isEmpty())
 
         model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
         confirmPreview(model)
@@ -367,6 +414,71 @@ class HomeBoardRulesTest {
         assertEquals(true, board.posted.single().third)
         // The server moved the rest to History; the board asks for it again.
         assertEquals(loadsBefore + 1, board.loads)
+    }
+
+    @Test
+    fun `Replace seeds the newest document and sends against the one chosen`() = runTest(dispatcher) {
+        val doc = PickedMedia("sheet.pdf", "application/pdf", ByteArray(4))
+        val board = FakeBoard(
+            listOf(callSheet),
+            listOf(
+                post("older", "them", NOW - 1000, NoticeKind.Document, pdf),
+                post("newest", "them", NOW, NoticeKind.Document, pdf),
+            ),
+        )
+        val model = viewModel(board, picked = doc)
+        advanceUntilIdle()
+
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.Replace))
+        assertEquals("newest", model.state.value.callSheetPrompt?.replaceNoticeId)
+
+        // An id the prompt never offered is ignored; a real one takes.
+        model.onEvent(HomeFeedEvent.CallSheetReplaceOne("not-on-the-board"))
+        assertEquals("newest", model.state.value.callSheetPrompt?.replaceNoticeId)
+        model.onEvent(HomeFeedEvent.CallSheetReplaceOne("older"))
+        assertEquals("older", model.state.value.callSheetPrompt?.replaceNoticeId)
+
+        model.onEvent(HomeFeedEvent.CallSheetSend)
+        confirmPreview(model)
+        advanceUntilIdle()
+        // Replace is not a wipe: the flag stays false and the id rides along.
+        // Both halves, or the post appends and the chosen document stays live.
+        assertEquals(false, board.posted.single().third)
+        assertEquals("older", board.replacedIds.single())
+    }
+
+    @Test
+    fun `a New upload leaves only itself on the board`() = runTest(dispatcher) {
+        val doc = PickedMedia("day-13.pdf", "application/pdf", ByteArray(4))
+        // What the server does on a New: everything else moves to History, so
+        // the refetch answers with the upload alone.
+        val older = listOf(
+            post("old-1", "them", NOW - 7_200_000, NoticeKind.Document, pdf),
+            post("old-2", "them", NOW - 3_600_000, NoticeKind.Document, pdf),
+        )
+        val board = FakeBoard(listOf(callSheet), older)
+        val model = viewModel(board, picked = doc)
+        advanceUntilIdle()
+        assertEquals(2, model.state.value.notices.size)
+
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.New))
+        model.onEvent(HomeFeedEvent.CallSheetSend)
+        model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
+        confirmPreview(model)
+        advanceUntilIdle()
+
+        assertEquals(true, board.posted.single().third, "the wipe flag went up")
+        // The retired rows are gone from the screen, not merely re-read behind
+        // the upload: they are what the user watched the New replace.
+        assertEquals(
+            emptyList(),
+            model.state.value.notices.filter { it.id.startsWith("old-") }.map { it.id },
+        )
+        assertEquals(1, model.state.value.notices.size)
     }
 
     @Test
@@ -383,6 +495,7 @@ class HomeBoardRulesTest {
 
         assertNull(model.state.value.callSheetPrompt)
         assertNull(model.state.value.draft.media)
+        assertTrue(board.posted.isEmpty())
     }
 
     @Test
@@ -409,6 +522,21 @@ class HomeBoardRulesTest {
     }
 
     @Test
+    fun `a picture is refused before the question is ever put`() = runTest(dispatcher) {
+        val board = FakeBoard(listOf(reportChat), listOf(post("n1", "them", NOW, NoticeKind.Document, pdf)))
+        val model = viewModel(board, picked = photo)
+        advanceUntilIdle()
+
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
+        advanceUntilIdle()
+
+        assertNull(model.state.value.callSheetPrompt)
+        assertTrue(board.posted.isEmpty())
+        assertNotNull(model.state.value.error)
+    }
+
+    @Test
     fun `a dropped file waits in the question and attaches with the answer`() = runTest(dispatcher) {
         val doc = PickedMedia("sheet.pdf", "application/pdf", ByteArray(4))
         val board = FakeBoard(listOf(callSheet), listOf(post("n1", "them", NOW, NoticeKind.Document, pdf)))
@@ -417,9 +545,10 @@ class HomeBoardRulesTest {
 
         model.onEvent(HomeFeedEvent.AttachDropped(listOf(doc)))
         confirmPreview(model)
-        assertEquals(listOf(doc), model.state.value.callSheetPrompt?.dropped)
+        assertEquals(listOf(doc), model.state.value.callSheetPrompt?.files)
 
-        model.onEvent(HomeFeedEvent.CallSheetContinuation)
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.Continuation))
+        model.onEvent(HomeFeedEvent.CallSheetSend)
         confirmPreview(model)
         advanceUntilIdle()
         assertEquals(false, board.posted.single().third)
@@ -434,7 +563,8 @@ class HomeBoardRulesTest {
 
         model.onEvent(HomeFeedEvent.Attach)
         confirmPreview(model)
-        model.onEvent(HomeFeedEvent.CallSheetNew)
+        model.onEvent(HomeFeedEvent.CallSheetChoice(UploadChoice.New))
+        model.onEvent(HomeFeedEvent.CallSheetSend)
         model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.RemoveAttachment)

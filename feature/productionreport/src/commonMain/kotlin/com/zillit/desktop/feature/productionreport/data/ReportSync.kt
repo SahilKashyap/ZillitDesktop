@@ -33,6 +33,10 @@ val PRODUCTION_REPORT_SYNC_EVENTS: List<SocketEventName> = listOf(
     // ZL-21388 / ZL-21389.
     "productionreport:comment:updated",
     "productionreport:comment:deleted",
+    // ZL-21599: someone PUT project metadata (approvers, internal distribution
+    // receivers, day types, total days, shoot day). The payload is NOT read —
+    // the PUT merges and may carry a subset, so the client re-GETs instead.
+    "productionreport:metadata:updated",
 ).map(::SocketEventName)
 
 /**

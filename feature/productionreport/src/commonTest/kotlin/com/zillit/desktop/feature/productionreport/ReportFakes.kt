@@ -140,10 +140,14 @@ internal class FakeReportRepository : ReportRepository {
 
     private val ok = ZillitResult.Success(Unit)
 
+    /** How many times the metadata was read — the live refresh is counted here. */
+    var metadataReads = 0
+
     override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> =
         if (metadataFails) {
             ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Http(500, "boom"))
         } else {
+            metadataReads++
             ZillitResult.Success(metadata)
         }
 

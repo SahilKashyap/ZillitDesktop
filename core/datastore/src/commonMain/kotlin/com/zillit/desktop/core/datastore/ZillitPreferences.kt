@@ -238,6 +238,15 @@ object ZillitPreferences {
     val BadgeResyncedLaunch = PreferenceKey.StringKey("badges.resyncedLaunch", "", PreferenceScope.User)
 
     /**
+     * The installed version whose first seed last pruned the ledger of rows
+     * the server no longer serves (see `BadgeResync.pruneDue`). A different
+     * version means this build has not pruned yet, so one seed judges its page
+     * and retires what the listing has forgotten. Per version, not per launch:
+     * an ordinary restart should not pay for the pass.
+     */
+    val BadgeResyncedVersion = PreferenceKey.StringKey("badges.resyncedVersion", "", PreferenceScope.User)
+
+    /**
      * Badge reads made while the socket was down, waiting to be sent — a JSON
      * list kept by `DurableEmits`. User-scoped: a read is this person's, and
      * must never go out under the next person to sign in.

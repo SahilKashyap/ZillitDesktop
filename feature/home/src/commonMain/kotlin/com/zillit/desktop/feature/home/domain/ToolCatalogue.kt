@@ -238,6 +238,17 @@ object ToolCatalogue {
      */
     private val REQUIRES: Map<String, String> = mapOf(PRODUCTION_REPORT_CHAT_TOOL to "production_report_tool")
 
+    /**
+     * The route a tool identifier opens, or null when this build has no route
+     * of its own for it.
+     *
+     * For a caller holding a name with no tile to go with it — a notification
+     * row, which the server addresses by tool — where [present]'s derived
+     * `/tool/{identifier}` would open a placeholder window for a tool this
+     * build cannot draw. Staying put is the better answer there.
+     */
+    fun routeFor(identifier: String): WorkspaceRoute? = known[identifier]?.second
+
     /** The tiles to draw: the tools a user may open, less any whose required tool was not issued. */
     fun grid(permissions: ProjectPermissions): List<ToolAccess> {
         val issued = permissions.tools.mapTo(mutableSetOf()) { it.identifier }

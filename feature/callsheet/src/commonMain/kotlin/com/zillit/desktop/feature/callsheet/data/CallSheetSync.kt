@@ -23,6 +23,10 @@ val CALL_SHEET_SYNC_EVENTS: List<SocketEventName> = listOf(
     "callsheet:comment:created",
     "callsheet:comment:updated",
     "callsheet:comment:deleted",
+    // ZL-21599: someone PUT project metadata (approvers, internal distribution
+    // receivers, total days, shoot day). The payload is NOT read — the PUT
+    // merges and may carry a subset, so the client re-GETs instead.
+    "callsheet:metadata:updated",
 ).map(::SocketEventName)
 
 /**

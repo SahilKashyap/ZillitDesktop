@@ -89,7 +89,7 @@ class HomeToolProvider(
     private val onOpenUrl: (String) -> Unit = {},
 ) : ToolProvider {
 
-    override val path: String = "/home"
+    override val path: String = HOME_PATH
     override val title: String get() = str(S.home)
     override val icon = ZillitIcons.Home
 
@@ -202,3 +202,6 @@ fun CalendarPane(
         onOpenLink = onOpenLink,
     )
 }
+
+/** The production's board, as the workspace addresses it. */
+const val HOME_PATH = "/home"

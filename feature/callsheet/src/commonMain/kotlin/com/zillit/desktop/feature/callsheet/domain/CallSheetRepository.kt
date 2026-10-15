@@ -78,6 +78,10 @@ data class SheetSyncEvent(
     val commentId: String? = null,
 ) {
     val isComment: Boolean get() = name.startsWith("callsheet:comment:")
+
+    companion object {
+        const val METADATA = "callsheet:metadata:updated"
+    }
 }
 
 /**
