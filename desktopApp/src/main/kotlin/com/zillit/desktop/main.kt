@@ -1560,6 +1560,9 @@ private fun ProjectScopedLoads(
         viewModels.permissionGrid?.onProjectChanged()
         // The outside-contact directory is the previous production's until it reloads.
         viewModels.externalUsers?.onProjectChanged()
+        // The chart is one production's crew against one production's
+        // calendar; the previous one's bars would otherwise stay on screen.
+        viewModels.crewDood?.onProjectChanged()
         // A reconciliation belongs to one production's bank accounts; carrying
         // the previous one's periods would show another shoot's statement.
         viewModels.bankRec?.onProjectChanged()
@@ -3300,6 +3303,8 @@ internal class AppViewModels(
     val distribution: com.zillit.desktop.feature.distribution.ui.DistributionViewModel?,
     /** Crew List: the grouped roster and its generated PDF. */
     val crewList: com.zillit.desktop.feature.crewlist.ui.CrewListViewModel?,
+    /** Crew DOOD: the crew list against the production's calendar, day by day. */
+    val crewDood: com.zillit.desktop.feature.crewdood.ui.CrewDoodViewModel?,
     /** Asset Register: PO lines as assets — category, note, export. */
     val assetRegister: com.zillit.desktop.feature.assetreport.ui.AssetViewModel?,
     /** Transportation: vehicles, pickup requests, permanent allocations, drivers. */
@@ -3766,6 +3771,7 @@ private fun rememberAppViewModels(
             externalUsers = ready?.buildExternalUsers(permissions),
             distribution = ready?.buildDistributionList(permissions),
             crewList = ready?.buildCrewList(permissions),
+            crewDood = ready?.buildCrewDood(),
             assetRegister = ready?.buildAssetRegister(permissions),
             location = ready?.buildLocation(permissions),
             continuity = ready?.buildContinuity(permissions),
@@ -3948,6 +3954,7 @@ private fun buildRegistry(
         (graph as? AppGraph.Ready)?.crewListProvider(vm, viewModels, onOpenWidget = { openWidget(ZillitWidget.Crew) })
             ?: CrewListToolProvider(vm, onOpenWidget = { openWidget(ZillitWidget.Crew) })
     }
+    val crewDood = viewModels.crewDood?.let { crewDoodProvider(it) }
     val assetRegister = viewModels.assetRegister?.let {
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
     }
@@ -4422,7 +4429,7 @@ private fun buildRegistry(
         callSheet, productionReport, productionReportChat, adReport, wrapReport, sides, permissionGrid,
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
-        boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
+        boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList, crewDood,
         assetRegister, transport, transportHub, location, continuity, costReport, costReportWorksheet,
         costReportAnalytics,
         invoices, draft,

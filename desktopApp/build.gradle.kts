@@ -98,6 +98,7 @@ dependencies {
     implementation(project(":feature:drive"))
     implementation(project(":feature:pagedistribution"))
     implementation(project(":feature:assetreport"))
+    implementation(project(":feature:crewdood"))
     implementation(project(":feature:crewlist"))
     implementation(project(":feature:distribution"))
     implementation(project(":feature:externalusers"))

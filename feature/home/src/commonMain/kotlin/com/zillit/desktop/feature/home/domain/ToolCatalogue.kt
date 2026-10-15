@@ -124,6 +124,12 @@ object ToolCatalogue {
         // real tool sat unreachable.
         "forms_and_signature_tool" to
             (ZillitToolIcons.FormSignature to WorkspaceRoute.Tool("/film-tools/form-signature")),
+        // Crew DOOD — the crew list against the production's calendar. The
+        // backend identifier is still PENDING: `crew_dood_tool` is the
+        // placeholder the web uses too, so the tile appears only once the
+        // backend ships a tool by that name. Rename both together.
+        "crew_dood_tool" to
+            (ZillitToolIcons.CrewList to WorkspaceRoute.Tool("/film-tools/crew-dood")),
         "generate_crew_list_tool" to
             (ZillitToolIcons.CrewList to WorkspaceRoute.Tool("/film-tools/generate-crew-list")),
         "home_unit_calendar" to

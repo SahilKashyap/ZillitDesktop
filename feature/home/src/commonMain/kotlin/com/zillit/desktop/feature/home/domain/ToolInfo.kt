@@ -69,6 +69,9 @@ private val WEB: List<WebEntry> = listOf(
         "continuity",
         admin(S.desktop_tool_info_continuity_info_admin_user, S.desktop_tool_info_continuity_info_user),
     ),
+    // Crew DOOD's own line. No `tutorial`/`video` on the web entry, so the
+    // tile offers neither.
+    WebEntry("crew_dood", always(S.desktop_cdood_tool_tooltip)),
     WebEntry("forms_and_signature", admin(S.form_signature_info_admin, S.desktop_tool_info_formsignature_user)),
     WebEntry(
         "generate_crew_list",
