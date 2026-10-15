@@ -489,6 +489,9 @@ object ZillitIcons {
     private const val VIEWPORT = 24f
     private const val STROKE = 1.75f
 
+    /** An overflow dot's radius, matching the web's `dots-vertical`. */
+    private const val DOT_RADIUS = 1.6f
+
     /**
      * Builds a stroke-only icon on the shared 24×24 grid.
      *
@@ -933,11 +936,9 @@ object ZillitIcons {
         close()
     }
 
-    /** The row overflow menu. */
-    val MoreHorizontal: ImageVector = stroked("MoreHorizontal") {
-        moveTo(5.5f, 12f); lineTo(5.51f, 12f)
-        moveTo(12f, 12f); lineTo(12.01f, 12f)
-        moveTo(18.5f, 12f); lineTo(18.51f, 12f)
+    /** The row overflow menu, in [MoreVertical]'s dots laid flat. */
+    val MoreHorizontal: ImageVector = filled("MoreHorizontal") {
+        dot(5.5f, 12f); dot(12f, 12f); dot(18.5f, 12f)
     }
 
     /** A door with the arrow leaving — the rail's Logout. */
@@ -1076,11 +1077,15 @@ object ZillitIcons {
         moveTo(4f, 19f); lineTo(20f, 19f)
     }
 
-    /** Three dots stacked — the row menu the web draws vertically. */
-    val MoreVertical: ImageVector = stroked("MoreVertical") {
-        moveTo(12f, 5f); lineTo(12.01f, 5f)
-        moveTo(12f, 12f); lineTo(12.01f, 12f)
-        moveTo(12f, 19f); lineTo(12.01f, 19f)
+    /**
+     * Three dots stacked — the row menu the web draws vertically.
+     *
+     * Filled circles, not stroke caps: a cap is one stroke wide (1.75 of 24),
+     * which at an 18 dp icon is a 1.3 dp speck that all but vanishes against
+     * light paper. The web's own `dots-vertical` is the same size as these.
+     */
+    val MoreVertical: ImageVector = filled("MoreVertical") {
+        dot(12f, 5f); dot(12f, 12f); dot(12f, 19f)
     }
 
     /** An open envelope — read mail. */
@@ -1113,6 +1118,14 @@ object ZillitIcons {
     }
 
     /** A closed rectangle with round corners, drawn clockwise from the top-left edge. */
+    /** One dot of an overflow menu: a filled circle, drawn as two half arcs. */
+    private fun PathBuilder.dot(centreX: Float, centreY: Float) {
+        moveTo(centreX - DOT_RADIUS, centreY)
+        arcTo(DOT_RADIUS, DOT_RADIUS, 0f, true, false, centreX + DOT_RADIUS, centreY)
+        arcTo(DOT_RADIUS, DOT_RADIUS, 0f, true, false, centreX - DOT_RADIUS, centreY)
+        close()
+    }
+
     private fun PathBuilder.roundedRect(left: Float, top: Float, right: Float, bottom: Float, radius: Float) {
         moveTo(left + radius, top)
         lineTo(right - radius, top)
