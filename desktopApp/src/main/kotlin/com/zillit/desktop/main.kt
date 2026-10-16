@@ -2811,7 +2811,12 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
     // the resync `BadgeRefresh` starts fetches the ledger again from the top.
     // Its rows' publish repaints the cards from the ledger (the picker's
     // `now` stops answering with [BadgeResync.serverCards] once it lands).
-    if (ready.badgeResync.due()) {
+    //
+    // Only for a ledger with no page in it yet. One that has rows can answer
+    // now, and its answer is the better one: the server's totals count rows
+    // this device read long ago, so standing them in front of a ledger that
+    // has them read put a stuck number back on the card at every launch.
+    if (ready.badgeResync.due() && !ready.badgeStore.hasSeededRows()) {
         val server = serverProjectUnread(ready)
         ready.badgeResync.showServerCards(server)
         if (server.isNotEmpty()) {
@@ -2830,6 +2835,15 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
     if (ledger.isNotEmpty()) {
         ZillitLog.d("Badges") { "picker counts from ledger: $ledger" }
         return ledger
+    }
+    // Nothing unread is an answer, not a gap. An empty map and an unseeded
+    // ledger read alike here — `projectCounts` keeps only cards with a number
+    // on them — and asking the server on the strength of that undid every read
+    // this device holds: a row read here, or swept by `sweepStuckBadges`, is
+    // still unread to the server, so the card wore it again.
+    if (ready.badgeStore.hasSeededRows()) {
+        ZillitLog.d("Badges") { "picker cards bare: the ledger holds rows and counts none unread" }
+        return emptyMap()
     }
     return serverProjectUnread(ready)
 }
