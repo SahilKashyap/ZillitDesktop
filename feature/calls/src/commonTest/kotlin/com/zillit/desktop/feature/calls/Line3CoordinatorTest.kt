@@ -702,6 +702,46 @@ class Line3CoordinatorTest {
         assertTrue("Vivek removed you from the call" in h.toasts)
     }
 
+    /**
+     * The 16 Oct log read straight.
+     *
+     * A second ring used to take the diagnostics window from the call still
+     * running, so that call's `speak`, `audio` and its `disconnect` were filed
+     * under the ring beside it — which is how an answered call came to look
+     * like one whose microphone died 173 ms before its own accept. A ring is
+     * reported as ITSELF; the call we are on keeps the window.
+     */
+    @Test
+    fun `a second ring is filed under its own id, and the live call keeps the window`() = runTest {
+        val h = harness()
+        inCall(h)
+        h.socket.push(
+            """
+            {"type":"incomingCall","callId":"c2","callType":"audio","callMode":"private",
+             "from":{"userId":"sam","displayName":"Sam"},"toUserId":"me","projectId":"p1",
+             "livekit":{"token":"tok2","url":"wss://node.zillit.com/rtc","preconnectToken":"pre2"}}
+            """.trimIndent(),
+        )
+        runCurrent()
+        assertEquals("c2", h.socket.logCallFor("ring_shown"))
+
+        // The pre-warm of that ring is measured while we are in another call,
+        // so its line names the call it warmed; everything else the page
+        // measures is about the room it is in.
+        h.engine.push(CallEngineEvent.Telemetry("warm_connect", mapOf("ok" to true, "ms" to 2L, "call" to "c2")))
+        h.engine.push(CallEngineEvent.Telemetry("audio", mapOf("outPkts" to 31L)))
+        runCurrent()
+        assertEquals("c2", h.socket.logCallFor("warm_connect"))
+        assertEquals("c1", h.socket.logCallFor("audio"))
+        assertNull(h.socket.logFor("warm_connect")?.get("call"), "the id routes the line; it is not part of it")
+
+        h.coordinator.hangUp()
+        runCurrent()
+        h.socket.answer("leaveCall")
+        runCurrent()
+        assertEquals("c1", h.socket.logCallFor("disconnect"), "the call that ended is the one that says so")
+    }
+
     @Test
     fun `a second ring while on a call is a banner, and each answer goes on the wire`() = runTest {
         val h = harness()

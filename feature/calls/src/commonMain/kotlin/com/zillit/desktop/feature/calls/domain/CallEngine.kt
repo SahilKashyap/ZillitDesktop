@@ -180,7 +180,7 @@ sealed interface CallEngineEvent {
      * no budget and no call window with it — all three belong to
      * `CallDiagnostics`, which is the only thing that sends.
      */
-    data class Telemetry(val event: String, val fields: Map<String, String>) : CallEngineEvent
+    data class Telemetry(val event: String, val fields: Map<String, Any?>) : CallEngineEvent
 
     /**
      * Our own active-speaker state flipped, with how loud we are.

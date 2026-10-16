@@ -101,10 +101,9 @@ object EngineBridge {
             }
             "error" -> CallEngineEvent.Failed(obj.str("message") ?: "call page error")
             // WebRTC facts only the page can measure, on their way to
-            // `CallDiagnostics`. Read as strings whatever their JSON type: the
-            // page is the only thing that knows what each field means, nothing
-            // here does arithmetic on them, and the diagnostic's own writer
-            // decides how they go back on the wire.
+            // `CallDiagnostics`, each field keeping the JSON type the page gave
+            // it: the server charts these, and a number it has to parse out of
+            // a quoted string is a number it does not chart at all.
             "telemetry" -> obj.str("event")?.takeIf(String::isNotBlank)
                 ?.let { CallEngineEvent.Telemetry(it, obj.fields("data")) }
             "self-speaking" -> CallEngineEvent.SelfSpeaking(obj.bool("speaking"), obj.double("level"))
@@ -298,15 +297,38 @@ object EngineBridge {
         (this[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 0.0
 
     /**
-     * A flat object of scalars, as strings — the shape a telemetry line
-     * carries. Nested values are dropped rather than rendered: the diagnostic
-     * payload is flat by contract, and a stringified object inside it would eat
-     * the server's 900-character budget for nothing.
+     * A flat object of scalars, each keeping the JSON type the page gave it.
+     *
+     * Read as strings, every desktop metric reached the server quoted —
+     * `{"outPkts":"497","micOn":"true"}` where the web sends `497` and
+     * `false` — and every numeric audit server-side silently skipped the
+     * desktop: in one audio audit it looked like the cleanest platform
+     * because none of its 23,643 values was a number.
+     *
+     * Nested values are dropped rather than rendered: the diagnostic payload
+     * is flat by contract, and a stringified object inside it would eat the
+     * server's 900-character budget for nothing.
      */
-    private fun JsonObject.fields(key: String): Map<String, String> =
+    private fun JsonObject.fields(key: String): Map<String, Any?> =
         (this[key] as? JsonObject)?.mapNotNull { (name, value) ->
-            (value as? JsonPrimitive)?.contentOrNull?.let { name to it }
+            (value as? JsonPrimitive)?.scalar()?.let { name to it }
         }?.toMap().orEmpty()
+
+    /**
+     * One JSON scalar as the Kotlin value it is.
+     *
+     * A quoted field stays a string — the page quotes `pc`, `state` and
+     * `reason`, and guessing a number out of text it chose to quote would be
+     * this bug in the other direction.
+     */
+    private fun JsonPrimitive.scalar(): Any? {
+        if (isString) return contentOrNull
+        val text = contentOrNull ?: return null
+        return text.toBooleanStrictOrNull()
+            ?: text.toLongOrNull()
+            ?: text.toDoubleOrNull()
+            ?: text
+    }
 
     private fun JsonObject.intList(key: String): List<Int> =
         (this[key] as? JsonArray).orEmpty().mapNotNull { entry ->

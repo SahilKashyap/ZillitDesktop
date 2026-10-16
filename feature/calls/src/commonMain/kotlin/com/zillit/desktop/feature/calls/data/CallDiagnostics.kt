@@ -104,11 +104,61 @@ class CallDiagnostics(
         scope.launch { send(id, name, payload) }
     }
 
+    /**
+     * One line about [id], whichever call the window is open for.
+     *
+     *  * No window: it opens one for [id], as a ring answered from idle does.
+     *  * [id] is the open window: an ordinary [log].
+     *  * ANOTHER call's window is open: the line goes out under [id] and the
+     *    window is left exactly where it was.
+     *
+     * That last case is the whole reason this exists. A ring arriving while a
+     * call is up is a second-call banner, and pointing the window at it took
+     * the live call's `speak`, `audio` and `disconnect` lines with it: in the
+     * 16 Oct log, a call that was still running read as a ring that hung up
+     * 173 ms before its own accept, and the microphone that went quiet was
+     * the one belonging to the call that had just ended.
+     */
+    fun logAbout(id: String, event: String, data: Map<String, Any?> = emptyMap()) {
+        if (id.isBlank()) return
+        val open = callId
+        if (open == null) {
+            startCall(id)
+            log(event, data)
+            return
+        }
+        if (open == id) {
+            log(event, data)
+            return
+        }
+        if (!admit()) return
+        val payload = data.toJson()
+        val name = event.take(EVENT_MAX)
+        scope.launch { send(id, name, payload) }
+    }
+
     /** [log], but at most once per call for this event — `warm_connect`, `promoted`, `publish`. */
     fun logOnce(event: String, data: Map<String, Any?> = emptyMap()) {
         if (callId == null) return
         if (!once.add(event)) return
         log(event, data)
+    }
+
+    /**
+     * [logAbout] for a fact that is one line per call — `warm_connect`, which
+     * the page measures on the ring-warmed path and the app measures on every
+     * other, so whichever arrives first silences the other rather than the
+     * two of them disagreeing about how long answering took.
+     */
+    fun logOnceAbout(id: String, event: String, data: Map<String, Any?> = emptyMap()) {
+        if (id.isBlank()) return
+        // Only the open window has a per-call set to mark; a line about
+        // another call is simply the first thing said about it.
+        if (id == callId && !once.add(event)) return
+        logAbout(id, event, data)
+        // The line opened the window itself, there being nothing live: mark it
+        // there too, so our own measurement does not follow it with a second.
+        if (callId == id) once.add(event)
     }
 
     /**

@@ -2319,13 +2319,36 @@ class CallCoordinator(
 
     // ── Engine reactions ────────────────────────────────────────────────
 
+    /**
+     * A line the page measured, filed under the call it is about.
+     *
+     * Almost every one belongs to the call we are on and says nothing about
+     * which — the page measures one room at a time. The exception is a
+     * pre-warm: the ring of a SECOND call is warmed while the window belongs
+     * to the call in progress, so that line names its call (`call`) and is
+     * filed there instead of landing on the wrong one.
+     */
+    private fun onTelemetry(event: CallEngineEvent.Telemetry) {
+        val about = (event.fields[TELEMETRY_CALL] as? String)?.takeIf(String::isNotBlank)
+        if (about == null) {
+            diagnostics.log(event.event, event.fields)
+            return
+        }
+        val fields = event.fields - TELEMETRY_CALL
+        // A named line is a pre-warm's, and `warm_connect` is one line per
+        // call however it was measured — see [onConnectionChanged], which
+        // measures the paths that connect themselves.
+        if (event.event == WARM_CONNECT) diagnostics.logOnceAbout(about, event.event, fields)
+        else diagnostics.logAbout(about, event.event, fields)
+    }
+
     private fun onConnectionChanged(state: EngineConnection) {
         if (state == EngineConnection.Connected && joinStartedAtMillis > 0) {
             // Once per call: a ring-warmed room connected during the ring and
             // the page has already sent this, so the first writer wins rather
             // than two lines disagreeing.
             diagnostics.logOnce(
-                "warm_connect",
+                WARM_CONNECT,
                 mapOf("ok" to true, "ms" to now() - joinStartedAtMillis),
             )
         }
@@ -2362,7 +2385,7 @@ class CallCoordinator(
                 is CallEngineEvent.ConnectionChanged -> onConnectionChanged(event.state)
                 // Diagnostics the page measured, and our own speaking edge.
                 // Neither touches the call; both are dropped outside one.
-                is CallEngineEvent.Telemetry -> diagnostics.log(event.event, event.fields)
+                is CallEngineEvent.Telemetry -> onTelemetry(event)
                 is CallEngineEvent.SelfSpeaking -> diagnostics.selfSpeaking(event.speaking, event.level)
                 is CallEngineEvent.ScreenShare -> {
                     // The phones read `screenShare` off the roster row to
@@ -3206,8 +3229,12 @@ class CallCoordinator(
             // The ring is about to be shown. `source` is the transport that
             // delivered it — the desktop has no push, so it is always the
             // socket; the field stays for the sake of one log across clients.
-            diagnostics.startCall(session.callUuid)
-            diagnostics.log("ring_shown", mapOf("source" to "socket"))
+            //
+            // `logAbout`, not `startCall`: a ring that arrives while a call is
+            // up is a banner beside it, and taking the diagnostics window from
+            // the live call filed that call's own `speak`, `audio` and
+            // `disconnect` lines under the ring instead.
+            diagnostics.logAbout(session.callUuid, "ring_shown", mapOf("source" to "socket"))
             // PRE-CONNECT while it rings, on the ring's locked token: the
             // accept then upgrades this participant in place instead of
             // starting a connect from nothing. Idempotent by call id, so a
@@ -3582,6 +3609,16 @@ class CallCoordinator(
 
         /** The server's word for an accept that came too late. */
         const val CALL_ENDED = "call_ended"
+
+        /**
+         * The field a telemetry line uses to name the call it is about — the
+         * pre-warm's, measured beside the call we are on. Carried only to be
+         * routed, never sent: the server's own envelope already has the id.
+         */
+        const val TELEMETRY_CALL = "call"
+
+        /** Measured by the page on the ring-warmed path and here on every other; one line either way. */
+        const val WARM_CONNECT = "warm_connect"
 
         /**
          * How long Line 1's media-only empty room waits before it ends the call.
