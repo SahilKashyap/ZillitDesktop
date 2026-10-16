@@ -398,6 +398,13 @@ sealed interface CallEvent {
     /** The pill was dragged by this much; accumulated onto its offset. */
     data class DragPill(val dx: Float, val dy: Float) : CallEvent
     data object ToggleRoster : CallEvent
+
+    /**
+     * The stage's "+N" was pressed: show the users panel, never hide it. A
+     * toggle here would close the list for someone who already had it open
+     * and pressed "+N" expecting to be shown the people it counts.
+     */
+    data object ShowPeople : CallEvent
     data object ToggleAddPeople : CallEvent
 
     data object ToggleScreenShare : CallEvent
@@ -624,6 +631,9 @@ class CallViewModel(
         launch { coordinator.notices.collect { text -> setState { copy(notice = text) } } }
         // The pin drawn inside the video picture: the page can only ask.
         launch { coordinator.pinRequests.collect { key -> setState { togglePin(key) } } }
+        // Its "+N", likewise. Open only: the press means "show me the rest",
+        // and a toggle would close the panel for anyone who already had it up.
+        launch { coordinator.peopleRequests.collect { toggleUsers(openOnly = true) } }
         // One collector, not four: the tile list is a function of all of them
         // together, and projecting on each separately would publish states
         // where the roster and the media picture disagree.
@@ -881,6 +891,7 @@ class CallViewModel(
                 copy(pillOffsetX = pillOffsetX + event.dx, pillOffsetY = pillOffsetY + event.dy)
             }
             CallEvent.ToggleRoster -> toggleUsers()
+            CallEvent.ShowPeople -> toggleUsers(openOnly = true)
             CallEvent.RefreshRoster -> onRefreshRoster(force = true)
             CallEvent.ToggleScreenShare -> onToggleScreenShare()
             is CallEvent.ChooseShareSource -> setState {

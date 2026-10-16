@@ -214,6 +214,19 @@ class CallUsersAndLayoutTest {
         assertEquals(null, EngineBridge.parse("""{"type":"pin","key":""}"""))
     }
 
+    /**
+     * The rail's "+N" counts people with no tile on the stage at all, so a
+     * press that reaches nothing leaves them unreachable — which is what it
+     * did: the cell drew a number and had no listener on it.
+     */
+    @Test
+    fun `the page's plus-N press asks for the users panel`() {
+        assertEquals(
+            CallEngineEvent.PeopleRequested,
+            EngineBridge.parse("""{"type":"people"}"""),
+        )
+    }
+
     @Test
     fun `a new projection keeps the pins in the page's model`() {
         val pinned = state.togglePin("asha")

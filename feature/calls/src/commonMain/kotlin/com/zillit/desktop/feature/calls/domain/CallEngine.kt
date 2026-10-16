@@ -74,6 +74,14 @@ sealed interface CallEngineEvent {
     data class PinRequested(val key: String) : CallEngineEvent
 
     /**
+     * The "+N" at the end of the stage's rail was pressed. The people it
+     * stands for are not on the stage at all, and the users panel is the only
+     * list that holds every one of them — so the page asks for it, as it asks
+     * for a pin, rather than deciding anything itself.
+     */
+    data object PeopleRequested : CallEngineEvent
+
+    /**
      * A remote participant raised or lowered their hand, by USER id.
      *
      * Line 1 only: the SFU broadcasts `peerRaisedHand`/`peerLoweredHand` with

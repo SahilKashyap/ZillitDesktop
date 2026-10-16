@@ -36,6 +36,9 @@ fun stageJson(tiles: List<CallTile>, columns: Int, pins: List<String> = emptyLis
         put("guest", str(S.txt_badge_guest))
         put("hold", str(S.desktop_call_on_hold))
         put("sharing", str(S.sharing))
+        // The rail's "+N", which opens the people panel: the label a screen
+        // reader gets, since the tile itself is only a number.
+        put("people", str(S.desktop_call_users))
     }
     // Pinned tile keys, in pin order: the page lays them out big and asks
     // back through a `pin` event, never deciding for itself.

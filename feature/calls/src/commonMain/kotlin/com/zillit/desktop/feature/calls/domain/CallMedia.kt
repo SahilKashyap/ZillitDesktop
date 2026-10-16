@@ -122,8 +122,10 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.RecordingSaved -> this
     // Our own mute is the coordinator's flag, not a peer's media.
     is CallEngineEvent.SelfMicMuted -> this
-    // Pins are a viewing choice; the view model holds them.
+    // Pins are a viewing choice; the view model holds them. So is asking for
+    // the users panel — neither says anything about the media picture.
     is CallEngineEvent.PinRequested -> this
+    CallEngineEvent.PeopleRequested -> this
     // Diagnostics. Measurements ABOUT the media picture, never part of it —
     // the whole point of `CallDiagnostics` is that nothing it carries can
     // change how a call behaves.
