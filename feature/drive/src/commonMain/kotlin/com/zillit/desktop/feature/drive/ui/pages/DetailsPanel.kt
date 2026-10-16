@@ -165,7 +165,9 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
                 leadingIcon = ZillitIcons.Edit,
             )
         }
-        if (item.isFolder && state.canCreateHere) {
+        // This folder's own rights: an Editor on a folder shared with them may
+        // ask for files into it.
+        if (item.isFolder && state.viewer.canCreate && state.viewer.may(DriveAction.Edit, item)) {
             ZillitButton(
                 text = str(S.drive_request_files_title),
                 onClick = { onEvent(DriveEvent.OpenFileRequests(item)) },

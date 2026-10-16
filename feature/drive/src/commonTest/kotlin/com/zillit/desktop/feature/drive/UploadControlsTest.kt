@@ -102,6 +102,7 @@ class UploadControlsTest {
     /** Each call to [upload] runs the next script entry. */
     private class ScriptedUploader : DriveUploader {
         val calls = mutableListOf<Call>()
+        val targets = mutableListOf<UploadTarget>()
         val script = ArrayDeque<Step>()
 
         override suspend fun upload(
@@ -112,6 +113,7 @@ class UploadControlsTest {
             onProgress: (Int, Int) -> Unit,
         ): ZillitResult<DriveItem> {
             val call = Call(file, resume).also(calls::add)
+            targets += target
             return script.removeFirst().invoke(call, onCheckpoint, onProgress)
         }
     }
@@ -460,5 +462,28 @@ class UploadControlsTest {
 
         vm.onEvent(DriveEvent.OpenRenameUploads)
         assertTrue(vm.state.value.renameUploads.open)
+    }
+
+    @Test
+    fun `two uploads in a row from inside a folder both land in it`() = runTest(dispatcher) {
+        // ZL-21873 on the web: the second upload went to the Drive root.
+        step { _, _, _ -> done }
+        step { _, _, _ -> done }
+        val folder = DriveItem(id = "fold", kind = DriveItemKind.Folder, name = "Day 1", createdById = "u1")
+        repo.rows = listOf(folder)
+        val vm = DriveViewModel(repository = repo, viewer = { admin }, uploader = uploader)
+        vm.start()
+        runCurrent()
+        vm.onEvent(DriveEvent.OpenFolder("fold"))
+        runCurrent()
+
+        repeat(2) { attempt ->
+            vm.onEvent(DriveEvent.OpenUpload)
+            vm.onEvent(DriveEvent.AddUploadFiles(listOf(file("a$attempt.txt"))))
+            vm.onEvent(DriveEvent.SubmitUpload)
+            runCurrent()
+        }
+
+        assertEquals(listOf("fold", "fold"), uploader.targets.map { it.folderId })
     }
 }

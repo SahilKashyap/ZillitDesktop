@@ -316,7 +316,7 @@ internal fun DriveEmptyState(state: DriveUiState, onEvent: (DriveEvent) -> Unit)
             modifier = Modifier.padding(top = ZillitTheme.spacing.xs).widthIn(max = EMPTY_TEXT_WIDTH),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        if (!searchEmpty && !sharedByMeEmpty && !sharedEmpty && state.canCreateHere &&
+        if (!searchEmpty && !sharedByMeEmpty && !sharedEmpty && state.canAddHere &&
             !state.showFavouritesOnly && state.tagFilterId == null
         ) {
             Row(

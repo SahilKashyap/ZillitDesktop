@@ -218,7 +218,9 @@ private fun TableRow(
     val inspected = state.details.item?.id == item.id
     val dropHover = drag.hoverFolderId == item.id
     val beingDragged = drag.dragging?.id == item.id
-    val canDrag = state.viewer.may(DriveAction.Edit, item) && !state.isSearching
+    // Dragging a row onto a folder is a move, so it is withheld wherever Move
+    // is (ZL-21869) — see [DriveUiState.canMoveHere].
+    val canDrag = state.viewer.may(DriveAction.Edit, item) && !state.isSearching && state.canMoveHere
     var origin by remember { mutableStateOf(Offset.Zero) }
 
     val background = when {

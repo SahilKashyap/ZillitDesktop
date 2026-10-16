@@ -419,7 +419,10 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 )
             }
             if (state.tags.isNotEmpty()) TagFilter(state.tags, state.tagFilterId, onEvent)
-            if (state.canCreateHere) {
+            // Upload / New folder / Request files follow what may be added
+            // where the user is standing, not which tab it is: an Editor on a
+            // folder shared with them gets them too (ZL-21871).
+            if (state.canAddHere) {
                 ZillitButton(
                     text = str(S.upload),
                     onClick = { onEvent(DriveEvent.OpenUpload) },
@@ -566,7 +569,9 @@ private fun BulkBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 leadingIcon = ZillitIcons.Trash,
             )
         }
-        if (state.movableCount > 0) {
+        // No Move under "Shared with me", whatever the rows' own rights say
+        // (ZL-21869) — see [DriveUiState.canMoveHere].
+        if (state.movableCount > 0 && state.canMoveHere) {
             ZillitButton(
                 text = bulkLabel(str(S.drive_move_to_ellipsis), state.movableCount, selected),
                 onClick = { onEvent(DriveEvent.OpenMoveSelection) },

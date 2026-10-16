@@ -122,7 +122,7 @@ internal fun DropPermissionsDialog(state: DriveUiState, onEvent: (DriveEvent) ->
             onChange = { onEvent(DriveEvent.DropAccess(it)) },
             people = state.sharePeople.filterNot { it.id == state.viewer.userId },
             forFolder = false,
-            showInherit = false,
+            privateHint = if (drop.access.inherited.isEmpty()) null else str(S.desktop_drive_folder_members_kept),
         )
     }
 }

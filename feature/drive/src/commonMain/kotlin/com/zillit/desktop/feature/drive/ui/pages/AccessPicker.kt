@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,7 +27,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.feature.drive.domain.DrivePerson
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.FileAccessLevel
@@ -42,9 +40,17 @@ import com.zillit.desktop.core.strings.str
  *
  * Two modes: **Project users** applies one grant to everyone eligible;
  * **Specific users** picks people one by one, each with their own grant.
- * Folders grant roles (owner / editor / viewer); files grant levels
- * (view / download / edit). [locked] people are listed but cannot be
- * changed — the item's creator, and the viewer themself.
+ *
+ * In specific mode the grant is three nested boxes, drawn the same way for
+ * both kinds: Viewer / Editor / Owner on a folder, View / Download / Edit on
+ * a file. A box takes the ones below it with it, unticking drops one level,
+ * and unticking the lowest stops sharing — [AccessDraft.clicked] is the whole
+ * rule. A person a parent folder already covers ([AccessDraft.inherited]) has
+ * those boxes and their own checkbox locked: they can be given more here,
+ * never less.
+ *
+ * [locked] people are left out of the list entirely — the item's creator, and
+ * the viewer themself, for whom sharing means nothing.
  */
 @Composable
 @Suppress("LongParameterList") // One seam per thing the three callers differ on.
@@ -56,7 +62,6 @@ internal fun AccessPicker(
     modifier: Modifier = Modifier,
     locked: Set<String> = emptySet(),
     privateHint: String? = null,
-    showInherit: Boolean = forFolder,
     enabled: Boolean = true,
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -72,73 +77,69 @@ internal fun AccessPicker(
                 label = str(S.drive_permissions_mode_project),
                 selected = draft.projectWide,
                 onClick = {
-                    if (enabled) onChange(AccessDraft(projectWide = true, inheritToChildren = draft.inheritToChildren))
+                    // The mode is the only thing a switch keeps: a grant
+                    // chosen one way does not carry over to the other. The
+                    // inherited floors do — they are the server's, not a choice.
+                    if (enabled) onChange(AccessDraft(projectWide = true, inherited = draft.inherited))
                 },
             )
             ZillitChoiceChip(
                 label = str(S.drive_permissions_mode_specific),
                 selected = !draft.projectWide,
                 onClick = {
-                    if (enabled) onChange(AccessDraft(projectWide = false, inheritToChildren = draft.inheritToChildren))
+                    if (enabled) onChange(AccessDraft(projectWide = false, inherited = draft.inherited))
                 },
             )
         }
-        if (forFolder) RoleLegend()
 
         if (draft.projectWide) {
             ProjectWide(draft, onChange, people, forFolder, enabled)
         } else {
             SpecificPeople(draft, onChange, people, forFolder, locked, enabled)
-        }
-
-        val anyGrant = if (draft.projectWide) {
-            draft.projectRole != null || draft.projectLevel != null
-        } else {
-            draft.selectedCount > 0
-        }
-        if (showInherit && anyGrant) {
-            ZillitCheckbox(
-                checked = draft.inheritToChildren,
-                onCheckedChange = { onChange(draft.copy(inheritToChildren = it)) },
-                label = str(S.desktop_drive_apply_access_subfolders),
-                enabled = enabled,
+            ZillitText(
+                text = if (forFolder) str(S.desktop_drive_folder_nest_hint) else str(S.desktop_drive_file_nest_hint),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
             )
         }
     }
 }
 
-/** Owner / Editor / Viewer with their tints, as a hover hint — the web's role legend. */
+/** The grid's heading: how many are selected, and what each box column means. */
 @Composable
-private fun RoleLegend() {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        DriveRole.entries.forEach { role ->
-            ZillitTooltip(text = role.description) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(LEGEND_DOT)
-                            .clip(ZillitTheme.shapes.pill)
-                            .background(roleTint(role)),
-                    )
-                    ZillitText(
-                        text = role.label,
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textSecondary,
-                    )
-                }
-            }
+private fun GridHead(selectedCount: Int, forFolder: Boolean) {
+    val colors = ZillitTheme.colors
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        ZillitText(
+            text = when (selectedCount) {
+                0 -> str(S.desktop_drive_no_users_selected)
+                1 -> str(S.desktop_drive_user_selected_one)
+                else -> str(S.drive_users_selected, selectedCount)
+            },
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        levelColumns(forFolder).forEach { column ->
+            ZillitText(
+                text = column.label,
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                modifier = Modifier.width(LEVEL_COLUMN),
+            )
         }
     }
 }
 
+/** The three nested grants, in level order — what the grid's columns are. */
+private data class LevelColumn(val level: Int, val label: String)
+
 @Composable
-internal fun roleTint(role: DriveRole): Color = when (role) {
-    DriveRole.Owner -> ZillitTheme.colors.danger
-    DriveRole.Editor -> ZillitTheme.colors.info
-    DriveRole.Viewer -> ZillitTheme.colors.success
+private fun levelColumns(forFolder: Boolean): List<LevelColumn> = if (forFolder) {
+    DriveRole.entries.sortedBy { it.level }.map { LevelColumn(it.level, it.label) }
+} else {
+    FileAccessLevel.entries.sortedBy { it.level }.map { LevelColumn(it.level, it.label) }
 }
 
 @Composable
@@ -209,19 +210,7 @@ private fun SpecificPeople(
         placeholder = str(S.drive_search_team_members),
         enabled = enabled,
     )
-    ZillitText(
-        text = if (draft.selectedCount > 0) {
-            if (draft.selectedCount == 1) {
-                str(S.desktop_drive_user_selected_one)
-            } else {
-                str(S.drive_users_selected, draft.selectedCount)
-            }
-        } else {
-            str(S.desktop_drive_no_users_selected)
-        },
-        style = ZillitTheme.typography.labelSmall,
-        color = colors.textSecondary,
-    )
+    GridHead(draft.selectedCount, forFolder)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -251,6 +240,14 @@ private fun SpecificPeople(
     }
 }
 
+/**
+ * One person's row: their name, and the three nested boxes.
+ *
+ * [AccessDraft.inherited] is the floor a folder above set. Its boxes and the
+ * row's own checkbox are disabled, and the note under the name says where the
+ * access came from instead of the person's designation — the same wording the
+ * web shows.
+ */
 @Composable
 private fun PersonRow(
     person: DrivePerson,
@@ -260,77 +257,63 @@ private fun PersonRow(
     enabled: Boolean,
 ) {
     val colors = ZillitTheme.colors
-    val selected = if (forFolder) person.id in draft.roles else person.id in draft.levels
+    val level = draft.levelOf(person.id, forFolder)
+    val floor = draft.floor(person.id, forFolder)
+    val selected = level > 0
     fun toggle(on: Boolean) {
-        onChange(
-            if (forFolder) {
-                draft.copy(
-                    roles = if (on) {
-                        draft.roles + (person.id to (draft.roles[person.id] ?: DriveRole.Viewer))
-                    } else {
-                        draft.roles - person.id
-                    },
-                )
-            } else {
-                draft.copy(
-                    levels = if (on) {
-                        draft.levels + (person.id to (draft.levels[person.id] ?: FileAccessLevel.View))
-                    } else {
-                        draft.levels - person.id
-                    },
-                )
-            },
-        )
+        if (floor > 0) return
+        onChange(draft.atLevel(person.id, if (on) 1 else 0, forFolder))
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (selected) colors.accentSoft.copy(alpha = SELECTED_WASH) else Color.Transparent)
-            .clickable(enabled = enabled) { toggle(!selected) }
+            .clickable(enabled = enabled && floor == 0) { toggle(!selected) }
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitCheckbox(checked = selected, onCheckedChange = ::toggle, enabled = enabled)
+        ZillitCheckbox(checked = selected, onCheckedChange = ::toggle, enabled = enabled && floor == 0)
         ZillitAvatar(name = person.name, userId = person.id, size = PERSON_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(text = person.name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
-            if (person.designation.isNotBlank()) {
+            val note = accessNote(person, floor, forFolder)
+            if (note.isNotBlank()) {
                 ZillitText(
-                    text = person.designation,
+                    text = note,
                     style = ZillitTheme.typography.labelSmall,
-                    color = colors.textSecondary,
+                    color = if (floor > 0) colors.info else colors.textSecondary,
                     maxLines = 1,
                 )
             }
         }
-        if (selected) {
-            if (forFolder) {
-                ZillitSelect(
-                    value = draft.roles[person.id] ?: DriveRole.Viewer,
-                    options = DriveRole.entries,
-                    onSelect = { onChange(draft.copy(roles = draft.roles + (person.id to it))) },
-                    label = { it.label },
-                    enabled = enabled,
-                    modifier = Modifier.width(GRANT_WIDTH),
-                )
-            } else {
-                ZillitSelect(
-                    value = draft.levels[person.id] ?: FileAccessLevel.View,
-                    options = FileAccessLevel.entries,
-                    onSelect = { onChange(draft.copy(levels = draft.levels + (person.id to it))) },
-                    label = { it.label },
-                    enabled = enabled,
-                    modifier = Modifier.width(GRANT_WIDTH),
+        levelColumns(forFolder).forEach { column ->
+            Box(modifier = Modifier.width(LEVEL_COLUMN)) {
+                ZillitCheckbox(
+                    checked = level >= column.level,
+                    onCheckedChange = { onChange(draft.clicked(person.id, column.level, forFolder)) },
+                    // At or below the inherited floor: this is not ours to take away.
+                    enabled = enabled && column.level > floor,
                 )
             }
         }
     }
 }
 
-private val LEGEND_DOT = 8.dp
 private val LIST_MAX_HEIGHT = 280.dp
 private val ROW_HEIGHT = 53.dp
+/**
+ * What is said under the name: where the access came from when a folder above
+ * gave it, and the person's designation otherwise.
+ */
+@Composable
+private fun accessNote(person: DrivePerson, floor: Int, forFolder: Boolean): String = when {
+    floor > 0 && forFolder -> str(S.desktop_drive_access_through_parent)
+    floor > 0 -> str(S.desktop_drive_access_through_folder)
+    else -> person.designation
+}
+
 private val PERSON_AVATAR = 32.dp
-private val GRANT_WIDTH = 120.dp
+/** Each box column, header and boxes alike, so the two line up. */
+private val LEVEL_COLUMN = 58.dp
 private const val SELECTED_WASH = 0.5f

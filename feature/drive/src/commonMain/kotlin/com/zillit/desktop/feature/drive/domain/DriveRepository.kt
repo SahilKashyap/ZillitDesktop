@@ -55,6 +55,21 @@ interface DriveRepository {
      */
     suspend fun listing(query: DriveListQuery): ZillitResult<DriveListing>
 
+    /**
+     * One folder's own files and subfolders — `GET /files?folder_id=` and
+     * `GET /folders?parent_folder_id=`, the pair the web fires whenever a
+     * folder is opened.
+     *
+     * Needed because the tab-wide lists cannot see everything that is in a
+     * folder: a file someone uploads into another person's folder is neither
+     * *shared with* them nor in their own My Drive, so it is in no scope of
+     * theirs, and the server does not announce it back to the device that
+     * uploaded it either. The answer is **merged** into the listing, never
+     * substituted for it.
+     */
+    suspend fun folderContents(folderId: String): ZillitResult<DriveListing> =
+        ZillitResult.Success(DriveListing())
+
     suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem>
 
     // -- mutations ---------------------------------------------------------
@@ -84,6 +99,26 @@ interface DriveRepository {
 
     /** Presigned URLs for a selection, for a multi-file download. */
     suspend fun bulkDownloadUrls(fileIds: List<String>): ZillitResult<List<String>>
+
+    /**
+     * A token for the selection as one .zip
+     * (`POST /bulk/download-zip-link`).
+     *
+     * Refused for an empty list, for more than 200 files, and for a selection
+     * holding nothing this person may download — all three as the server's own
+     * message. Files they may not download are left out of the zip and listed
+     * in a `_skipped.txt` inside it.
+     */
+    suspend fun filesZipLink(fileIds: List<String>): ZillitResult<DriveZipLink> =
+        ZillitResult.Failure(ZillitError.Unknown("the zip download is not wired"))
+
+    /**
+     * Where [token] is redeemed — `GET /bulk/download-zip?token=…`.
+     *
+     * Carries **no auth header**: the token is the authorisation, and it
+     * expires in two minutes, so the download has to start at once.
+     */
+    fun zipDownloadUrl(token: String): String = ""
 
     // -- reading a file ----------------------------------------------------
 
@@ -132,12 +167,19 @@ interface DriveRepository {
         ZillitResult.Failure(ZillitError.Unknown("file requests are not wired"))
 
     /**
-     * The document editor's configuration for [fileId].
+     * The live editor's configuration for [fileId] — Zillit Sheets, Docs or
+     * Slides (`GET /editor/{id}/config`).
      *
-     * Returns the URL to load. The editor itself is an embedded browser
-     * surface, which this module does not own — see `DriveEffect.OpenEditor`.
+     * [viewOnly] asks for `mode=view`, which is also what someone without
+     * edit rights gets whatever they ask for. A file the editors cannot open
+     * is a **400 with a message key** — `file_type_not_editable`,
+     * `file_too_large_to_edit`, `live_editor_unavailable` — so the failure
+     * carries what to show and this client does not word it itself.
+     *
+     * The session is assembled into an address by [EditorSession.address]; the
+     * surface that loads it is the host's — see `DriveEffect.OpenEditor`.
      */
-    suspend fun editorUrl(fileId: String, editable: Boolean): ZillitResult<String>
+    suspend fun editorSession(fileId: String, viewOnly: Boolean): ZillitResult<EditorSession>
 
     // -- uploads -----------------------------------------------------------
 
@@ -204,20 +246,25 @@ interface DriveRepository {
     suspend fun access(ref: DriveRef): ZillitResult<List<DriveAccessEntry>>
 
     /**
-     * Replaces the access list for one item.
+     * Replaces the access list for one item, answering the server's message.
      *
      * Replaces rather than patches, matching the endpoint: an entry omitted
      * from [entries] has its access revoked. Callers must send the full list.
      *
-     * [applyToChildren] only means anything for a folder — the server inherits
-     * the roles down every descendant (FR-05.8), which on a large tree is not
-     * instant.
+     * There is no "apply to subfolders" any more, and no second call to
+     * `/access/inherit`: a folder's access reaches everything inside it,
+     * existing subfolders included, and a change or a removal follows down at
+     * once. The server does all of it.
+     *
+     * The answer is its `message` key (`folder_access_updated`,
+     * `file_access_updated`), for the caller to translate and show. Building
+     * our own sentence is what made removing one of two people say "shared
+     * with 1 user".
      */
     suspend fun updateAccess(
         ref: DriveRef,
         entries: List<DriveAccessEntry>,
-        applyToChildren: Boolean = false,
-    ): ZillitResult<Unit>
+    ): ZillitResult<String>
 
     /**
      * Who may be given access at all — the ids with view rights on the drive

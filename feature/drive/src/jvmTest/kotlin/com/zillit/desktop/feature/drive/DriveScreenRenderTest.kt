@@ -365,6 +365,43 @@ class DriveScreenRenderTest {
         onNodeWithText("Folder moved").assertExists()
     }
 
+    /**
+     * The folder share drawer: three nested boxes, and a person a parent
+     * folder already covers.
+     */
+    @Test
+    fun `a folder's access is three nested boxes with the inherited ones locked`() = runComposeUiTest {
+        val current = mutableStateOf(
+            state().copy(
+                share = ShareState(item = folder, access = AccessDraft(roles = mapOf("u2" to DriveRole.Editor))),
+            ),
+        )
+        setContent { ZillitTheme { DriveScreen(state = current.value, onEvent = {}) } }
+        waitForIdle()
+
+        // The grid's three box columns, and what they mean. (Grace's own
+        // designation is "Editor", hence more than one node for that one.)
+        onNodeWithText("Viewer").assertExists()
+        assertTrue(onAllNodesWithText("Editor").fetchSemanticsNodes().isNotEmpty())
+        onNodeWithText("Owner").assertExists()
+        onNodeWithText("Owner includes Editor and Viewer. Editor includes Viewer.").assertExists()
+        // There is no "apply to subfolders" choice any more; this says why.
+        onNodeWithText("Everything inside this folder, subfolders included, gets the same access.").assertExists()
+
+        // Someone a parent folder covers: the note replaces their designation.
+        current.value = state().copy(
+            share = ShareState(
+                item = folder,
+                access = AccessDraft(
+                    roles = mapOf("u2" to DriveRole.Editor),
+                    inherited = mapOf("u2" to DriveRole.Editor),
+                ),
+            ),
+        )
+        waitForIdle()
+        onNodeWithText("Has access through the parent folder").assertExists()
+    }
+
     @Test
     fun `every dialog composes`() = runComposeUiTest {
         val current = mutableStateOf(state().copy(moveTo = MoveToState(items = listOf(folder))))

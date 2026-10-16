@@ -167,12 +167,18 @@ internal fun menuEntries(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
             onEvent(DriveEvent.CopyLink(item))
         }
     }
-    if (canEdit && !viewOnly) {
+    // ZL-21869 — no Move under "Shared with me", at any depth and whatever
+    // this row's own can_edit says: Move rearranges the owner's tree, which
+    // was never the recipient's to do.
+    if (canEdit && !viewOnly && state.canMoveHere) {
         entries += ZillitMenuEntry.Action(str(S.drive_move_to_ellipsis), ZillitIcons.ArrowRight) {
             onEvent(DriveEvent.OpenMoveTo(listOf(item)))
         }
     }
-    if (item.isFolder && !viewOnly && state.canCreateHere) {
+    // Asking for files into a folder follows that folder's own rights, so an
+    // Editor on a shared folder may (ZL-21871).
+    val mayRequestFiles = canEdit && state.viewer.canCreate
+    if (item.isFolder && !viewOnly && mayRequestFiles) {
         entries += ZillitMenuEntry.Action(str(S.drive_request_files_title), ZillitIcons.Inbox) {
             onEvent(DriveEvent.OpenFileRequests(item))
         }

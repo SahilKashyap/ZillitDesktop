@@ -128,8 +128,14 @@ internal fun UploadSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                     onChange = { onEvent(DriveEvent.UploadAccess(it)) },
                     people = state.sharePeople.filterNot { it.id == state.viewer.userId },
                     forFolder = false,
-                    privateHint = str(S.desktop_drive_skip_permissions_files),
-                    showInherit = false,
+                    // Uploading into a folder: the people the folder covers
+                    // are shown locked at the level it gives them, because a
+                    // file's own share can no longer take that away.
+                    privateHint = if (draft.access.inherited.isEmpty()) {
+                        str(S.desktop_drive_skip_permissions_files)
+                    } else {
+                        str(S.desktop_drive_folder_members_kept)
+                    },
                 )
             }
         }

@@ -24,6 +24,7 @@ import com.zillit.desktop.feature.drive.domain.MyDriveFilter
 import com.zillit.desktop.feature.drive.domain.PreviewKind
 import com.zillit.desktop.feature.drive.domain.UploadCheckpoint
 import com.zillit.desktop.feature.drive.domain.breadcrumbTo
+import com.zillit.desktop.feature.drive.domain.driveMessage
 import com.zillit.desktop.feature.drive.domain.driveUnread
 import com.zillit.desktop.feature.drive.domain.eligible
 import kotlinx.coroutines.Job
@@ -257,6 +258,11 @@ class DriveViewModel(
             DriveEvent.DownloadSelection -> downloadSelection()
             is DriveEvent.CopyLink -> copyLink(event.item)
             is DriveEvent.OpenInEditor -> openEditor(event.item, event.editable)
+            // Over the listing, not the rows on screen: the window that asked
+            // is its own, and the tab or folder behind it may have moved on.
+            is DriveEvent.SwitchEditorToEdit -> currentState.listing.files
+                .firstOrNull { it.id == event.fileId }
+                ?.let { openEditor(it, editable = true) }
             is DriveEvent.Preview -> drawers.preview(event.item)
             DriveEvent.ClosePreview -> setState { copy(preview = null) }
             DriveEvent.OpenPreviewInBrowser -> drawers.openPreviewOutside()
@@ -275,9 +281,7 @@ class DriveViewModel(
             }
             DriveEvent.ClearUploadFiles -> drawers.updateUpload { copy(files = emptyList(), unsupported = emptyList()) }
             DriveEvent.ClearUnsupported -> drawers.updateUpload { copy(unsupported = emptyList()) }
-            is DriveEvent.UploadDestination -> drawers.updateUpload {
-                copy(pickExisting = event.pickExisting, destinationFolderId = event.folderId)
-            }
+            is DriveEvent.UploadDestination -> drawers.uploadDestination(event.pickExisting, event.folderId)
 
             is DriveEvent.UploadDescription -> drawers.updateUpload { copy(description = event.text) }
             DriveEvent.ToggleUploadDetails -> drawers.updateUpload { copy(showDetails = !showDetails) }
@@ -528,6 +532,9 @@ class DriveViewModel(
             setState { copy(searchInput = "", search = "") }
             loadListing()
         }
+        // The folder's own contents, as the web asks for them on every folder
+        // open: what is inside it is not all in this tab's lists.
+        mergeFolder(folderId)
     }
 
     private fun searchInput(text: String) {
@@ -612,6 +619,35 @@ class DriveViewModel(
         }
     }
 
+    /**
+     * Folds one folder's own contents into the listing.
+     *
+     * The tab-wide lists cannot see everything in a folder — a file someone
+     * uploaded into another person's folder is in no scope of theirs, and the
+     * server does not announce it back to the device that uploaded it — so the
+     * folder is asked directly and the answer is **merged**: the listing keeps
+     * every row it had, and these replace or join them. That is also how an
+     * Editor's subfolder inside the owner's folder becomes visible.
+     */
+    internal fun mergeFolder(folderId: String?) {
+        val id = folderId ?: return
+        launch {
+            val fetched = repository.folderContents(id) as? ZillitResult.Success ?: return@launch
+            if (fetched.data.isEmpty) return@launch
+            setState {
+                val merged = DriveListing(
+                    files = listing.files.mergedWith(fetched.data.files),
+                    folders = listing.folders.mergedWith(fetched.data.folders),
+                )
+                copy(
+                    listing = merged,
+                    unread = merged.driveUnread(unreadRows, section),
+                    breadcrumb = breadcrumbTo(folderId, merged.folders),
+                )
+            }
+        }
+    }
+
     internal fun loadTrash() {
         setState { copy(trash = trash.copy(loading = true)) }
         launch {
@@ -673,19 +709,40 @@ class DriveViewModel(
         }
     }
 
+    /**
+     * Why this move cannot happen, or null when it can.
+     *
+     * Three refusals, each said in its own words: the section it was asked in
+     * (ZL-21869), the rights on the rows, and a folder being dropped into
+     * itself.
+     */
+    private fun moveRefusal(
+        state: DriveUiState,
+        matched: List<DriveItem>,
+        allowed: List<DriveItem>,
+        targetFolderId: String?,
+    ): String? = when {
+        // Nothing under "Shared with me" moves, at any depth and whatever the
+        // viewer's own can_edit says — those items are in someone else's tree.
+        // The screens withhold Move there, so this is the backstop for a drag
+        // or a shortcut that got through.
+        !state.canMoveHere -> str(S.desktop_drive_no_move_shared)
+        matched.isNotEmpty() && allowed.isEmpty() -> str(S.desktop_drive_no_move_permission)
+        // A folder cannot go into itself or its own descendants; the server
+        // would refuse the loop, and refusing here says why.
+        targetFolderId != null && allowed.any { it.isFolder && it.id == targetFolderId } ->
+            str(S.desktop_drive_folder_into_itself)
+
+        else -> null
+    }
+
     private fun moveTo(refs: List<DriveRef>, targetFolderId: String?) {
         if (refs.isEmpty()) return
         val state = currentState
         val matched = state.rows.filter { row -> refs.any { it.id == row.id } }
         val allowed = state.viewer.eligible(DriveAction.Edit, matched)
-        if (matched.isNotEmpty() && allowed.isEmpty()) {
-            sendEffect(DriveEffect.Failed(str(S.desktop_drive_no_move_permission)))
-            return
-        }
-        // A folder cannot go into itself or its own descendants; the server
-        // would refuse the loop, and refusing here says why.
-        if (targetFolderId != null && allowed.any { it.isFolder && it.id == targetFolderId }) {
-            sendEffect(DriveEffect.Failed(str(S.desktop_drive_folder_into_itself)))
+        moveRefusal(state, matched, allowed, targetFolderId)?.let { why ->
+            sendEffect(DriveEffect.Failed(why))
             return
         }
         val toMove = if (matched.isEmpty()) refs else allowed.map { it.ref }
@@ -832,17 +889,36 @@ class DriveViewModel(
         if (!item.isFolder) badges.readItem(item.id)
     }
 
+    /**
+     * Opens a file in Zillit Sheets / Docs / Slides.
+     *
+     * A file the editors cannot open comes back as a refusal carrying its own
+     * key — `file_type_not_editable`, `file_too_large_to_edit`,
+     * `live_editor_unavailable` — and that is what the user is shown, rather
+     * than wording of ours that would have to guess which of the three it was.
+     */
     internal fun openEditor(item: DriveItem, editable: Boolean) {
         setState { copy(menu = null) }
         markRead(item)
         launch {
-            when (val url = repository.editorUrl(item.id, editable)) {
+            when (val session = repository.editorSession(item.id, viewOnly = !editable)) {
                 is ZillitResult.Success -> {
-                    sendEffect(DriveEffect.OpenEditor(url.data, item.name))
-                    if (!editable) setState { copy(notice = str(S.desktop_drive_opening_preview_mode)) }
+                    val config = session.data
+                    sendEffect(
+                        DriveEffect.OpenEditor(
+                            url = config.address(),
+                            fileName = config.fileName.ifBlank { item.name },
+                            fileId = item.id,
+                            viewOnly = config.viewOnly,
+                            // Only for someone who may edit; a viewer never
+                            // sees the button.
+                            canSwitchToEdit = config.viewOnly && config.canSwitchToEdit,
+                        ),
+                    )
+                    if (config.viewOnly) setState { copy(notice = str(S.desktop_drive_opening_preview_mode)) }
                 }
 
-                is ZillitResult.Failure -> report(url.error)
+                is ZillitResult.Failure -> report(session.error)
             }
         }
     }
@@ -921,11 +997,31 @@ class DriveViewModel(
                     ) + (if (skipped > 0) " " + str(S.desktop_drive_download_skipped, skipped) else "…"),
             )
         }
-        launch {
-            when (val urls = repository.bulkDownloadUrls(allowed.map { it.id })) {
-                is ZillitResult.Success -> urls.data.forEach { sendEffect(DriveEffect.OpenUrl(it)) }
-                is ZillitResult.Failure -> report(urls.error)
+        launch { saveSelection(allowed.map { it.id }) }
+    }
+
+    /**
+     * Several files as one .zip; one file as itself.
+     *
+     * One address per file only ever saved the first — which is the bug this
+     * replaces. The zip is two steps because the download cannot carry our
+     * auth headers: an authorised call mints a token, and the token *is* the
+     * authorisation on the address that follows. It expires in two minutes, so
+     * the download is started straight away and nothing is queued behind it.
+     * Files the person may not download are left out and named in a
+     * `_skipped.txt` inside the zip.
+     */
+    private suspend fun saveSelection(fileIds: List<String>) {
+        if (fileIds.size == 1) {
+            when (val url = repository.downloadUrl(fileIds.first())) {
+                is ZillitResult.Success -> sendEffect(DriveEffect.OpenUrl(url.data))
+                is ZillitResult.Failure -> report(url.error)
             }
+            return
+        }
+        when (val link = repository.filesZipLink(fileIds)) {
+            is ZillitResult.Success -> sendEffect(DriveEffect.OpenUrl(repository.zipDownloadUrl(link.data.token)))
+            is ZillitResult.Failure -> report(link.error)
         }
     }
 
@@ -1034,8 +1130,18 @@ class DriveViewModel(
 
     // -- shared ------------------------------------------------------------
 
+    /**
+     * Says what the server said.
+     *
+     * `localised()` is right for everything the client diagnoses and for an
+     * ordinary HTTP failure, but a **403** is mapped to a flat "You do not
+     * have access to this" with the server's own key tucked into `technical` —
+     * and this tool's refusals are exactly the ones that need that key:
+     * `only_owner_can_move_out_of_folder` says *why* a move was refused and
+     * who can do it, which the generic sentence does not.
+     */
     private fun report(error: ZillitError) {
-        sendEffect(DriveEffect.Failed(error.localised()))
+        sendEffect(DriveEffect.Failed(error.driveMessage()))
     }
 
     // -- seams for the collaborators ----------------------------------------
@@ -1151,6 +1257,18 @@ interface DrivePreviewHost {
         override suspend fun renderPdfPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<ByteArray>> =
             ZillitResult.Failure(ZillitError.Validation(str(S.desktop_drive_pdf_preview_unavailable)))
     }
+}
+
+/**
+ * [fresh] over [this], by id — the merge a scoped folder read lands with.
+ *
+ * Never a replacement: the listing holds the whole open scope, and a folder's
+ * own contents are a few rows of it. A row that came back is the newer one.
+ */
+internal fun List<DriveItem>.mergedWith(fresh: List<DriveItem>): List<DriveItem> {
+    if (fresh.isEmpty()) return this
+    val byId = fresh.associateBy { it.id }
+    return map { byId[it.id] ?: it } + fresh.filterNot { row -> any { it.id == row.id } }
 }
 
 /** Adds or removes, whichever the current membership implies. */

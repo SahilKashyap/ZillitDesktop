@@ -3,10 +3,15 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.FlowLayout
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import javax.swing.JButton
 import javax.swing.JFrame
+import javax.swing.JLabel
+import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,11 +61,23 @@ internal object DocumentEditorWindow {
      * the caller's job is to say the editor cannot open, not to open it
      * elsewhere.
      */
+    @Suppress("LongParameterList") // One window, and the two things its own toolbar needs.
     fun open(
         url: String,
         fileName: String,
         scope: CoroutineScope,
         onUnavailable: (reason: String) -> Unit,
+        /** Opened read-only: the window says so in its own strip. */
+        viewOnly: Boolean = false,
+        /**
+         * "Edit", for a read-only session belonging to someone who may edit.
+         *
+         * The editor page draws no such button on a non-desktop surface, and
+         * it cannot reopen itself with a new token anyway — only Drive can
+         * mint one — so the button lives here and the caller reopens the file.
+         * Null leaves the strip with nothing but "View only".
+         */
+        onEdit: (() -> Unit)? = null,
     ) {
         scope.launch {
             val client = KcefRuntime.client()
@@ -78,7 +95,7 @@ internal object DocumentEditorWindow {
                 onUnavailable(reason)
                 return@launch
             }
-            withContext(Dispatchers.Main) { show(client, url, fileName) }
+            withContext(Dispatchers.Main) { show(client, url, fileName, viewOnly, onEdit) }
         }
     }
 
@@ -91,7 +108,13 @@ internal object DocumentEditorWindow {
      * its component receives, and a frame sized before it had a child sends
      * none of them — the window comes up blank and stays blank.
      */
-    private fun show(client: CefClient, url: String, fileName: String) {
+    private fun show(
+        client: CefClient,
+        url: String,
+        fileName: String,
+        viewOnly: Boolean = false,
+        onEdit: (() -> Unit)? = null,
+    ) {
         // Load failures and page console errors land in the app log. Without
         // them a Collabora page that 404s or throws is indistinguishable from
         // one that is simply slow, because none of it reaches Kotlin.
@@ -103,7 +126,11 @@ internal object DocumentEditorWindow {
         val browser: CefBrowser = client.createBrowser(url, CefRendering.DEFAULT, false)
         val frame = JFrame("$fileName — Zillit")
         frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
-        frame.contentPane.add(browser.uiComponent)
+        frame.contentPane.layout = BorderLayout()
+        if (viewOnly) {
+            frame.contentPane.add(viewOnlyStrip(frame, browser, client, onEdit), BorderLayout.NORTH)
+        }
+        frame.contentPane.add(browser.uiComponent, BorderLayout.CENTER)
         frame.minimumSize = Dimension(MIN_WIDTH, MIN_HEIGHT)
         frame.isVisible = true
         frame.setSize(WIDTH, HEIGHT)
@@ -121,6 +148,32 @@ internal object DocumentEditorWindow {
         open += frame
         // The URL is never logged — it carries the session token.
         ZillitLog.i(TAG) { "editor open for $fileName" }
+    }
+
+    /**
+     * "View only", and the Edit button beside it when there is one.
+     *
+     * Pressing it closes this window first: the file reopens with an editing
+     * token of its own, and two windows on one document — one of them unable
+     * to save — is the confusing state this avoids.
+     */
+    private fun viewOnlyStrip(
+        frame: JFrame,
+        browser: CefBrowser,
+        client: CefClient,
+        onEdit: (() -> Unit)?,
+    ): JPanel {
+        val strip = JPanel(FlowLayout(FlowLayout.LEFT, STRIP_GAP, STRIP_GAP))
+        strip.add(JLabel(str(S.drive_link_badge_view)))
+        if (onEdit != null) {
+            val edit = JButton(str(S.edit))
+            edit.addActionListener {
+                dispose(frame, browser, client)
+                onEdit()
+            }
+            strip.add(edit)
+        }
+        return strip
     }
 
     private fun dispose(frame: JFrame, browser: CefBrowser, client: CefClient) {
@@ -151,6 +204,7 @@ internal object DocumentEditorWindow {
     }
 
     private const val TAG = "DriveEditor"
+    private const val STRIP_GAP = 8
     private const val WIDTH = 1280
     private const val HEIGHT = 860
     private const val MIN_WIDTH = 640

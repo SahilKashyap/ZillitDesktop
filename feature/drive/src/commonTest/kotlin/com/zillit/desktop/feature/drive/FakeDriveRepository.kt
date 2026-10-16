@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.EditorSession
 import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
@@ -54,7 +55,14 @@ internal open class FakeDriveRepository(
     override suspend fun previewUrl(fileId: String): ZillitResult<String> = ZillitResult.Success("u")
     override suspend fun streamUrl(fileId: String): ZillitResult<String> = ZillitResult.Success("u")
     override suspend fun shareLink(fileId: String): ZillitResult<String> = ZillitResult.Success("u")
-    override suspend fun editorUrl(fileId: String, editable: Boolean): ZillitResult<String> = ZillitResult.Success("u")
+    override suspend fun editorSession(fileId: String, viewOnly: Boolean): ZillitResult<EditorSession> =
+        ZillitResult.Success(
+            EditorSession(
+                baseUrl = "https://editor.test/sheet",
+                wopiSrc = "https://wopi.test/f/$fileId",
+                accessToken = "t",
+            ),
+        )
     override suspend fun initiateUpload(request: UploadRequest): ZillitResult<UploadSession> = unused()
     override suspend fun completeUpload(
         uploadId: String,
@@ -74,8 +82,7 @@ internal open class FakeDriveRepository(
     override suspend fun updateAccess(
         ref: DriveRef,
         entries: List<DriveAccessEntry>,
-        applyToChildren: Boolean,
-    ): ZillitResult<Unit> = ok()
+    ): ZillitResult<String> = ZillitResult.Success("folder_access_updated")
     override suspend fun activity(itemId: String?): ZillitResult<List<DriveActivity>> =
         ZillitResult.Success(emptyList())
     override suspend fun comments(fileId: String): ZillitResult<List<DriveComment>> = ZillitResult.Success(emptyList())

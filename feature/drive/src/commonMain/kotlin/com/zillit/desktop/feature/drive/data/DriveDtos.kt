@@ -5,6 +5,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
+import com.zillit.desktop.feature.drive.domain.DriveEditorKind
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
@@ -12,6 +13,7 @@ import com.zillit.desktop.feature.drive.domain.DrivePermissions
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveZipLink
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.LinkPermission
 import com.zillit.desktop.feature.drive.domain.LinkRecipient
@@ -487,6 +489,17 @@ internal data class AccessDto(
     @SerialName("can_edit") val canEdit: Boolean? = null,
     @SerialName("can_download") val canDownload: Boolean? = null,
     @SerialName("can_delete") val canDelete: Boolean? = null,
+    /**
+     * The row came from a folder above, not from this item.
+     *
+     * Folder sharing reaches everything inside it, so both access lists now
+     * carry these: on a folder they are the parent's roles, on a file they are
+     * the people its folder gives access to. They are the floor the share
+     * panel locks — the server keeps them whatever a client sends.
+     */
+    @SerialName("inherited") val inherited: Boolean? = null,
+    @SerialName("inherited_role") val inheritedRole: String? = null,
+    @SerialName("inherited_from_folder_id") val inheritedFrom: String? = null,
 ) {
     fun toDomain(): DriveAccessEntry? = user.identifier()?.takeIf { it.isNotBlank() }?.let {
         val resolved = DriveRole.from(role)
@@ -495,6 +508,12 @@ internal data class AccessDto(
             userName = userName.orEmpty().ifBlank { user.personName() },
             designation = user.designation(),
             role = resolved,
+            inherited = inherited == true || !inheritedRole.isNullOrBlank(),
+            // `DriveRole.from` answers Viewer for anything it does not know,
+            // so an absent field has to be checked before it is read — else
+            // every row would come back with a Viewer floor it never had.
+            inheritedRole = inheritedRole?.takeIf { role -> role.isNotBlank() }?.let(DriveRole::from),
+            inheritedFromFolderId = inheritedFrom?.takeIf { id -> id.isNotBlank() },
             // File-level rows carry flags and no role; folder-level rows carry
             // a role and no flags. Whichever came, the other is derived so the
             // share panel renders one shape.
@@ -519,26 +538,83 @@ internal data class AccessDto(
 @Serializable
 internal data class EditorConfigDto(
     @SerialName("collaboraUrl") val collaboraUrl: String? = null,
+    /**
+     * Zillit's own editor page. The mobile contract names it `editorUrl` and
+     * the web reads `liveEditorUrl`; the same server answers both spellings,
+     * so both are declared rather than guessed at.
+     */
     @SerialName("editorUrl") val editorUrl: String? = null,
+    @SerialName("liveEditorUrl") val liveEditorUrl: String? = null,
     @SerialName("wopiSrc") val wopiSrc: String? = null,
     @SerialName("accessToken") val accessToken: String? = null,
     @SerialName("fileName") val fileName: String? = null,
+    /** `sheet` / `doc` / `slide`. */
+    @SerialName("editor") val editor: String? = null,
+    @SerialName("_permissions") val permissions: EditorPermissionsDto? = null,
 ) {
-    fun toDomain(): EditorSession = EditorSession(
-        // Discovery is cached for an hour and is empty on a cold server, so
-        // the conventional path under `collaboraUrl` is the fallback — the
-        // same one the web applies.
-        baseUrl = editorUrl?.takeIf { it.isNotBlank() }
-            ?: collaboraUrl?.takeIf { it.isNotBlank() }?.let { "${it.trimEnd('/')}$COOL_PATH" }
-            ?: "",
-        wopiSrc = wopiSrc.orEmpty(),
-        accessToken = accessToken.orEmpty(),
-        fileName = fileName.orEmpty(),
-    )
+    /** The Zillit editor page, if this server named one. */
+    private val livePage: String?
+        get() = listOf(editorUrl, liveEditorUrl).firstOrNull { !it.isNullOrBlank() }
+
+    fun toDomain(viewOnly: Boolean): EditorSession {
+        val live = livePage
+        return EditorSession(
+            // Discovery is cached for an hour and is empty on a cold server, so
+            // the conventional path under `collaboraUrl` is the fallback — the
+            // same one the web applies.
+            baseUrl = live
+                ?: collaboraUrl?.takeIf { it.isNotBlank() }?.let { "${it.trimEnd('/')}$COOL_PATH" }
+                ?: "",
+            wopiSrc = wopiSrc.orEmpty(),
+            accessToken = accessToken.orEmpty(),
+            fileName = fileName.orEmpty(),
+            kind = DriveEditorKind.from(editor),
+            // A config with no `_permissions` opens for editing: the token the
+            // server minted is what decides what may be saved (the web reads
+            // it the same way round).
+            viewOnly = viewOnly || permissions?.canEdit == false,
+            canSwitchToEdit = permissions?.canSwitchToEdit == true,
+            legacyFrame = live == null,
+        )
+    }
 }
+
+/** `_permissions` on the editor config — camelCase, like the rest of it. */
+@Serializable
+internal data class EditorPermissionsDto(
+    @SerialName("canEdit") val canEdit: Boolean? = null,
+    /** A read-only session belonging to someone who may edit after all. */
+    @SerialName("canSwitchToEdit") val canSwitchToEdit: Boolean? = null,
+)
 
 /** Collabora Online's editor page, at its conventional location. */
 private const val COOL_PATH = "/browser/dist/cool.html"
+
+/**
+ * `POST /bulk/download-zip-link` — a token and what the zip will hold.
+ *
+ * `skipped_count` is the files the person may not download: they are left out
+ * and named in a `_skipped.txt` inside the zip rather than failing the whole
+ * download.
+ */
+@Serializable
+internal data class ZipLinkDto(
+    @SerialName("token") val token: String? = null,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_count") val fileCount: Int? = null,
+    @SerialName("skipped_count") val skippedCount: Int? = null,
+    @SerialName("expires_in_seconds") val expiresInSeconds: Int? = null,
+) {
+    fun toDomain(): DriveZipLink? = token?.takeIf { it.isNotBlank() }?.let {
+        DriveZipLink(
+            token = it,
+            fileName = fileName.orEmpty(),
+            fileCount = fileCount ?: 0,
+            skippedCount = skippedCount ?: 0,
+            expiresInSeconds = expiresInSeconds ?: 0,
+        )
+    }
+}
 
 /** A URL-only reply, which the download, preview, stream and share routes send. */
 @Serializable
@@ -592,6 +668,11 @@ internal fun decodeFavouriteIds(json: String): Set<String> =
     driveWireJson.decodeFromString(ListSerializer(String.serializer()), json)
         .filter { it.isNotBlank() }
         .toSet()
+
+/** The zip-link reply, decoded off the envelope so a refusal keeps its message. */
+internal fun decodeZipLink(data: JsonElement?): DriveZipLink? = data
+    ?.let { runCatching { driveWireJson.decodeFromJsonElement(ZipLinkDto.serializer(), it) }.getOrNull() }
+    ?.toDomain()
 
 internal fun decodeActivityPage(json: String): List<DriveActivity> =
     driveWireJson.decodeFromString(ActivityPageDto.serializer(), json)

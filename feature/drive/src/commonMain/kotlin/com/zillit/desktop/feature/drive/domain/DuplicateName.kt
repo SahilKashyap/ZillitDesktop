@@ -1,6 +1,27 @@
 package com.zillit.desktop.feature.drive.domain
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
+
+/**
+ * What to put in front of someone when a Drive call is refused.
+ *
+ * [ZillitError.localised] is right for everything the client diagnoses itself
+ * and for an ordinary HTTP failure. A **403** is the exception: the network
+ * layer maps it to [ZillitError.Forbidden], whose user-facing text is a flat
+ * "You do not have access to this" and whose `technical` field is where the
+ * server's own key ended up. Drive's refusals are exactly the ones that key
+ * matters for — `only_owner_can_move_out_of_folder` says why the move was
+ * refused and who may do it — so the key is translated and shown when there
+ * is one.
+ */
+fun ZillitError.driveMessage(): String = when (this) {
+    is ZillitError.Forbidden -> technical?.takeIf { it.isNotBlank() && ' ' !in it }?.localisedMessage()
+        ?: localised()
+
+    else -> localised()
+}
 
 /**
  * Whether the server refused because a sibling already has this name.

@@ -116,7 +116,7 @@ private fun DriveScreenBody(
     val compact = LocalDriveCompact.current
     val drag = remember { DragToFolderState() }
     var dropHover by remember { mutableStateOf(false) }
-    val acceptsDrops = state.canCreateHere && !state.showTrash && !state.hasOverlay
+    val acceptsDrops = state.canAddHere && !state.showTrash && !state.hasOverlay
 
     Box(
         modifier = modifier

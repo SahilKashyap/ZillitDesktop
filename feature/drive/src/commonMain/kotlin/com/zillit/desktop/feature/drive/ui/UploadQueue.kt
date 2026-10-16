@@ -87,7 +87,10 @@ internal class UploadQueue(
             val folderIds = if (directories.isEmpty()) {
                 emptyMap()
             } else {
-                createFolderTree(directories, target.folderId).also { vm.loadListing() }
+                createFolderTree(directories, target.folderId).also {
+                    vm.loadListing()
+                    vm.mergeFolder(target.folderId)
+                }
             }
             accepted.zip(rows).forEach { (file, row) ->
                 val folder = folderIds[file.relativeDirectory] ?: target.folderId
@@ -185,7 +188,15 @@ internal class UploadQueue(
                 // while the user is still looking at it — a completed
                 // background upload must not yank the listing out from
                 // under someone browsing elsewhere.
-                if (settled is UploadState.Done && !vm.state.value.showTrash) vm.loadListing()
+                if (settled is UploadState.Done && !vm.state.value.showTrash) {
+                    vm.loadListing()
+                    // A file uploaded into someone else's folder is in no
+                    // scope of this user's — it is not shared *with* them and
+                    // it is not in their My Drive — and the server does not
+                    // announce it back to the device that uploaded it either.
+                    // Without this the uploader cannot see their own file.
+                    vm.mergeFolder(entry.target.folderId)
+                }
                 if (settled is UploadState.Failed && settled.duplicateName) {
                     // The name is the only thing wrong, and the dialog says so and fixes it.
                     vm.update { copy(renameUploads = renameUploads.copy(open = true)) }

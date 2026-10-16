@@ -13411,4 +13411,11 @@
     <string name="desktop_recce_section_conditions_desc">Helps the crew plan the journey and what to wear.</string>
     <string name="desktop_recce_important_desc_v2">The recce title, the date and where everyone meets.</string>
     <string name="desktop_recce_schedule_desc_v2">Each stop carries its own map pin. Recipients tap the map link to navigate.</string>
+    <string name="desktop_drive_access_through_parent">Has access through the parent folder</string>
+    <string name="desktop_drive_access_through_folder">Has access through this folder</string>
+    <string name="desktop_drive_folder_nest_hint">Owner includes Editor and Viewer. Editor includes Viewer.</string>
+    <string name="desktop_drive_file_nest_hint">Edit includes Download and View. Download includes View.</string>
+    <string name="desktop_drive_subfolders_follow">Everything inside this folder, subfolders included, gets the same access.</string>
+    <string name="desktop_drive_folder_members_kept">People with access to this folder keep it on every file inside. You can give them more here, not less.</string>
+    <string name="desktop_drive_no_move_shared">Only the person who created this item can move it out of the folder it was shared in.</string>
 </resources>

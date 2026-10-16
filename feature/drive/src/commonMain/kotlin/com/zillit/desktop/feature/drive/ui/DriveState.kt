@@ -30,6 +30,7 @@ import com.zillit.desktop.feature.drive.domain.combinedRows
 import com.zillit.desktop.feature.drive.domain.eligible
 import com.zillit.desktop.feature.drive.domain.suggestFreeName
 import com.zillit.desktop.feature.drive.domain.innerTabTotals
+import com.zillit.desktop.feature.drive.domain.nextAccessLevel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -147,9 +148,62 @@ data class AccessDraft(
     val roles: Map<String, DriveRole> = emptyMap(),
     val levels: Map<String, FileAccessLevel> = emptyMap(),
     val search: String = "",
-    val inheritToChildren: Boolean = false,
+    /**
+     * What a folder above already gives each person — the floor nothing here
+     * may go below.
+     *
+     * Google Drive's rule, which the server now enforces: inside a shared
+     * folder someone can be given **more** on a subfolder or a file, never
+     * less. The picker locks the boxes at or below this and the row's own
+     * checkbox, so they cannot be lowered or removed where they were never
+     * granted.
+     */
+    val inherited: Map<String, DriveRole> = emptyMap(),
 ) {
     val selectedCount: Int get() = maxOf(roles.size, levels.size)
+
+    /** The level a folder above already grants [userId] here; 0 when none does. */
+    fun floor(userId: String, forFolder: Boolean): Int = inherited[userId]?.let { role ->
+        if (forFolder) role.level else FileAccessLevel.fromRole(role).level
+    } ?: 0
+
+    /** What this person is granted here, as a level — 0 when they are not. */
+    fun levelOf(userId: String, forFolder: Boolean): Int =
+        if (forFolder) roles[userId]?.level ?: 0 else levels[userId]?.level ?: 0
+
+    /**
+     * The draft after a click on the box at [clicked] for [userId].
+     *
+     * Nested: a box takes the ones below it with it, unticking drops one
+     * level, and level 0 stops sharing — except that an inherited floor
+     * cannot be crossed.
+     */
+    fun clicked(userId: String, clicked: Int, forFolder: Boolean): AccessDraft {
+        val next = maxOf(nextAccessLevel(levelOf(userId, forFolder), clicked), floor(userId, forFolder))
+        return atLevel(userId, next, forFolder)
+    }
+
+    /**
+     * Everyone below their inherited floor raised up to it.
+     *
+     * An inherited row does not always say what it grants twice: a folder's
+     * row carries `inherited_role` and may carry no `role` at all, which
+     * reads back as Viewer. Drawn as it arrived, the grid would show Viewer
+     * ticked with the Editor box disabled and unticked — less than the person
+     * actually has. The floors are the server's word, so they win.
+     */
+    fun liftedToFloors(forFolder: Boolean): AccessDraft =
+        inherited.keys.fold(this) { draft, userId ->
+            val floor = draft.floor(userId, forFolder)
+            if (draft.levelOf(userId, forFolder) < floor) draft.atLevel(userId, floor, forFolder) else draft
+        }
+
+    /** Sets (or clears, at 0) one person's grant. */
+    fun atLevel(userId: String, level: Int, forFolder: Boolean): AccessDraft = if (forFolder) {
+        copy(roles = DriveRole.ofLevel(level)?.let { roles + (userId to it) } ?: (roles - userId))
+    } else {
+        copy(levels = FileAccessLevel.ofLevel(level)?.let { levels + (userId to it) } ?: (levels - userId))
+    }
 
     /** The wire entries for a folder, over [eligible] in project-wide mode. */
     fun folderEntries(eligible: List<DrivePerson>): List<DriveAccessEntry> =
@@ -161,16 +215,27 @@ data class AccessDraft(
             roles.map { (id, role) -> DriveAccessEntry(userId = id, role = role, permissions = role.permissions) }
         }
 
-    /** The wire entries for a file, over [eligible] in project-wide mode. */
-    fun fileEntries(eligible: List<DrivePerson>): List<DriveAccessEntry> =
+    /**
+     * The wire entries for a file, over [eligible] in project-wide mode.
+     *
+     * [skipCovered] leaves out the people the folder already covers at the
+     * level chosen for them — what the upload step sends, because a grant the
+     * folder already gives is not this file's to make (they can still be
+     * given more here).
+     */
+    fun fileEntries(eligible: List<DrivePerson>, skipCovered: Boolean = false): List<DriveAccessEntry> =
         if (projectWide) {
             projectLevel?.let { level ->
                 eligible.map { DriveAccessEntry(userId = it.id, permissions = level.permissions) }
+                    .filterNot { skipCovered && level.level <= floor(it.userId, forFolder = false) }
             }.orEmpty()
         } else {
             levels.map { (id, level) -> DriveAccessEntry(userId = id, permissions = level.permissions) }
+                .filterNot { skipCovered && levels[it.userId]?.level.orZero() <= floor(it.userId, forFolder = false) }
         }
 }
+
+private fun Int?.orZero(): Int = this ?: 0
 
 /** The upload drawer (`UploadFilesDrawer.jsx`). */
 data class UploadDraft(
@@ -418,6 +483,38 @@ data class DriveUiState(
 
     /** Upload, New folder and Request files appear only in My Drive with posting rights. */
     val canCreateHere: Boolean get() = viewer.canCreate && section == DriveSection.MyDrive
+
+    /** The folder the user is standing in, when they are in one. */
+    val openFolder: DriveItem? get() = folderId?.let { folderById[it] }
+
+    /**
+     * Whether anything may be **added** where the user is standing — Upload,
+     * New folder, Request files, an OS drop (ZL-21871).
+     *
+     * Not the same question as [canCreateHere], which asks which tab this is.
+     * An Editor on a folder someone shared with them may add to it: that is
+     * what Editor means, and the server already permits it. A Viewer may not,
+     * and the root of "Shared with me" never can — it is a list of other
+     * people's items with no folder to add to.
+     *
+     * Not the same question as [canMoveHere] either (ZL-21869): adding a file
+     * is the point of Editor, while Move rearranges the owner's own tree.
+     */
+    val canAddHere: Boolean
+        get() = viewer.canCreate &&
+            (section == DriveSection.MyDrive || openFolder?.let { viewer.may(DriveAction.Edit, it) } == true)
+
+    /**
+     * Whether Move is offered at all here (ZL-21869).
+     *
+     * Withheld everywhere under "Shared with me", at every depth and whatever
+     * the viewer's own `can_edit` says: those items belong to someone else,
+     * and only their creator may take one out of the folder it was shared in —
+     * the server answers `only_owner_can_move_out_of_folder` to anyone else.
+     * A subfolder of a shared folder is still this section, so this covers
+     * depth too.
+     */
+    val canMoveHere: Boolean get() = section != DriveSection.SharedWithMe
 
     /**
      * How many of the selection a bulk delete would actually remove.

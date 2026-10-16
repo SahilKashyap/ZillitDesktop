@@ -123,9 +123,17 @@ private fun PeopleTab(share: ShareState, state: DriveUiState, onEvent: (DriveEve
         people = state.sharePeople,
         forFolder = item.isFolder,
         locked = setOf(item.createdById, state.viewer.userId).filter { it.isNotBlank() }.toSet(),
-        showInherit = item.isFolder,
         enabled = !share.submitting,
     )
+    // There is no "apply to subfolders" choice any longer — a folder's access
+    // simply reaches everything inside it — so this says so instead.
+    if (item.isFolder) {
+        ZillitText(
+            text = str(S.desktop_drive_subfolders_follow),
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+    }
 }
 
 /** "Share via link" — `ShareViaLink.jsx`: the form, then the live links. */

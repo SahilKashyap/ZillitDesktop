@@ -2733,7 +2733,7 @@ internal fun driveHostSeams(viewModel: DriveViewModel, scope: CoroutineScope) = 
         }
     },
     onCopy = ::copyToClipboard,
-    onOpenEditor = { url, fileName ->
+    onOpenEditor = { url, fileName, viewOnly, onEdit ->
         DocumentEditorWindow.open(
             url = url,
             fileName = fileName,
@@ -2741,6 +2741,8 @@ internal fun driveHostSeams(viewModel: DriveViewModel, scope: CoroutineScope) = 
             // Reported through the view model so it lands on the same toast as
             // every other failure, rather than in a dialog of its own.
             onUnavailable = { reason -> viewModel.onEditorUnavailable(reason) },
+            viewOnly = viewOnly,
+            onEdit = onEdit,
         )
     },
     onOpenMedia = { url, title ->

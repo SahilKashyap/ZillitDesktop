@@ -145,11 +145,55 @@ enum class DriveRole(val wire: String, private val labelKey: String, private val
             Viewer -> DrivePermissions(canView = true)
         }
 
+    /**
+     * Where this role sits in the nest: Viewer 1, Editor 2, Owner 3.
+     *
+     * The share grid draws the three as boxes that include the ones beneath
+     * them — Owner ticks Editor and Viewer — so the whole interaction is one
+     * number, and [nextAccessLevel] decides what a click does to it.
+     *
+     * Spelled out rather than taken from the declaration order, which runs
+     * the other way (Owner first, as the legend lists them) and had Viewer
+     * outranking Owner the first time this was read off `ordinal`.
+     */
+    val level: Int
+        get() = when (this) {
+            Viewer -> 1
+            Editor -> 2
+            Owner -> 3
+        }
+
     companion object {
         fun from(wire: String?): DriveRole =
             entries.firstOrNull { it.wire == wire?.lowercase() } ?: Viewer
+
+        /** The role at [level], or null for 0 — which is "not shared". */
+        fun ofLevel(level: Int): DriveRole? = entries.firstOrNull { it.level == level }
+
+        /**
+         * The role a resolved set of flags amounts to.
+         *
+         * Needed for a **file's** access list, whose inherited rows carry the
+         * flags the folder gives and no role at all: read as a role, those
+         * rows would all come back Viewer and an Editor's floor would be set
+         * one level too low.
+         */
+        fun of(permissions: DrivePermissions): DriveRole = when {
+            permissions.canDelete && permissions.canEdit -> Owner
+            permissions.canEdit -> Editor
+            else -> Viewer
+        }
     }
 }
+
+/**
+ * What ticking the box at [clicked] does to a row sitting at [current].
+ *
+ * An unticked box grants that level; a ticked one drops to the level below
+ * it, so unticking the lowest box (0) stops sharing with that person. The
+ * web's `nextFileAccessLevel`, which both grids share.
+ */
+fun nextAccessLevel(current: Int, clicked: Int): Int = if (current >= clicked) clicked - 1 else clicked
 
 /**
  * The cumulative file permission levels the web's pickers offer
@@ -173,6 +217,14 @@ enum class FileAccessLevel(private val labelKey: String, private val description
             Edit -> DrivePermissions(canView = true, canEdit = true, canDownload = true)
         }
 
+    /** View 1, Download 2, Edit 3 — see [DriveRole.level]. */
+    val level: Int
+        get() = when (this) {
+            View -> 1
+            Download -> 2
+            Edit -> 3
+        }
+
     companion object {
         /** `flagsToLevel` — edit outranks download outranks view. */
         fun of(permissions: DrivePermissions): FileAccessLevel = when {
@@ -180,6 +232,18 @@ enum class FileAccessLevel(private val labelKey: String, private val description
             permissions.canDownload -> Download
             else -> View
         }
+
+        fun ofLevel(level: Int): FileAccessLevel? = entries.firstOrNull { it.level == level }
+
+        /**
+         * What a folder role gives on a file inside it.
+         *
+         * A person's access to a file is the **higher** of the file's own
+         * share and their role on the folder, so this is the floor a file's
+         * share panel locks: an Editor or Owner of the folder keeps Edit
+         * (which includes Download), a Viewer keeps View.
+         */
+        fun fromRole(role: DriveRole): FileAccessLevel = of(role.permissions)
     }
 }
 
@@ -239,24 +303,51 @@ data class DriveItem(
     val modifiedAt: Long? get() = updatedAt ?: createdAt
 
     /**
-     * Whether this can be opened in the document editor.
+     * Whether this opens in one of Zillit's own editors (Sheets, Docs, Slides).
      *
-     * Editing is a WOPI round trip through Collabora, and only the office
-     * formats it serves are editable — offering "Edit" on a PDF opens a viewer
-     * that cannot save, which reads as a broken feature rather than an
-     * unsupported one. The list is the web's `ONLYOFFICE_EDITABLE_EXTENSIONS`.
+     * Only the office formats those editors serve — offering "Edit" on a PDF
+     * or a `.txt` opens something that cannot save, which reads as a broken
+     * feature rather than an unsupported one, and the config call now refuses
+     * those with `file_type_not_editable`. `.txt` and `.md` are Drive's own
+     * text and Markdown viewers instead.
      */
     val isEditableDocument: Boolean
         get() = !isFolder && extension.lowercase() in EDITABLE
+
+    /** Which of the three editors opens it, so the window can say so. */
+    val editorKind: DriveEditorKind?
+        get() = if (isFolder) null else DriveEditorKind.of(extension)
 
     /** Who this row belongs to — the creator, else the uploader. */
     val ownerId: String get() = createdById.ifBlank { uploadedById }
 
     private companion object {
-        val EDITABLE = setOf(
-            "docx", "xlsx", "pptx", "doc", "xls", "ppt",
-            "odt", "ods", "odp", "csv", "txt",
-        )
+        /** Every format the three editors take; see [DriveEditorKind]. */
+        val EDITABLE = DriveEditorKind.entries.flatMap { it.extensions }.toSet()
+    }
+}
+
+/**
+ * Which of Zillit's editors a file opens in — what `GET /editor/{id}/config`
+ * answers as `editor`.
+ *
+ * `ppt` and `odp` are converted before they open, so they take a little
+ * longer; everything else is loaded as it is.
+ */
+enum class DriveEditorKind(val wire: String, val extensions: Set<String>) {
+    Sheet("sheet", setOf("xlsx", "xlsm", "xls", "ods", "csv")),
+    Doc("doc", setOf("docx", "doc", "odt", "rtf")),
+    Slide("slide", setOf("pptx", "ppt", "odp")),
+    ;
+
+    companion object {
+        fun of(extension: String): DriveEditorKind? {
+            val ext = extension.lowercase().trimStart('.')
+            return entries.firstOrNull { ext in it.extensions }
+        }
+
+        fun from(wire: String?): DriveEditorKind? =
+            entries.firstOrNull { it.wire == wire?.lowercase() }
     }
 }
 
@@ -366,13 +457,46 @@ data class DriveVersion(
     val createdAt: Long? = null,
 )
 
-/** Who has access to one item, as the share panel lists it. */
+/**
+ * Who has access to one item, as the share panel lists it.
+ *
+ * ## The rows a parent folder put there
+ *
+ * Folder sharing reaches everything inside it, so an access list now carries
+ * rows the item itself never granted: [inherited] rows, which come from a
+ * folder above. The highest access wins — someone may be given **more** here,
+ * never less — so [inheritedRole] is the floor the share panel locks, and the
+ * server keeps that floor whatever a client sends.
+ */
 data class DriveAccessEntry(
     val userId: String,
     val userName: String = "",
     val designation: String = "",
     val role: DriveRole = DriveRole.Viewer,
     val permissions: DrivePermissions = DrivePermissions.ViewOnly,
+    /** `inherited` — true when this row comes from a folder above, not from the item. */
+    val inherited: Boolean = false,
+    /** `inherited_role` — what the folders above grant this person, or null. */
+    val inheritedRole: DriveRole? = null,
+    /** `inherited_from_folder_id` — which folder it came from, on a file's list. */
+    val inheritedFromFolderId: String? = null,
+)
+
+/**
+ * A short-lived token for a .zip the server builds as it sends it.
+ *
+ * Two steps, because a download cannot carry our auth headers: this is the
+ * answer to the authorised call, and the token is the whole authorisation on
+ * the download that follows — which is why it expires in two minutes and the
+ * download has to start straight away.
+ */
+data class DriveZipLink(
+    val token: String,
+    val fileName: String = "",
+    val fileCount: Int = 0,
+    /** Files left out because this person may not download them; listed in `_skipped.txt`. */
+    val skippedCount: Int = 0,
+    val expiresInSeconds: Int = 0,
 )
 
 /** A crew member, as the share and permission pickers list them. */
@@ -468,12 +592,17 @@ data class DriveFileRequestDraft(
     val recipients: List<String> = emptyList(),
 )
 
-/** What the create-folder drawer sends (`handleCreateFolder`). */
+/**
+ * What the create-folder drawer sends (`handleCreateFolder`).
+ *
+ * No "apply to future subfolders" flag: the server now gives everything
+ * inside a folder the folder's own access, existing subfolders included, so
+ * `inheritToChildren` was dropped from the payload (the server ignores it).
+ */
 data class NewFolder(
     val name: String,
     val parentId: String?,
     val description: String = "",
     val access: List<DriveAccessEntry> = emptyList(),
-    val inheritToChildren: Boolean = false,
     val color: String = "",
 )

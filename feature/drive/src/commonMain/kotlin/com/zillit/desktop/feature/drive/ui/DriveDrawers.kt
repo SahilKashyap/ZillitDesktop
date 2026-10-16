@@ -1,11 +1,14 @@
 package com.zillit.desktop.feature.drive.ui
 
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.feature.drive.domain.isDuplicateName
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.drive.domain.DriveAction
 import com.zillit.desktop.feature.drive.domain.DriveActivityPage
+import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveItem
+import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.DriveShareLinkDraft
 import com.zillit.desktop.feature.drive.domain.FileAccessLevel
@@ -34,6 +37,45 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     fun openUpload() {
         if (!vm.requirePosting()) return
         vm.update { copy(upload = UploadDraft(), menu = null) }
+        // Into a folder: its members keep their access on every file inside
+        // it, so the permissions step shows them locked at that level rather
+        // than offering a grant it cannot take away.
+        loadFolderFloors { floors -> updateUpload { copy(access = access.copy(inherited = floors)) } }
+    }
+
+    /**
+     * Picking a destination in the drawer: the floors follow it.
+     *
+     * The upload may be aimed at a folder other than the one on screen, and
+     * it is *that* folder whose members keep their access on every file in
+     * it — so a change of destination reloads them, and the Drive root clears
+     * them.
+     */
+    fun uploadDestination(pickExisting: Boolean, folderId: String?) {
+        updateUpload {
+            copy(
+                pickExisting = pickExisting,
+                destinationFolderId = folderId,
+                access = access.copy(inherited = emptyMap()),
+            )
+        }
+        loadFolderFloors(folderId) { floors -> updateUpload { copy(access = access.copy(inherited = floors)) } }
+    }
+
+    /**
+     * The roles a folder gives, for the pickers that grant on a file inside
+     * it. Nothing happens at the root, where there is no folder to inherit
+     * from; [folderId] defaults to the folder on screen.
+     */
+    private fun loadFolderFloors(
+        folderId: String? = state.folderId,
+        apply: (Map<String, DriveRole>) -> Unit,
+    ) {
+        val folder = folderId?.let { state.folderById[it] } ?: return
+        vm.run {
+            val rows = vm.repo.access(folder.ref).getOrNull().orEmpty()
+            if (rows.isNotEmpty()) apply(rows.floors())
+        }
     }
 
     fun updateUpload(change: UploadDraft.() -> UploadDraft) =
@@ -80,7 +122,10 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         val target = UploadTarget(
             folderId = destination,
             description = draft.description.trim(),
-            fileAccess = draft.access.fileEntries(state.sharePeople.exceptMe()),
+            // Nothing is sent for the people the folder already covers: that
+            // grant is the folder's, and the server keeps it whatever a file's
+            // own share says. More than the folder gives still goes.
+            fileAccess = draft.access.fileEntries(state.sharePeople.exceptMe(), skipCovered = true),
         )
         vm.update { copy(upload = null) }
         queue.enqueue(draft.files, target)
@@ -95,7 +140,9 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
      */
     fun dropFiles(files: List<PickedFile>) {
         if (!vm.requirePosting()) return
-        if (state.section != com.zillit.desktop.feature.drive.domain.DriveSection.MyDrive) {
+        // Not "which tab is this": a folder shared with this person as Editor
+        // takes files too (ZL-21871). The root of Shared with me does not.
+        if (!state.canAddHere) {
             vm.reportFailure(str(S.desktop_drive_upload_my_drive_only))
             return
         }
@@ -126,6 +173,9 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         }
         if (valid.isEmpty()) return
         vm.update { copy(dropUpload = DropUploadState(valid)) }
+        loadFolderFloors { floors ->
+            vm.update { copy(dropUpload = dropUpload?.copy(access = dropUpload.access.copy(inherited = floors))) }
+        }
     }
 
     fun confirmDrop(withAccess: Boolean) {
@@ -133,7 +183,11 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         vm.update { copy(dropUpload = null) }
         val target = UploadTarget(
             folderId = state.folderId,
-            fileAccess = if (withAccess) drop.access.fileEntries(state.sharePeople.exceptMe()) else emptyList(),
+            fileAccess = if (withAccess) {
+                drop.access.fileEntries(state.sharePeople.exceptMe(), skipCovered = true)
+            } else {
+                emptyList()
+            },
         )
         queue.enqueue(drop.files, target)
     }
@@ -162,7 +216,6 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             parentId = parent,
             description = draft.description.trim(),
             access = draft.access.folderEntries(state.sharePeople.exceptMe()),
-            inheritToChildren = draft.access.inheritToChildren,
         )
         updateNewFolder { copy(submitting = true) }
         vm.run {
@@ -170,6 +223,9 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
                 is ZillitResult.Success -> {
                     vm.update { copy(newFolder = null, notice = str(S.desktop_drive_activity_folder_created)) }
                     vm.loadListing()
+                    // A subfolder made inside someone else's folder is in no
+                    // tab-wide list of this user's; the folder itself is asked.
+                    vm.mergeFolder(parent)
                 }
 
                 is ZillitResult.Failure -> {
@@ -257,19 +313,18 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             copy(share = ShareState(item = item, loading = true, link = ShareLinkForm(loadingLinks = !item.isFolder)))
         }
         vm.run {
-            val access = vm.repo.access(item.ref)
+            val rows = vm.repo.access(item.ref).getOrNull().orEmpty()
             val draft = AccessDraft(
-                roles = if (item.isFolder) {
-                    access.getOrNull().orEmpty().associate { it.userId to it.role }
-                } else {
-                    emptyMap()
-                },
+                roles = if (item.isFolder) rows.associate { it.userId to it.role } else emptyMap(),
                 levels = if (item.isFolder) {
                     emptyMap()
                 } else {
-                    access.getOrNull().orEmpty().associate { it.userId to FileAccessLevel.of(it.permissions) }
+                    rows.associate { it.userId to FileAccessLevel.of(it.permissions) }
                 },
-            )
+                // The rows a folder above put there: shown ticked, and locked
+                // at the level that folder gives (see [AccessDraft.inherited]).
+                inherited = rows.floors(),
+            ).liftedToFloors(item.isFolder)
             updateShare { copy(access = draft, loading = false) }
             if (!item.isFolder) reloadLinks(item.id)
         }
@@ -290,16 +345,17 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         }
         updateShare { copy(submitting = true) }
         vm.run {
-            when (val done = vm.repo.updateAccess(item.ref, entries, share.access.inheritToChildren)) {
+            when (val done = vm.repo.updateAccess(item.ref, entries)) {
                 is ZillitResult.Success -> {
                     vm.update {
                         copy(
                             share = null,
-                            notice = if (entries.size == 1) {
-                                str(S.desktop_drive_shared_with_one, item.name)
-                            } else {
-                                str(S.desktop_drive_shared_with_many, item.name, entries.size)
-                            },
+                            // The server's own word for what happened
+                            // (`folder_access_updated`), translated. Counting
+                            // the entries ourselves is what made removing one
+                            // of two people say "shared with 1 user".
+                            notice = done.data.takeIf { it.isNotBlank() }?.localisedMessage()
+                                ?: str(S.desktop_drive_activity_access_updated),
                         )
                     }
                     vm.loadListing()
@@ -614,3 +670,14 @@ fun archiveMimeType(fileName: String): String? = when (fileName.substringAfterLa
     else -> null
 }
 
+/**
+ * The floor each person's access sits on, out of an access list.
+ *
+ * A row the server marked `inherited` came from a folder above, and
+ * `inherited_role` is what that folder gives. A file's inherited rows carry
+ * the flags instead of a role, so those are read back as the role they amount
+ * to — read as a role they would all be Viewer. Rows the item granted itself
+ * set no floor: those are this screen's to change.
+ */
+internal fun List<DriveAccessEntry>.floors(): Map<String, DriveRole> = filter { it.inherited }
+    .associate { it.userId to (it.inheritedRole ?: DriveRole.of(it.permissions)) }

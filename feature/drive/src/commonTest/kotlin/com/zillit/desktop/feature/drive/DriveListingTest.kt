@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.drive
 
+import com.zillit.desktop.feature.drive.domain.DriveEditorKind
 import com.zillit.desktop.feature.drive.domain.DriveInnerTab
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
@@ -203,9 +204,21 @@ class DriveListingTest {
     @Test
     fun `editable documents are the office formats and nothing else`() {
         assertTrue(file("d", "deck.pptx").copy(extension = "pptx").isEditableDocument)
-        assertTrue(file("t", "notes.txt").copy(extension = "txt").isEditableDocument)
+        assertTrue(file("s", "budget.xlsm").copy(extension = "xlsm").isEditableDocument)
+        assertTrue(file("r", "letter.rtf").copy(extension = "rtf").isEditableDocument)
+        // A .txt opens Drive's own text viewer; the editors answer
+        // `file_type_not_editable` for it, so it must not offer "Open in editor".
+        assertFalse(file("t", "notes.txt").copy(extension = "txt").isEditableDocument)
         assertFalse(file("p", "sides.pdf").copy(extension = "pdf").isEditableDocument)
         assertFalse(folder("f", "Folder").isEditableDocument)
+    }
+
+    @Test
+    fun `each format names the editor that opens it`() {
+        assertEquals(DriveEditorKind.Sheet, file("s", "b.xlsx").copy(extension = "xlsx").editorKind)
+        assertEquals(DriveEditorKind.Doc, file("d", "d.docx").copy(extension = "docx").editorKind)
+        assertEquals(DriveEditorKind.Slide, file("p", "p.odp").copy(extension = "odp").editorKind)
+        assertEquals(null, file("x", "x.pdf").copy(extension = "pdf").editorKind)
     }
 
     @Test

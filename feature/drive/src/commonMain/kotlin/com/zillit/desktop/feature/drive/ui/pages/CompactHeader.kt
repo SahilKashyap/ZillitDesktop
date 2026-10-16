@@ -60,7 +60,7 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 },
                 modifier = Modifier.weight(1f),
             )
-            if (state.canCreateHere) {
+            if (state.canAddHere) {
                 // The phones' upload sheet: Photo, Video, Document — Android's
                 // `ZillitDriveActivity` offers camera, gallery, video and document.
                 com.zillit.desktop.core.media.AttachMenu(
@@ -132,7 +132,7 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                         size = ButtonSize.Small,
                     )
                 }
-                if (state.movableCount > 0) {
+                if (state.movableCount > 0 && state.canMoveHere) {
                     ZillitIconButton(
                         icon = ZillitIcons.ArrowRight,
                         contentDescription = str(S.desktop_drive_move_selection),

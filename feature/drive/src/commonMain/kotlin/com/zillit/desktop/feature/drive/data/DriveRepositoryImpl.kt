@@ -27,7 +27,9 @@ import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveZipLink
 import com.zillit.desktop.feature.drive.domain.EditorSession
+import com.zillit.desktop.feature.drive.domain.percentEncoded
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
 import com.zillit.desktop.feature.drive.domain.UploadSession
@@ -133,6 +135,24 @@ class DriveRepositoryImpl(
         }
     }
 
+    /**
+     * One folder's own contents, scoped on the server — see
+     * [DriveRepository.folderContents] for why the tab-wide lists cannot
+     * answer this.
+     */
+    override suspend fun folderContents(folderId: String): ZillitResult<DriveListing> {
+        val files = get("$base/files", ItemListSerializer, mapOf("folder_id" to folderId))
+        val folders = get("$base/folders", ItemListSerializer, mapOf("parent_folder_id" to folderId))
+        return files.flatMap { f ->
+            folders.map { d ->
+                DriveListing(
+                    files = f.rows(DriveItemKind.File).named(),
+                    folders = d.rows(DriveItemKind.Folder).named(),
+                )
+            }
+        }
+    }
+
     override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> {
         val url = if (kind == DriveItemKind.Folder) "$base/folders/$id" else "$base/files/$id"
         return get(url, DriveItemDto.serializer()).flatMap { dto ->
@@ -156,10 +176,10 @@ class DriveRepositoryImpl(
             if (folder.description.isNotBlank()) put("description", JsonPrimitive(folder.description.trim()))
             put("parent_folder_id", folder.parentId.orJsonNull())
             if (folder.color.isNotBlank()) put("folder_color", JsonPrimitive(folder.color))
-            if (folder.access.isNotEmpty()) {
-                put("folder_access", folder.access.toRoleEntries())
-                put("inheritToChildren", JsonPrimitive(folder.inheritToChildren))
-            }
+            // No `inheritToChildren`: the server gives everything inside a
+            // folder the folder's own access, so the flag is ignored and the
+            // toggle that set it is gone.
+            if (folder.access.isNotEmpty()) put("folder_access", folder.access.toRoleEntries())
         },
     ).flatMap { dto ->
         dto.toDomain(DriveItemKind.Folder)?.let { ZillitResult.Success(it) }
@@ -231,6 +251,41 @@ class DriveRepositoryImpl(
             options = callOptions(),
             body = buildJsonObject { put("file_ids", fileIds.toJsonArray()) },
         ).map { rows -> rows.mapNotNull { it.url?.takeIf(String::isNotBlank) } }
+
+    /**
+     * The selection as one .zip, in two steps — see
+     * [DriveRepository.filesZipLink].
+     *
+     * Read off the envelope rather than through `request`, because a refusal
+     * here can arrive as a 200 with `status: 0` and no `data`: decoded as data
+     * that is the client's own "response had no data field", which throws away
+     * the one thing the user needs to be told.
+     */
+    override suspend fun filesZipLink(fileIds: List<String>): ZillitResult<DriveZipLink> =
+        apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "$base/bulk/download-zip-link",
+            module = RequestModule.ProjectUser,
+            options = callOptions(),
+            body = buildJsonObject { put("file_ids", fileIds.toJsonArray()) },
+        ).flatMap { envelope ->
+            val link = decodeZipLink(envelope.data)
+            if (envelope.status == ENVELOPE_OK && link != null) {
+                ZillitResult.Success(link)
+            } else {
+                ZillitResult.Failure(
+                    ZillitError.Http(
+                        status = ENVELOPE_REFUSED_STATUS,
+                        serverMessage = envelope.message,
+                        messageElements = envelope.messageElements.orEmpty(),
+                    ),
+                )
+            }
+        }
+
+    /** No auth header on this one: the token is the authorisation. */
+    override fun zipDownloadUrl(token: String): String =
+        "$base/bulk/download-zip?token=${token.percentEncoded()}"
 
     // -- reading a file ----------------------------------------------------
 
@@ -363,21 +418,24 @@ class DriveRepositoryImpl(
     ).map { }
 
     /**
-     * The address to load, assembled from the pieces the config returns.
+     * The pieces one document opens with — see [EditorSession], which
+     * assembles them into an address.
      *
-     * There is no endpoint that hands back a ready URL — see [EditorSession].
      * A config missing any of its three parts is a failure rather than a
-     * half-built address, because Collabora answers one of those with its own
-     * error page and the user reads that as the document being broken.
+     * half-built address: the editor answers one of those with its own error
+     * page, and the user reads that as the document being broken.
      */
-    override suspend fun editorUrl(fileId: String, editable: Boolean): ZillitResult<String> = get(
+    override suspend fun editorSession(fileId: String, viewOnly: Boolean): ZillitResult<EditorSession> = get(
         "$base/editor/$fileId/config",
         EditorConfigDto.serializer(),
-        mapOf("mode" to if (editable) "edit" else "view"),
+        // `mode` is sent only to ask for read-only. An edit session is the
+        // route's own default, and the server downgrades it by itself for
+        // someone without edit rights.
+        if (viewOnly) mapOf("mode" to "view") else emptyMap(),
     ).flatMap { dto ->
-        val session = dto.toDomain()
+        val session = dto.toDomain(viewOnly)
         if (session.isUsable) {
-            ZillitResult.Success(session.address())
+            ZillitResult.Success(session)
         } else {
             ZillitResult.Failure(
                 ZillitError.Serialization("the editor configuration was incomplete"),
@@ -514,18 +572,24 @@ class DriveRepositoryImpl(
             .map { rows -> rows.mapNotNull { it.toDomain() } }
     }
 
+    /**
+     * One call, and its message back.
+     *
+     * `POST /folders/{id}/access/inherit` is **not** called any more: the
+     * server reaches every subfolder and file itself, at once, and that route
+     * only remains for older app versions.
+     */
     override suspend fun updateAccess(
         ref: DriveRef,
         entries: List<DriveAccessEntry>,
-        applyToChildren: Boolean,
-    ): ZillitResult<Unit> {
+    ): ZillitResult<String> {
         val folder = ref.kind == DriveItemKind.Folder
         val url = if (folder) {
             "$base/folders/${ref.id}/access"
         } else {
             "$base/file-access/${ref.id}/access"
         }
-        val result = mutate(
+        return message(
             HttpVerb.Put,
             url,
             buildJsonObject {
@@ -536,17 +600,6 @@ class DriveRepositoryImpl(
                 if (folder) put("replace_existing", JsonPrimitive(true))
             },
         )
-        // Inheritance is a second call, and deliberately after: it walks every
-        // descendant, so firing it against access that then failed to save
-        // would push the *old* roles down the tree.
-        if (result is ZillitResult.Success && folder && applyToChildren) {
-            return mutate(
-                HttpVerb.Post,
-                "$base/folders/${ref.id}/access/inherit",
-                buildJsonObject { put("trigger", JsonPrimitive(true)) },
-            )
-        }
-        return result
     }
 
     /**
@@ -810,8 +863,28 @@ class DriveRepositoryImpl(
         body = body,
     ).map { }
 
+    /**
+     * A mutation whose **message** is the answer — the key the screen shows
+     * (`folder_access_updated`), rather than wording of our own.
+     */
+    private suspend fun message(
+        verb: HttpVerb,
+        path: String,
+        body: JsonObject?,
+    ): ZillitResult<String> = apiClient.envelope(
+        verb = verb,
+        url = path,
+        module = RequestModule.ProjectUser,
+        options = callOptions(),
+        body = body,
+    ).map { it.message.orEmpty() }
+
     private companion object {
         const val SHARE_EXPIRY = "24h"
+        /** What this backend calls success in the envelope. */
+        const val ENVELOPE_OK = 1
+        /** A refusal the envelope carried on a 200; reported as the bad request it is. */
+        const val ENVELOPE_REFUSED_STATUS = 400
         const val TOOL_IDENTIFIER = "drive_tool"
         /** The web's `getTrashForDrive({ limit: 200 })`. */
         const val TRASH_LIMIT = 200

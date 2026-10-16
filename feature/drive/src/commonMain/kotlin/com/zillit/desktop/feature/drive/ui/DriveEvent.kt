@@ -66,6 +66,12 @@ sealed interface DriveEvent {
     /** The bare 24-hour link, straight to the clipboard ("Copy link"). */
     data class CopyLink(val item: DriveItem) : DriveEvent
     data class OpenInEditor(val item: DriveItem, val editable: Boolean) : DriveEvent
+
+    /**
+     * "Edit" pressed in the editor window's own toolbar: reopen the same
+     * file without `mode=view`, so Drive mints an editing token.
+     */
+    data class SwitchEditorToEdit(val fileId: String) : DriveEvent
     data class Preview(val item: DriveItem) : DriveEvent
     data object ClosePreview : DriveEvent
     /** A preview this dialog cannot draw — hand its address to the browser instead. */
@@ -239,8 +245,27 @@ sealed interface DriveEffect {
     /** Hand a URL to the OS — a download, a share link. */
     data class OpenUrl(val url: String) : DriveEffect
 
-    /** Open the document editor for a file, in an embedded browser surface. */
-    data class OpenEditor(val url: String, val fileName: String) : DriveEffect
+    /**
+     * Open a file in Zillit Sheets / Docs / Slides, in an embedded browser
+     * surface.
+     *
+     * The page does everything itself once it has the address — it loads and
+     * saves through Drive, joins the live session, shows its own saving and
+     * connection strip and hides Download and Export. There is no bridge to
+     * build and no Save button to draw.
+     *
+     * [canSwitchToEdit] is a read-only session belonging to someone who may
+     * edit after all: the page draws no Edit button outside a desktop browser,
+     * so the host's own toolbar offers one, which reopens the file for editing
+     * ([DriveEvent.SwitchEditorToEdit]).
+     */
+    data class OpenEditor(
+        val url: String,
+        val fileName: String,
+        val fileId: String = "",
+        val viewOnly: Boolean = false,
+        val canSwitchToEdit: Boolean = false,
+    ) : DriveEffect
 
     /**
      * Play a video or audio file at a presigned address, in the app's own

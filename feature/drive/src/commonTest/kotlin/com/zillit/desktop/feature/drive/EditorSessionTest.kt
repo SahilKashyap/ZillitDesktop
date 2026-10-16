@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.drive
 
+import com.zillit.desktop.feature.drive.domain.DriveEditorKind
 import com.zillit.desktop.feature.drive.domain.EditorSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,11 +8,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Assembling the Collabora address.
+ * Assembling the editor address.
  *
  * The config route returns pieces, not a URL, and the first pass here looked
  * for a `editor_url` field that does not exist — the response is camelCase and
- * carries `collaboraUrl` / `wopiSrc` / `accessToken` instead. The symptom was
+ * carries `editorUrl` / `wopiSrc` / `accessToken` instead. The symptom was
  * an editor that silently never opened.
  */
 class EditorSessionTest {
@@ -21,6 +22,7 @@ class EditorSessionTest {
         wopiSrc = "https://driveapi-dev.zillit.com/api/v2/drive/wopi/files/64f1a2b3",
         accessToken = "eyJhbGciOi.J9+abc/d==",
         fileName = "Budget.xlsx",
+        legacyFrame = true,
     )
 
     @Test
@@ -47,10 +49,29 @@ class EditorSessionTest {
     }
 
     @Test
-    fun `the iframe flag is set`() {
+    fun `the iframe flag is set for the old editor only`() {
         // Without it Collabora renders its own chrome and its close button
-        // tries to navigate the host away.
+        // tries to navigate the host away. Zillit's own editors are loaded
+        // top-level instead and take no such flag.
         assertTrue(session.address().endsWith("&NotWOPIButIframe=true"))
+        assertFalse(session.copy(legacyFrame = false).address().contains("NotWOPIButIframe"))
+    }
+
+    @Test
+    fun `a Zillit editor is the base plus the two credentials and nothing else`() {
+        val live = EditorSession(
+            baseUrl = "https://drive-dev.zillit.com/editor/sheet",
+            wopiSrc = "https://driveapi-dev.zillit.com/api/v2/drive/wopi/files/64f1a2b3",
+            accessToken = "tok",
+            kind = DriveEditorKind.Sheet,
+        )
+
+        assertEquals(
+            "https://drive-dev.zillit.com/editor/sheet" +
+                "?WOPISrc=https%3A%2F%2Fdriveapi-dev.zillit.com%2Fapi%2Fv2%2Fdrive%2Fwopi%2Ffiles%2F64f1a2b3" +
+                "&access_token=tok",
+            live.address(),
+        )
     }
 
     @Test

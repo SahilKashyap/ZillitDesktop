@@ -43,15 +43,24 @@ class DriveHostSeams(
     /** Puts text on the system clipboard. */
     val onCopy: (String) -> Unit = {},
     /**
-     * Opens the document editor.
+     * Opens a file in Zillit Sheets / Docs / Slides.
      *
      * Separate from [onOpenUrl] because it is not the same act: the editor is
      * an embedded browser surface with a session token in its URL, and handing
      * that to the system browser leaks the token into another application's
      * history. Defaults to the plain launcher only because a build without an
      * embedded surface is better than a dead button.
+     *
+     * [viewOnly] asks the surface to say so, and [onEdit] — non-null only for
+     * a read-only session belonging to someone who may edit — is what its own
+     * "Edit" button calls, because the page cannot mint itself a new token.
      */
-    val onOpenEditor: (url: String, fileName: String) -> Unit = { url, _ -> onOpenUrl(url) },
+    val onOpenEditor: (
+        url: String,
+        fileName: String,
+        viewOnly: Boolean,
+        onEdit: (() -> Unit)?,
+    ) -> Unit = { url, _, _, _ -> onOpenUrl(url) },
     /** Plays a video or audio file at its presigned address — the same surface as the editor. */
     val onOpenMedia: (url: String, title: String) -> Unit = { url, _ -> onOpenUrl(url) },
     /** The wall clock, for "3 days ago". */
@@ -119,7 +128,20 @@ class DriveToolProvider(
 fun handle(effect: DriveEffect, viewModel: DriveViewModel, host: DriveHostSeams): String? = when (effect) {
     is DriveEffect.Failed -> effect.message
     is DriveEffect.OpenUrl -> null.also { host.onOpenUrl(effect.url) }
-    is DriveEffect.OpenEditor -> null.also { host.onOpenEditor(effect.url, effect.fileName) }
+    is DriveEffect.OpenEditor -> null.also {
+        host.onOpenEditor(
+            effect.url,
+            effect.fileName,
+            effect.viewOnly,
+            // Only a session that may be switched gets the button; a viewer's
+            // read-only window shows "View only" and nothing else.
+            if (effect.canSwitchToEdit && effect.fileId.isNotBlank()) {
+                { viewModel.onEvent(DriveEvent.SwitchEditorToEdit(effect.fileId)) }
+            } else {
+                null
+            },
+        )
+    }
     is DriveEffect.OpenMedia -> null.also { host.onOpenMedia(effect.url, effect.title) }
     // The label is the notice, not an error — but it is the only
     // confirmation a clipboard copy can give, and a silent copy reads as a
