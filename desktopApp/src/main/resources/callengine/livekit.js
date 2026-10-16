@@ -85,6 +85,22 @@
      * tracks are the ones that go on the wire.
      */
     var prewarmed = null;
+    /**
+     * The `prewarmMedia` open still in flight. [join] WAITS on it rather than
+     * opening its own devices beside it: the second getUserMedia above is not
+     * only slow, it fails outright on some hardware, and on the accept path
+     * the two overlap by design — the devices are opened at the tap and the
+     * join follows one round trip later.
+     */
+    var prewarmPending = null;
+    /**
+     * Bumped when the tracks `prewarmMedia` opened stop being wanted — a call
+     * that ended, a lobby closed, a drop. NOT by [join]: a join is the thing
+     * those tracks were opened FOR, and retiring them on the join's own
+     * generation is what left an answered call holding the microphone open
+     * and publishing nothing (16 Oct, call 1c058f1e).
+     */
+    var mediaGen = 0;
 
     /*
      * A Line 1 MEET's lobby: the devices opened before there is any room,
@@ -226,6 +242,7 @@
         if (rejoining || !creds || !room) { return; }
         rejoining = true;
         var gen = joinGeneration;
+        connectAt = Date.now();
         try {
             sendConnection('RECONNECTING');
             var dead = room;
@@ -257,6 +274,11 @@
             }
             showLocalPreview();
             sendConnection('CONNECTED');
+            // The sampler was watching the room that died — `sample` retires
+            // itself the moment `room` is another object — so a recovered call
+            // sent no `audio`, no `ice` and had nothing watching its
+            // microphone. It watches the new room from here.
+            startSampler(r);
         } catch (e) {
             warn('rejoin', e);   // the poll retries to its deadline
         } finally {
@@ -293,12 +315,26 @@
     var prevScreenStats = null;
     var iceSeen = {};
     var publishLogged = false;
+    /**
+     * When the room this call publishes on started connecting — set by [join]
+     * and [rejoin], NOT by the sampler. `publish` and `promoted` are measured
+     * from it, and a clock set after the event it times reported `ms` as the
+     * epoch itself: 46 lines in the log carry a "latency" of 56 years.
+     */
     var connectAt = 0;
     var lastSpoke = false;
+    /** Microphone recoveries on the live room: how many, when, one at a time, told once. */
+    var micRecoveries = 0;
+    var micRecoveryAt = 0;
+    var micRecovering = false;
+    var micFailureTold = false;
 
     function telemetry(event, data) {
         send({ type: 'telemetry', event: event, data: data || {} });
     }
+
+    /** Elapsed millis since a clock that may never have been set — never an epoch. */
+    function since(at) { return at ? Math.max(0, Date.now() - at) : 0; }
 
     function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
     function round1(v) { return Math.round(v * 10) / 10; }
@@ -319,13 +355,48 @@
     }
 
     /**
+     * Every remote audio track's own receiver stats.
+     *
+     * The inbound half is read per RECEIVER, through `getRTCStatsReport()` on
+     * the track, rather than off the subscriber transport: the transport is
+     * reached by walking `engine.pcManager`, which is the SDK's private shape
+     * and in production handed back nothing — 7,881 audio lines in a row with
+     * every inbound field at zero, which is why a "I cannot hear anything"
+     * report had no evidence at all behind it. A track's receiver is public
+     * API and is the thing actually carrying the audio.
+     */
+    async function inboundReports(r) {
+        var reports = [];
+        try {
+            var people = [];
+            r.remoteParticipants.forEach(function (p) { people.push(p); });
+            for (var i = 0; i < people.length; i++) {
+                var pubs = [];
+                people[i].trackPublications.forEach(function (pub) { pubs.push(pub); });
+                for (var j = 0; j < pubs.length; j++) {
+                    var track = pubs[j].track;
+                    if (!track || kindOf(track) !== 'audio' || !track.getRTCStatsReport) { continue; }
+                    var report = await track.getRTCStatsReport().catch(function () { return null; });
+                    if (report) { reports.push(report); }
+                }
+            }
+        } catch (e) { /* a stat nobody could read is a zero, never a thrown call */ }
+        return reports;
+    }
+
+    /**
      * `audio` — what this device sent and received in the last five seconds.
      *
      * A group call has several inbound streams: the counters are summed, and
      * the WORST jitter and the loudest level are taken, so one line still
      * answers "what do I receive".
+     *
+     * `jbDelayMs`, `jbTargetMs` and `concealedPct` are the jitter buffer's own
+     * account of itself, as the web sends them — the three fields that settle
+     * a "choppy audio" report, because packets can arrive in full while the
+     * buffer conceals half of them.
      */
-    function emitAudio(r, pub, sub) {
+    function emitAudio(r, pub, inbound) {
         var outPkts = 0, outBytes = 0, outLevel = 0;
         if (pub) {
             pub.forEach(function (st) {
@@ -338,16 +409,24 @@
             });
         }
         var inPkts = 0, inBytes = 0, inLost = 0, inLevel = 0, jitterMs = 0;
-        if (sub) {
-            sub.forEach(function (st) {
-                if (st.type !== 'inbound-rtp' || st.kind !== 'audio') { return; }
+        var jbDelay = 0, jbEmitted = 0, jbTargetMs = 0, concealed = 0, samples = 0;
+        (inbound || []).forEach(function (report) {
+            report.forEach(function (st) {
+                if (st.type !== 'inbound-rtp' || (st.kind || st.mediaType) !== 'audio') { return; }
                 inPkts += num(st.packetsReceived);
                 inBytes += num(st.bytesReceived);
                 inLost += num(st.packetsLost);
                 inLevel = Math.max(inLevel, num(st.audioLevel));
                 jitterMs = Math.max(jitterMs, num(st.jitter) * 1000);
+                // Both are running totals over emitted frames; the quotient is
+                // the delay a listener is actually hearing.
+                jbDelay += num(st.jitterBufferDelay);
+                jbEmitted += num(st.jitterBufferEmittedCount);
+                jbTargetMs = Math.max(jbTargetMs, num(st.jitterBufferTargetDelay) * 1000);
+                concealed += num(st.concealedSamples);
+                samples += num(st.totalSamplesReceived);
             });
-        }
+        });
         var at = Date.now();
         var outKbps = 0, inKbps = 0;
         if (prevStats && at > prevStats.at) {
@@ -362,6 +441,9 @@
             outPkts: outPkts, outKbps: outKbps, outLevel: round3(outLevel), micOn: micOn,
             inPkts: inPkts, inKbps: inKbps, inLevel: round3(inLevel), inLost: inLost,
             jitterMs: Math.round(jitterMs),
+            jbDelayMs: jbEmitted > 0 ? Math.round(jbDelay / jbEmitted * 1000) : 0,
+            jbTargetMs: Math.round(jbTargetMs),
+            concealedPct: samples > 0 ? round1(concealed / samples * 100) : 0,
         });
     }
 
@@ -446,27 +528,52 @@
         });
     }
 
+    /**
+     * One transport's stats, or null.
+     *
+     * Through a try rather than `.catch`, because a `getStats` that returns
+     * nothing at all (an SDK whose transport is not holding a peer connection
+     * yet) has no `.catch` to call and would take the whole sample down with
+     * it — and a sample that throws is a line the server never sees.
+     */
+    async function statsOf(pc) {
+        if (!pc || !pc.getStats) { return null; }
+        try { return (await pc.getStats()) || null; } catch (e) { return null; }
+    }
+
     async function sample(r) {
         if (room !== r) { stopSampler(); return; }
         try {
             var pub = pcOf(r, 'pub');
             var sub = pcOf(r, 'sub');
-            var pubReport = pub && pub.getStats ? await pub.getStats().catch(function () { return null; }) : null;
-            var subReport = sub && sub.getStats ? await sub.getStats().catch(function () { return null; }) : null;
+            var pubReport = await statsOf(pub);
+            var subReport = await statsOf(sub);
+            var inbound = await inboundReports(r);
             if (room !== r) { return; }
-            emitAudio(r, pubReport, subReport);
+            // The subscriber transport, when there were no receivers to read:
+            // its report holds the same `inbound-rtp` rows, so whichever of
+            // the two the SDK will actually hand over, the inbound half of
+            // the line is filled rather than being zero by construction.
+            if (!inbound.length && subReport) { inbound = [subReport]; }
+            emitAudio(r, pubReport, inbound);
             emitScreen(pubReport);
             if (pubReport) { emitIce('pub', pubReport, iceStateOf(pub)); }
             if (subReport) { emitIce('sub', subReport, iceStateOf(sub)); }
+            // The microphone is meant to be on and is not: the five-second
+            // sampler is the only thing watching, and a call nobody notices
+            // is the one that costs the user all of it rather than a moment.
+            if (!micLive(r)) { await ensureMicPublished(r, 'sampler'); }
         } catch (e) { /* a failed sample is skipped; the loop continues */ }
     }
 
     /** Starts the five-second sampler for a connected room. Replaces any previous one. */
     function startSampler(r) {
         stopSampler();
-        connectAt = Date.now();
         publishLogged = false;
         lastSpoke = false;
+        micRecoveries = 0;
+        micRecoveryAt = 0;
+        micFailureTold = false;
         prevStats = null;
         prevScreenStats = null;
         iceSeen = {};
@@ -485,6 +592,20 @@
     }
 
     var SAMPLE_MS = 5000;
+
+    /**
+     * Microphone recoveries allowed per room. Three is a device that is busy
+     * for a moment (the call we just left releasing it) recovered twice over;
+     * past that it is gone, and reopening it every five seconds for the rest
+     * of the call would be its own fault.
+     */
+    var MIC_RETRIES = 3;
+
+    /** The least time between two of them, so the join and its sampler are not one attempt twice. */
+    var MIC_RETRY_MS = 2000;
+
+    /** How long a join waits for the devices its accept started opening. */
+    var MIC_OPEN_WAIT_MS = 3000;
 
     /**
      * The person behind a LiveKit identity. The token's subject is
@@ -753,7 +874,7 @@
             var mic = pub && (pub.source === 'microphone' || pub.kind === 'audio');
             if (mic && !publishLogged) {
                 publishLogged = true;
-                telemetry('publish', { ok: true, ms: Date.now() - connectAt });
+                telemetry('publish', { ok: true, ms: since(connectAt) });
             }
             showLocalPreview();
         });
@@ -773,16 +894,134 @@
                 var could = prev && prev.canPublish;
                 var can = false;
                 try { can = !!r.localParticipant.permissions.canPublish; } catch (e) { /* ignore */ }
-                if (can && !could) { telemetry('promoted', { ms: Date.now() - connectAt }); }
+                if (can && !could) { telemetry('promoted', { ms: since(connectAt) }); }
             });
         }
     }
 
     /** Release anything `prewarmMedia` opened that a join never published. */
     function dropPrewarmedTracks() {
+        mediaGen++;
         if (!prewarmed) { return; }
         prewarmed.forEach(function (t) { try { t.stop(); } catch (e) { /* already gone */ } });
         prewarmed = null;
+    }
+
+    /** The microphone publication this room is holding, if any. */
+    function micPublication(r) {
+        try {
+            return r.localParticipant.getTrackPublication(LK.Track.Source.Microphone) || null;
+        } catch (e) { return null; }
+    }
+
+    /**
+     * Is a LIVE microphone track on the wire?
+     *
+     * Not `isMicrophoneEnabled`, which answers "is the publication unmuted" —
+     * a room with no publication at all answers false to both, and a room
+     * holding a publication whose device has ENDED answers true to the SDK
+     * while sending silence. `readyState` is the only thing that knows.
+     */
+    function micLive(r) {
+        if (!r || room !== r) { return true; }
+        var pub = micPublication(r);
+        var track = pub && pub.track;
+        var device = track && track.mediaStreamTrack;
+        return !!(device && device.readyState === 'live');
+    }
+
+    /**
+     * THE MICROPHONE IS ON THE WIRE, or the log and the user are told why.
+     *
+     * Every mic open before this was `try { setMicrophoneEnabled } catch
+     * { warn }` — one attempt, a line in the app log nobody reads, and a call
+     * that then ran to its end publishing nothing. On 16 Oct a user answered
+     * a call from inside another one, the device was still being released by
+     * the call he was leaving, the single attempt failed with it, and he was
+     * inaudible for five minutes while hearing everyone perfectly (call
+     * 1c058f1e: micOn false and outPkts 0 on all 64 reports, no `publish`
+     * line at all).
+     *
+     * So: retry, then fall back to the OS default — the device we were asked
+     * for may be gone, which is what `device-missing` tells Kotlin, as Lines 1
+     * and 2 already report it — and when it still will not open, say so in the
+     * telemetry (`publish {ok:false}`) and on screen, because a user who knows
+     * nobody can hear them can at least hang up and dial again.
+     */
+    async function ensureMicPublished(r, why) {
+        if (room !== r || !desiredMic || onHold || rejoining || micRecovering) { return; }
+        if (micLive(r)) { return; }
+        if (micRecoveries >= MIC_RETRIES) { return; }
+        // Spaced out: the join asks, and so does the sampler it starts a
+        // moment later. Two attempts in the same instant are one attempt
+        // against the same busy device, and would spend the budget on it.
+        if (micRecoveryAt && Date.now() - micRecoveryAt < MIC_RETRY_MS) { return; }
+        micRecovering = true;
+        micRecoveries++;
+        micRecoveryAt = Date.now();
+        trace('microphone is not on the wire (' + why + '); attempt ' + micRecoveries);
+        try {
+            // The chosen device first, then the OS default: a mic that is
+            // simply busy comes back on the retry, and one that is gone never
+            // will.
+            var attempts = chosenMic ? [{ deviceId: chosenMic }, undefined] : [undefined];
+            for (var i = 0; i < attempts.length; i++) {
+                if (room !== r || !desiredMic || onHold) { return; }
+                try {
+                    // Capped: a device open that hangs would leave this the
+                    // only thing watching the microphone, waiting for ever —
+                    // the same silence it exists to break. The attempt that
+                    // overran may still land; the next look sees it.
+                    await Promise.race([
+                        r.localParticipant.setMicrophoneEnabled(true, attempts[i]),
+                        new Promise(function (resolve, reject) {
+                            setTimeout(function () { reject(new Error('mic open timed out')); }, MIC_OPEN_WAIT_MS);
+                        }),
+                    ]);
+                } catch (e) {
+                    warn('microphone:recover', e);
+                    continue;
+                }
+                if (!micLive(r)) { continue; }
+                if (attempts[i] === undefined && chosenMic) {
+                    // It opened on the default, so the remembered one is the
+                    // problem: Kotlin forgets the choice rather than failing
+                    // the next call the same way.
+                    trace('the chosen microphone would not open; the OS default did');
+                    send({ type: 'device-missing', kind: 'microphone' });
+                    chosenMic = '';
+                }
+                return;
+            }
+            // Out of attempts, and still nothing on the wire. The log has
+            // carried no sign of this until now — `publish` was sent only on
+            // success, so a call with no microphone read exactly like a call
+            // whose telemetry was dropped — and the user had no way to know
+            // either, which is how one of them talked for five minutes.
+            if (room !== r || micFailureTold || micRecoveries < MIC_RETRIES) { return; }
+            micFailureTold = true;
+            telemetry('publish', { ok: false, ms: since(connectAt), why: why });
+            send({
+                type: 'notice',
+                message: 'Your microphone could not be started — the others cannot hear you.',
+            });
+        } finally {
+            micRecovering = false;
+        }
+    }
+
+    /** Waits for an in-flight `prewarmMedia` so [join] publishes its tracks instead of racing them. */
+    async function settleMicOpen() {
+        var pending = prewarmPending;
+        if (!pending) { return; }
+        // Capped: a device whose open hangs — a driver, or an OS prompt nobody
+        // answers — must not hold the publish behind it for the whole call.
+        // Past the cap the join opens its own, and the late tracks are
+        // released rather than left holding the device.
+        await Promise.race([
+            pending.catch(function () { /* its own warn covers it */ }),
+            new Promise(function (resolve) { setTimeout(resolve, MIC_OPEN_WAIT_MS); }),
+        ]);
     }
 
     /**
@@ -890,7 +1129,12 @@
                 // This IS the connect for a ring-warmed call, so it owns
                 // `warm_connect`; join() only sends it on the paths that connect
                 // themselves, which keeps it at one line per call either way.
-                telemetry('warm_connect', { ok: true, ms: Date.now() - startedAt });
+                //
+                // Named, unlike every other line: a ring arriving while a call
+                // is up is warmed BESIDE that call, and the diagnostics window
+                // belongs to the call we are on. Without the id this line was
+                // filed under the wrong call.
+                telemetry('warm_connect', { ok: true, ms: since(startedAt), call: callId });
                 return true;
             }).catch(function (e) { warn('prewarm', e); return false; });
             warm = { callId: callId, room: r, ready: ready, gen: myGen };
@@ -931,33 +1175,44 @@
          * are what join publishes — never re-opened, because a second
          * getUserMedia while the first is still held fails on some hardware.
          */
-        async prewarmMedia(video, audio) {
-            if (!LK || prewarmed || (!video && !audio)) { return; }
-            var myGen = joinGeneration;
-            try {
-                var tracks = await LK.createLocalTracks({
-                    audio: !!audio,
-                    video: video ? { resolution: LK.VideoPresets.h720.resolution } : false,
-                });
-                // Too late to be of use: either the call ended while the
-                // devices were opening (nothing to publish them to), or the
-                // join already ran and opened its own (publishing these now
-                // would put two cameras on the wire, and holding them is
-                // exactly the second getUserMedia this mechanism exists to
-                // avoid). Release them either way.
-                if (myGen !== joinGeneration || room) {
-                    tracks.forEach(function (t) { try { t.stop(); } catch (e) { /* gone */ } });
-                    trace('prewarmMedia landed too late; devices released');
-                    return;
+        prewarmMedia(video, audio) {
+            if (!LK || prewarmed || prewarmPending || (!video && !audio)) { return Promise.resolve(); }
+            var myGen = mediaGen;
+            var open = (async function () {
+                try {
+                    var tracks = await LK.createLocalTracks({
+                        audio: !!audio,
+                        video: video ? { resolution: LK.VideoPresets.h720.resolution } : false,
+                    });
+                    // Too late to be of use: the call ended while the devices
+                    // were opening, or a join waited for them as long as it
+                    // could and went on to open its own (the sampler running
+                    // is what says a join is past its publish step). Holding
+                    // them then is both the second getUserMedia this
+                    // mechanism exists to avoid and a device the recovery
+                    // below would find busy.
+                    if (myGen !== mediaGen || (room && sampleTimer)) {
+                        tracks.forEach(function (t) { try { t.stop(); } catch (e) { /* gone */ } });
+                        trace('prewarmMedia landed too late; devices released');
+                        return;
+                    }
+                    prewarmed = tracks;
+                    trace('prewarmMedia opened ' + tracks.length + ' track(s)');
+                } catch (e) {
+                    // Permission denied, or no device. The join reports it; there is
+                    // nothing to release.
+                    prewarmed = null;
+                    warn('prewarmMedia', e);
                 }
-                prewarmed = tracks;
-                trace('prewarmMedia opened ' + tracks.length + ' track(s)');
-            } catch (e) {
-                // Permission denied, or no device. The join reports it; there is
-                // nothing to release.
-                prewarmed = null;
-                warn('prewarmMedia', e);
-            }
+            })();
+            // Held so the join can WAIT for it: on the accept path the devices
+            // are opened at the tap and the join follows a round trip later,
+            // and the two running side by side is a getUserMedia against a
+            // device the first call still holds.
+            prewarmPending = open;
+            return open.then(function () {
+                if (prewarmPending === open) { prewarmPending = null; }
+            });
         },
 
         /** A meet's lobby opened: the microphone, and the camera when [video], previewed full-surface. */
@@ -999,6 +1254,10 @@
             desiredMic = !micMuted;
             desiredCam = !!withVideo;
             chosenMic = microphoneId || '';
+            // From HERE, not from the sampler: `publish` and `promoted` are
+            // measured against it, and a clock set after them turned every
+            // desktop latency in the log into a Unix timestamp.
+            connectAt = Date.now();
             var r = null;
             try {
                 // ADOPT the room the ring pre-warmed, when this is that call:
@@ -1041,6 +1300,11 @@
                 // A stale hand from a previous session on this device would
                 // otherwise stay up; an explicit "" forces the change through.
                 r.localParticipant.setAttributes({ hand: '' }).catch(function () { /* no grant */ });
+                // The devices this call's accept already started opening: the
+                // join publishes THOSE, so it waits for them rather than
+                // opening a second set against a device the first is holding.
+                await settleMicOpen();
+                if (gen !== joinGeneration) { await r.disconnect(); return; }
                 // The tracks `prewarmMedia` opened, if any: publishing those is
                 // the point of having opened them early. Nothing warm → open the
                 // devices here as before.
@@ -1061,6 +1325,13 @@
                 startSampler(r);
                 showLocalPreview();
                 if (window.zillitCall && window.zillitCall.listDevices) { window.zillitCall.listDevices(); }
+                // Whatever the path above did, the question the user cares
+                // about is whether the microphone is on the wire. Asked here
+                // once, and by the sampler for as long as the call runs.
+                //
+                // Not awaited: reopening a device takes the device's own time,
+                // and the call is joined — nothing above waits on it.
+                ensureMicPublished(r, 'join').catch(function () { /* never a thrown call */ });
             } catch (e) {
                 if (room === r) { room = null; }
                 // Our own leave() during the connect (the call ended while the
@@ -1077,6 +1348,7 @@
             creds = null;
             stopReconnectPoll();
             stopSampler();
+            connectAt = 0;
             dropPrewarmedTracks();
             hideLobbyPreview();
             screenPub = null;

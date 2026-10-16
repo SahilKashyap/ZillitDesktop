@@ -57,21 +57,31 @@ class EngineBridgeTest {
     /**
      * The page measures the four WebRTC diagnostics (`publish`, `speak`,
      * `audio`, `ice`) because nothing on this side can see them, and hands them
-     * over as name plus flat fields. Read as STRINGS whatever their JSON type:
-     * the page is the only thing that knows what a field means, nothing here
-     * does arithmetic on them, and `CallDiagnostics` decides how they go back
-     * out.
+     * over as name plus flat fields, each keeping the JSON type the page gave
+     * it — numbers as numbers and `micOn` as a boolean, because the server
+     * charts them and skips whatever arrives quoted.
      */
     @Test
     fun `a telemetry line arrives as its name and its fields`() {
+        // Each field keeps the type the page gave it: the server charts these,
+        // and read as strings every desktop metric reached it quoted — which
+        // is how the desktop came to be excluded from every numeric audit.
         assertEquals(
             CallEngineEvent.Telemetry(
                 "audio",
-                mapOf("outPkts" to "120", "micOn" to "true", "jitterMs" to "4"),
+                mapOf("outPkts" to 120L, "outKbps" to 6.7, "micOn" to true, "jitterMs" to 4L),
             ),
             EngineBridge.parse(
-                """{"type":"telemetry","event":"audio","data":{"outPkts":120,"micOn":true,"jitterMs":4}}""",
+                """{"type":"telemetry","event":"audio",""" +
+                    """"data":{"outPkts":120,"outKbps":6.7,"micOn":true,"jitterMs":4}}""",
             ),
+        )
+        // A field the page QUOTED stays a string: `pc`, `state` and `reason`
+        // are words, and reading a number out of text it chose to quote would
+        // be the same bug the other way round.
+        assertEquals(
+            CallEngineEvent.Telemetry("ice", mapOf("pc" to "pub", "rttMs" to 18L)),
+            EngineBridge.parse("""{"type":"telemetry","event":"ice","data":{"pc":"pub","rttMs":18}}"""),
         )
         // No fields at all is a legitimate line — `promoted` sends almost none.
         assertEquals(

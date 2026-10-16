@@ -58,6 +58,8 @@ data class RailItem(
     val icon: ImageVector,
     val route: WorkspaceRoute,
     val badge: Int = 0,
+    /** Red, like Logout: the entry is an alarm, not another place to browse. */
+    val danger: Boolean = false,
 ) {
     /** The label in the current language. Read in composition, it follows the language. */
     val label: String get() = str(labelKey)
@@ -96,7 +98,7 @@ val DefaultRailItems: List<RailItem> = listOf(
  * app is already installed, and the web's page only existed to install one.
  */
 val AppRailItems: List<RailItem> = listOf(
-    RailItem("sos", S.sos, ZillitRailIcons.Sos, WorkspaceRoute.Tool("/sos")),
+    RailItem("sos", S.sos, ZillitRailIcons.Sos, WorkspaceRoute.Tool("/sos"), danger = true),
     RailItem("help", S.zillit_help, ZillitIcons.Help, WorkspaceRoute.Tool("/settings/help")),
 )
 
@@ -251,11 +253,16 @@ private fun RailFoot(
     }
     onSignOut?.let { requestSignOut ->
         RailButton(
-            item = RailItem("logout", S.logout, ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
+            item = RailItem(
+                id = "logout",
+                labelKey = S.logout,
+                icon = ZillitIcons.Logout,
+                route = WorkspaceRoute.Tool("/logout"),
+                danger = true,
+            ),
             isActive = false,
             expanded = expanded,
             onClick = requestSignOut,
-            danger = true,
         )
     }
     ColumnFooterScope.footer()
@@ -285,8 +292,6 @@ private fun RailButton(
     expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Logout: red, like every other Logout in the app. */
-    danger: Boolean = false,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -301,7 +306,7 @@ private fun RailButton(
         label = "railBackground",
     )
     val contentColor = when {
-        danger -> colors.danger
+        item.danger -> colors.danger
         isActive -> colors.accent
         hovered -> colors.textPrimary
         else -> colors.textSecondary

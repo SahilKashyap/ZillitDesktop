@@ -44,11 +44,12 @@ class SosContactsTest {
         repository: FakeSosRepository,
         admin: Boolean = false,
         phone: String = "7700900000",
+        roster: List<SosCrewMember> = crew,
     ) = SosViewModel(
         repository = repository,
         nowMillis = { 1_000L },
         viewer = { SosViewer(userId = "u-me", isAdmin = admin, phone = phone) },
-        crew = { crew },
+        crew = { roster },
     )
 
     @Test
@@ -79,6 +80,51 @@ class SosContactsTest {
         viewModel.onEvent(SosEvent.CrewSearchChanged("zzz"))
         val narrowed = viewModel.currentState
         assertTrue(narrowed.contacts.addableCrew(narrowed.viewer.userId).isEmpty())
+    }
+
+    @Test
+    fun `the picker offers only the Contacts tab's people, never crew off the production`() =
+        runTest(dispatcher) {
+            // The roster keeps everyone so an old alert can still be named;
+            // only the people Chat & Calls lists under Contacts are offered
+            // as receivers (2026-10-16: left crew came with an Add button).
+            val roster = crew + listOf(
+                SosCrewMember(
+                    userId = "u-gone",
+                    fullName = "Gus Gone",
+                    designation = "Spark",
+                    hasLeft = true,
+                    inDirectory = false,
+                ),
+                SosCrewMember(
+                    userId = "u-quiet",
+                    fullName = "Quinn Quiet",
+                    designation = "Grip",
+                    inDirectory = false,
+                ),
+            )
+            val viewModel = viewModel(FakeSosRepository(), roster = roster)
+            viewModel.start()
+            advanceUntilIdle()
+
+            val state = viewModel.currentState
+            assertEquals(
+                listOf("u-sam", "u-ada"),
+                state.contacts.addableCrew(state.viewer.userId).map { it.userId },
+            )
+        }
+
+    @Test
+    fun `a roster of nobody but departed crew offers nobody`() = runTest(dispatcher) {
+        val roster = listOf(
+            SosCrewMember(userId = "u-gone", fullName = "Gus Gone", designation = "", hasLeft = true, inDirectory = false),
+        )
+        val viewModel = viewModel(FakeSosRepository(), roster = roster)
+        viewModel.start()
+        advanceUntilIdle()
+
+        val state = viewModel.currentState
+        assertTrue(state.contacts.addableCrew(state.viewer.userId).isEmpty())
     }
 
     @Test

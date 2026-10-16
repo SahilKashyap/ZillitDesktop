@@ -67,11 +67,18 @@ data class SosContactsState(
      * viewer themself — the web filters both (`SOS.jsx:59-76`, `:363-369`).
      * [crewSearch] then narrows by name, which the web does with a plain
      * `Select` and the desktop does with a search field.
+     *
+     * Only people the production offers to be reached are offered as
+     * receivers ([SosCrewMember.inDirectory]) — the same list Chat & Calls
+     * shows under Contacts. It used to be the whole roster, so crew who had
+     * left or been removed came with an Add button, and adding one saved a
+     * receiver no alert could ever reach.
      */
     fun addableCrew(viewerUserId: String): List<SosCrewMember> {
         val taken = members.filterNot { it.id == editingId }.map { it.userId }.toSet()
         val needle = crewSearch.trim()
         return crew
+            .filter { it.inDirectory }
             .filterNot { it.userId in taken || it.userId == viewerUserId }
             .filter { needle.isEmpty() || it.fullName.contains(needle, ignoreCase = true) }
     }

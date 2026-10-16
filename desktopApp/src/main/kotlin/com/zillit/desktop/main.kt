@@ -4873,6 +4873,10 @@ private fun ProjectContext?.sosCrew(): List<SosCrewMember> =
             // which a blank device id would not: this roster keeps that too.
             deviceId = user.deviceId.orEmpty(),
             hasLeft = user.status == "left" || user.status == "removed",
+            // Who the picker may offer: the Contacts tab's people in Chat &
+            // Calls — on the crew now, named, and not keeping that name
+            // private ([callableCrew] filters the same three).
+            inDirectory = !user.keepNamePrivate && user.fullName.isNotBlank() && user.isActiveMember(),
         )
     }
 

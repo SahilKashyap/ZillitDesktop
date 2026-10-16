@@ -12,6 +12,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.ChatMessage
@@ -65,7 +66,11 @@ class ChatLocationRenderTest {
     /** A picker that answers one place, counting how often it was asked. */
     private class FakePicker(private val answer: PickedLocation?) : LocationPicker {
         var opened = 0
-        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? {
+        override suspend fun pick(
+            initial: PickedLocation?,
+            title: String,
+            near: PickerStart?,
+        ): PickedLocation? {
             opened++
             return answer
         }

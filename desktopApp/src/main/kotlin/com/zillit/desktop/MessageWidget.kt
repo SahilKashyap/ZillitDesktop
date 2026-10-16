@@ -35,7 +35,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.CrewContact
-import com.zillit.desktop.feature.chat.domain.flattenMentions
+import com.zillit.desktop.feature.chat.domain.previewMentions
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
 import com.zillit.desktop.core.strings.S
@@ -199,7 +199,7 @@ internal fun ChatMessage.toToast(crewName: (String) -> String?, groupName: (Stri
  */
 internal fun ChatMessage.cardPreview(nameOf: (String) -> String?): String =
     attachment?.let { str(S.docusign_sent_on, it.name) }
-        ?: flattenMentions(body, nameOf).replace(UNRESOLVED_MENTION, str(S.desktop_someone_mention))
+        ?: previewMentions(body, nameOf, str(S.desktop_someone_mention))
             .ifBlank { str(S.desktop_sent_a_message) }
 
 /** Newest first, one per conversation, at most [MAX_TOASTS]. */
@@ -228,6 +228,5 @@ private val CARD_HEIGHT = 84.dp
 private val GAP = 8.dp
 private val CORNER = 12.dp
 private val DISMISS_SIZE = 24.dp
-private val UNRESOLVED_MENTION = Regex("@?\\{\\{[a-zA-Z0-9]+\\}\\}")
 private const val MAX_TOASTS = 3
 private const val TOAST_MILLIS = 8_000L

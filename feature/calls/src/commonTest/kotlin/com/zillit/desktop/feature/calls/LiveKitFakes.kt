@@ -62,12 +62,16 @@ internal class LiveKitFakeSocket : LiveKitSocketFactory, LiveKitSocket {
     fun logged(event: String): Boolean = logFor(event) != null
 
     /** The `data` of the last `clientLog` frame for [event], or null when none was sent. */
-    fun logFor(event: String): JsonObject? = frames
-        .lastOrNull {
-            it["type"]?.jsonPrimitive?.content == "clientLog" &&
-                it["event"]?.jsonPrimitive?.content == event
-        }
+    fun logFor(event: String): JsonObject? = lastLog(event)
         ?.let { it["data"] as? JsonObject ?: JsonObject(emptyMap()) }
+
+    /** Which call the last `clientLog` frame for [event] was filed under. */
+    fun logCallFor(event: String): String? = lastLog(event)?.get("callId")?.jsonPrimitive?.content
+
+    private fun lastLog(event: String): JsonObject? = frames.lastOrNull {
+        it["type"]?.jsonPrimitive?.content == "clientLog" &&
+            it["event"]?.jsonPrimitive?.content == event
+    }
 }
 
 /** The REST side: every call recorded, answers scripted per path suffix. */

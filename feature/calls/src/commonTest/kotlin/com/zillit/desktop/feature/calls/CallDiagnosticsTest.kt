@@ -144,6 +144,54 @@ class CallDiagnosticsTest {
             sent.socket.filter { it.second == "warm_connect" }.map { it.first },
             "one call's first-line set must not silence the next call's",
         )
+
+        // Whoever measured it first wins. `warm_connect` is timed by the page
+        // on the ring-warmed path and by the app on every other, and two
+        // lines disagreeing about how long answering took is worse than one.
+        diagnostics.endCall()
+        diagnostics.startCall("c3")
+        diagnostics.logOnceAbout("c3", "warm_connect", mapOf("ms" to 2))
+        diagnostics.logOnce("warm_connect", mapOf("ms" to 700))
+        runCurrent()
+        assertEquals(1, sent.socket.count { it.first == "c3" && it.second == "warm_connect" })
+        assertEquals(2, sent.socket.last().third.text("ms")?.toInt(), "the page's measurement is the one kept")
+    }
+
+    /**
+     * A second ring, while a call is up, must not take the window.
+     *
+     * This is the 16 Oct log read straight: the ring of the call being
+     * answered was given the window, so the call still running put its own
+     * `speak` lines and its `disconnect` under the ring's id — a call that
+     * read as having hung up 173 ms before its own accept, with a microphone
+     * that "died" at the moment the OTHER call ended.
+     */
+    @Test
+    fun `a line about another call leaves the live window alone`() = runTest {
+        val sent = Sent()
+        val diagnostics = diagnostics(sent)
+        diagnostics.startCall("live")
+
+        diagnostics.logAbout("ringing", "ring_shown", mapOf("source" to "socket"))
+        diagnostics.log("speak", mapOf("speaking" to true))
+        diagnostics.endCall("Hungup")
+        runCurrent()
+        assertEquals(
+            listOf("ringing" to "ring_shown", "live" to "speak", "live" to "disconnect"),
+            sent.socket.map { it.first to it.second },
+        )
+
+        // Nothing open: the ring opens the window, as one answered from idle does.
+        diagnostics.logAbout("ringing", "ring_shown")
+        diagnostics.log("accept_tap")
+        runCurrent()
+        assertTrue(diagnostics.isActive)
+        assertEquals(listOf("ringing", "ringing"), sent.socket.takeLast(2).map { it.first })
+
+        // The call it is about IS the open one: an ordinary line.
+        diagnostics.logAbout("ringing", "warm_connect", mapOf("ms" to 2))
+        runCurrent()
+        assertEquals("ringing" to "warm_connect", sent.socket.last().let { it.first to it.second })
     }
 
     @Test
