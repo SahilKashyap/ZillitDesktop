@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitLogo
 import com.zillit.desktop.core.designsystem.component.ZillitQrCode
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -121,22 +122,10 @@ private fun SignInHeader() {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A lettermark rather than a bitmap: the desktop build ships no image
-        // resources yet, and a placeholder file would be worse than a shape
-        // drawn from the brand colour.
-        Box(
-            modifier = Modifier
-                .size(LOGO_SIZE)
-                .clip(ZillitTheme.shapes.medium)
-                .background(ZillitTheme.colors.signInStepBadge),
-            contentAlignment = Alignment.Center,
-        ) {
-            ZillitText(
-                text = "Z",
-                style = ZillitTheme.typography.titleLarge,
-                color = ZillitTheme.colors.signInText,
-            )
-        }
+        // The app's own mark. It stood in as a "Z" on an orange tile while the
+        // desktop build shipped no image resources; the design system carries
+        // the file now (see [ZillitLogo]), so the page shows the real thing.
+        ZillitLogo(size = LOGO_SIZE)
         ZillitText(
             text = str(S.desktop_zillit_desktop),
             style = ZillitTheme.typography.titleSmall,
