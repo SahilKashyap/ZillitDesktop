@@ -77,7 +77,7 @@ class AppShellTest {
     fun `frame renders its regions`() = runComposeUiTest {
         setShell()
 
-        onNodeWithText("Zillit").assertIsDisplayed()
+        onNodeWithContentDescription("Zillit").assertIsDisplayed()
         onNodeWithText("No project selected").assertIsDisplayed()
         onNodeWithText("0 open").assertIsDisplayed()
         onNodeWithText("Nothing open").assertIsDisplayed()
@@ -378,7 +378,7 @@ class AppShellTest {
 
         onNodeWithText("3").assertIsDisplayed()
 
-        onNodeWithText("Zillit").performClick()
+        onNodeWithContentDescription("Zillit").performClick()
 
         onNodeWithText("1 open").assertIsDisplayed()
         // The window is the notification list: its tab and its content both
@@ -386,12 +386,12 @@ class AppShellTest {
         onAllNodesWithText("Notifications").assertCountEquals(2)
     }
 
-    /** Without a destination the mark is just the app's name — and inert. */
+    /** Without a destination the mark is just the app's logo — and inert. */
     @Test
     fun `the mark opens nothing when there is no notification list`() = runComposeUiTest {
         setShell()
 
-        onNodeWithText("Zillit").performClick()
+        onNodeWithContentDescription("Zillit").performClick()
 
         onNodeWithText("0 open").assertIsDisplayed()
     }

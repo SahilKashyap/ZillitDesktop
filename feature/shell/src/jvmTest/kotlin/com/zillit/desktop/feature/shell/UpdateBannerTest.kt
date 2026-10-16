@@ -232,7 +232,7 @@ class UpdateBannerTest {
         onAllNodesWithTag(DISMISSIBLE_TAG).assertCountEquals(0)
         // The rest of the frame is untouched — the strip took a band of height
         // and gave it back.
-        onNodeWithText("Zillit").assertIsDisplayed()
+        onNodeWithContentDescription("Zillit").assertIsDisplayed()
     }
 
     /**

@@ -41,6 +41,7 @@ import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
 import com.zillit.desktop.core.designsystem.component.ZillitAppControls
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitLogo
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -436,13 +437,9 @@ private fun BrandMark(badge: Int, onOpenNotifications: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitText(
-            text = str(S.app_name),
-            style = ZillitTheme.typography.titleMedium,
-            color = colors.accent,
-        )
+        ZillitLogo(size = BRAND_MARK_SIZE)
         // Beside the mark rather than over it: the count is a number people
-        // read, and a badge on a wordmark clips its last letter.
+        // read, and a badge over the mark covers the name inside it.
         if (badge > 0) ZillitBadge(count = badge)
     }
 }
@@ -741,6 +738,9 @@ private val SWITCHER_LINE_GAP = 1.dp
 
 /** A long production name is cut rather than pushing the bar's right half off. */
 private val SWITCHER_NAME_MAX = 260.dp
+
+/** Sized to the 56dp bar: the mark reads without crowding the production name. */
+private val BRAND_MARK_SIZE = 40.dp
 
 /** The rule between the app's mark and the production's name. */
 private val BAR_DIVIDER_HEIGHT = 24.dp
