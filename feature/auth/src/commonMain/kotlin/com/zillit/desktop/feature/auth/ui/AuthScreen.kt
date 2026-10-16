@@ -25,6 +25,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitLogo
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
@@ -124,7 +125,7 @@ fun AuthScreen(
 /**
  * The launch screen while the keychain is asked who this machine is.
  *
- * Deliberately only the brand and a spinner: no QR, no email field, no
+ * Deliberately only the mark and a spinner: no QR, no email field, no
  * "signed out" wording. Nothing is known yet about whether this person has to
  * sign in at all, so the screen must not imply either answer — and there is
  * nothing here to click in the moment before it is replaced.
@@ -139,11 +140,7 @@ private fun ResumingPage(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            ZillitText(
-                text = str(S.app_name),
-                style = ZillitTheme.typography.displayLarge,
-                color = ZillitTheme.colors.accent,
-            )
+            ZillitLogo()
             ZillitSpinner()
         }
     }
