@@ -40,4 +40,15 @@ internal val DRIVE_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("drive:bulk:deleted"),
     SocketEventName("drive:file:shared"),
     SocketEventName("drive:folder:shared"),
+    // Revoking access has always emitted these; the web subscribed to
+    // neither until Oct 2026, and the item sat in the recipient's drive —
+    // listed and clickable — until they reloaded. A refetch of the scope is
+    // what removes it, and standing inside it says so (`folder gone`).
+    SocketEventName("drive:file:unshared"),
+    SocketEventName("drive:folder:unshared"),
+    // A restore is the one change whose item is *not* visible yet, so it can
+    // never be caught by a listener that only reloads what is on screen —
+    // which is exactly why the web's own guard had to let it through.
+    SocketEventName("drive:file:restored"),
+    SocketEventName("drive:folder:restored"),
 )

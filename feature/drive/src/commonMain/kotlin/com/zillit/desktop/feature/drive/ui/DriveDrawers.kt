@@ -37,6 +37,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     fun openUpload() {
         if (!vm.requirePosting()) return
         vm.update { copy(upload = UploadDraft(), menu = null) }
+        vm.refreshPeople()
         // Into a folder: its members keep their access on every file inside
         // it, so the permissions step shows them locked at that level rather
         // than offering a grant it cannot take away.
@@ -197,6 +198,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     fun openNewFolder() {
         if (!vm.requirePosting()) return
         vm.update { copy(newFolder = NewFolderDraft(), menu = null) }
+        vm.refreshPeople()
     }
 
     fun updateNewFolder(change: NewFolderDraft.() -> NewFolderDraft) =
@@ -312,6 +314,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         vm.update {
             copy(share = ShareState(item = item, loading = true, link = ShareLinkForm(loadingLinks = !item.isFolder)))
         }
+        vm.refreshPeople()
         vm.run {
             val rows = vm.repo.access(item.ref).getOrNull().orEmpty()
             val draft = AccessDraft(

@@ -71,6 +71,23 @@ class DriveSyncTest {
         assertTrue("drive:folder:shared" in names)
     }
 
+    /**
+     * Access taken away, and an item put back.
+     *
+     * A revoke has always emitted `drive:*:unshared` and nobody subscribed to
+     * it, so the item stayed in the recipient's drive — listed and
+     * clickable — until they reloaded. A restore is the opposite case: its
+     * item is not on screen yet, so nothing that reloads only what is visible
+     * can catch it.
+     */
+    @Test
+    fun `losing access and restoring from the trash both reload the list`() {
+        val names = DRIVE_SYNC_EVENTS.map { it.value }
+
+        assertTrue("drive:file:unshared" in names && "drive:folder:unshared" in names)
+        assertTrue("drive:file:restored" in names && "drive:folder:restored" in names)
+    }
+
     /** Comments belong to the open details panel, not to the listing. */
     @Test
     fun `comments do not reload the list`() {

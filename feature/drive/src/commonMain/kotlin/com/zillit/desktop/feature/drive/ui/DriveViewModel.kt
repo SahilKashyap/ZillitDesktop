@@ -232,7 +232,12 @@ class DriveViewModel(
 
             is DriveEvent.SortBy -> setState { copy(sort = sort.toggled(event.column)) }
             is DriveEvent.FilterByTag -> filterByTag(event.tagId)
-            is DriveEvent.ShowFavouritesOnly -> setState { copy(showFavouritesOnly = event.on) }
+            is DriveEvent.ShowFavouritesOnly -> {
+                setState { copy(showFavouritesOnly = event.on) }
+                // Nothing starred and no answer yet look the same from here;
+                // turning the filter on is when it matters, so ask again.
+                if (event.on && !currentState.favouritesLoaded) launch { primeFavourites() }
+            }
 
             is DriveEvent.ToggleSelection -> setState { copy(selected = selected.toggled(event.itemId)) }
             is DriveEvent.SetSelected -> setState {
@@ -666,8 +671,23 @@ class DriveViewModel(
 
     private suspend fun primeFavourites() {
         (repository.favouriteIds() as? ZillitResult.Success)?.let { loaded ->
-            setState { copy(favouriteIds = loaded.data) }
+            // `favouritesLoaded` only on a real answer: see its doc for what
+            // an empty set would otherwise be read as.
+            setState { copy(favouriteIds = loaded.data, favouritesLoaded = true) }
         }
+    }
+
+    /**
+     * The crew and who may be shared with, read again.
+     *
+     * Both were fetched once when the tool opened, so anyone who joined the
+     * production while the Drive stayed open did not exist: missing from the
+     * share list, and silently left out of the "Project users" grant whose own
+     * hint claims to cover everyone. Re-read when a picker opens.
+     */
+    internal fun refreshPeople() {
+        setState { copy(crew = crew()) }
+        launch { primeShareable() }
     }
 
     private suspend fun primeTags() {

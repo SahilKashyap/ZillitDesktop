@@ -208,14 +208,10 @@ private fun ColumnScope.Metadata(item: DriveItem, state: DriveUiState) {
             }
         }
         item.createdAt?.let { stamp ->
-            DetailRow(str(S.drive_created)) {
-                ZillitTooltip(text = EpochDate.dateTime(stamp)) { Value(stampLabel(stamp, now)) }
-            }
+            DetailRow(str(S.drive_created)) { ExactStamp(stamp, now) }
         }
         item.updatedAt?.takeIf { it != item.createdAt }?.let { stamp ->
-            DetailRow(str(S.drive_modified)) {
-                ZillitTooltip(text = EpochDate.dateTime(stamp)) { Value(stampLabel(stamp, now)) }
-            }
+            DetailRow(str(S.drive_modified)) { ExactStamp(stamp, now) }
         }
         DetailRow(str(S.drive_owner)) {
             Row(
@@ -235,6 +231,28 @@ private fun ColumnScope.Metadata(item: DriveItem, state: DriveUiState) {
 @Composable
 private fun Value(text: String, lines: Int = 2) {
     ZillitText(text = text, style = ZillitTheme.typography.bodySmall, maxLines = lines)
+}
+
+/**
+ * When exactly, and how long ago under it.
+ *
+ * It used to be the other way round — "3 days ago" with the real stamp
+ * hidden in a tooltip — which is unreadable at a glance and useless for
+ * telling two saves a minute apart apart. Seconds are shown for that reason.
+ */
+@Composable
+private fun ExactStamp(stamp: Long, now: Long) {
+    Column {
+        Value(EpochDate.dateTimeSeconds(stamp), lines = 1)
+        if (now > 0) {
+            ZillitText(
+                text = relativeTime(stamp, now),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 @Composable

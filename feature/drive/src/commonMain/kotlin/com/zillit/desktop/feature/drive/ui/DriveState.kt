@@ -418,6 +418,16 @@ data class DriveUiState(
      * the list and the grid.
      */
     val favouriteIds: Set<String> = emptySet(),
+    /**
+     * Whether the favourites call has actually answered.
+     *
+     * An empty [favouriteIds] means two different things — nobody has starred
+     * anything, or the fetch has not landed (its failure is only logged) — and
+     * the Starred filter must act on the first and not the second. Turning the
+     * filter on with this still false re-asks, so a dropped request heals
+     * instead of leaving the view wrong for the session.
+     */
+    val favouritesLoaded: Boolean = false,
     /** The unread dots, rolled up from the ledger over the current listing. */
     val unread: DriveUnread = DriveUnread(),
     /** Small image previews by file id, fetched lazily for the grid and the name cell. */
