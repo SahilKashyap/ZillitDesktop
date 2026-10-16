@@ -2,6 +2,8 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * **Temporary — one build only.** Clears unread rows nothing on this machine
@@ -44,6 +46,20 @@ import com.zillit.desktop.core.datastore.ZillitPreferences
  * therefore survive, and `-Dzillit.badges.sweep=1` forces the sweep on the
  * next launch for that case.
  *
+ * ## Waiting for the ledger
+ *
+ * An empty ledger is not a repaired one, and on the production listing it is
+ * the common case: the launch seed there goes through the cached production
+ * list and this person's id inside it ([seedFromLastProduction]), and a
+ * sign-out has just emptied that cache — so the first seed of a fresh session
+ * can fetch nothing at all. Sweeping then would spend the build's one pass on
+ * an empty table and leave the cards wearing the server's totals, which is
+ * exactly where the stuck numbers were reported.
+ *
+ * So a sweep that turns nothing waits for the ledger to move
+ * ([BadgeStore.changes]) and tries again, a few times and briefly. If it never
+ * moves, the version is left unrecorded and the next launch has another go.
+ *
  * ## Removing it
  *
  * Delete this file, its call in `main.kt`, [BadgeStore.markEveryRowRead], its
@@ -61,19 +77,32 @@ internal suspend fun sweepStuckBadges(ready: AppGraph.Ready) {
     val swept = runCatching { ready.preferences.get(ZillitPreferences.BadgeSweptVersion) }.getOrNull()
     if (!forced && swept == version) return
 
-    val turned = ready.badgeStore.markEveryRowRead()
-    // An empty ledger has not been repaired, it has not been seen: the seed
-    // may have failed, or no production has been opened yet. Leaving the
-    // version unrecorded lets the next launch try again, which is the whole
-    // value of the pass.
-    if (turned == 0) {
-        ZillitLog.i(TAG) { "stuck-badge sweep found no unread rows; staying armed for $version" }
-        return
+    for (attempt in 1..ATTEMPTS) {
+        val turned = ready.badgeStore.markEveryRowRead()
+        if (turned > 0) {
+            ZillitLog.i(TAG) {
+                "stuck-badge sweep: $turned unread rows flipped read locally (build $version, attempt $attempt)"
+            }
+            runCatching { ready.preferences.set(ZillitPreferences.BadgeSweptVersion, version) }
+                .onFailure { ZillitLog.w(TAG) { "sweep ran but was not recorded: ${it::class.simpleName}" } }
+            return
+        }
+        if (attempt == ATTEMPTS) break
+        // Nothing to read yet. The next seed to land publishes, and that is the
+        // moment this pass is worth spending; a wait that times out simply
+        // tries once more on whatever has arrived meanwhile.
+        withTimeoutOrNull(WAIT_MILLIS) { ready.badgeStore.changes.first() }
     }
-    ZillitLog.i(TAG) { "stuck-badge sweep: $turned unread rows flipped read locally (build $version)" }
-    runCatching { ready.preferences.set(ZillitPreferences.BadgeSweptVersion, version) }
-        .onFailure { ZillitLog.w(TAG) { "sweep ran but was not recorded: ${it::class.simpleName}" } }
+    // Leaving the version unrecorded lets the next launch try again, which is
+    // the whole value of the pass.
+    ZillitLog.i(TAG) { "stuck-badge sweep found no unread rows; staying armed for $version" }
 }
+
+/** How many times one launch looks for rows to sweep, counting the first look. */
+private const val ATTEMPTS = 3
+
+/** How long each of those waits for the ledger to move before looking again. */
+private const val WAIT_MILLIS = 20_000L
 
 /** Forces the sweep on the next launch whatever the stored version says. */
 private const val SWEEP_PROPERTY = "zillit.badges.sweep"
