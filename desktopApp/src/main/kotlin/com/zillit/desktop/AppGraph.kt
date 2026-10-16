@@ -1529,6 +1529,10 @@ sealed interface AppGraph {
                 locate = DeviceGeolocation(storageClient) {
                     remoteConfigRepository.current()?.googleMapsKey
                 }::locate,
+                // A picker with nothing to open on starts where this machine
+                // last picked, before it falls back to a position lookup.
+                lastCenter = { preferences.get(ZillitPreferences.MapPickerLastCenter) },
+                rememberLastCenter = { preferences.set(ZillitPreferences.MapPickerLastCenter, it) },
                 scope = appScope,
             ).also(Shutdown::locationPicker)
             // Hoisted above the call coordinator, which needs it: a finished

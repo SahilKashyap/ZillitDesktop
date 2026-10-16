@@ -5,12 +5,15 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.feature.documentdistribution.data.FromToolFile
+import com.zillit.desktop.feature.documentdistribution.data.FromToolPublisher
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.recce.data.RecceRepositoryImpl
 import com.zillit.desktop.feature.recce.domain.GeocodeHit
 import com.zillit.desktop.feature.recce.domain.LatLng
+import com.zillit.desktop.feature.recce.domain.RecceDistribution
 import com.zillit.desktop.feature.recce.domain.RecceHost
 import com.zillit.desktop.feature.recce.domain.ReccePdfPage
 import com.zillit.desktop.feature.recce.domain.RecceReport
@@ -50,7 +53,7 @@ import java.util.UUID
  * prompt rather than an error, since the pins still sit on each stop.
  */
 @Suppress("TooManyFunctions") // One function per seam.
-internal fun AppGraph.Ready.recceHost(): RecceHost = object : RecceHost {
+internal fun AppGraph.Ready.recceHost(permissions: () -> ProjectPermissions): RecceHost = object : RecceHost {
 
     private fun mapsKey(): String? = remoteConfigRepository.credentials.value?.googleMapsKey?.takeIf { it.isNotBlank() }
 
@@ -139,6 +142,36 @@ internal fun AppGraph.Ready.recceHost(): RecceHost = object : RecceHost {
         )
     }
 
+    /** Posting rights on Document Distribution, or admin — the web's `canPost || is_admin`. */
+    override fun canDistribute(): Boolean =
+        permissions().let { it.canPost(DOC_DISTRIBUTION_TOOL) || it.isAdmin }
+
+    /**
+     * `documents/from-tool` under the cross-platform root "Recce", dated by
+     * the recce day — the web's `distributeAttachment({ toolName: RECCE })`
+     * and the same route Crew List and Call Sheet publish through. Nothing is
+     * re-uploaded: the recce service already stored the PDF, so only its keys
+     * travel.
+     */
+    override suspend fun distribute(file: RecceDistribution): ZillitResult<Unit> = FromToolPublisher(
+        apiClient,
+        config,
+        canPost = { canDistribute() },
+    ).publish(
+        FromToolFile(
+            folderPath = file.folderPath,
+            name = file.fileName,
+            media = file.media,
+            bucket = file.bucket,
+            region = file.region,
+            contentType = "document",
+            contentSubtype = file.contentSubtype,
+            thumbnail = file.thumbnail.ifBlank { null },
+            fileSizeBytes = file.fileSizeBytes,
+            folderDate = file.folderDate,
+        ),
+    ).map { }
+
     override suspend fun geocode(query: String, country: String?): GeocodeHit? {
         val key = mapsKey() ?: return null
         val bias = country?.let { "&components=country:${it.encodeURLParameter()}" }.orEmpty()
@@ -177,7 +210,7 @@ internal fun AppGraph.Ready.recceHost(): RecceHost = object : RecceHost {
 
 internal fun AppGraph.Ready.buildRecce(permissions: () -> ProjectPermissions) = RecceViewModel(
     repository = RecceRepositoryImpl(apiClient, config),
-    host = recceHost(),
+    host = recceHost(permissions),
     units = { unitRepository.joinUnits() },
     resolveViewer = {
         RecceViewer.from(permissions(), projectContext?.context?.value?.profile?.userId.orEmpty())

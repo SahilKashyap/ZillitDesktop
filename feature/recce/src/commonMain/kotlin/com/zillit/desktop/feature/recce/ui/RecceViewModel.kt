@@ -18,8 +18,11 @@ import com.zillit.desktop.feature.recce.data.RECCE_SYNC_EVENTS
 import com.zillit.desktop.feature.recce.data.eventProjectId
 import com.zillit.desktop.feature.recce.data.parseDeletedIds
 import com.zillit.desktop.feature.recce.data.parseRecceEvent
+import com.zillit.desktop.feature.recce.domain.DOC_DIST_RECCE_FOLDER
 import com.zillit.desktop.feature.recce.domain.LatLng
 import com.zillit.desktop.feature.recce.domain.Recce
+import com.zillit.desktop.feature.recce.domain.RecceClock
+import com.zillit.desktop.feature.recce.domain.RecceDistribution
 import com.zillit.desktop.feature.recce.domain.RecceHost
 import com.zillit.desktop.feature.recce.domain.RecceQuery
 import com.zillit.desktop.feature.recce.domain.RecceRepository
@@ -29,6 +32,7 @@ import com.zillit.desktop.feature.recce.domain.RecceViewer
 import com.zillit.desktop.feature.recce.domain.StopKind
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlin.time.Clock
 
 /**
  * Recce: a list of scout days, a detail page, and a form — the web's three
@@ -83,6 +87,7 @@ class RecceViewModel(
                 routeMap = if (keepForm) routeMap else null,
                 pdf = null,
                 deleteTarget = null,
+                distribute = null,
                 leavePrompt = false,
             )
         }
@@ -142,6 +147,11 @@ class RecceViewModel(
             RecceEvent.ConfirmDelete -> delete()
             RecceEvent.CancelDelete -> if (!currentState.deleting) setState { copy(deleteTarget = null) }
             RecceEvent.GeneratePdf -> generatePdf()
+            RecceEvent.SendToDocDist -> askToDistribute()
+            RecceEvent.ConfirmSendToDocDist -> distribute()
+            RecceEvent.CancelSendToDocDist -> if (currentState.distribute?.sending != true) {
+                setState { copy(distribute = null) }
+            }
             RecceEvent.PrintPdf -> printPdf()
             RecceEvent.DownloadPdf -> downloadPdf()
             RecceEvent.ClosePdf -> setState { copy(pdf = null) }
@@ -173,7 +183,7 @@ class RecceViewModel(
             is RecceEvent.RemoveStop -> editEditor { copy(stops = stops.filterIndexed { i, _ -> i != event.index }) }
             is RecceEvent.MoveStop -> editEditor { copy(stops = stops.moved(event.index, event.delta)) }
             RecceEvent.AddPerson -> editEditor { copy(personnel = personnel + PersonEditor()) }
-            is RecceEvent.AddCrewMember -> addCrew(event.userId)
+            is RecceEvent.ChooseCrew -> chooseCrew(event.userIds)
             is RecceEvent.PersonChanged -> editEditor {
                 copy(personnel = personnel.mapIndexed { i, p -> if (i == event.index) event.person else p })
             }
@@ -372,19 +382,29 @@ class RecceViewModel(
         }
     }
 
-    private fun addCrew(userId: String) {
-        val member = currentState.crew.firstOrNull { it.userId == userId } ?: return
+    /**
+     * The crew multi-select's whole choice applied to the personnel rows —
+     * the web's `crewSyncPlan`: a deselected crew row goes, a newly chosen id
+     * arrives (in the order picked), and hand-typed rows are never touched.
+     */
+    private fun chooseCrew(userIds: List<String>) {
+        val wanted = userIds.filter { it.isNotBlank() }.distinct()
         editEditor {
-            if (personnel.any { it.userId == userId }) return@editEditor this
-            val row = PersonEditor(
-                userId = member.userId,
-                name = member.name,
-                // The designation is an i18n key; the web stores its translation.
-                role = member.role.takeIf { it.isNotBlank() }?.localised().orEmpty(),
-                email = member.email,
-                contact = member.contact,
-            )
-            copy(personnel = personnel.filterNot { it.isBlankSeed } + row)
+            val kept = personnel.filter { !it.isCrew || it.userId in wanted }
+            val have = kept.mapNotNull { it.userId }
+            val added = wanted.filterNot { it in have }.mapNotNull { id ->
+                currentState.crew.firstOrNull { it.userId == id }?.let { member ->
+                    PersonEditor(
+                        userId = member.userId,
+                        name = member.name,
+                        // The designation is an i18n key; the web stores its translation.
+                        role = member.role.takeIf { it.isNotBlank() }?.localised().orEmpty(),
+                        email = member.email,
+                        contact = member.contact,
+                    )
+                }
+            }
+            copy(personnel = kept + added, errors = if (added.isEmpty()) errors else errors - RecceField.Personnel)
         }
     }
 
@@ -396,7 +416,11 @@ class RecceViewModel(
             val problems = editor.publishProblems()
             if (problems.isNotEmpty()) {
                 setState { copy(editor = editor.copy(errors = problems)) }
-                sendEffect(RecceEffect.ScrollToTop)
+                // Personnel alone failing scrolls there; anything else is in
+                // section 1, which the top of the form shows — the web's own
+                // `scrollToField` / personnel fallback.
+                val onlyPersonnel = problems.keys == setOf(RecceField.Personnel)
+                sendEffect(if (onlyPersonnel) RecceEffect.ScrollToPersonnel else RecceEffect.ScrollToTop)
                 return
             }
         }
@@ -417,7 +441,10 @@ class RecceViewModel(
                     // A create adds a row and a publish moves one between
                     // tabs — the list re-answers the active badge itself.
                     loadList()
-                    loadCounts(covered = if (search.isEmpty()) currentState.filter else null)
+                    // A write moves rows between tabs, so neither badge can be
+                    // taken from the list request that has only just gone out:
+                    // both are re-read and drafts re-derived from the pair.
+                    loadCounts(covered = null)
                     open(outcome.data)
                 }
             }
@@ -485,7 +512,8 @@ class RecceViewModel(
         }
         sendEffect(RecceEffect.Notice(str(S.recce_deleted)))
         loadList(page = nextPage)
-        loadCounts(covered = if (search.isEmpty()) currentState.filter else null)
+        // As for a save: a delete changes both totals, so both are re-read.
+        loadCounts(covered = null)
     }
 
     // ------------------------------------------------------------------- pdf
@@ -553,6 +581,80 @@ class RecceViewModel(
             }
         }
     }
+
+    // ------------------------------------------------- document distribution
+
+    /**
+     * Names the file and opens the confirm — the web's `handleSendToDocDist`.
+     *
+     * Published recces only (a draft is still changing, and the library has
+     * no draft root for Recce), and it takes BOTH rights: the recce download
+     * right, because the library would otherwise hand out a PDF this user may
+     * not download here, and Document Distribution's own posting right.
+     */
+    private fun askToDistribute() {
+        val recce = currentState.selected ?: return
+        if (!recce.isPublished) return
+        if (refuses(RightsKind.Download)) return
+        if (!host.canDistribute()) {
+            sendEffect(RecceEffect.Notice(str(S.desktop_docdist_no_distribute_permission), success = false))
+            return
+        }
+        setState { copy(distribute = DistributeTarget(id = recce.id, fileName = distributionName(recce))) }
+    }
+
+    /**
+     * Renders the report, then registers it in the library's `Recce` folder,
+     * dated by the recce day. `from-tool` always creates a NEW document, so a
+     * second send adds a second file — as it does on the web.
+     */
+    private fun distribute() {
+        val target = currentState.distribute ?: return
+        if (target.sending) return
+        val recce = currentState.selected?.takeIf { it.id == target.id } ?: return
+        setState { copy(distribute = target.copy(sending = true)) }
+        launch {
+            val outcome = when (val report = repository.report(target.id)) {
+                is ZillitResult.Failure -> report
+                is ZillitResult.Success -> host.distribute(
+                    RecceDistribution(
+                        fileName = target.fileName,
+                        media = report.data.media,
+                        bucket = report.data.bucket,
+                        region = report.data.region,
+                        // The server does not always say; the library needs one.
+                        contentSubtype = report.data.contentSubtype.ifBlank { PDF_SUBTYPE },
+                        thumbnail = report.data.thumbnail,
+                        fileSizeBytes = report.data.fileSizeBytes,
+                        folderDate = distributionFolderDate(recce),
+                    ),
+                )
+            }
+            when (outcome) {
+                is ZillitResult.Failure -> {
+                    setState { copy(distribute = null) }
+                    sendEffect(RecceEffect.Notice(outcome.error.localised(), success = false))
+                }
+                is ZillitResult.Success -> setState {
+                    copy(distribute = distribute?.copy(sending = false, done = true))
+                }
+            }
+        }
+    }
+
+    /**
+     * The published file's name: the title with the characters a file name
+     * cannot hold replaced by `-`, or `Recce` when that leaves nothing, plus
+     * `.pdf` — the same rule on every platform, so the library's rows match.
+     */
+    private fun distributionName(recce: Recce): String {
+        val base = recce.title.replace(UNSAFE_IN_FILE_NAME, "-").trim()
+        return (base.ifBlank { DOC_DIST_RECCE_FOLDER }) + ".pdf"
+    }
+
+    /** The recce day on this device's calendar; today when the record has no date. */
+    private fun distributionFolderDate(recce: Recce): String =
+        RecceClock.ymd(recce.dateMs).ifBlank { RecceClock.ymd(Clock.System.now().toEpochMilliseconds()) }
 
     private suspend fun fetchReport(id: String): ZillitResult<Pair<String, ByteArray>> =
         when (val report = repository.report(id)) {
@@ -663,6 +765,12 @@ class RecceViewModel(
         const val PREVIEW_WIDTH_PX = 640
         const val PREVIEW_HEIGHT_PX = 220
         const val PDF_PAGE_WIDTH_PX = 1600
+
+        /** What the library files the report under when the server does not say. */
+        const val PDF_SUBTYPE = "pdf"
+
+        /** The characters a stored file name cannot hold — the web's own set. */
+        val UNSAFE_IN_FILE_NAME = Regex("""[\\/:*?"<>|]+""")
     }
 }
 

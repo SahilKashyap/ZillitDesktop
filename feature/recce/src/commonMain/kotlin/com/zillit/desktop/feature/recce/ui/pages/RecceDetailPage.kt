@@ -60,6 +60,7 @@ import com.zillit.desktop.feature.recce.ui.RecceEvent
 import com.zillit.desktop.feature.recce.ui.RecceUiState
 import com.zillit.desktop.feature.recce.ui.RouteMapState
 import com.zillit.desktop.feature.recce.ui.components.DescLabel
+import com.zillit.desktop.feature.recce.ui.components.LocalTimeTag
 import com.zillit.desktop.feature.recce.ui.components.MutedText
 import com.zillit.desktop.feature.recce.ui.components.RecceBody
 import com.zillit.desktop.feature.recce.ui.components.RecceCanvas
@@ -73,15 +74,15 @@ import com.zillit.desktop.feature.recce.ui.components.RecceTag
 import com.zillit.desktop.feature.recce.ui.components.RecceToolHeader
 import com.zillit.desktop.feature.recce.ui.components.TagKind
 import com.zillit.desktop.feature.recce.ui.components.UnitTag
-import com.zillit.desktop.feature.recce.ui.components.W3WChip
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * One recce — the web's `RecceDetail`: the header with its status and
  * actions, the unit and date meta row, the Important-information cells, the
- * schedule timeline (W3W + map links + travel notes), the route picture and
- * the personnel list.
+ * schedule timeline (map links + travel notes), the route picture and the
+ * personnel list. Every time is the reader's own clock, each labelled with
+ * [LocalTimeTag].
  */
 @Composable
 internal fun RecceDetailPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
@@ -106,6 +107,25 @@ internal fun RecceDetailPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit)
                         leadingIcon = ZillitIcons.Print,
                         loading = state.busy,
                     )
+                    // Published recces only: a draft is still changing, and
+                    // the library has no draft root for Recce. The button
+                    // stays visible on a draft and says why it is refused.
+                    ZillitTooltip(
+                        text = if (recce.isPublished) {
+                            str(S.desktop_recce_send_to_dd_hint)
+                        } else {
+                            str(S.desktop_recce_send_to_dd_publish_first)
+                        },
+                    ) {
+                        ZillitButton(
+                            text = str(S.cs_action_send_to_dd),
+                            onClick = { onEvent(RecceEvent.SendToDocDist) },
+                            variant = ButtonVariant.Secondary,
+                            leadingIcon = ZillitIcons.Send,
+                            enabled = recce.isPublished,
+                            loading = state.distribute?.sending == true,
+                        )
+                    }
                     ZillitButton(
                         text = str(S.delete),
                         onClick = { onEvent(RecceEvent.Delete(recce.id)) },
@@ -160,10 +180,16 @@ private fun ImportantInformation(recce: Recce, onEvent: (RecceEvent) -> Unit) {
         RecceCardHead(str(S.important_information))
         Row(Modifier.height(IntrinsicSize.Min)) {
             InfoCell(ZillitIcons.Clock, str(S.recce_label_rendezvous), Modifier.weight(1f)) {
-                BigValue(RecceClock.hm(recce.rdv.timeMs).ifBlank { "—" })
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    BigValue(RecceClock.hm(recce.rdv.timeMs).ifBlank { "—" })
+                    if (recce.rdv.timeMs > 0) LocalTimeTag()
+                }
                 if (recce.rdv.place.isNotBlank()) SubValue(recce.rdv.place)
                 if (recce.rdv.address.isNotBlank()) SubValue(recce.rdv.address)
-                LocationLinks(recce.rdv, small = true, onEvent = onEvent, topPadding = 8.dp)
+                LocationLinks(recce.rdv, onEvent = onEvent, topPadding = 8.dp)
             }
             CellDivider()
             InfoCell(RecceIcons.Train, str(S.recce_field_station), Modifier.weight(1f)) {
@@ -181,7 +207,15 @@ private fun ImportantInformation(recce: Recce, onEvent: (RecceEvent) -> Unit) {
                     val span = listOf(RecceClock.hm(stops.first().timeMs), RecceClock.hm(stops.last().timeMs))
                         .filter { it.isNotBlank() }
                         .joinToString(" – ")
-                    if (span.isNotBlank()) SubValue(span)
+                    if (span.isNotBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            SubValue(span)
+                            LocalTimeTag()
+                        }
+                    }
                 }
             }
         }
@@ -221,24 +255,20 @@ private fun SubValue(text: String) {
     MutedText(text)
 }
 
-/** The W3W chip and the Map link a placed stop carries. */
+/** The Map link a placed stop carries — the only hand-off left since W3W went. */
 @Composable
 private fun LocationLinks(
     stop: RecceStop,
-    small: Boolean,
     onEvent: (RecceEvent) -> Unit,
     topPadding: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
-    val w3w = stop.w3wUrl
-    val maps = stop.mapsUrl
-    if (w3w == null && maps == null) return
+    val maps = stop.mapsUrl ?: return
     Row(
         modifier = Modifier.padding(top = topPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        w3w?.let { W3WChip(words = stop.w3w, onOpen = { onEvent(RecceEvent.OpenUrl(it)) }, small = small) }
-        maps?.let { RecceLink(text = str(S.map), onClick = { onEvent(RecceEvent.OpenUrl(it)) }) }
+        RecceLink(text = str(S.map), onClick = { onEvent(RecceEvent.OpenUrl(maps)) })
     }
 }
 
@@ -298,6 +328,7 @@ private fun TimelineStop(number: Int, stop: RecceStop, last: Boolean, onEvent: (
                     textAlign = TextAlign.End,
                 )
             }
+            if (stop.timeMs > 0 || stop.endTimeMs > 0) LocalTimeTag(Modifier.padding(top = 2.dp))
             // "RENDEZVOUS" is the widest kind; the column is sized so it never wraps.
             ZillitText(
                 text = stop.kind.wire.uppercase(),
@@ -397,7 +428,7 @@ private fun StopCard(stop: RecceStop, onEvent: (RecceEvent) -> Unit) {
                 }
             }
         }
-        LocationLinks(stop, small = false, onEvent = onEvent)
+        LocationLinks(stop, onEvent = onEvent)
     }
 }
 

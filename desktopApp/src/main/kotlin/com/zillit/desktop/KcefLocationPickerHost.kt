@@ -6,6 +6,7 @@ import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPickerEvent
 import com.zillit.desktop.core.locationpicker.LocationPickerWire
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.core.locationpicker.PickerTheme
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -77,6 +78,14 @@ class KcefLocationPickerHost(
      * [DeviceGeolocation], which is what it is in the running app.
      */
     private val locate: suspend () -> GeoPoint?,
+    /**
+     * The last place this device picked, `"lat,lng"`, and how to write it.
+     * A per-device convenience only: losing it costs one position lookup.
+     * The web keeps the same thing in `localStorage`
+     * (`RecceLocationPicker.jsx`, `recce_map_last_center`).
+     */
+    private val lastCenter: suspend () -> String = { "" },
+    private val rememberLastCenter: suspend (String) -> Unit = {},
     private val scope: CoroutineScope,
 ) : LocationPicker {
 
@@ -102,6 +111,15 @@ class KcefLocationPickerHost(
 
     /** True while the position lookup is in flight; the button waits on it. */
     val locating: StateFlow<Boolean> = _locating.asStateFlow()
+
+    private val _startLocating = MutableStateFlow(false)
+
+    /**
+     * True while an opening with nothing to go on is waiting for a position
+     * fix — the map sits at a world view and says "Finding your location…",
+     * as the web's picker does, rather than looking like a broken map.
+     */
+    val startLocating: StateFlow<Boolean> = _startLocating.asStateFlow()
 
     private val _hint = MutableStateFlow<String?>(null)
 
@@ -138,6 +156,14 @@ class KcefLocationPickerHost(
     @Volatile
     private var seed: PickedLocation? = null
 
+    /**
+     * Where to open NEXT TO when [seed] has no pin: a place the caller
+     * already knows (a neighbouring recce stop). Centres the map and drops
+     * no pin, so the user still picks the actual spot.
+     */
+    @Volatile
+    private var nearby: PickerStart? = null
+
     /** True once Google's map object exists, so a seed can be pushed directly. */
     @Volatile
     private var mapReady = false
@@ -154,7 +180,7 @@ class KcefLocationPickerHost(
     @Volatile
     private var fixAt = 0L
 
-    override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? =
+    override suspend fun pick(initial: PickedLocation?, title: String, near: PickerStart?): PickedLocation? =
         suspendCancellableCoroutine { continuation ->
             // Only one dialog can be on screen, so a second ask replaces the
             // first rather than queueing behind it — the first caller's field
@@ -165,6 +191,7 @@ class KcefLocationPickerHost(
             displaced?.takeIf { it.isActive }?.resume(null)
 
             seed = initial
+            nearby = near
             _picked.value = initial
             _failure.value = null
             _hint.value = null
@@ -175,8 +202,13 @@ class KcefLocationPickerHost(
             scope.launch { open() }
         }
 
-    /** Hands back the current pick and closes. */
-    fun confirm() = finish(_picked.value)
+    /** Hands back the current pick and closes, remembering where it was. */
+    fun confirm() {
+        _picked.value?.let { place ->
+            scope.launch { runCatching { rememberLastCenter("${place.lat},${place.lng}") } }
+        }
+        finish(_picked.value)
+    }
 
     /** Closes with nothing. Also what the scrim and the header's close do. */
     fun cancel() = finish(null)
@@ -201,7 +233,9 @@ class KcefLocationPickerHost(
         _request.value = null
         _picked.value = null
         _hint.value = null
+        _startLocating.value = false
         seed = null
+        nearby = null
         browser?.let { target -> run(target, LocationPickerWire.resetScript) }
     }
 
@@ -209,7 +243,41 @@ class KcefLocationPickerHost(
     private suspend fun open() {
         if (!prepare()) return
         if (mapReady) replaySeed()
-        if (seed == null) startOnHere()
+        if (seed == null) startWithoutAPin()
+    }
+
+    /**
+     * Where a picker opened on nothing starts, in the order the web settled
+     * on (Oct 2026) — and never on a fixed city, which is what it used to do
+     * while the first fix was pending:
+     *
+     *  1. a pin the caller already knows is nearby (the `near` argument);
+     *  2. the last place this device picked;
+     *  3. a coarse position fix, over a world view, saying so while it waits.
+     *
+     * A pick made while the lookup is in flight wins: they asked for a
+     * picker, not for a fix.
+     */
+    private suspend fun startWithoutAPin() {
+        nearby?.let { place ->
+            val target = browser ?: return
+            run(target, LocationPickerWire.centerScript(place.lat, place.lng, WIDE_ZOOM))
+            return
+        }
+        readLastCenter()?.let { place ->
+            val target = browser ?: return
+            run(target, LocationPickerWire.centerScript(place.lat, place.lng, WIDE_ZOOM))
+            return
+        }
+        startOnHere()
+    }
+
+    /** The remembered centre, or null when there is none or it will not parse. */
+    private suspend fun readLastCenter(): GeoPoint? {
+        val parts = runCatching { lastCenter() }.getOrNull()?.split(',')?.takeIf { it.size == 2 } ?: return null
+        val lat = parts[0].trim().toDoubleOrNull()
+        val lng = parts[1].trim().toDoubleOrNull()
+        return if (lat == null || lng == null) null else GeoPoint(lat, lng)
     }
 
     /**
@@ -257,7 +325,13 @@ class KcefLocationPickerHost(
      * not for a fix.
      */
     private suspend fun startOnHere() {
-        val point = fix() ?: return
+        _startLocating.value = true
+        val point = try {
+            fix()
+        } finally {
+            _startLocating.value = false
+        }
+        if (point == null) return
         if (_request.value == null || _picked.value != null) return
         val target = browser ?: return
         run(target, LocationPickerWire.hereScript(point.lat, point.lng, WIDE_ZOOM))

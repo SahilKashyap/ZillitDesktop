@@ -181,6 +181,15 @@ object ZillitPreferences {
     val CallSpeakerId = PreferenceKey.StringKey("call.device.speaker", "", PreferenceScope.Device)
 
     /**
+     * The last place the map picker was pointed at, `"lat,lng"` — so a picker
+     * opened with nothing to go on starts somewhere the user has been rather
+     * than on a world view or a fixed city (the web keeps the same thing in
+     * `localStorage`). Device-scoped: it describes where this machine is,
+     * and losing it costs one position lookup.
+     */
+    val MapPickerLastCenter = PreferenceKey.StringKey("map.picker.last_center", "", PreferenceScope.Device)
+
+    /**
      * Calendar occurrences already reminded about, so restarting the app inside
      * a reminder's grace window does not deliver it twice. Pruned on write.
      */

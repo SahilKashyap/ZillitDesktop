@@ -46,10 +46,14 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.recce.domain.Recce
 import com.zillit.desktop.feature.recce.domain.ReccePerson
 import com.zillit.desktop.feature.recce.domain.StopKind
+import kotlinx.datetime.TimeZone
 
 /** The web's `recce.css` colours that the theme has no token for. */
 @Suppress("MagicNumber") // The stylesheet's palette, colour for colour.
@@ -57,10 +61,6 @@ internal object RecceColors {
     /** The brand amber, constant across themes. */
     val Brand = Color(0xFFF99300)
     val BrandStrong = Color(0xFFE07F00)
-
-    /** What3Words red — the `///`. */
-    @Composable
-    fun w3wRed(): Color = if (ZillitTheme.colors.isDark) Color(0xFFFF5A5F) else Color(0xFFE11F26)
 
     @Composable
     fun link(): Color = if (ZillitTheme.colors.isDark) Color(0xFF60A5FA) else Color(0xFF1353D1)
@@ -162,53 +162,39 @@ internal fun UnitTag(name: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * The What3Words chip — red `///`, the words in mono, a navigation arrow;
- * opens what3words, which hands off to satnav. The web's hero feature.
+ * "Local time" beside a time — on the form's labels, on the detail page and
+ * in the list's Rendezvous column (web, Oct 2026).
+ *
+ * Every recce time is entered and shown on the READER's own clock, so each
+ * one says so; the zone's name is detail for the tooltip, not for the label.
+ * Only the PDF prints in the recce's stored zone, which the server does.
  */
 @Composable
-internal fun W3WChip(words: String, onOpen: () -> Unit, modifier: Modifier = Modifier, small: Boolean = false) {
-    if (words.isBlank()) return
+internal fun LocalTimeTag(modifier: Modifier = Modifier) {
+    val zone = remember { deviceTimeZone() }
     val colors = ZillitTheme.colors
-    val red = RecceColors.w3wRed()
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val border by animateColorAsState(if (hovered) red else colors.border, label = "w3wBorder")
-    val arrow by animateColorAsState(if (hovered) red else colors.textMuted, label = "w3wArrow")
-    val size = if (small) 12.sp else 13.sp
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(colors.surface)
-            .border(1.dp, border, RoundedCornerShape(6.dp))
-            .hoverable(interaction)
-            .clickable(onClick = onOpen)
-            .padding(horizontal = if (small) 6.dp else 8.dp, vertical = if (small) 3.dp else 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+    val tag = @Composable {
         ZillitText(
-            text = "///",
-            style = ZillitTheme.typography.label.copy(
-                fontSize = size,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = (-0.5).sp,
+            text = str(S.desktop_recce_local_time),
+            style = ZillitTheme.typography.labelSmall.copy(
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.2.sp,
             ),
-            color = red,
-        )
-        ZillitText(
-            text = words,
-            style = ZillitTheme.typography.label.copy(
-                fontSize = size,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-            ),
-            color = colors.textPrimary,
+            color = colors.textMuted,
             maxLines = 1,
+            modifier = modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(colors.surfaceSunken)
+                .border(1.dp, colors.border, RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 1.dp),
         )
-        ZillitIcon(icon = RecceIcons.Navigation, tint = arrow, size = if (small) 12.dp else 14.dp)
     }
+    if (zone.isBlank()) tag() else ZillitTooltip(text = str(S.desktop_recce_local_time_hint, zone)) { tag() }
 }
+
+/** The IANA zone this machine is in, for the tag's tooltip; blank when it cannot say. */
+private fun deviceTimeZone(): String = runCatching { TimeZone.currentSystemDefault().id }.getOrDefault("")
 
 /** A blue text link with a leading icon — the web's `az-link` (Map, Open in Google Maps). */
 @Composable

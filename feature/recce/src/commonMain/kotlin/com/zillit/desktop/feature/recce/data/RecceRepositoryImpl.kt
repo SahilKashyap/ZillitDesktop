@@ -46,7 +46,10 @@ import kotlinx.serialization.json.put
  *    write route; delete is `PUT /recce/delete {recce_ids:[...]}`;
  *  - the body is snake_case throughout, longitude is `long`, missing times
  *    are `0` and missing coordinates `null` — never the other way round;
- *  - `photo` is always `null`: the model has the slot, the web never fills it.
+ *  - `photo` is always `null`: the model has the slot, the web never fills it;
+ *  - `w3w` is NOT sent: What3Words was taken out of the module in October
+ *    2026 (web `d81c9580f`). The field stays optional on the server, so a
+ *    stored value is cleared by the next save — which is intended.
  */
 class RecceRepositoryImpl(
     private val apiClient: ApiClient,
@@ -108,17 +111,9 @@ class RecceRepositoryImpl(
     override suspend fun report(id: String): ZillitResult<RecceReport> =
         apiClient.envelope(HttpVerb.Post, "$base/$id/pdf", RequestModule.ProjectUser, null)
             .flatMapData { data ->
-                val obj = data as? JsonObject
-                    ?: return@flatMapData ZillitResult.Failure(ZillitError.Unknown("pdf answered no file"))
-                ZillitResult.Success(
-                    RecceReport(
-                        url = obj.text("url").takeIf { it.isNotBlank() },
-                        media = obj.text("media"),
-                        bucket = obj.text("bucket"),
-                        region = obj.text("region"),
-                        name = obj.text("name").ifBlank { "recce.pdf" },
-                    ),
-                )
+                parseReport(data as? JsonObject)
+                    ?.let { ZillitResult.Success(it) }
+                    ?: ZillitResult.Failure(ZillitError.Unknown("pdf answered no file"))
             }
 
     // Transport ------------------------------------------------------------
@@ -172,7 +167,6 @@ internal fun recceWire(draft: RecceDraft, id: String?): JsonObject = buildJsonOb
             put("time", draft.rdv.timeMs)
             put("place", draft.rdv.place.trim())
             put("address", draft.rdv.address.trim())
-            put("w3w", draft.rdv.w3w.trim())
             putCoordinate("lat", draft.rdv.lat)
             putCoordinate("long", draft.rdv.long)
         },
@@ -188,7 +182,6 @@ internal fun recceWire(draft: RecceDraft, id: String?): JsonObject = buildJsonOb
                         put("kind", stop.kind.wire)
                         put("place", stop.place.trim())
                         put("address", stop.address.trim())
-                        put("w3w", stop.w3w.trim())
                         putCoordinate("lat", stop.lat)
                         putCoordinate("long", stop.long)
                         put("description", stop.description.trim())
@@ -249,6 +242,29 @@ internal fun parseRecce(obj: JsonObject?): Recce? {
 }
 
 /**
+ * The stored report the `/pdf` route answers.
+ *
+ * Everything past the keys is for Document Distribution, which registers
+ * this very object rather than uploading it again. `file_size` travels as a
+ * string, as it does everywhere else; `content_subtype` is often absent, and
+ * the caller supplies `pdf` rather than this parser, so a missing one stays
+ * visible here.
+ */
+internal fun parseReport(obj: JsonObject?): RecceReport? {
+    if (obj == null) return null
+    return RecceReport(
+        url = obj.text("url").takeIf { it.isNotBlank() },
+        media = obj.text("media"),
+        bucket = obj.text("bucket"),
+        region = obj.text("region"),
+        name = obj.text("name").ifBlank { "recce.pdf" },
+        contentSubtype = obj.text("content_subtype"),
+        thumbnail = obj.text("thumbnail"),
+        fileSizeBytes = obj.long("file_size") ?: 0L,
+    )
+}
+
+/**
  * The recce a `recce:created` / `recce:updated` broadcast carries — the web's
  * `upsertRecce` reads `data.data`; a bare record is accepted too.
  */
@@ -276,7 +292,6 @@ private fun parseStop(obj: JsonObject?): RecceStop? {
         kind = StopKind.fromWire(obj.text("kind")),
         place = obj.text("place"),
         address = obj.text("address"),
-        w3w = obj.text("w3w"),
         lat = obj.double("lat"),
         long = obj.double("long", "lng"),
         description = obj.text("description"),

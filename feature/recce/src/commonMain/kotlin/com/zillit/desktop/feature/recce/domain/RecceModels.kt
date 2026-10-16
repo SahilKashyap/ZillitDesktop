@@ -91,8 +91,6 @@ data class RecceStop(
     val kind: StopKind = StopKind.Continue,
     val place: String = "",
     val address: String = "",
-    /** What3Words, the bare words without `///`. */
-    val w3w: String = "",
     val lat: Double? = null,
     val long: Double? = null,
     val description: String = "",
@@ -106,8 +104,6 @@ data class RecceStop(
 
     /** The hand-off every maps app opens — the web's `gmapsLink`. */
     val mapsUrl: String? get() = pin?.let { mapsLink(it) }
-
-    val w3wUrl: String? get() = w3w.takeIf { it.isNotBlank() }?.let { "https://what3words.com/$it" }
 }
 
 /** A coordinate pair; the wire spells longitude `long`, Google spells it `lng`. */
@@ -127,6 +123,13 @@ data class ReccePerson(
 ) {
     /** The web hides the number for "Production" (a placeholder, not a phone). */
     val hasPhone: Boolean get() = contact.isNotBlank() && contact != "Production"
+
+    /**
+     * Picked from the project crew, so this person can open the recce in
+     * Zillit — the web's `isCrewRow`. A hand-typed row has no `user_id` and
+     * only ever reads the PDF.
+     */
+    val isCrew: Boolean get() = !userId.isNullOrBlank()
 }
 
 /** One crew member offered by the personnel picker (`GET recce/crew`). */
@@ -139,7 +142,13 @@ data class RecceCrewMember(
     val contact: String,
 )
 
-/** The recce report the server renders — a stored file to fetch and open. */
+/**
+ * The recce report the server renders — a stored file to fetch and open.
+ *
+ * Everything past [name] is only read when the file is handed to Document
+ * Distribution, which registers the stored object rather than re-uploading
+ * it, so it needs the same metadata the library's own uploads carry.
+ */
 data class RecceReport(
     /** A directly usable URL, when the storage serves one. */
     val url: String?,
@@ -147,6 +156,10 @@ data class RecceReport(
     val bucket: String,
     val region: String,
     val name: String,
+    /** The extension the library files it under; `pdf` when the server omits it. */
+    val contentSubtype: String = "",
+    val thumbnail: String = "",
+    val fileSizeBytes: Long = 0,
 )
 
 /**

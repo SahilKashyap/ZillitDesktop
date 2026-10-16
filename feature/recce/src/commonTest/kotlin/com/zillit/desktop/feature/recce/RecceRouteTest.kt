@@ -70,6 +70,18 @@ class RecceRouteTest {
     }
 
     @Test
+    fun `every total re-derives drafts, in whichever order the answers land`() {
+        // A delete seen by the published badge first, then by the list.
+        val stale = RecceCounts(all = 10, published = 4, draft = 6)
+        assertEquals(6, stale.with(RecceFilter.Published, 4).draft)
+        assertEquals(5, stale.with(RecceFilter.Published, 4).with(RecceFilter.All, 9).draft)
+        // And the other way round: the list first, the badge after.
+        assertEquals(5, stale.with(RecceFilter.All, 9).with(RecceFilter.Published, 4).draft)
+        // Never negative, whatever a half-applied pair says.
+        assertEquals(0, RecceCounts(all = 1, published = 1).with(RecceFilter.Published, 4).draft)
+    }
+
+    @Test
     fun `the pager shows every page up to seven, then the ends and the neighbours`() {
         assertEquals(listOf(1, 2, 3), pageNumbers(current = 2, count = 3))
         assertEquals(listOf(1, null, 5, 6, 7, null, 12), pageNumbers(current = 6, count = 12))

@@ -13394,4 +13394,21 @@
     <string name="desktop_chat_export_text_only_short">text only</string>
     <string name="desktop_email_export_ready_notice">Your mailbox export is ready</string>
     <string name="desktop_email_export_failed_notice">Your mailbox export failed</string>
+    <string name="desktop_recce_local_time">Local time</string>
+    <string name="desktop_recce_local_time_hint">Shown in your device time zone: %1$s</string>
+    <string name="desktop_recce_personnel_visibility">Who is going on this recce. Only you, project admins and the crew members you add here can see it.</string>
+    <string name="desktop_recce_required_to_publish">Required to publish</string>
+    <string name="desktop_recce_choose_crew">Choose crew members from the project</string>
+    <string name="desktop_recce_choose_crew_hint">Each person you choose is added to the table below. Remove them here or with the bin icon.</string>
+    <string name="desktop_recce_personnel_empty">No one added yet. Choose crew members above.</string>
+    <string name="desktop_recce_add_manual_person">Add someone who isn’t on the crew list</string>
+    <string name="desktop_recce_manual_person_hint">People added by hand aren’t project users, so they can’t open the recce in Zillit. Share the PDF with them instead.</string>
+    <string name="desktop_recce_crew_required">Add at least one crew member from the project before you publish.</string>
+    <string name="desktop_recce_send_to_dd_hint">Adds this recce as a PDF to the Document Distribution library, in the Recce folder</string>
+    <string name="desktop_recce_send_to_dd_publish_first">Publish this recce first. Only published recces can be sent to Document Distribution.</string>
+    <string name="desktop_map_finding_your_location">Finding your location…</string>
+    <string name="desktop_recce_section_conditions">Nearest station &amp; weather</string>
+    <string name="desktop_recce_section_conditions_desc">Helps the crew plan the journey and what to wear.</string>
+    <string name="desktop_recce_important_desc_v2">The recce title, the date and where everyone meets.</string>
+    <string name="desktop_recce_schedule_desc_v2">Each stop carries its own map pin. Recipients tap the map link to navigate.</string>
 </resources>

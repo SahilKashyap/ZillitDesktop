@@ -42,9 +42,25 @@ data class PickedLocation(
  */
 interface LocationPicker {
 
-    /** Opens the picker; returns null when the user cancels. */
-    suspend fun pick(initial: PickedLocation? = null, title: String = str(S.desktop_pick_location)): PickedLocation?
+    /**
+     * Opens the picker; returns null when the user cancels.
+     *
+     * [near] is a place the caller already knows that the picker may open
+     * NEXT TO when [initial] has no pin of its own — a neighbouring stop on
+     * the same recce, the rendezvous. It is a view hint only: no pin is
+     * dropped on it, and "Use this location" stays disabled until the user
+     * picks. Without either, the picker falls back to the last place this
+     * device used and then to a coarse fix; it never opens on a fixed city.
+     */
+    suspend fun pick(
+        initial: PickedLocation? = null,
+        title: String = str(S.desktop_pick_location),
+        near: PickerStart? = null,
+    ): PickedLocation?
 }
+
+/** A coordinate pair to open the map near; no name, because nothing is picked. */
+data class PickerStart(val lat: Double, val lng: Double)
 
 /**
  * The picker in scope, or null where none is wired — the field then behaves as

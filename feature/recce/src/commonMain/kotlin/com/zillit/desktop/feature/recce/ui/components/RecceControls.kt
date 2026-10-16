@@ -45,6 +45,10 @@ import com.zillit.desktop.core.strings.str
  * A clock field — typed `HH:mm`, or picked from a dropdown of five-minute
  * slots, the web's `TimePicker minuteStep={5}`. Typing still works: a
  * schedule with twelve stops is typed faster than it is clicked.
+ *
+ * [localTime] puts the "Local time" tag after the label, as the web's
+ * `TimeLabel` does on every time field: the value is the reader's own clock.
+ * It needs a [label] to sit beside, so a bare field ignores it.
  */
 @Composable
 internal fun RecceTimeField(
@@ -54,7 +58,14 @@ internal fun RecceTimeField(
     label: String? = null,
     errorText: String? = null,
     enabled: Boolean = true,
+    localTime: Boolean = false,
 ) {
+    if (localTime && label != null) {
+        Labelled(label = label, modifier = modifier, errorText = errorText, trailing = { LocalTimeTag() }) {
+            RecceTimeField(value, onValueChange, Modifier.fillMaxWidth(), enabled = enabled)
+        }
+        return
+    }
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         ZillitTextField(
@@ -132,11 +143,16 @@ internal fun Labelled(
     required: Boolean = false,
     errorText: String? = null,
     hint: String? = null,
+    /** Sits at the end of the label row — the "Local time" tag, a count. */
+    trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val colors = ZillitTheme.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (required) ZillitText(text = "*", style = ZillitTheme.typography.label, color = colors.danger)
             ZillitText(
                 text = label,
@@ -150,6 +166,7 @@ internal fun Labelled(
                     color = colors.textMuted,
                 )
             }
+            trailing?.invoke()
         }
         content()
         errorText?.let {

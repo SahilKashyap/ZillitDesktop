@@ -23,7 +23,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 /** The recce tool as a workspace tool, at the web's path (`/film-tools/recce`). */
 class RecceToolProvider(
     private val viewModel: RecceViewModel,
-    /** Opens a maps / what3words URL in the system browser (https only). */
+    /** Opens a maps URL in the system browser (https only). */
     private val onOpenUrl: (String) -> Unit,
 ) : ToolProvider {
 
@@ -39,6 +39,7 @@ class RecceToolProvider(
         val state by viewModel.state.collectAsState()
         var toast by remember { mutableStateOf<Pair<String, ZillitToastTone>?>(null) }
         var scrollToTop by remember { mutableIntStateOf(0) }
+        var scrollToPersonnel by remember { mutableIntStateOf(0) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
         LaunchedEffect(viewModel) {
@@ -48,6 +49,7 @@ class RecceToolProvider(
                         toast = effect.text to if (effect.success) ZillitToastTone.Success else ZillitToastTone.Danger
                     is RecceEffect.OpenUrl -> onOpenUrl(effect.url)
                     RecceEffect.ScrollToTop -> scrollToTop++
+                    RecceEffect.ScrollToPersonnel -> scrollToPersonnel++
                 }
             }
         }
@@ -64,7 +66,12 @@ class RecceToolProvider(
         val dirty = state.editor?.dirty == true
         LaunchedEffect(dirty) { navigator.setDirty(dirty) }
 
-        RecceScreen(state = state, onEvent = viewModel::onEvent, scrollToTop = scrollToTop)
+        RecceScreen(
+            state = state,
+            onEvent = viewModel::onEvent,
+            scrollToTop = scrollToTop,
+            scrollToPersonnel = scrollToPersonnel,
+        )
         ZillitToast(
             message = toast?.first,
             onDismiss = { toast = null },

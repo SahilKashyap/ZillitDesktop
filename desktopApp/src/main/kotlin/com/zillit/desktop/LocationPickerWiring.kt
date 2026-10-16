@@ -91,6 +91,7 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
     val picked by host.picked.collectAsState()
     val failure by host.failure.collectAsState()
     val locating by host.locating.collectAsState()
+    val startLocating by host.startLocating.collectAsState()
     val hint by host.hint.collectAsState()
     val colors = ZillitTheme.colors
 
@@ -135,7 +136,7 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
             )
         },
     ) {
-        MapSurface(host = host, failure = failure)
+        MapSurface(host = host, failure = failure, locating = startLocating)
         PickedSummary(picked)
         if (hint != null) {
             ZillitText(
@@ -149,7 +150,7 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
 
 /** The Chromium surface, or what is standing in for it. */
 @Composable
-private fun MapSurface(host: KcefLocationPickerHost, failure: String?) {
+private fun MapSurface(host: KcefLocationPickerHost, failure: String?, locating: Boolean) {
     val component by host.surface.collectAsState()
     val awtComponent = component
     Box(
@@ -177,6 +178,29 @@ private fun MapSurface(host: KcefLocationPickerHost, failure: String?) {
                     onDispose { host.releaseSurface() }
                 }
                 SwingPanel(factory = { awtComponent }, modifier = Modifier.fillMaxSize())
+                // A picker with nothing to open on sits at a world view while
+                // the position lookup runs; the map is not broken, it is
+                // waiting, and the web says the same words here.
+                if (locating) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(ZillitTheme.spacing.sm)
+                            .clip(ZillitTheme.shapes.small)
+                            .background(ZillitTheme.colors.surface)
+                            .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.small)
+                            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    ) {
+                        ZillitIcon(icon = ZillitIcons.Pin, tint = ZillitTheme.colors.textMuted, size = ICON_SMALL)
+                        ZillitText(
+                            text = str(S.desktop_map_finding_your_location),
+                            style = ZillitTheme.typography.bodySmall,
+                            color = ZillitTheme.colors.textSecondary,
+                        )
+                    }
+                }
             }
         }
     }
@@ -264,6 +288,7 @@ private val DIALOG_WIDTH = 760.dp
 private val DIALOG_HEIGHT = 720.dp
 private val MAP_HEIGHT = 380.dp
 private val HAIRLINE = 1.dp
+private val ICON_SMALL = 14.dp
 private const val RGB_MASK = 0xFFFFFF
 private const val HEX_RADIX = 16
 private const val RGB_DIGITS = 6

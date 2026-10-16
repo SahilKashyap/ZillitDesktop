@@ -40,6 +40,7 @@ import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -60,8 +61,10 @@ import kotlinx.coroutines.launch
  * still of the map; a pasted Google Maps link sets the pin too, and the
  * link field always shows the canonical link with a copy affordance.
  *
- * What3Words is deliberately not here — it is a display-only satnav code
- * kept separate in the form.
+ * [nearPin] is where the picker opens when this place has no pin yet: a pin
+ * already on the same recce. The picker falls back from there to the last
+ * place this device used and then to a coarse fix, so it never opens on a
+ * city nobody chose (web, Oct 2026).
  */
 @Composable
 internal fun RecceLocationControl(
@@ -76,6 +79,7 @@ internal fun RecceLocationControl(
     required: Boolean = false,
     namePlaceholder: String = "e.g. Millennium Bridge",
     errorText: String? = null,
+    nearPin: LatLng? = null,
 ) {
     val picker = LocalLocationPicker.current
     val scope = rememberCoroutineScope()
@@ -91,7 +95,11 @@ internal fun RecceLocationControl(
         scope.launch {
             try {
                 val initial = pin?.let { PickedLocation(stop.place, stop.address, it.lat, it.lng) }
-                service.pick(initial = initial, title = str(S.desktop_pick_location))?.let { picked ->
+                service.pick(
+                    initial = initial,
+                    title = str(S.desktop_pick_location),
+                    near = nearPin?.let { PickerStart(it.lat, it.lng) },
+                )?.let { picked ->
                     // The picked venue names a place that had none; one already
                     // named keeps its name — the web's `place: name || place`.
                     onChange(

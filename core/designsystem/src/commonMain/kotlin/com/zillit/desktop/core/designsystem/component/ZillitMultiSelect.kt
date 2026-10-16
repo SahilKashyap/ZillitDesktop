@@ -55,6 +55,14 @@ fun <T> ZillitMultiSelect(
     section: ((T) -> String?)? = null,
     dropdownWidth: Dp? = null,
     searchPlaceholder: String? = null,
+    /**
+     * Puts a "Done" button in the open list's footer. The list stays open
+     * while people are picked, and where several picks in a row are the
+     * normal case — a crew list, a distribution list — an explicit way to
+     * close it reads better than only a click outside (the web's own crew
+     * picker does this).
+     */
+    showDone: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     val anchor = rememberZillitSelectAnchor()
@@ -119,6 +127,18 @@ fun <T> ZillitMultiSelect(
                 section = section,
                 emptyText = emptyText,
                 searchPlaceholder = searchPlaceholder,
+                footerAction = if (!showDone) {
+                    null
+                } else {
+                    {
+                        ZillitButton(
+                            text = str(S.ah_done),
+                            onClick = { open = false },
+                            size = ButtonSize.Small,
+                            leadingIcon = ZillitIcons.Check,
+                        )
+                    }
+                },
             )
         }
     }

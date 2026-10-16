@@ -6,9 +6,6 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,7 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,9 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -67,17 +65,23 @@ import com.zillit.desktop.feature.recce.ui.components.MutedText
 import com.zillit.desktop.feature.recce.ui.components.RecceBody
 import com.zillit.desktop.feature.recce.ui.components.RecceCanvas
 import com.zillit.desktop.feature.recce.ui.components.RecceCard
-import com.zillit.desktop.feature.recce.ui.components.RecceColors
 import com.zillit.desktop.feature.recce.ui.components.RecceLocationControl
+import com.zillit.desktop.feature.recce.ui.components.RecceTag
 import com.zillit.desktop.feature.recce.ui.components.RecceTimeField
 import com.zillit.desktop.feature.recce.ui.components.RecceToolHeader
 import com.zillit.desktop.feature.recce.ui.components.SectionNumber
+import com.zillit.desktop.feature.recce.ui.components.TagKind
 
 /**
- * The create / edit form — the web's `RecceForm`: three numbered sections
- * and a sticky footer. The recce day is a date field and every clock value
- * a time field; all are recombined to local epoch-ms on save. Publish
- * validates the four required fields; Save as Draft validates nothing.
+ * The create / edit form — the web's `RecceForm`: four numbered sections and
+ * a sticky footer. The recce day is a date field and every clock value a
+ * time field, each labelled "Local time"; all are recombined to local
+ * epoch-ms on save. Publish validates the required fields — including at
+ * least one crew member on Personnel; Save as Draft validates nothing.
+ *
+ * Section order is the web's (Oct 2026): 1 Important information → 2 Recce
+ * personnel → 3 Nearest station & weather → 4 Schedule. Personnel sits right
+ * under the rendezvous point because it decides who can SEE the recce.
  */
 @Composable
 internal fun RecceFormPage(
@@ -85,6 +89,8 @@ internal fun RecceFormPage(
     onEvent: (RecceEvent) -> Unit,
     editing: Boolean,
     scroll: ScrollState = rememberScrollState(),
+    /** Bumped by a publish refused for want of a crew member. */
+    scrollToPersonnel: Int = 0,
 ) {
     val editor = state.editor
     Column(Modifier.fillMaxSize()) {
@@ -96,11 +102,18 @@ internal fun RecceFormPage(
             RecceCanvas { ZillitSpinner() }
             return@Column
         }
+        var personnelAt by remember { mutableStateOf(0) }
+        LaunchedEffect(scrollToPersonnel) {
+            if (scrollToPersonnel > 0) scroll.animateScrollTo(personnelAt)
+        }
         RecceBody(modifier = Modifier.weight(1f), narrow = true, scroll = scroll) {
             ErrorNotice(state, onEvent)
             ImportantSection(state, editor, onEvent)
+            Box(Modifier.onGloballyPositioned { personnelAt = (scroll.value + it.positionInParent().y).toInt() }) {
+                PersonnelSection(state.crew, editor, onEvent)
+            }
+            ConditionsSection(editor, onEvent)
             ScheduleSection(state, editor, onEvent)
-            PersonnelSection(state.crew, editor, onEvent)
         }
         Footer(editor, onEvent)
     }
@@ -139,7 +152,9 @@ private fun FormSection(
 
 @Composable
 private fun ImportantSection(state: RecceUiState, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
-    FormSection(1, str(S.recce_section_important), str(S.desktop_recce_important_description)) {
+    // The description is the v2 one: station and weather moved out to their
+    // own section when personnel took second place (web, Oct 2026).
+    FormSection(1, str(S.recce_section_important), str(S.desktop_recce_important_desc_v2)) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
                 ZillitTextField(
@@ -176,6 +191,7 @@ private fun ImportantSection(state: RecceUiState, editor: RecceEditor, onEvent: 
                 onValueChange = { onEvent(RecceEvent.EditorChanged(rdv = editor.rdv.copy(time = it))) },
                 label = str(S.desktop_recce_rdv_time),
                 errorText = editor.errors[RecceField.RdvTime],
+                localTime = true,
                 modifier = Modifier.width(RDV_TIME_WIDTH),
             )
             RecceLocationControl(
@@ -186,68 +202,37 @@ private fun ImportantSection(state: RecceUiState, editor: RecceEditor, onEvent: 
                 onNeedPreview = { onEvent(RecceEvent.NeedPreview(it)) },
                 onOpenUrl = { onEvent(RecceEvent.OpenUrl(it)) },
                 label = str(S.desktop_recce_rendezvous_point),
+                required = true,
                 namePlaceholder = str(S.desktop_recce_rdv_place_placeholder),
                 errorText = editor.errors[RecceField.RdvPlace],
+                nearPin = editor.nearPinForRdv(),
             )
-            W3WField(
-                value = editor.rdv.w3w,
-                onValueChange = { onEvent(RecceEvent.EditorChanged(rdv = editor.rdv.copy(w3w = it))) },
-                hint = str(S.desktop_recce_w3w_display_hint),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                ZillitTextField(
-                    value = editor.station,
-                    onValueChange = { onEvent(RecceEvent.EditorChanged(station = it)) },
-                    label = str(S.recce_field_station),
-                    placeholder = str(S.desktop_recce_station_placeholder),
-                    modifier = Modifier.weight(1f),
-                )
-                Labelled(label = str(S.recce_field_weather), modifier = Modifier.weight(WEATHER_WEIGHT)) {
-                    WeatherControl(editor.weather) { onEvent(RecceEvent.EditorChanged(weather = it)) }
-                }
-            }
         }
     }
 }
 
-/** The What3Words input with its red `///` prefix — the web's `W3WControl`. */
+// ------------------------------------------------- 3 · station & weather
+
+/** The web's third section: the station the crew travels to and the forecast. */
 @Composable
-private fun W3WField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    hint: String? = null,
-) {
-    val colors = ZillitTheme.colors
-    Labelled(label = str(S.recce_w3w_label), modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .height(W3W_PREFIX_HEIGHT)
-                    .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
-                    .background(colors.surfaceSunken)
-                    .border(1.dp, colors.border, RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                ZillitText(
-                    text = "///",
-                    style = ZillitTheme.typography.label.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 13.sp,
-                    ),
-                    color = RecceColors.w3wRed(),
-                )
-            }
+private fun ConditionsSection(editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
+    FormSection(
+        n = 3,
+        title = str(S.desktop_recce_section_conditions),
+        description = str(S.desktop_recce_section_conditions_desc),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
             ZillitTextField(
-                value = value,
-                onValueChange = { onValueChange(it.removePrefix("///").trim()) },
-                placeholder = "leaned.sushi.port",
+                value = editor.station,
+                onValueChange = { onEvent(RecceEvent.EditorChanged(station = it)) },
+                label = str(S.recce_field_station),
+                placeholder = str(S.desktop_recce_station_placeholder),
                 modifier = Modifier.weight(1f),
             )
+            Labelled(label = str(S.recce_field_weather), modifier = Modifier.weight(WEATHER_WEIGHT)) {
+                WeatherControl(editor.weather) { onEvent(RecceEvent.EditorChanged(weather = it)) }
+            }
         }
-        hint?.let { MutedText(it, size = 12.sp) }
     }
 }
 
@@ -299,14 +284,15 @@ private fun String.filterNumber(): String = buildString {
     }
 }
 
-// ----------------------------------------------------------- 2 · schedule
+// ----------------------------------------------------------- 4 · schedule
 
 @Composable
 private fun ScheduleSection(state: RecceUiState, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
     FormSection(
-        n = 2,
+        n = 4,
         title = str(S.recce_section_schedule),
-        description = str(S.desktop_recce_schedule_description),
+        // v2: the stops' satnav hand-off is the map pin, not What3Words.
+        description = str(S.desktop_recce_schedule_desc_v2),
         action = {
             ZillitButton(
                 text = str(S.recce_add_stop),
@@ -327,7 +313,7 @@ private fun ScheduleSection(state: RecceUiState, editor: RecceEditor, onEvent: (
                 modifier = Modifier.fillMaxWidth(),
             )
             editor.stops.forEachIndexed { index, stop ->
-                StopCard(state, index, stop, editor.stops.size, onEvent)
+                StopCard(state, index, stop, editor, onEvent)
             }
             // Add another stop without scrolling back up to the section header.
             DashedAddRow(text = str(S.recce_add_stop), onClick = { onEvent(RecceEvent.AddStop) })
@@ -336,8 +322,15 @@ private fun ScheduleSection(state: RecceUiState, editor: RecceEditor, onEvent: (
 }
 
 @Composable
-private fun StopCard(state: RecceUiState, index: Int, stop: StopEditor, count: Int, onEvent: (RecceEvent) -> Unit) {
+private fun StopCard(
+    state: RecceUiState,
+    index: Int,
+    stop: StopEditor,
+    editor: RecceEditor,
+    onEvent: (RecceEvent) -> Unit,
+) {
     val colors = ZillitTheme.colors
+    val count = editor.stops.size
     val change = { updated: StopEditor -> onEvent(RecceEvent.StopChanged(index, updated)) }
     Column(
         modifier = Modifier
@@ -353,6 +346,7 @@ private fun StopCard(state: RecceUiState, index: Int, stop: StopEditor, count: I
                 value = stop.time,
                 onValueChange = { change(stop.copy(time = it)) },
                 label = str(S.recce_field_time),
+                localTime = true,
                 modifier = Modifier.width(STOP_TIME_WIDTH),
             )
             Labelled(label = str(S.recce_field_type), modifier = Modifier.width(KIND_WIDTH)) {
@@ -392,11 +386,7 @@ private fun StopCard(state: RecceUiState, index: Int, stop: StopEditor, count: I
             previewKnown = stop.pin?.let { it in state.previews } ?: false,
             onNeedPreview = { onEvent(RecceEvent.NeedPreview(it)) },
             onOpenUrl = { onEvent(RecceEvent.OpenUrl(it)) },
-        )
-        W3WField(
-            value = stop.w3w,
-            onValueChange = { change(stop.copy(w3w = it)) },
-            modifier = Modifier.widthIn(max = W3W_MAX_WIDTH),
+            nearPin = editor.nearPinForStop(index),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
             ZillitTextField(
@@ -410,6 +400,7 @@ private fun StopCard(state: RecceUiState, index: Int, stop: StopEditor, count: I
                 value = stop.endTime,
                 onValueChange = { change(stop.copy(endTime = it)) },
                 label = str(S.desktop_recce_end_time_optional),
+                localTime = true,
                 modifier = Modifier.width(KIND_WIDTH),
             )
         }
@@ -445,64 +436,130 @@ private fun RemoveButton(description: String, onClick: () -> Unit) {
     }
 }
 
-// ---------------------------------------------------------- 3 · personnel
+// ---------------------------------------------------------- 2 · personnel
 
+/**
+ * Who is coming, and — since October 2026 — who can SEE the recce: the
+ * creator, project admins and the project users listed here.
+ *
+ * So the section leads with a multi-select of the project crew
+ * (`GET recce/crew`), each pick becoming a row in the table under it, and a
+ * publish is refused until at least one row came from that picker. People
+ * typed in by hand stay possible and stay useful — they are on the PDF —
+ * but they are not Zillit users, which the hint under the table says.
+ */
 @Composable
 private fun PersonnelSection(crew: List<RecceCrewMember>, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
+    val colors = ZillitTheme.colors
     FormSection(
-        n = 3,
+        n = 2,
         title = str(S.recce_section_personnel),
-        description = str(S.desktop_recce_personnel_description),
-        action = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val available = crew.filter { member -> editor.personnel.none { it.userId == member.userId } }
-                if (crew.isNotEmpty()) {
-                    CrewPicker(available) { onEvent(RecceEvent.AddCrewMember(it.userId)) }
-                }
-                ZillitButton(
-                    text = str(S.recce_add_person),
-                    onClick = { onEvent(RecceEvent.AddPerson) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Add,
-                )
-            }
-        },
+        description = str(S.desktop_recce_personnel_visibility),
+        action = { RecceTag(text = str(S.desktop_recce_required_to_publish), kind = TagKind.Pending) },
     ) {
-        val colors = ZillitTheme.colors
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .border(1.dp, colors.border, RoundedCornerShape(8.dp)),
-        ) {
-            Row(
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            CrewPicker(crew, editor, onEvent)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(colors.surfaceSunken)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, colors.border, RoundedCornerShape(8.dp)),
             ) {
-                listOf(
-                    S.name,
-                    S.recce_field_role,
-                    S.recce_field_email,
-                    S.contact,
-                    S.recce_field_note,
-                ).forEach { column ->
-                    ZillitText(
-                        text = str(column),
-                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = colors.textSecondary,
-                        modifier = Modifier.weight(1f),
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.surfaceSunken)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        S.name,
+                        S.recce_field_role,
+                        S.recce_field_email,
+                        S.contact,
+                        S.recce_field_note,
+                    ).forEach { column ->
+                        ZillitText(
+                            text = str(column),
+                            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = colors.textSecondary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(Modifier.width(ROW_ACTION_WIDTH))
                 }
-                Spacer(Modifier.width(ROW_ACTION_WIDTH))
+                if (editor.personnel.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                        MutedText(str(S.desktop_recce_personnel_empty))
+                    }
+                }
+                editor.personnel.forEachIndexed { index, person ->
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+                    PersonRow(index, person, onEvent)
+                }
             }
-            editor.personnel.forEachIndexed { index, person ->
-                Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
-                PersonRow(index, person, onEvent)
-            }
+            DashedAddRow(
+                text = str(S.desktop_recce_add_manual_person),
+                onClick = { onEvent(RecceEvent.AddPerson) },
+            )
+            MutedText(str(S.desktop_recce_manual_person_hint), size = 12.sp)
+        }
+    }
+}
+
+/**
+ * The crew multi-select — the web's `mode="multiple"` select: chips for the
+ * people chosen, a search over name, designation and number, and a list that
+ * stays open while several are picked, with "N chosen" and a Done button in
+ * its footer.
+ *
+ * Choosing is the only thing it does: the whole id list goes back to the
+ * ViewModel, which adds and removes rows to match and leaves hand-typed rows
+ * alone.
+ */
+@Composable
+private fun CrewPicker(crew: List<RecceCrewMember>, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
+    // Somebody saved on this recce who has since left the project still needs
+    // a named chip rather than a raw id, so the picker offers them too.
+    val options = remember(crew, editor.personnel) {
+        val known = crew.associateBy { it.userId }
+        crew + editor.personnel.filter { it.isCrew && it.userId !in known }
+            .map { RecceCrewMember(it.userId.orEmpty(), it.name, it.role, it.email, it.contact) }
+    }
+    val chosen = remember(options, editor.personnel) {
+        val ids = editor.chosenCrewIds
+        options.filter { it.userId in ids }
+    }
+    Labelled(
+        label = str(S.desktop_recce_choose_crew),
+        required = true,
+        errorText = editor.errors[RecceField.Personnel],
+        hint = null,
+        trailing = { ZillitText(
+            text = str(S.desktop_ad_n_chosen, chosen.size),
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        ) },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ZillitMultiSelect(
+                selected = chosen,
+                options = options,
+                label = { it.name.ifBlank { "—" } },
+                onChange = { picked -> onEvent(RecceEvent.ChooseCrew(picked.map { it.userId })) },
+                placeholder = str(S.desktop_recce_crew_search_placeholder),
+                emptyText = str(S.recce_crew_empty),
+                searchText = { "${it.name} ${it.role.localised()} ${it.contact}" },
+                subtitle = { member ->
+                    listOf(member.role.localised(), member.contact).filter { it.isNotBlank() }.joinToString(" · ")
+                },
+                searchPlaceholder = str(S.desktop_recce_crew_search_placeholder),
+                // Several picks in a row is the normal case here, so the open
+                // list carries its own way out, as the web's footer does.
+                showDone = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            MutedText(str(S.desktop_recce_choose_crew_hint), size = 12.sp)
         }
     }
 }
@@ -555,65 +612,6 @@ private fun PersonRow(index: Int, person: PersonEditor, onEvent: (RecceEvent) ->
     }
 }
 
-/**
- * "+ Add from project crew…" — a searchable dropdown over the crew not yet
- * on the list, each option two lines (name; designation · contact), the
- * web's `recce-crew-select`: on-brand outline and tint so it reads as a
- * tappable picker rather than a greyed-out field.
- */
-@Composable
-private fun CrewPicker(available: List<RecceCrewMember>, onPick: (RecceCrewMember) -> Unit) {
-    val colors = ZillitTheme.colors
-    var open by remember { mutableStateOf(false) }
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Box {
-        Row(
-            modifier = Modifier
-                .width(CREW_PICKER_WIDTH)
-                .height(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(colors.accentSoft)
-                .border(1.dp, if (hovered) RecceColors.BrandStrong else RecceColors.Brand, RoundedCornerShape(8.dp))
-                .hoverable(interaction)
-                .clickable { open = true }
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            ZillitText(
-                text = "+ " + str(S.recce_add_from_crew),
-                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = colors.accentText,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.accentText, size = 14.dp)
-        }
-        if (open) {
-            // Pick-to-add: nothing is "selected", the pick leaves the list.
-            ZillitOptionPopup(
-                onDismiss = { open = false },
-                width = CREW_PICKER_WIDTH,
-                options = available,
-                isSelected = { false },
-                onPick = { member ->
-                    open = false
-                    onPick(member)
-                },
-                label = RecceCrewMember::name,
-                searchable = true,
-                searchPlaceholder = str(S.desktop_recce_crew_search_placeholder),
-                searchText = { "${it.name} ${it.role.localised()} ${it.contact}" },
-                subtitle = { member ->
-                    listOf(member.role.localised(), member.contact).filter { it.isNotBlank() }.joinToString(" · ")
-                },
-                emptyText = str(S.desktop_recce_everyone_on_list),
-            )
-        }
-    }
-}
-
 // --------------------------------------------------------------- footer
 
 /** The sticky footer: the counter, Cancel, Save as Draft, Publish recce. */
@@ -660,14 +658,11 @@ private fun Footer(editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
 }
 
 private val RDV_TIME_WIDTH = 160.dp
-private val W3W_PREFIX_HEIGHT = 32.dp
 private val TEMP_WIDTH = 84.dp
 private val UNIT_WIDTH = 90.dp
 private val STOP_TIME_WIDTH = 160.dp
 private val ACTIONS_TOP = 20.dp
 private val KIND_WIDTH = 170.dp
-private val W3W_MAX_WIDTH = 360.dp
 private val ROW_ACTION_WIDTH = 36.dp
-private val CREW_PICKER_WIDTH = 260.dp
 private val FOOTER_WIDTH = 1200.dp
 private const val WEATHER_WEIGHT = 1.6f

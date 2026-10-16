@@ -53,6 +53,7 @@ import com.zillit.desktop.feature.recce.ui.RecceEvent
 import com.zillit.desktop.feature.recce.ui.RecceFilter
 import com.zillit.desktop.feature.recce.ui.RecceUiState
 import com.zillit.desktop.feature.recce.ui.components.AvatarStack
+import com.zillit.desktop.feature.recce.ui.components.LocalTimeTag
 import com.zillit.desktop.feature.recce.ui.components.MutedText
 import com.zillit.desktop.feature.recce.ui.components.RecceBody
 import com.zillit.desktop.feature.recce.ui.components.RecceCard
@@ -219,7 +220,14 @@ private fun RecceRow(state: RecceUiState, recce: Recce, last: Boolean, onEvent: 
                 bottom = RecceClock.weekday(recce.dateMs),
                 modifier = Modifier.weight(1f),
             )
-            TwoLine(top = RecceClock.hm(recce.rdv.timeMs), bottom = recce.station, modifier = Modifier.weight(1f))
+            // The Rendezvous column, labelled "Local time" like every other
+            // recce time: it is the reader's clock, not the recce's zone.
+            TwoLine(
+                top = RecceClock.hm(recce.rdv.timeMs),
+                bottom = recce.station,
+                modifier = Modifier.weight(1f),
+                topTrailing = if (recce.rdv.timeMs > 0) ({ LocalTimeTag() }) else null,
+            )
             Row(
                 modifier = Modifier.width(STOPS_WIDTH),
                 verticalAlignment = Alignment.CenterVertically,
@@ -289,13 +297,26 @@ private fun TitleCell(recce: Recce, modifier: Modifier) {
 }
 
 @Composable
-private fun TwoLine(top: String, bottom: String, modifier: Modifier) {
+private fun TwoLine(
+    top: String,
+    bottom: String,
+    modifier: Modifier,
+    topTrailing: (@Composable () -> Unit)? = null,
+) {
     val colors = ZillitTheme.colors
     Column(modifier) {
         if (top.isBlank()) {
             Dash()
         } else {
-            ZillitText(text = top, style = ZillitTheme.typography.bodyLarge, color = colors.textSecondary, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                ZillitText(
+                    text = top,
+                    style = ZillitTheme.typography.bodyLarge,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                )
+                topTrailing?.invoke()
+            }
         }
         if (bottom.isNotBlank()) {
             ZillitText(text = bottom, style = ZillitTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)

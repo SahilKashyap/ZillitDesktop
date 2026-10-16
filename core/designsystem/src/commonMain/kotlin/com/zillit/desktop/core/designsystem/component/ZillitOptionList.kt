@@ -171,7 +171,8 @@ fun ZillitSelectTrigger(
  * [showInitials] off drops the tile; [renderOption] replaces the whole row's
  * content. [isEnabled] false greys a row out and the keys skip it.
  * [section] names each option's group: a header is drawn wherever it changes
- * from the row above, so pass the options already grouped. [pinnedAction]
+ * from the row above, so pass the options already grouped. [footerAction]
+ * sits at the end of the count strip (a multi-select's "Done"); [pinnedAction]
  * sits above every row; [header] above the search line; [onCreate] offers
  * `Create "<typed>"` when a search matches nothing. [searchPlaceholder]
  * words the empty search line ("Search…" by default); every word typed must
@@ -195,6 +196,12 @@ fun <T> ZillitOptionPopup(
     width: Dp = POPUP_MIN_WIDTH,
     searchable: Boolean = options.size > SEARCH_THRESHOLD,
     footer: @Composable (shown: Int) -> String = { zillitOptionCount(it) },
+    /**
+     * A control at the end of the count strip. A multi-select stays open
+     * while rows are toggled, so it puts an explicit "Done" there rather
+     * than leaving a click outside as the only way to close it.
+     */
+    footerAction: (@Composable () -> Unit)? = null,
     searchText: (T) -> String = label,
     subtitle: ((T) -> String?)? = null,
     showInitials: Boolean = true,
@@ -356,7 +363,7 @@ fun <T> ZillitOptionPopup(
                     }
                 }
             }
-            OptionFooter(footer(filtered.size))
+            OptionFooter(footer(filtered.size), footerAction)
         }
     }
 }
@@ -557,7 +564,7 @@ private fun CreateRow(text: String, onClick: () -> Unit) {
 
 /** The tinted strip along the bottom: the count, then the keys. */
 @Composable
-private fun OptionFooter(text: String) {
+private fun OptionFooter(text: String, action: (@Composable () -> Unit)? = null) {
     val colors = ZillitTheme.colors
     Column {
         ZillitDivider()
@@ -581,6 +588,7 @@ private fun OptionFooter(text: String) {
             HintText(str(S.drive_cd_navigate))
             Kbd("↵")
             HintText(str(S.select))
+            action?.invoke()
         }
     }
 }

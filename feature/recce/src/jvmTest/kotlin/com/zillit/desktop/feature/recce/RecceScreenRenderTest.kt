@@ -15,15 +15,19 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.feature.recce.domain.Recce
+import com.zillit.desktop.feature.recce.domain.RecceCrewMember
 import com.zillit.desktop.feature.recce.domain.ReccePerson
 import com.zillit.desktop.feature.recce.domain.RecceStatus
 import com.zillit.desktop.feature.recce.domain.RecceStop
 import com.zillit.desktop.feature.recce.domain.StopKind
 import com.zillit.desktop.feature.recce.ui.DeleteTarget
+import com.zillit.desktop.feature.recce.ui.DistributeTarget
 import com.zillit.desktop.feature.recce.ui.RecceCounts
 import com.zillit.desktop.feature.recce.ui.RecceEditor
 import com.zillit.desktop.feature.recce.ui.RecceEvent
+import com.zillit.desktop.feature.recce.ui.RecceField
 import com.zillit.desktop.feature.recce.ui.ReccePage
 import com.zillit.desktop.feature.recce.ui.RecceScreen
 import com.zillit.desktop.feature.recce.ui.RecceUiState
@@ -38,9 +42,15 @@ class RecceScreenRenderTest {
 
     private class FakePicker(private val place: PickedLocation?) : LocationPicker {
         var openedWith: PickedLocation? = null
+        var openedNear: PickerStart? = null
 
-        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? {
+        override suspend fun pick(
+            initial: PickedLocation?,
+            title: String,
+            near: PickerStart?,
+        ): PickedLocation? {
             openedWith = initial
+            openedNear = near
             return place
         }
     }
@@ -65,7 +75,6 @@ class RecceScreenRenderTest {
             kind = StopKind.Rendezvous,
             timeMs = 1_772_784_000_000L,
             place = "Notes Coffee",
-            w3w = "leaned.sushi.port",
         ),
         itinerary = listOf(
             RecceStop(
@@ -85,7 +94,13 @@ class RecceScreenRenderTest {
             ),
         ),
         personnel = listOf(
-            ReccePerson(name = "Aisha Khan", role = "1st AD", contact = "07700 900123", note = "Joining at Waterloo"),
+            ReccePerson(
+                userId = "u9",
+                name = "Aisha Khan",
+                role = "1st AD",
+                contact = "07700 900123",
+                note = "Joining at Waterloo",
+            ),
         ),
         status = RecceStatus.Draft,
         version = 1,
@@ -122,7 +137,7 @@ class RecceScreenRenderTest {
     }
 
     @Test
-    fun `the detail draws every stop, the W3W chip and the crew`() = runComposeUiTest {
+    fun `the detail draws every stop, the crew and a Local time label on each clock`() = runComposeUiTest {
         setContent {
             ZillitTheme {
                 RecceScreen(RecceUiState(route = ReccePage.Detail("r1"), selected = bridges), onEvent = {})
@@ -132,8 +147,11 @@ class RecceScreenRenderTest {
         onNodeWithText("Millennium Bridge").assertExists()
         onNodeWithText("Borough Market").assertExists()
         onNodeWithText("Tower Bridge").assertExists()
-        onNodeWithText("leaned.sushi.port").assertExists()
         onNodeWithText("Tube from Temple").assertExists()
+        // Every time on the page says whose clock it is.
+        assertTrue(onAllNodesWithText("Local time").fetchSemanticsNodes().isNotEmpty())
+        // What3Words went in October 2026: no `///` link is left anywhere.
+        onAllNodesWithText("///").assertCountEquals(0)
         onNodeWithText("Aisha Khan").assertExists()
         onNodeWithText("Joining at Waterloo").assertExists()
         onNodeWithText("2 locations").assertExists()
@@ -259,6 +277,126 @@ class RecceScreenRenderTest {
             assertEquals(51.5074, rdv.lat)
             assertEquals(-0.1278, rdv.long)
         }
+
+    @Test
+    fun `the form leads with personnel, says who can see the recce and marks it required`() =
+        runComposeUiTest {
+            setContent {
+                ZillitTheme {
+                    RecceScreen(RecceUiState(route = ReccePage.Form(null), editor = editor()), onEvent = {})
+                }
+            }
+
+            onNodeWithText(
+                "Who is going on this recce. Only you, project admins and the crew members you add here can see it.",
+            ).assertExists()
+            onNodeWithText("Required to publish").assertExists()
+            onNodeWithText("Choose crew members from the project").assertExists()
+            // Nobody is seeded: the table says so rather than showing a blank row.
+            onNodeWithText("No one added yet. Choose crew members above.").assertExists()
+            onNodeWithText("Add someone who isn’t on the crew list").assertExists()
+        }
+
+    @Test
+    fun `a publish refused for want of a crew member says so under the picker`() = runComposeUiTest {
+        val refused = editor().copy(
+            errors = mapOf(RecceField.Personnel to "Add at least one crew member from the project before you publish."),
+        )
+        setContent {
+            ZillitTheme { RecceScreen(RecceUiState(route = ReccePage.Form(null), editor = refused), onEvent = {}) }
+        }
+
+        onNodeWithText("Add at least one crew member from the project before you publish.").assertExists()
+    }
+
+    @Test
+    fun `the map opens near a pin already on the recce when this place has none`() = runComposeUiTest {
+        val picker = FakePicker(aria)
+        val withPinnedRdv = editor(rdv = StopEditor(place = "Gate", lat = 51.5, long = -0.12))
+        setContent {
+            ZillitTheme {
+                CompositionLocalProvider(LocalLocationPicker provides picker) {
+                    RecceScreen(RecceUiState(route = ReccePage.Form(null), editor = withPinnedRdv), onEvent = {})
+                }
+            }
+        }
+
+        onAllNodesWithText("Search / pick on map")[0].performScrollTo().performClick()
+        waitForIdle()
+
+        // The stop has no pin, so the picker opens next to the rendezvous — and
+        // drops no pin there, which is why nothing is handed over as `initial`.
+        assertEquals(PickerStart(51.5, -0.12), picker.openedNear)
+        assertEquals(null, picker.openedWith)
+    }
+
+    @Test
+    fun `send to Document Distribution is offered on a published recce and refused on a draft`() =
+        runComposeUiTest {
+            val events = mutableListOf<RecceEvent>()
+            val published = bridges.copy(status = RecceStatus.Published)
+            setContent {
+                ZillitTheme {
+                    RecceScreen(
+                        RecceUiState(route = ReccePage.Detail("r1"), selected = published),
+                        events::add,
+                    )
+                }
+            }
+
+            onNodeWithText("Send to Document Distribution").performClick()
+            assertEquals(RecceEvent.SendToDocDist, events.last())
+        }
+
+    @Test
+    fun `the publish confirm names the pdf it is about to file`() = runComposeUiTest {
+        val events = mutableListOf<RecceEvent>()
+        setContent {
+            ZillitTheme {
+                RecceScreen(
+                    RecceUiState(
+                        route = ReccePage.Detail("r1"),
+                        selected = bridges.copy(status = RecceStatus.Published),
+                        distribute = DistributeTarget("r1", "Stunt Recce — City Bridges.pdf"),
+                    ),
+                    events::add,
+                )
+            }
+        }
+        waitForIdle()
+
+        onNodeWithText(
+            "Publish \"Stunt Recce — City Bridges.pdf\" to the Document Distribution library?",
+        ).assertExists()
+        onNodeWithText("Publish").performClick()
+        assertEquals(RecceEvent.ConfirmSendToDocDist, events.last())
+    }
+
+    @Test
+    fun `the crew list stays open while people are picked, and carries its own Done`() = runComposeUiTest {
+        val events = mutableListOf<RecceEvent>()
+        val crew = listOf(
+            RecceCrewMember(userId = "u1", name = "Aisha Khan", role = "1st AD", email = "", contact = "07700 1"),
+            RecceCrewMember(userId = "u2", name = "Tom Reed", role = "Gaffer", email = "", contact = "07700 2"),
+        )
+        setContent {
+            ZillitTheme {
+                RecceScreen(
+                    RecceUiState(route = ReccePage.Form(null), editor = editor(), crew = crew),
+                    events::add,
+                )
+            }
+        }
+
+        onNodeWithText("Search name, designation or number").performScrollTo().performClick()
+        waitForIdle()
+
+        onNodeWithText("Aisha Khan").performClick()
+        waitForIdle()
+        assertEquals(RecceEvent.ChooseCrew(listOf("u1")), events.last())
+        // Still open after a pick, with the explicit way out in its footer.
+        onNodeWithText("Done").assertExists()
+    }
 
     private companion object {
         /** The rendezvous section is drawn before the itinerary. */

@@ -29,11 +29,17 @@ class ZillitLocationFieldRenderTest {
         var seenInitial: PickedLocation? = null
         var seenTitle: String? = null
         var calls = 0
+        var seenNear: PickerStart? = null
 
-        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? {
+        override suspend fun pick(
+            initial: PickedLocation?,
+            title: String,
+            near: PickerStart?,
+        ): PickedLocation? {
             calls++
             seenInitial = initial
             seenTitle = title
+            seenNear = near
             return answer
         }
     }

@@ -108,12 +108,51 @@ interface RecceHost {
     suspend fun previewMap(pin: LatLng, widthPx: Int, heightPx: Int, dark: Boolean): ByteArray?
 
     /**
+     * Whether this user may file into the Document Distribution library:
+     * posting rights on that tool, or project admin. The web reads the same
+     * `canPost || is_admin` (`useDistributeToDocDist`) — there is no separate
+     * flag for a send from a tool.
+     */
+    fun canDistribute(): Boolean
+
+    /** Registers the already-stored report in the library — `documents/from-tool`. */
+    suspend fun distribute(file: RecceDistribution): ZillitResult<Unit>
+
+    /**
      * Resolves an address to a pin, optionally biased to a country (ISO-2),
      * answering the country the hit landed in — the web's second pass
      * re-geocodes outliers biased to the dominant country of the other stops.
      */
     suspend fun geocode(query: String, country: String? = null): GeocodeHit?
 }
+
+/**
+ * The report as Document Distribution takes it: the storage keys of the file
+ * the recce service already wrote, plus where it files.
+ *
+ * [folderPath] is always [DOC_DIST_RECCE_FOLDER] — the server resolves
+ * folders BY NAME, so a different spelling on any platform grows a second
+ * root folder instead of reusing the shared one.
+ */
+data class RecceDistribution(
+    val fileName: String,
+    val media: String,
+    val bucket: String,
+    val region: String,
+    val contentSubtype: String,
+    val thumbnail: String,
+    val fileSizeBytes: Long,
+    /** `yyyy-MM-dd` — the recce day, read on the device's own calendar. */
+    val folderDate: String,
+    val folderPath: List<String> = listOf(DOC_DIST_RECCE_FOLDER),
+)
+
+/**
+ * The library's root folder for recces, agreed across web, Android and iOS
+ * (the web's `DOC_DIST_TOOL.RECCE`). The exact string; do not improve the
+ * casing or the spacing.
+ */
+const val DOC_DIST_RECCE_FOLDER: String = "Recce"
 
 /** One page of the rendered report, as encoded image bytes. */
 data class ReccePdfPage(

@@ -11,7 +11,9 @@ import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.feature.recce.domain.GeocodeHit
 import com.zillit.desktop.feature.recce.domain.LatLng
 import com.zillit.desktop.feature.recce.domain.Recce
+import com.zillit.desktop.feature.recce.domain.RecceClock
 import com.zillit.desktop.feature.recce.domain.RecceCrewMember
+import com.zillit.desktop.feature.recce.domain.RecceDistribution
 import com.zillit.desktop.feature.recce.domain.RecceDraft
 import com.zillit.desktop.feature.recce.domain.RecceHost
 import com.zillit.desktop.feature.recce.domain.RecceListPage
@@ -28,6 +30,7 @@ import com.zillit.desktop.feature.recce.ui.RecceEffect
 import com.zillit.desktop.feature.recce.ui.RecceEvent
 import com.zillit.desktop.feature.recce.ui.RecceField
 import com.zillit.desktop.feature.recce.ui.RecceFilter
+import com.zillit.desktop.feature.recce.ui.PersonEditor
 import com.zillit.desktop.feature.recce.ui.ReccePage
 import com.zillit.desktop.feature.recce.ui.RecceViewModel
 import kotlinx.coroutines.Dispatchers
@@ -180,7 +183,7 @@ class RecceViewModelTest {
 
         val errors = model.state.value.editor!!.errors
         assertEquals(
-            setOf(RecceField.Title, RecceField.Date, RecceField.RdvTime, RecceField.RdvPlace),
+            setOf(RecceField.Title, RecceField.Date, RecceField.RdvTime, RecceField.RdvPlace, RecceField.Personnel),
             errors.keys,
         )
         assertTrue(effects.any { it is RecceEffect.ScrollToTop })
@@ -189,6 +192,137 @@ class RecceViewModelTest {
         model.onEvent(RecceEvent.EditorChanged(title = "Bridges"))
         assertFalse(RecceField.Title in model.state.value.editor!!.errors)
     }
+
+    @Test
+    fun `publish is refused until somebody from the project crew is on it`() = runTest(dispatcher) {
+        val repository = FakeRepository(all = 0, published = 0, crew = listOf(member("u9", "Aisha Khan")))
+        val model = viewModel(repository)
+        model.start()
+        advanceUntilIdle()
+        val effects = mutableListOf<RecceEffect>()
+        backgroundScope.launch { model.effects.toList(effects) }
+        runCurrent()
+
+        model.onEvent(RecceEvent.New)
+        model.onEvent(RecceEvent.EditorChanged(title = "Bridges", dateYmd = "2026-10-16"))
+        val rdv = model.state.value.editor!!.rdv
+        model.onEvent(RecceEvent.EditorChanged(rdv = rdv.copy(time = "08:30", place = "Gate")))
+        // A hand-typed person is not a project user, so it does not unblock.
+        model.onEvent(RecceEvent.AddPerson)
+        model.onEvent(RecceEvent.PersonChanged(0, PersonEditor(name = "Walk-in")))
+        model.onEvent(RecceEvent.Publish)
+        runCurrent()
+
+        assertTrue(repository.created.isEmpty())
+        assertEquals(setOf(RecceField.Personnel), model.state.value.editor!!.errors.keys)
+        assertTrue(effects.any { it is RecceEffect.ScrollToPersonnel })
+
+        // Someone from the crew clears it, and the publish goes through.
+        model.onEvent(RecceEvent.ChooseCrew(listOf("u9")))
+        model.onEvent(RecceEvent.Publish)
+        advanceUntilIdle()
+
+        val published = repository.created.single()
+        assertEquals(RecceStatus.Published, published.status)
+        assertEquals(listOf(null, "u9"), published.personnel.map { it.userId })
+    }
+
+    @Test
+    fun `a draft with nobody on it still saves`() = runTest(dispatcher) {
+        val repository = FakeRepository(all = 0, published = 0)
+        val model = viewModel(repository)
+        model.start()
+        advanceUntilIdle()
+
+        model.onEvent(RecceEvent.New)
+        model.onEvent(RecceEvent.SaveDraft)
+        advanceUntilIdle()
+
+        assertTrue(repository.created.single().personnel.isEmpty())
+    }
+
+    @Test
+    fun `the crew picker's choice adds and removes rows, and leaves hand-typed people alone`() =
+        runTest(dispatcher) {
+            val crew = listOf(member("u1", "Aisha Khan"), member("u2", "Tom Reed"))
+            val model = viewModel(FakeRepository(all = 0, published = 0, crew = crew))
+            model.start()
+            advanceUntilIdle()
+
+            model.onEvent(RecceEvent.New)
+            model.onEvent(RecceEvent.AddPerson)
+            model.onEvent(RecceEvent.PersonChanged(0, PersonEditor(name = "Walk-in")))
+            model.onEvent(RecceEvent.ChooseCrew(listOf("u1", "u2")))
+            advanceUntilIdle()
+
+            val names = model.state.value.editor!!.personnel.map { it.name }
+            assertEquals(listOf("Walk-in", "Aisha Khan", "Tom Reed"), names)
+
+            // Deselecting one takes only that row away.
+            model.onEvent(RecceEvent.ChooseCrew(listOf("u2")))
+            assertEquals(listOf("Walk-in", "Tom Reed"), model.state.value.editor!!.personnel.map { it.name })
+            assertEquals(listOf("u2"), model.state.value.editor!!.chosenCrewIds)
+        }
+
+    @Test
+    fun `send to Document Distribution names the file, files it under Recce and dates it by the recce day`() =
+        runTest(dispatcher) {
+            val repository = FakeRepository(all = 1, published = 1)
+            repository.rows[0] = repository.rows[0].copy(title = """Stunt: Bridges / Night?""")
+            val host = FakeHost()
+            val model = viewModel(repository, host = host)
+            model.start()
+            advanceUntilIdle()
+            model.onEvent(RecceEvent.Open("r1"))
+            advanceUntilIdle()
+
+            model.onEvent(RecceEvent.SendToDocDist)
+            runCurrent()
+
+            // The confirm names the file before anything is rendered.
+            assertEquals("Stunt- Bridges - Night-.pdf", model.state.value.distribute?.fileName)
+            assertTrue(repository.reported.isEmpty())
+
+            model.onEvent(RecceEvent.ConfirmSendToDocDist)
+            advanceUntilIdle()
+
+            val filed = host.distributed.single()
+            assertEquals(listOf("Recce"), filed.folderPath)
+            assertEquals("Stunt- Bridges - Night-.pdf", filed.fileName)
+            assertEquals(RecceClock.ymd(repository.rows[0].dateMs), filed.folderDate)
+            // The server said no subtype, so the library gets the fallback.
+            assertEquals("pdf", filed.contentSubtype)
+            assertEquals("thumb", filed.thumbnail)
+            assertEquals(2048L, filed.fileSizeBytes)
+            assertTrue(model.state.value.distribute!!.done)
+        }
+
+    @Test
+    fun `a draft is never sent to Document Distribution, and neither is one without posting rights`() =
+        runTest(dispatcher) {
+            val drafts = FakeRepository(all = 1, published = 0)
+            val host = FakeHost()
+            val model = viewModel(drafts, host = host)
+            model.start()
+            advanceUntilIdle()
+            model.onEvent(RecceEvent.Open("r1"))
+            advanceUntilIdle()
+
+            model.onEvent(RecceEvent.SendToDocDist)
+            runCurrent()
+            assertNull(model.state.value.distribute)
+
+            val refusing = FakeRepository(all = 1, published = 1)
+            val gated = viewModel(refusing, host = FakeHost(mayDistribute = false))
+            gated.start()
+            advanceUntilIdle()
+            gated.onEvent(RecceEvent.Open("r1"))
+            advanceUntilIdle()
+
+            gated.onEvent(RecceEvent.SendToDocDist)
+            runCurrent()
+            assertNull(gated.state.value.distribute)
+        }
 
     @Test
     fun `a draft saves without validation, then opens the new record`() = runTest(dispatcher) {
@@ -265,6 +399,29 @@ class RecceViewModelTest {
         advanceUntilIdle()
         assertEquals(ReccePage.Detail("r1"), model.state.value.route)
         assertNull(model.state.value.editor)
+    }
+
+    @Test
+    fun `a delete re-reads both totals, so the drafts badge cannot go stale`() = runTest(dispatcher) {
+        val repository = FakeRepository(all = 10, published = 4)
+        val model = viewModel(repository)
+        model.start()
+        advanceUntilIdle()
+        assertEquals(6, model.state.value.counts.draft)
+        val before = repository.queries.size
+
+        model.onEvent(RecceEvent.Delete("r10")) // a draft
+        model.onEvent(RecceEvent.ConfirmDelete)
+        advanceUntilIdle()
+
+        // Neither badge is taken from the open tab's own list request: both are
+        // asked for again, and drafts is derived from the fresh pair.
+        val after = repository.queries.drop(before)
+        assertTrue(after.any { it == RecceQuery(page = 1, limit = 1, status = null) })
+        assertTrue(after.any { it == RecceQuery(page = 1, limit = 1, status = RecceStatus.Published) })
+        assertEquals(9, model.state.value.counts.all)
+        assertEquals(4, model.state.value.counts.published)
+        assertEquals(5, model.state.value.counts.draft)
     }
 
     @Test
@@ -404,9 +561,11 @@ class RecceViewModelTest {
         rights = rights,
     )
 
-    private class FakeRepository(all: Int, published: Int) : RecceRepository {
+    private class FakeRepository(all: Int, published: Int, val crew: List<RecceCrewMember> = emptyList()) :
+        RecceRepository {
         val queries = mutableListOf<RecceQuery>()
         val created = mutableListOf<RecceDraft>()
+        val reported = mutableListOf<String>()
         val rows: MutableList<Recce> = (1..all).map { n ->
             recce("r$n", if (n <= published) RecceStatus.Published else RecceStatus.Draft)
         }.toMutableList()
@@ -424,7 +583,7 @@ class RecceViewModelTest {
             rows.firstOrNull { it.id == id }?.let { ZillitResult.Success(it) }
                 ?: ZillitResult.Failure(ZillitError.Unknown("missing"))
 
-        override suspend fun crew(): ZillitResult<List<RecceCrewMember>> = ZillitResult.Success(emptyList())
+        override suspend fun crew(): ZillitResult<List<RecceCrewMember>> = ZillitResult.Success(crew)
 
         override suspend fun create(draft: RecceDraft): ZillitResult<String> {
             created += draft
@@ -440,16 +599,34 @@ class RecceViewModelTest {
             return ZillitResult.Success(Unit)
         }
 
-        override suspend fun report(id: String): ZillitResult<RecceReport> =
-            ZillitResult.Success(
-                RecceReport(url = null, media = "m", bucket = "b", region = "r", name = "RECCE Day one 1"),
+        override suspend fun report(id: String): ZillitResult<RecceReport> {
+            reported += id
+            return ZillitResult.Success(
+                RecceReport(
+                    url = null,
+                    media = "m",
+                    bucket = "b",
+                    region = "r",
+                    name = "RECCE Day one 1",
+                    thumbnail = "thumb",
+                    fileSizeBytes = 2048,
+                ),
             )
+        }
     }
 
-    private class FakeHost : RecceHost {
+    private class FakeHost(private val mayDistribute: Boolean = true) : RecceHost {
         val geocoded = mutableListOf<String>()
         val plottedPins = mutableListOf<List<RoutePin>>()
         val printed = mutableListOf<String>()
+        val distributed = mutableListOf<RecceDistribution>()
+
+        override fun canDistribute(): Boolean = mayDistribute
+
+        override suspend fun distribute(file: RecceDistribution): ZillitResult<Unit> {
+            distributed += file
+            return ZillitResult.Success(Unit)
+        }
 
         override suspend fun fetchReport(report: RecceReport): ZillitResult<ByteArray> =
             ZillitResult.Success(byteArrayOf(1, 2, 3))
@@ -479,6 +656,9 @@ class RecceViewModelTest {
     }
 
     private companion object {
+        fun member(id: String, name: String) =
+            RecceCrewMember(userId = id, name = name, role = "", email = "", contact = "")
+
         fun recce(id: String, status: RecceStatus) = Recce(
             id = id,
             uniqueId = "u-$id",

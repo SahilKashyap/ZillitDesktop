@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.recce
 
 import com.zillit.desktop.feature.recce.data.parseRecce
+import com.zillit.desktop.feature.recce.data.parseReport
 import com.zillit.desktop.feature.recce.data.recceWire
 import com.zillit.desktop.feature.recce.domain.RecceClock
 import com.zillit.desktop.feature.recce.domain.RecceDraft
@@ -76,6 +77,28 @@ class RecceWireTest {
         assertEquals(JsonNull, stops[0].jsonObject["photo"])
         assertEquals("0", stops[0].jsonObject["end_time"]!!.jsonPrimitive.content)
         assertEquals(JsonNull, body["personnel"]!!.jsonArray[0].jsonObject["user_id"])
+    }
+
+    @Test
+    fun `w3w is not sent any more, in the rendezvous or in a stop`() {
+        val body = recceWire(draft, id = null)
+        val rdv = body["rdv"]!!.jsonObject
+        assertEquals(listOf("time", "place", "address", "lat", "long"), rdv.keys.toList())
+        val stop = body["itinerary"]!!.jsonArray[0].jsonObject
+        assertNull(stop["w3w"])
+    }
+
+    @Test
+    fun `the report carries what Document Distribution needs, and says pdf when the server does not`() {
+        val json = Json.parseToJsonElement(
+            """{"media":"k/1.pdf","bucket":"b","region":"r","name":"RECCE.pdf","thumbnail":"t","file_size":"4096"}""",
+        ) as JsonObject
+        val report = parseReport(json)!!
+        assertEquals("k/1.pdf", report.media)
+        assertEquals("t", report.thumbnail)
+        assertEquals(4096L, report.fileSizeBytes)
+        // Not said on the wire: the caller falls back to "pdf".
+        assertEquals("", report.contentSubtype)
     }
 
     @Test

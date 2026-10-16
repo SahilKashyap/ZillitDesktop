@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.recce.domain.RecceQuery
 import com.zillit.desktop.feature.recce.domain.RecceStatus
 import com.zillit.desktop.feature.recce.domain.RecceStop
 import com.zillit.desktop.feature.recce.domain.ReccePerson
+import com.zillit.desktop.feature.recce.domain.ReccePins
 import com.zillit.desktop.feature.recce.domain.ReccePdfPage
 import com.zillit.desktop.feature.recce.domain.RecceViewer
 import com.zillit.desktop.feature.recce.domain.StopKind
@@ -37,8 +38,13 @@ sealed interface ReccePage {
 }
 
 /**
- * The tab badges — project-wide counts, not the loaded page. The web keeps
- * drafts as `all − published` because a recce's status is binary.
+ * The tab badges — project-wide counts, not the loaded page.
+ *
+ * Drafts is never fetched: it is `all − published`, because a recce's status
+ * is binary. Every update of either total re-derives it, so whichever of the
+ * list and badge requests lands last leaves the three in agreement — the web
+ * found this out the other way round (`recceCounts.js`), where only the badge
+ * request derived drafts and a delete could leave "Drafts 1" with no drafts.
  */
 data class RecceCounts(val all: Int = 0, val published: Int = 0, val draft: Int = 0) {
     fun of(filter: RecceFilter): Int = when (filter) {
@@ -55,7 +61,7 @@ data class RecceCounts(val all: Int = 0, val published: Int = 0, val draft: Int 
 }
 
 /** The fields the web validates before a publish. */
-enum class RecceField { Title, Date, RdvTime, RdvPlace }
+enum class RecceField { Title, Date, RdvTime, RdvPlace, Personnel }
 
 /** One stop under edit — text fields, parsed on save. */
 data class StopEditor(
@@ -64,7 +70,6 @@ data class StopEditor(
     val kind: StopKind = StopKind.Continue,
     val place: String = "",
     val address: String = "",
-    val w3w: String = "",
     val lat: Double? = null,
     val long: Double? = null,
     val contact: String = "",
@@ -83,7 +88,6 @@ data class StopEditor(
             kind = stop.kind,
             place = stop.place,
             address = stop.address,
-            w3w = stop.w3w,
             lat = stop.lat,
             long = stop.long,
             contact = stop.contact,
@@ -98,7 +102,6 @@ data class StopEditor(
         kind = kind,
         place = place,
         address = address,
-        w3w = w3w.removePrefix("///"),
         lat = lat,
         long = long,
         description = description,
@@ -115,8 +118,12 @@ data class PersonEditor(
     val contact: String = "",
     val note: String = "",
 ) {
-    /** A seed row nobody touched — it gives way to the first crew pick. */
-    val isBlankSeed: Boolean get() = userId == null && name.isBlank() && role.isBlank() && contact.isBlank()
+    /** Picked from the crew, so this person can open the recce — the web's `isCrewRow`. */
+    val isCrew: Boolean get() = !userId.isNullOrBlank()
+
+    /** A row with nothing in it: what older records saved, and what is dropped on open. */
+    val isEmpty: Boolean get() =
+        !isCrew && listOf(name, role, email, contact, note).all { it.isBlank() }
 
     companion object {
         fun from(person: ReccePerson) = PersonEditor(
@@ -154,7 +161,12 @@ data class RecceEditor(
     val crewNote: String = "",
     val rdv: StopEditor = StopEditor(kind = StopKind.Rendezvous),
     val stops: List<StopEditor> = listOf(StopEditor(kind = StopKind.Rendezvous)),
-    val personnel: List<PersonEditor> = listOf(PersonEditor()),
+    /**
+     * Starts EMPTY and is filled from the crew picker (web, Oct 2026): a
+     * publish needs at least one person picked from the project crew, and a
+     * blank seed row only ever looked like one.
+     */
+    val personnel: List<PersonEditor> = emptyList(),
     val dirty: Boolean = false,
     val saving: RecceStatus? = null,
     /** Set by a refused publish; cleared as each field is edited. */
@@ -173,7 +185,24 @@ data class RecceEditor(
             put(RecceField.RdvTime, str(S.desktop_recce_rdv_time_required))
         }
         if (rdv.place.isBlank()) put(RecceField.RdvPlace, str(S.desktop_recce_rdv_place_required))
+        // Only the creator, project admins and the project users listed here
+        // can see a published recce, so a publish with nobody on it would be
+        // visible to nobody. Enforced in the app until the server does it.
+        if (personnel.none { it.isCrew }) put(RecceField.Personnel, str(S.desktop_recce_crew_required))
     }
+
+    /** The crew ids the picker shows as chosen — hand-typed rows are not among them. */
+    val chosenCrewIds: List<String> get() = personnel.mapNotNull { it.userId?.takeIf { id -> id.isNotBlank() } }
+
+    /**
+     * Where a map picker should open for a place with no pin of its own: a
+     * pin already on this recce ([ReccePins]). Without one the picker falls
+     * back to the last place this device used, then to a coarse fix — never
+     * to a city nobody chose.
+     */
+    fun nearPinForStop(index: Int): LatLng? = ReccePins.nearPin(stops.map { it.pin }, rdv.pin, index)
+
+    fun nearPinForRdv(): LatLng? = ReccePins.nearPin(stops.map { it.pin }, rdv.pin, ReccePins.RDV_INDEX)
 
     fun toDraft(status: RecceStatus, timezone: String) = RecceDraft(
         uniqueId = uniqueId,
@@ -204,13 +233,26 @@ data class RecceEditor(
             rdv = StopEditor.from(recce.rdv).copy(kind = StopKind.Rendezvous),
             stops = recce.itinerary.map { StopEditor.from(it) }
                 .ifEmpty { listOf(StopEditor(kind = StopKind.Rendezvous)) },
-            personnel = recce.personnel.map { PersonEditor.from(it) }.ifEmpty { listOf(PersonEditor()) },
+            // No seed row: phantom blanks saved by older versions are dropped.
+            personnel = recce.personnel.map { PersonEditor.from(it) }.filterNot { it.isEmpty },
         )
     }
 }
 
 /** The pending delete — the web's `{ ids, label }` confirm. */
 data class DeleteTarget(val id: String, val label: String)
+
+/**
+ * The pending send to Document Distribution: the file's name is settled
+ * before the confirm opens, as the web's does, so the reader is told exactly
+ * what is about to be published.
+ */
+data class DistributeTarget(
+    val id: String,
+    val fileName: String,
+    val sending: Boolean = false,
+    val done: Boolean = false,
+)
 
 /** The generated report in the in-app viewer — the web's `DocumentViewer` over the new tab. */
 data class ReccePdfViewer(
@@ -257,6 +299,8 @@ data class RecceUiState(
     val leavePrompt: Boolean = false,
     val deleteTarget: DeleteTarget? = null,
     val deleting: Boolean = false,
+    /** The pending "Send to Document Distribution" — its confirm, then its progress. */
+    val distribute: DistributeTarget? = null,
     val pdf: ReccePdfViewer? = null,
     val routeMap: RouteMapState? = null,
     /** Form previews, one picture per placed pin; null marks a fetch that found nothing. */
@@ -308,6 +352,9 @@ sealed interface RecceEvent {
     data object ConfirmDelete : RecceEvent
     data object CancelDelete : RecceEvent
     data object GeneratePdf : RecceEvent
+    data object SendToDocDist : RecceEvent
+    data object ConfirmSendToDocDist : RecceEvent
+    data object CancelSendToDocDist : RecceEvent
     data object PrintPdf : RecceEvent
     data object DownloadPdf : RecceEvent
     data object ClosePdf : RecceEvent
@@ -331,7 +378,9 @@ sealed interface RecceEvent {
     data class RemoveStop(val index: Int) : RecceEvent
     data class MoveStop(val index: Int, val delta: Int) : RecceEvent
     data object AddPerson : RecceEvent
-    data class AddCrewMember(val userId: String) : RecceEvent
+
+    /** The crew multi-select's whole choice — rows are added and removed to match. */
+    data class ChooseCrew(val userIds: List<String>) : RecceEvent
     data class PersonChanged(val index: Int, val person: PersonEditor) : RecceEvent
     data class RemovePerson(val index: Int) : RecceEvent
     data object SaveDraft : RecceEvent
@@ -348,4 +397,7 @@ sealed interface RecceEffect {
     data class OpenUrl(val url: String) : RecceEffect
     /** A refused publish — the web scrolls to the first failing field. */
     data object ScrollToTop : RecceEffect
+
+    /** A publish refused for want of a crew member — the web scrolls to Personnel. */
+    data object ScrollToPersonnel : RecceEffect
 }
