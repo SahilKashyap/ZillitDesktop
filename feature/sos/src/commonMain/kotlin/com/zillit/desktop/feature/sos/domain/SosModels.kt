@@ -144,6 +144,14 @@ data class SosCrewMember(
      * a blank device id would not catch it: this roster keeps their device.
      */
     val hasLeft: Boolean = false,
+    /**
+     * They are someone this production offers to be reached: on the crew now,
+     * named, and not keeping that name private — the Contacts tab's rule in
+     * Chat & Calls. Only these are offered as receivers; the rest stay on the
+     * roster so an old alert can still be named and refused with the right
+     * message.
+     */
+    val inDirectory: Boolean = true,
 )
 
 /** Who is looking, and what the page shows because of it. */

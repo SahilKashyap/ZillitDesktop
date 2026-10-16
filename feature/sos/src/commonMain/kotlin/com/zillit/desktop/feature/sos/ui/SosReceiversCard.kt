@@ -153,7 +153,10 @@ private fun MemberPicker(state: SosUiState, onEvent: (SosEvent) -> Unit) {
             addable.isEmpty() -> MutedLine(
                 when {
                     contacts.crewSearch.isNotBlank() -> str(S.desktop_sos_no_crew_match)
-                    contacts.crew.isEmpty() -> str(S.desktop_sos_nobody_on_crew)
+                    // The roster, read as the picker reads it: a production
+                    // whose only rows are crew who have left has nobody to
+                    // offer, not everyone already a receiver.
+                    contacts.crew.none { it.inDirectory } -> str(S.desktop_sos_nobody_on_crew)
                     else -> str(S.desktop_sos_everyone_already_receiver)
                 },
             )
