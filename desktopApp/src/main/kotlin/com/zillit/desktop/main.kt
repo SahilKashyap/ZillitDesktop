@@ -1379,7 +1379,12 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean, onListing: Bo
     // listing or in a production, whichever comes first; the seed itself knows
     // it is a resync (`BadgeResync`). The socket may not be up yet, and the
     // listing's cards are showing the server's totals until this lands.
-    LaunchedEffect(ready) { if (ready.badgeResync.due()) ready.seedBadges() }
+    LaunchedEffect(ready) {
+        if (ready.badgeResync.due()) ready.seedBadges()
+        // Temporary, one build only: once the seed has landed, the stuck rows
+        // are in the ledger to be found. See `sweepStuckBadges`.
+        sweepStuckBadges(ready)
+    }
     LaunchedEffect(ready) { badgeSocketEffects(ready) }
     LaunchedEffect(ready) {
         // Coalesce the doubts inside a window, seed once per window.

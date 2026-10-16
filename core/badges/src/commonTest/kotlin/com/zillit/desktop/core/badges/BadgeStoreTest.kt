@@ -548,6 +548,38 @@ class BadgeStoreTest {
         assertTrue(storage.rows("p2").isEmpty())
     }
 
+    /**
+     * The temporary stuck-badge sweep. A read, not a delete — so the next page
+     * that carries the row unread cannot put the badge back.
+     */
+    @Test
+    fun `the sweep flips every production's unread rows read and keeps them`() = runTest {
+        val storage = InMemoryNotificationLedgerStore()
+        val store = BadgeStore(storage)
+        store.open(project)
+        store.seed(listOf(row("stuck", updated = 150L), row("elsewhere", projectId = "p2", updated = 150L)))
+
+        assertEquals(2, store.markEveryRowRead())
+
+        assertEquals(0, store.counts.value.section(BadgeSections.TOOLS))
+        assertTrue(store.projectCounts(null).isEmpty(), "the picker's cards go down too")
+        assertNotNull(storage.row("stuck"), "kept on disk: the read is what outlives the next seed")
+        assertEquals(150L, store.watermark(""), "the watermark stands, so the seed does not re-ask for the page")
+
+        // The server still calls it unread; the read made here wins.
+        store.seed(listOf(row("stuck", updated = 150L)))
+        assertEquals(0, store.counts.value.section(BadgeSections.TOOLS))
+    }
+
+    /** A sweep with nothing to sweep turns nothing, so its caller can stay armed. */
+    @Test
+    fun `the sweep turns nothing on an empty ledger`() = runTest {
+        val store = BadgeStore(InMemoryNotificationLedgerStore())
+        store.open(project)
+
+        assertEquals(0, store.markEveryRowRead())
+    }
+
     private fun dm(id: String, created: Long = 100L) =
         row(id, section = BadgeSections.CNC, tool = NotificationRecord.CHAT_TOOL, unit = "chat_member_label")
             .copy(senderId = "peer", created = created)

@@ -247,6 +247,19 @@ object ZillitPreferences {
     val BadgeResyncedVersion = PreferenceKey.StringKey("badges.resyncedVersion", "", PreferenceScope.User)
 
     /**
+     * **Temporary (one build only — remove with `sweepStuckBadges`).** The
+     * installed version whose launch last swept the ledger of stuck unread
+     * rows: rows no screen can reach, which survived a restart, an update and
+     * a sign-out because the server still serves them unread. A different
+     * version means this build has not swept yet.
+     *
+     * Device-scoped, unlike its `badges.resynced*` neighbours: the sweep is a
+     * repair of this machine's ledger, and a sign-out must not re-arm it and
+     * clear the next person's real badges.
+     */
+    val BadgeSweptVersion = PreferenceKey.StringKey("badges.sweptVersion", "", PreferenceScope.Device)
+
+    /**
      * Badge reads made while the socket was down, waiting to be sent — a JSON
      * list kept by `DurableEmits`. User-scoped: a read is this person's, and
      * must never go out under the next person to sign in.
@@ -311,7 +324,8 @@ object ZillitPreferences {
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
-        LastProjectId, LastUnitId, BadgeMailboxes, BadgeResyncedLaunch, HeldBadgeReads,
+        LastProjectId, LastUnitId, BadgeMailboxes, BadgeResyncedLaunch, BadgeResyncedVersion, BadgeSweptVersion,
+        HeldBadgeReads,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, EmailActiveMailbox, EmailMailboxTourSeen, ToolGroupOrder, RecentMentions, ChatFavourites,
         CallWidget, MessageWidget, CloseToTray, StartAtLogin,
