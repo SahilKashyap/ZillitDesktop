@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.auth.domain.QrLoginSession
 import com.zillit.desktop.feature.auth.ui.AuthEvent
 import com.zillit.desktop.feature.auth.ui.AuthStep
 import com.zillit.desktop.feature.auth.ui.AuthViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -77,7 +78,11 @@ class QrLoginTest {
     fun `the frame is drawn before the code arrives`() = runTest(dispatcher) {
         // The instructions are readable during the round trip rather than the
         // whole page being a spinner.
-        val viewModel = viewModel()
+        val viewModel = viewModel(FakeQrRepository(heldUntil = CompletableDeferred()))
+
+        // Far enough for the keychain to have said "no device here", and no
+        // further: the code is still in flight.
+        advance()
 
         val step = viewModel.currentState.step
         assertIs<AuthStep.QrLogin>(step)
@@ -236,6 +241,8 @@ class QrLoginTest {
         private val scannedAfterPolls: Int = 1,
         private val failPollsAt: Set<Int> = emptySet(),
         private val startResult: ZillitResult<QrLoginSession>? = null,
+        /** Holds the code in flight, so the page's own frame can be inspected. */
+        private val heldUntil: CompletableDeferred<kotlin.Unit>? = null,
     ) : QrLoginRepository {
 
         var pollCount = 0
@@ -246,6 +253,7 @@ class QrLoginTest {
 
         override suspend fun startSession(): ZillitResult<QrLoginSession> {
             startResult?.let { return it }
+            heldUntil?.await()
             pollCount = 0
             sessions++
             return ZillitResult.Success(

@@ -25,6 +25,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -65,6 +66,16 @@ fun AuthScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
+    // Launch, before it is known whether this machine is linked: the brand and
+    // nothing to act on. Drawing the sign-in page here instead — which is what
+    // happened while QR was the landing step — showed a QR code to a signed-in
+    // user for as long as the keychain took to answer, then swapped it for the
+    // production list.
+    if (state.step == AuthStep.Resuming) {
+        ResumingPage(modifier)
+        return
+    }
+
     // Two steps are full-bleed pages with their own frame rather than entries in
     // the shared card, matching the web: `/device/login` is the QR landing page,
     // `/projects` is a searchable list. Neither fits a 420pt column.
@@ -98,13 +109,42 @@ fun AuthScreen(
                 AuthStep.Email -> EmailStep(state, viewModel::onEvent)
                 is AuthStep.Otp -> OtpStep(state, step.email, viewModel::onEvent)
                 AuthStep.Recovery -> RecoveryStep(state, viewModel::onEvent)
-                // Both handled above, full-bleed.
+                // All handled above, full-bleed.
+                AuthStep.Resuming -> Unit
                 is AuthStep.QrLogin -> Unit
                 AuthStep.ProjectSelection -> Unit
                 AuthStep.Complete -> Unit
             }
 
             state.error?.let { ErrorBanner(it) }
+        }
+    }
+}
+
+/**
+ * The launch screen while the keychain is asked who this machine is.
+ *
+ * Deliberately only the brand and a spinner: no QR, no email field, no
+ * "signed out" wording. Nothing is known yet about whether this person has to
+ * sign in at all, so the screen must not imply either answer — and there is
+ * nothing here to click in the moment before it is replaced.
+ */
+@Composable
+private fun ResumingPage(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        ) {
+            ZillitText(
+                text = str(S.app_name),
+                style = ZillitTheme.typography.displayLarge,
+                color = ZillitTheme.colors.accent,
+            )
+            ZillitSpinner()
         }
     }
 }

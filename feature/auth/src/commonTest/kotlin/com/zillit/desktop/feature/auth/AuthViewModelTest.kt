@@ -66,8 +66,9 @@ class AuthViewModelTest {
         )
         val viewModel = viewModel(auth)
 
-        // QR is the landing step now; the email path is reached by backing out
-        // of it.
+        // Launch restores first and lands on the QR page when this machine
+        // holds no device; the email path is reached by backing out of it.
+        advance()
         viewModel.onEvent(AuthEvent.Back)
         viewModel.onEvent(AuthEvent.EmailChanged("nope"))
         viewModel.onEvent(AuthEvent.SubmitEmail)

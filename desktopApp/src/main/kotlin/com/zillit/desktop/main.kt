@@ -808,9 +808,16 @@ private fun ApplicationScope.ZillitWindows(
     openChat: () -> Unit,
 ) {
     val workspace by viewModel.state.collectAsState()
+    // Seeded from the file rather than assumed, for the same reason the window
+    // geometry is (see [rememberRestoredWindowState]): with
+    // `initial = ThemeMode.System`, every window painted its first frames in
+    // the system's theme and repainted when DataStore's first read landed — so
+    // launching on a dark Mac with Light chosen flashed a dark splash and a
+    // dark production list before going light. `runBlocking` is otherwise
+    // forbidden (plan §11.2); there is no UI thread to block yet.
     val themeMode by preferences
         .observeAs(ZillitPreferences.ThemeMode, ThemeMode::fromId)
-        .collectAsState(initial = ThemeMode.System)
+        .collectAsState(initial = remember { runBlocking { storedThemeMode(preferences) } })
     // The stored choice, blank for "follow the system". The catalogue that
     // is actually on screen follows this through `StringStore` in the graph;
     // the bar only needs to know which row to tick.
@@ -2348,6 +2355,15 @@ private fun UnconfiguredScreen(reason: String) {
 }
 
 private val UNCONFIGURED_WIDTH = 480.dp
+
+/**
+ * The theme this device last chose, read before the first frame is drawn.
+ *
+ * Its own function so the one `runBlocking` has one suppression and one place
+ * to be read; see the call site in [ZillitWindows] for why it is blocking.
+ */
+private suspend fun storedThemeMode(preferences: PreferenceStore): ThemeMode =
+    ThemeMode.fromId(preferences.get(ZillitPreferences.ThemeMode))
 
 /**
  * Restores the window's saved geometry.

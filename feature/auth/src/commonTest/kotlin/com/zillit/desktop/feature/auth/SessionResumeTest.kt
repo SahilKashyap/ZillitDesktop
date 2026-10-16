@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.feature.auth.ui.AuthStep
 import com.zillit.desktop.feature.auth.ui.AuthViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -51,11 +52,15 @@ class SessionResumeTest {
     private class FakeAuth(
         private val stored: DeviceIdentity?,
         private val fail: Boolean = false,
+        /** Never completed by the hung-keychain test: the read simply does not return. */
+        private val hangUntil: CompletableDeferred<kotlin.Unit>? = null,
     ) : AuthRepository {
         override val session = flowOf<AuthSession?>(null)
-        override suspend fun restoreDevice(): ZillitResult<DeviceIdentity?> =
-            if (fail) ZillitResult.Failure(ZillitError.Crypto("keychain locked"))
+        override suspend fun restoreDevice(): ZillitResult<DeviceIdentity?> {
+            hangUntil?.await()
+            return if (fail) ZillitResult.Failure(ZillitError.Crypto("keychain locked"))
             else ZillitResult.Success(stored)
+        }
 
         override suspend fun requestOtp(email: String, language: String) = ZillitResult.Success(Unit)
         override suspend fun verifyOtp(email: String, otp: String) = ZillitResult.Success("C")
@@ -100,6 +105,17 @@ class SessionResumeTest {
         AuthViewModel(auth, FakeProjects(), qrLoginRepository = null, nowMillis = { 0L })
 
     @Test
+    fun `no sign-in page is shown while the device is being restored`() = runTest(dispatcher) {
+        // The QR page used to hold the landing step, so a linked machine opened
+        // on a sign-in screen and swapped it for the production list once the
+        // keychain answered: the app's first screen said "signed out" to
+        // someone who was signed in, with a scannable code on it.
+        val viewModel = viewModel(FakeAuth(DeviceIdentity("device-1", "", false)))
+
+        assertEquals(AuthStep.Resuming, viewModel.currentState.step)
+    }
+
+    @Test
     fun `a linked device goes straight to the production picker`() = runTest(dispatcher) {
         val viewModel = viewModel(FakeAuth(DeviceIdentity("device-1", "", false)))
 
@@ -111,6 +127,18 @@ class SessionResumeTest {
     @Test
     fun `an unlinked machine still gets the QR screen`() = runTest(dispatcher) {
         val viewModel = viewModel(FakeAuth(stored = null))
+
+        advanceUntilIdle()
+
+        assertIs<AuthStep.QrLogin>(viewModel.currentState.step)
+    }
+
+    @Test
+    fun `a keychain that never answers falls back to signing in`() = runTest(dispatcher) {
+        // The splash has nothing on it to click, so a credential store that
+        // has stopped answering — a locked keychain, an OS prompt behind
+        // another window — must not be where the app ends.
+        val viewModel = viewModel(FakeAuth(stored = null, hangUntil = CompletableDeferred()))
 
         advanceUntilIdle()
 

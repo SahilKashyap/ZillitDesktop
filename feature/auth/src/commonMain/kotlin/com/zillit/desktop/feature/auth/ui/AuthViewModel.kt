@@ -31,6 +31,21 @@ import kotlinx.coroutines.flow.emptyFlow
  */
 sealed interface AuthStep {
 
+    /**
+     * Launch: asking the keychain whether this machine is already linked.
+     *
+     * The **landing** step, before anything is drawn for the user to act on.
+     * [AuthStep.QrLogin] used to hold that place, so every launch on a linked
+     * machine opened on a sign-in page — QR code and all — and replaced it with
+     * the production list a moment later, once the keychain answered. The first
+     * screen of the app told the user they were signed out when they were not.
+     *
+     * The restore is a keychain read, not a round trip, but it is off the UI
+     * thread and the native credential store is slow to warm on a cold start,
+     * which is long enough to see and to click on.
+     */
+    data object Resuming : AuthStep
+
     /** Collecting an email address. */
     data object Email : AuthStep
 
@@ -47,8 +62,9 @@ sealed interface AuthStep {
      * (`StartProjectVM` displays, `AdminVM` scans) and suits desktop, where the
      * webcam faces the user rather than the page.
      *
-     * This is the **landing** step, as on the web: `/device/login` shows the QR
-     * immediately rather than asking for an email first.
+     * This is where signing in *starts*, as on the web: `/device/login` shows
+     * the QR immediately rather than asking for an email first. It is reached
+     * from [Resuming], once the keychain has said this machine holds no device.
      *
      * @param session null while the code is being fetched — the page frame is
      *   drawn straightaway so the instructions are readable during the round
@@ -82,7 +98,7 @@ val AuthStep.isEstablished: Boolean
     get() = this == AuthStep.Complete || this == AuthStep.ProjectSelection
 
 data class AuthUiState(
-    val step: AuthStep = AuthStep.QrLogin(),
+    val step: AuthStep = AuthStep.Resuming,
     val email: String = "",
     val otp: String = "",
     val recoveryCode: String = "",
@@ -311,9 +327,32 @@ class AuthViewModel(
      * surfaces the error and the user can fall back to signing in again.
      */
     private fun resumeOrSignIn() {
+        val startedAt = nowMillis()
+
+        // A keychain that never answers must not be a dead end. The native
+        // credential store can block — a locked keychain, an OS prompt behind
+        // another window — and the splash has nothing on it to click. Signing
+        // in does not need the keychain, so offer it rather than wait for
+        // ever; a restore that lands afterwards still opens the picker from
+        // its own branch below.
+        launch {
+            delay(RESTORE_PATIENCE_MILLIS)
+            if (currentState.step != AuthStep.Resuming) return@launch
+            ZillitLog.w(TAG) { "keychain silent after ${RESTORE_PATIENCE_MILLIS}ms; offering sign-in" }
+            startQrLogin()
+        }
+
         launchResult(
             block = { authRepository.restoreDevice() },
             onSuccess = { identity ->
+                // The splash is on screen until this line, so how long the
+                // keychain took is the one number that explains a launch that
+                // felt slow — and which screen it then went to.
+                ZillitLog.i(TAG) {
+                    val took = nowMillis() - startedAt
+                    if (identity == null) "no device on this machine (${took}ms): signing in"
+                    else "device restored (${took}ms): opening the production list"
+                }
                 if (identity == null) {
                     startQrLogin()
                 } else {
@@ -612,7 +651,10 @@ class AuthViewModel(
         }
 
         qrJob?.cancel()
-        setState { AuthUiState() }
+        // Everything of the last person cleared, on the sign-in page: not the
+        // launch splash, which would say "restoring" to someone who just asked
+        // to be signed out while `leaveProject` tears the session down.
+        setState { AuthUiState(step = AuthStep.QrLogin()) }
 
         launch {
             projectRepository.leaveProject()
@@ -629,15 +671,27 @@ class AuthViewModel(
      * endpoint for the whole two-minute lifetime.
      */
     private fun startQrLogin(notice: String? = null) {
-        val repository = qrLoginRepository ?: run {
-            setState { copy(error = str(S.desktop_qr_sign_in_unavailable)) }
-            return
-        }
-
         cancelQrLoop()
+        // The step moves here, before the code is asked for, because this is
+        // what leaves the launch splash: the page frame is drawn — and an
+        // error has somewhere to appear — during the round trip. A step that
+        // is already a QR keeps its session, so a reload leaves the stale code
+        // on screen rather than blanking the page.
+        //
         // Clears whatever went wrong last time, unless the caller is arriving
         // here *because* something did and wants to say so.
-        setState { copy(isBusy = true, error = notice) }
+        setState {
+            copy(
+                isBusy = true,
+                error = notice,
+                step = step as? AuthStep.QrLogin ?: AuthStep.QrLogin(),
+            )
+        }
+
+        val repository = qrLoginRepository ?: run {
+            setState { copy(isBusy = false, error = str(S.desktop_qr_sign_in_unavailable)) }
+            return
+        }
 
         qrJob = launch {
             when (val started = repository.startSession()) {
@@ -754,6 +808,15 @@ class AuthViewModel(
 
     private companion object {
         const val TAG = "Auth"
+
+        /**
+         * How long the launch splash waits on the keychain before it offers
+         * signing in instead.
+         *
+         * The read normally answers in milliseconds; this is the backstop for
+         * a store that has stopped answering altogether, not a budget.
+         */
+        const val RESTORE_PATIENCE_MILLIS = 5_000L
 
         /** Says what happened and what to do, without blaming the user. */
         val SESSION_EXPIRED_MESSAGE: String get() = str(S.desktop_session_ended_scan_again)
