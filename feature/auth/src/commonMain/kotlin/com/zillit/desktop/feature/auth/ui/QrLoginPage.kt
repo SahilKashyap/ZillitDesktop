@@ -309,7 +309,8 @@ private val SIGN_IN_STEPS: List<() -> String> = listOf(
 private val CARD_MAX_WIDTH = 1100.dp
 private val CARD_PADDING = 56.dp
 private val CARD_TOP_INSET = 72.dp
-private val LOGO_SIZE = 40.dp
+/** 40dp while this was a lettermark; the mark has a wordmark inside it to read. */
+private val LOGO_SIZE = 56.dp
 private val BADGE_SIZE = 24.dp
 private val QR_SIZE = 260.dp
 private val RELOAD_BUTTON_SIZE = 190.dp
