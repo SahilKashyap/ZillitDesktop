@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.chat
 import com.zillit.desktop.feature.chat.domain.MentionSpan
 import com.zillit.desktop.feature.chat.domain.flattenMentions
 import com.zillit.desktop.feature.chat.domain.mentionSpans
+import com.zillit.desktop.feature.chat.domain.previewMentions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -41,6 +42,14 @@ class ChatMentionsTest {
         assertEquals(
             "morning @Ravi and @Aisha Khan",
             flattenMentions("morning @{{abc123}} and @{{67fcd7fc2ae929576c067820}}", ::nameOf),
+        )
+    }
+
+    @Test
+    fun `a preview names who it can and says someone for the rest`() {
+        assertEquals(
+            "morning @Ravi and @someone",
+            previewMentions("morning @{{abc123}} and @{{678108ba34a30d92ea0}}", ::nameOf, "@someone"),
         )
     }
 

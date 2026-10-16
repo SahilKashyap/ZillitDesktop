@@ -86,3 +86,12 @@ fun flattenMentions(body: String, nameOf: (String) -> String?): String =
             is MentionSpan.Link -> span.text
         }
     }
+
+/**
+ * The body a listing or a banner shows: tags spelt `@Name`, and a tag whose
+ * id the crew list cannot place spelt [unknown] — a preview reading
+ * `@{{678108ba34a30d92ea0…}}` is noise nobody can read past, where the bubble
+ * can afford to leave the raw token alone.
+ */
+fun previewMentions(body: String, nameOf: (String) -> String?, unknown: String): String =
+    flattenMentions(body, nameOf).replace(MENTION) { unknown }

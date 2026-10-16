@@ -88,6 +88,7 @@ import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.hasStanding
 import com.zillit.desktop.feature.chat.domain.lastEntryDate
+import com.zillit.desktop.feature.chat.domain.previewMentions
 import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
 import com.zillit.desktop.feature.chat.domain.searchRecents
@@ -1155,7 +1156,7 @@ private fun RecentRowCard(
     onEvent: (ChatEvent) -> Unit,
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
     nowMillis: Long = 0L,
-    /** Names a room line's writer for its preview. */
+    /** Names a row preview's writer and the crew it tags. */
     crew: List<CrewContact> = emptyList(),
 ) {
     when (row) {
@@ -1175,7 +1176,11 @@ private fun RecentRowCard(
             isSelected = !state.peerIsGroup && state.peer?.userId == row.contact.userId,
             loadAvatar = loadAvatar,
             onClick = { onEvent(ChatEvent.OpenThread(row.contact)) },
-            subtitle = state.previews[row.contact.userId]?.line(selfId, inRoom = false),
+            subtitle = state.previews[row.contact.userId]?.line(
+                selfId,
+                inRoom = false,
+                nameFor = { id -> crew.firstOrNull { it.userId == id }?.fullName },
+            ),
             stamp = (state.activity[row.contact.userId] ?: row.contact.lastActiveMillis)
                 ?.takeIf { it > 0L }
                 ?.let { chatTimeLabel(it, nowMillis) },
@@ -1441,13 +1446,18 @@ private fun RowTrailing(
  * The row's one-line reading of a preview: "You: …" for one's own line,
  * the writer's first name in a room, the bare words from the other end of
  * a DM — who wrote it is the name over the row.
+ *
+ * A tagged crew member reads as `@Full Name`, the way the thread spells it;
+ * the row used to carry the wire's raw `@{{userId}}` and spend its one line
+ * on an id.
  */
 private fun ChatPreview.line(
     selfId: String?,
     inRoom: Boolean,
     nameFor: (String) -> String? = { null },
 ): String {
-    val words = text.lineSequence().firstOrNull().orEmpty().trim()
+    val words = previewMentions(text, nameFor, str(S.desktop_someone_mention))
+        .lineSequence().firstOrNull().orEmpty().trim()
     val by = when {
         selfId != null && senderId == selfId -> str(S.you)
         inRoom -> nameFor(senderId)?.substringBefore(' ')
