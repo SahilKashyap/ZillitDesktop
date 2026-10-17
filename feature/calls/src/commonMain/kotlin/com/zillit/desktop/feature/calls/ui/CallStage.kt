@@ -158,16 +158,26 @@ private fun StageBody(
                 // sharing a colour needs the whole list, and the three layouts
                 // below must agree on the answer.
                 val colours = remember(state.stageTiles) { CallTileColors.assign(state.stageTiles) }
+                // The "+N" stands for people with no tile anywhere on the
+                // stage; the panel is the only place they can be reached.
+                val overflow = { onEvent(CallEvent.ShowPeople) }
                 CompositionLocalProvider(LocalCallTileColors provides colours) {
                     when {
                         several && pinnedTiles(state.stageTiles, state.pins).isNotEmpty() ->
-                            PinnedStage(tiles = state.stageTiles, pins = pins, modifier = fill, loadAvatar = loadAvatar)
-                        isDuo(state.stageTiles) -> DuoStage(state.stageTiles, fill, loadAvatar, pins)
+                            PinnedStage(
+                                tiles = state.stageTiles,
+                                pins = pins,
+                                modifier = fill,
+                                loadAvatar = loadAvatar,
+                                onOverflow = overflow,
+                            )
+                        isDuo(state.stageTiles) -> DuoStage(state.stageTiles, fill, loadAvatar, pins, overflow)
                         else -> AvatarGrid(
                             tiles = state.stageTiles,
                             modifier = fill,
                             loadAvatar = loadAvatar,
                             pins = pins,
+                            onOverflow = overflow,
                         )
                     }
                 }

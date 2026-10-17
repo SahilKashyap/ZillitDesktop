@@ -54,6 +54,14 @@ import kotlin.test.assertTrue
  * web's in-call orchestration (`App.tsx`'s socket cases), pinned as what
  * goes on the wire and what the state machine does with what comes back.
  */
+/*
+ * LargeClass, as CallCoordinatorTest is: one line, one set of tests for it,
+ * sharing one fake socket, fake REST and room engine. The harness is where
+ * the subtle parts live — the hidden pre-connect, the ring fixture every
+ * test builds on — and splitting by feature means copying it, which is how
+ * copies drift apart.
+ */
+@Suppress("LargeClass")
 @OptIn(ExperimentalCoroutinesApi::class)
 class Line3CoordinatorTest {
 
@@ -474,6 +482,30 @@ class Line3CoordinatorTest {
             )
             runCurrent()
             assertEquals(listOf("kim"), vm.state.value.addableCrew.map { it.userId }, "the server's list wins")
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /**
+     * The stage's "+N" shows the users panel and never hides it: a toggle
+     * would close, on the second press, the one list holding the people it
+     * counts — which reads as the press having broken something.
+     */
+    @Test
+    fun `the stage's plus-N opens the users panel and keeps it open`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val h = harness()
+        val vm = CallViewModel(coordinator = h.coordinator, crew = { emptyList() })
+        try {
+            inCall(h)
+            repeat(2) { vm.onEvent(CallEvent.ShowPeople) }
+            runCurrent()
+            assertTrue(vm.state.value.rosterOpen, "two presses open it and leave it open")
+            vm.onEvent(CallEvent.ToggleRoster)
+            runCurrent()
+            assertFalse(vm.state.value.rosterOpen, "the people button still closes it")
         } finally {
             vm.viewModelScope.cancel()
             Dispatchers.resetMain()

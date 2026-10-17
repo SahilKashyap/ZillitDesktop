@@ -87,6 +87,9 @@ object EngineBridge {
             // and nothing here read it, so a Line 3 presenter was never known.
             "peer-screen-share" -> CallEngineEvent.PeerScreenShare(obj.int("uid"), obj.bool("sharing"))
             "pin" -> CallEngineEvent.PinRequested(obj.str("key")?.takeIf(String::isNotBlank) ?: return null)
+            // The rail's "+N": open the users panel, where the people it
+            // counts can actually be seen.
+            "people" -> CallEngineEvent.PeopleRequested
             "devices" -> CallEngineEvent.Devices(
                 microphones = obj.devices("microphones"),
                 speakers = obj.devices("speakers"),

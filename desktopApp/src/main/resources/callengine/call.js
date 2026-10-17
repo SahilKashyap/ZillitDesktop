@@ -247,9 +247,10 @@
     }
 
     /*
-     * One focus tile is the largest 16:9 box the stage holds, the others
-     * floating over its corner. Several — pins — share the stage as a grid
-     * above a band the strip gets to itself, or it would cover the last one.
+     * One focus tile is the largest 16:9 box the stage holds, the others in a
+     * rail down the right-hand side. The rail takes real width off the stage
+     * rather than floating over the picture's corner, so nothing on the big
+     * tile — a name, a shared screen's edge, a face — ends up underneath it.
      * CallGrid.kt's FocusStage draws the same for a call with no video.
      */
     function renderFocus(root, list, focus) {
@@ -258,14 +259,19 @@
         const inset = 8;
         const gap = 8;
         const others = list.filter((t) => focus.indexOf(t) < 0);
-        const smallH = Math.max(72, Math.min(128, height * 0.22));
-        const smallW = smallH * (16 / 9);
-        const band = focus.length > 1 && others.length ? smallH + 44 : 0;
+        // Sized off the stage's WIDTH, because the rail's width is what it
+        // costs the picture: a tall window would otherwise grow 128 px tiles
+        // on a narrow stage and leave the big tile a slot.
+        const smallW = Math.max(112, Math.min(208, width * 0.2));
+        const smallH = smallW / (16 / 9);
+        const rail = others.length ? smallW + 44 : 0;
+        const stageW = Math.max(1, width - rail);
         const main = document.createElement('div');
         main.className = 'focus';
-        main.style.height = Math.max(1, height - band) + 'px';
+        main.style.height = Math.max(1, height) + 'px';
+        main.style.width = stageW + 'px';
         if (focus.length === 1) {
-            const mainW = Math.max(1, Math.min(width - inset * 2, (height - band - inset * 2) * (16 / 9)));
+            const mainW = Math.max(1, Math.min(stageW - inset * 2, (height - inset * 2) * (16 / 9)));
             const mainH = mainW / (16 / 9);
             main.appendChild(buildCell(focus[0], mainW, mainH, Math.max(40, Math.min(mainH * 0.3, 150))));
         } else {
@@ -273,8 +279,8 @@
             const n = focus.length;
             const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4;
             const rows = Math.ceil(n / cols);
-            const cellW = (width - gap * (cols - 1)) / cols;
-            const cellH = (height - band - gap * (rows - 1)) / rows;
+            const cellW = (stageW - gap * (cols - 1)) / cols;
+            const cellH = (height - gap * (rows - 1)) / rows;
             const tileW = Math.max(1, Math.min(cellW, cellH * (16 / 9), 560));
             const tileH = tileW / (16 / 9);
             const disc = Math.max(28, Math.min(tileH * 0.42, 96));
@@ -289,8 +295,8 @@
         }
         root.appendChild(main);
 
-        // The others sit bottom-right, 128 px tall at most, as `.duoSelf` does.
-        const fits = Math.max(1, Math.floor((width * 0.9) / (smallW + gap)));
+        // How many the rail holds is now a question about HEIGHT.
+        const fits = Math.max(1, Math.floor((height * 0.9) / (smallH + gap)));
         const shown = others.length > fits ? others.slice(0, fits - 1) : others;
         const strip = document.createElement('div');
         strip.className = 'strip';
@@ -313,6 +319,11 @@
             more.style.width = smallW + 'px';
             more.style.height = smallH + 'px';
             more.textContent = '+' + (others.length - shown.length);
+            more.setAttribute('aria-label', word('people', 'People'));
+            // The "+N" stood for people with nowhere to be seen: it drew a
+            // count and did nothing. Only asks — Kotlin opens the panel,
+            // which is the one list that holds everybody.
+            more.addEventListener('click', () => { send({ type: 'people' }); });
             strip.appendChild(more);
         }
         root.appendChild(strip);

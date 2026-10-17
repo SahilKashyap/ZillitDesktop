@@ -266,6 +266,10 @@ class CallCoordinator(
     private val _pinRequests = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val pinRequests: SharedFlow<String> = _pinRequests.asSharedFlow()
 
+    /** The video page's "+N" was pressed: the view model opens the users panel. */
+    private val _peopleRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val peopleRequests: SharedFlow<Unit> = _peopleRequests.asSharedFlow()
+
     /**
      * Line 3's in-call extras — the host's policy, who we muted for
      * ourselves, the guests at the door — and the verbs that move them. A
@@ -2554,6 +2558,7 @@ class CallCoordinator(
             is CallEngineEvent.SelfMicMuted -> if (_micMuted.value != event.muted) _micMuted.value = event.muted
             is CallEngineEvent.RecordingSaved -> onRecordingSaved(event)
             is CallEngineEvent.PinRequested -> _pinRequests.tryEmit(event.key)
+            CallEngineEvent.PeopleRequested -> _peopleRequests.tryEmit(Unit)
             else -> Unit
         }
     }

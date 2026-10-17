@@ -8,12 +8,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Each launch's start-over: when a resync is due, and what the listing's cards wear meanwhile. */
+/** Each launch's start-over: when a resync is due, and when a version prunes. */
 class BadgeResyncTest {
 
     @Test
@@ -37,20 +35,6 @@ class BadgeResyncTest {
         preferences.clear(PreferenceScope.User)
 
         assertTrue(resync.due())
-    }
-
-    @Test
-    fun `the cards wear the server's totals until the resync lands, and never after`() = runTest {
-        val resync = BadgeResync(FakePreferences(), launch = "run-1")
-        resync.showServerCards(mapOf("p1" to 40))
-        assertEquals(mapOf("p1" to 40), resync.serverCards)
-
-        resync.completed()
-        assertNull(resync.serverCards, "the ledger's counts again")
-
-        // A listing load racing the resync must not put the server's numbers back for good.
-        resync.showServerCards(mapOf("p1" to 40))
-        assertNull(resync.serverCards)
     }
 
     /**
@@ -91,13 +75,6 @@ class BadgeResyncTest {
     @Test
     fun `a build with no version never prunes`() = runTest {
         assertFalse(BadgeResync(FakePreferences(), launch = "run-1").pruneDue())
-    }
-
-    @Test
-    fun `an empty server answer leaves the cards to the ledger`() = runTest {
-        val resync = BadgeResync(FakePreferences(), launch = "run-1")
-        resync.showServerCards(emptyMap())
-        assertNull(resync.serverCards)
     }
 
     /** In memory, honest about defaults. */

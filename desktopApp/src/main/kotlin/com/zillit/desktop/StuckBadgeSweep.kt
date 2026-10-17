@@ -53,8 +53,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * list and this person's id inside it ([seedFromLastProduction]), and a
  * sign-out has just emptied that cache — so the first seed of a fresh session
  * can fetch nothing at all. Sweeping then would spend the build's one pass on
- * an empty table and leave the cards wearing the server's totals, which is
- * exactly where the stuck numbers were reported.
+ * an empty table and leave the stuck rows for the next page to bring in,
+ * unswept.
  *
  * So a sweep that turns nothing waits for the ledger to move
  * ([BadgeStore.changes]) and tries again, a few times and briefly. If it never

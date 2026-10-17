@@ -14,10 +14,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +51,7 @@ fun AvatarGrid(
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
     pins: TilePins = TilePins(),
+    onOverflow: (() -> Unit)? = null,
 ) {
     // One transition for the whole grid: twelve tiles each running their own
     // would be twelve animation nodes drifting out of phase with each other.
@@ -93,6 +94,7 @@ fun AvatarGrid(
                             )
                             is GridEntry.Overflow -> OverflowCell(
                                 count = entry.count,
+                                onClick = onOverflow,
                                 modifier = Modifier.size(tileWidth, tileHeight),
                             )
                         }
@@ -120,6 +122,7 @@ fun DuoStage(
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
     pins: TilePins = TilePins(),
+    onOverflow: (() -> Unit)? = null,
 ) {
     val self = tiles.firstOrNull { it.isSelf } ?: return
     val other = tiles.firstOrNull { !it.isSelf } ?: return
@@ -131,6 +134,7 @@ fun DuoStage(
         loadAvatar = loadAvatar,
         pins = pins,
         onMiniClick = { selfBig = !selfBig },
+        onOverflow = onOverflow,
     )
 }
 
@@ -146,6 +150,7 @@ fun PinnedStage(
     pins: TilePins,
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
+    onOverflow: (() -> Unit)? = null,
 ) {
     val pinned = pinnedTiles(tiles, pins.keys)
     FocusStage(
@@ -155,16 +160,20 @@ fun PinnedStage(
         loadAvatar = loadAvatar,
         pins = pins,
         onMiniClick = null,
+        onOverflow = onOverflow,
     )
 }
 
 /**
  * The big-and-small stage both layouts above draw.
  *
- * One focus tile is the largest 16:9 box the stage holds, with the strip
- * floating over its corner as the web's `.duoSelf` does. Several share the
- * stage as a grid above the strip, which gets a band of its own — floated,
- * it would cover the corner of the last pinned tile.
+ * The focus tile — one, or a grid of pins — is the largest 16:9 box fitting
+ * what the rail leaves, and everyone else stands in that rail down the
+ * right-hand side. The strip used to float over the picture's bottom-right
+ * corner, the web's `.duoSelf`, and the more people were off the stage the
+ * more of the tile it hid, name chip first. A column of its own costs the big
+ * tile some width and covers none of it, and the band the pinned grid needed
+ * to keep clear of the strip goes away with it.
  */
 @Composable
 private fun FocusStage(
@@ -174,6 +183,7 @@ private fun FocusStage(
     loadAvatar: suspend (String) -> ImageBitmap?,
     pins: TilePins,
     onMiniClick: ((CallTile) -> Unit)?,
+    onOverflow: (() -> Unit)?,
 ) {
     val pulse by rememberInfiniteTransition(label = "focus-pulse").animateFloat(
         initialValue = 0f,
@@ -182,12 +192,16 @@ private fun FocusStage(
         label = "focus-pulse-value",
     )
     BoxWithConstraints(modifier = modifier) {
-        val smallHeight = (maxHeight * DUO_SMALL_SHARE).coerceIn(DUO_SMALL_MIN, DUO_SMALL_MAX)
-        val band = if (focus.size > 1 && others.isNotEmpty()) smallHeight + DUO_CORNER_GAP * 2 else 0.dp
-        val main = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(maxHeight - band)
+        // Off the stage's WIDTH, because the rail's width is what it costs the
+        // picture: sized off height, a tall narrow window grew 128 dp tiles
+        // next to a big tile with nothing left to be big in.
+        val smallWidth = (maxWidth * RAIL_SHARE).coerceIn(RAIL_MIN_WIDTH, RAIL_MAX_WIDTH)
+        val rail = if (others.isEmpty()) 0.dp else smallWidth + RAIL_GAP * 2
+        val stageWidth = (maxWidth - rail).coerceAtLeast(1.dp)
+        val main = Modifier.align(Alignment.CenterStart).width(stageWidth).height(maxHeight)
         if (focus.size == 1) {
             val big = focus.single()
-            val bigWidth = minOf(maxWidth - DUO_INSET * 2, (maxHeight - band - DUO_INSET * 2) * TILE_ASPECT)
+            val bigWidth = minOf(stageWidth - DUO_INSET * 2, (maxHeight - DUO_INSET * 2) * TILE_ASPECT)
                 .coerceAtLeast(1.dp)
             val bigHeight = bigWidth / TILE_ASPECT
             Box(modifier = main, contentAlignment = Alignment.Center) {
@@ -206,37 +220,43 @@ private fun FocusStage(
         }
         FocusStrip(
             others = others,
-            smallHeight = smallHeight,
-            maxWidth = maxWidth,
+            smallWidth = smallWidth,
+            maxHeight = maxHeight - RAIL_GAP * 2,
             pulse = pulse,
             loadAvatar = loadAvatar,
             pins = pins,
             onMiniClick = onMiniClick,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(DUO_CORNER_GAP),
+            onOverflow = onOverflow,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(RAIL_GAP),
         )
     }
 }
 
-/** Everyone not on the stage, small, bottom-right; a crowd past the width is a "+N". */
+/**
+ * Everyone not on the stage, in a column down the right-hand edge; a crowd
+ * past the rail's height is a "+N", which opens the users panel — the only
+ * list the people it stands for appear in at all.
+ */
 @Suppress("LongParameterList") // Geometry handed down from the stage's constraints.
 @Composable
 private fun FocusStrip(
     others: List<CallTile>,
-    smallHeight: Dp,
-    maxWidth: Dp,
+    smallWidth: Dp,
+    maxHeight: Dp,
     pulse: Float,
     loadAvatar: suspend (String) -> ImageBitmap?,
     pins: TilePins,
     onMiniClick: ((CallTile) -> Unit)?,
+    onOverflow: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     if (others.isEmpty()) return
-    val smallWidth = smallHeight * TILE_ASPECT
-    val fits = ((maxWidth * STRIP_SHARE) / (smallWidth + GAP)).toInt().coerceAtLeast(1)
+    val smallHeight = smallWidth / TILE_ASPECT
+    val fits = ((maxHeight * STRIP_SHARE) / (smallHeight + GAP)).toInt().coerceAtLeast(1)
     val shown = if (others.size > fits) others.take(fits - 1) else others
     val overflow = others.size - shown.size
     val corner = RoundedCornerShape(CELL_CORNER)
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(GAP)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(GAP, Alignment.CenterVertically)) {
         shown.forEach { tile ->
             CallTileView(
                 tile = tile,
@@ -254,6 +274,7 @@ private fun FocusStrip(
         if (overflow > 0) {
             OverflowCell(
                 count = overflow,
+                onClick = onOverflow,
                 modifier = Modifier.shadow(DUO_ELEVATION, corner).size(smallWidth, smallHeight),
             )
         }
@@ -295,12 +316,19 @@ fun gridLayout(cells: Int, maxWidth: Dp, maxHeight: Dp): GridLayout {
     )
 }
 
-/** The "+4" cell: a crowd past the cap is a number, not twelve more faces. */
+/**
+ * The "+4" cell: a crowd past the cap is a number, not twelve more faces.
+ *
+ * Pressing it opens the users panel, where those faces have names. It drew
+ * the count and did nothing at all until then — the one thing on the stage
+ * that stands for people you cannot otherwise get to.
+ */
 @Composable
-private fun OverflowCell(count: Int, modifier: Modifier = Modifier) {
+private fun OverflowCell(count: Int, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(CELL_CORNER))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .background(CallPalette.control),
         contentAlignment = Alignment.Center,
     ) {
@@ -350,13 +378,14 @@ private fun rememberTileFace(
 
 private val GAP = 8.dp
 private val DUO_INSET = 8.dp
-private val DUO_CORNER_GAP = 22.dp
-private val DUO_SMALL_MIN = 72.dp
-private val DUO_SMALL_MAX = 128.dp
+/** The gutter between the stage and its rail, and the rail and the edge. */
+private val RAIL_GAP = 22.dp
 private val DUO_SMALL_AVATAR_MIN = 28.dp
 private val DUO_AVATAR_MAX = 150.dp
 private val DUO_ELEVATION = 12.dp
-private const val DUO_SMALL_SHARE = 0.22f
+private val RAIL_MIN_WIDTH = 112.dp
+private val RAIL_MAX_WIDTH = 208.dp
+private const val RAIL_SHARE = 0.2f
 private const val STRIP_SHARE = 0.9f
 private const val DUO_AVATAR_RATIO = 0.3f
 private val TILE_MAX_WIDTH = 560.dp

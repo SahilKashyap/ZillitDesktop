@@ -12,6 +12,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.Notice
@@ -56,7 +57,7 @@ class LocationShareRenderTest {
     /** A picker that always answers, so the composer's click has somewhere to go. */
     private class FakePicker(private val place: PickedLocation?) : LocationPicker {
         var titleAsked: String? = null
-        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? {
+        override suspend fun pick(initial: PickedLocation?, title: String, near: PickerStart?): PickedLocation? {
             titleAsked = title
             return place
         }

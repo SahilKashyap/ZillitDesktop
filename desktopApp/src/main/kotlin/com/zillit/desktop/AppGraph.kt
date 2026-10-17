@@ -1058,8 +1058,7 @@ sealed interface AppGraph {
                 database?.let(::SqlNotificationLedgerStore) ?: InMemoryNotificationLedgerStore(),
             )
             val badgeDrilldown = BadgeDrilldown { query -> ZillitResult.Success(badgeStore.split(query)) }
-            // Every launch, the first seed starts from the top, and the
-            // listing's cards show the server's totals until it lands. The
+            // Every launch, the first seed starts from the top. The
             // first seed of a newly installed version also prunes the rows the
             // server no longer serves — the badges a resync alone can never
             // clear, because a seed only ever adds.
