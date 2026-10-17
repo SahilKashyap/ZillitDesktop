@@ -5,6 +5,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.crewdood.domain.CalendarPush
 import com.zillit.desktop.feature.crewdood.domain.CrewDoodExport
 import com.zillit.desktop.feature.crewdood.domain.CrewDoodRepository
 import com.zillit.desktop.feature.crewdood.domain.DoodBand
@@ -15,6 +16,7 @@ import com.zillit.desktop.feature.crewdood.domain.DoodDepartment
 import com.zillit.desktop.feature.crewdood.domain.DoodSources
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -53,6 +55,22 @@ class CrewDoodViewModel(
             // the project moves bars here. The deals alone are refetched, in
             // the background; a failed refresh keeps what is on screen.
             repository.dealChanges.collectLatest { refreshDeals() }
+        }
+        launch {
+            // Someone else saved the calendar. The frame carries it, so it is
+            // applied with no read at all; `collect`, not `collectLatest`,
+            // because each save is one frame and dropping one for the next
+            // would lose a holiday nobody reads again until a reload.
+            repository.calendarPushes.collect(::onCalendarPushed)
+        }
+        launch {
+            // Who is in the crew changed. One read per burst: the last event
+            // of five approvals in a row is the one that fires, because
+            // `collectLatest` cancels the wait each time another arrives.
+            repository.crewChanges.collectLatest {
+                delay(CREW_REFRESH_DELAY_MS)
+                refreshCrew()
+            }
         }
     }
 
@@ -114,7 +132,13 @@ class CrewDoodViewModel(
                 deals = (dealList as ZillitResult.Success).data,
                 shootDays = shootDays.await().dataOrEmpty(),
                 directory = directory.await().dataOrEmpty(),
-                calendar = (calendar.await() as? ZillitResult.Success)?.data,
+                // A calendar pushed while this read was in flight can be
+                // newer than the answer to it, so the read only wins when it
+                // is the later of the two.
+                calendar = newer(
+                    read = (calendar.await() as? ZillitResult.Success)?.data,
+                    pushed = sources.calendar,
+                ),
             )
             setState { copy(loading = false, error = null).rebuilt() }
         }
@@ -130,8 +154,51 @@ class CrewDoodViewModel(
         }
     }
 
+    /** The crew list alone — the rows and their order come from it. */
+    private suspend fun refreshCrew() {
+        val outcome = repository.roster()
+        if (outcome is ZillitResult.Success) {
+            sources = sources.copy(units = outcome.data)
+            setState { rebuilt() }
+        }
+    }
+
+    /**
+     * A calendar someone else saved.
+     *
+     * A frame that carries one replaces what is on screen when it is newer —
+     * our own save coming back, or a frame overtaken by a later one, changes
+     * nothing. A frame that carries none is read instead of guessed.
+     */
+    private suspend fun onCalendarPushed(push: CalendarPush) {
+        when (push) {
+            is CalendarPush.Saved -> {
+                if (!push.calendar.isNewerThan(sources.calendar)) return
+                applyCalendar(push.calendar)
+            }
+            CalendarPush.Unknown -> {
+                val read = (repository.calendar() as? ZillitResult.Success)?.data ?: return
+                applyCalendar(read)
+            }
+        }
+    }
+
+    private fun applyCalendar(calendar: DoodCalendar) {
+        sources = sources.copy(calendar = calendar)
+        // Nothing is built while the first read is still in flight: `load`
+        // takes the pushed calendar into account when it lands.
+        if (!currentState.loading) setState { rebuilt() }
+    }
+
     private fun <T> ZillitResult<List<T>>.dataOrEmpty(): List<T> =
         (this as? ZillitResult.Success)?.data ?: emptyList()
+
+    private fun newer(read: DoodCalendar?, pushed: DoodCalendar?): DoodCalendar? = when {
+        read == null -> pushed
+        pushed == null -> read
+        read.isNewerThan(pushed) -> read
+        else -> pushed
+    }
 
     // -- writes -------------------------------------------------------------
 
@@ -234,4 +301,9 @@ class CrewDoodViewModel(
         booked = bookedCount,
         total = this.crew.size,
     )
+
+    private companion object {
+        /** One crew-list read per burst of project-user events, as the web waits. */
+        const val CREW_REFRESH_DELAY_MS = 500L
+    }
 }

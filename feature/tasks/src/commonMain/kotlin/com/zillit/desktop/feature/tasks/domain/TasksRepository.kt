@@ -64,4 +64,57 @@ interface TasksRepository {
 
     /** Adds a comment; answers the task with every comment on it. */
     suspend fun comment(taskId: String, text: String, mentions: List<String>): ZillitResult<Task>
+
+    // -- images and files in the description ---------------------------------
+
+    /**
+     * Adds one prepared image or file to a task, in the service's three steps:
+     * an upload link, the bytes straight to storage, then "attach".
+     *
+     * The bytes do **not** go through the API client: the signed link is the
+     * permission and it is made for exactly the headers the service handed
+     * out, so sending `moduledata` or a Bearer alongside makes storage refuse
+     * a request it would otherwise have taken. See [AttachmentUpload].
+     *
+     * Answers the task as the service now has it, or where it stopped.
+     */
+    suspend fun addAttachment(taskId: String, item: PreparedAttachment): AttachmentWrite
+
+    /** Removes one; answers the task. */
+    suspend fun removeAttachment(taskId: String, attachmentId: String): AttachmentWrite
+
+    /**
+     * A fresh signed link for one attachment — to show an image whose link
+     * has run out, or, with [download], to save the file under its own name.
+     */
+    suspend fun attachmentLink(
+        taskId: String,
+        attachmentId: String,
+        download: Boolean = false,
+    ): ZillitResult<String>
+
+    /** The bytes of a signed link, for a thumbnail and the full-size view. */
+    suspend fun attachmentBytes(url: String): ByteArray?
 }
+
+/** What an attachment write answered. */
+sealed interface AttachmentWrite {
+    /** The task as the service now has it, with the message it announced. */
+    data class Saved(val task: Task, val message: String?) : AttachmentWrite
+
+    /**
+     * Refused, and by which step: the service's own message for a link or an
+     * attach, and no message at all when **storage** would not take the bytes
+     * — there is no envelope in that case, which is why the client has a
+     * sentence of its own for it.
+     */
+    data class Refused(
+        val step: AttachmentStep,
+        val message: String?,
+        val httpStatus: Int,
+        val error: com.zillit.desktop.core.common.ZillitError,
+    ) : AttachmentWrite
+}
+
+/** How far adding one got. */
+enum class AttachmentStep { Link, Upload, Attach }

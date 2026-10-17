@@ -36,6 +36,21 @@ object EpochDate {
         return "${date(millis)} | ${if (hour == 0) HALF_DAY else hour}:${moment.minute.pad()} $meridiem"
     }
 
+    /**
+     * `04 Aug, 2026 | 4:35:09 PM` — the same stamp to the second.
+     *
+     * For the places that show *when exactly* something happened rather than
+     * roughly how long ago: an upload's time has to be readable at a glance,
+     * and two saves a minute apart have to be told apart.
+     */
+    fun dateTimeSeconds(millis: Long?): String {
+        val moment = millis.toLocalOrNull() ?: return ""
+        val hour = moment.hour % HALF_DAY
+        val meridiem = if (moment.hour >= HALF_DAY) "PM" else "AM"
+        return "${date(millis)} | ${if (hour == 0) HALF_DAY else hour}:" +
+            "${moment.minute.pad()}:${moment.second.pad()} $meridiem"
+    }
+
     /** `2026-08-04` — what the export and filter endpoints take. */
     fun isoDate(millis: Long?): String {
         val moment = millis.toLocalOrNull() ?: return ""

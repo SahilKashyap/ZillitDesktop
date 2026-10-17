@@ -13,6 +13,12 @@ import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.tasks.domain.AttachmentBytes
+import com.zillit.desktop.feature.tasks.domain.AttachmentKind
+import com.zillit.desktop.feature.tasks.domain.AttachmentStep
+import com.zillit.desktop.feature.tasks.domain.AttachmentUploadTicket
+import com.zillit.desktop.feature.tasks.domain.AttachmentWrite
+import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskAssignees
 import com.zillit.desktop.feature.tasks.domain.TaskDepartment
@@ -38,9 +44,18 @@ import kotlinx.serialization.json.put
  * 403 is `tasks_tool_not_enabled`, which is why nothing calls until the tool's
  * rights row has confirmed it (see [com.zillit.desktop.feature.tasks.domain.TasksViewer.canCall]).
  */
+// One function per server operation, plus the envelope plumbing they share;
+// the interface's own note explains why they are not split in two.
+@Suppress("TooManyFunctions")
 class TasksRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /**
+     * The bytes of an attachment, which do not go through [apiClient] — see
+     * [AttachmentBytes]. Unsupported by default, so a harness builds this
+     * repository without a host and adding an attachment simply refuses.
+     */
+    private val attachmentBytes: AttachmentBytes = AttachmentBytes.Unsupported,
 ) : TasksRepository {
 
     /**
@@ -159,6 +174,74 @@ class TasksRepositoryImpl(
         return call(HttpVerb.Post, "/$taskId/comments", body = body).mapTask()
     }
 
+    // -- images and files in the description ---------------------------------
+
+    /**
+     * Link, bytes, attach — in that order, stopping at the first refusal.
+     *
+     * The three are one repository call because two of them are useless on
+     * their own: a ticket nobody PUT to expires, and bytes in storage that
+     * were never attached are invisible to everyone. The same `key` attached
+     * twice attaches it once, so a retry of the last step is safe.
+     */
+    override suspend fun addAttachment(taskId: String, item: PreparedAttachment): AttachmentWrite {
+        val body = buildJsonObject {
+            put("name", item.name)
+            put("size", item.sizeBytes)
+            put("mime", item.mimeType)
+        }
+        val ticket = when (val asked = call(HttpVerb.Post, "/$taskId/attachments/uploads", body = body)) {
+            is ZillitResult.Failure -> return refusal(AttachmentStep.Link, asked.error)
+            is ZillitResult.Success -> asked.data.data.toUploadTicket()
+        }
+        if (ticket == null || ticket.key.isBlank() || ticket.url.isBlank()) {
+            return AttachmentWrite.Refused(
+                step = AttachmentStep.Link,
+                message = null,
+                httpStatus = 0,
+                error = ZillitError.Serialization("the upload link answer had no link in it"),
+            )
+        }
+        val stored = attachmentBytes.put(ticket.url, ticket.headers, item.bytes, item.mimeType)
+        if (!stored) {
+            // Storage says nothing a user could read, so the caller words this one.
+            return AttachmentWrite.Refused(
+                step = AttachmentStep.Upload,
+                message = null,
+                httpStatus = 0,
+                error = ZillitError.Validation(str(S.desktop_tasks_attachment_upload_failed, item.name)),
+            )
+        }
+        val attach = buildJsonObject {
+            put("key", ticket.key)
+            put("name", item.name)
+            // Only for an image, and only when both are known: the service
+            // stores them for the thumbnail's shape.
+            if (item.kind == AttachmentKind.Image && item.width > 0 && item.height > 0) {
+                put("width", item.width)
+                put("height", item.height)
+            }
+        }
+        return call(HttpVerb.Post, "/$taskId/attachments", body = attach).asAttachmentWrite(AttachmentStep.Attach)
+    }
+
+    override suspend fun removeAttachment(taskId: String, attachmentId: String): AttachmentWrite =
+        call(HttpVerb.Delete, "/$taskId/attachments/$attachmentId").asAttachmentWrite(AttachmentStep.Attach)
+
+    override suspend fun attachmentLink(
+        taskId: String,
+        attachmentId: String,
+        download: Boolean,
+    ): ZillitResult<String> = call(
+        HttpVerb.Get,
+        "/$taskId/attachments/$attachmentId/link",
+        query = if (download) mapOf("download" to 1) else emptyMap(),
+    ).mapData { data -> (data as? JsonObject)?.let { (it["url"] as? JsonPrimitive)?.contentOrNull }.orEmpty() }
+        .flatMapBlank("attachment link")
+
+    override suspend fun attachmentBytes(url: String): ByteArray? =
+        url.takeIf { it.isNotBlank() }?.let { attachmentBytes.get(it) }
+
     /** One answer from the service: its `data`, and the `message` it announced with it. */
     private class Reply(val data: JsonElement?, val message: String?)
 
@@ -210,6 +293,26 @@ class TasksRepositoryImpl(
         is ZillitResult.Failure -> TaskWrite.Refused(task.error.serverMessageOrNull, task.error.httpStatus ?: 0, task.error)
     }
 
+    private fun ZillitResult<Reply>.asAttachmentWrite(step: AttachmentStep): AttachmentWrite =
+        when (val task = mapTask()) {
+            is ZillitResult.Success -> AttachmentWrite.Saved(task.data, (this as? ZillitResult.Success)?.data?.message)
+            is ZillitResult.Failure -> refusal(step, task.error)
+        }
+
+    private fun refusal(step: AttachmentStep, error: ZillitError): AttachmentWrite = AttachmentWrite.Refused(
+        step = step,
+        message = (error as? ZillitError.Http)?.serverMessage,
+        httpStatus = error.httpStatus ?: 0,
+        error = error,
+    )
+
+    /** A URL answer with nothing in it is a failure, not an empty string. */
+    private fun ZillitResult<String>.flatMapBlank(what: String): ZillitResult<String> = when (this) {
+        is ZillitResult.Failure -> this
+        is ZillitResult.Success ->
+            if (data.isBlank()) ZillitResult.Failure(ZillitError.Serialization("no $what in the response")) else this
+    }
+
     private companion object {
         const val PAGE_SIZE = 1000
         const val MAX_PAGES = 20
@@ -228,3 +331,15 @@ val ZillitError.httpStatus: Int?
     }
 
 private val ZillitError.serverMessageOrNull: String? get() = (this as? ZillitError.Http)?.serverMessage
+
+/** Step 1's answer: `{ key, url, headers }` — the headers it was signed for. */
+private fun JsonElement?.toUploadTicket(): AttachmentUploadTicket? {
+    val obj = this as? JsonObject ?: return null
+    fun text(key: String) = (obj[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val headers = (obj["headers"] as? JsonObject).orEmpty()
+        .mapNotNull { (name, value) -> (value as? JsonPrimitive)?.contentOrNull?.let { name to it } }
+        .toMap()
+    return AttachmentUploadTicket(key = text("key"), url = text("url"), headers = headers)
+}
+
+private fun JsonObject?.orEmpty(): Map<String, JsonElement> = this ?: emptyMap()

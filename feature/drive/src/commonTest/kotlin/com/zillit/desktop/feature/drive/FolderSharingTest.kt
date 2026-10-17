@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.drive
 
+import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.drive.data.AccessDto
 import com.zillit.desktop.feature.drive.data.ZipLinkDto
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
@@ -15,7 +17,18 @@ import com.zillit.desktop.feature.drive.domain.FileAccessLevel
 import com.zillit.desktop.feature.drive.domain.nextAccessLevel
 import com.zillit.desktop.feature.drive.ui.AccessDraft
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.feature.drive.ui.DriveEvent
+import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import com.zillit.desktop.feature.drive.ui.floors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -253,5 +266,90 @@ class FolderSharingTest {
             "an Editor of a shared folder does not get Move inside it either",
         )
         assertTrue(state(DriveSection.MyDrive, "f1", listOf(editable)).canMoveHere)
+    }
+}
+
+/**
+ * The two reads that went stale while the tool stayed open: the favourites
+ * set, and who may be shared with.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class DriveStaleReadsTest {
+
+    private val dispatcher = StandardTestDispatcher()
+
+    @BeforeTest fun setUp() = Dispatchers.setMain(dispatcher)
+
+    @AfterTest fun tearDown() = Dispatchers.resetMain()
+
+    private val viewer = DriveViewer(userId = "u1", canView = true, canPost = true, ready = true)
+
+    private class Repo : FakeDriveRepository() {
+        var favouriteCalls = 0
+        var favouritesAnswer: ZillitResult<Set<String>> = ZillitResult.Failure(ZillitError.NoConnection())
+        var shareableCalls = 0
+
+        override suspend fun favouriteIds(): ZillitResult<Set<String>> {
+            favouriteCalls++
+            return favouritesAnswer
+        }
+
+        override suspend fun viewAccessUserIds(): ZillitResult<Set<String>?> {
+            shareableCalls++
+            return ZillitResult.Success(setOf("u2"))
+        }
+    }
+
+    @Test
+    fun `a favourites fetch that never answered is asked again when the filter goes on`() = runTest(dispatcher) {
+        val repo = Repo()
+        val vm = DriveViewModel(repository = repo, viewer = { viewer })
+        vm.start()
+        runCurrent()
+        assertEquals(1, repo.favouriteCalls)
+        assertFalse(vm.state.value.favouritesLoaded, "a failure is not an answer")
+
+        repo.favouritesAnswer = ZillitResult.Success(setOf("f1"))
+        vm.onEvent(DriveEvent.ShowFavouritesOnly(true))
+        runCurrent()
+
+        assertEquals(2, repo.favouriteCalls, "the dropped request heals instead of showing an empty drive")
+        assertTrue(vm.state.value.favouritesLoaded)
+        assertEquals(setOf("f1"), vm.state.value.favouriteIds)
+
+        vm.onEvent(DriveEvent.ShowFavouritesOnly(false))
+        vm.onEvent(DriveEvent.ShowFavouritesOnly(true))
+        runCurrent()
+        assertEquals(2, repo.favouriteCalls, "once it has answered, the filter is free")
+    }
+
+    @Test
+    fun `opening a picker re-reads who may be shared with`() = runTest(dispatcher) {
+        val repo = Repo()
+        val file = DriveItem(
+            id = "f1",
+            kind = DriveItemKind.File,
+            name = "plan.pdf",
+            permissions = DrivePermissions.Owner,
+            hasExplicitPermissions = true,
+            createdById = "u1",
+        )
+        repo.rows = listOf(file)
+        val vm = DriveViewModel(repository = repo, viewer = { viewer })
+        vm.start()
+        runCurrent()
+        assertEquals(1, repo.shareableCalls, "read once when the tool opened")
+
+        vm.onEvent(DriveEvent.OpenShare(file))
+        runCurrent()
+        assertEquals(2, repo.shareableCalls, "someone who joined since must appear in the list")
+
+        vm.onEvent(DriveEvent.OpenUpload)
+        runCurrent()
+        assertEquals(3, repo.shareableCalls)
+
+        vm.onEvent(DriveEvent.OpenNewFolder)
+        runCurrent()
+        assertEquals(4, repo.shareableCalls)
     }
 }

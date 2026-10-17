@@ -555,6 +555,15 @@ sealed interface HistoryLine {
 
     data class SubtaskDeleted(val title: String) : HistoryLine
 
+    /**
+     * "Added image “recce.jpg”", "Removed file “budget.xlsx”".
+     *
+     * An attachment is its own kind of entry, not a change to a field: the
+     * server records it as `attachment_added` / `attachment_removed` with the
+     * name and which of the two it was.
+     */
+    data class AttachmentChanged(val name: String, val isImage: Boolean, val added: Boolean) : HistoryLine
+
     data object DescriptionChanged : HistoryLine
 
     /**
@@ -575,16 +584,32 @@ sealed interface HistoryLine {
     data class Note(val reason: String) : HistoryLine
 }
 
+/**
+ * The entries that are an event rather than a change to a field: null for
+ * everything else, which is then read off `changes`.
+ */
+private fun eventLines(entry: TaskHistoryEntry, isSubtask: Boolean): List<HistoryLine>? = when (entry.action) {
+    "created" -> buildList {
+        add(HistoryLine.Created(isSubtask))
+        entry.assigneeId?.let { add(HistoryLine.CreatedAssignee(it)) }
+    }
+
+    "subtask_added" -> listOf(HistoryLine.SubtaskAdded(entry.subtaskTitle))
+    "subtask_deleted" -> listOf(HistoryLine.SubtaskDeleted(entry.subtaskTitle))
+    "attachment_added", "attachment_removed" -> listOf(
+        HistoryLine.AttachmentChanged(
+            name = entry.attachmentName,
+            isImage = entry.attachmentKind == AttachmentKind.Image,
+            added = entry.action == "attachment_added",
+        ),
+    )
+
+    else -> null
+}
+
 /** The lines of one entry, in order. */
 fun historyLines(entry: TaskHistoryEntry, isSubtask: Boolean): List<HistoryLine> {
-    when (entry.action) {
-        "created" -> return buildList {
-            add(HistoryLine.Created(isSubtask))
-            entry.assigneeId?.let { add(HistoryLine.CreatedAssignee(it)) }
-        }
-        "subtask_added" -> return listOf(HistoryLine.SubtaskAdded(entry.subtaskTitle))
-        "subtask_deleted" -> return listOf(HistoryLine.SubtaskDeleted(entry.subtaskTitle))
-    }
+    eventLines(entry, isSubtask)?.let { return it }
     val lines = entry.changes.map { change ->
         when (change.field) {
             "description" -> HistoryLine.DescriptionChanged

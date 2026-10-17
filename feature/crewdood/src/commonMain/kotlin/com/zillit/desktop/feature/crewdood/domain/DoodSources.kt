@@ -108,8 +108,8 @@ interface CrewDoodRepository {
     /**
      * `GET {dealMemo}deal-memo/crew-dood/calendar`.
      *
-     * Null when the project has saved none — and, until the backend ships the
-     * route (handoff §5.3), what every project answers.
+     * Null when the project has saved none, which the model draws as Saturday
+     * and Sunday off.
      */
     suspend fun calendar(): ZillitResult<DoodCalendar?>
 
@@ -128,6 +128,31 @@ interface CrewDoodRepository {
      * background, so a failed refresh keeps what is on screen.
      */
     val dealChanges: Flow<Unit>
+
+    /**
+     * A calendar saved by anyone on the project.
+     *
+     * The frame carries the calendar, so what arrives is applied in place with
+     * no read — [CalendarPush.Saved], kept only when it is newer than the one
+     * on screen ([DoodCalendar.isNewerThan]). A frame that does not look like
+     * a calendar is [CalendarPush.Unknown]: read it instead of guessing.
+     */
+    val calendarPushes: Flow<CalendarPush>
+
+    /**
+     * Someone joined, left, was removed, was reordered or had their profile
+     * changed: the crew list alone is stale. Already filtered to this project.
+     */
+    val crewChanges: Flow<Unit>
+}
+
+/** What a `crew_dood_calendar:updated` frame turned out to carry. */
+sealed interface CalendarPush {
+    /** The saved calendar itself, as the frame sent it. */
+    data class Saved(val calendar: DoodCalendar) : CalendarPush
+
+    /** A frame with no calendar in it — read the calendar rather than guess. */
+    data object Unknown : CalendarPush
 }
 
 /** What a calendar save answers: the stored calendar, and the server's message. */

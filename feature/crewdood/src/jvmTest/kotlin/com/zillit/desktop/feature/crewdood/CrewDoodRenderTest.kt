@@ -1,7 +1,12 @@
 package com.zillit.desktop.feature.crewdood
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.crewdood.domain.DoodCalc
@@ -172,6 +177,62 @@ class CrewDoodRenderTest {
                 }
             }
             onNodeWithText("No crew match your filters.").assertExists()
+        }
+    }
+
+    @Test
+    fun `a calendar saved elsewhere keeps the editor's edits and offers Load theirs`() {
+        runComposeUiTest {
+            // The calendar as the screen holds it: a save by someone else
+            // arrives over the socket and changes it under the open editor.
+            var live by mutableStateOf(DoodCalendar(weeklyOff = setOf(0, 6)))
+            setContent {
+                ZillitTheme {
+                    val calendar = live
+                    CrewDoodCalendarDialog(
+                        calendar = calendar,
+                        saving = false,
+                        onSave = {},
+                        onDismiss = {},
+                    )
+                }
+            }
+
+            onNodeWithText("Mon").performClick()
+            onNodeWithText("Mon, Sat, Sun off · 4-day week").assertExists()
+
+            live = DoodCalendar(weeklyOff = setOf(0, 5, 6), updatedAt = 2_000L)
+            waitForIdle()
+
+            // The edit stands, and the footer says what saving would do.
+            onNodeWithText("Mon, Sat, Sun off · 4-day week").assertExists()
+            onNodeWithText("Someone else just saved the calendar. Saving will replace their version.")
+                .assertExists()
+
+            onNodeWithText("Load theirs").performClick()
+            onNodeWithText("Fri, Sat, Sun off · 4-day week").assertExists()
+            onNodeWithText("3 weekly days off · 0 holiday days").assertExists()
+        }
+    }
+
+    @Test
+    fun `an untouched editor follows a calendar saved elsewhere`() {
+        runComposeUiTest {
+            var live by mutableStateOf(DoodCalendar(weeklyOff = setOf(0, 6)))
+            setContent {
+                ZillitTheme {
+                    val calendar = live
+                    CrewDoodCalendarDialog(calendar = calendar, saving = false, onSave = {}, onDismiss = {})
+                }
+            }
+
+            onNodeWithText("Sat, Sun off · 5-day week").assertExists()
+            live = DoodCalendar(weeklyOff = setOf(0, 5, 6), updatedAt = 2_000L)
+            waitForIdle()
+
+            onNodeWithText("Fri, Sat, Sun off · 4-day week").assertExists()
+            // Nothing was edited here, so there is nothing to replace.
+            onNodeWithText("Load theirs").assertDoesNotExist()
         }
     }
 

@@ -18,7 +18,19 @@ import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.DriveSortSpec
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveUnread
+import com.zillit.desktop.feature.drive.domain.DriveChangeAuthorCount
+import com.zillit.desktop.feature.drive.domain.DriveChangeGroup
+import com.zillit.desktop.feature.drive.domain.DriveFileKind
+import com.zillit.desktop.feature.drive.domain.DriveFileVersion
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveVersionChanges
+import com.zillit.desktop.feature.drive.domain.DriveVersionHistory
+import com.zillit.desktop.feature.drive.domain.DriveVersionSession
+import com.zillit.desktop.feature.drive.domain.changeAuthors
+import com.zillit.desktop.feature.drive.domain.changesByPerson
+import com.zillit.desktop.feature.drive.domain.fileKindOf
+import com.zillit.desktop.feature.drive.domain.findCurrentVersion
+import com.zillit.desktop.feature.drive.domain.findVersion
 import com.zillit.desktop.feature.drive.domain.DriveView
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.domain.FileAccessLevel
@@ -98,6 +110,93 @@ data class FileRequestState(
 
 /** A fortnight: long enough for a supplier to get round to it, short enough to expire. */
 const val DEFAULT_EXPIRY_DAYS = 14
+
+/**
+ * The version history panel — the web's `versionHistory/VersionHistoryPanel`.
+ *
+ * Two views in one state: the list of sessions, and one version's detail with
+ * what changed in it ([detailVersionId]). The changes are fetched per version
+ * and held here rather than on the version, because the history row carries
+ * only a summary and the detail's full comparison is several hundred rows that
+ * nothing else reads.
+ *
+ * [history] is null while the first load runs; an empty history is a loaded
+ * one with no sessions, and the two read differently on screen.
+ */
+data class VersionHistoryState(
+    /** The file the panel is open on; null when it is closed. */
+    val item: DriveItem? = null,
+    val history: DriveVersionHistory? = null,
+    val loading: Boolean = false,
+    val failed: Boolean = false,
+    /** Show only the versions somebody named. */
+    val namedOnly: Boolean = false,
+    /** Sessions whose older saves are unfolded. */
+    val expanded: Set<String> = emptySet(),
+    val detailVersionId: String? = null,
+    val changes: DriveVersionChanges? = null,
+    val changesLoading: Boolean = false,
+    val changesFailed: Boolean = false,
+    /** [DriveChangeAuthorCount.key] of the one person whose changes are shown. */
+    val personKey: String? = null,
+    /**
+     * Groups the user has folded or unfolded in the detail.
+     *
+     * What was *pressed*, not what is open: the first few sheets start open
+     * and the rest closed, so a set of open names would reopen a sheet the
+     * user had just folded.
+     */
+    val toggledGroups: Set<String> = emptySet(),
+    /** Groups showing every change rather than the first page of them. */
+    val fullGroups: Set<String> = emptySet(),
+    /** The version being named, and the working text. */
+    val naming: DriveFileVersion? = null,
+    val nameDraft: String = "",
+    val savingName: Boolean = false,
+) {
+    val open: Boolean get() = item != null
+
+    val sessions: List<DriveVersionSession> get() = history?.sessions.orEmpty()
+
+    /** Read off the history's own file name, falling back to the row's. */
+    val fileKind: DriveFileKind
+        get() = fileKindOf(history?.fileName.orEmpty().ifBlank { item?.name.orEmpty() })
+
+    val current: DriveFileVersion? get() = findCurrentVersion(sessions)
+
+    val detail: DriveFileVersion? get() = findVersion(sessions, detailVersionId)
+
+    /**
+     * The rights the *history route* reported on the file.
+     *
+     * Not the listing row's: a file shared straight with someone carries no
+     * permissions on the rows the tab-wide lists return, and the server is
+     * the only thing that knows whether this person may name or restore a
+     * version of it.
+     */
+    val canEdit: Boolean get() = history?.canEdit == true
+
+    val canDownload: Boolean get() = history?.canDownload == true
+
+    val namedCount: Int get() = history?.namedCount ?: 0
+
+    /** The authors of the listed changes, for the filter chips. */
+    val authors: List<DriveChangeAuthorCount> get() = changeAuthors(changes?.groups.orEmpty())
+
+    /**
+     * The person actually filtered on.
+     *
+     * A key picked for another version — or for somebody the server has since
+     * stopped attributing changes to — means "All", rather than an empty list
+     * with a chip that cannot be turned off.
+     */
+    val activePersonKey: String? get() = personKey?.takeIf { key -> authors.any { it.key == key } }
+
+    val visibleGroups: List<DriveChangeGroup>
+        get() = changesByPerson(changes?.groups.orEmpty(), activePersonKey)
+
+    fun isExpanded(session: DriveVersionSession): Boolean = session.id in expanded
+}
 
 /** A confirmation the user has to answer before something irreversible happens. */
 data class DrivePrompt(
@@ -418,6 +517,16 @@ data class DriveUiState(
      * the list and the grid.
      */
     val favouriteIds: Set<String> = emptySet(),
+    /**
+     * Whether the favourites call has actually answered.
+     *
+     * An empty [favouriteIds] means two different things — nobody has starred
+     * anything, or the fetch has not landed (its failure is only logged) — and
+     * the Starred filter must act on the first and not the second. Turning the
+     * filter on with this still false re-asks, so a dropped request heals
+     * instead of leaving the view wrong for the session.
+     */
+    val favouritesLoaded: Boolean = false,
     /** The unread dots, rolled up from the ledger over the current listing. */
     val unread: DriveUnread = DriveUnread(),
     /** Small image previews by file id, fetched lazily for the grid and the name cell. */
@@ -436,6 +545,7 @@ data class DriveUiState(
     val renameUploads: RenameUploadsState = RenameUploadsState(),
     val details: DetailsState = DetailsState(),
     val fileRequests: FileRequestState = FileRequestState(),
+    val versionHistory: VersionHistoryState = VersionHistoryState(),
     val prompt: DrivePrompt? = null,
     val upload: UploadDraft? = null,
     val newFolder: NewFolderDraft? = null,
@@ -446,6 +556,17 @@ data class DriveUiState(
     val menu: ItemMenuState? = null,
     val dropUpload: DropUploadState? = null,
 ) {
+
+    /**
+     * The production's name for one person, for the surfaces that are handed
+     * only an id (version history, change attribution).
+     *
+     * "Someone" rather than the raw id when the crew list does not have them:
+     * an id on screen tells the reader nothing, and somebody who has left the
+     * production is exactly the case this hits.
+     */
+    fun personName(userId: String): String =
+        crew.firstOrNull { it.id == userId }?.name?.takeIf { it.isNotBlank() } ?: str(S.history_someone)
 
     val isSearching: Boolean get() = search.isNotBlank()
 
@@ -571,5 +692,6 @@ data class DriveUiState(
     val hasOverlay: Boolean
         get() = prompt != null || upload != null || newFolder != null || edit != null ||
             share != null || moveTo != null || preview != null || dropUpload != null ||
-            activityLog.open || fileRequests.open || renameUploads.open
+            activityLog.open || fileRequests.open || renameUploads.open ||
+            versionHistory.open
 }

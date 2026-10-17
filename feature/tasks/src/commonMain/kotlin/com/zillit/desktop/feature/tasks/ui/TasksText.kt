@@ -140,6 +140,14 @@ fun historyValue(
     }
 }
 
+/** "Added image “recce.jpg”" — the four ways an attachment entry reads. */
+private fun attachmentHistoryText(line: HistoryLine.AttachmentChanged): String = when {
+    line.added && line.isImage -> str(S.desktop_tasks_history_image_added, line.name)
+    line.added -> str(S.desktop_tasks_history_file_added, line.name)
+    line.isImage -> str(S.desktop_tasks_history_image_removed, line.name)
+    else -> str(S.desktop_tasks_history_file_removed, line.name)
+}
+
 /** What a [HistoryLine] says, as plain text — one sentence, or "Label: from → to". */
 fun historyText(
     line: HistoryLine,
@@ -151,6 +159,7 @@ fun historyText(
     is HistoryLine.CreatedAssignee ->
         "${str(S.desktop_tasks_field_assignee)}: ${historyValue("assignee_id", line.assigneeId, crewById, departmentName, today)}"
     is HistoryLine.SubtaskAdded -> str(S.desktop_tasks_history_subtask_added, line.title)
+    is HistoryLine.AttachmentChanged -> attachmentHistoryText(line)
     is HistoryLine.SubtaskDeleted -> str(S.desktop_tasks_history_subtask_deleted, line.title)
     HistoryLine.DescriptionChanged -> str(S.desktop_tasks_history_description)
     HistoryLine.Changed -> str(S.desktop_tasks_history_changed)

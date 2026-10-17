@@ -115,6 +115,7 @@ internal fun TaskCard(
             DueChip(task, actions.today)
             SubtaskCount(subtasks)
             CommentCount(task.commentCount)
+            AttachmentCount(task.attachments.size)
         }
         if (showWho) {
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

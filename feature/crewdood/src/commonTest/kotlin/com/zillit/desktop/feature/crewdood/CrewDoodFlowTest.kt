@@ -9,6 +9,12 @@ import com.zillit.desktop.core.config.Environment
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
+import com.zillit.desktop.core.socket.SocketClient
+import com.zillit.desktop.core.socket.SocketConfig
+import com.zillit.desktop.core.socket.SocketConnectionState
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.feature.crewdood.data.CrewDoodRepositoryImpl
 import com.zillit.desktop.feature.crewdood.domain.CrewDoodExport
 import com.zillit.desktop.feature.crewdood.domain.CrewDoodExported
@@ -28,6 +34,8 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -38,10 +46,12 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -74,13 +84,13 @@ class CrewDoodFlowTest {
 
     private fun utc(stamp: String) = Instant.parse(stamp).toEpochMilliseconds()
 
-    private val crewList = """[{"unit_name":"main_unit","departments":[
+    private var crewList = """[{"unit_name":"main_unit","departments":[
         {"department_name":"Camera","users":[
           {"user_id":"u1","full_name":"Ann","designation_name":"DOP"},
           {"user_id":"u2","full_name":"Ben","designation_name":"1st AC"}]},
         {"department_name":"Sound","users":[{"user_id":"u3","full_name":"Cat","designation_name":"Mixer"}]}]}]"""
 
-    private val deals = """[
+    private var deals = """[
         {"_id":"d1","status":"active","user_id":"u1","deal":{"start_date":${utc("2026-04-06T00:00:00Z")},"end_date":${utc("2026-04-10T23:59:59Z")}}},
         {"_id":"d2","status":"issued","user_id":"u2","deal":{"start_date":${utc("2026-04-06T00:00:00Z")},"end_date":${utc("2026-04-10T23:59:59Z")}}}]"""
 
@@ -132,8 +142,37 @@ class CrewDoodFlowTest {
     private var exportSkipped = 0
     private var exportFails = false
 
+    /**
+     * The socket, as the tool sees it: one event in, whatever the bus makes of
+     * it out. Every test's project is `p1`, so a frame naming another one is a
+     * frame this chart must ignore.
+     */
+    private class Socket : SocketClient {
+        private val flow = MutableSharedFlow<SocketMessage>(extraBufferCapacity = 16)
+        override val connectionState = MutableStateFlow<SocketConnectionState>(SocketConnectionState.Connected("test"))
+        override val messages: Flow<SocketMessage> = flow
+        override suspend fun connect(config: SocketConfig) = Unit
+        override suspend fun disconnect() = Unit
+        override suspend fun <T> emit(event: SocketEventName, payload: T, serializer: KSerializer<T>) =
+            ZillitResult.Success(Unit)
+        override suspend fun emit(event: SocketEventName) = ZillitResult.Success(Unit)
+        override suspend fun <T> emitForAck(event: SocketEventName, payload: T, serializer: KSerializer<T>) =
+            ZillitResult.Success<JsonElement>(JsonObject(emptyMap()))
+
+        suspend fun say(event: String, payload: String) =
+            flow.emit(SocketMessage(SocketEventName(event), Json.parseToJsonElement(payload)))
+    }
+
+    private val socket = Socket()
+
     private fun viewModel() = CrewDoodViewModel(
-        repository = CrewDoodRepositoryImpl(apiClient, config, labelOf = { it }),
+        repository = CrewDoodRepositoryImpl(
+            apiClient,
+            config,
+            bus = SocketEventBus(socket),
+            currentProjectId = { "p1" },
+            labelOf = { it },
+        ),
         export = CrewDoodExport {
             exported += 1
             if (exportFails) {
@@ -315,8 +354,132 @@ class CrewDoodFlowTest {
         assertTrue(model.state.value.groups.isNotEmpty())
     }
 
+    // -- live --------------------------------------------------------------
+
+    private fun daysOf(model: CrewDoodViewModel, name: String) =
+        model.state.value.groups.flatMap { it.crew }.first { it.name == name }.days
+
+    /**
+     * Time for the socket's work to land where the test expects it to change
+     * nothing — long enough in virtual time to fire the crew list's wait.
+     */
+    private suspend fun TestScope.quiet() {
+        repeat(QUIET_TRIES) {
+            advanceUntilIdle()
+            withContext(Dispatchers.Default) { delay(SETTLE_STEP_MILLIS) }
+        }
+        advanceUntilIdle()
+    }
+
+    private fun calendarReads() = paths().count { it.endsWith("/crew-dood/calendar") }
+
+    private fun crewReads() = paths().count { it.endsWith("/crewlist/list") }
+
+    @Test
+    fun `a calendar saved elsewhere is applied straight from the socket, with no read`() = runTest(dispatcher) {
+        val model = loaded()
+        assertEquals(5, daysOf(model, "Ann"))
+        val readsBefore = calendarReads()
+
+        // Someone made Friday a day off as well.
+        socket.say(
+            "crew_dood_calendar:updated",
+            """{"project_id":"p1","data":{"weekly_off":[0,5,6],"holidays":[],"updated_at":2000}}""",
+        )
+        settle { daysOf(model, "Ann") == 4 }
+
+        assertEquals(setOf(0, 5, 6), model.state.value.calendar.weeklyOff)
+        assertEquals(4, daysOf(model, "Ann"))
+        assertEquals(readsBefore, calendarReads())
+    }
+
+    @Test
+    fun `an older calendar frame arriving late changes nothing`() = runTest(dispatcher) {
+        val model = loaded()
+        socket.say(
+            "crew_dood_calendar:updated",
+            """{"project_id":"p1","data":{"weekly_off":[0,5,6],"holidays":[],"updated_at":2000}}""",
+        )
+        settle { daysOf(model, "Ann") == 4 }
+
+        socket.say(
+            "crew_dood_calendar:updated",
+            """{"project_id":"p1","data":{"weekly_off":[0,6],"holidays":[],"updated_at":1000}}""",
+        )
+        quiet()
+        assertEquals(setOf(0, 5, 6), model.state.value.calendar.weeklyOff)
+        assertEquals(4, daysOf(model, "Ann"))
+    }
+
+    @Test
+    fun `a frame carrying no calendar is read rather than guessed`() = runTest(dispatcher) {
+        val model = loaded()
+        val readsBefore = calendarReads()
+        calendarRead = """{"weekly_off":[0,5,6],"holidays":[],"updated_at":3000}"""
+
+        socket.say("crew_dood_calendar:updated", """{"project_id":"p1"}""")
+        settle { daysOf(model, "Ann") == 4 }
+
+        assertEquals(readsBefore + 1, calendarReads())
+        assertEquals(setOf(0, 5, 6), model.state.value.calendar.weeklyOff)
+    }
+
+    @Test
+    fun `another production's calendar frame is ignored`() = runTest(dispatcher) {
+        val model = loaded()
+        val readsBefore = calendarReads()
+        socket.say(
+            "crew_dood_calendar:updated",
+            """{"project_id":"elsewhere","data":{"weekly_off":[0,5,6],"holidays":[],"updated_at":2000}}""",
+        )
+        quiet()
+        assertEquals(setOf(0, 6), model.state.value.calendar.weeklyOff)
+        assertEquals(5, daysOf(model, "Ann"))
+        assertEquals(readsBefore, calendarReads())
+    }
+
+    @Test
+    fun `a burst of project-user events reads the crew list once, and nothing else`() = runTest(dispatcher) {
+        val model = loaded()
+        assertEquals(1, crewReads())
+        val dealReadsBefore = paths().count { it.endsWith("/deal-memo/deals") }
+        crewList = crewList.replace("\"Ann\"", "\"Ann Lensford\"")
+
+        socket.say("project:user:profile:update", """{"project_id":"p1"}""")
+        socket.say("project:user:left", """{"data":{"project_id":"p1"}}""")
+        socket.say("project:user:reordered", """{}""") // no project named: still reads
+
+        settle { model.state.value.groups.flatMap { it.crew }.any { it.name == "Ann Lensford" } }
+        assertEquals(2, crewReads())
+        assertEquals(dealReadsBefore, paths().count { it.endsWith("/deal-memo/deals") })
+    }
+
+    @Test
+    fun `another production's project-user event is ignored`() = runTest(dispatcher) {
+        val model = loaded()
+        assertEquals(1, crewReads())
+        socket.say("project:user:removed", """{"project_id":"elsewhere"}""")
+        quiet()
+        assertEquals(1, crewReads())
+        assertTrue(model.state.value.groups.isNotEmpty())
+    }
+
+    @Test
+    fun `a deal change refreshes the deals alone`() = runTest(dispatcher) {
+        val model = loaded()
+        assertEquals(0, daysOf(model, "Ben"))
+        deals = deals.replace("\"status\":\"issued\"", "\"status\":\"active\"")
+
+        socket.say("deal:activated", """{"project_id":"p1"}""")
+        settle { daysOf(model, "Ben") == 5 }
+
+        assertEquals(5, daysOf(model, "Ben"))
+        assertEquals(1, crewReads())
+    }
+
     private companion object {
         const val SETTLE_TRIES = 400
+        const val QUIET_TRIES = 20
         const val SETTLE_STEP_MILLIS = 5L
     }
 }

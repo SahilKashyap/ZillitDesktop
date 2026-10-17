@@ -1049,8 +1049,9 @@ private const val HATCH_GAP_DP = 7f
 private const val LABEL_PAD_DP = 4f
 private const val LABEL_LINES = 2
 private const val HEAT_INSET_DP = 4f
-private const val HEAT_FLOOR = 0.10f
-private const val HEAT_RANGE = 0.80f
+// The web's own wash: rgba(accent, 0.08 + share * 0.82).
+private const val HEAT_FLOOR = 0.08f
+private const val HEAT_RANGE = 0.82f
 private const val HEAT_INK_SWITCH = 0.5f
 private const val WEEKDAY_LETTERS = 2
 private const val MONTHS_IN_YEAR = 12

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,13 +80,29 @@ internal fun CrewDoodCalendarDialog(
     onDismiss: () -> Unit,
 ) {
     val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
-    val initial = remember(calendar) { CalendarDraft.of(calendar) }
-    var draft by remember(calendar) { mutableStateOf(initial) }
-    val selection = remember(calendar) { CalendarSelection() }
+    // The baseline is the newest saved calendar this editor knows, NOT the
+    // live one: someone else's save, applied in place while this is open, must
+    // not make an untouched editor look edited, nor let a stale draft undo it
+    // unseen.
+    var base by remember { mutableStateOf(CalendarDraft.of(calendar)) }
+    var draft by remember { mutableStateOf(base) }
+    /** Someone saved while this editor held other edits: said beside Save. */
+    var overwrite by remember { mutableStateOf(false) }
+    val selection = remember { CalendarSelection() }
+
+    LaunchedEffect(calendar) {
+        val rebased = rebase(draft = draft, base = base, saved = CalendarDraft.of(calendar))
+        base = rebased.base
+        draft = rebased.draft
+        overwrite = rebased.overwrite
+    }
 
     val runs = remember(draft) { DoodCalc.groupHolidays(draft.holidays) }
     // A week with no working day would leave every bar on the grid empty.
     val allOff = draft.weeklyOff.size == DAYS_PER_WEEK
+    val dirty = draft != base
+    // Saving now would replace someone else's newer calendar.
+    val conflict = overwrite && dirty
 
     ZillitDialogShell(
         title = str(S.desktop_cdood_calendar_button),
@@ -96,12 +113,27 @@ internal fun CrewDoodCalendarDialog(
         onDismiss = { if (!saving) onDismiss() },
         actions = {
             ZillitText(
-                text = summaryLine(draft),
+                text = if (conflict) str(S.desktop_cdood_calendar_overwrite) else summaryLine(draft),
                 style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textSecondary,
+                color = if (conflict) ZillitTheme.colors.warning else ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
-                maxLines = 1,
+                maxLines = 2,
             )
+            if (conflict) {
+                ZillitButton(
+                    text = str(S.desktop_cdood_calendar_load_theirs),
+                    // Only the saved fields go back to theirs: a range being
+                    // picked on the calendar is not an edit to the draft yet,
+                    // so it is left where it is.
+                    onClick = {
+                        draft = base
+                        overwrite = false
+                    },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    enabled = !saving,
+                )
+            }
             ZillitButton(
                 text = str(S.cancel),
                 onClick = onDismiss,
@@ -113,7 +145,7 @@ internal fun CrewDoodCalendarDialog(
                 text = str(S.save),
                 onClick = { onSave(draft.toCalendar()) },
                 size = ButtonSize.Small,
-                enabled = !saving && draft != initial && !allOff,
+                enabled = !saving && dirty && !allOff,
                 loading = saving,
             )
         },
@@ -814,6 +846,28 @@ internal data class CalendarDraft(
         )
     }
 }
+
+/**
+ * What an editor should hold once a calendar saved elsewhere arrives.
+ *
+ * Three cases, and the middle one is the whole point: a calendar saved by
+ * someone else while this editor is open must not throw away what is being
+ * typed here.
+ *
+ *  - the same calendar (a stamp changed, nothing else, or our own save coming
+ *    back): nothing moves;
+ *  - nothing edited here, or edits that already match theirs: follow them;
+ *  - edits that differ: keep them, and say that saving replaces theirs
+ *    ([Rebased.overwrite]) so Load theirs is the way out.
+ */
+internal fun rebase(draft: CalendarDraft, base: CalendarDraft, saved: CalendarDraft): Rebased = when {
+    saved == base -> Rebased(draft = draft, base = base, overwrite = false)
+    draft == base || draft == saved -> Rebased(draft = saved, base = saved, overwrite = false)
+    else -> Rebased(draft = draft, base = saved, overwrite = true)
+}
+
+/** The editor's three values after a calendar saved elsewhere lands. */
+internal data class Rebased(val draft: CalendarDraft, val base: CalendarDraft, val overwrite: Boolean)
 
 internal sealed interface AddOutcome {
     data class Added(val draft: CalendarDraft) : AddOutcome

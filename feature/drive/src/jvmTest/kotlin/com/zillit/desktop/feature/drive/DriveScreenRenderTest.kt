@@ -8,6 +8,19 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
+import com.zillit.desktop.feature.drive.domain.DriveActivityItem
+import com.zillit.desktop.feature.drive.domain.DriveActivityPerson
+import com.zillit.desktop.feature.drive.domain.DriveCellChange
+import com.zillit.desktop.feature.drive.domain.DriveChangeAuthor
+import com.zillit.desktop.feature.drive.domain.DriveChangeGroup
+import com.zillit.desktop.feature.drive.domain.DriveChangeKind
+import com.zillit.desktop.feature.drive.domain.DriveChangeStatus
+import com.zillit.desktop.feature.drive.domain.DriveFileVersion
+import com.zillit.desktop.feature.drive.domain.DriveSaveType
+import com.zillit.desktop.feature.drive.domain.DriveVersionActivity
+import com.zillit.desktop.feature.drive.domain.DriveVersionChanges
+import com.zillit.desktop.feature.drive.domain.DriveVersionHistory
+import com.zillit.desktop.feature.drive.domain.DriveVersionSession
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveCrumb
@@ -46,6 +59,7 @@ import com.zillit.desktop.feature.drive.ui.ShareState
 import com.zillit.desktop.feature.drive.ui.ShareTab
 import com.zillit.desktop.feature.drive.ui.TrashState
 import com.zillit.desktop.feature.drive.ui.UploadDraft
+import com.zillit.desktop.feature.drive.ui.VersionHistoryState
 import androidx.compose.runtime.mutableStateOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -462,5 +476,125 @@ class DriveScreenRenderTest {
         }
         // The row beneath and the details header over it both name the folder.
         assertEquals(2, onAllNodesWithText("Camera Reports").fetchSemanticsNodes().size)
+    }
+
+    /**
+     * The version history panel, in both of its views.
+     *
+     * `now` is handed in so the day heading is "Today" rather than an
+     * absolute date, which is also what the session row's time range needs.
+     */
+    @Test
+    @Suppress("LongMethod") // One panel through every state it has; splitting it loses the sequence.
+    fun `the version history panel composes as a list and as one version's detail`() = runComposeUiTest {
+        val resize = DriveActivityItem("column_width", 1, "Resized column F")
+        val newest = DriveFileVersion(
+            id = "v3",
+            versionNumber = 3,
+            name = "Final draft",
+            savedAt = STAMP,
+            savedById = "u2",
+            editorIds = listOf("u2", "u1"),
+            saveType = DriveSaveType.Exit,
+            isCurrent = true,
+            changes = DriveVersionChanges(
+                status = DriveChangeStatus.Done,
+                cells = 0,
+                sheets = 0,
+                activity = DriveVersionActivity(
+                    items = listOf(resize),
+                    people = listOf(DriveActivityPerson("u2", "Grace Hopper", listOf(resize))),
+                ),
+            ),
+        )
+        val older = DriveFileVersion(
+            id = "v2",
+            versionNumber = 2,
+            savedAt = STAMP - 600_000,
+            savedById = "u2",
+            saveType = DriveSaveType.Autosave,
+        )
+        val panel = VersionHistoryState(
+            item = sharedDoc,
+            history = DriveVersionHistory(
+                fileName = "Budget.xlsx",
+                canEdit = true,
+                canDownload = true,
+                sessions = listOf(
+                    DriveVersionSession(
+                        id = "s1",
+                        startedAt = STAMP - 600_000,
+                        endedAt = STAMP,
+                        editorIds = listOf("u2", "u1"),
+                        versions = listOf(newest, older),
+                    ),
+                ),
+            ),
+        )
+        val current = mutableStateOf(state().copy(versionHistory = panel))
+        setContent {
+            ZillitTheme { DriveScreen(state = current.value, onEvent = {}, now = { STAMP + 3_600_000 }) }
+        }
+        onNodeWithText("Version history").assertExists()
+        onNodeWithText("Today").assertExists()
+        onNodeWithText("Final draft").assertExists()
+        onNodeWithText("Current version").assertExists()
+        // The newest version already has a name, so the toolbar offers to change it.
+        onNodeWithText("Rename current version").assertExists()
+        onNodeWithText("Only named versions (1)").assertExists()
+        // A formatting-only save reads as what was done, not "No cell changes":
+        // the session row counts its saves, then says what changed in the newest.
+        onNodeWithText("2 saves · Resized column F").assertExists()
+
+        // One version's detail, with the cell changes and the person filter.
+        val priya = DriveChangeAuthor("u1", "Ada Lovelace")
+        val riya = DriveChangeAuthor("u2", "Grace Hopper")
+        current.value = state().copy(
+            versionHistory = panel.copy(
+                detailVersionId = "v3",
+                changes = DriveVersionChanges(
+                    status = DriveChangeStatus.Done,
+                    total = 2,
+                    cells = 2,
+                    sheets = 1,
+                    groups = listOf(
+                        DriveChangeGroup(
+                            name = "Action Vehicle",
+                            total = 2,
+                            changes = listOf(
+                                DriveCellChange("P2", DriveChangeKind.Added, "", "vidya", listOf(priya)),
+                                DriveCellChange("B5", DriveChangeKind.Changed, "1", "2", listOf(riya, priya)),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        waitForIdle()
+        onNodeWithText("All versions").assertExists()
+        onNodeWithText("What changed").assertExists()
+        onNodeWithText("2 cells changed").assertExists()
+        onNodeWithText("P2").assertExists()
+        onNodeWithText("B5").assertExists()
+        // Two people changed cells, so the filter row is drawn — its own "All"
+        // chip beside the header's My Drive filter of the same name.
+        assertEquals(2, onAllNodesWithText("All").fetchSemanticsNodes().size)
+        onNodeWithText("Open read-only").assertExists()
+
+        // The empty and failed states, and the named-only filter with nothing named.
+        current.value = state().copy(
+            versionHistory = VersionHistoryState(item = sharedDoc, history = DriveVersionHistory(), namedOnly = true),
+        )
+        waitForIdle()
+        onNodeWithText("No named versions yet.").assertExists()
+
+        current.value = state().copy(versionHistory = VersionHistoryState(item = sharedDoc, failed = true))
+        waitForIdle()
+        onNodeWithText("Couldn't load the version history.").assertExists()
+
+        // The name dialog, which is what the toolbar button opens.
+        current.value = state().copy(versionHistory = panel.copy(naming = newest, nameDraft = "Final draft"))
+        waitForIdle()
+        onNodeWithText("Rename version").assertExists()
     }
 }

@@ -121,10 +121,28 @@ internal fun TaskPanelOverlay(
     // The ✕ and the scrim close (a new task's form just goes, as the web's
     // does); Escape cancels a new task — a new subtask back to its main task.
     val close = { onEvent(TasksEvent.ClosePanel) }
-    val escape = { onEvent(if (panel.creating) TasksEvent.CancelCreate else TasksEvent.ClosePanel) }
+    // The viewer takes Escape first, so looking at an image and pressing it
+    // does not close the whole panel behind it.
+    val escape = {
+        onEvent(
+            when {
+                panel.viewing != null -> TasksEvent.CloseAttachment
+                panel.creating -> TasksEvent.CancelCreate
+                else -> TasksEvent.ClosePanel
+            },
+        )
+    }
     val focus = remember { FocusRequester() }
     // A new task starts in its title (see PanelContent); anything else in the panel.
     LaunchedEffect(panel.key) { if (!panel.creating) runCatching { focus.requestFocus() } }
+    // A file's download link, fetched by the view model: the host opens it,
+    // and it is cleared at once so the same link is never opened twice.
+    LaunchedEffect(panel.openUrl) {
+        panel.openUrl?.let { url ->
+            onOpenUrl?.invoke(url)
+            onEvent(TasksEvent.OpenedUrl)
+        }
+    }
 
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(k.scrim).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = close))
@@ -161,6 +179,8 @@ internal fun TaskPanelOverlay(
                 PanelContent(state, panel, today, onEvent, mentionable, close, onOpenUrl)
             }
         }
+        // Over the panel, inside the tool: the full-size image viewer.
+        AttachmentViewerOverlay(state, panel, onEvent)
     }
 }
 
@@ -309,13 +329,26 @@ private fun ColumnScope.PanelContent(
 
         Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
         Section(str(if (draft.isSelf) S.notes else S.description)) {
+            val canAddFiles = !readOnly && state.features.attachments
             DescriptionField(
                 value = draft.description,
                 onChange = { set(draft.copy(description = it)) },
                 enabled = !readOnly,
-                placeholder = str(S.desktop_tasks_description_placeholder),
+                placeholder = str(
+                    if (canAddFiles) {
+                        S.desktop_tasks_description_placeholder_files
+                    } else {
+                        S.desktop_tasks_description_placeholder
+                    },
+                ),
                 onOpenUrl = onOpenUrl,
+                canAddFiles = canAddFiles,
+                onFiles = { files -> onEvent(TasksEvent.AddAttachments(files)) },
+                onPick = { imagesOnly -> onEvent(TasksEvent.PickAttachments(imagesOnly)) },
             )
+            // The images and files a task has are shown whether or not this
+            // service can take new ones.
+            TaskAttachmentsSection(state, panel, readOnly, onEvent)
         }
 
         Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))

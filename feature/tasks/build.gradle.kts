@@ -10,6 +10,8 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            // Images in a description are decoded and shrunk before they go up.
+            implementation(project(":core:media"))
             implementation(project(":core:socket"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))

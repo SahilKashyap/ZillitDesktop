@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
@@ -121,6 +122,37 @@ class CrewDoodWireTest {
         assertNull(CrewDoodWire.calendar(null))
         // A saved empty week means what it says, and is not the default.
         assertEquals(emptySet(), CrewDoodWire.calendar(parse("""{"weekly_off":[]}"""))?.weeklyOff)
+    }
+
+    @Test
+    fun `a pushed calendar carries its stamp, and only a stamped older one is kept out`() {
+        // The hub's envelope: the calendar sits in `data`, the project at the top.
+        val pushed = CrewDoodWire.calendarPush(
+            parse("""{"project_id":"p1","data":{"weekly_off":[0,5,6],"holidays":[],"updated_at":2000}}"""),
+        )
+        assertEquals(setOf(0, 5, 6), pushed?.weeklyOff)
+        assertEquals(2000L, pushed?.updatedAt)
+        // A read carries the stamp too, so the two can be ordered.
+        assertEquals(1000L, CrewDoodWire.calendar(parse("""{"weekly_off":[0,6],"updated_at":1000}"""))?.updatedAt)
+
+        // A bare frame is read too, in case a service sends one.
+        val older = CrewDoodWire.calendarPush(parse("""{"weekly_off":[0,6],"updated_at":1000}"""))
+        assertTrue(pushed!!.isNewerThan(older))
+        assertFalse(older!!.isNewerThan(pushed))
+        // An unstamped calendar is one nobody can order: it is never the older.
+        assertTrue(DoodCalendar().isNewerThan(pushed))
+        assertTrue(pushed.isNewerThan(DoodCalendar()))
+    }
+
+    @Test
+    fun `a frame with no weekly days off in it is not a calendar`() {
+        // Not "nobody has a day off": the screen reads the calendar instead.
+        assertNull(CrewDoodWire.calendarPush(parse("""{"project_id":"p1"}""")))
+        assertNull(CrewDoodWire.calendarPush(parse("""{"project_id":"p1","data":{}}""")))
+        assertNull(CrewDoodWire.calendarPush(parse("""{"holidays":[{"date":"2026-04-02","name":"X"}]}""")))
+        assertNull(CrewDoodWire.calendarPush(null))
+        // A saved empty week IS a calendar, and says what it says.
+        assertEquals(emptySet(), CrewDoodWire.calendarPush(parse("""{"weekly_off":[]}"""))?.weeklyOff)
     }
 
     @Test

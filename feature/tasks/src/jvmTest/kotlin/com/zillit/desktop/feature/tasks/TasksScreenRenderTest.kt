@@ -10,13 +10,19 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import androidx.compose.runtime.mutableStateOf
+import com.zillit.desktop.feature.tasks.domain.AttachmentKind
+import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
 import com.zillit.desktop.feature.tasks.domain.Task
+import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TaskComment
 import com.zillit.desktop.feature.tasks.domain.TaskDepartment
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.domain.toDraft
 import com.zillit.desktop.feature.tasks.ui.TaskPanel
@@ -151,5 +157,59 @@ class TasksScreenRenderTest {
             setContent { ZillitTheme(darkTheme = false) { TasksScreen(off, onEvent = {}, mentionable = { crew }) } }
             onNodeWithText("Tasks is not switched on for this project").assertExists()
         }
+    }
+
+    /**
+     * The description's images and files, and the two controls that add them.
+     *
+     * The controls appear only where the service said it can keep them; the
+     * attachments a task already has are drawn either way.
+     */
+    @Test
+    fun `the description draws its images and files, and offers them only where the service keeps them`() = runComposeUiTest {
+        val attachments = listOf(
+            TaskAttachment(id = "a1", name = "recce.jpg", kind = AttachmentKind.Image, fileSizeBytes = 120_345, width = 2000, height = 1333, uploadedBy = "u1"),
+            TaskAttachment(id = "a2", name = "budget.xlsx", fileSizeBytes = 23 * 1024, uploadedBy = "u1"),
+        )
+        val open = tasks[0].copy(attachments = attachments, comments = emptyList(), history = emptyList())
+        val panel = TaskPanel(key = 1, creating = false, taskId = "a", task = open, orig = open.toDraft(), draft = open.toDraft())
+        val current = mutableStateOf(
+            state().copy(panel = panel, features = TasksFeatures(attachments = true)),
+        )
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(current.value, onEvent = {}, mentionable = { crew }) } }
+
+        onNodeWithText("Add image").assertExists()
+        onNodeWithText("Attach file").assertExists()
+        onNodeWithText("Paste or drop files · links are clickable").assertExists()
+        // The file row: its badge, name and size.
+        onNodeWithText("XLS").assertExists()
+        onNodeWithText("budget.xlsx").assertExists()
+        onAllNodesWithText("23 KB · Una One").onFirst().assertExists()
+
+        // A service that cannot keep them: the controls are gone, the files stay.
+        current.value = state().copy(panel = panel, features = TasksFeatures())
+        waitForIdle()
+        onNodeWithText("Add image").assertDoesNotExist()
+        onNodeWithText("Attach file").assertDoesNotExist()
+        onNodeWithText("budget.xlsx").assertExists()
+
+        // One waiting for Create says so, and the viewer opens over the panel.
+        current.value = state().copy(
+            panel = panel.copy(
+                pending = listOf(
+                    PreparedAttachment(key = "p1", kind = AttachmentKind.File, name = "Notes.txt", bytes = ByteArray(10), mimeType = "text/plain"),
+                ),
+                uploading = 1,
+                viewing = "a1",
+            ),
+            features = TasksFeatures(attachments = true),
+        )
+        waitForIdle()
+        onNodeWithText("Notes.txt").assertExists()
+        // The row reads "10 B · Saved when you create the task".
+        onAllNodesWithText("Saved when you create the task", substring = true).onFirst().assertExists()
+        onAllNodesWithText("Uploading…").onFirst().assertExists()
+        // The viewer's own header: the name, the size and which of them it is.
+        onAllNodesWithText("1 / 1").onFirst().assertExists()
     }
 }

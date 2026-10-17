@@ -12,6 +12,10 @@ import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.TaskWrite
 import com.zillit.desktop.feature.tasks.domain.TasksFeatures
+import com.zillit.desktop.feature.tasks.domain.AttachmentStep
+import com.zillit.desktop.feature.tasks.domain.AttachmentWrite
+import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
+import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TasksRepository
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.ui.TaskPeople
@@ -495,6 +499,54 @@ class TasksViewModelTest {
         }
 
         override suspend fun assignees() = ZillitResult.Success(TaskAssignees(setOf("u1"), emptySet()))
+
+        /** What was attached, in order, and what the fake answers with. */
+        val attached = mutableListOf<Pair<String, PreparedAttachment>>()
+        val removedAttachments = mutableListOf<Pair<String, String>>()
+        val linksAsked = mutableListOf<Triple<String, String, Boolean>>()
+        var refuseAttachments = false
+        var attachmentsOn: List<TaskAttachment> = emptyList()
+
+        override suspend fun addAttachment(taskId: String, item: PreparedAttachment): AttachmentWrite {
+            attached += taskId to item
+            if (refuseAttachments) {
+                return AttachmentWrite.Refused(
+                    step = AttachmentStep.Attach,
+                    message = "task_attachment_type",
+                    httpStatus = 422,
+                    error = ZillitError.Http(422, "task_attachment_type"),
+                )
+            }
+            attachmentsOn = attachmentsOn + TaskAttachment(
+                id = "att-${attached.size}",
+                name = item.name,
+                kind = item.kind,
+                fileSizeBytes = item.sizeBytes,
+                uploadedBy = "me",
+            )
+            return answerWith(taskId)
+        }
+
+        override suspend fun removeAttachment(taskId: String, attachmentId: String): AttachmentWrite {
+            removedAttachments += taskId to attachmentId
+            attachmentsOn = attachmentsOn.filterNot { it.id == attachmentId }
+            return answerWith(taskId)
+        }
+
+        override suspend fun attachmentLink(taskId: String, attachmentId: String, download: Boolean): ZillitResult<String> {
+            linksAsked += Triple(taskId, attachmentId, download)
+            return ZillitResult.Success("https://storage.test/$attachmentId")
+        }
+
+        override suspend fun attachmentBytes(url: String): ByteArray? = ByteArray(4)
+
+        /** Every attachment write answers with the task as the service now has it. */
+        private fun answerWith(taskId: String): AttachmentWrite {
+            val task = held.firstOrNull { it.id == taskId } ?: Task(id = taskId, title = "T")
+            val fresh = task.copy(attachments = attachmentsOn)
+            held = held.map { if (it.id == taskId) fresh else it }
+            return AttachmentWrite.Saved(fresh, "task_attachment_added")
+        }
 
         override suspend fun departments() = ZillitResult.Success(listOf(TaskDepartment("d1", "Art")))
 

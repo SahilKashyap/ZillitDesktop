@@ -56,6 +56,9 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import androidx.compose.runtime.rememberCoroutineScope
+import com.zillit.desktop.feature.tasks.domain.PickedTaskFile
+import kotlinx.coroutines.launch
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.LinkPart
@@ -156,12 +159,26 @@ internal fun RichText(
  * switches and the details under it stay under the click that caused it.
  */
 @Composable
+// One field with three jobs: the text (box or formatted), the three ways to a
+// link, and the images and files under it — each a branch or two, and reading
+// them together is what the web's own `DescriptionField` is for.
+@Suppress("CyclomaticComplexMethod")
 internal fun DescriptionField(
     value: String,
     onChange: (String) -> Unit,
     enabled: Boolean,
     placeholder: String,
     onOpenUrl: ((String) -> Unit)? = null,
+    /**
+     * Whether images and files may be added: posting rights, and a service
+     * that can keep them. Off means **gone** — no Add image, no Attach file,
+     * no drop and no paste of files, and the links-only hint stays.
+     */
+    canAddFiles: Boolean = false,
+    /** Files dropped or pasted on the box. */
+    onFiles: (List<PickedTaskFile>) -> Unit = {},
+    /** "Add image" (true) and "Attach file" (false): the host's own dialog. */
+    onPick: (imagesOnly: Boolean) -> Unit = {},
 ) {
     val k = TasksTheme.c
     var editing by remember { mutableStateOf(false) }
@@ -170,6 +187,18 @@ internal fun DescriptionField(
     val focus = remember { FocusRequester() }
     val clipboard = LocalClipboardManager.current
     val shape = RoundedCornerShape(10.dp)
+    val scope = rememberCoroutineScope()
+    var dragOver by remember { mutableStateOf(false) }
+    val pasteFiles: (() -> Unit)? = if (enabled && canAddFiles) {
+        {
+            scope.launch {
+                val pasted = clipboardAttachments()
+                if (pasted.isNotEmpty()) onFiles(pasted)
+            }
+        }
+    } else {
+        null
+    }
 
     // The panel's own copy is the truth: a save's reply, Discard or another
     // task replaces what is being edited.
@@ -187,7 +216,15 @@ internal fun DescriptionField(
         Box(
             Modifier.fillMaxWidth().heightIn(min = DESCRIPTION_MIN).clip(shape)
                 .background(if (editing) k.surface else k.surface2)
-                .border(BorderStroke(1.dp, if (editing) k.accent else Color.Transparent), shape)
+                .border(
+                    BorderStroke(1.dp, if (editing || dragOver) k.accent else Color.Transparent),
+                    shape,
+                )
+                .taskFileDrop(
+                    enabled = enabled && canAddFiles,
+                    onHover = { dragOver = it },
+                    onFiles = onFiles,
+                )
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             if (editing && enabled) {
@@ -200,38 +237,31 @@ internal fun DescriptionField(
                         if (next.text != value) onChange(next.text)
                     },
                     onLeave = { if (!linking) editing = false },
-                    onPasteLink = { pasted ->
-                        val url = webAddress(pasted)
-                        if (url == null) {
-                            false
-                        } else {
-                            val words = field.text.substring(field.selection.start, field.selection.end)
-                            put(linkText(url, words), words.isEmpty())
-                            true
-                        }
-                    },
+                    // The clipboard's own flavours, not Compose's: a
+                    // screenshot is how most of these arrive, and Compose's
+                    // clipboard gives text only.
+                    onPasteFiles = pasteFiles,
+                    onPasteLink = { pasted -> pasteAsLink(pasted, field, put) },
                 )
             } else {
-                val source = remember { MutableInteractionSource() }
-                Box(
-                    Modifier.fillMaxWidth()
-                        // A link stops its own click, so this only fires off one.
-                        .then(if (enabled) Modifier.clickable(interactionSource = source, indication = null) { editing = true } else Modifier),
-                ) {
-                    if (value.isBlank()) {
-                        ZillitText(placeholder, style = txt(14, lineHeight = 22.sp), color = k.faint)
-                    } else {
-                        RichText(value, onOpenUrl = onOpenUrl)
-                    }
-                }
+                DescriptionView(
+                    value = value,
+                    placeholder = placeholder,
+                    enabled = enabled,
+                    onOpenUrl = onOpenUrl,
+                    onEdit = { editing = true },
+                )
             }
         }
         if (enabled) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LinkButton(onInsert = { url, words -> put(linkText(url, words), true) }, onOpen = { linking = it; if (it) editing = true })
-                TText(str(S.desktop_tasks_links_hint), 12, color = k.faint)
-            }
+            DescriptionTools(
+                canAddFiles = canAddFiles,
+                onInsertLink = { url, words -> put(linkText(url, words), true) },
+                onLinking = { linking = it; if (it) editing = true },
+                onPick = onPick,
+            )
         }
+        if (dragOver) TText(str(S.desktop_tasks_attachment_drop), 12, color = k.accent)
     }
 }
 
@@ -251,6 +281,8 @@ private fun DescriptionEditor(
     onLeave: () -> Unit,
     /** A pasted web address: answers true once it has been put in as a link. */
     onPasteLink: (String) -> Boolean,
+    /** Null where files may not be added; otherwise what a paste of files does. */
+    onPasteFiles: (() -> Unit)? = null,
 ) {
     val k = TasksTheme.c
     val clipboard = LocalClipboardManager.current
@@ -261,7 +293,18 @@ private fun DescriptionEditor(
         modifier = Modifier.fillMaxWidth().focusRequester(focus)
             // Leaving the box shows the formatted text again.
             .onFocusChanged { if (!it.isFocused) onLeave() }
-            .onPreviewKeyEvent { event -> pastedLink(event, clipboard.getText()?.text, onPasteLink) },
+            .onPreviewKeyEvent { event ->
+                // Text that is one whole address becomes a link; anything else
+                // on the clipboard may be an image or a file.
+                val asLink = pastedLink(event, clipboard.getText()?.text, onPasteLink)
+                if (asLink) return@onPreviewKeyEvent true
+                if (onPasteFiles != null && isPaste(event)) {
+                    onPasteFiles()
+                    // Not consumed: a paste that turns out to hold neither an
+                    // image nor a file must still paste the text.
+                }
+                false
+            },
         textStyle = style.copy(color = k.fg),
         cursorBrush = SolidColor(k.accent),
         decorationBox = { inner ->
@@ -273,10 +316,13 @@ private fun DescriptionEditor(
     )
 }
 
+/** Ctrl/Cmd+V, whatever it is carrying. */
+private fun isPaste(event: KeyEvent): Boolean = event.type == KeyEventType.KeyDown &&
+    (event.isCtrlPressed || event.isMetaPressed) && event.key == Key.V
+
 /** Ctrl/Cmd+V of one whole web address becomes a link instead of plain text. */
 private fun pastedLink(event: KeyEvent, pasted: String?, insert: (String) -> Boolean): Boolean {
-    if (event.type != KeyEventType.KeyDown) return false
-    if (!(event.isCtrlPressed || event.isMetaPressed) || event.key != Key.V) return false
+    if (!isPaste(event)) return false
     val text = pasted.orEmpty()
     if (!isPastedLink(text)) return false
     return insert(text)
@@ -358,3 +404,92 @@ private val DESCRIPTION_MIN = 104.dp
 
 /** The service's own limit; the same one the panel's other fields are held to. */
 private const val DESCRIPTION_MAX = 10000
+
+/** "Add image" / "Attach file" — the same shape as "Add link" beside them. */
+@Composable
+private fun ToolButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    val k = TasksTheme.c
+    Row(
+        Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ZillitIcon(icon, tint = k.accent, size = 14.dp)
+        TText(label, 13, FontWeight.SemiBold, k.accent)
+    }
+}
+
+/**
+ * The row under the box: "Add link", and — where the service can keep them —
+ * "Add image" and "Attach file", then the hint that says what a paste does.
+ */
+@Composable
+private fun DescriptionTools(
+    canAddFiles: Boolean,
+    onInsertLink: (String, String) -> Unit,
+    onLinking: (Boolean) -> Unit,
+    onPick: (imagesOnly: Boolean) -> Unit,
+) {
+    val k = TasksTheme.c
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LinkButton(onInsert = onInsertLink, onOpen = onLinking)
+        if (canAddFiles) {
+            ToolButton(ZillitIcons.Photo, str(S.desktop_tasks_add_image)) { onPick(true) }
+            ToolButton(ZillitIcons.Paperclip, str(S.attach_file)) { onPick(false) }
+        }
+        TText(
+            str(if (canAddFiles) S.desktop_tasks_files_hint else S.desktop_tasks_links_hint),
+            12,
+            color = k.faint,
+        )
+    }
+}
+
+/**
+ * An address pasted over selected words makes those words the link; pasted on
+ * its own it goes in as the address. False when what was pasted is not one
+ * whole web address, which leaves the paste to the text box.
+ */
+private fun pasteAsLink(
+    pasted: String,
+    field: TextFieldValue,
+    insert: (text: String, spaced: Boolean) -> Unit,
+): Boolean {
+    val url = webAddress(pasted) ?: return false
+    val words = field.text.substring(field.selection.start, field.selection.end)
+    insert(linkText(url, words), words.isEmpty())
+    return true
+}
+
+/**
+ * The description as it reads when it is not being edited: its links
+ * clickable, and a click anywhere else opening the text box.
+ */
+@Composable
+private fun DescriptionView(
+    value: String,
+    placeholder: String,
+    enabled: Boolean,
+    onOpenUrl: ((String) -> Unit)?,
+    onEdit: () -> Unit,
+) {
+    val k = TasksTheme.c
+    val source = remember { MutableInteractionSource() }
+    Box(
+        Modifier.fillMaxWidth()
+            // A link stops its own click, so this only fires off one.
+            .then(
+                if (enabled) {
+                    Modifier.clickable(interactionSource = source, indication = null, onClick = onEdit)
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        if (value.isBlank()) {
+            ZillitText(placeholder, style = txt(14, lineHeight = 22.sp), color = k.faint)
+        } else {
+            RichText(value, onOpenUrl = onOpenUrl)
+        }
+    }
+}

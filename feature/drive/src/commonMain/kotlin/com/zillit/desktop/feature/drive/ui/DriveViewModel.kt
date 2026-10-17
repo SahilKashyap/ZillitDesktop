@@ -101,6 +101,7 @@ class DriveViewModel(
     private var unreadRows: List<DriveUnreadRow> = emptyList()
 
     private val details = DriveDetails(this)
+    private val versions = DriveVersions(this)
     private val uploads = UploadQueue(this, uploader, newUploadId)
     private val drawers = DriveDrawers(this, uploads)
     private val thumbnailsInFlight = mutableSetOf<String>()
@@ -146,6 +147,10 @@ class DriveViewModel(
         launch {
             repository.refreshes.collect {
                 if (started && !currentState.viewer.isBlocked) {
+                    // The version family is in the same list (`DriveSync`) and
+                    // carries no payload past the bus, so the open history
+                    // re-reads on any drive pulse rather than on a file match.
+                    if (currentState.versionHistory.open) versions.reloadOpen()
                     loadListing()
                     if (currentState.showTrash) loadTrash()
                 }
@@ -232,7 +237,12 @@ class DriveViewModel(
 
             is DriveEvent.SortBy -> setState { copy(sort = sort.toggled(event.column)) }
             is DriveEvent.FilterByTag -> filterByTag(event.tagId)
-            is DriveEvent.ShowFavouritesOnly -> setState { copy(showFavouritesOnly = event.on) }
+            is DriveEvent.ShowFavouritesOnly -> {
+                setState { copy(showFavouritesOnly = event.on) }
+                // Nothing starred and no answer yet look the same from here;
+                // turning the filter on is when it matters, so ask again.
+                if (event.on && !currentState.favouritesLoaded) launch { primeFavourites() }
+            }
 
             is DriveEvent.ToggleSelection -> setState { copy(selected = selected.toggled(event.itemId)) }
             is DriveEvent.SetSelected -> setState {
@@ -433,6 +443,7 @@ class DriveViewModel(
             is DriveEvent.RemoveTag -> details.removeTag(event.tagId)
             DriveEvent.CreateAndAssignTag -> details.createAndAssignTag()
             is DriveEvent.DownloadVersion -> downloadVersion(event.item, event.versionId)
+
             is DriveEvent.RequestRestoreVersion -> setState {
                 copy(
                     prompt = DrivePrompt(
@@ -448,7 +459,33 @@ class DriveViewModel(
             is DriveEvent.RestoreVersion -> mutate(
                 { repository.restoreVersion(event.fileId, event.versionId) },
                 str(S.desktop_drive_version_restored),
-            ) { details.reloadOpen() }
+            ) {
+                details.reloadOpen()
+                // The restore becomes the newest version, so the panel it was
+                // pressed in is wrong until it re-reads — and its detail view
+                // is now describing a version that is no longer the latest.
+                versions.closeDetail()
+                versions.reloadOpen()
+            }
+
+            // -- version history -------------------------------------------
+
+            is DriveEvent.OpenVersionHistory -> versions.open(event.item)
+            DriveEvent.CloseVersionHistory -> versions.close()
+            DriveEvent.RefreshVersionHistory -> versions.refresh()
+            is DriveEvent.ShowNamedVersionsOnly -> versions.namedOnly(event.on)
+            is DriveEvent.ToggleVersionSession -> versions.toggleSession(event.sessionId)
+            is DriveEvent.OpenVersionDetail -> versions.openDetail(event.versionId)
+            DriveEvent.CloseVersionDetail -> versions.closeDetail()
+            DriveEvent.ReloadVersionChanges -> versions.reloadChanges()
+            is DriveEvent.FilterVersionChangesBy -> versions.filterBy(event.personKey)
+            is DriveEvent.ToggleVersionChangeGroup -> versions.toggleGroup(event.groupName)
+            is DriveEvent.ShowAllVersionChanges -> versions.showAllChanges(event.groupName)
+            is DriveEvent.StartNameVersion -> versions.startNaming(event.version)
+            is DriveEvent.VersionNameDraft -> versions.nameDraft(event.text)
+            DriveEvent.SaveVersionName -> versions.saveName()
+            DriveEvent.CancelNameVersion -> versions.cancelNaming()
+            is DriveEvent.PreviewVersion -> versions.preview(event.version)
 
             // -- trash -----------------------------------------------------
 
@@ -666,8 +703,23 @@ class DriveViewModel(
 
     private suspend fun primeFavourites() {
         (repository.favouriteIds() as? ZillitResult.Success)?.let { loaded ->
-            setState { copy(favouriteIds = loaded.data) }
+            // `favouritesLoaded` only on a real answer: see its doc for what
+            // an empty set would otherwise be read as.
+            setState { copy(favouriteIds = loaded.data, favouritesLoaded = true) }
         }
+    }
+
+    /**
+     * The crew and who may be shared with, read again.
+     *
+     * Both were fetched once when the tool opened, so anyone who joined the
+     * production while the Drive stayed open did not exist: missing from the
+     * share list, and silently left out of the "Project users" grant whose own
+     * hint claims to cover everyone. Re-read when a picker opens.
+     */
+    internal fun refreshPeople() {
+        setState { copy(crew = crew()) }
+        launch { primeShareable() }
     }
 
     private suspend fun primeTags() {

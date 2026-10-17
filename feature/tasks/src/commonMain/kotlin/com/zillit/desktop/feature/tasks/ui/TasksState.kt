@@ -8,6 +8,10 @@ import com.zillit.desktop.feature.tasks.domain.TaskLookup
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.TaskVisibility
+import com.zillit.desktop.feature.tasks.domain.AttachmentKind
+import com.zillit.desktop.feature.tasks.domain.PickedTaskFile
+import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
+import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.domain.isDirty
@@ -57,8 +61,56 @@ data class TaskPanel(
     val tab: PanelTab = PanelTab.Comments,
     /** A new task opened from "Assign to someone" starts with the crew picker open. */
     val pickAssignee: Boolean = false,
+
+    // -- images and files in the description --------------------------------
+
+    /**
+     * Prepared and waiting for Create.
+     *
+     * Only ever non-empty while [creating]: on a task that exists each one
+     * goes up as it is added, so there is nothing to wait.
+     */
+    val pending: List<PreparedAttachment> = emptyList(),
+    /** How many are going up right now — one "Uploading…" tile each. */
+    val uploading: Int = 0,
+    /**
+     * The bytes of each attachment that has been fetched, by id.
+     *
+     * Held here rather than decoded per row: a thumbnail would otherwise
+     * re-fetch its signed link on every recomposition of the panel.
+     */
+    val imageBytes: Map<String, ByteArray> = emptyMap(),
+    /**
+     * Attachments whose image could not be fetched, even after a fresh link.
+     *
+     * Separate from "not fetched yet", because a row that failed must say so
+     * rather than ask again for ever.
+     */
+    val imagesFailed: Set<String> = emptySet(),
+    /** The image open in the full-size viewer, by id; null when it is closed. */
+    val viewing: String? = null,
+    /**
+     * A download link just fetched, for the host to open once.
+     *
+     * The service's `?download=1` link is what saves the file under its own
+     * name; the view model has no way to the OS, so the panel opens it and
+     * clears this.
+     */
+    val openUrl: String? = null,
 ) {
     val ready: Boolean get() = draft != null && (creating || task != null)
+
+    /** The task's own images and files, in the order the service keeps them. */
+    val attachments: List<TaskAttachment> get() = task?.attachments.orEmpty()
+
+    val images: List<TaskAttachment> get() = attachments.filter { it.isImage }
+
+    val files: List<TaskAttachment> get() = attachments.filterNot { it.isImage }
+
+    /** What a new task's description shows under the box until Create. */
+    val pendingImages: List<PreparedAttachment> get() = pending.filter { it.kind == AttachmentKind.Image }
+
+    val pendingFiles: List<PreparedAttachment> get() = pending.filter { it.kind == AttachmentKind.File }
 
     /**
      * Whether there are unsaved edits. [features] is what the service can
@@ -221,4 +273,37 @@ sealed interface TasksEvent {
     data object DeleteOpenTask : TasksEvent
     data class CommentChanged(val text: String) : TasksEvent
     data object SendComment : TasksEvent
+
+    // -- images and files in the description --
+
+    /** "Add image" / "Attach file": asks the host for a file dialog. */
+    data class PickAttachments(val imagesOnly: Boolean) : TasksEvent
+
+    /**
+     * Files chosen, pasted or dropped on the description.
+     *
+     * The same event for all three: the checks, the shrinking and the limit
+     * of 20 are the same whichever way a file arrived.
+     */
+    data class AddAttachments(val files: List<PickedTaskFile>) : TasksEvent
+
+    /** Removes one the task has; the panel asks first. */
+    data class RemoveAttachment(val attachment: TaskAttachment) : TasksEvent
+
+    /** Takes away one that was waiting for Create. */
+    data class RemovePendingAttachment(val key: String) : TasksEvent
+
+    /** Opens one image full size, and moves between them. */
+    data class OpenAttachment(val attachmentId: String) : TasksEvent
+    data object CloseAttachment : TasksEvent
+
+    /** Fetches one image's bytes for its thumbnail; does nothing once it has them. */
+    data class LoadAttachment(val attachment: TaskAttachment) : TasksEvent
+
+    /** Fetches a fresh link and the bytes behind it, for a thumbnail that failed. */
+    data class ReloadAttachment(val attachment: TaskAttachment) : TasksEvent
+
+    /** Asks for a `download=1` link; the panel opens it and clears it. */
+    data class DownloadAttachment(val attachment: TaskAttachment) : TasksEvent
+    data object OpenedUrl : TasksEvent
 }

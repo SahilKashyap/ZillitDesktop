@@ -40,4 +40,27 @@ internal val DRIVE_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("drive:bulk:deleted"),
     SocketEventName("drive:file:shared"),
     SocketEventName("drive:folder:shared"),
+    // Revoking access has always emitted these; the web subscribed to
+    // neither until Oct 2026, and the item sat in the recipient's drive —
+    // listed and clickable — until they reloaded. A refetch of the scope is
+    // what removes it, and standing inside it says so (`folder gone`).
+    SocketEventName("drive:file:unshared"),
+    SocketEventName("drive:folder:unshared"),
+    // A restore is the one change whose item is *not* visible yet, so it can
+    // never be caught by a listener that only reloads what is on screen —
+    // which is exactly why the web's own guard had to let it through.
+    SocketEventName("drive:file:restored"),
+    SocketEventName("drive:folder:restored"),
+    // The version family, which the web routes to the history panel rather
+    // than to the listing: a new save, a name somebody else gave a version, a
+    // restore, and the background comparison finishing (`drive:version:changes`
+    // — the only event here that announces no change to the file at all). The
+    // bus carries no payload past `onAny`, so the view model re-reads the open
+    // history rather than matching a file id; a save on another file costs one
+    // call nobody sees. A restore also changes the file itself, which is why
+    // these sit in the same list as the rest.
+    SocketEventName("drive:version:created"),
+    SocketEventName("drive:version:updated"),
+    SocketEventName("drive:version:restored"),
+    SocketEventName("drive:version:changes"),
 )

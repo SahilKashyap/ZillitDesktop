@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.tasks.data
 
+import com.zillit.desktop.feature.tasks.domain.AttachmentKind
 import com.zillit.desktop.feature.tasks.domain.Task
+import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TaskChange
 import com.zillit.desktop.feature.tasks.domain.TaskComment
 import com.zillit.desktop.feature.tasks.domain.TaskHistoryEntry
@@ -46,6 +48,7 @@ internal fun JsonObject.toTask(): Task? {
     val id = text("_id")?.takeIf { it.isNotBlank() } ?: return null
     val permissions = obj("permissions")
     val comments = if (this["comments"] is JsonArray) list("comments").mapNotNull { it.toComment() } else null
+    val attachments = list("attachments").mapNotNull { it.toAttachment() }
     val history = if (this["history"] is JsonArray) list("history").mapNotNull { it.toHistoryEntry() } else null
     return Task(
         id = id,
@@ -73,8 +76,29 @@ internal fun JsonObject.toTask(): Task? {
         canDelete = permissions?.flag("can_delete") ?: false,
         canReassign = permissions?.flag("can_reassign") ?: false,
         canChangeVisibility = permissions?.flag("can_change_visibility") ?: false,
+        attachments = attachments,
         comments = comments,
         history = history,
+    )
+}
+
+/**
+ * One image or file: `content_type` is the service's own word for which of
+ * the two it is ("image" or "file"), not a MIME type.
+ */
+private fun JsonObject.toAttachment(): TaskAttachment? {
+    val id = text("_id") ?: text("id") ?: return null
+    val kind = if (text("content_type") == AttachmentKind.Image.wire) AttachmentKind.Image else AttachmentKind.File
+    return TaskAttachment(
+        id = id,
+        name = text("name").orEmpty(),
+        kind = kind,
+        fileSizeBytes = (this["file_size"] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() } ?: 0,
+        width = (this["width"] as? JsonPrimitive)?.longOrNull?.toInt() ?: 0,
+        height = (this["height"] as? JsonPrimitive)?.longOrNull?.toInt() ?: 0,
+        url = text("url").orEmpty(),
+        uploadedBy = text("uploaded_by").blankToNull(),
+        createdMillis = millis("created"),
     )
 }
 
@@ -100,6 +124,10 @@ private fun JsonObject.toHistoryEntry(): TaskHistoryEntry? {
         changes = list("changes").map { TaskChange(it.text("field").orEmpty(), it.text("from"), it.text("to")) },
         assigneeId = meta?.text("assignee_id").blankToNull(),
         subtaskTitle = meta?.text("title").orEmpty(),
+        attachmentName = meta?.text("name").orEmpty(),
+        attachmentKind = meta?.text("kind")?.let { kind ->
+            AttachmentKind.entries.firstOrNull { it.wire == kind }
+        },
         reason = meta?.text("reason"),
         createdMillis = millis("created"),
     )
@@ -121,7 +149,11 @@ private fun JsonObject.strictFlag(key: String): Boolean =
 
 internal fun JsonElement?.toFeatures(): TasksFeatures {
     val features = (this as? JsonObject)?.obj("features") ?: return TasksFeatures()
-    return TasksFeatures(visibility = features.strictFlag("visibility"), dpr = features.strictFlag("dpr"))
+    return TasksFeatures(
+        visibility = features.strictFlag("visibility"),
+        dpr = features.strictFlag("dpr"),
+        attachments = features.strictFlag("attachments"),
+    )
 }
 
 /** `{ tasks: [...], total, features }` — one page of a list read. */
