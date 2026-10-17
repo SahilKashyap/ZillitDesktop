@@ -800,6 +800,19 @@ sealed interface AppGraph {
      */
     data class Unconfigured(val reason: String) : AppGraph
 
+    /**
+     * Not wired yet. [build] is running on another thread.
+     *
+     * The state the application composes against for its first frame. Every
+     * surface outside `ZillitContent` already asks `graph as? Ready` and
+     * degrades when the answer is null — that was written for [Unconfigured],
+     * and it is exactly what a graph that has not finished needs too. So this
+     * costs one branch in `ZillitContent` and nothing anywhere else.
+     *
+     * See [AppGraphLoader] for why the build moved off the composition.
+     */
+    data object Building : AppGraph
+
     @Suppress("LargeClass") // Linear construction of one graph; splitting it hides the order.
     companion object {
         // Linear construction of one graph; splitting it hides the order. The
@@ -815,6 +828,9 @@ sealed interface AppGraph {
             // the loader takes for production — so every packaged build was
             // verbose on a user's machine while talking to the live server.
             ZillitLogging.initialise(verbose = !JvmConfigLoader.environment().isProduction)
+            // The log exists from here, so everything the splash path held can
+            // now be written. See [StartupTrace].
+            StartupTrace.loggingReady()
 
             val preferences = PreferenceStoreFactory.create()
             val secureStore = KeychainSecureStore()
@@ -902,7 +918,7 @@ sealed interface AppGraph {
 
             // The encrypted local cache — opened before the REST client so every
             // read can be kept for offline viewing.
-            val database = openLocalDatabase(secureStore)
+            val database = StartupTrace.time("openLocalDatabase") { openLocalDatabase(secureStore) }
             val readCache = database?.let { SqlReadCache(it) }
             readCache?.let { cache -> appScope.launch { cache.prune(System.currentTimeMillis()) } }
 
@@ -957,6 +973,7 @@ sealed interface AppGraph {
                 authenticator = tokenSession,
                 onFailure = { failure -> appLog?.log(failure.toLogEvent()) },
             )
+            StartupTrace.mark("apiClient built")
             appLog = appLogger(
                 apiClient = { apiClient },
                 config = config,
@@ -1098,7 +1115,7 @@ sealed interface AppGraph {
                 currentProjectId = { headerContext.value.projectId },
             )
 
-            val syncDatabase = openSyncDatabase(secureStore)
+            val syncDatabase = StartupTrace.time("openSyncDatabase") { openSyncDatabase(secureStore) }
             // What can be sent later: an operation of a kind nobody here
             // handles parks with a reason rather than running. Chat's handler
             // joins below, once its repository exists.

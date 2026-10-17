@@ -81,6 +81,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.component.UpdateCheckOutcome
+import com.zillit.desktop.core.designsystem.component.ZillitLogo
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.feature.auth.ui.AuthEffect
@@ -343,13 +344,17 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
+    StartupTrace.mark("main() entered")
     installCrashLogging()
     val wantsWidget = WidgetLaunch.requestedBy(args)
     val startHidden = BackgroundLaunch.requestedBy(args)
     // Something on screen before the slow part, so the launcher does not look
     // ignored for the seconds the graph takes to build. A background launch
     // has nothing to announce and shows none. See [Splash].
-    if (!startHidden) Splash.show()
+    if (!startHidden) {
+        Splash.show()
+        StartupTrace.mark("splash up")
+    }
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
     if (!SingleInstance.claim()) {
@@ -378,9 +383,42 @@ fun main(args: Array<String>) {
     // from the composition, which is several seconds away on a cold start —
     // see [MainWindowRequest.startAcknowledging].
     MainWindowRequest.startAcknowledging()
+    // Before the build thread, which installs into both. See the doc.
+    primeSharedState()
+    // Started here rather than from the composition so the wiring runs across
+    // Compose's own startup instead of in front of it — see [AppGraphLoader].
+    // After the claim: this is what opens the database and the preference file.
+    AppGraphLoader.start()
     installDockIcon()
     WidgetLaunch.installUriHandler()
+    StartupTrace.mark("entering application {}")
     runZillit(openWidget = wantsWidget, startHidden = startHidden)
+}
+
+/**
+ * Creates the two app-wide snapshot states on this thread, before Compose runs.
+ *
+ * A `mutableStateOf` records the id of the snapshot it was created in, and
+ * reading it from an *older* snapshot throws `IllegalStateException: Reading a
+ * state that was created after the snapshot was taken`. Writing one from any
+ * thread is fine and the app does it constantly — only creating one while a
+ * composition pass is already open is not.
+ *
+ * `Strings.catalog` and the counter behind `Labels.current` are the only two
+ * held in an `object`, so each is created by whichever thread reads it first.
+ * Until the graph moved off the composition that was always the main thread,
+ * before the first frame. Now [AppGraphLoader]'s thread installs a catalogue
+ * and a dictionary into both while Compose is composing, and whichever it
+ * creates mid-pass takes the window down — which it did, every launch, on
+ * `Labels.current` in the title-refresh key below.
+ *
+ * Two reads are the whole fix: the read runs the class initialiser, and from
+ * then on the build only ever writes.
+ */
+private fun primeSharedState() {
+    val language = Strings.language.code
+    val labels = Labels.current.size
+    StartupTrace.mark("shared state primed: $language, $labels labels")
 }
 
 /**
@@ -511,10 +549,24 @@ private fun installDockIcon() {
 
 @Suppress("LongMethod") // The application's wiring, in the order it must happen; splitting it hides that.
 private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = application {
-    val graph = remember { AppGraph.build() }
-    val preferences = remember {
-        (graph as? AppGraph.Ready)?.preferences ?: PreferenceStoreFactory.create()
-    }
+    // Straight from the factory rather than off the graph, which may not exist
+    // yet. The same instance either way — the factory caches per file, and has
+    // to: a second DataStore on one path throws on its first read.
+    val preferences = remember { PreferenceStoreFactory.create() }
+    // One scope for the whole app: the view models take it, and so does the
+    // registry below. Above the graph because [AppGraphLoader] needs it to
+    // build the view models on its own thread — see the doc there.
+    val scope = rememberCoroutineScope()
+    // [AppGraph.Building] and empty view models on the first frame, the wired
+    // pair when the thread `main` started finishes. Everything below keyed on
+    // either is rebuilt at that point, which is the swap: the window is
+    // already on screen, so what runs there has to be cheap.
+    val wired = AppGraphLoader.current(preferences, scope)
+    val graph = wired.graph
+    // One registry for the whole app: the main frame and every torn-off OS
+    // window resolve through it, so a second one built for the frame alone
+    // would make a detached Home render as a placeholder.
+    val viewModels = wired.viewModels
     // The sign-in state, at application level: the main window shows it, and
     // the Drive widget lives or dies by it (see DriveWidgetWindow).
     val authViewModel = remember(graph) { (graph as? AppGraph.Ready)?.let { buildAuth(it) } }
@@ -522,12 +574,7 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     // save to, and every way out of the app after it goes through the hook.
     remember(preferences) { Shutdown.install(preferences) }
     val windowState = rememberRestoredWindowState(preferences)
-
-    // One registry for the whole app: the main frame and every torn-off OS
-    // window resolve through it, so a second one built for the frame alone
-    // would make a detached Home render as a placeholder.
-    val scope = rememberCoroutineScope()
-    val viewModels = rememberAppViewModels(graph, preferences, scope)
+    remember { StartupTrace.mark("window geometry restored") }
 
     // The widgets: open if asked for on the command line, or if they were open
     // when the app last quit. Toggled from the tray, from Settings, from the
@@ -535,13 +582,15 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     val widgets = rememberWidgetSwitches(preferences, openWidget, scope)
 
     val tools = remember(viewModels) {
-        buildRegistry(
-            graph,
-            viewModels,
-            scope,
-            openDriveWidget = { widgets.open(ZillitWidget.Drive) },
-            openWidget = { widget -> widgets.open(widget) },
-        )
+        StartupTrace.time("buildRegistry") {
+            buildRegistry(
+                graph,
+                viewModels,
+                scope,
+                openDriveWidget = { widgets.open(ZillitWidget.Drive) },
+                openWidget = { widget -> widgets.open(widget) },
+            )
+        }
     }
     val registry = tools.registry
 
@@ -884,6 +933,7 @@ private fun ApplicationScope.ZillitWindows(
         },
     ) {
         LaunchedEffect(window) {
+            StartupTrace.mark("main window composed")
             onFrame(window)
             // The frame exists, so the stand-in has done its job. Closed here
             // rather than on `mainVisible` because a launch that goes straight
@@ -1847,6 +1897,11 @@ private fun ZillitContent(
     onLanguageChange: (String) -> Unit,
     onQuit: () -> Unit,
 ) {
+    if (graph is AppGraph.Building) {
+        StartingScreen()
+        return
+    }
+
     if (graph is AppGraph.Unconfigured) {
         UnconfiguredScreen(graph.reason)
         return
@@ -2352,6 +2407,33 @@ private fun InAppUpdater.startFor(status: UpdateStatus) {
     }
     start(version, ref)
 }
+
+/**
+ * What the window shows while [AppGraph.build] is still running.
+ *
+ * Deliberately the same picture as the AWT splash it takes over from — the app
+ * mark on the brand's orange (see [Splash], which draws it with `Graphics2D`
+ * because `core:designsystem` cannot be loaded that early). The two are on
+ * screen within a frame of each other at the handover, and anything else there
+ * would read as a flicker rather than as the window arriving.
+ *
+ * No spinner and no wording. A progress indicator here would be the one moving
+ * thing in a handover whose whole point is that nothing appears to change, and
+ * there is no honest text for it: at this moment the app does not yet know
+ * whether it is about to show a sign-in page or a production.
+ */
+@Composable
+private fun StartingScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize().background(ZillitTheme.colors.signInBackdrop),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitLogo(size = STARTING_MARK)
+    }
+}
+
+/** [Splash]'s mark, at the size it draws it. */
+private val STARTING_MARK = 112.dp
 
 /**
  * Shown when no `zillit.properties` could be found.
@@ -3587,441 +3669,448 @@ private fun localToolSections(): List<ToolSection> = listOfNotNull(
  */
 private val driveHolder = java.util.concurrent.atomic.AtomicReference<DriveViewModel?>(null)
 
-@Composable
+/**
+ * Every screen's view model, for one [appGraph].
+ *
+ * Plain rather than `@Composable` on purpose: [AppGraphLoader] runs it on its
+ * own thread for the wired graph, because on the UI thread it costs ~1.2s with
+ * the window already up — see the doc there for the measurement.
+ *
+ * Call it once per graph. Several of these own a socket or a poll loop, so a
+ * second set for the same graph would be a second subscriber to everything.
+ */
 // Linear construction of every screen; splitting it hides the set, and the
 // "complexity" is one null-guard per screen rather than any branching logic.
 @Suppress("LongMethod", "CyclomaticComplexMethod")
-private fun rememberAppViewModels(
-    graph: AppGraph,
+internal fun buildAppViewModels(
+    appGraph: AppGraph,
     preferences: PreferenceStore,
     scope: CoroutineScope,
 ): AppViewModels {
-    val ready = graph as? AppGraph.Ready
-    val settings = remember(graph) { buildSettings(graph, preferences, scope) }
-    return remember(graph, settings) {
-        // Hoisted out of the constructor call because two other view models
-        // read from it: the tool-access grid arrives with Home's `project/tools`
-        // fetch, and the library tools are gated by it. Issuing a second call
-        // for the same list would mean two answers that can disagree.
-        val home = ready?.let {
-            HomeViewModel(
-                it.toolsRepository,
-                offline = it.offlineSupport,
-                // Gates the grid's customise entry, as the phones gate theirs.
-                isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
-                localSections = localToolSections(),
-                // Manage Tool Groups rides the web's Remote Config switch.
-                organizeSwitch = { it.appUpdateChecker.flag(MANAGE_TOOL_GROUPS_FLAG) },
-            )
-        }
-        val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
-        // Hoisted for the same reason the tool grid is: the forward picker's
-        // Email destination hands a message to this very mailbox, and a
-        // second one would compose into a window nobody is looking at.
-        val mailbox = ready?.let(::buildMailbox)
-        // Everywhere a forwarded message can go beyond the surface it was
-        // forwarded from — see ForwardWiring.
-        val forward = ready?.forwardReach(permissions, ready.emailForwarding(mailbox))
-
-        AppViewModels(
-            home = home,
-            chat = ready?.let {
-                ChatViewModel(
-                    repository = it.chatRepository,
-                    presence = it.chatPresence,
-                    presenceProjectId = { it.projectContext?.context?.value?.project?.projectId },
-                    nowMillis = System::currentTimeMillis,
-                    newUniqueId = { UUID.randomUUID().toString() },
-                    offline = it.offlineSupport,
-                    // The same picker and routed uploader mail and the board
-                    // use; the stored key rides the message envelope.
-                    pickAttachment = { pickChatAttachment(it) },
-                    pickAttachmentOf = { kind -> pickChatAttachment(it, kind) },
-                    // Pasted images take the same route to storage.
-                    uploadMedia = { name, type, bytes, onProgress ->
-                        uploadChatMedia(it, name, type, bytes, onProgress)
-                    },
-                    // The sending bubble's picture, cut the way the upload cuts it.
-                    thumbnailOf = ::chatThumbnail,
-                    // A send stays with the production it was made in, and
-                    // the app-wide Uploads tray follows it from anywhere.
-                    pinMedia = { it.pinChatMedia() },
-                    sendTracker = mediaSendTracker,
-                    // The picture of a shared place — the same Static Maps
-                    // image the boards already post beside their locations.
-                    staticMap = { lat, lng -> fetchStaticMapBytes(it, lat, lng) },
-                    voice = chatVoice(it),
-                    loadFavourites = {
-                        it.preferences.get(ZillitPreferences.ChatFavourites)
-                            .split('\n').filter(String::isNotBlank).toSet()
-                    },
-                    saveFavourites = { stars ->
-                        it.preferences.set(
-                            ZillitPreferences.ChatFavourites,
-                            stars.joinToString("\n"),
-                        )
-                    },
-                    // Chat reads ride the chat protocol itself (read-untill,
-                    // emitted by the repository) — `notification:read` is not
-                    // chat's clearing mechanism on any client. The ledger is
-                    // told by conversation, as Android's `markReadyByChatRoomIdSenderId`.
-                    onThreadRead = { conversationId ->
-                        it.badgeStore.markRead(LedgerRead.Conversation(conversationId))
-                    },
-                    // What the listing knows and the ledger cannot: which
-                    // rooms are still open, and how far this computer had
-                    // already read each thread. Without them the production
-                    // picker's card counted rooms the user had left and
-                    // threads they had read — a badge the card cannot open.
-                    onChatLedgerFacts = { rooms, readUpTo ->
-                        // The store's own open production, so a list that
-                        // lands during a switch cannot scope the new one by
-                        // the old one's rooms.
-                        val project = it.badgeStore.openProjectId
-                        if (rooms != null && project != null) it.badgeStore.showChatRooms(project, rooms)
-                        if (readUpTo.isNotEmpty()) {
-                            it.badgeStore.markRead(LedgerRead.ConversationsRead(readUpTo))
-                        }
-                    },
-                    // The area's split by tool: chat_label / call_label —
-                    // what the Chats and Calls tabs wear.
-                    sectionBadges = { sectionSplit(it, "cnc_label", "tool") },
-                    // Looking at the Missed list reads the missed calls (iOS
-                    // `readCNCMessage(.misscall)`: notification:read on call_label).
-                    // The ledger read is iOS's `updateMarkReadByTool`: the
-                    // call rows, never the bell's (`LocalNoticifationRealm.swift:866-874`).
-                    onCallsViewed = {
-                        emitSegmentRead(
-                            it,
-                            segment = NotificationRecord.CALL_TOOL,
-                            module = BadgeSections.CNC,
-                            read = LedgerRead.Matching("missed calls") { row ->
-                                row.tool == NotificationRecord.CALL_TOOL && row.section != BadgeSections.GLOBAL
-                            },
-                        )
-                    },
-                    // The bubble menu's clocks and Translate: an admin's
-                    // Edit/Delete never time out; Translate shows when the
-                    // production's language is not this computer's.
-                    isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
-                    translator = AppChatTranslator(it, scope.chatUiLanguage(preferences)),
-                    // The boards, the mailbox and the film tools a line can
-                    // be forwarded to — the chat's own people and rooms are
-                    // the pane's own business.
-                    reach = forward,
-                )
-            },
-            homeFeed = ready?.let { buildHomeFeed(it, permissions, forward) },
-            calendar = ready?.let(::buildCalendar),
-            email = mailbox,
-            settings = settings,
-            approvals = ready?.let { graph ->
-                ApprovalsViewModel(
-                    repository = graph.approvalsRepository.readingLedger(graph),
-                    // New requests and other admins' decisions, live.
-                    events = graph.socketEvents,
-                    // The crew list the session already holds. Without it the
-                    // profile-change queue cannot say what is changing — the
-                    // server sends only the requested values.
-                    knownCrew = { userId ->
-                        graph.projectContext?.context?.value?.user(userId)?.let { member ->
-                            KnownCrewMember(
-                                fullName = member.fullName,
-                                department = member.department,
-                                designation = member.designation,
-                            )
-                        }
-                    },
-                    // Departments come from the join flow's repository and units
-                    // from their own service. Adapted here rather than reached
-                    // for directly: a settings module importing another
-                    // feature's data layer is the coupling the module layout
-                    // exists to prevent.
-                    presets = ApprovalPresets { graph.crewPresets() },
-                    nowMillis = System::currentTimeMillis,
-                    // Another admin's decision clears its notification here too,
-                    // as iOS's observer does: this queue's unit, that person.
-                    viewer = {
-                        ApprovalViewer(
-                            projectId = graph.projectContext?.context?.value?.project?.projectId,
-                            deviceId = graph.deviceId(),
-                            isAdmin = graph.projectContext?.context?.value?.isAdmin == true,
-                        )
-                    },
-                    onDecidedElsewhere = { queue, userId ->
-                        emitSegmentRead(
-                            graph,
-                            segment = queue.badgeUnit,
-                            module = queue.badgeUnit,
-                            referenceId = userId,
-                            read = LedgerRead.Reference(userId, unit = queue.badgeUnit),
-                        )
-                    },
-                )
-            },
-            admin = ready?.let { graph ->
-                AdminViewModel(
-                    repository = graph.adminRepository,
-                    isAdmin = { graph.projectContext?.context?.value?.isAdmin == true },
-                    // Named on the deletion confirmation, and read at call time
-                    // rather than captured: a dialog naming the wrong
-                    // production is the worst place for a stale value.
-                    productionName = {
-                        graph.projectContext?.context?.value?.project?.name.orEmpty()
-                    },
-                    // So the delete page opens knowing a deletion is already
-                    // counting down — after a restart, or when another admin
-                    // scheduled it.
-                    markedForDeletion = {
-                        graph.projectContext?.context?.value?.project?.markedForDeletion == true
-                    },
-                    // The grid rereads at once; its own socket echo may not come.
-                    onToolsChanged = { home?.onEvent(HomeEvent.Reload) },
-                    // Crew, departments and the join queues move under a second
-                    // coordinator; the page being looked at should say so.
-                    events = graph.socketEvents,
-                    // User Management leaves the reader off their own list, as the web does.
-                    selfUserId = { graph.projectContext?.context?.value?.profile?.userId },
-                )
-            },
-            account = ready?.let(::buildAccount),
-            calls = ready?.let { graph ->
-                CallViewModel(
-                    coordinator = graph.callCoordinator,
-                    crew = { graph.callableCrew() },
-                    nameDirectory = graph.callNameDirectory(),
-                    // Null in a dev run: the helper only exists in a packaged
-                    // bundle, and without it Share sends the whole screen.
-                    screenSources = macCaptureHelper()?.let(::MacScreenSources),
-                    copyToClipboard = { com.zillit.desktop.core.designsystem.component.copyTextToClipboard(it) },
-                )
-            },
-            cashExpenses = ready?.let { graph ->
-                // The badge scope follows the view the tool is showing: an
-                // accountant who opened it from the tools grid sees the crew
-                // view (as on the web) and reads the cash tool's badges.
-                var cashModel: CashExpensesViewModel? = null
-                CashExpensesViewModel(
-                    repository = graph.cashRepositoryWithExports(),
-                    files = cashFiles(),
-                    viewer = { graph.cashViewer() },
-                    assignees = { graph.cashAssignees() },
-                    events = graph.socketEvents,
-                    // As with purchase orders: the float request form's
-                    // configuration is the account hub's document.
-                    formTemplate = graph.formTemplateFor(FormModule.CashExpenses),
-                    // An accountant's rows file under the account hub, everyone
-                    // else's under the cash tool (`constants.js:229-246`) — the
-                    // coding queue always the latter; per tab and per row. See
-                    // CashWiring.
-                    badges = graph.cashBadges {
-                        cashModel?.state?.value?.viewer?.isAccountant ?: graph.cashViewer().isAccountant
-                    },
-                    // Production Setup's currencies, the hub's departments and
-                    // chart, and the receipt picker — see CashWiring.
-                    reference = graph.cashReferenceSources(),
-                ).also { cashModel = it }
-            },
-            // Two instances, one per door, as the web's two entries are two
-            // sessions (`AuthContext.jsx:47-68`): the Account Hub's sidebar
-            // opens the accountant console, the Film Tools tile
-            // (`?entry=tool`) the crew view — even for an accountant.
-            cardExpenses = ready?.let { graph -> graph.cardExpensesModel(asTool = false) },
-            cardExpensesTool = ready?.let { graph -> graph.cardExpensesModel(asTool = true) },
-            // Two instances here for the same reason as the cards: the hub's
-            // sidebar opens the accounts console, the Film Tools tile the
-            // department view — even for an accountant.
-            purchaseOrders = ready?.let { graph ->
-                graph.purchaseOrderModel(permissions, asTool = false)
-            },
-            purchaseOrdersTool = ready?.let { graph ->
-                graph.purchaseOrderModel(permissions, asTool = true)
-            },
-            timecards = ready?.let { graph ->
-                TimecardViewModel(
-                    repository = graph.timecardRepository,
-                    viewer = { graph.timecardViewer() },
-                    currentWeekStarting = ::currentWeekStarting,
-                    offline = graph.offlineSupport,
-                    // Per tab, per week and per record, read one week or record
-                    // at a time as iOS does (HubBadgeWiring.kt).
-                    badges = graph.timecardBadges(),
-                )
-            },
-            payroll = ready?.buildPayroll(permissions),
-            dealMemos = ready?.buildDealMemos(permissions),
-            talentDeals = ready?.buildTalentDeals(permissions),
-            accountHub = ready?.let { graph -> graph.buildAccountHub { graph.accountHubViewer(permissions()) } },
-            // Deal Memo's Approvers page, on a view model of its own so it does not
-            // trample the console's module. Its posting users may edit the Deal Memo
-            // chain (the web's `canEdit={canPost}`); nobody else gets that.
-            dealMemoApprovers = ready?.let { graph ->
-                graph.buildAccountHub {
-                    graph.accountHubViewer(permissions())
-                        .copy(approvalsHostEdit = graph.dealMemoPostingRight(permissions()) == true)
-                }
-            },
-            taxFiling = ready?.buildTaxFiling(),
-            bankRec = ready?.buildBankRec(),
-            budgetBuilder = ready?.let { graph ->
-                BudgetBuilderViewModel(
-                    resolveViewer = { BudgetBuilderViewer.from(permissions()) },
-                    // Both halves, or the window says "unconfigured" instead of
-                    // showing a browser that cannot load: the service API and
-                    // the web deployment that serves the page.
-                    configured = graph.budgetBuilderConfigured(),
-                    online = graph.connectivity.online,
-                )
-            },
-            formSignature = ready?.let { graph -> graph.buildFormSignature(permissions) },
-            esignature = ready?.let { graph ->
-                EsignViewModel(
-                    repository = EsignRepositoryImpl(
-                        apiClient = graph.apiClient,
-                        config = graph.config,
-                        today = { esignToday() },
-                        bus = graph.socketEvents,
-                        rawGet = graph.esignRawGet(),
-                    ),
-                    transfer = graph.esignTransfer(),
-                    pdf = esignPdf(),
-                    resolveViewer = { EsignViewer.from(permissions()) },
-                    currentUserId = {
-                        graph.projectContext?.context?.value?.profile?.userId.orEmpty()
-                    },
-                    currentUserName = {
-                        graph.projectContext?.context?.value?.profile?.fullName.orEmpty()
-                    },
-                    signerOptions = { graph.esignSignerOptions() },
-                    newId = { UUID.randomUUID().toString() },
-                    currentUserEmail = {
-                        graph.projectContext?.context?.value?.profile?.email.orEmpty()
-                    },
-                    rights = graph.rightsRequests,
-                    badges = graph.esignBadges(),
-                )
-            },
-            callSheet = ready?.buildCallSheet(permissions),
-            productionReport = ready?.buildReport(ReportKind.Production, permissions, ::today),
-            productionReportChat = ready?.productionReportChatFeed(permissions),
-            adReport = ready?.buildReport(ReportKind.Ad, permissions, ::today),
-            wrapReport = ready?.buildReport(ReportKind.Wrap, permissions, ::today),
-            sides = ready?.let { graph ->
-                SidesViewModel(
-                    repository = SidesRepositoryImpl(
-                        apiClient = graph.apiClient,
-                        config = graph.config,
-                        rawGet = graph.sidesRawGet(),
-                        bus = graph.socketEvents,
-                    ),
-                    transfer = graph.sidesTransfer(),
-                    resolveViewer = {
-                        val context = graph.projectContext?.context?.value
-                        SidesViewer.from(
-                            permissions = permissions(),
-                            userId = context?.profile?.userId.orEmpty(),
-                            displayName = context?.profile?.fullName.orEmpty(),
-                        )
-                    },
-                    rights = graph.rightsRequests,
-                )
-            },
-            permissionGrid = ready?.let { graph ->
-                PermissionGridViewModel(
-                    repository = PermissionGridRepositoryImpl(
-                        apiClient = graph.apiClient,
-                        config = graph.config,
-                        // Your own row is hidden: revoking your own view rights
-                        // from this screen is a door that locks behind you.
-                        currentUserId = {
-                            graph.projectContext?.context?.value?.profile?.userId
-                        },
-                        bus = graph.socketEvents,
-                        currentProjectId = {
-                            graph.projectContext?.context?.value?.project?.projectId
-                        },
-                    ),
-                    rights = graph.rightsRequests,
-                )
-            },
-            info = ready?.boardFeed(
-                board = "info",
-                toolIdentifier = "info_tool",
-                permissions = permissions,
-                forward = forward,
-            ),
-            confidentialInfo = ready?.boardFeed(
-                board = "confidentialinfo",
-                toolIdentifier = "confidential_info_tool",
-                permissions = permissions,
-                forward = forward,
-            ),
-            reports = ready?.reportsFeed(permissions, forward),
-            scriptNotes = ready?.scriptNotesFeed(permissions, forward),
-            catering = ready?.cateringFeed(permissions, forward),
-            accounts = ready?.accountsFeed(permissions, forward),
-            boxSchedule = ready?.buildBoxSchedule(permissions),
-            maps = ready?.buildMaps(permissions),
-            recce = ready?.buildRecce(permissions),
-            externalUsers = ready?.buildExternalUsers(permissions),
-            distribution = ready?.buildDistributionList(permissions),
-            crewList = ready?.buildCrewList(permissions),
-            crewDood = ready?.buildCrewDood(),
-            assetRegister = ready?.buildAssetRegister(permissions),
-            location = ready?.buildLocation(permissions),
-            continuity = ready?.buildContinuity(permissions),
-            costReport = ready?.buildCostReport(permissions),
-            costReportWorksheet = ready?.buildCostReportWorksheet(permissions),
-            costReportAnalytics = ready?.buildCostReportAnalytics(),
-            saPortal = ready?.buildSaPortal(permissions),
-            adDashboard = ready?.buildAdDashboard(permissions),
-            budget = ready?.buildBudget(permissions, scope),
-            weather = ready?.buildWeather(permissions),
-            tasks = ready?.buildTasks(permissions),
-            selectStills = ready?.buildSelectStills(permissions),
-            costumeSetSync = ready?.buildCostumeSetSync(permissions),
-            casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
-            wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
-            invoices = ready?.buildInvoices(permissions, scope),
-            draft = ready?.let { graph ->
-                graph.buildDraft(
-                    drive = { driveHolder.get() },
-                    projectId = { graph.projectContext?.context?.value?.project?.projectId },
-                )
-            },
-            transport = ready?.buildTransport(permissions),
-            transportHub = ready?.buildTransportHub(permissions),
-            scheduleDistribution = ready?.buildDistribution(DistributionTool.ScheduleDistribution, permissions),
-            scriptDistribution = ready?.buildDistribution(DistributionTool.ScriptDistribution, permissions),
-            scheduleDod = ready?.buildDistribution(DistributionTool.ScheduleDod, permissions),
-            docDist = ready?.let { graph ->
-                DocDistViewModel(
-                    repository = graph.docDistRepository,
-                    viewer = { graph.docDistViewer(permissions()) },
-                    today = ::today,
-                    rights = graph.rightsRequests,
-                    host = graph.docDistHost(),
-                    badges = graph.docDistBadges(),
-                )
-            },
-            drive = ready?.let { graph ->
-                DriveViewModel(
-                    repository = graph.driveRepository,
-                    viewer = { graph.driveViewer(permissions()) },
-                    // The plain client, deliberately: presigned S3 PUTs must
-                    // not carry the API's encrypted headers. See
-                    // MultipartDriveUploader.
-                    uploader = MultipartDriveUploader(graph.driveRepository, graph.httpClient),
-                    previewHost = AppDrivePreviewHost(graph.httpClient),
-                    crew = { graph.driveCrew() },
-                    newUploadId = { UUID.randomUUID().toString() },
-                    rights = graph.rightsRequests,
-                    now = System::currentTimeMillis,
-                    badges = graph.driveBadges(),
-                ).also(driveHolder::set)
-            },
+    val ready = appGraph as? AppGraph.Ready
+    val settings = buildSettings(appGraph, preferences, scope)
+    // Hoisted out of the constructor call because two other view models
+    // read from it: the tool-access grid arrives with Home's `project/tools`
+    // fetch, and the library tools are gated by it. Issuing a second call
+    // for the same list would mean two answers that can disagree.
+    val home = ready?.let {
+        HomeViewModel(
+            it.toolsRepository,
+            offline = it.offlineSupport,
+            // Gates the grid's customise entry, as the phones gate theirs.
+            isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
+            localSections = localToolSections(),
+            // Manage Tool Groups rides the web's Remote Config switch.
+            organizeSwitch = { it.appUpdateChecker.flag(MANAGE_TOOL_GROUPS_FLAG) },
         )
     }
+    val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
+    // Hoisted for the same reason the tool grid is: the forward picker's
+    // Email destination hands a message to this very mailbox, and a
+    // second one would compose into a window nobody is looking at.
+    val mailbox = ready?.let(::buildMailbox)
+    // Everywhere a forwarded message can go beyond the surface it was
+    // forwarded from — see ForwardWiring.
+    val forward = ready?.forwardReach(permissions, ready.emailForwarding(mailbox))
+
+    return AppViewModels(
+        home = home,
+        chat = ready?.let {
+            ChatViewModel(
+                repository = it.chatRepository,
+                presence = it.chatPresence,
+                presenceProjectId = { it.projectContext?.context?.value?.project?.projectId },
+                nowMillis = System::currentTimeMillis,
+                newUniqueId = { UUID.randomUUID().toString() },
+                offline = it.offlineSupport,
+                // The same picker and routed uploader mail and the board
+                // use; the stored key rides the message envelope.
+                pickAttachment = { pickChatAttachment(it) },
+                pickAttachmentOf = { kind -> pickChatAttachment(it, kind) },
+                // Pasted images take the same route to storage.
+                uploadMedia = { name, type, bytes, onProgress ->
+                    uploadChatMedia(it, name, type, bytes, onProgress)
+                },
+                // The sending bubble's picture, cut the way the upload cuts it.
+                thumbnailOf = ::chatThumbnail,
+                // A send stays with the production it was made in, and
+                // the app-wide Uploads tray follows it from anywhere.
+                pinMedia = { it.pinChatMedia() },
+                sendTracker = mediaSendTracker,
+                // The picture of a shared place — the same Static Maps
+                // image the boards already post beside their locations.
+                staticMap = { lat, lng -> fetchStaticMapBytes(it, lat, lng) },
+                voice = chatVoice(it),
+                loadFavourites = {
+                    it.preferences.get(ZillitPreferences.ChatFavourites)
+                        .split('\n').filter(String::isNotBlank).toSet()
+                },
+                saveFavourites = { stars ->
+                    it.preferences.set(
+                        ZillitPreferences.ChatFavourites,
+                        stars.joinToString("\n"),
+                    )
+                },
+                // Chat reads ride the chat protocol itself (read-untill,
+                // emitted by the repository) — `notification:read` is not
+                // chat's clearing mechanism on any client. The ledger is
+                // told by conversation, as Android's `markReadyByChatRoomIdSenderId`.
+                onThreadRead = { conversationId ->
+                    it.badgeStore.markRead(LedgerRead.Conversation(conversationId))
+                },
+                // What the listing knows and the ledger cannot: which
+                // rooms are still open, and how far this computer had
+                // already read each thread. Without them the production
+                // picker's card counted rooms the user had left and
+                // threads they had read — a badge the card cannot open.
+                onChatLedgerFacts = { rooms, readUpTo ->
+                    // The store's own open production, so a list that
+                    // lands during a switch cannot scope the new one by
+                    // the old one's rooms.
+                    val project = it.badgeStore.openProjectId
+                    if (rooms != null && project != null) it.badgeStore.showChatRooms(project, rooms)
+                    if (readUpTo.isNotEmpty()) {
+                        it.badgeStore.markRead(LedgerRead.ConversationsRead(readUpTo))
+                    }
+                },
+                // The area's split by tool: chat_label / call_label —
+                // what the Chats and Calls tabs wear.
+                sectionBadges = { sectionSplit(it, "cnc_label", "tool") },
+                // Looking at the Missed list reads the missed calls (iOS
+                // `readCNCMessage(.misscall)`: notification:read on call_label).
+                // The ledger read is iOS's `updateMarkReadByTool`: the
+                // call rows, never the bell's (`LocalNoticifationRealm.swift:866-874`).
+                onCallsViewed = {
+                    emitSegmentRead(
+                        it,
+                        segment = NotificationRecord.CALL_TOOL,
+                        module = BadgeSections.CNC,
+                        read = LedgerRead.Matching("missed calls") { row ->
+                            row.tool == NotificationRecord.CALL_TOOL && row.section != BadgeSections.GLOBAL
+                        },
+                    )
+                },
+                // The bubble menu's clocks and Translate: an admin's
+                // Edit/Delete never time out; Translate shows when the
+                // production's language is not this computer's.
+                isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
+                translator = AppChatTranslator(it, scope.chatUiLanguage(preferences)),
+                // The boards, the mailbox and the film tools a line can
+                // be forwarded to — the chat's own people and rooms are
+                // the pane's own business.
+                reach = forward,
+            )
+        },
+        homeFeed = ready?.let { buildHomeFeed(it, permissions, forward) },
+        calendar = ready?.let(::buildCalendar),
+        email = mailbox,
+        settings = settings,
+        approvals = ready?.let { graph ->
+            ApprovalsViewModel(
+                repository = graph.approvalsRepository.readingLedger(graph),
+                // New requests and other admins' decisions, live.
+                events = graph.socketEvents,
+                // The crew list the session already holds. Without it the
+                // profile-change queue cannot say what is changing — the
+                // server sends only the requested values.
+                knownCrew = { userId ->
+                    graph.projectContext?.context?.value?.user(userId)?.let { member ->
+                        KnownCrewMember(
+                            fullName = member.fullName,
+                            department = member.department,
+                            designation = member.designation,
+                        )
+                    }
+                },
+                // Departments come from the join flow's repository and units
+                // from their own service. Adapted here rather than reached
+                // for directly: a settings module importing another
+                // feature's data layer is the coupling the module layout
+                // exists to prevent.
+                presets = ApprovalPresets { graph.crewPresets() },
+                nowMillis = System::currentTimeMillis,
+                // Another admin's decision clears its notification here too,
+                // as iOS's observer does: this queue's unit, that person.
+                viewer = {
+                    ApprovalViewer(
+                        projectId = graph.projectContext?.context?.value?.project?.projectId,
+                        deviceId = graph.deviceId(),
+                        isAdmin = graph.projectContext?.context?.value?.isAdmin == true,
+                    )
+                },
+                onDecidedElsewhere = { queue, userId ->
+                    emitSegmentRead(
+                        graph,
+                        segment = queue.badgeUnit,
+                        module = queue.badgeUnit,
+                        referenceId = userId,
+                        read = LedgerRead.Reference(userId, unit = queue.badgeUnit),
+                    )
+                },
+            )
+        },
+        admin = ready?.let { graph ->
+            AdminViewModel(
+                repository = graph.adminRepository,
+                isAdmin = { graph.projectContext?.context?.value?.isAdmin == true },
+                // Named on the deletion confirmation, and read at call time
+                // rather than captured: a dialog naming the wrong
+                // production is the worst place for a stale value.
+                productionName = {
+                    graph.projectContext?.context?.value?.project?.name.orEmpty()
+                },
+                // So the delete page opens knowing a deletion is already
+                // counting down — after a restart, or when another admin
+                // scheduled it.
+                markedForDeletion = {
+                    graph.projectContext?.context?.value?.project?.markedForDeletion == true
+                },
+                // The grid rereads at once; its own socket echo may not come.
+                onToolsChanged = { home?.onEvent(HomeEvent.Reload) },
+                // Crew, departments and the join queues move under a second
+                // coordinator; the page being looked at should say so.
+                events = graph.socketEvents,
+                // User Management leaves the reader off their own list, as the web does.
+                selfUserId = { graph.projectContext?.context?.value?.profile?.userId },
+            )
+        },
+        account = ready?.let(::buildAccount),
+        calls = ready?.let { graph ->
+            CallViewModel(
+                coordinator = graph.callCoordinator,
+                crew = { graph.callableCrew() },
+                nameDirectory = graph.callNameDirectory(),
+                // Null in a dev run: the helper only exists in a packaged
+                // bundle, and without it Share sends the whole screen.
+                screenSources = macCaptureHelper()?.let(::MacScreenSources),
+                copyToClipboard = { com.zillit.desktop.core.designsystem.component.copyTextToClipboard(it) },
+            )
+        },
+        cashExpenses = ready?.let { graph ->
+            // The badge scope follows the view the tool is showing: an
+            // accountant who opened it from the tools grid sees the crew
+            // view (as on the web) and reads the cash tool's badges.
+            var cashModel: CashExpensesViewModel? = null
+            CashExpensesViewModel(
+                repository = graph.cashRepositoryWithExports(),
+                files = cashFiles(),
+                viewer = { graph.cashViewer() },
+                assignees = { graph.cashAssignees() },
+                events = graph.socketEvents,
+                // As with purchase orders: the float request form's
+                // configuration is the account hub's document.
+                formTemplate = graph.formTemplateFor(FormModule.CashExpenses),
+                // An accountant's rows file under the account hub, everyone
+                // else's under the cash tool (`constants.js:229-246`) — the
+                // coding queue always the latter; per tab and per row. See
+                // CashWiring.
+                badges = graph.cashBadges {
+                    cashModel?.state?.value?.viewer?.isAccountant ?: graph.cashViewer().isAccountant
+                },
+                // Production Setup's currencies, the hub's departments and
+                // chart, and the receipt picker — see CashWiring.
+                reference = graph.cashReferenceSources(),
+            ).also { cashModel = it }
+        },
+        // Two instances, one per door, as the web's two entries are two
+        // sessions (`AuthContext.jsx:47-68`): the Account Hub's sidebar
+        // opens the accountant console, the Film Tools tile
+        // (`?entry=tool`) the crew view — even for an accountant.
+        cardExpenses = ready?.let { graph -> graph.cardExpensesModel(asTool = false) },
+        cardExpensesTool = ready?.let { graph -> graph.cardExpensesModel(asTool = true) },
+        // Two instances here for the same reason as the cards: the hub's
+        // sidebar opens the accounts console, the Film Tools tile the
+        // department view — even for an accountant.
+        purchaseOrders = ready?.let { graph ->
+            graph.purchaseOrderModel(permissions, asTool = false)
+        },
+        purchaseOrdersTool = ready?.let { graph ->
+            graph.purchaseOrderModel(permissions, asTool = true)
+        },
+        timecards = ready?.let { graph ->
+            TimecardViewModel(
+                repository = graph.timecardRepository,
+                viewer = { graph.timecardViewer() },
+                currentWeekStarting = ::currentWeekStarting,
+                offline = graph.offlineSupport,
+                // Per tab, per week and per record, read one week or record
+                // at a time as iOS does (HubBadgeWiring.kt).
+                badges = graph.timecardBadges(),
+            )
+        },
+        payroll = ready?.buildPayroll(permissions),
+        dealMemos = ready?.buildDealMemos(permissions),
+        talentDeals = ready?.buildTalentDeals(permissions),
+        accountHub = ready?.let { graph -> graph.buildAccountHub { graph.accountHubViewer(permissions()) } },
+        // Deal Memo's Approvers page, on a view model of its own so it does not
+        // trample the console's module. Its posting users may edit the Deal Memo
+        // chain (the web's `canEdit={canPost}`); nobody else gets that.
+        dealMemoApprovers = ready?.let { graph ->
+            graph.buildAccountHub {
+                graph.accountHubViewer(permissions())
+                    .copy(approvalsHostEdit = graph.dealMemoPostingRight(permissions()) == true)
+            }
+        },
+        taxFiling = ready?.buildTaxFiling(),
+        bankRec = ready?.buildBankRec(),
+        budgetBuilder = ready?.let { graph ->
+            BudgetBuilderViewModel(
+                resolveViewer = { BudgetBuilderViewer.from(permissions()) },
+                // Both halves, or the window says "unconfigured" instead of
+                // showing a browser that cannot load: the service API and
+                // the web deployment that serves the page.
+                configured = graph.budgetBuilderConfigured(),
+                online = graph.connectivity.online,
+            )
+        },
+        formSignature = ready?.let { graph -> graph.buildFormSignature(permissions) },
+        esignature = ready?.let { graph ->
+            EsignViewModel(
+                repository = EsignRepositoryImpl(
+                    apiClient = graph.apiClient,
+                    config = graph.config,
+                    today = { esignToday() },
+                    bus = graph.socketEvents,
+                    rawGet = graph.esignRawGet(),
+                ),
+                transfer = graph.esignTransfer(),
+                pdf = esignPdf(),
+                resolveViewer = { EsignViewer.from(permissions()) },
+                currentUserId = {
+                    graph.projectContext?.context?.value?.profile?.userId.orEmpty()
+                },
+                currentUserName = {
+                    graph.projectContext?.context?.value?.profile?.fullName.orEmpty()
+                },
+                signerOptions = { graph.esignSignerOptions() },
+                newId = { UUID.randomUUID().toString() },
+                currentUserEmail = {
+                    graph.projectContext?.context?.value?.profile?.email.orEmpty()
+                },
+                rights = graph.rightsRequests,
+                badges = graph.esignBadges(),
+            )
+        },
+        callSheet = ready?.buildCallSheet(permissions),
+        productionReport = ready?.buildReport(ReportKind.Production, permissions, ::today),
+        productionReportChat = ready?.productionReportChatFeed(permissions),
+        adReport = ready?.buildReport(ReportKind.Ad, permissions, ::today),
+        wrapReport = ready?.buildReport(ReportKind.Wrap, permissions, ::today),
+        sides = ready?.let { graph ->
+            SidesViewModel(
+                repository = SidesRepositoryImpl(
+                    apiClient = graph.apiClient,
+                    config = graph.config,
+                    rawGet = graph.sidesRawGet(),
+                    bus = graph.socketEvents,
+                ),
+                transfer = graph.sidesTransfer(),
+                resolveViewer = {
+                    val context = graph.projectContext?.context?.value
+                    SidesViewer.from(
+                        permissions = permissions(),
+                        userId = context?.profile?.userId.orEmpty(),
+                        displayName = context?.profile?.fullName.orEmpty(),
+                    )
+                },
+                rights = graph.rightsRequests,
+            )
+        },
+        permissionGrid = ready?.let { graph ->
+            PermissionGridViewModel(
+                repository = PermissionGridRepositoryImpl(
+                    apiClient = graph.apiClient,
+                    config = graph.config,
+                    // Your own row is hidden: revoking your own view rights
+                    // from this screen is a door that locks behind you.
+                    currentUserId = {
+                        graph.projectContext?.context?.value?.profile?.userId
+                    },
+                    bus = graph.socketEvents,
+                    currentProjectId = {
+                        graph.projectContext?.context?.value?.project?.projectId
+                    },
+                ),
+                rights = graph.rightsRequests,
+            )
+        },
+        info = ready?.boardFeed(
+            board = "info",
+            toolIdentifier = "info_tool",
+            permissions = permissions,
+            forward = forward,
+        ),
+        confidentialInfo = ready?.boardFeed(
+            board = "confidentialinfo",
+            toolIdentifier = "confidential_info_tool",
+            permissions = permissions,
+            forward = forward,
+        ),
+        reports = ready?.reportsFeed(permissions, forward),
+        scriptNotes = ready?.scriptNotesFeed(permissions, forward),
+        catering = ready?.cateringFeed(permissions, forward),
+        accounts = ready?.accountsFeed(permissions, forward),
+        boxSchedule = ready?.buildBoxSchedule(permissions),
+        maps = ready?.buildMaps(permissions),
+        recce = ready?.buildRecce(permissions),
+        externalUsers = ready?.buildExternalUsers(permissions),
+        distribution = ready?.buildDistributionList(permissions),
+        crewList = ready?.buildCrewList(permissions),
+        crewDood = ready?.buildCrewDood(),
+        assetRegister = ready?.buildAssetRegister(permissions),
+        location = ready?.buildLocation(permissions),
+        continuity = ready?.buildContinuity(permissions),
+        costReport = ready?.buildCostReport(permissions),
+        costReportWorksheet = ready?.buildCostReportWorksheet(permissions),
+        costReportAnalytics = ready?.buildCostReportAnalytics(),
+        saPortal = ready?.buildSaPortal(permissions),
+        adDashboard = ready?.buildAdDashboard(permissions),
+        budget = ready?.buildBudget(permissions, scope),
+        weather = ready?.buildWeather(permissions),
+        tasks = ready?.buildTasks(permissions),
+        selectStills = ready?.buildSelectStills(permissions),
+        costumeSetSync = ready?.buildCostumeSetSync(permissions),
+        casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
+        wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
+        invoices = ready?.buildInvoices(permissions, scope),
+        draft = ready?.let { graph ->
+            graph.buildDraft(
+                drive = { driveHolder.get() },
+                projectId = { graph.projectContext?.context?.value?.project?.projectId },
+            )
+        },
+        transport = ready?.buildTransport(permissions),
+        transportHub = ready?.buildTransportHub(permissions),
+        scheduleDistribution = ready?.buildDistribution(DistributionTool.ScheduleDistribution, permissions),
+        scriptDistribution = ready?.buildDistribution(DistributionTool.ScriptDistribution, permissions),
+        scheduleDod = ready?.buildDistribution(DistributionTool.ScheduleDod, permissions),
+        docDist = ready?.let { graph ->
+            DocDistViewModel(
+                repository = graph.docDistRepository,
+                viewer = { graph.docDistViewer(permissions()) },
+                today = ::today,
+                rights = graph.rightsRequests,
+                host = graph.docDistHost(),
+                badges = graph.docDistBadges(),
+            )
+        },
+        drive = ready?.let { graph ->
+            DriveViewModel(
+                repository = graph.driveRepository,
+                viewer = { graph.driveViewer(permissions()) },
+                // The plain client, deliberately: presigned S3 PUTs must
+                // not carry the API's encrypted headers. See
+                // MultipartDriveUploader.
+                uploader = MultipartDriveUploader(graph.driveRepository, graph.httpClient),
+                previewHost = AppDrivePreviewHost(graph.httpClient),
+                crew = { graph.driveCrew() },
+                newUploadId = { UUID.randomUUID().toString() },
+                rights = graph.rightsRequests,
+                now = System::currentTimeMillis,
+                badges = graph.driveBadges(),
+            ).also(driveHolder::set)
+        },
+    )
 }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Linear assembly; splitting it hides the set.
