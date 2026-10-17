@@ -346,9 +346,17 @@ fun main(args: Array<String>) {
     installCrashLogging()
     val wantsWidget = WidgetLaunch.requestedBy(args)
     val startHidden = BackgroundLaunch.requestedBy(args)
+    // Something on screen before the slow part, so the launcher does not look
+    // ignored for the seconds the graph takes to build. A background launch
+    // has nothing to announce and shows none. See [Splash].
+    if (!startHidden) Splash.show()
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
     if (!SingleInstance.claim()) {
+        // Before any of the branches below: one of them puts a modal dialog up,
+        // and an always-on-top splash in front of it is a dialog that cannot be
+        // read. The running copy's window is what this person is about to see.
+        Splash.close()
         // A "Zillit Drive" shortcut while Zillit is up: hand the request to
         // the running copy and go quietly — a dialog here would be noise.
         when {
@@ -365,6 +373,11 @@ fun main(args: Array<String>) {
         }
         return
     }
+    // From here on this process owns the lock, so every later launch is one
+    // this copy has to answer. Taking those requests starts now rather than
+    // from the composition, which is several seconds away on a cold start —
+    // see [MainWindowRequest.startAcknowledging].
+    MainWindowRequest.startAcknowledging()
     installDockIcon()
     WidgetLaunch.installUriHandler()
     runZillit(openWidget = wantsWidget, startHidden = startHidden)
@@ -402,6 +415,11 @@ private fun installCrashLogging() {
                     .appendText("\nUNCAUGHT on '${thread.name}':\n$trace\n")
             }
         }
+        // A crash before the first window leaves the splash up, and the splash
+        // is always-on-top: the dialog below would open behind a rectangle
+        // nothing can dismiss. Down first, so the error is what is on screen.
+        runCatching { Splash.close() }
+
         // Whatever the platform installed still gets its turn — Compose's own
         // handler is what puts the dialog on screen, and losing it would turn
         // a visible crash into a silent one.
@@ -574,6 +592,10 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     // the running app a reopen event, while Windows and Linux start a second
     // process that leaves a note and exits.
     LaunchedEffect(Unit) { DockReopen.watch(showMain) }
+    // Requests taken by the thread `main` started — including any that arrived
+    // while this copy was still coming up, which is what kept the "already
+    // running" dialog away. This is the first moment there is a window to
+    // honour them with.
     LaunchedEffect(Unit) { MainWindowRequest.watch(onShow = showMain) }
     // A meet's lobby is drawn in the main window: a Join pressed in a torn-off
     // tool window must bring it forward, or the lobby opens out of sight.
@@ -861,7 +883,15 @@ private fun ApplicationScope.ZillitWindows(
             WorkspaceShortcuts.resolve(event, workspace, os)?.also(viewModel::onEvent) != null
         },
     ) {
-        LaunchedEffect(window) { onFrame(window) }
+        LaunchedEffect(window) {
+            onFrame(window)
+            // The frame exists, so the stand-in has done its job. Closed here
+            // rather than on `mainVisible` because a launch that goes straight
+            // to the tray never shows this window and would otherwise leave an
+            // always-on-top rectangle on the desktop with nothing to dismiss
+            // it. See [Splash].
+            Splash.close()
+        }
 
         ZillitTheme(darkTheme = isDark) {
             // Inside the theme: the picker styles its page from the app's own

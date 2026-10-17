@@ -166,23 +166,97 @@ internal object MainWindowRequest {
     fun consume(directory: File): Boolean = File(directory, MARKER).let { it.exists() && it.delete() }
 
     /**
-     * In the running app: calls [onShow] each time a second launch asks for the
-     * window. Never returns.
-     *
-     * Beside [DockReopen.watch] rather than folded into [WidgetLaunch.watch],
-     * which polls the same directory: the two are the same idea on different
-     * platforms — macOS is handed a reopen event, Windows and Linux start a
-     * second process that has to leave a note — and reading them side by side
-     * at the call site is worth one more `exists()` per second.
+     * A request taken off the disk but not yet acted on. See [startAcknowledging].
      */
-    suspend fun watch(directory: File = ZillitVariant.dataDir, onShow: () -> Unit) {
-        while (true) {
-            if (withContext(Dispatchers.IO) { consume(directory) }) {
-                ZillitLog.i(TAG) { "a second launch asked for the main window" }
-                onShow()
+    private val pending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * In the running app: starts taking requests **now**, long before there is
+     * a window to show.
+     *
+     * ## The dead end this removes
+     *
+     * [ask] waits [ACK_TIMEOUT_MILLIS] to see its marker consumed and shows the
+     * "already running" dialog if nobody takes it. Until this existed the only
+     * consumer was [watch], which runs from a `LaunchedEffect` inside the
+     * composition — so it starts *after* `AppGraph.build()` has finished wiring
+     * the application. A launch during those seconds was therefore answered by
+     * nobody, and the person who double-clicked a slow-starting app was told to
+     * switch to a window that did not exist yet. The copy they had just started
+     * was coming up perfectly well the whole time.
+     *
+     * So the acknowledgement is split from the raising. A daemon thread takes
+     * the request the moment it lands — which is all [ask] is waiting for, and
+     * all that is needed to keep the dialog away — and [watch] raises the
+     * window once there is one. The person sees the splash, then the window,
+     * and never the dialog.
+     *
+     * A thread rather than a coroutine because this runs before the application
+     * has a scope, and daemon so it can never hold the process open. Polling
+     * faster than [watch] did on purpose: [ask]'s patience is the budget, and
+     * spending a tenth of it on one `exists()` is the difference between a
+     * second launch feeling answered and feeling ignored.
+     */
+    fun startAcknowledging(directory: File = ZillitVariant.dataDir) {
+        Thread {
+            while (true) {
+                if (runCatching { consume(directory) }.getOrDefault(false)) {
+                    reportTaken()
+                    pending.set(true)
+                }
+                Thread.sleep(ACK_POLL_MILLIS)
             }
-            delay(POLL_MILLIS)
+        }.apply {
+            isDaemon = true
+            name = "zillit-main-window-requests"
+        }.start()
+    }
+
+    /**
+     * In the running app: calls [onShow] for each request [startAcknowledging]
+     * has taken. Never returns.
+     *
+     * Reads a flag rather than the directory because the thread above owns the
+     * marker file — two consumers would mean a request raising the window twice
+     * or not at all. [onShow] touches Compose state, which is why it waits for
+     * the composition instead of being called from that thread.
+     *
+     * Beside [DockReopen.watch] rather than folded into [WidgetLaunch.watch]:
+     * the two are the same idea on different platforms — macOS is handed a
+     * reopen event, Windows and Linux start a second process that has to leave
+     * a note — and reading them side by side at the call site is worth it.
+     */
+    suspend fun watch(onShow: () -> Unit) {
+        raising = true
+        while (true) {
+            if (pending.getAndSet(false)) onShow()
+            delay(RAISE_POLL_MILLIS)
         }
+    }
+
+    /** True once [watch] is running, which also means there is a logger. */
+    @Volatile
+    private var raising = false
+
+    /**
+     * Says a request was taken, on whichever channel works at the time.
+     *
+     * Under `Startup` rather than this object's own tag because production
+     * keeps INFO for a short list of tags and that is one of them — and a
+     * second launch *is* a launch. The line matters: it is the only evidence in
+     * a sent-in log that the person tried to open Zillit again and what the
+     * running copy did about it, which is the whole subject here.
+     *
+     * The stderr copy is the same trick [SingleInstance.report] uses and for
+     * the same reason — a request taken on the way up is taken before
+     * `ZillitLogging.initialise` has installed a sink, so the `ZillitLog` line
+     * goes nowhere at exactly the moment it is most worth having. Once [watch]
+     * is running there is a logger, and a second channel would only be noise.
+     */
+    private fun reportTaken() {
+        val message = "a second launch asked for the main window"
+        if (!raising) System.err.println("[$TAG] $message")
+        runCatching { ZillitLog.i(STARTUP_TAG) { message } }
     }
 
     private const val MARKER = "show-main-window"
@@ -195,6 +269,14 @@ internal object MainWindowRequest {
      */
     private const val ACK_TIMEOUT_MILLIS = 3_000L
     private const val ACK_POLL_MILLIS = 100L
-    private const val POLL_MILLIS = 1_000L
+
+    /**
+     * How long a request waits for the window after it has been taken. No file
+     * is touched here, so this is a flag read, not a stat.
+     */
+    private const val RAISE_POLL_MILLIS = 150L
     private const val TAG = "MainWindowRequest"
+
+    /** `ZillitLogging.FIELD_TAGS` keeps this one's INFO in production. */
+    private const val STARTUP_TAG = "Startup"
 }

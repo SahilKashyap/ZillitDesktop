@@ -2,6 +2,7 @@ package com.zillit.desktop
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.launch
 import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -75,6 +76,44 @@ class MainWindowRequestTest {
         assertFalse(MainWindowRequest.consume(directory))
     }
 
+    /**
+     * The regression this exists for.
+     *
+     * The only consumer used to be [MainWindowRequest.watch], started from a
+     * `LaunchedEffect` inside the composition — so nothing was listening until
+     * `AppGraph.build()` had finished wiring the entire application. A launch
+     * during those seconds went unanswered and the person who double-clicked a
+     * slow-starting app was told to switch to a window that did not exist yet.
+     *
+     * No `watch` here, deliberately: this is the state the app is in on the way
+     * up, and the request must still be taken.
+     */
+    @Test
+    fun `a request arriving before there is a window is still answered`() {
+        MainWindowRequest.startAcknowledging(directory)
+
+        assertTrue(MainWindowRequest.ask(directory))
+    }
+
+    /** And is not dropped on the floor: the window comes up once there is one. */
+    @Test
+    fun `a request taken before the window raises it once there is one`() {
+        MainWindowRequest.startAcknowledging(directory)
+        assertTrue(MainWindowRequest.ask(directory))
+
+        val raised = java.util.concurrent.CountDownLatch(1)
+        val watcher = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+            .launch { MainWindowRequest.watch { raised.countDown() } }
+        try {
+            assertTrue(
+                raised.await(RAISE_TIMEOUT, java.util.concurrent.TimeUnit.SECONDS),
+                "the request was acknowledged but never reached the window",
+            )
+        } finally {
+            watcher.cancel()
+        }
+    }
+
     @Test
     fun `a directory that does not exist yet is created`() {
         val nested = File(directory, "not/created/yet")
@@ -86,5 +125,6 @@ class MainWindowRequestTest {
 
     private companion object {
         const val POLL = 20L
+        const val RAISE_TIMEOUT = 5L
     }
 }

@@ -817,6 +817,125 @@ if (File(jbrBin, "jcef_helper.exe").isFile) {
 }
 
 /*
+ * Class Data Sharing, put back.
+ *
+ * A JDK ships a CDS archive — `classes.jsa`, the JDK's own classes already
+ * parsed, verified and laid out — and the VM maps it instead of reading them
+ * out of `lib/modules` one at a time. jlink does not carry it across unless
+ * asked (`--generate-cds-archive`), and nothing here asks, so every packaged
+ * Zillit has started with sharing off. Confirmed on the shipped 1.2.2:
+ * `runtime/bin/server/` holds `jvm.dll` and no archive, and the VM reports
+ * "mixed mode" where a JDK reports "mixed mode, sharing".
+ *
+ * Dumped from the image itself rather than copied from the JBR, because an
+ * archive is tied to the exact module set it was built against: the full JBR's
+ * would be rejected by this trimmed runtime, which is most of the point of
+ * trimming it.
+ *
+ * Measured on the 1.2.2 image, a workload that loads the AWT/Swing/NIO graph a
+ * launch actually pays for went from ~130ms to ~100ms. That is a fraction of a
+ * cold start — the app's own 195 jars are not in this archive and are the
+ * larger share — but it is free, and it is on the path before anything can
+ * draw. An AppCDS archive covering those jars is the obvious next step and a
+ * harder one: it needs a training run at package time, and a dynamic archive
+ * measured *worse* than none on this runtime, so it wants its own investigation
+ * rather than a flag added here.
+ *
+ * Costs ~28MB in the install.
+ *
+ * ## Why a launcher is borrowed and then removed
+ *
+ * `-Xshare:dump` is the VM doing the work, and the VM is reached through a
+ * launcher the image does not have: jlink strips `bin/java` from a runtime
+ * meant to be packaged, and jpackage would strip it anyway. So the JBR's own
+ * launcher is copied in for the length of the dump and deleted afterwards.
+ * Deleted rather than left: a `java.exe` inside an installed application is a
+ * general-purpose way to run code with the bundled VM, and it is not there in
+ * any build that shipped before this one.
+ */
+val runtimeImageDir = layout.buildDirectory.dir("compose/tmp/main/runtime")
+
+val generateCdsArchive = tasks.register("generateCdsArchive") {
+    dependsOn("createRuntimeImage")
+    description = "Dumps the JDK's CDS archive into the jlink runtime image, which jlink leaves without one."
+
+    // Plain values only: the configuration cache serialises this body. Same
+    // constraint the Exec bodies elsewhere in this script are written to.
+    val image = runtimeImageDir
+    val windows = System.getProperty("os.name").lowercase().contains("win")
+    val launcherName = if (windows) "java.exe" else "java"
+    val borrowedFrom = File(jbrBin, launcherName)
+    // Windows keeps the VM and its archive under `bin\server`; everything else
+    // under `lib/server`. `-Xshare:dump` writes to the right one itself — this
+    // is only where the result is checked for.
+    val archivePath = if (windows) "bin/server/classes.jsa" else "lib/server/classes.jsa"
+
+    // jlink rewrites this image, so an up-to-date verdict here can be about an
+    // archive that no longer exists. The same reason `copyCefResources` above
+    // never considers itself up to date.
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val imageDir = image.get().asFile
+        // `release` is jlink's own output and marks a real runtime image. Checked
+        // so a moved or renamed image fails with a sentence rather than dumping
+        // an archive into an empty directory nothing packages — which is how
+        // `copyCefResources` first shipped broken.
+        check(File(imageDir, "release").isFile) {
+            "generateCdsArchive: ${imageDir.path} is not a jlink runtime image (no `release` file)."
+        }
+        check(borrowedFrom.isFile) {
+            "generateCdsArchive: no $launcherName at ${borrowedFrom.path} to dump with."
+        }
+
+        val launcher = File(imageDir, "bin/$launcherName")
+        val borrowed = !launcher.isFile
+        if (borrowed) {
+            borrowedFrom.copyTo(launcher, overwrite = true)
+            launcher.setExecutable(true, false)
+        }
+        val output = try {
+            val process = ProcessBuilder(launcher.absolutePath, "-Xshare:dump")
+                .redirectErrorStream(true)
+                .start()
+            val text = process.inputStream.bufferedReader().readText().trim()
+            val code = process.waitFor()
+            check(code == 0) { "generateCdsArchive: -Xshare:dump failed (exit $code).\n$text" }
+            text
+        } finally {
+            // Whatever happened above, the launcher does not ship. In a
+            // `finally` because a failed dump must not be the reason a
+            // `java.exe` ends up inside an installed app.
+            if (borrowed) launcher.delete()
+        }
+
+        val archive = File(imageDir, archivePath)
+        check(archive.isFile) {
+            "generateCdsArchive: -Xshare:dump reported success but wrote no archive at " +
+                "${archive.path}.\n$output"
+        }
+        logger.lifecycle(
+            "generateCdsArchive: ${archive.length() / 1024 / 1024}MB of shared classes in the runtime image",
+        )
+    }
+}
+
+// Everything that lays out or wraps the runtime needs the archive in it first,
+// for the same reason `copyCefResources` is listed against the same tasks:
+// these are siblings, not a chain, and each takes its own copy of the image.
+listOf(
+    "createDistributable",
+    "packageExe",
+    "packageMsi",
+    "packageDmg",
+    "packageDeb",
+    "packageDistributionForCurrentOS",
+    "runDistributable",
+).forEach { consumer ->
+    tasks.matching { it.name == consumer }.configureEach { dependsOn(generateCdsArchive) }
+}
+
+/*
  * Authenticode signing, Windows.
  *
  * Opt-in exactly as the macOS identity above is: with no certificate named,
@@ -1600,14 +1719,33 @@ compose.desktop {
 
         javaHome = jetbrainsRuntime.get().metadata.installationPath.asFile.absolutePath
 
-        // JCEF (the call media engine's embedded Chromium) reaches into AWT's
-        // platform internals; without these opens macOS dies with SIGABRT at
-        // libjawt load. Harmless everywhere else.
-        jvmArgs += listOf(
-            "--add-opens", "java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-opens", "java.desktop/sun.lwawt=ALL-UNNAMED",
-            "--add-opens", "java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-        )
+        /*
+         * JCEF (the call media engine's embedded Chromium) reaches into AWT's
+         * platform internals; without these opens macOS dies with SIGABRT at
+         * libjawt load.
+         *
+         * macOS only, now that there is a CDS archive in the runtime image.
+         * These used to ride every platform on the grounds that they were
+         * harmless elsewhere, which was true of behaviour and not of cost: a
+         * single `jdk.module.addopens` property turns off CDS's optimized
+         * module handling for the whole run — the VM says so itself, and on a
+         * Windows build it said it three times for three opens that name two
+         * packages the platform does not even have (`sun.lwawt`,
+         * `sun.lwawt.macosx`; the launcher printed "package not in
+         * java.desktop" for both). Gated, a Windows start logs
+         * "optimized module handling: enabled" instead.
+         *
+         * Decided from the packaging host rather than a target, as
+         * `javafxPlatform` and `ffmpegClassifier` above are: jpackage builds
+         * only the host OS's formats.
+         */
+        if (System.getProperty("os.name").lowercase().contains("mac")) {
+            jvmArgs += listOf(
+                "--add-opens", "java.desktop/sun.awt=ALL-UNNAMED",
+                "--add-opens", "java.desktop/sun.lwawt=ALL-UNNAMED",
+                "--add-opens", "java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            )
+        }
 
         // Which server a packaged build talks to.
         //
