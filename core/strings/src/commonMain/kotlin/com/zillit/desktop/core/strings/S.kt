@@ -4893,6 +4893,8 @@ object S {
     const val desktop_cdood_post_week: String = "desktop_cdood_post_week"
     const val desktop_cdood_prep_week: String = "desktop_cdood_prep_week"
     const val desktop_cdood_range_exists: String = "desktop_cdood_range_exists"
+    const val desktop_cdood_calendar_overwrite: String = "desktop_cdood_calendar_overwrite"
+    const val desktop_cdood_calendar_load_theirs: String = "desktop_cdood_calendar_load_theirs"
     const val desktop_cdood_range_too_long: String = "desktop_cdood_range_too_long"
     const val desktop_cdood_rest_day: String = "desktop_cdood_rest_day"
     const val desktop_cdood_search_placeholder: String = "desktop_cdood_search_placeholder"

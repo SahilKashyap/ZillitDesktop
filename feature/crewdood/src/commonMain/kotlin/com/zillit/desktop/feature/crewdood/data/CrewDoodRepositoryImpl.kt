@@ -12,6 +12,8 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.crewdood.domain.CalendarPush
 import com.zillit.desktop.feature.crewdood.domain.CalendarSaved
 import com.zillit.desktop.feature.crewdood.domain.CrewDoodRepository
 import com.zillit.desktop.feature.crewdood.domain.DoodCalendar
@@ -44,9 +46,10 @@ import kotlinx.serialization.json.JsonElement
  *    endpoint returns them all (handoff §5.2).
  *  - **a 200 answering `status: 0` is a refusal** on these services, as
  *    everywhere else in this app, so each read checks the envelope;
- *  - **the calendar route is not live yet** (handoff §5.3). A failed read is
- *    not an error on this screen: it resolves to `null`, which the model
- *    draws as Saturday and Sunday off.
+ *  - **a calendar read that fails is not an error on this screen**: it
+ *    resolves to `null`, which the model draws as Saturday and Sunday off.
+ *    The route is live (verified 2026-10-15), so that fallback is no longer
+ *    the common path.
  */
 class CrewDoodRepositoryImpl(
     private val apiClient: ApiClient,
@@ -63,8 +66,23 @@ class CrewDoodRepositoryImpl(
     private val production = config.apiV2(ZillitService.PreAndProduction)
     private val core = config.apiV2(ZillitService.Core)
 
-    override val dealChanges: Flow<Unit> =
-        bus?.onAny(DOOD_DEAL_EVENTS)
+    override val dealChanges: Flow<Unit> = signals(DOOD_DEAL_EVENTS)
+
+    override val calendarPushes: Flow<CalendarPush> =
+        bus?.on(DOOD_CALENDAR_EVENT)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { message ->
+                CrewDoodWire.calendarPush(message.payload)
+                    ?.let { CalendarPush.Saved(it) }
+                    ?: CalendarPush.Unknown
+            }
+            ?: emptyFlow()
+
+    override val crewChanges: Flow<Unit> = signals(DOOD_CREW_EVENTS)
+
+    /** Any of [events] that belongs to this project, as a bare trigger. */
+    private fun signals(events: Set<SocketEventName>): Flow<Unit> =
+        bus?.onAny(events)
             ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
             ?.map { }
             ?: emptyFlow()

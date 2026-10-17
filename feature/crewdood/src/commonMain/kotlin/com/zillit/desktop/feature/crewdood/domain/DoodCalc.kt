@@ -45,7 +45,12 @@ object DoodCalc {
     // ── Project calendar ────────────────────────────────────────────────────
 
     /** The calendar the API's two fields describe; absent `weekly_off` means the default. */
-    fun calendarFrom(weeklyOff: List<Int>?, holidays: List<DoodHoliday>): DoodCalendar {
+    fun calendarFrom(
+        weeklyOff: List<Int>?,
+        holidays: List<DoodHoliday>,
+        /** The service's `updated_at`, when it sent one — see [DoodCalendar.isNewerThan]. */
+        updatedAt: Long? = null,
+    ): DoodCalendar {
         val off = (weeklyOff ?: DEFAULT_WEEKLY_OFF.toList())
             .filter { it in 0..<DAYS_PER_WEEK }
             .toSet()
@@ -53,7 +58,7 @@ object DoodCalc {
         // name it was first given rather than the last one sent.
         val named = LinkedHashMap<LocalDate, String>()
         holidays.forEach { holiday -> named.putIfAbsent(holiday.date, holiday.name.trim()) }
-        return DoodCalendar(weeklyOff = off, holidays = named)
+        return DoodCalendar(weeklyOff = off, holidays = named, updatedAt = updatedAt)
     }
 
     /** Every day from [from] to [to], both included; empty when backwards, capped at [MAX_HOLIDAY_RANGE]. */

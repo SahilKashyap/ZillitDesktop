@@ -97,6 +97,13 @@ const val DAYS_PER_WEEK = 7
 data class DoodCalendar(
     val weeklyOff: Set<Int> = DEFAULT_WEEKLY_OFF,
     val holidays: Map<LocalDate, String> = emptyMap(),
+    /**
+     * The service's `updated_at`, when it sent one — how a calendar pushed
+     * over the socket is told from the one on screen. Null on a calendar this
+     * client built itself (the editor's own draft), and null is never older:
+     * see [isNewerThan].
+     */
+    val updatedAt: Long? = null,
 ) {
     fun isWeeklyOff(date: LocalDate): Boolean = weeklyOff.contains(date.sundayBasedDay())
 
@@ -104,6 +111,22 @@ data class DoodCalendar(
 
     /** A weekly day off or a holiday: nobody works it, not even a shoot day. */
     fun isDayOff(date: LocalDate): Boolean = isWeeklyOff(date) || isHoliday(date)
+
+    /**
+     * Whether this calendar should replace [other] on screen — the web's
+     * `isNewer` in `useCrewDoodData`.
+     *
+     * A frame is kept out only when both sides are stamped and this one is not
+     * the later stamp: our own save coming back over the socket, or a late
+     * frame. No stamp on either side counts as newer, because a calendar with
+     * no stamp is one nobody can order — the editor's own body, or a service
+     * that answers the save without one.
+     */
+    fun isNewerThan(other: DoodCalendar?): Boolean {
+        val mine = updatedAt ?: return true
+        val theirs = other?.updatedAt ?: return true
+        return mine > theirs
+    }
 
     companion object {
         val Default = DoodCalendar()

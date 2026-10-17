@@ -165,16 +165,43 @@ internal object CrewDoodWire {
      */
     fun calendar(data: JsonElement?): DoodCalendar? {
         val body = data as? JsonObject ?: return null
-        val weekly = (body["weekly_off"] as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.content?.trim()?.toIntOrNull() }
-        val holidays = body["holidays"].array().mapNotNull { it as? JsonObject }.mapNotNull { holiday ->
+        val weekly = body.weeklyOff()
+        val holidays = body.holidays()
+        if (weekly == null && holidays.isEmpty()) return null
+        return DoodCalc.calendarFrom(weekly, holidays, body["updated_at"].millis())
+    }
+
+    /**
+     * A calendar pushed over the socket — `crew_dood_calendar:updated`, the
+     * one Account Hub event whose frame **carries what the screen would
+     * otherwise fetch**, so it is applied with no read at all.
+     *
+     * The envelope is `{ project_id, data: { weekly_off, holidays,
+     * updated_at, updated_by } }` — the hub hands its handlers
+     * `envelope.data` — so the calendar is looked for inside `data` first and
+     * then at the top level, the way every other sync in this app reads one.
+     *
+     * Null means the frame does not carry a calendar, and the rule then is to
+     * read it rather than guess: a frame with no `weekly_off` list says
+     * nothing about which weekdays are off, and taking its absence for
+     * "nobody has a day off" would redraw every bar on the chart.
+     */
+    fun calendarPush(frame: JsonElement?): DoodCalendar? {
+        val outer = frame as? JsonObject ?: return null
+        val body = (outer["data"] as? JsonObject)?.takeIf { WEEKLY_OFF in it } ?: outer
+        val weekly = body.weeklyOff() ?: return null
+        return DoodCalc.calendarFrom(weekly, body.holidays(), body["updated_at"].millis())
+    }
+
+    private fun JsonObject.weeklyOff(): List<Int>? = (this[WEEKLY_OFF] as? JsonArray)
+        ?.mapNotNull { (it as? JsonPrimitive)?.content?.trim()?.toIntOrNull() }
+
+    private fun JsonObject.holidays(): List<DoodHoliday> =
+        this["holidays"].array().mapNotNull { it as? JsonObject }.mapNotNull { holiday ->
             val date = holiday.text("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                 ?: return@mapNotNull null
             DoodHoliday(date = date, name = holiday.text("name").orEmpty())
         }
-        if (weekly == null && holidays.isEmpty()) return null
-        return DoodCalc.calendarFrom(weekly, holidays)
-    }
 
     /** The body a save sends: the same two fields, sorted so a diff is readable. */
     fun calendarBody(calendar: DoodCalendar): JsonObject = buildJsonObject {
@@ -219,4 +246,6 @@ internal object CrewDoodWire {
 
     private fun JsonElement?.localDay(): LocalDate? =
         millis()?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.currentSystemDefault()).date }
+
+    private const val WEEKLY_OFF = "weekly_off"
 }

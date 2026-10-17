@@ -13365,6 +13365,8 @@
     <string name="desktop_cdood_sum_holiday_many">holiday days</string>
     <string name="desktop_cdood_range_too_long">A range can be at most %1$s days.</string>
     <string name="desktop_cdood_range_exists">Every day in that range is already a holiday.</string>
+    <string name="desktop_cdood_calendar_overwrite">Someone else just saved the calendar. Saving will replace their version.</string>
+    <string name="desktop_cdood_calendar_load_theirs">Load theirs</string>
     <string name="desktop_board_select_option_to_send">Select an option to send</string>
     <string name="desktop_email_export_intro">Download every email in this mailbox as ZIP files. Large mailboxes can take over an hour — you can close this window and come back.</string>
     <string name="desktop_email_export_start">Start export</string>
