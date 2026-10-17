@@ -55,6 +55,7 @@ import com.zillit.desktop.feature.drive.ui.pages.PreviewDialog
 import com.zillit.desktop.feature.drive.ui.pages.ShareSheet
 import com.zillit.desktop.feature.drive.ui.pages.TrashView
 import com.zillit.desktop.feature.drive.ui.pages.UploadSheet
+import com.zillit.desktop.feature.drive.ui.pages.VersionHistorySheet
 import com.zillit.desktop.feature.drive.ui.pages.externalFileDrop
 import com.zillit.desktop.feature.drive.ui.pages.CompactHeader
 import com.zillit.desktop.core.strings.S
@@ -182,6 +183,7 @@ private fun DriveScreenBody(
         EditItemSheet(state, onEvent)
         ShareSheet(state, onEvent)
         ActivityLogSheet(state, onEvent)
+        VersionHistorySheet(state, onEvent)
         MoveToDialog(state, onEvent)
         DropPermissionsDialog(state, onEvent)
         PreviewDialog(state, onEvent)

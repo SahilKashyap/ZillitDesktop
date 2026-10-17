@@ -332,4 +332,43 @@ interface DriveRepository {
      * restore can itself be undone by restoring the snapshot it made (FR-08.7).
      */
     suspend fun restoreVersion(fileId: String, versionId: String): ZillitResult<Unit>
+
+    /**
+     * The same versions grouped into editing sessions, with what changed in
+     * each and the caller's rights on the file — `GET /versions/{id}/history`.
+     *
+     * A separate route from [versions], not a richer one: the flat list is
+     * what the details panel shows beside everything else about a file, and
+     * the history is one panel's worth of payload (sessions, per-version
+     * change summaries, activity) that no other surface reads.
+     */
+    suspend fun versionHistory(fileId: String): ZillitResult<DriveVersionHistory>
+
+    /**
+     * What changed in one version against the one before it.
+     *
+     * The comparison runs server-side in the background, so this can answer
+     * `pending` and be worth asking again — which is what the
+     * `drive:version:changes` socket event is for.
+     */
+    suspend fun versionChanges(fileId: String, versionId: String): ZillitResult<DriveVersionChanges>
+
+    /**
+     * An editor session that opens one stored version, read-only.
+     *
+     * The same [EditorSession] the live config gives, pointed at the version's
+     * own address: the window that loads it needs no second code path. The
+     * route is not guaranteed to name the editor page itself — see the
+     * implementation, which falls back to the file's live config for it.
+     */
+    suspend fun versionPreview(fileId: String, versionId: String): ZillitResult<EditorSession>
+
+    /**
+     * Names a version, or clears the name when [name] is blank.
+     *
+     * `PATCH /versions/{id}/{version}`. A name is how a version is found
+     * again months later ("Sent to client"), which is the whole point of the
+     * "only named versions" filter.
+     */
+    suspend fun nameVersion(fileId: String, versionId: String, name: String): ZillitResult<Unit>
 }

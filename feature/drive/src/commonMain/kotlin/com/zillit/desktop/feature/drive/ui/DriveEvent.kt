@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.drive.ui
 
 import com.zillit.desktop.feature.drive.domain.ActivityCategory
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
+import com.zillit.desktop.feature.drive.domain.DriveFileVersion
 import com.zillit.desktop.feature.drive.domain.DriveInnerTab
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveRef
@@ -199,6 +200,38 @@ sealed interface DriveEvent {
     data class RequestRestoreVersion(val fileId: String, val versionId: String) : DriveEvent
     data class RestoreVersion(val fileId: String, val versionId: String) : DriveEvent
     data class DownloadVersion(val item: DriveItem, val versionId: String) : DriveEvent
+
+    // -- version history --------------------------------------------------
+
+    /** Opens the history panel on one file (`VersionHistoryPanel`). */
+    data class OpenVersionHistory(val item: DriveItem) : DriveEvent
+    data object CloseVersionHistory : DriveEvent
+    data object RefreshVersionHistory : DriveEvent
+    data class ShowNamedVersionsOnly(val on: Boolean) : DriveEvent
+
+    /** Unfolds a session's older saves. */
+    data class ToggleVersionSession(val sessionId: String) : DriveEvent
+
+    /** Opens one version's detail, which fetches what changed in it. */
+    data class OpenVersionDetail(val versionId: String) : DriveEvent
+    data object CloseVersionDetail : DriveEvent
+    data object ReloadVersionChanges : DriveEvent
+
+    /** Narrows the listed changes to one person, or back to everyone (null). */
+    data class FilterVersionChangesBy(val personKey: String?) : DriveEvent
+
+    /** Folds a sheet or slide in the detail, and asks for the rest of its changes. */
+    data class ToggleVersionChangeGroup(val groupName: String) : DriveEvent
+    data class ShowAllVersionChanges(val groupName: String) : DriveEvent
+
+    /** Opens the name dialog on a version; an empty name clears it. */
+    data class StartNameVersion(val version: DriveFileVersion) : DriveEvent
+    data class VersionNameDraft(val text: String) : DriveEvent
+    data object SaveVersionName : DriveEvent
+    data object CancelNameVersion : DriveEvent
+
+    /** Opens one stored version read-only, in the editor window. */
+    data class PreviewVersion(val version: DriveFileVersion) : DriveEvent
     data class TagDraft(val text: String) : DriveEvent
     data class AssignTag(val tagId: String) : DriveEvent
     data class RemoveTag(val tagId: String) : DriveEvent

@@ -582,6 +582,16 @@ private fun ColumnScope.VersionsSection(
 ) {
     ZillitDivider()
     SectionTitle(str(S.drive_versions), versions.size)
+    // The whole history — sessions, what changed in each and who changed it —
+    // is a panel of its own; this section stays the two or three most recent
+    // saves beside everything else about the file.
+    ZillitButton(
+        text = str(S.desktop_drive_version_history),
+        onClick = { onEvent(DriveEvent.OpenVersionHistory(item)) },
+        variant = ButtonVariant.Secondary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Clock,
+    )
     if (versions.isEmpty()) {
         ZillitText(
             text = str(S.desktop_drive_no_previous_versions),
@@ -591,48 +601,58 @@ private fun ColumnScope.VersionsSection(
         return
     }
     val now = LocalDriveNow.current()
-    versions.forEach { version ->
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ZillitText(text = "v${version.versionNumber}", style = ZillitTheme.typography.label)
-                    ZillitText(
-                        text = version.createdAt?.let { stampLabel(it, now) }.orEmpty(),
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                }
+    versions.forEach { version -> DetailsVersionRow(item, version, viewer, now, onEvent) }
+}
+
+/** One recent save: which version, when, how big, and the two actions on it. */
+@Composable
+private fun DetailsVersionRow(
+    item: DriveItem,
+    version: DriveVersion,
+    viewer: DriveViewer,
+    now: Long,
+    onEvent: (DriveEvent) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitText(text = "v${version.versionNumber}", style = ZillitTheme.typography.label)
                 ZillitText(
-                    text = "${version.fileName.ifBlank { item.name }} · ${formatBytes(version.sizeBytes)}",
+                    text = version.createdAt?.let { stampLabel(it, now) }.orEmpty(),
                     style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textSecondary,
-                    maxLines = 1,
+                    color = ZillitTheme.colors.textMuted,
                 )
             }
-            if (viewer.may(DriveAction.Download, item)) {
-                ZillitTooltip(text = str(S.desktop_drive_download_this_version)) {
-                    ZillitIconButton(
-                        icon = ZillitIcons.Download,
-                        contentDescription = str(S.desktop_drive_download_version_n, version.versionNumber),
-                        onClick = { onEvent(DriveEvent.DownloadVersion(item, version.id)) },
-                    )
-                }
+            ZillitText(
+                text = "${version.fileName.ifBlank { item.name }} · ${formatBytes(version.sizeBytes)}",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textSecondary,
+                maxLines = 1,
+            )
+        }
+        if (viewer.may(DriveAction.Download, item)) {
+            ZillitTooltip(text = str(S.desktop_drive_download_this_version)) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Download,
+                    contentDescription = str(S.desktop_drive_download_version_n, version.versionNumber),
+                    onClick = { onEvent(DriveEvent.DownloadVersion(item, version.id)) },
+                )
             }
-            if (viewer.may(DriveAction.Edit, item)) {
-                ZillitTooltip(text = str(S.desktop_drive_restore_this_version)) {
-                    ZillitIconButton(
-                        icon = ZillitIcons.Reload,
-                        contentDescription = str(S.desktop_drive_restore_version_n, version.versionNumber),
-                        onClick = { onEvent(DriveEvent.RequestRestoreVersion(item.id, version.id)) },
-                    )
-                }
+        }
+        if (viewer.may(DriveAction.Edit, item)) {
+            ZillitTooltip(text = str(S.desktop_drive_restore_this_version)) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Reload,
+                    contentDescription = str(S.desktop_drive_restore_version_n, version.versionNumber),
+                    onClick = { onEvent(DriveEvent.RequestRestoreVersion(item.id, version.id)) },
+                )
             }
         }
     }

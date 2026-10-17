@@ -51,4 +51,16 @@ internal val DRIVE_SYNC_EVENTS: List<SocketEventName> = listOf(
     // which is exactly why the web's own guard had to let it through.
     SocketEventName("drive:file:restored"),
     SocketEventName("drive:folder:restored"),
+    // The version family, which the web routes to the history panel rather
+    // than to the listing: a new save, a name somebody else gave a version, a
+    // restore, and the background comparison finishing (`drive:version:changes`
+    // — the only event here that announces no change to the file at all). The
+    // bus carries no payload past `onAny`, so the view model re-reads the open
+    // history rather than matching a file id; a save on another file costs one
+    // call nobody sees. A restore also changes the file itself, which is why
+    // these sit in the same list as the rest.
+    SocketEventName("drive:version:created"),
+    SocketEventName("drive:version:updated"),
+    SocketEventName("drive:version:restored"),
+    SocketEventName("drive:version:changes"),
 )

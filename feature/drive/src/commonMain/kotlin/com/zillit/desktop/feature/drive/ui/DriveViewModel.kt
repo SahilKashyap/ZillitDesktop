@@ -101,6 +101,7 @@ class DriveViewModel(
     private var unreadRows: List<DriveUnreadRow> = emptyList()
 
     private val details = DriveDetails(this)
+    private val versions = DriveVersions(this)
     private val uploads = UploadQueue(this, uploader, newUploadId)
     private val drawers = DriveDrawers(this, uploads)
     private val thumbnailsInFlight = mutableSetOf<String>()
@@ -146,6 +147,10 @@ class DriveViewModel(
         launch {
             repository.refreshes.collect {
                 if (started && !currentState.viewer.isBlocked) {
+                    // The version family is in the same list (`DriveSync`) and
+                    // carries no payload past the bus, so the open history
+                    // re-reads on any drive pulse rather than on a file match.
+                    if (currentState.versionHistory.open) versions.reloadOpen()
                     loadListing()
                     if (currentState.showTrash) loadTrash()
                 }
@@ -438,6 +443,7 @@ class DriveViewModel(
             is DriveEvent.RemoveTag -> details.removeTag(event.tagId)
             DriveEvent.CreateAndAssignTag -> details.createAndAssignTag()
             is DriveEvent.DownloadVersion -> downloadVersion(event.item, event.versionId)
+
             is DriveEvent.RequestRestoreVersion -> setState {
                 copy(
                     prompt = DrivePrompt(
@@ -453,7 +459,33 @@ class DriveViewModel(
             is DriveEvent.RestoreVersion -> mutate(
                 { repository.restoreVersion(event.fileId, event.versionId) },
                 str(S.desktop_drive_version_restored),
-            ) { details.reloadOpen() }
+            ) {
+                details.reloadOpen()
+                // The restore becomes the newest version, so the panel it was
+                // pressed in is wrong until it re-reads — and its detail view
+                // is now describing a version that is no longer the latest.
+                versions.closeDetail()
+                versions.reloadOpen()
+            }
+
+            // -- version history -------------------------------------------
+
+            is DriveEvent.OpenVersionHistory -> versions.open(event.item)
+            DriveEvent.CloseVersionHistory -> versions.close()
+            DriveEvent.RefreshVersionHistory -> versions.refresh()
+            is DriveEvent.ShowNamedVersionsOnly -> versions.namedOnly(event.on)
+            is DriveEvent.ToggleVersionSession -> versions.toggleSession(event.sessionId)
+            is DriveEvent.OpenVersionDetail -> versions.openDetail(event.versionId)
+            DriveEvent.CloseVersionDetail -> versions.closeDetail()
+            DriveEvent.ReloadVersionChanges -> versions.reloadChanges()
+            is DriveEvent.FilterVersionChangesBy -> versions.filterBy(event.personKey)
+            is DriveEvent.ToggleVersionChangeGroup -> versions.toggleGroup(event.groupName)
+            is DriveEvent.ShowAllVersionChanges -> versions.showAllChanges(event.groupName)
+            is DriveEvent.StartNameVersion -> versions.startNaming(event.version)
+            is DriveEvent.VersionNameDraft -> versions.nameDraft(event.text)
+            DriveEvent.SaveVersionName -> versions.saveName()
+            DriveEvent.CancelNameVersion -> versions.cancelNaming()
+            is DriveEvent.PreviewVersion -> versions.preview(event.version)
 
             // -- trash -----------------------------------------------------
 

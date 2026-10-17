@@ -13,6 +13,8 @@ import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveVersionChanges
+import com.zillit.desktop.feature.drive.domain.DriveVersionHistory
 import com.zillit.desktop.feature.drive.domain.EditorSession
 import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.UploadPart
@@ -98,6 +100,35 @@ internal open class FakeDriveRepository(
     override suspend fun versionDownloadUrl(fileId: String, versionId: String): ZillitResult<String> =
         ZillitResult.Success("u")
     override suspend fun restoreVersion(fileId: String, versionId: String): ZillitResult<Unit> = ok()
+    var history: DriveVersionHistory? = null
+    var historyLoads = 0
+    var changes: DriveVersionChanges? = null
+    var namedVersion: Pair<String, String>? = null
+
+    override suspend fun versionHistory(fileId: String): ZillitResult<DriveVersionHistory> {
+        historyLoads++
+        return history?.let { ZillitResult.Success(it) } ?: unused()
+    }
+
+    override suspend fun versionChanges(
+        fileId: String,
+        versionId: String,
+    ): ZillitResult<DriveVersionChanges> = changes?.let { ZillitResult.Success(it) } ?: unused()
+
+    override suspend fun versionPreview(fileId: String, versionId: String): ZillitResult<EditorSession> =
+        ZillitResult.Success(
+            EditorSession(
+                baseUrl = "https://editor.test/sheet",
+                wopiSrc = "https://wopi.test/f/$fileId/v/$versionId",
+                accessToken = "t",
+                viewOnly = true,
+            ),
+        )
+
+    override suspend fun nameVersion(fileId: String, versionId: String, name: String): ZillitResult<Unit> {
+        namedVersion = versionId to name
+        return ok()
+    }
 
     protected fun ok(): ZillitResult<Unit> = ZillitResult.Success(Unit)
     protected fun <T> unused(): ZillitResult<T> = ZillitResult.Failure(ZillitError.Unknown("unused"))

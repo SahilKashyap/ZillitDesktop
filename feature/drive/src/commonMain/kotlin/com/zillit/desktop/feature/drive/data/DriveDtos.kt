@@ -12,7 +12,21 @@ import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DrivePermissions
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveTag
+import com.zillit.desktop.feature.drive.domain.DriveActivityItem
+import com.zillit.desktop.feature.drive.domain.DriveActivityPerson
+import com.zillit.desktop.feature.drive.domain.DriveCellChange
+import com.zillit.desktop.feature.drive.domain.DriveChangeAuthor
+import com.zillit.desktop.feature.drive.domain.DriveChangeGroup
+import com.zillit.desktop.feature.drive.domain.DriveChangeKind
+import com.zillit.desktop.feature.drive.domain.DriveChangeStatus
+import com.zillit.desktop.feature.drive.domain.DriveFileVersion
+import com.zillit.desktop.feature.drive.domain.DriveGroupStatus
+import com.zillit.desktop.feature.drive.domain.DriveSaveType
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveVersionActivity
+import com.zillit.desktop.feature.drive.domain.DriveVersionChanges
+import com.zillit.desktop.feature.drive.domain.DriveVersionHistory
+import com.zillit.desktop.feature.drive.domain.DriveVersionSession
 import com.zillit.desktop.feature.drive.domain.DriveZipLink
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.LinkPermission
@@ -546,6 +560,15 @@ internal data class EditorConfigDto(
     @SerialName("editorUrl") val editorUrl: String? = null,
     @SerialName("liveEditorUrl") val liveEditorUrl: String? = null,
     @SerialName("wopiSrc") val wopiSrc: String? = null,
+    /**
+     * The version preview route's own address for the file.
+     *
+     * `GET /versions/{id}/{version}/preview` answers the same config shape but
+     * points at the *stored version* on the WOPI base the editor host can
+     * reach, which the web prefers over `wopiSrc` for exactly that reason
+     * (`liveWopiSrc || wopiSrc`, `799776305`). Absent from the live config.
+     */
+    @SerialName("liveWopiSrc") val liveWopiSrc: String? = null,
     @SerialName("accessToken") val accessToken: String? = null,
     @SerialName("fileName") val fileName: String? = null,
     /** `sheet` / `doc` / `slide`. */
@@ -565,7 +588,7 @@ internal data class EditorConfigDto(
             baseUrl = live
                 ?: collaboraUrl?.takeIf { it.isNotBlank() }?.let { "${it.trimEnd('/')}$COOL_PATH" }
                 ?: "",
-            wopiSrc = wopiSrc.orEmpty(),
+            wopiSrc = listOf(liveWopiSrc, wopiSrc).firstOrNull { !it.isNullOrBlank() }.orEmpty(),
             accessToken = accessToken.orEmpty(),
             fileName = fileName.orEmpty(),
             kind = DriveEditorKind.from(editor),
@@ -867,3 +890,268 @@ internal data class IdListDto(
 ) {
     fun ids(): Set<String> = (items + data).mapNotNullTo(mutableSetOf()) { it.identifier()?.takeIf(String::isNotBlank) }
 }
+
+// -- version history -------------------------------------------------------
+
+/**
+ * `GET /versions/{id}/history` — the saves grouped into editing sessions,
+ * with the caller's own rights on the file.
+ *
+ * ## `changes.sheets` is a number here and an array in the other route
+ *
+ * The history's per-version `changes` is a **summary**: `cells` and `sheets`
+ * are counts. The same key on `GET /versions/{id}/{version}/changes` is the
+ * list of sheets with their changes in it. One name, two types, so they are
+ * two DTOs ([VersionChangeSummaryDto] and [VersionChangesDto]) rather than one
+ * with a `JsonElement` — declaring either as the other throws at the top level
+ * and empties the whole panel.
+ *
+ * Shapes read off the web's `versionHistory` (`d0723d0c4`); **no response
+ * from this route has been captured** — see the module note.
+ */
+@Serializable
+internal data class VersionHistoryDto(
+    @SerialName("file") val file: VersionFileDto? = null,
+    @SerialName("permissions") val permissions: VersionPermissionsDto? = null,
+    @SerialName("sessions") val sessions: List<VersionSessionDto> = emptyList(),
+    @SerialName("truncated") val truncated: Boolean? = null,
+) {
+    fun toDomain(): DriveVersionHistory = DriveVersionHistory(
+        fileName = file?.fileName.orEmpty(),
+        canEdit = permissions?.canEdit == true,
+        canDownload = permissions?.canDownload == true,
+        truncated = truncated == true,
+        sessions = sessions.mapNotNull { it.toDomain() },
+    )
+}
+
+@Serializable
+internal data class VersionFileDto(
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("name") val name: String? = null,
+) {
+    val displayName: String get() = fileName?.takeIf { it.isNotBlank() } ?: name.orEmpty()
+}
+
+/** The caller's rights **on the file**, which is what gates naming and restoring. */
+@Serializable
+internal data class VersionPermissionsDto(
+    @SerialName("can_edit") val canEdit: Boolean? = null,
+    @SerialName("can_download") val canDownload: Boolean? = null,
+)
+
+@Serializable
+internal data class VersionSessionDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("_id") val underscoreId: String? = null,
+    @SerialName("started_at") val startedAt: JsonPrimitive? = null,
+    @SerialName("ended_at") val endedAt: JsonPrimitive? = null,
+    @SerialName("editors") val editors: List<JsonElement> = emptyList(),
+    @SerialName("versions") val versions: List<VersionRowDto> = emptyList(),
+) {
+    /**
+     * A session with no versions in it is dropped: it is a row that would
+     * render as a day heading with nothing under it, and the panel's own
+     * "newest version" is read off `versions[0]`.
+     */
+    fun toDomain(): DriveVersionSession? {
+        val rows = versions.mapNotNull { it.toDomain() }
+        if (rows.isEmpty()) return null
+        val identifier = listOf(id, underscoreId).firstOrNull { !it.isNullOrBlank() }
+        return DriveVersionSession(
+            // Falls back to the newest save's id: the id is only ever a key for
+            // the expand/collapse set, and a session without one would collapse
+            // every other session that also lacked one.
+            id = identifier ?: "session-${rows.first().id}",
+            startedAt = startedAt.epochMillis() ?: rows.last().savedAt,
+            endedAt = endedAt.epochMillis() ?: rows.first().savedAt,
+            editorIds = editors.mapNotNull { it.identifier()?.takeIf(String::isNotBlank) },
+            versions = rows,
+        )
+    }
+}
+
+@Serializable
+internal data class VersionRowDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("id") val plainId: String? = null,
+    @SerialName("version_number") val versionNumber: Int? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("saved_at") val savedAt: JsonPrimitive? = null,
+    @SerialName("created_on") val createdOn: JsonPrimitive? = null,
+    @SerialName("saved_by") val savedBy: JsonElement? = null,
+    @SerialName("editors") val editors: List<JsonElement> = emptyList(),
+    @SerialName("save_type") val saveType: String? = null,
+    @SerialName("restored_from_number") val restoredFromNumber: Int? = null,
+    @SerialName("is_current") val isCurrent: Boolean? = null,
+    @SerialName("synthetic") val synthetic: Boolean? = null,
+    @SerialName("changes") val changes: VersionChangeSummaryDto? = null,
+) {
+    fun toDomain(): DriveFileVersion? {
+        val identifier = listOf(id, plainId).firstOrNull { !it.isNullOrBlank() } ?: return null
+        return DriveFileVersion(
+            id = identifier,
+            versionNumber = versionNumber ?: 0,
+            name = name.orEmpty().trim(),
+            savedAt = (savedAt ?: createdOn).epochMillis() ?: 0,
+            savedById = savedBy.identifier().orEmpty(),
+            editorIds = editors.mapNotNull { it.identifier()?.takeIf(String::isNotBlank) },
+            saveType = DriveSaveType.of(saveType),
+            restoredFromNumber = restoredFromNumber,
+            isCurrent = isCurrent == true,
+            synthetic = synthetic == true,
+            changes = changes?.toDomain(),
+        )
+    }
+}
+
+/** The history's own `changes`: counts and the activity, never the change list. */
+@Serializable
+internal data class VersionChangeSummaryDto(
+    @SerialName("status") val status: String? = null,
+    @SerialName("reason") val reason: String? = null,
+    @SerialName("cells") val cells: Int? = null,
+    @SerialName("sheets") val sheets: Int? = null,
+    @SerialName("activity") val activity: VersionActivityDto? = null,
+) {
+    fun toDomain(): DriveVersionChanges = DriveVersionChanges(
+        status = DriveChangeStatus.of(status),
+        reason = reason.orEmpty(),
+        cells = cells ?: 0,
+        sheets = sheets ?: 0,
+        activity = activity?.toDomain(),
+    )
+}
+
+/**
+ * `GET /versions/{id}/{version}/changes` — the comparison with the version
+ * before it, plus the activity.
+ *
+ * `sheets` is the group list for every kind: a document's body is one group
+ * and a deck's slides are one each, which is why the domain calls them
+ * [DriveChangeGroup] rather than sheets.
+ */
+@Serializable
+internal data class VersionChangesDto(
+    @SerialName("status") val status: String? = null,
+    @SerialName("reason") val reason: String? = null,
+    @SerialName("total") val total: Int? = null,
+    @SerialName("truncated") val truncated: Boolean? = null,
+    @SerialName("sheets") val sheets: List<VersionChangeGroupDto> = emptyList(),
+    @SerialName("activity") val activity: VersionActivityDto? = null,
+) {
+    fun toDomain(): DriveVersionChanges {
+        val groups = sheets.map { it.toDomain() }
+        return DriveVersionChanges(
+            status = DriveChangeStatus.of(status),
+            reason = reason.orEmpty(),
+            // Kept in step with the groups so one domain type serves both
+            // routes: the summary's counts are what a row prints, and the
+            // detail counts the same things.
+            cells = total ?: groups.sumOf { it.changes.size },
+            sheets = groups.size,
+            total = total ?: groups.sumOf { it.changes.size },
+            truncated = truncated == true,
+            groups = groups,
+            activity = activity?.toDomain(),
+        )
+    }
+}
+
+@Serializable
+internal data class VersionChangeGroupDto(
+    @SerialName("name") val name: String? = null,
+    @SerialName("status") val status: String? = null,
+    @SerialName("total") val total: Int? = null,
+    @SerialName("changes") val changes: List<VersionChangeDto> = emptyList(),
+) {
+    fun toDomain(): DriveChangeGroup = DriveChangeGroup(
+        name = name.orEmpty(),
+        status = DriveGroupStatus.of(status),
+        total = total ?: changes.size,
+        changes = changes.map { it.toDomain() },
+    )
+}
+
+/**
+ * One change, in the server's short keys: `c` cell, `k` kind, `b` before,
+ * `a` after, `by` the people the edit log attributed it to (last writer
+ * first). A paragraph has no `c`.
+ */
+@Serializable
+internal data class VersionChangeDto(
+    @SerialName("c") val cell: String? = null,
+    @SerialName("k") val kind: String? = null,
+    @SerialName("b") val before: String? = null,
+    @SerialName("a") val after: String? = null,
+    @SerialName("by") val by: List<VersionChangeAuthorDto> = emptyList(),
+) {
+    fun toDomain(): DriveCellChange = DriveCellChange(
+        cell = cell.orEmpty(),
+        kind = DriveChangeKind.of(kind),
+        before = before.orEmpty(),
+        after = after.orEmpty(),
+        by = by.map { it.toDomain() },
+    )
+}
+
+@Serializable
+internal data class VersionChangeAuthorDto(
+    @SerialName("user_id") val userId: JsonElement? = null,
+    @SerialName("name") val name: String? = null,
+) {
+    fun toDomain(): DriveChangeAuthor =
+        DriveChangeAuthor(userId = userId.identifier().orEmpty(), name = name.orEmpty())
+}
+
+/**
+ * The editors' own edit log, summarised by the server.
+ *
+ * Each item carries the server's wording in `text`, which is what the client
+ * prints — a new kind of edit then reads correctly without a release here.
+ */
+@Serializable
+internal data class VersionActivityDto(
+    @SerialName("ops") val ops: Int? = null,
+    @SerialName("truncated") val truncated: Boolean? = null,
+    @SerialName("items") val items: List<VersionActivityItemDto> = emptyList(),
+    @SerialName("people") val people: List<VersionActivityPersonDto> = emptyList(),
+) {
+    fun toDomain(): DriveVersionActivity = DriveVersionActivity(
+        ops = ops ?: 0,
+        truncated = truncated == true,
+        items = items.map { it.toDomain() },
+        people = people.map { it.toDomain() },
+    )
+}
+
+@Serializable
+internal data class VersionActivityItemDto(
+    @SerialName("type") val type: String? = null,
+    @SerialName("count") val count: Int? = null,
+    @SerialName("text") val text: String? = null,
+) {
+    fun toDomain(): DriveActivityItem =
+        DriveActivityItem(type = type.orEmpty(), count = count ?: 0, text = text.orEmpty().trim())
+}
+
+@Serializable
+internal data class VersionActivityPersonDto(
+    @SerialName("user_id") val userId: JsonElement? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("items") val items: List<VersionActivityItemDto> = emptyList(),
+) {
+    fun toDomain(): DriveActivityPerson = DriveActivityPerson(
+        userId = userId.identifier().orEmpty(),
+        name = name.orEmpty(),
+        items = items.map { it.toDomain() },
+    )
+}
+
+/** Decodes a captured history body, for `DriveVersionHistoryWireTest`. */
+internal fun decodeVersionHistory(json: String): DriveVersionHistory =
+    driveWireJson.decodeFromString(VersionHistoryDto.serializer(), json).toDomain()
+
+/** Decodes a captured changes body, for `DriveVersionHistoryWireTest`. */
+internal fun decodeVersionChanges(json: String): DriveVersionChanges =
+    driveWireJson.decodeFromString(VersionChangesDto.serializer(), json).toDomain()

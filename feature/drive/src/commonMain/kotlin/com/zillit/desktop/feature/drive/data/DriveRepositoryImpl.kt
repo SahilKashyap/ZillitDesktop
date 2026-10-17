@@ -27,6 +27,8 @@ import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveVersionChanges
+import com.zillit.desktop.feature.drive.domain.DriveVersionHistory
 import com.zillit.desktop.feature.drive.domain.DriveZipLink
 import com.zillit.desktop.feature.drive.domain.EditorSession
 import com.zillit.desktop.feature.drive.domain.percentEncoded
@@ -787,6 +789,64 @@ class DriveRepositoryImpl(
         HttpVerb.Post,
         "$base/versions/$fileId/$versionId/restore",
         null,
+    )
+
+    override suspend fun versionHistory(fileId: String): ZillitResult<DriveVersionHistory> =
+        get("$base/versions/$fileId/history", VersionHistoryDto.serializer()).map { it.toDomain() }
+
+    override suspend fun versionChanges(
+        fileId: String,
+        versionId: String,
+    ): ZillitResult<DriveVersionChanges> =
+        get("$base/versions/$fileId/$versionId/changes", VersionChangesDto.serializer())
+            .map { it.toDomain() }
+
+    /**
+     * The version's own editor session.
+     *
+     * The route answers the editor config's shape, so it is decoded with the
+     * same DTO — but it names the *version's* address in `liveWopiSrc` and
+     * need not repeat the editor page, which belongs to the file rather than
+     * to any one version. When it does not, the file's live config supplies
+     * it: the alternative is a second window code path for something the user
+     * cannot tell apart from opening the file read-only.
+     *
+     * Always view-only, whatever the config says: a stored version is not
+     * writable, and a session that claimed otherwise would offer Save against
+     * a key nothing reads back.
+     */
+    override suspend fun versionPreview(
+        fileId: String,
+        versionId: String,
+    ): ZillitResult<EditorSession> =
+        get("$base/versions/$fileId/$versionId/preview", EditorConfigDto.serializer()).flatMap { dto ->
+            val session = dto.toDomain(viewOnly = true).copy(canSwitchToEdit = false)
+            when {
+                session.isUsable -> ZillitResult.Success(session)
+                session.wopiSrc.isBlank() || session.accessToken.isBlank() -> ZillitResult.Failure(
+                    ZillitError.Serialization("the version preview configuration was incomplete"),
+                )
+
+                else -> editorSession(fileId, viewOnly = true).map { live ->
+                    session.copy(
+                        baseUrl = live.baseUrl,
+                        kind = session.kind ?: live.kind,
+                        legacyFrame = live.legacyFrame,
+                        fileName = session.fileName.ifBlank { live.fileName },
+                    )
+                }
+            }
+        }
+
+    /** An empty `name` is how the web clears one, so it is sent as given. */
+    override suspend fun nameVersion(
+        fileId: String,
+        versionId: String,
+        name: String,
+    ): ZillitResult<Unit> = mutate(
+        HttpVerb.Patch,
+        "$base/versions/$fileId/$versionId",
+        buildJsonObject { put("name", JsonPrimitive(name.trim())) },
     )
 
     // -- plumbing ----------------------------------------------------------
