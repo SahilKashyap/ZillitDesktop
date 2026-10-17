@@ -57,7 +57,17 @@ enum class TaskVisibility(val wire: String) {
  * can see. So each is on only where the service said exactly `true`, and both
  * are off until a list has answered. Off means *gone*, not greyed out.
  */
-data class TasksFeatures(val visibility: Boolean = false, val dpr: Boolean = false)
+data class TasksFeatures(
+    val visibility: Boolean = false,
+    val dpr: Boolean = false,
+    /**
+     * Whether images and files may be **added**. Off where the service cannot
+     * store them, or a production keeps its files in Box: no Add image, no
+     * Attach file, no paste or drop. What a task already has is shown either
+     * way, so nothing a colleague attached disappears here.
+     */
+    val attachments: Boolean = false,
+)
 
 /** Declared high-first: the order [compareTasks] sorts by. */
 enum class TaskPriority(val wire: String) {
@@ -109,6 +119,14 @@ data class Task(
     val canReassign: Boolean = false,
     /** Only the creator or whoever assigned the task may switch Public / Private; the server decides. */
     val canChangeVisibility: Boolean = false,
+    /**
+     * The images and files in the description.
+     *
+     * They save on their own and **leave `updated` alone**, so an open panel
+     * with unsaved edits never becomes a 409 because of one — and cannot
+     * notice someone else's through `updated` either; see [attachmentIds].
+     */
+    val attachments: List<TaskAttachment> = emptyList(),
     /** Present only on a single-task read; the list's copy has neither. */
     val comments: List<TaskComment>? = null,
     val history: List<TaskHistoryEntry>? = null,
@@ -140,6 +158,10 @@ data class TaskHistoryEntry(
     val changes: List<TaskChange> = emptyList(),
     val assigneeId: String? = null,
     val subtaskTitle: String = "",
+    /** `meta.name` on an attachment entry: the image or file it is about. */
+    val attachmentName: String = "",
+    /** `meta.kind` on an attachment entry: whether it was an image or a file. */
+    val attachmentKind: AttachmentKind? = null,
     val reason: String? = null,
     val createdMillis: Long = 0,
 )

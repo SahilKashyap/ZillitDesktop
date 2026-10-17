@@ -1,4 +1,4 @@
-@file:Suppress("CyclomaticComplexMethod","TooManyFunctions","ReturnCount","MaxLineLength") // The board list and the panel share one write path, so they share one view model (as the web provider and drawer do).
+@file:Suppress("CyclomaticComplexMethod","TooManyFunctions","ReturnCount","MaxLineLength","LargeClass") // The board list and the panel share one write path, so they share one view model (as the web provider and drawer do).
 
 package com.zillit.desktop.feature.tasks.ui
 
@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.tasks.data.httpStatus
 import com.zillit.desktop.feature.tasks.data.tasksSyncEvents
 import com.zillit.desktop.feature.tasks.domain.DueProblem
 import com.zillit.desktop.feature.tasks.domain.Task
+import com.zillit.desktop.feature.tasks.domain.PickedTaskFile
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.TaskVisibility
@@ -23,6 +24,7 @@ import com.zillit.desktop.feature.tasks.domain.TaskWrite
 import com.zillit.desktop.feature.tasks.domain.TasksRepository
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.domain.applyFeatures
+import com.zillit.desktop.feature.tasks.domain.attachmentIds
 import com.zillit.desktop.feature.tasks.domain.closeBlocker
 import com.zillit.desktop.feature.tasks.domain.diffDraft
 import com.zillit.desktop.feature.tasks.domain.dropTask
@@ -62,6 +64,14 @@ class TasksViewModel(
     private val rights: RightsRequestBus? = null,
     private val events: SocketEventBus? = null,
     private val newId: () -> String = ::randomId,
+    /**
+     * The host's file dialog, for "Add image" and "Attach file".
+     *
+     * A seam rather than an effect: this view model has no effect type, and
+     * the dialog is the host's either way. The default picks nothing, so a
+     * test and the render harness build this without one.
+     */
+    private val pickFiles: suspend (imagesOnly: Boolean) -> List<PickedTaskFile> = { emptyList() },
 ) : ZillitViewModel<TasksUiState, TasksEvent, Nothing>(TasksUiState()) {
 
     /** Every load and every local write takes a new number; see the class note. */
@@ -72,6 +82,9 @@ class TasksViewModel(
     private var panelRefreshJob: Job? = null
     private var rightsPoll: Job? = null
     private var projectId: String? = null
+
+    /** Images and files in the open panel's description. */
+    private val attachments = TaskAttachmentsWork(this, repository) { imagesOnly -> pickFiles(imagesOnly) }
 
     /** The tool has been opened at least once: rights changes from then on reload it. */
     private var started = false
@@ -125,6 +138,16 @@ class TasksViewModel(
             TasksEvent.DeleteOpenTask -> currentState.panel?.task?.let(::deleteTask)
             is TasksEvent.CommentChanged -> editPanel { copy(comment = event.text) }
             TasksEvent.SendComment -> sendComment()
+            is TasksEvent.PickAttachments -> attachments.pick(event.imagesOnly)
+            is TasksEvent.AddAttachments -> attachments.add(event.files)
+            is TasksEvent.RemoveAttachment -> attachments.remove(event.attachment)
+            is TasksEvent.RemovePendingAttachment -> attachments.removePending(event.key)
+            is TasksEvent.OpenAttachment -> editPanel { copy(viewing = event.attachmentId) }
+            TasksEvent.CloseAttachment -> editPanel { copy(viewing = null) }
+            is TasksEvent.LoadAttachment -> attachments.load(event.attachment)
+            is TasksEvent.ReloadAttachment -> attachments.reload(event.attachment)
+            is TasksEvent.DownloadAttachment -> attachments.download(event.attachment)
+            TasksEvent.OpenedUrl -> editPanel { copy(openUrl = null) }
         }
     }
 
@@ -267,6 +290,54 @@ class TasksViewModel(
     /** The server's announcement for a write it saved (a message key), when it sent one. */
     private fun announce(message: String?) {
         message?.takeIf { it.isNotBlank() }?.let { key -> setState { copy(success = key.localisedMessage(), error = null, notice = null) } }
+    }
+
+    // -- seams for the attachments collaborator ---------------------------------------
+    //
+    // Images and files are their own little flow (pick, prepare, three calls
+    // each, the queue that waits for Create), so they live in
+    // [TaskAttachmentsWork] rather than in this class — which is already the
+    // list, the panel and every write. These are what it needs of this one.
+
+    internal fun panelEdit(change: TaskPanel.() -> TaskPanel) = editPanel(change)
+
+    internal fun work(block: suspend () -> Unit): Job = launch { block() }
+
+    internal fun warn(text: String) = notice(text)
+
+    internal fun failWith(error: ZillitError) = fail(error)
+
+    internal fun announceMessage(message: String?) = announce(message)
+
+    /**
+     * The task an attachment write answered.
+     *
+     * It leaves `updated` alone, so the panel keeps its unsaved edits and a
+     * later save is still not a conflict: only the attachments, the history
+     * and the comments are taken. The list gets the whole task, for the
+     * card's 📎 count.
+     */
+    internal fun absorbAttachments(fresh: Task) {
+        val open = currentState.panel
+        if (open?.task?.id == fresh.id) {
+            editPanel {
+                copy(
+                    task = task?.copy(
+                        attachments = fresh.attachments,
+                        history = fresh.history ?: task.history,
+                        comments = fresh.comments ?: task.comments,
+                    ),
+                )
+            }
+        }
+        if (currentState.loaded) upsert(fresh)
+    }
+
+    /** Re-reads the open task: an attachment somebody else has already removed. */
+    internal fun rereadOpenTask() {
+        val open = currentState.panel ?: return
+        val task = open.task ?: return
+        fetchTask(open.key, task.id, again = true)
     }
 
     private fun blockerText(open: Int) =
@@ -576,7 +647,17 @@ class TasksViewModel(
      * unsaved changes.
      */
     private fun mergeComments(fresh: Task) {
-        editPanel { copy(task = task?.copy(comments = fresh.comments, history = fresh.history)) }
+        editPanel {
+            copy(
+                task = task?.copy(
+                    comments = fresh.comments,
+                    history = fresh.history,
+                    // They save on their own, so they are never part of the
+                    // unsaved edits a refresh has to protect.
+                    attachments = fresh.attachments,
+                ),
+            )
+        }
     }
 
     /**
@@ -593,7 +674,12 @@ class TasksViewModel(
         val listed = currentState.byId[task.id]
         if (listed != null) {
             if (!open.seenInList) editPanel { copy(seenInList = true) }
-            if (listed.updatedMillis != task.updatedMillis || listed.status != task.status) fetchTask(open.key, task.id, again = true)
+            // Images and files leave `updated` alone, so they are compared by id:
+            // that is the only way this panel sees one somebody else added.
+            val filesDiffer = attachmentIds(listed) != attachmentIds(task)
+            if (listed.updatedMillis != task.updatedMillis || listed.status != task.status || filesDiffer) {
+                fetchTask(open.key, task.id, again = true)
+            }
         } else if (open.seenInList) {
             editPanel { copy(seenInList = false) }
             fetchTask(open.key, task.id, again = true)
@@ -741,12 +827,23 @@ class TasksViewModel(
         editPanel { copy(saving = true) }
         launch {
             val answer = repository.create(draft, open.uniqueId, features = currentState.features)
-            val stillOpen = currentState.panel?.key == open.key
-            if (stillOpen) editPanel { copy(saving = false) }
             when (answer) {
                 is TaskWrite.Saved -> {
                     upsert(answer.task)
                     announce(answer.message)
+                    // The images and files added while creating go up now that
+                    // the task exists, one after another — awaited, so the
+                    // button still says "Creating…" while they do and the
+                    // panel does not close over them.
+                    attachments.sendQueued(answer.task.id, open.key)
+                }
+
+                is TaskWrite.Refused, is TaskWrite.Conflict -> Unit
+            }
+            val stillOpen = currentState.panel?.key == open.key
+            if (stillOpen) editPanel { copy(saving = false) }
+            when (answer) {
+                is TaskWrite.Saved -> {
                     if (draft.parentId == null) {
                         if (stillOpen) setState { copy(panel = null) }
                     } else {

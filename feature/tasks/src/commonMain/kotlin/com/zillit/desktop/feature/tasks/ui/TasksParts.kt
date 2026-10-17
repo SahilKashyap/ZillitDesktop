@@ -275,6 +275,28 @@ internal fun CommentCount(count: Int) {
     }
 }
 
+/**
+ * 📎 3 — how many images and files a task has; nothing without any.
+ *
+ * Read off `attachments`, which the list carries: there is no count of its own
+ * on the wire.
+ */
+@Composable
+internal fun AttachmentCount(count: Int) {
+    if (count <= 0) return
+    val label = if (count == 1) {
+        str(S.desktop_tasks_attachments_count_one)
+    } else {
+        str(S.desktop_tasks_attachments_count, count)
+    }
+    ZillitTooltip(label) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            ZillitIcon(ZillitIcons.Paperclip, tint = TasksTheme.c.muted, size = 14.dp)
+            TText(count.toString(), 12, color = TasksTheme.c.muted)
+        }
+    }
+}
+
 /** A white box with its heading and a count, over rows — one group of a list (`.zt-group`). */
 @Composable
 internal fun GroupBox(title: String, count: Int, modifier: Modifier = Modifier, sub: String? = null, late: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
