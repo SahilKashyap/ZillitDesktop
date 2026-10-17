@@ -1,5 +1,6 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import java.util.UUID
@@ -46,6 +47,22 @@ import java.util.UUID
  * ([ZillitPreferences.BadgeResyncedVersion]) rather than on the run, so an
  * ordinary restart does not spend the extra pass — and, like the resync, a
  * fresh sign-in is due one because the key is user-scoped.
+ *
+ * ## Undoing the stuck-badge sweep, once per machine
+ *
+ * 1.2.1 and 1.2.2 shipped a "one build only" sweep that flipped every unread
+ * row of every production read on its first launch. It was gated per
+ * installed version, so each new version ran it again, and because a read
+ * made here is the one thing a seed never overturns, every badge it touched
+ * stayed hidden for good: 166 unread rows across five productions on one
+ * develop machine, shown for a second on the listing and then gone
+ * (2026-10-17). The phones kept showing all of them.
+ *
+ * A machine the sweep turned anything on still carries its stamp
+ * ([ZillitPreferences.BadgeSweptVersion]). [undoSweep] drops that machine's
+ * ledger once, so the next seed takes the server's read and unread state as
+ * sent, and then forgets the stamp. Reads made here since are lost only where
+ * the server never heard of them — the same rows the phones still badge.
  */
 class BadgeResync(
     private val preferences: PreferenceStore,
@@ -84,5 +101,24 @@ class BadgeResync(
     /** The resync answered: this run is remembered as resynced. */
     suspend fun completed() {
         runCatching { preferences.set(ZillitPreferences.BadgeResyncedLaunch, launch) }
+    }
+
+    /**
+     * On a machine the retired sweep ran on, drops the whole ledger so the
+     * server's unread rows badge again, and forgets the sweep's stamp.
+     *
+     * The ledger goes before the stamp: a launch that dies in between simply
+     * drops it again next time, where the other order could leave the rows
+     * hidden for good.
+     *
+     * @return whether the ledger was dropped — the caller then seeds at once,
+     *   whatever this run's resync has already done.
+     */
+    suspend fun undoSweep(store: BadgeStore): Boolean {
+        val swept = runCatching { preferences.get(ZillitPreferences.BadgeSweptVersion) }.getOrDefault("")
+        if (swept.isBlank()) return false
+        store.clearEverything()
+        runCatching { preferences.remove(ZillitPreferences.BadgeSweptVersion) }
+        return true
     }
 }

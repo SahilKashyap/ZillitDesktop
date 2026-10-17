@@ -1,17 +1,23 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.badges.InMemoryNotificationLedgerStore
+import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.datastore.PreferenceKey
 import com.zillit.desktop.core.datastore.PreferenceScope
 import com.zillit.desktop.core.datastore.PreferenceStore
+import com.zillit.desktop.core.datastore.ZillitPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Each launch's start-over: when a resync is due, and when a version prunes. */
+/** Each launch's start-over: when a resync is due, when a version prunes, and the undo of the retired sweep. */
 class BadgeResyncTest {
 
     @Test
@@ -75,6 +81,62 @@ class BadgeResyncTest {
     @Test
     fun `a build with no version never prunes`() = runTest {
         assertFalse(BadgeResync(FakePreferences(), launch = "run-1").pruneDue())
+    }
+
+    /**
+     * A machine the retired sweep ran on: its rows were flipped read here, so
+     * every later page left them read. The undo drops the ledger once, the
+     * server's unread rows badge again, and the stamp is gone so it never
+     * drops anything twice.
+     */
+    @Test
+    fun `a swept machine gets the server's unread rows back, once`() = runTest {
+        val preferences = FakePreferences()
+        preferences.set(ZillitPreferences.BadgeSweptVersion, "1.2.2")
+        val store = BadgeStore(InMemoryNotificationLedgerStore())
+        store.open(PROJECT)
+        store.seed(listOf(unread("a"), unread("b")))
+        store.clearProject(PROJECT) // what the sweep left behind: read here, unread to the server
+        store.seed(listOf(unread("a"), unread("b")))
+        assertEquals(0, store.counts.value.total, "hidden for good while the sweep's reads stand")
+
+        val resync = BadgeResync(preferences, launch = "run-1")
+        assertTrue(resync.undoSweep(store))
+        store.seed(listOf(unread("a"), unread("b")))
+
+        assertEquals(2, store.counts.value.total)
+        assertEquals(mapOf(PROJECT to 2), store.projectCounts(null))
+        assertEquals("", preferences.get(ZillitPreferences.BadgeSweptVersion))
+        assertFalse(resync.undoSweep(store), "a second launch drops nothing")
+        assertEquals(2, store.counts.value.total)
+    }
+
+    /** Where the sweep never turned a row there is nothing to undo, and the ledger keeps its own reads. */
+    @Test
+    fun `an unswept machine keeps its ledger`() = runTest {
+        val store = BadgeStore(InMemoryNotificationLedgerStore())
+        store.open(PROJECT)
+        store.seed(listOf(unread("a")))
+        store.clearProject(PROJECT)
+
+        assertFalse(BadgeResync(FakePreferences(), launch = "run-1").undoSweep(store))
+        store.seed(listOf(unread("a")))
+
+        assertEquals(0, store.counts.value.total, "a read made here still wins")
+    }
+
+    private fun unread(id: String) = NotificationRecord(
+        id = id,
+        projectId = PROJECT,
+        section = BadgeSections.TOOLS,
+        tool = "call_sheet_label",
+        created = 100L,
+        updated = 150L,
+        fromApi = true,
+    )
+
+    private companion object {
+        const val PROJECT = "p1"
     }
 
     /** In memory, honest about defaults. */

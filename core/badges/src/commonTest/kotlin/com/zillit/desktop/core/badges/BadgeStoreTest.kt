@@ -550,47 +550,26 @@ class BadgeStoreTest {
     }
 
     /**
-     * The temporary stuck-badge sweep. A read, not a delete — so the next page
-     * that carries the row unread cannot put the badge back.
+     * A row read here stays read whatever a page says — until the ledger is
+     * dropped. Then the server's unread state is taken as sent again, on the
+     * open production and on the picker's cards: the undo of the retired
+     * stuck-badge sweep rests on exactly this.
      */
     @Test
-    fun `the sweep flips every production's unread rows read and keeps them`() = runTest {
-        val storage = InMemoryNotificationLedgerStore()
-        val store = BadgeStore(storage)
-        store.open(project)
-        store.seed(listOf(row("stuck", updated = 150L), row("elsewhere", projectId = "p2", updated = 150L)))
-
-        assertEquals(2, store.markEveryRowRead())
-
-        assertEquals(0, store.counts.value.section(BadgeSections.TOOLS))
-        assertTrue(store.projectCounts(null).isEmpty(), "the picker's cards go down too")
-        assertNotNull(storage.row("stuck"), "kept on disk: the read is what outlives the next seed")
-        assertEquals(150L, store.watermark(""), "the watermark stands, so the seed does not re-ask for the page")
-
-        // The server still calls it unread; the read made here wins.
-        store.seed(listOf(row("stuck", updated = 150L)))
-        assertEquals(0, store.counts.value.section(BadgeSections.TOOLS))
-    }
-
-    /** A swept ledger counts nothing on the picker's cards — the empty answer is the ledger's own. */
-    @Test
-    fun `a swept ledger counts nothing`() = runTest {
+    fun `a dropped ledger takes the server's unread rows as sent again`() = runTest {
         val store = BadgeStore(InMemoryNotificationLedgerStore())
         store.open(project)
+        store.seed(listOf(row("here", updated = 150L), row("elsewhere", projectId = "p2", updated = 150L)))
+        store.clearProject(project)
+        store.clearProject("p2")
+        store.seed(listOf(row("here", updated = 150L), row("elsewhere", projectId = "p2", updated = 150L)))
+        assertTrue(store.projectCounts(null).isEmpty(), "local reads win over the page")
 
-        store.seed(listOf(row("stuck", updated = 150L)))
-        store.markEveryRowRead()
+        store.clearEverything()
+        store.seed(listOf(row("here", updated = 150L), row("elsewhere", projectId = "p2", updated = 150L)))
 
-        assertTrue(store.projectCounts(null).isEmpty())
-    }
-
-    /** A sweep with nothing to sweep turns nothing, so its caller can stay armed. */
-    @Test
-    fun `the sweep turns nothing on an empty ledger`() = runTest {
-        val store = BadgeStore(InMemoryNotificationLedgerStore())
-        store.open(project)
-
-        assertEquals(0, store.markEveryRowRead())
+        assertEquals(1, store.counts.value.section(BadgeSections.TOOLS))
+        assertEquals(mapOf(project to 1, "p2" to 1), store.projectCounts(null))
     }
 
     private fun dm(id: String, created: Long = 100L) =

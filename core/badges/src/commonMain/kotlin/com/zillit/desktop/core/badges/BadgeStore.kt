@@ -335,32 +335,11 @@ class BadgeStore(
     }
 
     /**
-     * **Temporary (one build only — remove with `sweepStuckBadges`).** Every
-     * unread row the ledger holds, of every production, flipped read.
-     *
-     * Read, not deleted, and that is the whole point: a delete would be
-     * undone by the next page that carries the row unread, while a read made
-     * here is what the seed keeps ("local read wins",
-     * `insertOrUpdateFromApi`). The watermark is left standing for the same
-     * reason — dropping the newest rows would make the next seed ask for
-     * exactly the pages that stuck.
-     *
-     * Not `clearEverything`: that answers `badges:cleared:device`, deletes,
-     * and belongs to the server's frame. This is a local sweep for rows no
-     * screen can reach — a dead room, a retired tool — and announces nothing
-     * to anybody.
-     *
-     * @return how many rows it turned.
+     * `badges:cleared:device` — every row of every production. Also the
+     * one-time undo of the retired stuck-badge sweep (`BadgeResync.undoSweep`):
+     * dropping the rows is what lets the next seed take the server's unread
+     * state as sent, since a row this ledger holds read stays read.
      */
-    suspend fun markEveryRowRead(): Int = lock.withLock {
-        val ids = storage.unreadAcrossProductions().map { it.id }
-        if (ids.isEmpty()) return@withLock 0
-        flip(ids)
-        publish()
-        ids.size
-    }
-
-    /** `badges:cleared:device` — every row of every production. */
     suspend fun clearEverything() = lock.withLock {
         storage.deleteAll()
         rows.clear()

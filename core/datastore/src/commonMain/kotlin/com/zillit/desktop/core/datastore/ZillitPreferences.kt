@@ -256,15 +256,12 @@ object ZillitPreferences {
     val BadgeResyncedVersion = PreferenceKey.StringKey("badges.resyncedVersion", "", PreferenceScope.User)
 
     /**
-     * **Temporary (one build only — remove with `sweepStuckBadges`).** The
-     * installed version whose launch last swept the ledger of stuck unread
-     * rows: rows no screen can reach, which survived a restart, an update and
-     * a sign-out because the server still serves them unread. A different
-     * version means this build has not swept yet.
-     *
-     * Device-scoped, unlike its `badges.resynced*` neighbours: the sweep is a
-     * repair of this machine's ledger, and a sign-out must not re-arm it and
-     * clear the next person's real badges.
+     * The stamp the retired stuck-badge sweep (1.2.1 and 1.2.2) left on a
+     * machine where it flipped rows read: the version it ran under. Nothing
+     * writes it any more. `BadgeResync.undoSweep` reads it once, drops that
+     * machine's ledger so the server's unread rows badge again, and removes
+     * it. Device-scoped because the sweep was a repair of this machine's
+     * ledger, whoever was signed in.
      */
     val BadgeSweptVersion = PreferenceKey.StringKey("badges.sweptVersion", "", PreferenceScope.Device)
 
