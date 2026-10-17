@@ -237,17 +237,20 @@ private fun BoxScope.RemoveCorner(name: String, confirm: String?, onRemove: () -
         }
         return
     }
-    ZillitTooltip(str(S.bs_chip_remove, name)) {
-        Box(
-            modifier = Modifier.align(Alignment.TopEnd)
-                .padding(4.dp)
-                .size(REMOVE_DOT)
-                .clip(RoundedCornerShape(50))
-                .background(TILE_SCRIM)
-                .clickable { if (confirm == null) onRemove() else armed = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            ZillitIcon(ZillitIcons.Close, tint = Color.White, size = 10.dp)
+    // The alignment belongs to this Box, not to one inside the tooltip: a
+    // tooltip lays its content out itself, and an `align` handed to it is
+    // simply ignored — which put the × in the tile's top-left corner.
+    Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+        ZillitTooltip(str(S.bs_chip_remove, name)) {
+            Box(
+                modifier = Modifier.size(REMOVE_DOT)
+                    .clip(RoundedCornerShape(50))
+                    .background(TILE_SCRIM)
+                    .clickable { if (confirm == null) onRemove() else armed = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitIcon(ZillitIcons.Close, tint = Color.White, size = 10.dp)
+            }
         }
     }
 }
@@ -451,17 +454,18 @@ internal fun AttachmentViewerOverlay(state: TasksUiState, panel: TaskPanel, onEv
 
 @Composable
 private fun BoxScope.ViewerStep(label: String, at: Alignment, glyph: String, onClick: () -> Unit) {
-    ZillitTooltip(label) {
-        Box(
-            modifier = Modifier.align(at)
-                .padding(8.dp)
-                .size(STEP_DOT)
-                .clip(RoundedCornerShape(50))
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            ZillitText(text = glyph, style = txt(18, FontWeight.Bold), color = Color.White)
+    // The alignment is this Box's, not one inside the tooltip — see RemoveCorner.
+    Box(Modifier.align(at).padding(8.dp)) {
+        ZillitTooltip(label) {
+            Box(
+                modifier = Modifier.size(STEP_DOT)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = STEP_SCRIM))
+                    .clickable(onClick = onClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitText(text = glyph, style = txt(18, FontWeight.Bold), color = Color.White)
+            }
         }
     }
 }
@@ -496,4 +500,5 @@ private val TILE = RoundedCornerShape(8.dp)
 private val TILE_SCRIM = Color.Black.copy(alpha = 0.55f)
 private const val ARM_MILLIS = 3_000L
 private const val VIEWER_SCRIM = 0.82f
+private const val STEP_SCRIM = 0.45f
 private const val FAINT_WHITE = 0.72f
