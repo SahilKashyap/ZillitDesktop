@@ -572,33 +572,16 @@ class BadgeStoreTest {
         assertEquals(0, store.counts.value.section(BadgeSections.TOOLS))
     }
 
-    /**
-     * The question the picker's fallback asks. A ledger that has been given a
-     * page answers for itself, even when the answer is "nothing" — otherwise a
-     * swept row comes back as the server's total on the card.
-     */
+    /** A swept ledger counts nothing on the picker's cards — the empty answer is the ledger's own. */
     @Test
-    fun `a swept ledger still reads as seeded`() = runTest {
+    fun `a swept ledger counts nothing`() = runTest {
         val store = BadgeStore(InMemoryNotificationLedgerStore())
         store.open(project)
-        assertFalse(store.hasSeededRows(), "nothing has arrived yet; the server's totals may stand in")
 
         store.seed(listOf(row("stuck", updated = 150L)))
         store.markEveryRowRead()
 
         assertTrue(store.projectCounts(null).isEmpty())
-        assertTrue(store.hasSeededRows(), "rows are held, so the empty answer is the ledger's own")
-    }
-
-    /** A row the socket brought is not a page: the watermark only moves for the API. */
-    @Test
-    fun `an arrival alone does not read as seeded`() = runTest {
-        val store = BadgeStore(InMemoryNotificationLedgerStore())
-        store.open(project)
-
-        store.arrived(listOf(row("live", updated = 150L, fromApi = false)))
-
-        assertFalse(store.hasSeededRows())
     }
 
     /** A sweep with nothing to sweep turns nothing, so its caller can stay armed. */

@@ -17,6 +17,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CallType
 import com.zillit.desktop.feature.home.calendar.EventAudience
@@ -257,7 +258,7 @@ class EventFormRenderTest {
     }
 
     private class FakePicker(private val place: PickedLocation?) : LocationPicker {
-        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? = place
+        override suspend fun pick(initial: PickedLocation?, title: String, near: PickerStart?): PickedLocation? = place
     }
 
     /**

@@ -248,9 +248,9 @@ class AuthViewModel(
     private val qrLoginRepository: QrLoginRepository? = null,
     private val nowMillis: () -> Long = { 0L },
     /**
-     * Unread per project, from the notification service's device scope
-     * (`GET device/unread`) — the one badge question that can be asked
-     * before a production is open. Hosts wire it; empty keeps cards bare.
+     * Unread per project, composed from the local badge ledger — the one
+     * badge question asked before a production is open. Hosts wire it; empty
+     * keeps cards bare.
      */
     private val projectUnread: PickerBadges = PickerBadges(),
     /** The last list this device was given; null when there is no local cache. */

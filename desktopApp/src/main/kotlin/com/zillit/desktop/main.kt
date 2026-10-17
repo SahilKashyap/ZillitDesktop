@@ -1385,7 +1385,7 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean, onListing: Bo
     // Each launch starts the ledger over at once — on the
     // listing or in a production, whichever comes first; the seed itself knows
     // it is a resync (`BadgeResync`). The socket may not be up yet, and the
-    // listing's cards are showing the server's totals until this lands.
+    // listing's cards stay bare until this lands.
     LaunchedEffect(ready) {
         if (ready.badgeResync.due()) ready.seedBadges()
         // Temporary, one build only: once the seed has landed, the stuck rows
@@ -2782,8 +2782,7 @@ private fun buildAuth(ready: AppGraph.Ready) = AuthViewModel(
         // used to grow on the thread drawing the listing — which is why
         // choosing a production got slower the more productions there were.
         refresh = { withContext(Dispatchers.IO) { fetchProjectUnread(ready) } },
-        // The server's totals until the launch's resync lands, then the ledger.
-        now = { ready.badgeResync.serverCards ?: ready.badgeStore.projectCounts(ready.deviceId()) },
+        now = { ready.badgeStore.projectCounts(ready.deviceId()) },
         changes = ready.badgeStore.changes,
     ),
     projectListStore = ready.projectListCache?.let(::CachedProjectList),
@@ -2823,87 +2822,36 @@ private suspend fun seedFromLastProduction(ready: AppGraph.Ready) {
     ready.mailboxScopes.learn(project.id, userId)
 }
 
-/** The listing's cards: the ledger's counts, or the server's own in the two cases it stands in. */
+/**
+ * The listing's cards: the ledger's counts, and only those.
+ *
+ * Android's foreground fetch (`ZillitApplication.onStart` → `callBadgesApi`):
+ * one listing call under the last production's headers, before anything is
+ * open — the listing is user-wide, so it fills every production's rows. Then
+ * the ledger, as the phones' picker groups their own rows by production and
+ * never asks the server for a count.
+ *
+ * Nothing stands in for the ledger any more, not even while it is empty. The
+ * server's `GET device/unread` totals used to, at launch and whenever the
+ * ledger held no page, and that is where every stuck card came from: those
+ * totals count rows this device read long ago, and rows the listing itself no
+ * longer serves — a production whose page came back empty still showed four
+ * (2026-10-17), lost them when the page landed, and wore them again on every
+ * return to the listing because an empty ledger looked like an unseeded one.
+ * A bare card for the moment before the first page lands is the phones'
+ * behaviour, and the honest one.
+ */
 private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> {
-    // A launch not yet resynced: the server's totals at once, while
-    // the resync `BadgeRefresh` starts fetches the ledger again from the top.
-    // Its rows' publish repaints the cards from the ledger (the picker's
-    // `now` stops answering with [BadgeResync.serverCards] once it lands).
-    //
-    // Only for a ledger with no page in it yet. One that has rows can answer
-    // now, and its answer is the better one: the server's totals count rows
-    // this device read long ago, so standing them in front of a ledger that
-    // has them read put a stuck number back on the card at every launch.
-    if (ready.badgeResync.due() && !ready.badgeStore.hasSeededRows()) {
-        val server = serverProjectUnread(ready)
-        ready.badgeResync.showServerCards(server)
-        if (server.isNotEmpty()) {
-            ZillitLog.d("Badges") { "picker counts from device/unread at launch, ledger resync behind" }
-            return server
-        }
-    }
-    // Android's foreground fetch (`ZillitApplication.onStart` → `callBadgesApi`):
-    // one listing call under the last production's headers, before anything
-    // is open — the listing is user-wide, so it fills every production's
-    // rows. Then the ledger, as the phones' picker groups their own rows by
-    // production and never asks the server. The server's answer stands in
-    // only while the ledger is still empty.
     seedFromLastProduction(ready)
     val ledger = ready.badgeStore.projectCounts(ready.deviceId())
-    if (ledger.isNotEmpty()) {
-        ZillitLog.d("Badges") { "picker counts from ledger: $ledger" }
-        return ledger
-    }
-    // Nothing unread is an answer, not a gap. An empty map and an unseeded
-    // ledger read alike here — `projectCounts` keeps only cards with a number
-    // on them — and asking the server on the strength of that undid every read
-    // this device holds: a row read here, or swept by `sweepStuckBadges`, is
-    // still unread to the server, so the card wore it again.
-    if (ready.badgeStore.hasSeededRows()) {
-        ZillitLog.d("Badges") { "picker cards bare: the ledger holds rows and counts none unread" }
-        return emptyMap()
-    }
-    return serverProjectUnread(ready)
-}
-
-/**
- * `GET device/unread` — unread per production, before any is open.
- *
- * The one badge question with device scope: the listing's cards wear the
- * answer while the ledger is empty, or at launch until the resync lands ([BadgeResync]).
- * The row shape is tolerated loosely (`project_id` + `unread`) because only
- * the web still calls this endpoint and its store discards the response shape
- * immediately; unknown rows count nothing rather than fail.
- */
-private suspend fun serverProjectUnread(ready: AppGraph.Ready): Map<String, Int> {
-    val rows = ready.apiClient.request(
-        verb = com.zillit.desktop.core.network.HttpVerb.Get,
-        url = "${ready.config.apiV2(com.zillit.desktop.core.config.ZillitService.Notification)}device/unread",
-        serializer = kotlinx.serialization.builtins.ListSerializer(
-            kotlinx.serialization.json.JsonElement.serializer(),
-        ),
-        module = com.zillit.desktop.core.network.RequestModule.Device,
-    )
-    val data = (rows as? ZillitResult.Success)?.data ?: return emptyMap()
-    val counts = mutableMapOf<String, Int>()
-    data.forEach { element ->
-        val row = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
-        val id = (row["project_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-            ?: (row["data"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-            ?: return@forEach
-        val unread = (row["unread"] as? kotlinx.serialization.json.JsonPrimitive)
-            ?.content?.toIntOrNull() ?: 0
-        if (unread > 0) counts[id] = (counts[id] ?: 0) + unread
-    }
-    ZillitLog.d("Badges") { "picker counts from device/unread: $counts" }
-    if (counts.isEmpty() && data.isNotEmpty()) {
-        ZillitLog.w("Badges") {
-            "device/unread rows carried no project ids (keys=${
-                (data.firstOrNull() as? kotlinx.serialization.json.JsonObject)?.keys
-            })"
+    ZillitLog.d("Badges") {
+        if (ledger.isEmpty()) {
+            "picker cards bare: the ledger counts nothing unread"
+        } else {
+            "picker counts from ledger: $ledger"
         }
     }
-    return counts
+    return ledger
 }
 
 /** The C&C area's tool identifier — Android `Constants.CNC_CHAT_TYPE` (Constants.kt:1898). */

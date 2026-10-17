@@ -192,9 +192,8 @@ class NotificationLedgerSeeder(
     ).map { payload ->
         val records = payload.wireRecords()
             .mapNotNull { notificationRecordFrom(it, fromApi = true, fallbackProjectId = projectId) }
-        // Before the rows land: their publish is what repaints the
-        // listing's cards, and those must stop showing the server's totals
-        // by then.
+        // Before the rows land, so that by the publish that repaints the
+        // listing's cards this run already counts as resynced.
         if (announceResync) onResynced()
         val outcome = store.seed(records)
         val me = myUserId()

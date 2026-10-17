@@ -172,18 +172,6 @@ class BadgeStore(
             .filterValues { it > 0 }
     }
 
-    /**
-     * Whether the ledger has ever been given a page — the watermark standing
-     * above zero.
-     *
-     * The question a fallback to the server's own totals has to ask. "No cards
-     * have a number on them" and "no rows have arrived yet" are the same shape
-     * coming out of [projectCounts], and they mean opposite things: the first
-     * is this ledger's answer and the second is its silence. Only the silence
-     * is the server's to fill.
-     */
-    fun hasSeededRows(): Boolean = storage.watermark("") > 0L
-
     /** The seed watermark for [projectId] — see [NotificationLedgerStore.watermark]. */
     fun watermark(projectId: String): Long = storage.watermark(projectId)
 
