@@ -270,7 +270,18 @@ sealed interface ChatEvent {
      */
     data class Watching(val watching: Boolean) : ChatEvent
     data class DraftChanged(val text: String) : ChatEvent
-    data object Send : ChatEvent
+
+    /**
+     * Send what is in the composer.
+     *
+     * [body] overrides the draft, for the one thing the composer holds in a
+     * shape the wire does not take: a crew tag, which the writer reads as
+     * `@Aisha Khan` and the socket carries as `@{{userId}}`. The crew list
+     * that resolves one lives in the pane, not here, so the pane hands the
+     * finished body over rather than this model reaching for a directory it
+     * has no business holding. Null sends the draft as typed.
+     */
+    data class Send(val body: String? = null) : ChatEvent
     data class Arrived(val message: ChatMessage) : ChatEvent
     data object DismissError : ChatEvent
 
@@ -774,7 +785,7 @@ class ChatViewModel(
                     launch { repository.sendTyping(peer.userId, started = now, isGroup = group) }
                 }
             }
-            ChatEvent.Send -> send()
+            is ChatEvent.Send -> send(bodyOverride = event.body)
             is ChatEvent.ToggleFavourite -> toggleFavourite(event.id)
             is ChatEvent.MissedCallsShown -> onMissedCallsShown(event)
             ChatEvent.AttachFile -> launch { pickForPreview() }

@@ -4,8 +4,8 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.zillit.desktop.feature.home.domain.mentionMatches
-import com.zillit.desktop.feature.home.domain.mentionQueryOf
+import com.zillit.desktop.core.common.mentionMatches
+import com.zillit.desktop.core.common.mentionQueryOf
 
 /**
  * Keyboard selection for the mention picker.

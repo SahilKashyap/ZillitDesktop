@@ -101,6 +101,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import com.zillit.desktop.core.common.completeMention
 import com.zillit.desktop.feature.chat.domain.MentionSpan
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
 import com.zillit.desktop.feature.chat.domain.chatClockTime
@@ -110,6 +111,7 @@ import com.zillit.desktop.feature.chat.domain.neighboursOf
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.lastMessageAt
 import com.zillit.desktop.feature.chat.domain.mentionSpans
+import com.zillit.desktop.feature.chat.domain.taggedBody
 import kotlinx.datetime.toLocalDateTime
 
 /** One open conversation: header, the bubbles, and the composer. */
@@ -269,7 +271,10 @@ internal fun ThreadPane(
                     )
                 }
 
-                ThreadFooter(state, peer.fullName, hasComposer, onEvent)
+                // Forward's people are the thread's taggable crew too: the
+                // same cut (still here, in the directory, not oneself) is the
+                // one that decides who it is worth asking to read a line.
+                ThreadFooter(state, peer.fullName, hasComposer, forwardPeople, onEvent)
             }
         }
 
@@ -710,12 +715,14 @@ private fun ThreadFooter(
     state: ChatUiState,
     peerName: String,
     hasComposer: Boolean,
+    /** Who an `@` offers to tag; empty keeps the composer a plain field. */
+    crew: List<CrewContact>,
     onEvent: (ChatEvent) -> Unit,
 ) {
     val selection = state.selection
     when {
         selection != null -> ChatSelectionBar(selection, onEvent)
-        hasComposer -> Composer(state, peerName, onEvent)
+        hasComposer -> Composer(state, peerName, crew, onEvent)
     }
 }
 
@@ -767,7 +774,12 @@ private fun ChatSelectionBar(selection: ChatSelection, onEvent: (ChatEvent) -> U
  * once there is.
  */
 @Composable
-private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) -> Unit) {
+private fun Composer(
+    state: ChatUiState,
+    peerName: String,
+    crew: List<CrewContact>,
+    onEvent: (ChatEvent) -> Unit,
+) {
     if (state.recordingSeconds != null) {
         Box(Modifier.fillMaxWidth().background(ZillitTheme.colors.chatPanel).padding(ZillitTheme.spacing.sm)) {
             com.zillit.desktop.core.designsystem.component.ZillitRecordingBar(
@@ -791,33 +803,49 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
         onEvent(ChatEvent.ImagePasted(image.name, image.contentType, image.bytes))
         true
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(ZillitTheme.colors.chatPanel)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        ComposerActions(state, onEvent)
-        ZillitTextField(
-            value = state.draft,
-            onValueChange = { onEvent(ChatEvent.DraftChanged(it)) },
-            placeholder = str(S.desktop_chat_message_placeholder, peerName),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(COMPOSER_RADIUS),
-            containerColor = ZillitTheme.colors.incomingBubble,
-            // Multi-line like the board's composer: Enter sends, Shift+Enter
-            // breaks the line — the same keys the board answers to.
-            singleLine = false,
+    // The tag suggestions, re-derived from the draft on every recomposition so
+    // the list follows the text. Kept per thread: a half-typed `@` does not
+    // belong to the next conversation.
+    val picker = remember(state.peer?.userId) { ChatMentionPickerState() }
+    picker.sync(state.draft, crew)
+    // A picked name goes into the draft as the writer reads it; it becomes an
+    // id on the way out — see taggedBody.
+    val pick: (CrewContact) -> Unit = { contact ->
+        onEvent(ChatEvent.DraftChanged(completeMention(state.draft, contact.fullName)))
+    }
+    // The body the socket gets, which is the draft with its names turned into
+    // `@{{id}}`. Computed here because the crew list that resolves a name is
+    // the pane's, not the view model's.
+    val send: () -> Unit = { onEvent(ChatEvent.Send(taggedBody(state.draft, crew))) }
+    Column(Modifier.fillMaxWidth().background(ZillitTheme.colors.chatPanel)) {
+        if (picker.isOpen) ChatMentionSuggestions(picker, pick)
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .heightIn(min = COMPOSER_MIN_HEIGHT)
-                .focusRequester(fieldFocus)
-                .onPreviewKeyEvent { event ->
-                    handleChatComposerKey(event, state.canSend, onEvent, pasteImage)
-                },
-        )
-        SendOrRecord(state.canSend, onEvent) { fieldFocus.requestFocus() }
+                .fillMaxWidth()
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ComposerActions(state, onEvent)
+            ZillitTextField(
+                value = state.draft,
+                onValueChange = { onEvent(ChatEvent.DraftChanged(it)) },
+                placeholder = str(S.desktop_chat_message_placeholder, peerName),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(COMPOSER_RADIUS),
+                containerColor = ZillitTheme.colors.incomingBubble,
+                // Multi-line like the board's composer: Enter sends, Shift+Enter
+                // breaks the line — the same keys the board answers to.
+                singleLine = false,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = COMPOSER_MIN_HEIGHT)
+                    .focusRequester(fieldFocus)
+                    .onPreviewKeyEvent { event ->
+                        handleChatComposerKey(event, state.canSend, onEvent, pasteImage, picker, pick, send)
+                    },
+            )
+            SendOrRecord(state.canSend, onEvent, send) { fieldFocus.requestFocus() }
+        }
     }
 }
 
@@ -827,13 +855,18 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
  * [afterSend] hands the caret back to the field.
  */
 @Composable
-private fun SendOrRecord(canSend: Boolean, onEvent: (ChatEvent) -> Unit, afterSend: () -> Unit) {
+private fun SendOrRecord(
+    canSend: Boolean,
+    onEvent: (ChatEvent) -> Unit,
+    onSend: () -> Unit,
+    afterSend: () -> Unit,
+) {
     if (canSend) {
         ZillitIconButton(
             icon = ZillitIcons.Send,
             contentDescription = str(S.send),
             onClick = {
-                onEvent(ChatEvent.Send)
+                onSend()
                 afterSend()
             },
             filled = true,
@@ -857,17 +890,52 @@ private fun SendOrRecord(canSend: Boolean, onEvent: (ChatEvent) -> Unit, afterSe
  * clipboard for a picture first: [onPasteImage] true consumes the key (the
  * image goes to the preview), false lets the field paste text normally.
  */
+@Suppress("LongParameterList") // One composer, one key: the hooks it may reach for.
 private fun handleChatComposerKey(
     event: androidx.compose.ui.input.key.KeyEvent,
     canSend: Boolean,
     onEvent: (ChatEvent) -> Unit,
     onPasteImage: () -> Boolean = { false },
+    /** The tag suggestions; while they are showing they take the arrows and Enter. */
+    picker: ChatMentionPickerState? = null,
+    onPick: (CrewContact) -> Unit = {},
+    onSend: () -> Unit = { onEvent(ChatEvent.Send()) },
 ): Boolean {
     if (event.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return false
     if (event.key == Key.V && (event.isMetaPressed || event.isCtrlPressed)) return onPasteImage()
-    if (event.key != androidx.compose.ui.input.key.Key.Enter || event.isShiftPressed) return false
-    if (canSend) onEvent(ChatEvent.Send)
-    return true
+    // The open picker goes first: an open list is what the writer is looking
+    // at, so Enter there completes a name rather than sending a half-typed
+    // `@ais`. The rows cannot take focus, so its keys arrive here or nowhere.
+    if (picker != null && handleMentionPickerKey(event, picker, onPick)) return true
+    // Enter sends; Shift+Enter is a line break and belongs to the field. A
+    // blank Enter is still swallowed rather than inserting a newline nobody
+    // asked for, which is why this is consumed whether or not it could send.
+    val sends = event.key == androidx.compose.ui.input.key.Key.Enter && !event.isShiftPressed
+    if (sends && canSend) onSend()
+    return sends
+}
+
+/**
+ * The suggestion list's own keys, while it is showing: the arrows walk it,
+ * Enter and Tab complete the lit row, and Escape shuts it — which is also how
+ * Enter gets handed back to sending without the writer touching the mouse.
+ *
+ * False means the key was not the list's, and the composer's own rules apply.
+ */
+private fun handleMentionPickerKey(
+    event: androidx.compose.ui.input.key.KeyEvent,
+    picker: ChatMentionPickerState,
+    onPick: (CrewContact) -> Unit,
+): Boolean {
+    if (!picker.isOpen) return false
+    return when (event.key) {
+        Key.DirectionDown -> true.also { picker.moveDown() }
+        Key.DirectionUp -> true.also { picker.moveUp() }
+        Key.Escape -> true.also { picker.dismiss() }
+        Key.Enter, Key.Tab -> !event.isShiftPressed &&
+            true.also { picker.selectedContact()?.let(onPick) }
+        else -> false
+    }
 }
 
 @Composable

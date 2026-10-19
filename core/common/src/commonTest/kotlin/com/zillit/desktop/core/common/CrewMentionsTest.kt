@@ -1,10 +1,5 @@
-package com.zillit.desktop.feature.home
+package com.zillit.desktop.core.common
 
-import com.zillit.desktop.feature.home.domain.completeMention
-import com.zillit.desktop.feature.home.domain.mentionMatchedIndices
-import com.zillit.desktop.feature.home.domain.mentionMatches
-import com.zillit.desktop.feature.home.domain.mentionQueryOf
-import com.zillit.desktop.feature.home.domain.mentionRangesIn
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -15,7 +10,7 @@ import kotlin.test.assertNull
  * The rules worth pinning are the refusals — an email address is not a
  * mention, and a stray `@` early in a paragraph must not swallow the tail.
  */
-class MentionsTest {
+class CrewMentionsTest {
 
     private val crew = listOf("Aisha Khan", "Aisha", "Sunil k Gautam", "Vidya Pixel")
 

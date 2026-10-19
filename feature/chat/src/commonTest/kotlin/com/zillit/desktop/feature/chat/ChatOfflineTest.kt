@@ -83,7 +83,7 @@ class ChatOfflineTest {
         runCurrent()
 
         model.onEvent(ChatEvent.DraftChanged("On the way up"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         runCurrent()
 
         val bubble = model.currentState.messages.single()
@@ -113,7 +113,7 @@ class ChatOfflineTest {
         runCurrent()
 
         model.onEvent(ChatEvent.DraftChanged("Rolling"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         runCurrent()
 
         assertEquals(ChatSendState.Queued, model.currentState.messages.single().sendState)
@@ -128,7 +128,7 @@ class ChatOfflineTest {
         first.onEvent(ChatEvent.OpenThread(aisha))
         runCurrent()
         first.onEvent(ChatEvent.DraftChanged("Still here"))
-        first.onEvent(ChatEvent.Send)
+        first.onEvent(ChatEvent.Send())
         runCurrent()
 
         val second = viewModel(repository, support)
@@ -153,7 +153,7 @@ class ChatOfflineTest {
         runCurrent()
 
         model.onEvent(ChatEvent.DraftChanged("Rolling"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         runCurrent()
 
         assertEquals(ChatSendState.Failed, model.currentState.messages.single().sendState)
