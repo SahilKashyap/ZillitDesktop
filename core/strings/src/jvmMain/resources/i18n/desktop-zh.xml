@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">邀请已复制。粘贴到您与剧组人员沟通的任何地方。</string>
     <string name="desktop_email_rule_pick_folder">请选择要将邮件移动到的文件夹。</string>
     <string name="desktop_board_live_call_sheet">当前通告单</string>
+    <string name="desktop_board_live_production_report">当前制作报告</string>
     <string name="desktop_could_not_save_profile">无法保存您的个人资料。%1$s</string>
     <string name="desktop_email_rule_cannot_move_into">邮件不能移动到 %1$s。</string>
     <string name="desktop_board_back_to_board">返回看板</string>

@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Einladung kopiert. Fügen Sie sie überall dort ein, wo Sie mit der Crew sprechen.</string>
     <string name="desktop_email_rule_pick_folder">Wählen Sie den Ordner, in den Nachrichten verschoben werden.</string>
     <string name="desktop_board_live_call_sheet">Aktuelles Call Sheet</string>
+    <string name="desktop_board_live_production_report">Aktuelle Produktionsberichte</string>
     <string name="desktop_could_not_save_profile">Ihr Profil konnte nicht gespeichert werden. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Nachrichten können nicht nach %1$s verschoben werden.</string>
     <string name="desktop_board_back_to_board">Zurück zum Board</string>

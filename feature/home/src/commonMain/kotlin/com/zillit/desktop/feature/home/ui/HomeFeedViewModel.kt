@@ -170,9 +170,11 @@ data class HomeFeedUiState(
      */
     val isAdmin: Boolean = false,
     /**
-     * The call sheet's history view.
+     * The board's history view — the call sheet's and the production report
+     * chat's, the two boards whose posts are documents that replace each other.
      *
-     * The same board in a different mode, as on the web: server data only,
+     * The same board in a different mode, as on the web: the posts the board no
+     * longer holds, read with `deleted=` ([HomeFeedRepository.loadHistory]),
      * ordered by publication rather than last edit, and no composer — history is
      * a record, not a conversation.
      */
@@ -890,7 +892,9 @@ class HomeFeedViewModel(
             HomeFeedEvent.Load -> loadUnits()
             is HomeFeedEvent.Watching -> onWatching(event.watching)
             HomeFeedEvent.ProjectChanged -> forgetProject()
-            HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
+            HomeFeedEvent.Refresh -> currentState.selectedUnit?.let {
+                if (currentState.isHistory) loadHistoryPage(it) else loadNotices(it)
+            }
             HomeFeedEvent.LoadOlder -> loadOlder()
             HomeFeedEvent.RequestPostingRights -> askForPostingRights()
             is HomeFeedEvent.DraftChanged -> setState {
@@ -936,7 +940,7 @@ class HomeFeedViewModel(
                     searchIndex = nextMatchIndex(searchIndex, searchMatches.size, event.forward),
                 )
             }
-            is HomeFeedEvent.ShowHistory -> setState { withHistory(event.history) }
+            is HomeFeedEvent.ShowHistory -> showHistory(event.history)
             // A units change refetches the tab strip — rights may have moved,
             // and a tab the user can no longer see must go. A board change
             // re-reads only the open board. Everything else is a pure merge;
@@ -958,6 +962,10 @@ class HomeFeedViewModel(
      * that tab is opened anyway. Everything else merges in place.
      */
     private fun onRealtime(event: HomeRealtimeEvent) {
+        // A record does not move. Every delta here belongs to the live board
+        // behind it, which is re-read the moment History is left — applying
+        // them to the record would post today's traffic into the archive.
+        if (currentState.isHistory) return
         when (event) {
             HomeRealtimeEvent.UnitsChanged -> loadUnits()
 
@@ -1216,9 +1224,15 @@ class HomeFeedViewModel(
         // What the outgoing tab was showing is worth keeping — it is fresher
         // than any fetch, carrying the socket arrivals and the posts of this
         // session. Coming back to it draws from here instead of from nothing.
+        //
+        // Unless what it was showing is a record: those posts are not that
+        // board's page, and its real one is already here, as it was when
+        // History was opened.
+        val record = currentState.isHistory
         currentState.selectedUnitId?.let { leaving ->
-            if (leaving != unit.id) boards[leaving] = currentState.notices
+            if (leaving != unit.id && !record) boards[leaving] = currentState.notices
         }
+        leaveHistory(unit)
         setState {
             copy(
                 // Neither the tab nor the posts are switched here: `loadNotices`
@@ -2553,6 +2567,96 @@ class HomeFeedViewModel(
     private fun landingTab(units: List<HomeUnit>): String? =
         defaultUnitId()?.takeIf { wanted -> units.visibleTabs().any { it.id == wanted } }
 
+    /**
+     * The board / record switch.
+     *
+     * The web gives History its own route and reads the posts the board no
+     * longer holds (`?deleted=`); here it is a mode of the same board, so the
+     * switch is what asks for them. The live page is kept as it is on the way
+     * in, which is what makes the way out free.
+     */
+    private fun showHistory(history: Boolean) {
+        if (currentState.isHistory == history) return
+        val unit = currentState.selectedUnit ?: return
+        if (!history) {
+            leaveHistory(unit)
+            loadNotices(unit)
+            return
+        }
+        boards[unit.id] = currentState.notices
+        setState {
+            copy(
+                isHistory = true,
+                // Nothing on screen is part of the record until the read
+                // answers — least of all a card still going up (ZL-17613).
+                notices = emptyList(),
+                hasOlder = false,
+                // The composer is gone in History, and so is anything it was
+                // in the middle of.
+                replyTo = null,
+                editing = null,
+                editingPost = null,
+                draftBeforeEdit = null,
+                searchQuery = null,
+                searchIndex = 0,
+                selection = null,
+                error = null,
+            )
+        }
+        loadHistoryPage(unit)
+    }
+
+    /**
+     * Steps out of the record and back onto [unit]'s live board.
+     *
+     * The posts on screen are the record's, so they are not carried into the
+     * read that follows: the board's own page is in [boards], put there when
+     * History was opened.
+     */
+    private fun leaveHistory(unit: HomeUnit) {
+        if (!currentState.isHistory) return
+        val live = boards[unit.id].orEmpty()
+        setState { copy(isHistory = false, notices = live, hasOlder = live.size > 1) }
+    }
+
+    /**
+     * The record's newest window.
+     *
+     * Nothing is filed and nothing is read: these posts are not the board, so
+     * neither the offline copy nor the unit's read receipt has anything to do
+     * with them.
+     */
+    private fun loadHistoryPage(unit: HomeUnit) {
+        if (!readsShownProduction()) return
+        setState { copy(isLoadingNotices = true, error = null) }
+        launchRead {
+            val result = repository.loadHistory(unit.id, nowMillis())
+            // The switch may have been turned off, or another tab opened,
+            // while this was out; the record is then nobody's answer.
+            val stale = { !currentState.isHistory || currentState.selectedUnitId != unit.id }
+            when (result) {
+                is ZillitResult.Success -> setState {
+                    if (stale()) {
+                        copy(isLoadingNotices = false)
+                    } else {
+                        copy(
+                            isLoadingNotices = false,
+                            notices = result.data,
+                            hasOlder = result.data.size > 1,
+                        )
+                    }
+                }
+                is ZillitResult.Failure -> setState {
+                    if (stale()) {
+                        copy(isLoadingNotices = false)
+                    } else {
+                        copy(isLoadingNotices = false, error = result.error.localised())
+                    }
+                }
+            }
+        }
+    }
+
     private fun loadNotices(unit: HomeUnit) {
         if (!readsShownProduction()) return
         // Re-read on every board load, not once at startup: the profile that
@@ -2748,13 +2852,20 @@ class HomeFeedViewModel(
         if (!readsShownProduction()) return
         // An archive pages from `created`, as the web's viewer does (the first
         // row's `created`); the live board pages from `updated`, as Android does.
-        val stamp: (Notice) -> Long = if (readOnly) Notice::createdAtMillis else Notice::pageStamp
+        // A record is an archive — it is ordered by `created` on screen too.
+        val record = currentState.isHistory
+        val stamp: (Notice) -> Long = if (readOnly || record) Notice::createdAtMillis else Notice::pageStamp
         val oldest = currentState.notices
             .filter { it.sendState == NoticeSendState.Sent && stamp(it) > 0 }
             .minOfOrNull(stamp) ?: return
         setState { copy(loadingOlder = true) }
         launchRead {
-            when (val page = repository.loadOlderNotices(unit.id, oldest)) {
+            val older = if (record) {
+                repository.loadHistory(unit.id, oldest)
+            } else {
+                repository.loadOlderNotices(unit.id, oldest)
+            }
+            when (val page = older) {
                 is ZillitResult.Success -> setState {
                     if (selectedUnitId != unit.id) {
                         copy(loadingOlder = false)
@@ -2894,16 +3005,6 @@ private const val MAX_KEPT_PRODUCTIONS = 4
 
 /** The posts the server has — what a kept board may hold. */
 private fun List<Notice>.sentOnly(): List<Notice> = filter { it.sendState == NoticeSendState.Sent }
-
-/**
- * Enters or leaves the call sheet's history mode. Entering drops optimistic
- * and failed posts: history shows what the server holds, and a card stuck
- * "Sending" is not part of the record (ZL-17613).
- */
-private fun HomeFeedUiState.withHistory(history: Boolean): HomeFeedUiState = copy(
-    isHistory = history,
-    notices = if (history) notices.filter { it.sendState == NoticeSendState.Sent } else notices,
-)
 
 /** iOS's PostingPermissionPopUp, as a composer error rather than a modal. */
 private fun noPostingRights(unit: HomeUnit): String = str(S.desktop_board_no_posting_rights_ask_admin, unit.label)

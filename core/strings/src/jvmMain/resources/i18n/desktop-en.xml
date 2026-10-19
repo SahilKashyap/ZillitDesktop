@@ -13527,4 +13527,5 @@
     <string name="desktop_cal_number_of_weeks">Number of Weeks</string>
     <string name="desktop_cal_number_of_months">Number of Months</string>
     <string name="desktop_cal_number_of_years">Number of Years</string>
+    <string name="desktop_board_live_production_report">Live production reports</string>
 </resources>

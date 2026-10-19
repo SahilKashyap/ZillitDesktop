@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Приглашение скопировано. Вставьте его там, где вы общаетесь с группой.</string>
     <string name="desktop_email_rule_pick_folder">Выберите папку для перемещения писем.</string>
     <string name="desktop_board_live_call_sheet">Актуальный вызывной лист</string>
+    <string name="desktop_board_live_production_report">Текущие отчёты о съёмках</string>
     <string name="desktop_could_not_save_profile">Не удалось сохранить профиль. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Письма нельзя перемещать в %1$s.</string>
     <string name="desktop_board_back_to_board">Назад к доске</string>

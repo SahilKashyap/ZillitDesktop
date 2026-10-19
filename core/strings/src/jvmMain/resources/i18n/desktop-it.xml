@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Invito copiato. Incollalo ovunque parli con la troupe.</string>
     <string name="desktop_email_rule_pick_folder">Scegli la cartella in cui spostare i messaggi.</string>
     <string name="desktop_board_live_call_sheet">Ordine del giorno in vigore</string>
+    <string name="desktop_board_live_production_report">Report di produzione correnti</string>
     <string name="desktop_could_not_save_profile">Impossibile salvare il tuo profilo. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">I messaggi non possono essere spostati in %1$s.</string>
     <string name="desktop_board_back_to_board">Torna alla bacheca</string>

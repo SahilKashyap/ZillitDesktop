@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">คัดลอกคำเชิญแล้ว วางได้ทุกที่ที่คุณคุยกับทีมงาน</string>
     <string name="desktop_email_rule_pick_folder">เลือกโฟลเดอร์ที่จะย้ายข้อความไป</string>
     <string name="desktop_board_live_call_sheet">คอลชีทสด</string>
+    <string name="desktop_board_live_production_report">รายงานการผลิตปัจจุบัน</string>
     <string name="desktop_could_not_save_profile">ไม่สามารถบันทึกโปรไฟล์ของคุณได้ %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">ไม่สามารถย้ายข้อความไปยัง %1$s ได้</string>
     <string name="desktop_board_back_to_board">กลับไปยังบอร์ด</string>

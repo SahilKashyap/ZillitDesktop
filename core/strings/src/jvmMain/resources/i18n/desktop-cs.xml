@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Pozvánka zkopírována. Vložte ji kamkoli, kde komunikujete se štábem.</string>
     <string name="desktop_email_rule_pick_folder">Vyberte složku, kam zprávy přesouvat.</string>
     <string name="desktop_board_live_call_sheet">Aktuální denní dispozice</string>
+    <string name="desktop_board_live_production_report">Aktuální produkční reporty</string>
     <string name="desktop_could_not_save_profile">Profil se nepodařilo uložit. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Zprávy nelze přesouvat do %1$s.</string>
     <string name="desktop_board_back_to_board">Zpět na nástěnku</string>

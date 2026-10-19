@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Invitation kopieret. Indsæt den, hvor du taler med crewet.</string>
     <string name="desktop_email_rule_pick_folder">Vælg den mappe, beskeder skal flyttes til.</string>
     <string name="desktop_board_live_call_sheet">Aktuelt call sheet</string>
+    <string name="desktop_board_live_production_report">Aktuelle produktionsrapporter</string>
     <string name="desktop_could_not_save_profile">Din profil kunne ikke gemmes. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Beskeder kan ikke flyttes til %1$s.</string>
     <string name="desktop_board_back_to_board">Tilbage til tavlen</string>

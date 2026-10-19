@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Invitación copiada. Pégala donde hables con el equipo.</string>
     <string name="desktop_email_rule_pick_folder">Elige la carpeta a la que mover los mensajes.</string>
     <string name="desktop_board_live_call_sheet">Hoja de llamada en vigor</string>
+    <string name="desktop_board_live_production_report">Informes de producción actuales</string>
     <string name="desktop_could_not_save_profile">No se pudo guardar tu perfil. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Los mensajes no se pueden mover a %1$s.</string>
     <string name="desktop_board_back_to_board">Volver al tablón</string>

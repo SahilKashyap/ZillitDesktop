@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Convite copiado. Cole-o onde falar com a equipa.</string>
     <string name="desktop_email_rule_pick_folder">Escolha a pasta para onde mover as mensagens.</string>
     <string name="desktop_board_live_call_sheet">Ordem do dia em vigor</string>
+    <string name="desktop_board_live_production_report">Relatórios de produção atuais</string>
     <string name="desktop_could_not_save_profile">Não foi possível guardar o seu perfil. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">As mensagens não podem ser movidas para %1$s.</string>
     <string name="desktop_board_back_to_board">Voltar ao quadro</string>

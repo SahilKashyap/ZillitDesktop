@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Undangan disalin. Tempel di mana pun Anda berbicara dengan kru.</string>
     <string name="desktop_email_rule_pick_folder">Pilih folder tujuan pemindahan pesan.</string>
     <string name="desktop_board_live_call_sheet">Call sheet langsung</string>
+    <string name="desktop_board_live_production_report">Laporan produksi terkini</string>
     <string name="desktop_could_not_save_profile">Tidak dapat menyimpan profil Anda. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Pesan tidak dapat dipindahkan ke %1$s.</string>
     <string name="desktop_board_back_to_board">Kembali ke papan</string>
