@@ -1992,7 +1992,6 @@ private fun SignedOutShell(
         onCancel = { ready.inAppUpdater.cancel() },
         onOpen = { ready.inAppUpdater.openDownloaded() },
         onRestart = { updateScope.launch { ready.restartToUpdate(onQuit) } },
-        onQuit = onQuit,
     ) {
         AuthScreen(
             viewModel = authViewModel,
@@ -2134,8 +2133,6 @@ private fun SignedInShell(
         // state turns to Failed and the strip says so.
         onRestartToUpdate = { scope.launch { ready.restartToUpdate(onQuit) } },
         onCheckForUpdates = { ready.checkForUpdatesFromBar() },
-        // The force-update screen's way out that is not the update.
-        onQuit = onQuit,
         railCollapsed = railCollapsed,
         onRailCollapsedChange = { collapsed ->
             scope.launch { ready.preferences.set(ZillitPreferences.RailCollapsed, collapsed) }

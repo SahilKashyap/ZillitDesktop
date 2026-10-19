@@ -45,8 +45,6 @@ fun UpdateSurface(
     onCancel: () -> Unit = {},
     onOpen: () -> Unit = {},
     onRestart: () -> Unit = {},
-    /** Quit, offered on the blocking screen; null leaves it off. */
-    onQuit: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     // Per version and per session, as the shell's is: dismissing 1.2.0 must
@@ -78,9 +76,7 @@ fun UpdateSurface(
                 onDownload = onDownload,
                 onInstall = onInstall,
                 onRestart = onRestart,
-                onCancel = onCancel,
                 onOpenDownloaded = onOpen,
-                onQuit = onQuit,
             )
         }
     }

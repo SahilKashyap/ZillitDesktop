@@ -26,9 +26,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -41,27 +38,27 @@ import com.zillit.desktop.core.strings.str
  *
  * The mandatory strip left the app usable, so "must update" was only advice.
  * This is the Android client's `IMMEDIATE` update: nothing behind it takes a
- * click, and the only ways forward are the update itself — downloaded and
+ * click, and the only way forward is the update itself — downloaded and
  * installed in place, with the same steps and buttons as the strip (see
- * [UpdateActions]) — or quitting.
+ * [UpdateActions]).
  *
  * The restart is still a click, here as in the strip: this screen covers a
  * call in progress, and closing the app from under it unasked would be worse
  * than a forced update that lands a minute later. There is no "Restart later"
- * on it, though — nothing behind it is reachable to go back to.
+ * on it, though — nothing behind it is reachable to go back to — and no
+ * Cancel on a download in progress and no Quit either: both lead back to this
+ * same screen, so offering them only says the block can be waited out.
  */
 @Composable
-// One per callback the strip exposes; and a card whose every line is one
-// visible element reads better whole than split into pieces.
-@Suppress("LongParameterList", "LongMethod")
+// A card whose every line is one visible element reads better whole than
+// split into pieces.
+@Suppress("LongMethod")
 internal fun ForceUpdateScreen(
     notice: UpdateNotice,
     onDownload: (String) -> Unit,
     onInstall: () -> Unit,
     onRestart: () -> Unit,
-    onCancel: () -> Unit,
     onOpenDownloaded: () -> Unit,
-    onQuit: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     // Keys too: focus leaves whatever field was being typed in, and Tab may
@@ -118,18 +115,11 @@ internal fun ForceUpdateScreen(
                     onDownload = onDownload,
                     onInstall = onInstall,
                     onRestart = onRestart,
-                    onCancel = onCancel,
+                    // Null leaves the download's Cancel out: there is nothing
+                    // to go back to.
+                    onCancel = null,
                     onOpenDownloaded = onOpenDownloaded,
                 )
-                onQuit?.let {
-                    ZillitButton(
-                        text = str(S.desktop_quit_zillit),
-                        onClick = it,
-                        size = ButtonSize.Small,
-                        variant = ButtonVariant.Tertiary,
-                        modifier = Modifier.testTag(FORCE_UPDATE_QUIT_TAG),
-                    )
-                }
             }
         }
     }
@@ -140,6 +130,3 @@ private val ICON_SIZE = 40.dp
 
 /** The blocking screen. */
 internal const val FORCE_UPDATE_TAG = "update-force"
-
-/** Its Quit button. */
-internal const val FORCE_UPDATE_QUIT_TAG = "update-force-quit"

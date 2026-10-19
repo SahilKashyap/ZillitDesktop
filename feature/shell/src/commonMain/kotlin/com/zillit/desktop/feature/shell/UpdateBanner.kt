@@ -123,7 +123,8 @@ internal fun UpdateBanner(
 /**
  * The step's own control, then the download page wherever the app cannot
  * finish the job itself: no installer, or an install that stopped. Shared by
- * the strip and [ForceUpdateScreen], so the two never offer different ways out.
+ * the strip and [ForceUpdateScreen], so the two never offer different ways
+ * out — bar the download's Cancel, which the blocking screen leaves out.
  */
 @Composable
 @Suppress("LongParameterList") // one per callback the strip exposes
@@ -133,7 +134,8 @@ internal fun UpdateActions(
     onDownload: (String) -> Unit,
     onInstall: () -> Unit,
     onRestart: () -> Unit,
-    onCancel: () -> Unit,
+    /** Stops a download in progress; null leaves the button out. */
+    onCancel: (() -> Unit)?,
     onOpenDownloaded: () -> Unit,
     /** Puts a staged build's restart off; null leaves the button out. */
     onRestartLater: (() -> Unit)? = null,
@@ -190,7 +192,7 @@ private fun InstallAction(
     accent: Color,
     onInstall: () -> Unit,
     onRestart: () -> Unit,
-    onCancel: () -> Unit,
+    onCancel: (() -> Unit)?,
     onRestartLater: (() -> Unit)?,
     onOpenDownloaded: () -> Unit,
 ) {
@@ -223,13 +225,15 @@ private fun InstallAction(
                 // bar would sit empty and look stuck.
                 ZillitSpinner(modifier = Modifier.testTag(PROGRESS_TAG), color = accent)
             }
-            ZillitButton(
-                text = str(S.cancel),
-                onClick = onCancel,
-                size = ButtonSize.Small,
-                variant = ButtonVariant.Secondary,
-                modifier = Modifier.testTag(CANCEL_TAG),
-            )
+            onCancel?.let { cancel ->
+                ZillitButton(
+                    text = str(S.cancel),
+                    onClick = cancel,
+                    size = ButtonSize.Small,
+                    variant = ButtonVariant.Secondary,
+                    modifier = Modifier.testTag(CANCEL_TAG),
+                )
+            }
         }
         UpdateInstall.Downloaded -> ZillitButton(
             text = str(S.desktop_update_open_installer),
@@ -286,7 +290,7 @@ private val PROGRESS_WIDTH = 120.dp
 /** The progress bar, or the spinner when the size is unknown. */
 internal const val PROGRESS_TAG = "update-progress"
 
-/** "Cancel", while downloading. */
+/** "Cancel", while downloading; the strip's only, not the blocking screen's. */
 internal const val CANCEL_TAG = "update-cancel"
 
 /** "Show installer", once downloaded. */

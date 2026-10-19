@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -16,7 +17,6 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import kotlin.test.Test
-import kotlin.test.assertEquals
 
 /**
  * The update strip and the blocking screen on the pages outside the shell —
@@ -31,10 +31,10 @@ class UpdateSurfaceTest {
 
     private val pageText = "the page underneath"
 
-    private fun ComposeUiTest.surface(notice: UpdateNotice?, onQuit: (() -> Unit)? = {}) {
+    private fun ComposeUiTest.surface(notice: UpdateNotice?) {
         setContent {
             ZillitTheme(animateThemeChange = false) {
-                UpdateSurface(notice = notice, onQuit = onQuit) {
+                UpdateSurface(notice = notice) {
                     Box(Modifier.fillMaxSize()) { ZillitText(pageText) }
                 }
             }
@@ -85,16 +85,14 @@ class UpdateSurfaceTest {
      */
     @Test
     fun `a mandatory update covers the page and offers the way out`() = runComposeUiTest {
-        var quits = 0
-        surface(notice = notice(blocking = true), onQuit = { quits++ })
+        surface(notice = notice(blocking = true))
 
         onNodeWithTag(FORCE_UPDATE_TAG).assertIsDisplayed()
         onNodeWithText("Update required").assertIsDisplayed()
         // The strip is not drawn as well — the screen replaces it.
         onAllNodesWithTag(DISMISSIBLE_TAG).assertCountEquals(0)
-
-        onNodeWithTag(FORCE_UPDATE_QUIT_TAG).performClick()
-        assertEquals(1, quits)
+        // The update is the only way out: no Quit to wait the block out with.
+        onAllNodesWithText("Quit Zillit").assertCountEquals(0)
     }
 
     /** A mandatory update is not dismissible here either. */
