@@ -1,6 +1,7 @@
 package com.zillit.desktop.core.network.tokenauth
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestAuthenticator
 import com.zillit.desktop.core.network.RequestModule
 import kotlinx.coroutines.CoroutineScope
@@ -209,6 +210,26 @@ class TokenSessionManager(
         path: String,
         failedToken: String,
     ): String? = scopeFor(module, projectId, path)?.let { recoverFromUnauthorized(it, failedToken) }
+
+    /**
+     * The web's `isDeviceRoute` gate, in the one place every call passes.
+     *
+     * Only in token mode, and only for a module that rides a token at all: a
+     * module pinned to `moduledata` (the QR handshake, the session bootstrap,
+     * the error log) is unaffected, and in legacy mode the encrypted header
+     * is still the whole scheme, so nothing is refused.
+     */
+    override suspend fun refusesWithNoProject(
+        module: RequestModule,
+        projectId: String?,
+        verb: HttpVerb,
+        path: String,
+    ): Boolean {
+        if (!tokenMode) return false
+        if (!projectId.isNullOrBlank()) return false
+        if (module.tokenScope(projectId) == null) return false
+        return !isDeviceRoute(verb, path)
+    }
 
     /**
      * The scope one request rides, with the route taken into account.

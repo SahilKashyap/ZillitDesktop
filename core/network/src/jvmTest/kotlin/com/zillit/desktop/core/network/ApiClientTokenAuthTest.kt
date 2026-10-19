@@ -1,6 +1,7 @@
 package com.zillit.desktop.core.network
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitResult
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -54,6 +55,16 @@ class ApiClientTokenAuthTest {
             recovered += failedToken
             return renewed
         }
+
+        /** Set by the no-production tests; the default keeps every other test's behaviour. */
+        var refuses = false
+
+        override suspend fun refusesWithNoProject(
+            module: RequestModule,
+            projectId: String?,
+            verb: HttpVerb,
+            path: String,
+        ): Boolean = refuses
     }
 
     private fun client(engine: MockEngine, authenticator: RequestAuthenticator?, onUnauthorized: () -> Unit = {}) =
@@ -69,6 +80,24 @@ class ApiClientTokenAuthTest {
         )
 
     private fun ok() = MockEngine { respond(OK_BODY, HttpStatusCode.OK, JSON) }
+
+    @Test
+    fun `a production's route with no production open never leaves the client`() = runTest {
+        val engine = ok()
+        val auth = FakeAuthenticator(token = "tok-1").also { it.refuses = true }
+        var expired = 0
+
+        val outcome = client(engine, auth, onUnauthorized = { expired++ })
+            .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertTrue(engine.requestHistory.isEmpty(), "no request, no 401, no refresh")
+        assertTrue(auth.asked.isEmpty(), "and no token minted for a call that was never sent")
+        assertEquals(0, expired, "a refusal here is not a dead session")
+        // The server's own answer, so every caller behaves as it does today.
+        val error = (outcome as ZillitResult.Failure).error as ZillitError.Http
+        assertEquals(401, error.status)
+        assertEquals("libs_invalid_token_scope", error.serverMessage)
+    }
 
     @Test
     fun `token mode sends a Bearer and no moduledata`() = runTest {

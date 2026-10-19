@@ -358,6 +358,17 @@ class ApiClient(
         // server reads one or the other, never both. Legacy mode, and any
         // call the authenticator declines, carries `moduledata` as before.
         val projectForAuth = options.projectId ?: readScope()?.projectId?.takeIf { it.isNotBlank() }
+
+        // A production's route with no production open: refused here rather
+        // than sent. The device token is refused on it and the legacy header
+        // is refused too, so the round trip can only end one way — and ending
+        // it in a 401 also spends a token refresh on a call that was never
+        // going to be answered. The web refuses the same calls in its request
+        // interceptor, off the same two lists.
+        if (authenticator?.refusesWithNoProject(module, projectForAuth, verb, url) == true) {
+            return refusedWithNoProject(verb, url)
+        }
+
         val token = authenticator?.bearerFor(module, projectForAuth, url)
         val resolvedHeaders = if (token == null) {
             headerProvider.headersFor(module, bodyJson, options.projectId, options.userId)
@@ -401,6 +412,28 @@ class ApiClient(
             // Ktor re-serialise could reorder keys and invalidate the hash.
             setBody(bodyJson)
         }
+    }
+
+    /**
+     * The answer a production's route gets with no production open.
+     *
+     * Deliberately the very failure the server would have sent — the same
+     * status and the same `message` key — so every caller behaves exactly as
+     * it does today, including whatever it renders. What changes is that no
+     * request leaves, no token is refreshed over it, and `onUnauthorized` is
+     * never reached, so a refusal here cannot be mistaken for a dead session.
+     *
+     * Named once per route, as the web names it: a device-level route missing
+     * from [com.zillit.desktop.core.network.tokenauth.isDeviceRoute] would
+     * otherwise just stop working with no trace. Once, because the callers
+     * that do this poll.
+     */
+    private fun refusedWithNoProject(verb: HttpVerb, url: String): ZillitResult<ApiEnvelope> {
+        val route = "${verb.wire} ${url.substringBefore('?')}"
+        if (refusedRoutes.add(route)) {
+            ZillitLog.w(TAG) { "refused with no production open: $route" }
+        }
+        return ZillitResult.Failure(ZillitError.Http(status = STATUS_UNAUTHORIZED, serverMessage = NO_PROJECT_KEY))
     }
 
     private suspend fun HttpResponse.toEnvelope(reportUnauthorized: Boolean): ZillitResult<ApiEnvelope> {
@@ -489,8 +522,18 @@ class ApiClient(
         HttpVerb.Delete -> HttpMethod.Delete
     }
 
+    /** Routes [refusedWithNoProject] has already named. */
+    private val refusedRoutes = mutableSetOf<String>()
+
     private companion object {
         const val TAG = "ApiClient"
+
+        /**
+         * The server's own key for "a device token on a production's route",
+         * reused for the refusal so a caller cannot tell the two apart.
+         */
+        const val NO_PROJECT_KEY = "libs_invalid_token_scope"
+
         /** What this backend calls success in the envelope. */
         const val STATUS_OK = 1
         const val STATUS_UNAUTHORIZED = 401
