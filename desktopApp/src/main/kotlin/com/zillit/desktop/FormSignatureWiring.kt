@@ -15,6 +15,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
@@ -230,24 +231,34 @@ internal fun AppGraph.Ready.formSignatureHost(): FormSignatureHost = object : Fo
     /** The web's `convertDocumentToPdfBase64`: `POST file-processing/convert-to/pdf`, multipart; answers PDF bytes. */
     override suspend fun convertToPdf(fileName: String, bytes: ByteArray): ZillitResult<ByteArray> = runCatching {
         val url = "${config.apiV2(ZillitService.Media)}file-processing/convert-to/pdf"
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null, null)
-        val response = httpClient.post(url) {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-            this.headers.append(HttpHeaders.CacheControl, "no-cache")
-            setBody(
-                MultiPartFormDataContent(
-                    formData {
-                        append(
-                            "file",
-                            bytes,
-                            Headers.build {
-                                append(HttpHeaders.ContentType, wordMime(fileName))
-                                append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                            },
-                        )
-                    },
-                ),
-            )
+        // Signed through the shared helper rather than with headers built
+        // here, which always sent legacy `moduledata` and so could only 401
+        // once the token-auth migration landed. `bodyJson` is null because
+        // the body is multipart, not JSON: there is nothing for the legacy
+        // `bodyhash` to digest, exactly as this call already passed null.
+        // `ProjectUser` is kept over `Media` deliberately — the two carry the
+        // same `moduledata` payload AND resolve to the same token scope, so
+        // renaming it would change nothing on the wire.
+        val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
+            httpClient.post(url) {
+                headers.forEach { (name, value) -> this.headers.append(name, value) }
+                bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+                this.headers.append(HttpHeaders.CacheControl, "no-cache")
+                setBody(
+                    MultiPartFormDataContent(
+                        formData {
+                            append(
+                                "file",
+                                bytes,
+                                Headers.build {
+                                    append(HttpHeaders.ContentType, wordMime(fileName))
+                                    append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                                },
+                            )
+                        },
+                    ),
+                )
+            }
         }
         val body = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true

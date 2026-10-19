@@ -15,7 +15,6 @@ import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
-import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
@@ -58,7 +57,6 @@ import com.zillit.desktop.feature.productionreport.ui.ReportServices
 import com.zillit.desktop.feature.productionreport.ui.ReportViewModel
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.client.statement.readRawBytes
 import io.ktor.http.isSuccess
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -267,17 +265,11 @@ internal fun AppGraph.Ready.productionReportDelivery(): ReportDelivery = object 
     private val work = PdfBoxWork()
     private val base = config.apiV2(ZillitService.ProductionReport).trimEnd('/')
 
-    override suspend fun pdf(reportId: String): ZillitResult<ByteArray> = runCatching {
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null)
-        val response = httpClient.get("$base/production-reports/$reportId/pdf") {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-        }
-        check(response.status.isSuccess()) { "PDF fetch answered ${response.status}" }
-        response.readRawBytes()
-    }.fold(
-        onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "PDF fetch failed")) },
-    )
+    // Through `getForBytes` for its auth — see `callSheetDelivery().pdf`, the
+    // same route one service over, broken the same way by the token-auth
+    // migration until both were routed through the shared signer.
+    override suspend fun pdf(reportId: String): ZillitResult<ByteArray> =
+        getForBytes("$base/production-reports/$reportId/pdf")
 
     override fun renderPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<SheetPdfPage>> =
         when (val pages = work.renderPages(pdf, targetWidthPx)) {

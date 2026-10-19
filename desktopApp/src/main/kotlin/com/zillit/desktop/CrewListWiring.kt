@@ -14,6 +14,7 @@ import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -110,12 +111,26 @@ private suspend fun AppGraph.Ready.crewRawPost(
     options: CallOptions,
 ): ZillitResult<ByteArray> {
     val bodyJson = HttpClientFactory.json.encodeToString(JsonElement.serializer(), body)
-    val headers = headerProvider.headersFor(RequestModule.ProjectUser, bodyJson, options.projectId, options.userId)
     return runCatching {
-        val response = httpClient.post(url) {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-            contentType(ContentType.Application.Json)
-            setBody(bodyJson)
+        // Signed through the shared helper, which makes the same
+        // Bearer-vs-`moduledata` decision every other call makes — building
+        // the headers here always sent the legacy one, and the token-auth
+        // migration left that behind. The widget's production and the
+        // caller's id on it ride along: a token is minted for THAT production,
+        // and a legacy fallback still carries both, as before.
+        val response = signedRawResponse(
+            module = RequestModule.ProjectUser,
+            url = url,
+            bodyJson = bodyJson,
+            projectId = options.projectId,
+            userId = options.userId,
+        ) { headers, bearer ->
+            httpClient.post(url) {
+                headers.forEach { (name, value) -> this.headers.append(name, value) }
+                bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+                contentType(ContentType.Application.Json)
+                setBody(bodyJson)
+            }
         }
         val bytes = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true
