@@ -886,15 +886,9 @@ private fun Messages(
     val listState = rememberLazyListState()
     val seams = LocalChatSeams.current
 
-    // Reversed layout pins the visual bottom by construction: media bubbles
-    // above can inflate as thumbnails load without shoving the newest message
-    // out of view. Opens at the newest, follows arrivals only while the
-    // reader is at the bottom — scrolled up means reading, not following.
-    com.zillit.desktop.core.designsystem.component.FollowLatestReversed(
-        listState,
-        state.messages.size,
-        contentKey = state.peer?.userId,
-    )
+    // Opens at the newest line, comes down to anything we send, and leaves a
+    // reader who scrolled back where they are — see FollowNewestMessage.
+    FollowNewestMessage(listState, state.peer?.userId, state.messages)
 
     // Scrolled to the top: the next page back, as the phones do, without a
     // trip to the button. Reversed, so the visual top is the list's END.
