@@ -1,4 +1,4 @@
-package com.zillit.desktop.feature.home.domain
+package com.zillit.desktop.core.common
 
 /**
  * Crew mentions, the cross-client-safe way.

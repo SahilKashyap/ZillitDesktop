@@ -70,7 +70,7 @@ class ChatSendListingTest {
         advanceUntilIdle()
 
         model.onEvent(ChatEvent.DraftChanged("Rolling at 8?"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         val sent = model.currentState.messages.last()
@@ -96,7 +96,7 @@ class ChatSendListingTest {
         advanceUntilIdle()
 
         model.onEvent(ChatEvent.DraftChanged("On the way up"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
 
         // No advanceUntilIdle: the ack has not resolved, and the listing must
         // already have moved — that is what optimistic means for the shelf.
@@ -114,7 +114,7 @@ class ChatSendListingTest {
             advanceUntilIdle()
 
             model.onEvent(ChatEvent.DraftChanged("On the way up"))
-            model.onEvent(ChatEvent.Send)
+            model.onEvent(ChatEvent.Send())
             advanceUntilIdle()
 
             // Someone *else* speaks, which recomputes the whole listing from
@@ -144,7 +144,7 @@ class ChatSendListingTest {
         advanceUntilIdle()
 
         model.onEvent(ChatEvent.DraftChanged("Withdraw me"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
         val sent = model.currentState.messages.last()
 
@@ -165,7 +165,7 @@ class ChatSendListingTest {
         advanceUntilIdle()
 
         model.onEvent(ChatEvent.DraftChanged("On the way up"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         // The bubble says "Not sent"; the shelf still reflects the attempt —

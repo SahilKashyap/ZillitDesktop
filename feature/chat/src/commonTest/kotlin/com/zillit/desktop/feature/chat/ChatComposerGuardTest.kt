@@ -47,7 +47,7 @@ class ChatComposerGuardTest {
         runCurrent()
 
         model.onEvent(ChatEvent.DraftChanged("x".repeat(8001)))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         assertTrue(repository.delivered.isEmpty(), "nothing may reach the wire")
@@ -63,7 +63,7 @@ class ChatComposerGuardTest {
         runCurrent()
 
         model.onEvent(ChatEvent.DraftChanged("x".repeat(8000)))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         assertEquals(1, repository.delivered.size)

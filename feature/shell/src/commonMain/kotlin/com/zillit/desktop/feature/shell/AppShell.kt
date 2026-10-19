@@ -162,8 +162,6 @@ fun AppShell(
      * [UpdateCheckOutcome.Available].
      */
     onCheckForUpdates: (suspend () -> UpdateCheckOutcome)? = null,
-    /** Quit, offered on [ForceUpdateScreen]; null leaves it off. */
-    onQuit: (() -> Unit)? = null,
     /**
      * When this production's scheduled deletion falls due, in epoch millis —
      * `ProjectContext.deletionDueAtMillis`, which is re-read whenever the
@@ -264,9 +262,7 @@ fun AppShell(
                     onDownload = onDownloadUpdate,
                     onInstall = onInstallUpdate,
                     onRestart = onRestartToUpdate,
-                    onCancel = onCancelUpdate,
                     onOpenDownloaded = onOpenUpdate,
-                    onQuit = onQuit,
                 )
             }
 

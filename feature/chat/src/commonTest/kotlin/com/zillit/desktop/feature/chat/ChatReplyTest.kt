@@ -95,7 +95,7 @@ class ChatReplyTest {
         assertEquals(parent.body, model.currentState.replyTo?.body, "the composer quotes the parent")
 
         model.onEvent(ChatEvent.DraftChanged("Behind the church"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         val carried = repository.replies.single()
@@ -118,7 +118,7 @@ class ChatReplyTest {
         model.onEvent(ChatEvent.StartReply("srv-9"))
         model.onEvent(ChatEvent.CancelReply)
         model.onEvent(ChatEvent.DraftChanged("Plain"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         assertEquals(0, repository.replies.size, "no reference travelled")
@@ -135,7 +135,7 @@ class ChatReplyTest {
 
         model.onEvent(ChatEvent.StartReply("srv-9"))
         model.onEvent(ChatEvent.DraftChanged("Behind the church"))
-        model.onEvent(ChatEvent.Send)
+        model.onEvent(ChatEvent.Send())
         advanceUntilIdle()
 
         assertEquals(1, repository.sent.size, "the message still went")

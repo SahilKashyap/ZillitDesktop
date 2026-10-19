@@ -92,9 +92,9 @@ import com.zillit.desktop.feature.home.domain.ReadReceipt
 import com.zillit.desktop.feature.home.domain.toClockTime
 import com.zillit.desktop.feature.home.domain.toDateTimeLabel
 import com.zillit.desktop.feature.home.domain.MIN_QUERY_LENGTH
-import com.zillit.desktop.feature.home.domain.completeMention
-import com.zillit.desktop.feature.home.domain.mentionMatchedIndices
-import com.zillit.desktop.feature.home.domain.mentionRangesIn
+import com.zillit.desktop.core.common.completeMention
+import com.zillit.desktop.core.common.mentionMatchedIndices
+import com.zillit.desktop.core.common.mentionRangesIn
 import com.zillit.desktop.feature.home.domain.parseGeoInput
 import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.AudioPlayer

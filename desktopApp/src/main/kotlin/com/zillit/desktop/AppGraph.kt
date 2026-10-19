@@ -126,6 +126,8 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import com.zillit.desktop.core.localization.labelRefreshTrigger
@@ -205,6 +207,7 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
 import com.zillit.desktop.core.config.ZillitRealtimeEndpoint
 import com.zillit.desktop.core.appupdate.FirebaseRemoteFlags
+import com.zillit.desktop.core.appupdate.FirebaseFlagStream
 import com.zillit.desktop.core.network.tokenauth.KtorSessionApi
 import com.zillit.desktop.core.network.tokenauth.TokenSessionManager
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -653,6 +656,16 @@ sealed interface AppGraph {
         val inAppUpdater: InAppUpdater,
         /** The latest verdict, shared by the banner's poll and Settings' manual check. */
         val appUpdateStatus: MutableStateFlow<UpdateStatus> = MutableStateFlow(UpdateStatus.Unknown),
+        /**
+         * Remote Config published a new template — the version number, as a
+         * signal rather than a payload.
+         *
+         * One stream, shared: a collector per reader would be a connection to
+         * Google per reader. Nothing may depend on it arriving (see
+         * `FirebaseFlagStream`); every reader of the template keeps the poll
+         * that is its guarantee and uses this only to hear sooner.
+         */
+        val configPublished: SharedFlow<Long> = MutableSharedFlow(),
         /** Settings' Download clicks, counted — each re-shows a dismissed update strip. */
         val appUpdateRequests: MutableStateFlow<Int> = MutableStateFlow(0),
         /** The notification list's source — see `NotificationsToolProvider`. */
@@ -1611,6 +1624,36 @@ sealed interface AppGraph {
                 { preferences.get(ZillitPreferences.CallingLinesLastGood) },
                 { preferences.set(ZillitPreferences.CallingLinesLastGood, it) }, appScope,
             ).also { callingLines = it; it.start() }
+            /*
+             * Remote Config, live where Google lets us.
+             *
+             * The console publishing a template arrives as an invalidation, and
+             * whoever reads that template re-reads it at once rather than on
+             * its own next turn: the calling lines below, and the update banner
+             * (`rememberUpdateStatus`, which otherwise asks every six hours).
+             *
+             * Shared, not collected twice. Each collector of `invalidations()`
+             * opens its own connection to Google, and two desktops' worth of
+             * open connections per desktop is a poor way to save six hours.
+             *
+             * Best-effort by construction — the stream is an undocumented
+             * surface and may simply refuse a desktop, see `FirebaseFlagStream`
+             * — so the poll started above and the banner's own six hours are
+             * still what guarantee the template is ever read. This only
+             * shortens the wait.
+             */
+            val configPublished = FirebaseFlagStream(
+                httpClient = storageClient,
+                firebase = config.firebase,
+                instanceId = { updateInstanceId(preferences) },
+                lastKnownVersion = remoteFlags::templateVersion,
+            ).invalidations().shareIn(appScope, SharingStarted.Eagerly)
+            appScope.launch {
+                configPublished.collect { version ->
+                    ZillitLog.i("RemoteFlags") { "console published template $version; re-reading the keys" }
+                    lineGate.refresh()
+                }
+            }
             liveKitLine = if (callSocketUrl != null && callApiBase != null) {
                 LiveKitLine(
                     scope = appScope,
@@ -1843,6 +1886,7 @@ sealed interface AppGraph {
                 chatPresence = chatPresence,
                 appUpdateChecker = appUpdateChecker,
                 inAppUpdater = inAppUpdater,
+                configPublished = configPublished,
                 homeRealtime = homeRealtime,
                 emailRealtime = EmailRealtimeSource(socketEvents),
                 calendarRepository = calendarRepository,

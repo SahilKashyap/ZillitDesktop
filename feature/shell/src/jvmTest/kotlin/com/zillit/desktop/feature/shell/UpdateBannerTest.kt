@@ -391,25 +391,36 @@ class UpdateBannerTest {
         onAllNodesWithTag(RESTART_LATER_TAG).assertCountEquals(0)
     }
 
-    /** Below the floor on a packaged build: the frame is covered, not striped, and Quit is the other way out. */
+    /** Below the floor on a packaged build: the frame is covered, not striped, and the update is the only way out. */
     @Test
-    fun `a blocking notice covers the frame and offers the update and quit`() = runComposeUiTest {
-        var quits = 0
+    fun `a blocking notice covers the frame and offers only the update`() = runComposeUiTest {
         var installs = 0
         setShell(
             notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Offer, blocking = true),
             onInstall = { installs++ },
-            onQuit = { quits++ },
         )
 
         onNodeWithTag(FORCE_UPDATE_TAG).assertIsDisplayed()
         onNodeWithText("Update required").assertIsDisplayed()
         onAllNodesWithTag(BLOCKING_TAG).assertCountEquals(0)
+        onAllNodesWithText("Quit Zillit").assertCountEquals(0)
         onNodeWithTag(INSTALL_TAG).performClick()
-        onNodeWithTag(FORCE_UPDATE_QUIT_TAG).performClick()
 
         assertEquals(1, installs)
-        assertEquals(1, quits)
+    }
+
+    /** Cancelling would only land back on this screen, so the blocking screen does not offer it. */
+    @Test
+    fun `a blocking download cannot be cancelled`() = runComposeUiTest {
+        setShell(
+            notice = UpdateNotice(
+                "1.2.0", true, DOWNLOAD_URL,
+                install = UpdateInstall.Downloading(percent = 42), blocking = true,
+            ),
+        )
+
+        onNodeWithTag(PROGRESS_TAG).assertIsDisplayed()
+        onAllNodesWithTag(CANCEL_TAG).assertCountEquals(0)
     }
 
     /** A file that failed verification would fail again: no retry, the page instead. */
@@ -451,10 +462,9 @@ class UpdateBannerTest {
         onRestart: () -> Unit = {},
         onCancel: () -> Unit = {},
         onOpen: () -> Unit = {},
-        onQuit: (() -> Unit)? = null,
     ) = setLiveShell(
         androidx.compose.runtime.mutableStateOf(notice),
-        onDownload, mode, onInstall, onRestart, onCancel, onOpen, onQuit,
+        onDownload, mode, onInstall, onRestart, onCancel, onOpen,
     )
 
     /** [setShell] with a notice the test can change after composition. */
@@ -467,7 +477,6 @@ class UpdateBannerTest {
         onRestart: () -> Unit = {},
         onCancel: () -> Unit = {},
         onOpen: () -> Unit = {},
-        onQuit: (() -> Unit)? = null,
     ) {
         setContent {
             val registry = remember { ToolRegistry(placeholderTools()) }
@@ -492,7 +501,6 @@ class UpdateBannerTest {
                     onRestartToUpdate = onRestart,
                     onCancelUpdate = onCancel,
                     onOpenUpdate = onOpen,
-                    onQuit = onQuit,
                 )
             }
         }
