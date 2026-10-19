@@ -101,6 +101,13 @@ data class EventDetailState(
     val durationText: String = "",
     /** "Created Wed, Oct 14, 2026 11:30 AM", under the organiser. */
     val createdLabel: String? = null,
+    /**
+     * Who arranged it, resolved for printing.
+     *
+     * Empty when neither the row nor the crew list can put a name to the
+     * creator, which is the only case the popover still reads "Unknown".
+     */
+    val organiserName: String = "",
     /** Crew plus outside guests — what the invitee card counts. */
     val inviteeCount: Int = 0,
     /**
@@ -501,11 +508,16 @@ class CalendarViewModel(
      * the one the user just clicked — typing today's date into a form you
      * opened from today's cell is the sort of thing that makes a calendar feel
      * like paperwork.
+     *
+     * Never earlier than today, though: an event cannot be created in the
+     * past, and opening the form from last Tuesday's cell with last Tuesday
+     * already typed in offers a form that can only ever be refused.
      */
     private fun openForm(event: CalendarEvent?) {
         val state = currentState
+        val startOn = maxOf(state.focusedDay, state.today)
         val draft = event?.toDraft(state.zone)
-            ?: newEventDraft(state.focusedDay, now(), state.zone)
+            ?: newEventDraft(startOn, now(), state.zone)
 
         setState {
             copy(
@@ -633,6 +645,7 @@ class CalendarViewModel(
                     createdLabel = event.createdAtMillis
                         .takeIf { it > 0 }
                         ?.let { str(S.docusign_created_on, dateTimeLabel(it, state.zone)) },
+                    organiserName = organiserName(event),
                     inviteeCount = event.invitedCount,
                     inviteeFaces = facesFor(event),
                 ),
@@ -640,6 +653,35 @@ class CalendarViewModel(
                 inviteeList = null,
             )
         }
+    }
+
+    /**
+     * Which occurrence of a repeating event this one is, as `invitationlist`
+     * addresses it; null for an event that happens once.
+     */
+    private fun occurrenceOf(event: CalendarEvent): String? =
+        if (event.isRecurring) {
+            Instant.fromEpochMilliseconds(event.startMillis)
+                .toLocalDateTime(currentState.zone).date.isoText()
+        } else {
+            null
+        }
+
+    /**
+     * Who to print as the organiser.
+     *
+     * `calendar/events` rows carry the creator's id far more dependably than
+     * their name — rows come back with `created_by` and no `created_by_name`,
+     * which read the popover's organiser line as "Unknown" on events the user
+     * had written themselves. The id is resolved against the crew the session
+     * already holds — the same list the avatar stack puts faces to — which
+     * costs no request and names everyone still on the production, the
+     * signed-in user included.
+     */
+    private fun organiserName(event: CalendarEvent): String {
+        event.creatorName?.takeIf { it.isNotBlank() }?.let { return it }
+        val id = event.creatorId?.takeIf { it.isNotBlank() } ?: return ""
+        return directory().firstOrNull { it.userId == id }?.name.orEmpty()
     }
 
     /**
@@ -670,12 +712,7 @@ class CalendarViewModel(
     private fun openInvitees() {
         val detail = currentState.detail ?: return
         val event = detail.event
-        val occurrence = if (event.isRecurring) {
-            Instant.fromEpochMilliseconds(event.startMillis)
-                .toLocalDateTime(currentState.zone).date.isoText()
-        } else {
-            null
-        }
+        val occurrence = occurrenceOf(event)
 
         setState {
             copy(

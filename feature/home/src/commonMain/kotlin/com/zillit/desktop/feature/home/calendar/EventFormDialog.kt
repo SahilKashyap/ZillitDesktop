@@ -244,6 +244,10 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
         errorText = form.errors.messageFor(EventFieldError.DateInvalid)
             ?: form.errors.messageFor(EventFieldError.DateInPast),
         modifier = Modifier.fillMaxWidth(),
+        // A new event cannot be put in the past, so the grid does not offer
+        // it. An edit can: last week's call sheet still needs its typos fixed,
+        // which is the same line `validate` draws.
+        minDate = form.today.takeUnless { draft.isEdit },
     )
 
     ZillitCheckbox(

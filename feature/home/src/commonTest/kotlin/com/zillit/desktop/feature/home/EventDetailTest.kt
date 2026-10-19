@@ -73,6 +73,7 @@ class EventDetailTest {
         end: Long = FUTURE + HOUR,
         status: String? = null,
         creator: String? = "u1",
+        creatorName: String? = null,
     ) = CalendarEvent(
         id = id,
         title = "Unit call",
@@ -80,6 +81,7 @@ class EventDetailTest {
         endMillis = end,
         status = status,
         creatorId = creator,
+        creatorName = creatorName,
     )
 
     private class FakeCalendar : CalendarRepository {
@@ -146,11 +148,16 @@ class EventDetailTest {
             ZillitResult.Success(emptyList<com.zillit.desktop.feature.home.calendar.TimezoneOption>())
     }
 
-    private fun viewModel(repo: FakeCalendar, userId: String? = "u1") =
+    private fun viewModel(
+        repo: FakeCalendar,
+        userId: String? = "u1",
+        directory: List<EventInvitee> = emptyList(),
+    ) =
         CalendarViewModel(
             repo,
             today = { LocalDate(2026, 1, 1) },
             currentUserId = { userId },
+            invitees = { directory },
             // Pinned to the same day as `today`: the form refuses a new event
             // in the past, and a real clock would put every draft there.
             now = { Instant.parse("2026-01-01T08:00:00Z") },
@@ -277,6 +284,65 @@ class EventDetailTest {
         val detail = calendar.state.value.detail
         assertEquals("e1", detail?.event?.id)
         assertTrue(detail?.permissions?.canManage == true, "u1 created it")
+    }
+
+    @Test
+    fun `an organiser the row does not name is looked up in the crew`() {
+        // `calendar/events` rows carry `created_by` and no `created_by_name`,
+        // which read the organiser line as "Unknown" on events the user had
+        // written themselves.
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo, directory = listOf(EventInvitee("u1", "Randeep Singh")))
+
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(event()))
+
+        assertEquals("Randeep Singh", calendar.state.value.detail?.organiserName)
+    }
+
+    @Test
+    fun `a named organiser is taken from the row, not the crew`() {
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo, directory = listOf(EventInvitee("u1", "Stale Name")))
+
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(event(creatorName = "Randeep Singh")))
+
+        assertEquals("Randeep Singh", calendar.state.value.detail?.organiserName)
+    }
+
+    @Test
+    fun `an organiser no longer on the production stays nameless`() {
+        // Empty rather than their id: the popover says "Unknown", which is
+        // true, instead of printing a mongo id at someone.
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo, directory = listOf(EventInvitee("u2", "Someone Else")))
+
+        calendar.onEvent(CalendarEvent2Event.OpenDetail(event()))
+
+        assertEquals("", calendar.state.value.detail?.organiserName)
+    }
+
+    @Test
+    fun `a new event opened from a past day starts today`() {
+        // The past-date rule would refuse it on save, so the form never opens
+        // with a date it can only reject.
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo)
+
+        calendar.onEvent(CalendarEvent2Event.Select(LocalDate(2025, 12, 20)))
+        calendar.onEvent(CalendarEvent2Event.OpenForm(null))
+
+        assertEquals("2026-01-01", calendar.state.value.form?.draft?.dateText)
+    }
+
+    @Test
+    fun `a new event opened from a future day keeps that day`() {
+        val repo = FakeCalendar()
+        val calendar = viewModel(repo)
+
+        calendar.onEvent(CalendarEvent2Event.Select(LocalDate(2026, 3, 9)))
+        calendar.onEvent(CalendarEvent2Event.OpenForm(null))
+
+        assertEquals("2026-03-09", calendar.state.value.form?.draft?.dateText)
     }
 
     @Test

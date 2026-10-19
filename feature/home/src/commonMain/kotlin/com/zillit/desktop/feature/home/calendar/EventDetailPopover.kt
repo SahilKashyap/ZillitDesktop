@@ -310,7 +310,11 @@ private fun CalendarEvent.mapOpener(onOpenLink: ((String) -> Unit)?): (() -> Uni
 @Composable
 private fun organiserLine(detail: EventDetailState): InfoLine {
     val event = detail.event
-    val name = event.creatorName?.takeIf { it.isNotBlank() } ?: str(S.desktop_unknown)
+    // Resolved in the view model, which can reach the crew list; the row's own
+    // name is the fallback for a state built without one.
+    val name = detail.organiserName.takeIf { it.isNotBlank() }
+        ?: event.creatorName?.takeIf { it.isNotBlank() }
+        ?: str(S.desktop_unknown)
 
     return InfoLine(
         icon = ZillitIcons.User,
@@ -368,7 +372,12 @@ private fun InfoRow(line: InfoLine, divider: Boolean) {
  */
 @Composable
 private fun InviteeCard(detail: EventDetailState, onEvent: (CalendarEvent2Event) -> Unit) {
-    if (detail.inviteeCount == 0) return
+    // A members event always has people on it, so the card is always its way
+    // in to them — even when the event row came back without its invitee
+    // array, which is how the only route to the invitee list used to vanish.
+    // A personal event has nobody, and the card would be a door to an empty
+    // room.
+    if (detail.inviteeCount == 0 && detail.event.audience != EventAudience.Members) return
     val colors = ZillitTheme.colors
 
     Column(
@@ -443,12 +452,19 @@ private fun TileIcon(icon: ImageVector, size: Dp, background: Color, tint: Color
     }
 }
 
-/** "21 Invitees" — the singular is its own key, never an inflected "(s)". */
+/**
+ * "21 Invitees" — the singular is its own key, never an inflected "(s)".
+ *
+ * A count of none on a members event means the row did not carry its guest
+ * list, not that nobody was asked: the plain word, rather than a "0 Invitees"
+ * the list underneath would immediately contradict.
+ */
 @Composable
-private fun inviteeCountLabel(count: Int): String = str(
-    if (count == 1) S.desktop_cal_invitee_count_one else S.desktop_cal_invitee_count_many,
-    count,
-)
+private fun inviteeCountLabel(count: Int): String = when (count) {
+    0 -> str(S.invitees)
+    1 -> str(S.desktop_cal_invitee_count_one, count)
+    else -> str(S.desktop_cal_invitee_count_many, count)
+}
 
 /**
  * Up to five faces, overlapping, with a "+N" bubble for the rest.

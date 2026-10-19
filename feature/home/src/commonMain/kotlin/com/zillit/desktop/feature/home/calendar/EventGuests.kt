@@ -2,8 +2,10 @@ package com.zillit.desktop.feature.home.calendar
 
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -137,27 +139,49 @@ internal fun JsonObject.readAudience(): EventAudience {
 }
 
 /**
- * Everyone on the event, under either spelling.
+ * Everyone on the event, under every spelling.
  *
- * `invitees` is iOS's key and `invited_users` the web's; a row may carry one or
- * both, and the same person appearing in each is deduplicated by the set and
- * the `distinct` below.
+ * `invitees` is iOS's key, `invited_users` the web's, and `invitations` what
+ * the stored document calls the same array once the server has expanded it. A
+ * row may carry any of them, or several, and the same person appearing twice
+ * is deduplicated by the set and the `distinct` below.
  */
+private val GUEST_KEYS = listOf("invitees", "invited_users", "invitations")
+
+private fun JsonObject.guestElements(): List<JsonElement> =
+    GUEST_KEYS.flatMap { key -> (this[key] as? JsonArray).orEmpty() }
+
 private fun JsonObject.guestRows(): List<JsonObject> =
-    ((this["invitees"] as? JsonArray).orEmpty() + (this["invited_users"] as? JsonArray).orEmpty())
-        .filterIsInstance<JsonObject>()
+    guestElements().filterIsInstance<JsonObject>()
+
+/**
+ * Guests written as bare strings rather than rows — `invitees: ["64ab…"]`.
+ *
+ * Reading only objects lost every one of them, which left the detail popover
+ * with nobody to count and so no invitee card at all. An address is an outside
+ * guest and anything else is a crew id: there is no `type` to go on, and that
+ * is the only distinction the two lists need.
+ */
+private fun JsonObject.guestStrings(): List<String> =
+    guestElements()
+        .mapNotNull { (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.content }
+        .filter { it.isNotBlank() }
 
 internal fun JsonObject.inviteeIds(): Set<String> =
-    guestRows()
-        .filter { it.str("type") != EXTERNAL_GUEST }
-        .mapNotNull { it.str("user_id") ?: it.str("userId") ?: it.str("_id") }
-        .toSet()
+    (
+        guestRows()
+            .filter { it.str("type") != EXTERNAL_GUEST }
+            .mapNotNull { it.str("user_id") ?: it.str("userId") ?: it.str("_id") } +
+            guestStrings().filterNot { it.looksLikeGuestEmail() }
+        ).toSet()
 
 internal fun JsonObject.externalEmails(): List<String> =
-    guestRows()
-        .filter { it.str("type") == EXTERNAL_GUEST }
-        .mapNotNull { it.str("email") }
-        .distinct()
+    (
+        guestRows()
+            .filter { it.str("type") == EXTERNAL_GUEST }
+            .mapNotNull { it.str("email") } +
+            guestStrings().filter { it.looksLikeGuestEmail() }
+        ).distinct()
 
 /**
  * Nobody is invited to a personal event.

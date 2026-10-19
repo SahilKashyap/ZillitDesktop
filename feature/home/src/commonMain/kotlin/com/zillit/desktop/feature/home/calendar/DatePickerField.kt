@@ -47,6 +47,11 @@ import kotlinx.datetime.plus
  * picker that takes the keyboard away is the one people complain about. The
  * grid is an alternative, not a replacement — which is also why an unparseable
  * date is left alone rather than corrected.
+ *
+ * [minDate] greys out the days before it and makes them unpickable, as the
+ * web's picker does. It only stops a day being *chosen* in the grid: the field
+ * stays typeable, so the rule that actually decides the matter is the one in
+ * `validate`.
  */
 @Composable
 internal fun DatePickerField(
@@ -58,6 +63,7 @@ internal fun DatePickerField(
     placeholder: String = str(S.desktop_cal_date_placeholder),
     errorText: String? = null,
     weekStart: DayOfWeek = DayOfWeek.MONDAY,
+    minDate: LocalDate? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     // Which month the grid shows. Seeded from the field, and kept while the
@@ -87,6 +93,7 @@ internal fun DatePickerField(
                 selected = value.toLocalDateOrNull(),
                 today = today,
                 weekStart = weekStart,
+                minDate = minDate,
                 onMonth = { visibleMonth = it },
                 onPick = { date ->
                     onValueChange(date.isoText())
@@ -115,6 +122,7 @@ private fun MonthPicker(
     weekStart: DayOfWeek,
     onMonth: (LocalDate) -> Unit,
     onPick: (LocalDate) -> Unit,
+    minDate: LocalDate? = null,
 ) {
     val grid = monthGrid(month, weekStart)
 
@@ -160,6 +168,7 @@ private fun MonthPicker(
                         day = day,
                         isSelected = day.date == selected,
                         isToday = day.date == today,
+                        isEnabled = minDate == null || day.date >= minDate,
                         onPick = onPick,
                         modifier = Modifier.weight(1f),
                     )
@@ -176,6 +185,7 @@ private fun DayButton(
     isToday: Boolean,
     onPick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    isEnabled: Boolean = true,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -192,15 +202,17 @@ private fun DayButton(
                 .background(
                     when {
                         isSelected -> colors.accent
-                        hovered -> colors.surfaceHover
+                        hovered && isEnabled -> colors.surfaceHover
                         else -> colors.surface
                     },
                 )
-                .hoverable(interaction)
+                .hoverable(interaction, enabled = isEnabled)
                 // Days from the neighbouring months are pickable, not just
                 // decoration: the 1st of next month is often exactly what
-                // someone scrolling to the end of a month wants.
-                .clickable { onPick(day.date) },
+                // someone scrolling to the end of a month wants. A day before
+                // the minimum is not: it is drawn, so the month still reads as
+                // a month, and does nothing when clicked.
+                .clickable(enabled = isEnabled) { onPick(day.date) },
             contentAlignment = Alignment.Center,
         ) {
             ZillitText(
@@ -210,7 +222,7 @@ private fun DayButton(
                 ),
                 color = when {
                     isSelected -> colors.textOnAccent
-                    !day.inMonth -> colors.textMuted
+                    !isEnabled || !day.inMonth -> colors.textMuted
                     isToday -> colors.accentText
                     else -> colors.textPrimary
                 },
