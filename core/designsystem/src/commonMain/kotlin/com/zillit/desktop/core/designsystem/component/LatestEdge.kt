@@ -81,34 +81,11 @@ fun FollowLatest(
     }
 }
 
-/**
- * [FollowLatest] for a `reverseLayout` list, where index 0 IS the newest item
- * and the visual bottom.
- *
- * Reversed layout is the chat-thread shape: the bottom edge is pinned by
- * construction, so media bubbles above inflating as their thumbnails load
- * cannot shove the newest message out of view — the failure mode that made
- * forward chat lists open mid-history. Following is just "stay at zero":
- * unconditionally on a thread switch, and on new arrivals only for a reader
- * already at the bottom.
- */
-@Composable
-fun FollowLatestReversed(
-    listState: LazyListState,
-    itemCount: Int,
-    contentKey: Any? = null,
-) {
-    var anchoredTo by remember(listState) { mutableStateOf<Any?>(Unanchored) }
-    LaunchedEffect(itemCount, contentKey) {
-        if (itemCount == 0) return@LaunchedEffect
-        val fresh = anchoredTo == Unanchored || anchoredTo != contentKey
-        val atLatest = listState.firstVisibleItemIndex < AT_LATEST_SLACK
-        if (fresh || atLatest) {
-            listState.scrollToItem(0)
-            anchoredTo = contentKey
-        }
-    }
-}
+// A reversed-layout counterpart lived here until the chat thread, its only
+// caller, outgrew it: a thread has to follow its own outgoing messages
+// unconditionally, which needs the identity of the newest message rather than
+// a row count. That rule is chat's, not the design system's, and lives beside
+// the thread as `FollowNewestMessage`.
 
 /**
  * Rows of tolerance between "at the latest" and "reading elsewhere".
