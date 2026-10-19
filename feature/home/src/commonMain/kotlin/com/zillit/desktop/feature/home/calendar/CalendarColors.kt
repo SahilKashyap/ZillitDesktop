@@ -33,19 +33,29 @@ internal fun CalendarEvent.tint(): Color {
 }
 
 /**
- * The palette the form offers. First entry is "no colour" (the web's white
- * default, shown as the accent); the rest are the hues the web's picker
- * commonly lands on.
+ * The palette the form offers — the web's `EVENT_COLORS`, in its order.
+ *
+ * The same twelve the web's picker presets to, so an event coloured on one
+ * client reads as a deliberate choice on the other instead of as the nearest
+ * hue the desktop happened to carry.
  */
 internal val EVENT_PALETTE = listOf(
-    "",
-    "#f5222d",
-    "#fa8c16",
-    "#fadb14",
-    "#52c41a",
-    "#1677ff",
-    "#722ed1",
+    "#fc9404",
+    "#C7784A",
+    "#7A8B6E",
+    "#C4697A",
+    "#5B7FA5",
+    "#A67B5B",
+    "#D4A853",
+    "#5A6B4F",
+    "#8B6E8B",
+    "#6B8F9C",
+    "#D4956B",
+    "#785A3C",
 )
+
+/** The web's `DEFAULT_EVENT_COLOR`: what a new event wears unless it says otherwise. */
+internal const val DEFAULT_EVENT_COLOR = "#fc9404"
 
 private const val HEX_DIGITS = 6
 private const val HEX_RADIX = 16

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.home
 
 import androidx.compose.ui.graphics.Color
+import com.zillit.desktop.feature.home.calendar.DEFAULT_EVENT_COLOR
 import com.zillit.desktop.feature.home.calendar.EVENT_PALETTE
 import com.zillit.desktop.feature.home.calendar.parseEventColor
 import kotlin.test.Test
@@ -31,10 +32,11 @@ class CalendarColorsTest {
     }
 
     @Test
-    fun `every palette entry is usable`() {
-        // The first entry is "no colour chosen" by design; the rest must parse.
-        assertEquals("", EVENT_PALETTE.first())
-        EVENT_PALETTE.drop(1).forEach { hex ->
+    fun `every palette entry is usable, and the default leads`() {
+        // The web's EVENT_COLORS, in its order: the default is what a new
+        // event wears, so it is the one the picker opens on.
+        assertEquals(DEFAULT_EVENT_COLOR, EVENT_PALETTE.first())
+        EVENT_PALETTE.forEach { hex ->
             assertEquals(true, parseEventColor(hex) != null, "palette entry $hex must parse")
         }
     }

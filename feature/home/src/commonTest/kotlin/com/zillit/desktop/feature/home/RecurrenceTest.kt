@@ -5,9 +5,11 @@ import com.zillit.desktop.feature.home.calendar.RecurrenceError
 import com.zillit.desktop.feature.home.calendar.RecurrenceFrequency
 import com.zillit.desktop.feature.home.calendar.defaultRecurrenceEnd
 import com.zillit.desktop.feature.home.calendar.endMillis
+import com.zillit.desktop.feature.home.calendar.repeatCount
 import com.zillit.desktop.feature.home.calendar.sundayFirstIndexToDayOfWeek
 import com.zillit.desktop.feature.home.calendar.toSundayFirstIndex
 import com.zillit.desktop.feature.home.calendar.validate
+import com.zillit.desktop.feature.home.calendar.withRepeatCount
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -167,5 +169,55 @@ class RecurrenceTest {
     fun `no end date means no end millis`() {
         assertNull(Recurrence(RecurrenceFrequency.Daily).endMillis(zone))
         assertNull(Recurrence(RecurrenceFrequency.Daily, endDateText = "nonsense").endMillis(zone))
+    }
+
+    // -- the length, counted in its own unit -------------------------------
+
+    @Test
+    fun `a repeat's length is read in the unit its frequency is measured in`() {
+        // The web's `computeRepeatCount`: six weeks of a weekly event reads
+        // "6", not "42" — the count box and the end date are one fact.
+        val weeklyRule = Recurrence(RecurrenceFrequency.Weekly, endDateText = "2026-09-15")
+        assertEquals(6, weeklyRule.repeatCount("2026-08-04"))
+
+        val dailyRule = Recurrence(RecurrenceFrequency.Daily, endDateText = "2026-08-14")
+        assertEquals(10, dailyRule.repeatCount("2026-08-04"))
+
+        val monthlyRule = Recurrence(RecurrenceFrequency.Monthly, endDateText = "2027-02-04")
+        assertEquals(6, monthlyRule.repeatCount("2026-08-04"))
+
+        // A custom rule repeats on weekdays, so it is measured in weeks.
+        assertEquals(1, weekly(end = "2026-08-11").repeatCount("2026-08-04"))
+    }
+
+    @Test
+    fun `a length is never read as nothing, and a rule that does not repeat has none`() {
+        // An end before the start is refused by `validate`; the count box is
+        // not where that is reported, so it floors at one rather than showing
+        // "-3" or "0".
+        val backwards = Recurrence(RecurrenceFrequency.Weekly, endDateText = "2026-07-01")
+        assertEquals(1, backwards.repeatCount("2026-08-04"))
+
+        assertNull(Recurrence(RecurrenceFrequency.Never).repeatCount("2026-08-04"))
+        assertNull(Recurrence(RecurrenceFrequency.Weekly).repeatCount("2026-08-04"))
+    }
+
+    @Test
+    fun `typing a length moves the end date`() {
+        val rule = Recurrence(RecurrenceFrequency.Weekly, endDateText = "2026-08-11")
+
+        assertEquals("2026-09-15", rule.withRepeatCount(6, "2026-08-04").endDateText)
+        assertEquals("2026-08-05", Recurrence(RecurrenceFrequency.Daily).withRepeatCount(1, "2026-08-04").endDateText)
+    }
+
+    @Test
+    fun `a length outside its unit's range leaves the end date alone`() {
+        // Weeks cap at 52, as the web's UNIT_MAP caps them — and a "1" on the
+        // way to "12" must not rewrite the field being typed into.
+        val rule = Recurrence(RecurrenceFrequency.Weekly, endDateText = "2026-09-15")
+
+        assertEquals("2026-09-15", rule.withRepeatCount(53, "2026-08-04").endDateText)
+        assertEquals("2026-09-15", rule.withRepeatCount(0, "2026-08-04").endDateText)
+        assertEquals("2026-09-15", rule.withRepeatCount(6, "nonsense").endDateText)
     }
 }

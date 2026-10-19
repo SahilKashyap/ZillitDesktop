@@ -325,7 +325,11 @@ fun CalendarEvent.toDraft(zone: TimeZone): EventDraft {
         inviteeIds = inviteeIds,
         externalEmails = externalEmails,
         recurrence = recurrence,
-        colorHex = colorHex.orEmpty(),
+        // An event stored without a colour opens on the default rather than on
+        // nothing, exactly as the web's `prefill?.color || DEFAULT_EVENT_COLOR`
+        // does — the picker has no "unset" to show, and saving an untouched
+        // form must not turn a colour into a blank.
+        colorHex = colorHex.orEmpty().ifBlank { DEFAULT_EVENT_COLOR },
         timezoneId = timezone.orEmpty(),
         audience = audience,
         callType = callType,

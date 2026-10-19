@@ -68,19 +68,22 @@ class EventFormRenderTest {
         // Who it is for, which the web asks first.
         onNodeWithText("Members").assertExists()
         onNodeWithText("Personal").assertExists()
-        // How they are meeting — required, so it has to be reachable.
-        onNodeWithText("Call type").assertExists()
+        // How they are meeting — required, so it has to be reachable. Nothing
+        // chosen yet, so the closed select reads as its own name, the way the
+        // web's placeholder does.
+        onNodeWithText("Call type *").assertExists()
+        onAllNodesWithText("Call type")[0].performClick()
         onNodeWithText("Video Call").assertExists()
         onNodeWithText("Meet in Person & Call").assertExists()
         // Who is coming, by crew record or by address.
-        onNodeWithText("Invite crew").assertExists()
+        onNodeWithText("Invitees").assertExists()
         onNodeWithText("Add crew").assertExists()
         onNodeWithText("External Guests").assertExists()
-        onNodeWithText("I will not be part of this event").assertExists()
+        onNodeWithText("The organizer will not be a part of this event").assertExists()
         // And the rest of the form.
         onNodeWithText("Repeat").assertExists()
         onNodeWithText("Reminder").assertExists()
-        onNodeWithText("Create").assertExists()
+        onNodeWithText("Create Event").assertExists()
     }
 
     @Test
@@ -88,11 +91,11 @@ class EventFormRenderTest {
         val personal = newEvent().copy(audience = EventAudience.Personal)
         setContent { ZillitTheme { EventFormDialog(form(personal), onEvent = {}) } }
 
-        onNodeWithText("Call type").assertDoesNotExist()
+        onNodeWithText("Call type *").assertDoesNotExist()
         onNodeWithText("External Guests").assertDoesNotExist()
         onNodeWithText("Add crew").assertDoesNotExist()
         // The date and times are still everybody's business.
-        onNodeWithText("Start time").assertExists()
+        onNodeWithText("Start time *").assertExists()
     }
 
     @Test
@@ -102,7 +105,7 @@ class EventFormRenderTest {
         setContent { ZillitTheme { EventFormDialog(form(newEvent().copy(id = "e1")), onEvent = {}) } }
 
         onNodeWithText("Personal").assertDoesNotExist()
-        onNodeWithText("Save").assertExists()
+        onNodeWithText("Update Event").assertExists()
     }
 
     @Test
@@ -110,14 +113,18 @@ class EventFormRenderTest {
         val night = newEvent().copy(startText = "22:00", endText = "04:00")
         setContent { ZillitTheme { EventFormDialog(form(night), onEvent = {}) } }
 
-        onNodeWithText("Ends the next day, 2026-08-05").assertExists()
+        // The End Date field is read, not typed: an event running past
+        // midnight ends on the following day and has to say so.
+        onNodeWithText("End Date").assertExists()
+        onNodeWithText("2026-08-05").assertExists()
     }
 
     @Test
-    fun `a same-day event says so plainly`() = runComposeUiTest {
+    fun `a same-day event ends on the day it starts`() = runComposeUiTest {
         setContent { ZillitTheme { EventFormDialog(form(newEvent()), onEvent = {}) } }
 
-        onNodeWithText("Ends 2026-08-04").assertExists()
+        // Twice over: the start date field and the end date that mirrors it.
+        onAllNodesWithText("2026-08-04").assertCountEquals(2)
     }
 
     @Test
@@ -183,7 +190,7 @@ class EventFormRenderTest {
         setContent { ZillitTheme { EventFormDialog(form(chosen), onEvent = events::add) } }
 
         onNodeWithText("Peach Android").assertExists()
-        onNodeWithText("Invite crew — 1 selected").assertExists()
+        onNodeWithText("Invitees").assertExists()
 
         scrollFormToBottom()
         onNodeWithContentDescription("Remove Peach Android").performClick()
@@ -215,7 +222,7 @@ class EventFormRenderTest {
         val meeting = newEvent().copy(callType = CallType.InPersonAndCall)
         setContent { ZillitTheme { EventFormDialog(form(meeting), onEvent = {}) } }
 
-        onNodeWithText("Location — required").assertExists()
+        onNodeWithText("Location *").assertExists()
     }
 
     /**

@@ -2,45 +2,45 @@ package com.zillit.desktop.feature.home.calendar
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.config.CallLineNumbering
+import com.zillit.desktop.core.config.EventCallLine
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitOptionPopup
+import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitSelectTrigger
+import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.component.popupWidth
+import com.zillit.desktop.core.designsystem.component.rememberZillitSelectAnchor
+import com.zillit.desktop.core.designsystem.component.zillitSelectAnchor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.PickedLocation
-import com.zillit.desktop.core.locationpicker.oneLine
 import com.zillit.desktop.core.locationpicker.ZillitLocationField
-import com.zillit.desktop.core.config.CallLineNumbering
-import com.zillit.desktop.core.config.EventCallLine
+import com.zillit.desktop.core.locationpicker.oneLine
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.callLineLabel
 import com.zillit.desktop.core.strings.str
@@ -49,9 +49,13 @@ import com.zillit.desktop.core.strings.str
  * Creating and editing an event.
  *
  * A port of the web's `calendarV3` `EventForm`, field for field and rule for
- * rule. The location is picked on a map, as the web picks it, and its
- * coordinates travel with it (`AddCalendarEvent.jsx:433-438`) — see
- * [MeetingSection].
+ * rule — and now row for row: the fields sit in the web's own four-across
+ * lines (date and times, repeat and zone and reminder, where and how and what
+ * colour) rather than in stacked cards, so somebody who books events on the
+ * web finds each control where their eye already goes.
+ *
+ * The location is picked on a map, as the web picks it, and its coordinates
+ * travel with it (`AddCalendarEvent.jsx:433-438`) — see [MeetingRow].
  */
 @Composable
 internal fun EventFormDialog(
@@ -88,7 +92,7 @@ internal fun EventFormDialog(
     }
 }
 
-/** The two buttons, pinned under the scrolling fields. */
+/** The two buttons, pinned under the scrolling fields — the web's drawer footer. */
 @Composable
 private fun RowScope.FormActions(form: EventFormState, onEvent: (CalendarEvent2Event) -> Unit) {
     Spacer(Modifier.weight(1f))
@@ -98,7 +102,7 @@ private fun RowScope.FormActions(form: EventFormState, onEvent: (CalendarEvent2E
         onClick = { onEvent(CalendarEvent2Event.CloseForm) },
     )
     ZillitButton(
-        text = if (form.draft.isEdit) str(S.save) else str(S.create),
+        text = if (form.draft.isEdit) str(S.ce_update_event) else str(S.create_event),
         loading = form.isSaving,
         onClick = { onEvent(CalendarEvent2Event.SaveForm) },
     )
@@ -113,89 +117,58 @@ private fun FormFields(
     val draft = form.draft
     val change = { updated: EventDraft -> onEvent(CalendarEvent2Event.FormChanged(updated)) }
 
-    ZillitTextField(
-        value = draft.title,
-        onValueChange = { change(draft.copy(title = it)) },
-        label = str(S.title),
-        placeholder = str(S.event_name),
-        errorText = form.errors.messageFor(EventFieldError.TitleBlank)
-            ?: form.errors.messageFor(EventFieldError.TitleTooShort),
-        modifier = Modifier.fillMaxWidth(),
-    )
-
+    TitleRow(form, change)
     AudienceRow(form, change)
-    ColorRow(draft, change)
-
-    FormSection(icon = ZillitIcons.Clock, title = str(S.section_when)) {
-        WhenSection(form, change)
-        TimezoneRow(form, change)
-    }
-
-    FormSection(
-        icon = if (draft.isForMembers) ZillitIcons.Phone else ZillitIcons.Home,
-        title = if (draft.isForMembers) str(S.desktop_cal_section_meeting) else str(S.desktop_cal_section_where),
-    ) {
-        MeetingSection(form, change)
-    }
-
-    FormSection(icon = ZillitIcons.Reload, title = str(S.repeat)) {
-        RecurrenceSection(form, change)
-    }
-
-    FormSection(icon = ZillitIcons.Bell, title = str(S.reminder)) {
-        ReminderRow(form, change)
-    }
+    WhenRow(form, change)
+    RepeatRow(form, change)
+    MeetingRow(form, change)
 
     if (draft.isForMembers) {
-        FormSection(icon = ZillitIcons.Users, title = str(S.section_people)) {
-            GuestSection(form, change, loadAvatar)
-        }
+        InviteeList(form, change, loadAvatar)
+        ExternalGuests(draft, change)
+
+        ZillitCheckbox(
+            checked = draft.excludeOrganiser,
+            label = str(S.exclude_me),
+            onCheckedChange = { change(draft.copy(excludeOrganiser = it)) },
+        )
+
+        form.errors.messageFor(EventFieldError.NoInvitees)?.let { ErrorLine(it) }
     }
 
     ZillitTextField(
         value = draft.description,
         onValueChange = { change(draft.copy(description = it)) },
         label = str(S.description),
-        placeholder = str(S.desktop_cal_notes_or_agenda),
+        placeholder = str(S.description_hint),
         singleLine = false,
         modifier = Modifier.fillMaxWidth().heightIn(min = NOTES_HEIGHT),
     )
 }
 
-/**
- * A titled group of fields on a sunken card.
- *
- * The form asks a dozen questions; ungrouped they read as one long
- * interrogation. Each card is one topic — when, where, how often — so the eye
- * can skip whole cards that don't apply, the way the web's form separates its
- * panels.
- */
+/** The name, and whether it takes the whole day — the web's top line. */
 @Composable
-private fun FormSection(
-    icon: ImageVector,
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.large)
-            .background(ZillitTheme.colors.surfaceSunken)
-            .padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+private fun TitleRow(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            ZillitIcon(icon, tint = ZillitTheme.colors.accentText, size = SECTION_ICON)
-            ZillitText(
-                text = title,
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
-        content()
+        ZillitTextField(
+            value = draft.title,
+            onValueChange = { change(draft.copy(title = it)) },
+            placeholder = str(S.add_title),
+            errorText = form.errors.messageFor(EventFieldError.TitleBlank)
+                ?: form.errors.messageFor(EventFieldError.TitleTooShort),
+            modifier = Modifier.weight(1f),
+        )
+        ZillitSwitch(
+            checked = draft.isAllDay,
+            onCheckedChange = { change(draft.copy(isAllDay = it)) },
+            label = str(S.all_day),
+        )
     }
 }
 
@@ -212,20 +185,25 @@ private fun AudienceRow(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
     if (draft.isEdit) return
 
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         EventAudience.entries.forEach { audience ->
             ZillitButton(
                 text = str(audience.label),
                 variant = chosen(audience == draft.audience),
                 size = ButtonSize.Small,
+                leadingIcon = if (audience == EventAudience.Members) ZillitIcons.Users else ZillitIcons.Edit,
                 onClick = { change(draft.copy(audience = audience)) },
+                modifier = Modifier.weight(1f),
             )
         }
     }
 }
 
 /**
- * When it happens.
+ * When it happens: start date, the two times, and the date it ends on.
  *
  * The end date is shown and not edited, as on the web: an event covers one day
  * unless its end time runs past midnight, and then it covers two. Showing the
@@ -233,35 +211,29 @@ private fun AudienceRow(form: EventFormState, change: (EventDraft) -> Unit) {
  * a typo that somehow saved.
  */
 @Composable
-private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
+private fun WhenRow(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
 
-    DatePickerField(
-        value = draft.dateText,
-        onValueChange = { change(draft.withDate(it)) },
-        today = form.today,
-        label = str(S.start_date),
-        errorText = form.errors.messageFor(EventFieldError.DateInvalid)
-            ?: form.errors.messageFor(EventFieldError.DateInPast),
-        modifier = Modifier.fillMaxWidth(),
-        // A new event cannot be put in the past, so the grid does not offer
-        // it. An edit can: last week's call sheet still needs its typos fixed,
-        // which is the same line `validate` draws.
-        minDate = form.today.takeUnless { draft.isEdit },
-    )
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        DatePickerField(
+            value = draft.dateText,
+            onValueChange = { change(draft.withDate(it)) },
+            today = form.today,
+            label = required(str(S.start_date)),
+            errorText = form.errors.messageFor(EventFieldError.DateInvalid)
+                ?: form.errors.messageFor(EventFieldError.DateInPast),
+            modifier = Modifier.weight(1f),
+            // A new event cannot be put in the past, so the grid does not offer
+            // it. An edit can: last week's call sheet still needs its typos fixed,
+            // which is the same line `validate` draws.
+            minDate = form.today.takeUnless { draft.isEdit },
+        )
 
-    ZillitCheckbox(
-        checked = draft.isAllDay,
-        label = str(S.all_day),
-        onCheckedChange = { change(draft.copy(isAllDay = it)) },
-    )
-
-    if (!draft.isAllDay) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        if (!draft.isAllDay) {
             TimePickerField(
                 value = draft.startText,
                 onValueChange = { change(draft.withStartTime(it)) },
-                label = str(S.start_time),
+                label = required(str(S.start_time)),
                 placeholder = "09:00",
                 errorText = form.errors.messageFor(EventFieldError.StartTimeInvalid)
                     ?: form.errors.messageFor(EventFieldError.TooShort),
@@ -270,77 +242,187 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
             TimePickerField(
                 value = draft.endText,
                 onValueChange = { change(draft.copy(endText = it)) },
-                label = str(S.end_time),
+                label = required(str(S.end_time)),
                 placeholder = "17:30",
                 errorText = form.errors.messageFor(EventFieldError.EndTimeInvalid),
                 modifier = Modifier.weight(1f),
             )
         }
 
-        draft.endDateText.takeIf { it.isNotBlank() }?.let { ends ->
-            ZillitText(
-                text = if (draft.isOvernight) {
-                    str(S.desktop_cal_ends_next_day, ends)
-                } else {
-                    str(S.desktop_cal_ends_at, ends)
-                },
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textMuted,
+        // Shown, never typed into: it is a reading of the other three fields.
+        ZillitTextField(
+            value = draft.endDateText,
+            onValueChange = {},
+            label = str(S.end_date),
+            enabled = false,
+            readOnly = true,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
+ * How often, in which zone, and how long before.
+ *
+ * The web's second line. The weekday row, the end of the repeat and its length
+ * follow underneath, and only once a repeat has been chosen — a fixed block of
+ * repeat controls above every one-off event is furniture, and most events are
+ * one-offs.
+ */
+@Composable
+private fun RepeatRow(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+    val rule = draft.recurrence
+
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        LabelledField(str(S.repeat), Modifier.weight(1f)) {
+            ZillitSelect(
+                value = rule.frequency,
+                options = RecurrenceFrequency.entries,
+                // Choosing a repeat fills in where it stops, rather than
+                // leaving a required field blank to be discovered on save.
+                onSelect = { change(draft.repeating(it)) },
+                label = { str(it.label) },
+                showInitials = false,
+                modifier = Modifier.fillMaxWidth(),
             )
+        }
+        TimezoneField(form, change, Modifier.weight(1f))
+        LabelledField(
+            label = str(S.reminder),
+            modifier = Modifier.weight(1f),
+            error = form.errors.messageFor(EventFieldError.ReminderPassed),
+        ) {
+            ZillitSelect(
+                value = draft.reminderMinutes,
+                options = REMINDER_CHOICES,
+                onSelect = { change(draft.copy(reminderMinutes = it)) },
+                label = { reminderLabel(it) },
+                showInitials = false,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    if (rule.needsWeekdays) {
+        LabelledField(str(S.txt_select_days)) {
+            WeekdayPicker(rule) { change(draft.copy(recurrence = it)) }
+        }
+        form.recurrenceErrors.messageFor(RecurrenceError.NoWeekdays)?.let { ErrorLine(it) }
+    }
+
+    if (rule.repeats) {
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            DatePickerField(
+                value = rule.endDateText,
+                onValueChange = { change(draft.copy(recurrence = rule.copy(endDateText = it))) },
+                today = form.today,
+                label = required(str(S.repeat_until)),
+                placeholder = "2026-12-31",
+                errorText = form.recurrenceErrors.messageFor(RecurrenceError.NoEndDate)
+                    ?: form.recurrenceErrors.messageFor(RecurrenceError.EndBeforeStart),
+                modifier = Modifier.weight(REPEAT_UNTIL_SHARE),
+            )
+            RepeatCountField(form, change, Modifier.weight(1f))
         }
     }
 }
 
 /**
- * How people are meeting, and where.
+ * How long the repeat runs, in its own unit.
  *
- * Both belong to a members event; a personal one is a note to yourself and has
- * nobody to call. The location is asked for only when some of the attendees
- * are physically travelling to it — the web's `meet_in_person_call`.
+ * The web's count box beside the end date: the same fact said the other way
+ * round, because "every week for six weeks" is how a schedule is spoken and
+ * "until 30 November" is how it is checked. Typing in either moves the other.
  */
 @Composable
-private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
+private fun RepeatCountField(
+    form: EventFormState,
+    change: (EventDraft) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val draft = form.draft
+    val unit = draft.recurrence.frequency.unit ?: return
+    val counted = draft.recurrence.repeatCount(draft.dateText)
+    val typed = remember { mutableStateOf(counted?.toString().orEmpty()) }
+
+    // A count the user did not type — the end date moved, the frequency
+    // changed, the event was dragged to another day — shows through here.
+    // One being typed is left alone, or every second keystroke would be
+    // rewritten by the date it had just produced.
+    if (counted != null && typed.value.toIntOrNull() != counted) typed.value = counted.toString()
+
+    ZillitTextField(
+        value = typed.value,
+        onValueChange = { text ->
+            val digits = text.filter { it.isDigit() }.take(COUNT_DIGITS)
+            typed.value = digits
+            digits.toIntOrNull()?.let {
+                change(draft.copy(recurrence = draft.recurrence.withRepeatCount(it, draft.dateText)))
+            }
+        },
+        label = required(str(unit.label)),
+        keyboardType = KeyboardType.Number,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Where, how, and in what colour.
+ *
+ * The call type belongs to a members event; a personal one is a note to
+ * yourself and has nobody to call. The location is asked for — marked
+ * required, as the web marks it — only when some of the attendees are
+ * physically travelling to it, the web's `meet_in_person_call`.
+ */
+@Composable
+private fun MeetingRow(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
 
-    if (draft.isForMembers) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            FieldLabel(str(S.call_type))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-            ) {
-                CallType.entries.forEach { callType ->
-                    ZillitButton(
-                        text = str(callType.label),
-                        variant = chosen(callType == draft.callType),
-                        size = ButtonSize.Small,
-                        onClick = { change(draft.copy(callType = callType)) },
-                    )
-                }
-            }
-            form.errors.messageFor(EventFieldError.CallTypeMissing)?.let { ErrorLine(it) }
-        }
-        // The same condition the body sends `line` under — never one without the other.
-        if (draft.carriesLine) CallLinePicker(draft, change)
-    }
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        // Picked on a map, as the web picks it, and the point travels with the
+        // words: `eventBody` sends `location: {lat, long}` beside
+        // `location_description`, the shape `AddCalendarEvent.jsx:433-438` sends.
+        ZillitLocationField(
+            text = draft.location,
+            // Typing replaces a picked place, so its coordinates go with it.
+            onTextChange = { change(draft.copy(location = it, locationLat = null, locationLng = null)) },
+            onPicked = { change(draft.copy(location = it.oneLine(), locationLat = it.lat, locationLng = it.lng)) },
+            label = if (draft.callType?.needsLocation == true) required(str(S.location)) else str(S.location),
+            placeholder = str(S.desktop_select_location),
+            errorText = form.errors.messageFor(EventFieldError.LocationMissing),
+            // The event's own place, when it has one. Without this the picker gets
+            // nothing and now opens on the user's own position — one click from
+            // overwriting the address of an event being edited.
+            initial = draft.pickedLocation(),
+            modifier = Modifier.weight(1f),
+        )
 
-    // Picked on a map, as the web picks it, and the point travels with the
-    // words: `eventBody` sends `location: {lat, long}` beside
-    // `location_description`, the shape `AddCalendarEvent.jsx:433-438` sends.
-    ZillitLocationField(
-        text = draft.location,
-        // Typing replaces a picked place, so its coordinates go with it.
-        onTextChange = { change(draft.copy(location = it, locationLat = null, locationLng = null)) },
-        onPicked = { change(draft.copy(location = it.oneLine(), locationLat = it.lat, locationLng = it.lng)) },
-        label = if (draft.callType?.needsLocation == true) str(S.desktop_cal_location_required) else str(S.location),
-        placeholder = str(S.desktop_cal_where_to_meet),
-        errorText = form.errors.messageFor(EventFieldError.LocationMissing),
-        // The event's own place, when it has one. Without this the picker gets
-        // nothing and now opens on the user's own position — one click from
-        // overwriting the address of an event being edited.
-        initial = draft.pickedLocation(),
-        modifier = Modifier.fillMaxWidth(),
-    )
+        if (draft.isForMembers) {
+            LabelledField(
+                label = required(str(S.call_type)),
+                modifier = Modifier.weight(1f),
+                error = form.errors.messageFor(EventFieldError.CallTypeMissing),
+            ) {
+                ZillitSelect<CallType?>(
+                    value = draft.callType,
+                    options = CallType.entries,
+                    onSelect = { change(draft.copy(callType = it)) },
+                    // Nothing chosen reads as the field's own name, the way the
+                    // web's `placeholder="Call Type"` does.
+                    label = { it?.let { type -> str(type.label) } ?: str(S.call_type) },
+                    isError = EventFieldError.CallTypeMissing in form.errors,
+                    showInitials = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            // The same condition the body sends `line` under — never one without the other.
+            if (draft.carriesLine) CallLineField(draft, change, Modifier.weight(1f))
+        }
+
+        ColorField(draft, change, Modifier.weight(1f))
+    }
 }
 
 /** What the draft already holds as a place to reopen the map on, or null. */
@@ -356,82 +438,58 @@ private fun EventDraft.pickedLocation(): PickedLocation? {
  * every other call menu.
  */
 @Composable
-private fun CallLinePicker(draft: EventDraft, change: (EventDraft) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldLabel(str(S.desktop_call_line_picker))
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            EventCallLine.entries.forEach { line ->
-                ZillitButton(
-                    text = callLineLabel(CallLineNumbering.numberOf(line.engine)),
-                    variant = chosen(line == draft.line),
-                    size = ButtonSize.Small,
-                    onClick = { change(draft.copy(line = line)) },
-                )
-            }
-        }
+private fun CallLineField(
+    draft: EventDraft,
+    change: (EventDraft) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LabelledField(str(S.desktop_call_line_picker), modifier) {
+        ZillitSelect(
+            value = draft.line,
+            options = EventCallLine.entries,
+            onSelect = { change(draft.copy(line = it)) },
+            label = { callLineLabel(CallLineNumbering.numberOf(it.engine)) },
+            showInitials = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
 /**
- * How often it repeats.
+ * The event's colour: the web's twelve presets, named by their hex.
  *
- * The weekday row and the end date appear only once a repeat is chosen — a
- * fixed block of repeat controls above every one-off event is furniture, and
- * most events are one-offs.
+ * A dropdown rather than a row of swatches, because the row shared the line
+ * with three other controls and a dozen circles would have owned it.
  */
 @Composable
-private fun RecurrenceSection(form: EventFormState, change: (EventDraft) -> Unit) {
-    val draft = form.draft
-    val rule = draft.recurrence
-
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            RecurrenceFrequency.entries.forEach { frequency ->
-                ZillitButton(
-                    text = str(frequency.label),
-                    variant = chosen(frequency == rule.frequency),
-                    size = ButtonSize.Small,
-                    // Choosing a repeat fills in where it stops, rather than
-                    // leaving a required field blank to be discovered on save.
-                    onClick = { change(draft.repeating(frequency)) },
-                )
-            }
-        }
-
-        if (rule.needsWeekdays) {
-            WeekdayPicker(rule) { change(draft.copy(recurrence = it)) }
-            form.recurrenceErrors.messageFor(RecurrenceError.NoWeekdays)?.let { ErrorLine(it) }
-        }
-
-        if (rule.repeats) {
-            DatePickerField(
-                value = rule.endDateText,
-                onValueChange = { change(draft.copy(recurrence = rule.copy(endDateText = it))) },
-                today = form.today,
-                label = str(S.repeat_until),
-                placeholder = "2026-12-31",
-                errorText = form.recurrenceErrors.messageFor(RecurrenceError.NoEndDate)
-                    ?: form.recurrenceErrors.messageFor(RecurrenceError.EndBeforeStart),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+private fun ColorField(
+    draft: EventDraft,
+    change: (EventDraft) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LabelledField(str(S.color), modifier) {
+        ZillitSelect(
+            value = draft.colorHex.ifBlank { DEFAULT_EVENT_COLOR },
+            options = EVENT_PALETTE,
+            onSelect = { change(draft.copy(colorHex = it)) },
+            label = { it },
+            showInitials = false,
+            searchable = false,
+            optionLeading = { Swatch(it) },
+            fieldLeading = { Swatch(it) },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
-/**
- * Picks a frequency and moves the end of the repeat to suit it.
- *
- * The web's `RecurrenceSelect`: switching to weekly means "for a week from
- * here" unless the user says otherwise.
- */
-private fun EventDraft.repeating(frequency: RecurrenceFrequency): EventDraft {
-    val start = dateText.trim().toLocalDateOrNull()
-    val end = start?.let { defaultRecurrenceEnd(frequency, it) }
-    return copy(
-        recurrence = recurrence.copy(
-            frequency = frequency,
-            endDateText = end?.isoText() ?: recurrence.endDateText,
-        ),
+@Composable
+private fun Swatch(hex: String) {
+    Box(
+        modifier = Modifier
+            .size(SWATCH)
+            .clip(ZillitTheme.shapes.small)
+            .background(parseEventColor(hex) ?: ZillitTheme.colors.accent)
+            .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.small),
     )
 }
 
@@ -461,41 +519,63 @@ private fun WeekdayPicker(rule: Recurrence, change: (Recurrence) -> Unit) {
 }
 
 /**
+ * Picks a frequency and moves the end of the repeat to suit it.
+ *
+ * The web's `RecurrenceSelect`: switching to weekly means "for a week from
+ * here" unless the user says otherwise.
+ */
+private fun EventDraft.repeating(frequency: RecurrenceFrequency): EventDraft {
+    val start = dateText.trim().toLocalDateOrNull()
+    val end = start?.let { defaultRecurrenceEnd(frequency, it) }
+    return copy(
+        recurrence = recurrence.copy(
+            frequency = frequency,
+            endDateText = end?.isoText() ?: recurrence.endDateText,
+        ),
+    )
+}
+
+/**
  * Which zone the typed times are meant in — the web's `SelectTimezone`, as a
- * searchable dropdown. Hidden for all-day events: a whole day is a whole day.
+ * searchable dropdown. Disabled for all-day events: a whole day is a whole day.
  */
 @Composable
-private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
+private fun TimezoneField(
+    form: EventFormState,
+    change: (EventDraft) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val draft = form.draft
-    // A whole day is a whole day — no clock to reinterpret.
-    if (draft.isAllDay) return
     val open = remember { mutableStateOf(false) }
+    val anchor = rememberZillitSelectAnchor()
 
     val chosenZone = form.timezones.firstOrNull { it.identifier == draft.timezoneId }
     val deviceZone = str(S.desktop_cal_device_timezone)
+    // A whole day has no clock to reinterpret, so the field stays but is shut.
+    val enabled = form.timezones.isNotEmpty() && !draft.isAllDay
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitText(
-            text = str(S.timezone),
-            style = ZillitTheme.typography.label,
-            color = ZillitTheme.colors.textSecondary,
-        )
-        Box {
-            ZillitButton(
-                text = chosenZone?.label ?: deviceZone,
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
+    LabelledField(str(S.timezone), modifier) {
+        Box(Modifier.fillMaxWidth().zillitSelectAnchor(anchor)) {
+            ZillitSelectTrigger(
+                open = open.value,
+                enabled = enabled,
                 onClick = { open.value = true },
-                enabled = form.timezones.isNotEmpty(),
-            )
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                ZillitText(
+                    text = chosenZone?.label ?: deviceZone,
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = if (enabled) ZillitTheme.colors.textPrimary else ZillitTheme.colors.textDisabled,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
             if (open.value) {
                 // null is the device's own zone, stored as "".
                 ZillitOptionPopup(
                     onDismiss = { open.value = false },
-                    width = TIMEZONE_MENU_WIDTH,
+                    width = anchor.popupWidth(TIMEZONE_MENU_WIDTH),
                     options = listOf<TimezoneOption?>(null) + form.timezones,
                     isSelected = { zone ->
                         if (zone == null) draft.timezoneId.isBlank() else zone.identifier == draft.timezoneId
@@ -519,88 +599,6 @@ private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
     }
 }
 
-/** The event's colour: a swatch per palette entry, the chosen one ringed. */
-@Composable
-private fun ColorRow(draft: EventDraft, change: (EventDraft) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitText(
-            text = str(S.av_color),
-            style = ZillitTheme.typography.label,
-            color = ZillitTheme.colors.textSecondary,
-        )
-        EVENT_PALETTE.forEach { hex ->
-            val swatch = parseEventColor(hex) ?: ZillitTheme.colors.accent
-            val selected = draft.colorHex == hex
-            Box(
-                modifier = Modifier
-                    .size(SWATCH)
-                    .clip(CircleShape)
-                    .background(swatch)
-                    .border(
-                        width = if (selected) SWATCH_RING else 0.dp,
-                        color = ZillitTheme.colors.textPrimary,
-                        shape = CircleShape,
-                    )
-                    .clickable { change(draft.copy(colorHex = hex)) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReminderRow(form: EventFormState, change: (EventDraft) -> Unit) {
-    val draft = form.draft
-
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        // Wraps: a Row squeezed the last chip into a one-letter-wide column.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-        ) {
-            REMINDER_CHOICES.forEach { minutes ->
-                ZillitButton(
-                    text = reminderLabel(minutes),
-                    variant = chosen(minutes == draft.reminderMinutes),
-                    size = ButtonSize.Small,
-                    onClick = { change(draft.copy(reminderMinutes = minutes)) },
-                )
-            }
-        }
-        form.errors.messageFor(EventFieldError.ReminderPassed)?.let { ErrorLine(it) }
-    }
-}
-
-/**
- * Who is coming.
- *
- * Only a members event has guests. The section disappears for a personal one
- * rather than greying out, so switching to "Personal" reads as "this is just
- * mine" instead of "these controls broke".
- */
-@Composable
-private fun GuestSection(
-    form: EventFormState,
-    change: (EventDraft) -> Unit,
-    loadAvatar: suspend (String) -> ByteArray?,
-) {
-    val draft = form.draft
-    if (!draft.isForMembers) return
-
-    InviteeList(form, change, loadAvatar)
-    ExternalGuests(draft, change)
-
-    ZillitCheckbox(
-        checked = draft.excludeOrganiser,
-        label = "I will not be part of this event",
-        onCheckedChange = { change(draft.copy(excludeOrganiser = it)) },
-    )
-
-    form.errors.messageFor(EventFieldError.NoInvitees)?.let { ErrorLine(it) }
-}
-
 /**
  * Who to invite, from the production's crew.
  *
@@ -618,15 +616,9 @@ private fun InviteeList(
     if (form.invitees.isEmpty()) return
     val draft = form.draft
 
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldLabel(
-            if (draft.inviteeIds.isEmpty()) {
-                str(S.desktop_cal_invite_crew)
-            } else {
-                str(S.desktop_cal_invite_crew_selected, draft.inviteeIds.size)
-            },
-        )
-
+    // The web's one label, whatever is chosen: the chips below it already say
+    // who is coming, and a label that counts them says it twice.
+    LabelledField(str(S.invitees)) {
         InviteePicker(
             invitees = form.invitees,
             selectedIds = draft.inviteeIds,
@@ -671,9 +663,7 @@ private fun ExternalGuests(draft: EventDraft, change: (EventDraft) -> Unit) {
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldLabel(str(S.external_guests))
-
+    LabelledField(str(S.external_guests)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -687,7 +677,7 @@ private fun ExternalGuests(draft: EventDraft, change: (EventDraft) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = str(S.add),
+                text = str(S.ce_add_external_guests),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 enabled = typed.value.isNotBlank(),
@@ -726,13 +716,31 @@ private fun GuestRow(address: String, onRemove: () -> Unit) {
     }
 }
 
+/**
+ * A field that is not a text field, wearing a text field's label.
+ *
+ * The selects and pickers carry no label of their own, and a row of controls
+ * where two are titled and two are not reads as a layout accident.
+ */
 @Composable
-private fun FieldLabel(text: String) {
-    ZillitText(
-        text = text,
-        style = ZillitTheme.typography.labelSmall,
-        color = ZillitTheme.colors.textMuted,
-    )
+private fun LabelledField(
+    label: String,
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        ZillitText(
+            text = label,
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+        content()
+        error?.let { ErrorLine(it) }
+    }
 }
 
 @Composable
@@ -744,11 +752,18 @@ private fun ErrorLine(text: String) {
     )
 }
 
-/** The one line a picked place reads as: its name, then its address. */
+/** The web's red `*` on a label the server will not do without. */
+private fun required(label: String): String = "$label *"
 
-/** The chip style for a choice that is on. */
+/**
+ * The chip style for a choice that is on.
+ *
+ * Filled for the chosen one and outlined for the rest, the way the web's
+ * `buttonStyle="solid"` radio group reads: two outlined chips side by side say
+ * nothing about which of them is in force.
+ */
 private fun chosen(selected: Boolean): ButtonVariant =
-    if (selected) ButtonVariant.Secondary else ButtonVariant.Tertiary
+    if (selected) ButtonVariant.Primary else ButtonVariant.Secondary
 
 private fun Set<EventFieldError>.messageFor(error: EventFieldError): String? =
     if (error in this) error.message else null
@@ -759,11 +774,16 @@ private fun Set<RecurrenceError>.messageFor(error: RecurrenceError): String? =
 /** The web's `NOTIFY_OPTIONS`. */
 private val REMINDER_CHOICES = listOf(0, 5, 10, 15, 30, 60)
 
-private val FORM_WIDTH = 520.dp
-private val FORM_MAX_HEIGHT = 680.dp
+/** The web's three-to-one split between the repeat's end date and its length. */
+private const val REPEAT_UNTIL_SHARE = 3f
+
+/** Enough for 365, the longest repeat any unit allows. */
+private const val COUNT_DIGITS = 3
+
+private val FORM_WIDTH = 840.dp
+private val FORM_MAX_HEIGHT = 700.dp
 private val NOTES_HEIGHT = 72.dp
 
-private val SWATCH = 22.dp
-private val SECTION_ICON = 14.dp
+private val SWATCH = 18.dp
+private val HAIRLINE = 1.dp
 private val TIMEZONE_MENU_WIDTH = 340.dp
-private val SWATCH_RING = 2.dp

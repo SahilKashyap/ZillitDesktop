@@ -7,6 +7,7 @@ import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.plus
+import kotlinx.datetime.until
 
 /**
  * How often an event repeats.
@@ -121,6 +122,74 @@ fun DayOfWeek.toSundayFirstIndex(): Int = isoDayNumber % DAYS_IN_WEEK
 /** The reverse, for rendering a stored rule back into the picker. */
 fun sundayFirstIndexToDayOfWeek(index: Int): DayOfWeek =
     DayOfWeek(if (index == 0) DAYS_IN_WEEK else index)
+
+/**
+ * How long a repeat runs, counted in its own unit.
+ *
+ * The web's `UNIT_MAP`: a daily event is so many days long, a weekly one so
+ * many weeks. The count and the end date are two readings of one fact, and the
+ * form offers both because "every week for six weeks" is how a schedule is
+ * spoken and "until 30 November" is how it is checked.
+ */
+@Suppress("MagicNumber") // Ceilings, not quantities: the web's own per-unit maxima.
+enum class RepeatUnit(val label: String, val max: Int) {
+    Days(S.cs_number_of_days, 365),
+    Weeks(S.desktop_cal_number_of_weeks, 52),
+    Months(S.desktop_cal_number_of_months, 12),
+    Years(S.desktop_cal_number_of_years, 5),
+}
+
+/** The unit a frequency is measured in, or null when it does not repeat. */
+val RecurrenceFrequency.unit: RepeatUnit?
+    get() = when (this) {
+        RecurrenceFrequency.Never -> null
+        RecurrenceFrequency.Daily -> RepeatUnit.Days
+        RecurrenceFrequency.Weekly -> RepeatUnit.Weeks
+        RecurrenceFrequency.Monthly -> RepeatUnit.Months
+        RecurrenceFrequency.Yearly -> RepeatUnit.Years
+        // A custom rule repeats on weekdays, so it is measured in weeks.
+        RecurrenceFrequency.Custom -> RepeatUnit.Weeks
+    }
+
+/**
+ * The repeat's length in its unit, as the count field shows it.
+ *
+ * The web's `computeRepeatCount`, floor to one: a rule that stops before it
+ * starts is a rule of length one, not zero or minus three, and the count field
+ * is not where that is reported — [Recurrence.validate] already refuses it.
+ */
+fun Recurrence.repeatCount(startDateText: String): Int? {
+    val unit = frequency.unit ?: return null
+    val start = startDateText.trim().toLocalDateOrNull() ?: return null
+    val end = endDateText.trim().toLocalDateOrNull() ?: return null
+    val spanned = when (unit) {
+        RepeatUnit.Days -> start.until(end, DateTimeUnit.DAY)
+        RepeatUnit.Weeks -> start.until(end, DateTimeUnit.WEEK)
+        RepeatUnit.Months -> start.until(end, DateTimeUnit.MONTH)
+        RepeatUnit.Years -> start.until(end, DateTimeUnit.YEAR)
+    }
+    return maxOf(1L, spanned).toInt()
+}
+
+/**
+ * Moves the end of the repeat to [count] units after the event.
+ *
+ * The web's `handleCountChange`. Out-of-range counts are ignored rather than
+ * clamped: a half-typed "1" on the way to "12" must not rewrite the end date
+ * to tomorrow and leave the user typing into a field that has moved on.
+ */
+fun Recurrence.withRepeatCount(count: Int, startDateText: String): Recurrence {
+    val unit = frequency.unit ?: return this
+    if (count < 1 || count > unit.max) return this
+    val start = startDateText.trim().toLocalDateOrNull() ?: return this
+    val end = when (unit) {
+        RepeatUnit.Days -> start.plus(count, DateTimeUnit.DAY)
+        RepeatUnit.Weeks -> start.plus(count, DateTimeUnit.WEEK)
+        RepeatUnit.Months -> start.plus(count, DateTimeUnit.MONTH)
+        RepeatUnit.Years -> start.plus(count, DateTimeUnit.YEAR)
+    }
+    return copy(endDateText = end.isoText())
+}
 
 /** `Sun`, `Mon`, … in the order the server indexes them. */
 val WEEKDAY_LABELS: List<String> = listOf(S.sun, S.mon, S.tue, S.wed, S.thu, S.fri, S.sat)

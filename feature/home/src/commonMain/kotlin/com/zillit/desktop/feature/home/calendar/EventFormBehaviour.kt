@@ -55,6 +55,10 @@ fun newEventDraft(date: LocalDate, now: Instant, zone: TimeZone): EventDraft {
         dateText = date.isoText(),
         startText = start.hhmmText(),
         endText = start.plusHour().hhmmText(),
+        // The web's `DEFAULT_EVENT_COLOR`, so a new event made here and one
+        // made on the web arrive the same colour rather than this one landing
+        // as the colourless `#ffffff` the body falls back to.
+        colorHex = DEFAULT_EVENT_COLOR,
         // A product default for new events, not a reading of a missing key.
         line = EventCallLine.CREATE_DEFAULT,
     )

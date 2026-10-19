@@ -13524,4 +13524,7 @@
     <string name="desktop_tasks_history_image_removed">Removed image \"%1$s\"</string>
     <string name="desktop_tasks_history_file_removed">Removed file \"%1$s\"</string>
     <string name="desktop_tasks_file_kind_text">Text file</string>
+    <string name="desktop_cal_number_of_weeks">Number of Weeks</string>
+    <string name="desktop_cal_number_of_months">Number of Months</string>
+    <string name="desktop_cal_number_of_years">Number of Years</string>
 </resources>
