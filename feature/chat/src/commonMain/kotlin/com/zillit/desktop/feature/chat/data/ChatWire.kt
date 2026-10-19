@@ -437,8 +437,24 @@ fun readChatMessage(
         isEdited = (obj.long("edited") ?: 0L) > 0L ||
             (obj["edited"] as? JsonPrimitive)?.booleanOrNull == true,
         notice = notice,
+        taggedNames = readTaggedNames(obj),
     )
 }
+
+/**
+ * `message_elements` as tag id → name, for the rows whose search is a
+ * `{{userId}}` tag. A notice's elements fill its sentence's blanks instead.
+ */
+private fun readTaggedNames(obj: JsonObject): Map<String, String> {
+    if (obj.str("message_type") == GROUP_NOTIFICATION_KIND) return emptyMap()
+    return readNoticeElements(obj).mapNotNull { element ->
+        val id = element.search?.let(TAG_SEARCH::matchEntire)?.groupValues?.get(1) ?: return@mapNotNull null
+        val name = element.replacer?.trim()?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+        id to name
+    }.toMap()
+}
+
+private val TAG_SEARCH = Regex("@?\\{\\{([a-zA-Z0-9]+)\\}\\}")
 
 /** The wire's `message_type` for the server's own room notices. */
 const val GROUP_NOTIFICATION_KIND = "group_notification"

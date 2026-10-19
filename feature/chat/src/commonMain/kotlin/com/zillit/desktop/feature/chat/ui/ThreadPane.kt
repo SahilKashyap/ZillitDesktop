@@ -262,11 +262,7 @@ internal fun ThreadPane(
                 state.replyTo?.let { parent ->
                     ChatReplyBar(
                         parent = parent,
-                        authorLabel = if (parent.isMine) {
-                            "yourself"
-                        } else {
-                            resolveName(parent.senderId) ?: peer.fullName
-                        },
+                        authorLabel = state.replyAuthor(parent, peer, resolveName),
                         onCancel = { onEvent(ChatEvent.CancelReply) },
                     )
                 }
@@ -1542,7 +1538,11 @@ internal data class MentionHooks(
     /** Strict crew lookup — null keeps an unknown id as raw text. */
     val resolve: (String) -> String? = { null },
     val onOpenUser: (String) -> Unit = {},
-)
+) {
+    /** The crew first, then the names [message]'s sender wrote beside its tags. */
+    fun carrying(message: ChatMessage): MentionHooks =
+        if (message.taggedNames.isEmpty()) this else copy(resolve = { id -> resolve(id) ?: message.taggedNames[id] })
+}
 
 /**
  * The body with its tags and links lit: `@{{id}}` renders as an accent-coloured
@@ -2052,7 +2052,7 @@ private fun BubbleWords(
             if (message != null) {
                 MentionedBody(
                     message.body.asServerSentence(),
-                    mentions,
+                    mentions.carrying(message),
                     footer = { DisableSelection { FooterLine(message) } },
                 )
             }
@@ -2065,7 +2065,7 @@ private fun BubbleWords(
         // and a fillMaxWidth child would stretch every translated line to
         // the bubble's ceiling (seen in the first render).
         Column {
-            if (message != null) MentionedBody(message.body.asServerSentence(), mentions)
+            if (message != null) MentionedBody(message.body.asServerSentence(), mentions.carrying(message))
             DisableSelection {
                 ZillitText(
                     text = str(S.translated),
@@ -3033,6 +3033,22 @@ private fun ChatUiState.hasComposer(peer: com.zillit.desktop.feature.chat.domain
  */
 private fun ChatUiState.acceptsDroppedFiles(peer: com.zillit.desktop.feature.chat.domain.CrewContact): Boolean =
     hasComposer(peer) && pendingPreview == null && recordingSeconds == null
+
+/**
+ * Who the reply bar says is being answered. A DM's other writer is the peer;
+ * a room's is not the room, whose name used to stand in for anyone the crew
+ * list could not place.
+ */
+private fun ChatUiState.replyAuthor(
+    parent: ChatMessage,
+    peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+    resolveName: (String) -> String?,
+): String = when {
+    parent.isMine -> "yourself"
+    else -> resolveName(parent.senderId)
+        ?: peer.fullName.takeUnless { peerIsGroup }
+        ?: str(S.history_someone)
+}
 
 /**
  * Who the typing line names. A room names its typist in full — first names

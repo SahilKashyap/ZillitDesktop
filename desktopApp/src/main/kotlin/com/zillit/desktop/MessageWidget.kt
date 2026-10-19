@@ -199,7 +199,7 @@ internal fun ChatMessage.toToast(crewName: (String) -> String?, groupName: (Stri
  */
 internal fun ChatMessage.cardPreview(nameOf: (String) -> String?): String =
     attachment?.let { str(S.docusign_sent_on, it.name) }
-        ?: previewMentions(body, nameOf, str(S.desktop_someone_mention))
+        ?: previewMentions(body, { id -> nameOf(id) ?: taggedNames[id] }, str(S.desktop_someone_mention))
             .ifBlank { str(S.desktop_sent_a_message) }
 
 /** Newest first, one per conversation, at most [MAX_TOASTS]. */

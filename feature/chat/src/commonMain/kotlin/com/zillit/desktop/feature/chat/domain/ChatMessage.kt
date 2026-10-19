@@ -41,6 +41,13 @@ data class ChatMessage(
      * a centred system line with no sender, menu or receipts.
      */
     val notice: GroupNotice? = null,
+    /**
+     * The names the sender's client wrote beside its tags — `message_elements`
+     * rows `{search: "{{userId}}", replacer: "Full Name"}` (web `cncEmit.js:24-33`,
+     * Android `ChatAndGroupModel.message_elements`). The fallback for a tag
+     * the crew list cannot place, which otherwise read "@someone".
+     */
+    val taggedNames: Map<String, String> = emptyMap(),
 ) {
     /**
      * Where an older page starts from: `updated`, as Android pages

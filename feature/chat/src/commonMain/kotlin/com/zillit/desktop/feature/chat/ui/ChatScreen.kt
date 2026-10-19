@@ -686,9 +686,17 @@ private fun OpenThread(
     ThreadPane(
         chatState,
         onEvent = { viewModel.onEvent(it) },
+        // Oneself reads "You" — the web's quote header (`SenderMessage.jsx:713`)
+        // and the reaction tooltip. The open peer stands in only for a DM's
+        // other writer: in a room the peer is the ROOM, and falling back to it
+        // put the group's name over an unplaced sender's bubble, quote and
+        // typing line.
         resolveName = { id ->
-            crew.firstOrNull { it.userId == id }?.fullName
-                ?: chatState.peer?.fullName
+            when {
+                selfId != null && id == selfId -> str(S.you)
+                else -> crew.firstOrNull { it.userId == id }?.fullName
+                    ?: chatState.peer?.takeIf { !chatState.peerIsGroup && it.userId == id }?.fullName
+            }
         },
         // Tags: strict lookup (an unknown id stays raw text), and a tap
         // opens the person — their thread, whose header is their profile
@@ -1456,7 +1464,7 @@ private fun ChatPreview.line(
     inRoom: Boolean,
     nameFor: (String) -> String? = { null },
 ): String {
-    val words = previewMentions(text, nameFor, str(S.desktop_someone_mention))
+    val words = previewMentions(text, { id -> nameFor(id) ?: taggedNames[id] }, str(S.desktop_someone_mention))
         .lineSequence().firstOrNull().orEmpty().trim()
     val by = when {
         selfId != null && senderId == selfId -> str(S.you)

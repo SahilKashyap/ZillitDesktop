@@ -62,8 +62,14 @@ import com.zillit.desktop.feature.chat.domain.sortedRecents
  * One conversation's newest line, for its row: the words (or what the
  * file/place reads as) and who wrote them, so the row can say "You:" or
  * lead with the writer's name in a room — the phones' listing line.
+ * [taggedNames] is the line's own [ChatMessage.taggedNames], for a tag the
+ * crew list cannot place.
  */
-data class ChatPreview(val text: String, val senderId: String = "")
+data class ChatPreview(
+    val text: String,
+    val senderId: String = "",
+    val taggedNames: Map<String, String> = emptyMap(),
+)
 
 data class ChatUiState(
     /** Who the open thread is with; null shows the contact card instead. */
@@ -2803,6 +2809,7 @@ class ChatViewModel(
             else -> message.body.asServerSentence()
         },
         senderId = message.senderId,
+        taggedNames = message.taggedNames,
     )
 
     /**

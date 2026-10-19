@@ -477,4 +477,21 @@ class ChatWireTest {
         assertEquals(1, rows.size)
         assertEquals("late", readChatMessage(rows.first(), myUserId = "me", decrypt = ::decrypt)?.body)
     }
+
+    @Test
+    fun `a tag's name rides in message_elements`() {
+        val message = readChatMessage(
+            Json.parseToJsonElement(
+                """{"_id":"m9","sender":"alice","receiver":"room1","message":"hex:hi @{{67fcd7fc}}",
+                   "message_elements":[{"search":"{{67fcd7fc}}","replacer":"Aisha Khan"},
+                                       {"search":"group_name","replacer":"Unit A"},
+                                       {"search":"{{blank99}}","replacer":"  "}]}""",
+            ),
+            myUserId = "bob",
+            decrypt = ::decrypt,
+            isGroup = true,
+        )!!
+        // A search that is not a {{tag}} is skipped; a blank name is no name.
+        assertEquals(mapOf("67fcd7fc" to "Aisha Khan"), message.taggedNames)
+    }
 }
