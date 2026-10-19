@@ -753,7 +753,9 @@ private fun DayColumn(
         Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.divider))
 
         if (events.isEmpty()) {
-            EmptyDay(onEvent)
+            // A day that has been and gone can hold nothing new, so the
+            // button that would only be refused on save is not offered.
+            EmptyDay(onEvent, canCreate = date >= state.today)
             return@Column
         }
 
@@ -828,9 +830,15 @@ private fun DayHeader(date: LocalDate, isToday: Boolean, count: Int) {
     }
 }
 
-/** A free day, said kindly, with the one thing worth doing about it. */
+/**
+ * A free day, said kindly, with the one thing worth doing about it.
+ *
+ * Unless the day has passed: then there is nothing worth doing about it, and
+ * the button is left off rather than shown to be refused. The words stay —
+ * "Nothing scheduled" is as true of last Thursday as of next one.
+ */
 @Composable
-private fun EmptyDay(onEvent: (CalendarEvent2Event) -> Unit) {
+private fun EmptyDay(onEvent: (CalendarEvent2Event) -> Unit, canCreate: Boolean = true) {
     Column(
         modifier = Modifier.fillMaxSize().padding(PAGE_PADDING),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md, Alignment.CenterVertically),
@@ -848,13 +856,15 @@ private fun EmptyDay(onEvent: (CalendarEvent2Event) -> Unit) {
             color = ZillitTheme.colors.textMuted,
             textAlign = TextAlign.Center,
         )
-        ZillitButton(
-            text = str(S.new_event),
-            leadingIcon = ZillitIcons.Add,
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            onClick = { onEvent(CalendarEvent2Event.OpenForm(null)) },
-        )
+        if (canCreate) {
+            ZillitButton(
+                text = str(S.new_event),
+                leadingIcon = ZillitIcons.Add,
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                onClick = { onEvent(CalendarEvent2Event.OpenForm(null)) },
+            )
+        }
     }
 }
 
