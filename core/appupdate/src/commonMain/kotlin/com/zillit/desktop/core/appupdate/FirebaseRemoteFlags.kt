@@ -41,6 +41,17 @@ class FirebaseRemoteFlags(
 
     @Volatile private var lastAttempt: TimeSource.Monotonic.ValueTimeMark? = null
 
+    @Volatile private var version: Long = 0
+
+    /**
+     * The console template this answer came from; 0 until a fetch succeeds.
+     *
+     * Read by [FirebaseFlagStream]: it is what the realtime stream is told we
+     * hold, and what distinguishes a publish worth refetching for from the
+     * echo of one already in hand.
+     */
+    val templateVersion: Long get() = version
+
     /** Every published entry, fetched once and then remembered; null when unreachable or unconfigured. */
     suspend fun entries(): Map<String, String>? {
         held?.let { return it }
@@ -74,6 +85,9 @@ class FirebaseRemoteFlags(
     /** Forgets what was read, so the next ask fetches again — sign-out, or a project switch. */
     fun clear() {
         held = null
+        // Not the version: it describes the console, not this user, and a
+        // stream told we hold nothing is answered with an invalidation we
+        // would then refetch for no reason.
     }
 
     private suspend fun fetch(config: FirebaseConfig, appId: String): Map<String, String>? = try {
@@ -88,7 +102,12 @@ class FirebaseRemoteFlags(
             )
         }
         if (response.status.isSuccess()) {
-            parseEntries(response.bodyAsText())
+            val payload = response.bodyAsText()
+            // Recorded even when the payload carries no entries: a template
+            // this client has no keys in is still a template we have read, and
+            // the stream must not be told otherwise.
+            parseTemplateVersion(payload)?.let { version = it }
+            parseEntries(payload)
         } else {
             ZillitLog.d(TAG) { "remote flags fetch returned ${response.status.value}" }
             null

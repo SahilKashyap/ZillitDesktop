@@ -2255,9 +2255,11 @@ private fun hostPlatformLabel(): String {
 }
 
 /**
- * The update check: once at sign-in, then every six hours. A desktop app
- * stays open for days, so a launch-only check leaves someone on a stale
- * build for a week; six hours is well inside Remote Config's own SDK default.
+ * The update check: once at sign-in, then every six hours — and again the
+ * moment Remote Config publishes, which is when a release actually goes out.
+ * A desktop app stays open for days, so a launch-only check leaves someone on
+ * a stale build for a week; six hours is well inside Remote Config's own SDK
+ * default, and [checkOnConfigPublish] closes most of even that gap.
  *
  * The verdict lives in `ready.appUpdateStatus`, which Settings' manual check
  * writes too, so "Check for updates" puts the strip up at once. Any update
@@ -2273,6 +2275,15 @@ private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
             ready.appUpdateChecker.check().let { if (it != UpdateStatus.Unknown) ready.appUpdateStatus.value = it }
             delay(UPDATE_CHECK_INTERVAL_MILLIS)
         }
+    }
+    // Separate from the poll above, not folded into it: a publish must not
+    // reset the six hours, and six hours asleep must not swallow a publish.
+    LaunchedEffect(Unit) {
+        checkOnConfigPublish(
+            published = ready.configPublished,
+            check = ready.appUpdateChecker::check,
+            status = ready.appUpdateStatus,
+        )
     }
     LaunchedEffect(updateStatus) {
         ready.inAppUpdater.cancelUnless(updateStatus.latestVersionOrNull())
