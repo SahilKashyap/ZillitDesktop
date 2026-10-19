@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Nakopya ang imbitasyon. I-paste ito saanman ka nakikipag-usap sa crew.</string>
     <string name="desktop_email_rule_pick_folder">Piliin ang folder na paglilipatan ng mga mensahe.</string>
     <string name="desktop_board_live_call_sheet">Live na call sheet</string>
+    <string name="desktop_board_live_production_report">Mga kasalukuyang production report</string>
     <string name="desktop_could_not_save_profile">Hindi ma-save ang profile mo. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Hindi puwedeng ilipat ang mga mensahe sa %1$s.</string>
     <string name="desktop_board_back_to_board">Bumalik sa board</string>

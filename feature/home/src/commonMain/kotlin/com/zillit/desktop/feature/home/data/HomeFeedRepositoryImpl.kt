@@ -211,6 +211,34 @@ class HomeFeedRepositoryImpl(
     }
 
     /**
+     * The record behind the board — what a replacement or a delete took off it.
+     *
+     * The same `previous` route with `deleted=` added, as every web client's
+     * History read spells it (`fetchPRChatMessageData`, `homeApi`'s call-sheet
+     * branch, `reportsApi`, `scriptNotesApi`). The stamp is the window's own
+     * cursor, which the two latter clients send verbatim and which equals the
+     * "now" the newest page asks with.
+     *
+     * Never cached and never filed: these posts are not that board, and
+     * writing them under its name would hand the next cold open an archive.
+     * They arrive carrying the server's `deleted` stamp — the live board's
+     * reader drops exactly those rows — so this read keeps them, replies and
+     * all (the web shows every reply here for the same reason: the parent's
+     * deletion deleted them with it, ZL-16952).
+     */
+    override suspend fun loadHistory(unitId: String, beforeMillis: Long): ZillitResult<List<Notice>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${chat}$unitId/$beforeMillis/previous?deleted=$beforeMillis",
+            serializer = ListSerializer(JsonElement.serializer()),
+            module = RequestModule.ProjectUser,
+        ).map { rows ->
+            rows.mapNotNull {
+                readNotice(it, keepDeletedReplies = true, keepDeleted = true, decryptBody = ::decryptBody)
+            }.forDisplay()
+        }
+
+    /**
      * The kept tab strip, for a board to draw while the real read is out.
      *
      * Null on a board whose tabs come from a provider ([units]): those resolve
@@ -296,7 +324,7 @@ class HomeFeedRepositoryImpl(
 
     /** The wire's rows as posts, in board order. One reader, live or from disk. */
     private fun List<JsonElement>.toNotices(): List<Notice> =
-        mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, ::decryptBody) }.forDisplay()
+        mapNotNull { readNotice(it, keepDeletedReplies = fileCabinet, decryptBody = ::decryptBody) }.forDisplay()
 
     /**
      * What the web adds to a chat read in cabinet mode (`fileCabinateDataFetch`,
@@ -317,9 +345,16 @@ class HomeFeedRepositoryImpl(
      * the input unchanged on failure, which puts a hex blob on screen where a
      * message should be — indistinguishable, to the reader, from a corrupted
      * post.
+     *
+     * A body that cannot be ciphertext at all ([NoticeBody.isCipherShaped]) is not put
+     * through that at all, because some bodies were never encrypted: the Production
+     * Report chat's record answered 13 of them on develop (2026-10-19), and each
+     * one drew the placeholder over words the phones show. "Not hex" is not a
+     * failure to decrypt — there is nothing there to decrypt.
      */
     private fun decryptBody(cipherHex: String): String {
         if (cipherHex.isBlank()) return ""
+        if (!NoticeBody.isCipherShaped(cipherHex)) return cipherHex
 
         return when (val result = decrypt.decryptFromHex(cipherHex)) {
             is ZillitResult.Success -> result.data
@@ -900,19 +935,28 @@ internal data class HomeUnitDto(
  * Top-level and internal so tests exercise the real reader rather than a copy.
  */
 internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Notice? =
-    readNotice(row, keepDeletedReplies = false, decryptBody)
+    readNotice(row, keepDeletedReplies = false, decryptBody = decryptBody)
 
 /**
- * [readNotice], optionally keeping the replies the server stamped `deleted`.
+ * [readNotice], optionally keeping what the server stamped `deleted`.
  *
  * The File Cabinet's records are the ones moved out of the live board, and
  * their replies carry that stamp with them; the web's viewer shows every reply
  * there (`UnitChatMessage` `filteredComments`, ZL-16952) where the live board
  * hides them.
+ *
+ * [keepDeleted] goes one further and keeps the post itself: the board's History
+ * read ([HomeFeedRepository.loadHistory]) asks for exactly the posts that stamp
+ * marks, so dropping them would answer an empty record every time.
  */
-internal fun readNotice(row: JsonElement, keepDeletedReplies: Boolean, decryptBody: (String) -> String): Notice? {
+internal fun readNotice(
+    row: JsonElement,
+    keepDeletedReplies: Boolean,
+    keepDeleted: Boolean = false,
+    decryptBody: (String) -> String,
+): Notice? {
     if (row !is JsonObject) return null
-    if (row.bool("deleted")) return null
+    if (!keepDeleted && row.bool("deleted")) return null
 
     val id = row.string("_id")?.takeIf { it.isNotBlank() } ?: return null
     val body = decryptBody(row.string("message").orEmpty())
@@ -1074,6 +1118,33 @@ internal fun readReadBy(row: JsonElement): ReadBy {
 // production, so a field's type is a hope rather than a guarantee.
 
 private fun JsonObject.primitive(key: String): JsonPrimitive? = this[key] as? JsonPrimitive
+
+/** What a board body is, before anybody tries to decrypt it. */
+internal object NoticeBody {
+
+    /** One AES block (16 bytes) as hex. */
+    private const val HEX_BLOCK = 32
+
+    /**
+     * Whether [body] could be an encrypted body at all.
+     *
+     * The wire's ciphertext is AES/CBC hex (`AesCbcCryptoEngine`), so it is
+     * hex digits in whole 16-byte blocks — 32 hex characters each, at least
+     * one of them. A body that is not that was never encrypted and is its own
+     * text: every web-written caption, and everything posted before the bodies
+     * were encrypted at all.
+     *
+     * Deliberately strict about the block count rather than just "is it hex":
+     * a well-shaped payload that will not decrypt is a broken post, and the
+     * reader is shown a placeholder for it instead of a hex blob — the rule
+     * `decryptBody` was written for. This only spares the bodies that could
+     * never have been one.
+     */
+    fun isCipherShaped(body: String): Boolean =
+        body.length >= HEX_BLOCK &&
+            body.length % HEX_BLOCK == 0 &&
+            body.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+}
 
 private fun JsonObject.string(key: String): String? =
     primitive(key)?.takeIf { it.isString }?.content

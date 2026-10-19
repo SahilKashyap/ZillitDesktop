@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Inbjudan kopierad. Klistra in den där du pratar med teamet.</string>
     <string name="desktop_email_rule_pick_folder">Välj mappen att flytta meddelanden till.</string>
     <string name="desktop_board_live_call_sheet">Aktuell callsheet</string>
+    <string name="desktop_board_live_production_report">Aktuella produktionsrapporter</string>
     <string name="desktop_could_not_save_profile">Kunde inte spara din profil. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Meddelanden kan inte flyttas till %1$s.</string>
     <string name="desktop_board_back_to_board">Tillbaka till tavlan</string>

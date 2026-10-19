@@ -8,7 +8,6 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
-import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
@@ -46,7 +45,6 @@ import com.zillit.desktop.feature.home.domain.NoticeKind
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.client.statement.readRawBytes
 import io.ktor.http.isSuccess
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -155,17 +153,13 @@ internal fun AppGraph.Ready.callSheetDelivery(): CallSheetDelivery = object : Ca
     private val work = PdfBoxWork()
     private val base = config.apiV2(ZillitService.CallSheet).trimEnd('/')
 
-    override suspend fun pdf(sheetId: String): ZillitResult<ByteArray> = runCatching {
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null)
-        val response = httpClient.get("$base/call-sheets/$sheetId/pdf") {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-        }
-        check(response.status.isSuccess()) { "PDF fetch answered ${response.status}" }
-        response.readRawBytes()
-    }.fold(
-        onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "PDF fetch failed")) },
-    )
+    // Through `getForBytes` for its auth: a raw fetch that builds its own
+    // headers sends legacy `moduledata`, which the token-auth migration left
+    // the server free to refuse — a 401 this screen could only report as
+    // "Something went wrong.". It also reads a JSON answer as the service
+    // declining and surfaces that message, as every raw download does.
+    override suspend fun pdf(sheetId: String): ZillitResult<ByteArray> =
+        getForBytes("$base/call-sheets/$sheetId/pdf")
 
     override fun renderPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<SheetPdfPage>> =
         when (val pages = work.renderPages(pdf, targetWidthPx)) {

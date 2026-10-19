@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">招待をコピーしました。クルーとの連絡手段に貼り付けてください。</string>
     <string name="desktop_email_rule_pick_folder">メッセージの移動先フォルダーを選択してください。</string>
     <string name="desktop_board_live_call_sheet">現在のコールシート</string>
+    <string name="desktop_board_live_production_report">現在の制作レポート</string>
     <string name="desktop_could_not_save_profile">プロフィールを保存できませんでした。%1$s</string>
     <string name="desktop_email_rule_cannot_move_into">メッセージを %1$s に移動することはできません。</string>
     <string name="desktop_board_back_to_board">ボードに戻る</string>

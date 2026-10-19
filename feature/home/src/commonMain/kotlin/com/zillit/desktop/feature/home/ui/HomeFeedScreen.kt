@@ -369,11 +369,14 @@ private fun BoardHeader(
         BoardSearchBar(state, onEvent)
     }
 
-    // Call sheets are published documents, so "what went out and when" is a
-    // question people actually ask. The web puts this behind a floating
-    // button; a toggle in the header says what it does.
-    if (state.selectedUnit?.kind == HomeUnitKind.CallSheet && !state.readOnly) {
-        HistoryToggle(state.isHistory, onEvent)
+    // Call sheets and production reports are published documents that replace
+    // each other, so "what went out and when" is a question people actually
+    // ask — and the web gives both boards a History button for it (its
+    // floating button on `/…/history`). A toggle in the header says what it
+    // does. The boards whose posts are a conversation have no record to show.
+    val board = state.selectedUnit?.kind
+    if (board != null && board.isDocumentUpload && !state.readOnly) {
+        HistoryToggle(board, state.isHistory, onEvent)
     }
 
     // Pinned posts stay in view as a banner over the board — the messaging
@@ -1828,9 +1831,9 @@ private fun PinWell() {
     }
 }
 
-/** The call sheet's board / history switch, on the column's edges like everything else. */
+/** A document board's board / history switch, on the column's edges like everything else. */
 @Composable
-private fun HistoryToggle(isHistory: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
+private fun HistoryToggle(board: HomeUnitKind, isHistory: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth().background(ZillitTheme.colors.canvas),
         contentAlignment = Alignment.Center,
@@ -1850,8 +1853,14 @@ private fun HistoryToggle(isHistory: Boolean, onEvent: (HomeFeedEvent) -> Unit) 
             size = TAB_ICON,
         )
         ZillitText(
+            // In History, Android's own words for this view
+            // (`history_header_message`, the web's `records_of_deleted_messages`
+            // banner): what is listed is what a replacement or a delete took
+            // off the board, which "published history" never quite said.
             text = if (isHistory) {
-                str(S.desktop_board_showing_published_history)
+                str(S.history_header_message)
+            } else if (board == HomeUnitKind.ProductionReport) {
+                str(S.desktop_board_live_production_report)
             } else {
                 str(S.desktop_board_live_call_sheet)
             },

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.esignature.ui.EsignPickKind
 import io.ktor.client.request.accept
@@ -119,10 +120,17 @@ internal fun AppGraph.Ready.esignTransfer(): EsignFileTransfer {
  */
 internal fun AppGraph.Ready.esignRawGet(): suspend (String) -> ZillitResult<ByteArray> = { url ->
     runCatching {
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null, null)
-        val response = httpClient.get(url) {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-            accept(ContentType.Application.Pdf)
+        // Signed through the shared helper, not with headers built here: that
+        // path always sent legacy `moduledata` and the token-auth migration
+        // left it behind, so the audit trail could only 401. Not `getForBytes`
+        // — this route needs its own `Accept: application/pdf` and keeps the
+        // audit trail's own wording for a refusal.
+        val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
+            httpClient.get(url) {
+                headers.forEach { (name, value) -> this.headers.append(name, value) }
+                bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+                accept(ContentType.Application.Pdf)
+            }
         }
         val bytes = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true

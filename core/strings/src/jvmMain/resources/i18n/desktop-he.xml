@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">ההזמנה הועתקה. הדביקו אותה בכל מקום שבו אתם מדברים עם הצוות.</string>
     <string name="desktop_email_rule_pick_folder">בחרו את התיקייה להעברת ההודעות.</string>
     <string name="desktop_board_live_call_sheet">דף קריאה פעיל</string>
+    <string name="desktop_board_live_production_report">דוחות הפקה פעילים</string>
     <string name="desktop_could_not_save_profile">לא ניתן היה לשמור את הפרופיל שלכם. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">לא ניתן להעביר הודעות אל %1$s.</string>
     <string name="desktop_board_back_to_board">חזרה ללוח</string>

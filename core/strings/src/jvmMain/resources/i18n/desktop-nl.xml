@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">Uitnodiging gekopieerd. Plak hem overal waar je met de crew praat.</string>
     <string name="desktop_email_rule_pick_folder">Kies de map om berichten naartoe te verplaatsen.</string>
     <string name="desktop_board_live_call_sheet">Live callsheet</string>
+    <string name="desktop_board_live_production_report">Actuele productierapporten</string>
     <string name="desktop_could_not_save_profile">Je profiel kon niet worden opgeslagen. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">Berichten kunnen niet naar %1$s worden verplaatst.</string>
     <string name="desktop_board_back_to_board">Terug naar bord</string>

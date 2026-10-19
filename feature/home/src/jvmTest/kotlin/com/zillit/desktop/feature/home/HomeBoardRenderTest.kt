@@ -53,6 +53,13 @@ class HomeBoardRenderTest {
     )
     private val callSheet = notices.copy(id = "cs", identifier = "call_sheet_tool", unitName = "call_sheet_label")
 
+    /** The production report tool's chat — a document board like the call sheet's. */
+    private val reportChat = notices.copy(
+        id = "pr",
+        identifier = "production_report_chat_tool",
+        unitName = "production_report_tool_chat_label",
+    )
+
     private val myOldPost = Notice(
         id = "n1",
         body = "the crew call moved to seven",
@@ -422,5 +429,51 @@ class HomeBoardRenderTest {
             raised.contains(HomeFeedEvent.RequestPostingRights),
             "the button raised $raised instead of a rights request",
         )
+    }
+
+    /**
+     * The History switch, on the two boards whose posts are documents that
+     * replace each other — the web gives both a History button, and the
+     * production report chat is the one that had none here.
+     */
+    @Test
+    fun `both document boards offer History, a conversation board does not`() = runComposeUiTest {
+        var fired: HomeFeedEvent? = null
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(reportChat), onEvent = { fired = it }) }
+        }
+
+        onNodeWithText("Live production reports").assertExists()
+        onNodeWithText("History").performClick()
+
+        assertEquals(HomeFeedEvent.ShowHistory(true), fired)
+    }
+
+    @Test
+    fun `the call sheet keeps its own wording, and a notice board has no record`() = runComposeUiTest {
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(callSheet), onEvent = {}) }
+        }
+        onNodeWithText("Live call sheet").assertExists()
+
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(notices), onEvent = {}) }
+        }
+        onNodeWithText("History").assertDoesNotExist()
+    }
+
+    @Test
+    fun `in History the line says what is listed, and the button leads back`() = runComposeUiTest {
+        var fired: HomeFeedEvent? = null
+        setContent {
+            ZillitTheme {
+                HomeFeedScreen(state = board(reportChat).copy(isHistory = true), onEvent = { fired = it })
+            }
+        }
+
+        onNodeWithText("Records of deleted messages").assertExists()
+        onNodeWithText("Back to board").performClick()
+
+        assertEquals(HomeFeedEvent.ShowHistory(false), fired)
     }
 }

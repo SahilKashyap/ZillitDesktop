@@ -1294,6 +1294,7 @@
     <string name="desktop_invite_copied">تم نسخ الدعوة. الصقها حيث تتواصل مع الطاقم.</string>
     <string name="desktop_email_rule_pick_folder">اختر المجلد لنقل الرسائل إليه.</string>
     <string name="desktop_board_live_call_sheet">ورقة النداء الحالية</string>
+    <string name="desktop_board_live_production_report">تقارير الإنتاج الحالية</string>
     <string name="desktop_could_not_save_profile">تعذّر حفظ ملفك الشخصي. %1$s</string>
     <string name="desktop_email_rule_cannot_move_into">لا يمكن نقل الرسائل إلى %1$s.</string>
     <string name="desktop_board_back_to_board">العودة إلى اللوحة</string>

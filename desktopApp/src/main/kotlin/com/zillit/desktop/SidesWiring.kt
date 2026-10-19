@@ -2,9 +2,10 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.S3Presigner
-import com.zillit.desktop.core.network.headersFor
+import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
@@ -21,6 +22,8 @@ import io.ktor.client.statement.readRawBytes
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -106,20 +109,52 @@ internal fun AppGraph.Ready.sidesTransfer(): SidesTransfer = object : SidesTrans
 /**
  * The raw authed GET the scenes routes need: they answer bare JSON, which the
  * enveloped ApiClient would refuse as a missing `data` field.
+ *
+ * It rides [signedRawResponse] rather than building headers itself, so it
+ * makes the same Bearer-vs-`moduledata` decision `ApiClient.envelope` makes
+ * and heals one expired-token 401 the same way. It did build them itself
+ * until now, and the token-auth migration left it behind: every scene fetch
+ * sent legacy `moduledata`, develop answered `401`, and because this call
+ * rides the unlogged storage client the refusal was invisible in
+ * `~/.zillit/logs` — the only symptom was "Something went wrong." the moment
+ * the Generate Sides form expanded the active script's current version. See
+ * `RawHttp.kt` for the same gap, found app-wide in the raw exports.
  */
 internal fun AppGraph.Ready.sidesRawGet(): suspend (String) -> ZillitResult<String> = { url ->
     runCatching {
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null)
-        val response = httpClient.get(url) {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
+        val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
+            httpClient.get(url) {
+                headers.forEach { (name, value) -> this.headers.append(name, value) }
+                bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+            }
         }
-        check(response.status.isSuccess()) { "scene fetch answered ${response.status}" }
+        if (!response.status.isSuccess()) {
+            throw SceneFetchDeclined(response.status.value, sceneDeclineMessage(response.bodyAsText()))
+        }
         response.bodyAsText()
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "scene fetch failed")) },
+        // The service's own reason, not a blanket "Something went wrong." — the
+        // same mapping every raw call uses.
+        onFailure = { failure ->
+            val declined = failure as? SceneFetchDeclined
+            ZillitResult.Failure(
+                rawExportError(declined?.httpStatus, declined?.serverMessage, failure.message ?: "scene fetch failed"),
+            )
+        },
     )
 }
+
+/** A scenes route that refused, carrying whatever reason it gave. */
+private class SceneFetchDeclined(
+    val httpStatus: Int,
+    val serverMessage: String?,
+) : RuntimeException(serverMessage ?: "scene fetch answered $httpStatus")
+
+/** The refusal's `message` key, when the body carried one. */
+private fun sceneDeclineMessage(body: String): String? = runCatching {
+    HttpClientFactory.json.parseToJsonElement(body).jsonObject["message"]?.jsonPrimitive?.content
+}.getOrNull()?.takeIf { it.isNotBlank() }
 
 /** A PDF, or PDF/Final Draft, picker for the sides forms. */
 internal suspend fun pickSidesDocument(pdfOnly: Boolean): PickedDoc? = withContext(Dispatchers.IO) {

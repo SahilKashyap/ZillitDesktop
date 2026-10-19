@@ -51,6 +51,21 @@ interface HomeFeedRepository {
         loadNotices(unitId, beforeMillis)
 
     /**
+     * The board's record: the posts it no longer holds, because a new document
+     * replaced them or they were deleted.
+     *
+     * The same `previous` route with `deleted=` on it, which is how the web
+     * reads its History page (`fetchPRChatMessageData`, `homeApi` for the call
+     * sheet) — so one page, both the newest and an older window, and never
+     * filed as the live board's offline copy.
+     *
+     * Defaults to the live board: the boards that have no record answer the
+     * same thing they always did rather than an error.
+     */
+    suspend fun loadHistory(unitId: String, beforeMillis: Long): ZillitResult<List<Notice>> =
+        loadNotices(unitId, beforeMillis)
+
+    /**
      * Posts a notice.
      *
      * [localId] is the client-generated `unique_id`, so the returned notice can

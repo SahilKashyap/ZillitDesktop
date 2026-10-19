@@ -3333,6 +3333,7 @@ object S {
     const val desktop_board_forward_subtitle: String = "desktop_board_forward_subtitle"
     const val desktop_board_forwarded_to: String = "desktop_board_forwarded_to"
     const val desktop_board_live_call_sheet: String = "desktop_board_live_call_sheet"
+    const val desktop_board_live_production_report: String = "desktop_board_live_production_report"
     const val desktop_board_loading_posts: String = "desktop_board_loading_posts"
     const val desktop_board_location_hint: String = "desktop_board_location_hint"
     const val desktop_board_location_placeholder: String = "desktop_board_location_placeholder"
