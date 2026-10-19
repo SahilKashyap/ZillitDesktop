@@ -374,30 +374,35 @@ private fun RepeatCountField(
  * yourself and has nobody to call. The location is asked for — marked
  * required, as the web marks it — only when some of the attendees are
  * physically travelling to it, the web's `meet_in_person_call`.
+ *
+ * The location takes a line of its own, which the web does not need: the
+ * web's control is one compact button, while this one is a typed address with
+ * a "Pick on map" button living inside it, and at a quarter of the dialog's
+ * width its placeholder broke one word to a line (seen live 2026-10-19).
  */
 @Composable
 private fun MeetingRow(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
 
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        // Picked on a map, as the web picks it, and the point travels with the
-        // words: `eventBody` sends `location: {lat, long}` beside
-        // `location_description`, the shape `AddCalendarEvent.jsx:433-438` sends.
-        ZillitLocationField(
-            text = draft.location,
-            // Typing replaces a picked place, so its coordinates go with it.
-            onTextChange = { change(draft.copy(location = it, locationLat = null, locationLng = null)) },
-            onPicked = { change(draft.copy(location = it.oneLine(), locationLat = it.lat, locationLng = it.lng)) },
-            label = if (draft.callType?.needsLocation == true) required(str(S.location)) else str(S.location),
-            placeholder = str(S.desktop_select_location),
-            errorText = form.errors.messageFor(EventFieldError.LocationMissing),
-            // The event's own place, when it has one. Without this the picker gets
-            // nothing and now opens on the user's own position — one click from
-            // overwriting the address of an event being edited.
-            initial = draft.pickedLocation(),
-            modifier = Modifier.weight(1f),
-        )
+    // Picked on a map, as the web picks it, and the point travels with the
+    // words: `eventBody` sends `location: {lat, long}` beside
+    // `location_description`, the shape `AddCalendarEvent.jsx:433-438` sends.
+    ZillitLocationField(
+        text = draft.location,
+        // Typing replaces a picked place, so its coordinates go with it.
+        onTextChange = { change(draft.copy(location = it, locationLat = null, locationLng = null)) },
+        onPicked = { change(draft.copy(location = it.oneLine(), locationLat = it.lat, locationLng = it.lng)) },
+        label = if (draft.callType?.needsLocation == true) required(str(S.location)) else str(S.location),
+        placeholder = str(S.desktop_select_location),
+        errorText = form.errors.messageFor(EventFieldError.LocationMissing),
+        // The event's own place, when it has one. Without this the picker gets
+        // nothing and now opens on the user's own position — one click from
+        // overwriting the address of an event being edited.
+        initial = draft.pickedLocation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
 
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         if (draft.isForMembers) {
             LabelledField(
                 label = required(str(S.call_type)),
@@ -422,6 +427,10 @@ private fun MeetingRow(form: EventFormState, change: (EventDraft) -> Unit) {
         }
 
         ColorField(draft, change, Modifier.weight(1f))
+
+        // A personal event has nothing else on this line; without this the
+        // colour select would stretch the width of the dialog.
+        if (!draft.isForMembers) Spacer(Modifier.weight(PERSONAL_COLOUR_GAP))
     }
 }
 
@@ -776,6 +785,9 @@ private val REMINDER_CHOICES = listOf(0, 5, 10, 15, 30, 60)
 
 /** The web's three-to-one split between the repeat's end date and its length. */
 private const val REPEAT_UNTIL_SHARE = 3f
+
+/** Two empty thirds beside the colour select on a personal event's line. */
+private const val PERSONAL_COLOUR_GAP = 2f
 
 /** Enough for 365, the longest repeat any unit allows. */
 private const val COUNT_DIGITS = 3
