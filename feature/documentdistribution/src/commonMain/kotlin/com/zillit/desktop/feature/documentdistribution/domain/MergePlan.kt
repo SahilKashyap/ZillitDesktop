@@ -22,7 +22,17 @@ import com.zillit.desktop.core.strings.str
  * some uploads land as even for PDFs, defers to the file name instead of
  * counting as a rejection.
  */
-fun LibraryDocument.isMergeable(): Boolean {
+fun LibraryDocument.isMergeable(): Boolean = isPdf()
+
+/**
+ * Whether this row is a PDF — the one test the merge and the publish dialog
+ * both run, under their own names.
+ *
+ * The row's own content type is trusted only when it looks like a MIME type —
+ * and `application/octet-stream`, which some uploads land as even for PDFs,
+ * defers to the file name instead of counting as a rejection.
+ */
+fun LibraryDocument.isPdf(): Boolean {
     val mime = contentType.orEmpty().lowercase().substringBefore(';').trim().takeIf { '/' in it }.orEmpty()
     if (mime.isNotEmpty() && mime !in GENERIC_BINARY) return mime == "application/pdf"
     return name.trim().endsWith(".pdf", ignoreCase = true)

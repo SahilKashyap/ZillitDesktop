@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.documentdistribution.ui.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -120,23 +121,56 @@ internal fun SendStatus.tone(): StatusTone = when (this) {
     SendStatus.Unknown -> StatusTone.Neutral
 }
 
-/** The web's `dd-label`: small caps above a field. */
+/**
+ * The web's `dd-label`: small caps above a field.
+ *
+ * [required] draws the web's red asterisk **against the label**, not at the
+ * far end of the row — the row is `SpaceBetween`, so an asterisk passed as
+ * [trailing] ends up alone at the opposite edge, reading as a footnote
+ * marker rather than as "this field is required". [count] is the same
+ * question for the running total beside "Files to publish".
+ */
 @Composable
 internal fun FieldLabel(
     text: String,
     modifier: Modifier = Modifier,
+    required: Boolean = false,
+    count: Int? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
+    val c = ZillitTheme.colors
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        ZillitText(
-            text = text.uppercase(),
-            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
-            color = ZillitTheme.colors.textMuted,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            ZillitText(
+                text = text.uppercase() + if (required) " *" else "",
+                style = ZillitTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.6.sp,
+                ),
+                color = if (required) c.textSecondary else c.textMuted,
+            )
+            if (count != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(ZillitTheme.shapes.small)
+                        .background(c.accentSoft)
+                        .padding(horizontal = ZillitTheme.spacing.xs),
+                ) {
+                    ZillitText(
+                        text = count.toString(),
+                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = c.accentText,
+                    )
+                }
+            }
+        }
         trailing?.let { Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs), content = it) }
     }
 }
@@ -181,6 +215,51 @@ internal fun HoverRow(
         content(hovered)
     }
 }
+
+/**
+ * The single-choice twin of [ZillitCheckbox]: a ring with a dot, and its label.
+ *
+ * The design system has no radio — nothing outside the publish dialog's
+ * three-way "what happens to what is already published" needs one, and that
+ * question is genuinely exclusive: a checkbox there would invite two answers
+ * the backend cannot take together.
+ */
+@Composable
+internal fun DocRadio(
+    selected: Boolean,
+    onSelect: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val c = ZillitTheme.colors
+    val ring = when {
+        !enabled -> c.border
+        selected -> c.accent
+        else -> c.borderStrong
+    }
+    Row(
+        modifier = modifier
+            .clickable(enabled = enabled, onClick = onSelect)
+            .padding(vertical = ZillitTheme.spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Box(
+            modifier = Modifier.size(RADIO_SIZE).clip(CircleShape).border(2.dp, ring, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) Box(Modifier.size(RADIO_SIZE / 2).clip(CircleShape).background(ring))
+        }
+        ZillitText(
+            text = label,
+            style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+            color = if (enabled) c.textPrimary else c.textDisabled,
+        )
+    }
+}
+
+private val RADIO_SIZE = 18.dp
 
 /** One entry of a [MenuPopup]. */
 internal data class MenuEntry(

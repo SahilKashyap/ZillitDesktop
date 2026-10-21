@@ -271,11 +271,11 @@ class PublishFlowTest {
     }
 
     /**
-     * Ticking a file to replace and then switching back to "add" must not
-     * leave the targets behind — the server acts on the list, not the word.
+     * Picking a file to replace and then switching back to Addition must not
+     * leave the target behind — the server acts on the id, not the word.
      */
     @Test
-    fun `an add-mode publish carries no replace targets`() = runTest(dispatcher) {
+    fun `an add-mode publish carries no replace target`() = runTest(dispatcher) {
         val repo = PublishRepo(MutableSharedFlow())
         val model = vm(repo)
         runCurrent()
@@ -284,19 +284,86 @@ class PublishFlowTest {
         model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("call_sheet_unit"))
         runCurrent()
-        model.onEvent(DocDistEvent.ToggleReplaceTarget("c1"))
-        model.onEvent(
-            DocDistEvent.EditPublishDraft(
-                model.state.value.publish!!.draft.copy(
-                    mode = PublishMode.Add,
-                    replaceChatIds = emptyList(),
-                ),
-            ),
-        )
+        model.onEvent(DocDistEvent.SetPublishMode(PublishMode.Replace))
+        model.onEvent(DocDistEvent.ChooseReplaceTarget("c1"))
+        model.onEvent(DocDistEvent.SetPublishMode(PublishMode.Add))
         model.onEvent(DocDistEvent.ConfirmPublish)
         runCurrent()
 
-        assertTrue(repo.published.single().second.replaceChatIds.isEmpty())
+        assertNull(repo.published.single().second.replaceChatId)
+    }
+
+    /**
+     * Ticking a second file under Replace is not an error to report at the
+     * end: the publish falls back to Addition and says so, which is what the
+     * web does rather than letting `publication_replace_single_only` answer.
+     */
+    @Test
+    fun `a second ticked file drops a replace back to addition`() = runTest(dispatcher) {
+        val repo = PublishRepo(MutableSharedFlow())
+        val model = vm(repo)
+        runCurrent()
+
+        model.pick("d1")
+        model.pick("d2")
+        model.onEvent(DocDistEvent.OpenPublishSelection)
+        model.onEvent(DocDistEvent.ChoosePublishTarget("call_sheet_unit"))
+        runCurrent()
+        // Down to one, so Replace is takeable, then back up to two.
+        model.onEvent(DocDistEvent.TogglePublishFile("d2"))
+        model.onEvent(DocDistEvent.SetPublishMode(PublishMode.Replace))
+        model.onEvent(DocDistEvent.ChooseReplaceTarget("c1"))
+        model.onEvent(DocDistEvent.TogglePublishFile("d2"))
+
+        val draft = model.state.value.publish!!.draft
+        assertEquals(PublishMode.Add, draft.mode)
+        assertNull(draft.replaceChatId)
+    }
+
+    /**
+     * A destination with nothing live sends no `mode` at all; one with
+     * something live starts on Addition, as the web's radio group does.
+     */
+    @Test
+    fun `the mode is null until the destination has something live`() = runTest(dispatcher) {
+        val repo = PublishRepo(MutableSharedFlow())
+        repo.live = emptyList()
+        val model = vm(repo)
+        runCurrent()
+
+        model.pick("d1")
+        model.onEvent(DocDistEvent.OpenPublishSelection)
+        model.onEvent(DocDistEvent.ChoosePublishTarget("call_sheet_unit"))
+        runCurrent()
+        assertNull(model.state.value.publish!!.draft.mode)
+
+        repo.live = listOf(PublishedFile(chatId = "c1", name = "Call sheet"))
+        model.onEvent(DocDistEvent.ChoosePublishTarget("production_report"))
+        runCurrent()
+        assertEquals(PublishMode.Add, model.state.value.publish!!.draft.mode)
+    }
+
+    /**
+     * Switching to a PDF-only destination drops the ticks it cannot take,
+     * rather than carrying a selection into a refusal.
+     */
+    @Test
+    fun `a change of destination re-derives the ticks`() = runTest(dispatcher) {
+        val repo = PublishRepo(MutableSharedFlow())
+        val model = vm(repo)
+        runCurrent()
+
+        model.pick("d1")
+        model.pick("d2")
+        model.onEvent(DocDistEvent.OpenPublishSelection)
+        model.onEvent(DocDistEvent.ChoosePublishTarget("info"))
+        runCurrent()
+        assertEquals(2, model.state.value.publish!!.draft.documentIds.size)
+
+        // Single-file, so only the first survives.
+        model.onEvent(DocDistEvent.ChoosePublishTarget("script_distribution"))
+        runCurrent()
+        assertEquals(listOf("d1"), model.state.value.publish!!.draft.documentIds)
     }
 
     @Test

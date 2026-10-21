@@ -103,6 +103,14 @@ data class LibraryDocument(
      */
     val isEphemeral: Boolean = false,
     val reused: Boolean = false,
+    /**
+     * The category this document was last published under, when it was.
+     *
+     * Only the publish dialog reads it, to stamp a row "Previously published"
+     * so nobody sends the same call sheet to the same board twice without
+     * meaning to (web `PublishModal` → `f.published_category`).
+     */
+    val publishedCategory: String? = null,
 ) {
     /**
      * Whether the server's stamping pipeline can watermark this.

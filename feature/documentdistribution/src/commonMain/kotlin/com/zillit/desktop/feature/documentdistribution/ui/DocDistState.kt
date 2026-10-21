@@ -24,9 +24,11 @@ import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
 import com.zillit.desktop.feature.documentdistribution.domain.MAX_TOTAL_ATTACHMENT_BYTES
 import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
 import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
+import com.zillit.desktop.feature.documentdistribution.domain.PublishCard
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
+import com.zillit.desktop.feature.documentdistribution.domain.isPdf
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.UploadPlan
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
@@ -777,20 +779,42 @@ data class MoveDestination(val id: String, val name: String, val depth: Int)
 data class PublishState(
     val target: PublishTarget? = null,
     val draft: PublishDraft = PublishDraft(),
-    /** The documents going out, for the dialog's file list. */
+    /**
+     * Every document the publish *could* carry — a folder's whole subtree, or
+     * the ticked rows. What actually goes is [PublishDraft.documentIds], which
+     * the dialog's own checkboxes narrow.
+     */
     val files: List<LibraryDocument> = emptyList(),
     val folder: LibraryFolder? = null,
     val alreadyPublished: List<PublishedFile> = emptyList(),
     val loadingPublished: Boolean = false,
     val saving: Boolean = false,
+    /** Which rail tile has its destination menu open, by [PublishCard.key]. */
+    val openCard: String? = null,
 ) {
-    /** Add / replace is offered only where the destination republishes *and* something is there. */
+    /** The republish options show only where the destination republishes *and* something is there. */
     val offersMode: Boolean
         get() = target?.republishable == true && !loadingPublished && alreadyPublished.isNotEmpty()
 
+    /**
+     * The rows that may be ticked at all.
+     *
+     * A PDF-only destination greys the rest rather than hiding them: a file
+     * missing from a list it was in a moment ago reads as a bug, where a
+     * disabled row with a "PDF only" stamp reads as the rule it is.
+     */
+    val selectable: List<LibraryDocument>
+        get() = if (target?.pdfOnly == true) files.filter { it.isPdf() } else files
+
+    fun canTick(document: LibraryDocument): Boolean =
+        target?.pdfOnly != true || document.isPdf()
+
     fun problem(isTelevision: Boolean): String? {
         val chosen = target ?: return str(S.desktop_docdist_choose_destination)
-        val effective = if (offersMode) draft else draft.copy(replaceChatIds = emptyList())
+        // Hold the button while the published-files read is in flight: sending
+        // now would leave out a `mode` the destination turns out to require.
+        if (loadingPublished) return str(S.dd_publish_loading_published)
+        val effective = if (offersMode) draft else draft.copy(mode = null, replaceChatId = null)
         return chosen.problem(effective, isTelevision)
     }
 }

@@ -666,7 +666,17 @@ private fun FolderListRow(folder: LibraryFolder, state: DocDistUiState, onEvent:
             ZillitBadge(count = state.unread.folder(folder.id))
         }
         CellText(prettyIsoDate(folder.folderDate), Modifier.width(DATE_COLUMN.dp))
-        CellText(folder.description.ifBlank { "—" }, Modifier.weight(DESCRIPTION_WEIGHT))
+        // A description longer than its column is unreadable in the row, so
+        // hovering gives the whole of it (web `common/TruncatedText.jsx`).
+        // Nothing to reveal on a folder with none, and a tooltip saying "—"
+        // would be a prompt to hover for no reason.
+        if (folder.description.isBlank()) {
+            CellText("—", Modifier.weight(DESCRIPTION_WEIGHT))
+        } else {
+            Box(Modifier.weight(DESCRIPTION_WEIGHT)) {
+                ZillitTooltip(folder.description) { CellText(folder.description, Modifier) }
+            }
+        }
         CellText("—", Modifier.width(SIZE_COLUMN.dp))
         Box(Modifier.width(ACTIONS_COLUMN.dp)) {
             FolderActions(folder, state, onEvent, visible = hovered || selected)

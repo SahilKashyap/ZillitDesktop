@@ -8,6 +8,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.permissions.RightsArea
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistHost
@@ -263,11 +264,14 @@ class DocDistViewModel(
             DocDistEvent.ClosePublish -> setState { copy(publish = null) }
             is DocDistEvent.ChoosePublishTarget -> library.choosePublishTarget(event.category)
             is DocDistEvent.EditPublishDraft -> setState { copy(publish = publish?.copy(draft = event.draft)) }
-            is DocDistEvent.ToggleReplaceTarget -> setState {
-                val open = publish ?: return@setState this
-                val chosen = open.draft.replaceChatIds.toSet().toggled(event.chatId)
-                copy(publish = open.copy(draft = open.draft.copy(replaceChatIds = chosen.toList())))
-            }
+            is DocDistEvent.OpenPublishCard -> library.openPublishCard(event.key)
+            is DocDistEvent.TogglePublishFile -> library.togglePublishFile(event.documentId)
+            DocDistEvent.ToggleAllPublishFiles -> library.toggleAllPublishFiles()
+            is DocDistEvent.SetPublishMode -> library.setPublishMode(event.mode)
+            is DocDistEvent.ChooseReplaceTarget -> library.chooseReplaceTarget(event.chatId)
+            is DocDistEvent.SetPublishDisplayName ->
+                library.setPublishDisplayName(event.documentId, event.name)
+            DocDistEvent.RequestPublishRights -> library.requestPublishRights()
             DocDistEvent.ConfirmPublish -> library.confirmPublish()
             // move
             DocDistEvent.OpenMove -> library.openMove()
@@ -596,6 +600,20 @@ class DocDistViewModel(
         override fun reload() = load(currentState.destination)
         override fun loadLibrary() = this@DocDistViewModel.loadLibrary()
         override fun askForRights(kind: RightsKind) = this@DocDistViewModel.askForRights(kind)
+
+        override fun askPostingRightsOn(moduleLabel: String, area: RightsArea) {
+            val asked = rights != null
+            if (asked) rights.ask(moduleLabel, RightsKind.Post, area)
+            sendEffect(
+                DocDistEffect.Failed(
+                    if (asked) {
+                        str(S.desktop_no_rights_on_module_asking_admin, RightsKind.Post.verb, moduleLabel)
+                    } else {
+                        str(S.desktop_no_rights_on_module, RightsKind.Post.verb, moduleLabel)
+                    },
+                ),
+            )
+        }
 
         /**
          * The second layer the web keeps deliberately (`requirePost()` in every

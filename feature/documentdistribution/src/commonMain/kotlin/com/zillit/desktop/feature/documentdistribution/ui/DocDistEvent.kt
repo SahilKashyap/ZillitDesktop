@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFolderTree
 import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
+import com.zillit.desktop.feature.documentdistribution.domain.PublishMode
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.parseAddressList
@@ -84,7 +85,27 @@ sealed interface DocDistEvent {
     data object ClosePublish : DocDistEvent
     data class ChoosePublishTarget(val category: String) : DocDistEvent
     data class EditPublishDraft(val draft: PublishDraft) : DocDistEvent
-    data class ToggleReplaceTarget(val chatId: String) : DocDistEvent
+
+    /** Opens (or closes, with null) one rail tile's destination menu. */
+    data class OpenPublishCard(val key: String?) : DocDistEvent
+
+    /** Ticks or unticks one row of "Files to publish". */
+    data class TogglePublishFile(val documentId: String) : DocDistEvent
+
+    /** Select all / Deselect all over the rows the destination allows. */
+    data object ToggleAllPublishFiles : DocDistEvent
+
+    /** Addition / Replace / Publish as a New File. */
+    data class SetPublishMode(val mode: PublishMode) : DocDistEvent
+
+    /** Which live file a replacement stands in for; null clears the pick. */
+    data class ChooseReplaceTarget(val chatId: String?) : DocDistEvent
+
+    /** The optional per-file display name the two republishing destinations take. */
+    data class SetPublishDisplayName(val documentId: String, val name: String) : DocDistEvent
+
+    /** Ask an admin for posting rights on the destination now selected. */
+    data object RequestPublishRights : DocDistEvent
     data object ConfirmPublish : DocDistEvent
 
     // move

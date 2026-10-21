@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.permissions.RightsArea
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -9,6 +10,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
+import com.zillit.desktop.feature.documentdistribution.domain.PublishMode
+import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.Thumbnails
 import com.zillit.desktop.feature.documentdistribution.domain.UploadBatch
@@ -16,6 +19,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.needsGeneratedThum
 import com.zillit.desktop.feature.documentdistribution.domain.thumbnailFileName
 import com.zillit.desktop.feature.documentdistribution.domain.SupportedUploads
 import com.zillit.desktop.feature.documentdistribution.domain.fileKindOf
+import com.zillit.desktop.feature.documentdistribution.domain.isPdf
 import com.zillit.desktop.feature.documentdistribution.domain.summariseFileNames
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -27,6 +31,13 @@ import kotlinx.coroutines.withTimeoutOrNull
  * server assigns ordering, date buckets and per-day counts, and a locally
  * patched row disagrees with all three until the next refresh.
  */
+/**
+ * The one server answer this screen acts on rather than merely reporting:
+ * the live file picked for a replacement is gone.
+ */
+private fun ZillitError.isStaleReplaceTarget(): Boolean =
+    this is ZillitError.Http && serverMessage == "publication_replace_target_not_found"
+
 @Suppress("TooManyFunctions") // One handler per user action.
 internal class LibrarySection(private val vm: VmScope) {
 
@@ -521,7 +532,10 @@ internal class LibrarySection(private val vm: VmScope) {
         vm.update {
             copy(
                 publish = PublishState(
-                    draft = PublishDraft(documentIds = documents.map { it.id }),
+                    draft = PublishDraft(
+                        documentIds = documents.map { it.id },
+                        folderId = folder?.id,
+                    ),
                     files = documents,
                     folder = folder,
                 ),
@@ -539,37 +553,173 @@ internal class LibrarySection(private val vm: VmScope) {
     fun choosePublishTarget(category: String) {
         val target = PublishTarget.of(category) ?: return
         val open = vm.state.publish ?: return
+        // Every destination is offered, so a disabled one can be picked. Say
+        // why here rather than letting the server answer it at the end of a
+        // filled-in form — the inline message in the rail says the same thing.
+        val access = vm.state.viewer.accessFor(category)
+        if (!access.enabled) vm.fail(str(S.dd_publish_tool_not_enabled, target.label))
         vm.update {
             copy(
                 publish = open.copy(
                     target = target,
-                    draft = PublishDraft(documentIds = open.draft.documentIds),
+                    // The ticks are re-derived against the new destination's
+                    // own rules; everything else starts clean.
+                    draft = PublishDraft(
+                        documentIds = open.ticksFor(target),
+                        folderId = open.draft.folderId,
+                    ),
                     alreadyPublished = emptyList(),
                     loadingPublished = target.republishable,
+                    openCard = null,
                 ),
             )
         }
         if (!target.republishable) return
         vm.run {
             val published = vm.repository.publishedFiles(category)
-            vm.update {
-                copy(
-                    publish = publish?.copy(
-                        loadingPublished = false,
-                        alreadyPublished = (published as? ZillitResult.Success)?.data.orEmpty(),
-                    ),
-                )
-            }
+            applyPublished(category, (published as? ZillitResult.Success)?.data.orEmpty())
         }
     }
 
-    fun confirmPublish() {
+    /**
+     * What came back from the published-files read, and the mode it implies.
+     *
+     * Nothing live means a first publish, which sends no `mode` at all; one or
+     * more means the options show and Addition is the default the web starts on.
+     */
+    private fun applyPublished(category: String, published: List<PublishedFile>) {
+        vm.update {
+            val open = publish?.takeIf { it.target?.category == category } ?: return@update this
+            copy(
+                publish = open.copy(
+                    loadingPublished = false,
+                    alreadyPublished = published,
+                    draft = open.draft.copy(
+                        mode = if (published.isEmpty()) null else PublishMode.Add,
+                        replaceChatId = null,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Opens or closes one rail tile's destination menu. */
+    fun openPublishCard(key: String?) {
+        vm.update { copy(publish = publish?.copy(openCard = key)) }
+    }
+
+    /**
+     * Tick or untick one row.
+     *
+     * A single-file destination behaves like a radio: ticking a row replaces
+     * the selection, ticking the ticked one clears it. A row the destination
+     * does not accept cannot be ticked at all.
+     */
+    fun togglePublishFile(documentId: String) {
         val open = vm.state.publish ?: return
-        val target = open.target ?: return
+        val document = open.files.firstOrNull { it.id == documentId } ?: return
+        if (!open.canTick(document)) return
+        val current = open.draft.documentIds
+        val next = when {
+            open.target?.singleFile == true -> if (documentId in current) emptyList() else listOf(documentId)
+            documentId in current -> current - documentId
+            else -> current + documentId
+        }
+        setTicks(next)
+    }
+
+    /** Select all / Deselect all, over the rows the destination allows. */
+    fun toggleAllPublishFiles() {
+        val open = vm.state.publish ?: return
+        val selectable = open.selectable.map { it.id }
+        setTicks(if (open.draft.documentIds.size == selectable.size) emptyList() else selectable)
+    }
+
+    /**
+     * Writes a new tick set, falling back off Replace when it stops being one
+     * file for one file.
+     *
+     * The web says so out loud rather than disabling the radio silently: the
+     * person ticked a second file on purpose, and a request the backend would
+     * refuse with `publication_replace_single_only` is not the answer.
+     */
+    private fun setTicks(ids: List<String>) {
+        val open = vm.state.publish ?: return
+        val leavesReplace = open.draft.mode == PublishMode.Replace && ids.size != 1
+        if (leavesReplace) {
+            vm.notice(
+                str(
+                    S.dd_publish_replace_switched_to_addition,
+                    PublishMode.Add.label(open.target?.label.orEmpty()),
+                ),
+            )
+        }
+        vm.update {
+            copy(
+                publish = publish?.copy(
+                    draft = publish.draft.copy(
+                        documentIds = ids,
+                        mode = if (leavesReplace) PublishMode.Add else publish.draft.mode,
+                        replaceChatId = if (leavesReplace) null else publish.draft.replaceChatId,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Addition / Replace / Publish as a New File. */
+    fun setPublishMode(mode: PublishMode) {
+        vm.update {
+            val open = publish ?: return@update this
+            copy(
+                publish = open.copy(
+                    draft = open.draft.copy(
+                        mode = mode,
+                        // Leaving a target picked behind an Addition would
+                        // send a replacement the server acts on.
+                        replaceChatId = if (mode == PublishMode.Replace) open.draft.replaceChatId else null,
+                    ),
+                ),
+            )
+        }
+    }
+
+    fun chooseReplaceTarget(chatId: String?) {
+        vm.update { copy(publish = publish?.copy(draft = publish.draft.copy(replaceChatId = chatId))) }
+    }
+
+    fun setPublishDisplayName(documentId: String, name: String) {
+        vm.update {
+            val open = publish ?: return@update this
+            val names = open.draft.displayNames.toMutableMap()
+            if (name.isBlank()) names.remove(documentId) else names[documentId] = name.take(DISPLAY_NAME_MAX)
+            copy(publish = open.copy(draft = open.draft.copy(displayNames = names)))
+        }
+    }
+
+    /**
+     * The ticks that survive a change of destination.
+     *
+     * A PDF-only destination drops the rest, and a single-file one keeps the
+     * first — so a selection made under Info cannot be carried into Script
+     * and refused there.
+     */
+    private fun PublishState.ticksFor(target: PublishTarget): List<String> {
+        val kept = draft.documentIds.filter { id ->
+            val document = files.firstOrNull { it.id == id } ?: return@filter false
+            !target.pdfOnly || document.isPdf()
+        }
+        return if (target.singleFile) kept.take(1) else kept
+    }
+
+    fun confirmPublish() {
+        val open = vm.state.publish
+        val target = open?.target ?: return
+        if (refusesDestination(target)) return
         val problem = open.problem(vm.state.viewer.isTelevision)
         if (problem != null) return vm.fail(problem)
         if (vm.refusesWrite()) return
-        val draft = if (open.offersMode) open.draft else open.draft.copy(replaceChatIds = emptyList())
+        val draft = if (open.offersMode) open.draft else open.draft.copy(mode = null, replaceChatId = null)
         vm.update { copy(publish = publish?.copy(saving = true)) }
         vm.run {
             when (val result = vm.repository.publish(target.category, draft)) {
@@ -592,12 +742,57 @@ internal class LibrarySection(private val vm: VmScope) {
                 is ZillitResult.Failure -> {
                     vm.update { copy(publish = publish?.copy(saving = false)) }
                     vm.report(result.error)
+                    refetchAfterStaleTarget(result.error, target.category)
                 }
             }
         }
     }
 
+    /**
+     * Somebody replaced or deleted the picked file while this form was open.
+     *
+     * The pick is cleared and the list re-read, so the next press chooses from
+     * what is actually there instead of sending the same dead id again.
+     */
+    private fun refetchAfterStaleTarget(error: ZillitError, category: String) {
+        if (!error.isStaleReplaceTarget()) return
+        vm.update { copy(publish = publish?.copy(loadingPublished = true, alreadyPublished = emptyList())) }
+        vm.run {
+            val published = vm.repository.publishedFiles(category)
+            applyPublished(category, (published as? ZillitResult.Success)?.data.orEmpty())
+        }
+    }
+
+    /**
+     * The destination's own posting right, not this tool's.
+     *
+     * The button stays pressable without it so the press can offer the ask —
+     * and the ask has to name the *receiving* tool, not Document
+     * Distribution. A module the production never switched on has no row to
+     * grant, so there the honest answer is why, not an ask nobody can meet.
+     */
+    private fun refusesDestination(target: PublishTarget): Boolean {
+        val access = vm.state.viewer.accessFor(target.category)
+        if (access.canPost) return false
+        if (access.enabled) requestPublishRights() else vm.fail(str(S.dd_publish_tool_not_enabled, target.label))
+        return true
+    }
+
+    /** Ask an admin for posting rights on whichever destination is selected. */
+    fun requestPublishRights() {
+        val target = vm.state.publish?.target ?: return
+        vm.askPostingRightsOn(
+            target.label,
+            // The Call Sheet destination is a home unit, and its row is on the
+            // grid's Home tab; every other destination is a film tool.
+            if (target.toolIdentifier == null) RightsArea.Home else RightsArea.Tools,
+        )
+    }
+
     private companion object {
+        /** The web's `maxLength` on the display-name field. */
+        const val DISPLAY_NAME_MAX = 120
+
         /** Wide enough to read a call sheet, small enough to rasterise quickly. */
         /** Wide enough to stay sharp on a high-density screen at full window width. */
         const val PREVIEW_PAGE_WIDTH = 1800

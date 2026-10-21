@@ -112,6 +112,8 @@ internal data class DocumentDto(
      * reading only that left every document with no storage at all.
      */
     @SerialName("attachment") val attachment: AttachmentStorageDto? = null,
+    /** Set once the document has been published somewhere; the dialog stamps the row. */
+    @SerialName("published_category") val publishedCategory: String? = null,
 ) {
     fun toDomain(ephemeral: Boolean = false): LibraryDocument? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -129,6 +131,7 @@ internal data class DocumentDto(
             // carry a full ISO timestamp, and an ungrouped `2026-08-11T09:00Z`
             // bucket beside `2026-08-11` splits one day into two headings.
             documentDate = documentDate.orEmpty().take(ISO_DATE_LENGTH),
+            publishedCategory = publishedCategory?.takeIf { it.isNotBlank() },
             createdAt = createdAt.toEpochMillisOrNull() ?: created?.content.toEpochMillisOrNull(),
             storage = attachment?.toDomain() ?: media?.takeIf { it.isNotBlank() }
                 ?.let { DocumentStorage(key = it, bucket = "", region = "") },

@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.permissions.RightsArea
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistHost
@@ -49,6 +50,16 @@ internal interface VmScope {
     fun refusesDownload(): Boolean
 
     fun askForRights(kind: RightsKind)
+
+    /**
+     * Asks for posting rights on *another* tool.
+     *
+     * The publish destinations are gated by the tool being published into, so
+     * the ask has to name that tool — an admin sent to Document Distribution's
+     * own row would change the wrong switch. [area] is which tab of the rights
+     * grid holds it: the Call Sheet unit lives under Home, the rest under Tools.
+     */
+    fun askPostingRightsOn(moduleLabel: String, area: RightsArea)
 }
 
 /** Reports the failure, or hands the value on. */

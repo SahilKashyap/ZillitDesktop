@@ -112,9 +112,27 @@ class PublishTargetTest {
         )
         assertNull(
             PublishTarget.CallSheet.problem(
-                replacing.copy(replaceChatIds = listOf("c1")),
+                replacing.copy(replaceChatId = "c1"),
                 isTelevision = false,
             ),
+        )
+    }
+
+    /**
+     * One live file for one new one — the backend refuses the rest with
+     * `publication_replace_single_only`, which says nothing the person can act on.
+     */
+    @Test
+    fun `a replace carrying two files is refused before it goes`() {
+        val twoFiles = PublishDraft(
+            documentIds = listOf("d1", "d2"),
+            mode = PublishMode.Replace,
+            replaceChatId = "c1",
+        )
+
+        assertEquals(
+            "Select exactly one file to replace an existing one.",
+            PublishTarget.CallSheet.problem(twoFiles, isTelevision = false),
         )
     }
 
@@ -215,6 +233,32 @@ class PublishTargetTest {
 
         assertFalse(viewer.ready)
         assertTrue(viewer.publishable.isEmpty(), "nothing is offered until rights are known")
+    }
+
+    /**
+     * The rail shows every destination whatever the rights, so the *badge* is
+     * what a missing right changes — not whether the tile is there.
+     */
+    @Test
+    fun `a destination without posting rights is view-only, not absent`() {
+        val viewer = DocDistViewer.from(permissions("info_tool"), "u1", "u@x", isTelevision = false)
+
+        val info = viewer.accessFor("info")
+        assertTrue(info.visible && info.canPost)
+
+        // A tool the rights payload never named: no row, so nothing to grant.
+        val missing = viewer.accessFor("confidential_info")
+        assertFalse(missing.canPost)
+        assertFalse(missing.enabled, "a tool with no row reads as one the production never enabled")
+    }
+
+    /** Before the tools call answers, the module's documented soft default applies. */
+    @Test
+    fun `an unresolved viewer treats every destination as open`() {
+        val viewer = DocDistViewer.from(ProjectPermissions.Empty, "u1", "u@x")
+
+        assertTrue(viewer.accessFor("info").canPost)
+        assertTrue(viewer.accessFor("info").enabled)
     }
     /**
      * The call sheet is gated by the home unit list, not the tool grid, so it

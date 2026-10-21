@@ -10,9 +10,9 @@ import com.zillit.desktop.core.strings.str
  * mirror of what each receiving endpoint validates. The rules are not
  * decoration: the schedule and script endpoints reject a non-PDF, the page
  * endpoints reject a publish with no scene number, and the backend answers
- * `publication_mode_not_supported` if `mode` is sent to a destination that
- * does not republish. Getting one wrong produces a refusal the person
- * publishing cannot act on.
+ * `publication_mode_not_supported` if `mode` reaches a destination that does
+ * not republish. Getting one wrong produces a refusal the person publishing
+ * cannot act on.
  */
 data class PublishTarget(
     /** The category id the backend's `PUBLICATION_CATEGORIES` lists. */
@@ -22,11 +22,13 @@ data class PublishTarget(
     val toolIdentifier: String? = null,
     /** The parent tool's name, when this destination sits under one. */
     private val groupKey: String? = null,
+    /** The card's one-line sub-copy, where the web gives one. */
+    private val descriptionKey: String? = null,
     /** PDF-only: the receiving endpoint validates `content_subtype`. */
     val pdfOnly: Boolean = false,
     /** One document per publish — a second would replace the first, not join it. */
     val singleFile: Boolean = false,
-    /** Offers add / replace once something is already published there. */
+    /** Offers addition / replace / resend once something is already published there. */
     val republishable: Boolean = false,
     val needsScene: Boolean = false,
     val needsScheduleDate: Boolean = false,
@@ -39,6 +41,9 @@ data class PublishTarget(
 
     /** The parent tool's name, when this destination sits under one. */
     val group: String? get() = groupKey?.let(::str)
+
+    /** The card's sub-copy, or null where the web shows none. */
+    val description: String? get() = descriptionKey?.let(::str)
 
     /** A note rides along except on the tool destinations, which have no field for it. */
     val takesNote: Boolean get() = !needsEpisodeOnTelevision
@@ -66,8 +71,11 @@ data class PublishTarget(
         if (needsEpisodeOnTelevision && isTelevision && draft.episode.isBlank()) {
             return str(S.desktop_docdist_episode_required_television)
         }
-        if (draft.mode == PublishMode.Replace && draft.replaceChatIds.isEmpty()) {
-            return str(S.dd_publish_replace_target_placeholder)
+        if (draft.mode == PublishMode.Replace) {
+            if (draft.replaceChatId.isNullOrBlank()) return str(S.dd_publish_replace_target_placeholder)
+            // One live file for one new one; the backend refuses the rest with
+            // `publication_replace_single_only`.
+            if (draft.documentIds.size != 1) return str(S.dd_publish_replace_single_hint)
         }
         return null
     }
@@ -94,11 +102,13 @@ data class PublishTarget(
             category = "info",
             labelKey = S.dd_cat_info_label,
             toolIdentifier = "info_tool",
+            descriptionKey = S.dd_cat_info_sub,
         )
         val ConfidentialInfo = PublishTarget(
             category = "confidential_info",
             labelKey = S.dd_cat_confidential_label,
             toolIdentifier = "confidential_info_tool",
+            descriptionKey = S.dd_cat_confidential_sub,
         )
 
         /**
@@ -176,20 +186,106 @@ data class PublishTarget(
     }
 }
 
-/** How a republish lands: alongside what is there, or over it. */
-enum class PublishMode(val wire: String, private val labelKey: String) {
-    Add("addition", S.desktop_docdist_publish_mode_add),
-    Replace("replace", S.replace),
+/**
+ * One tile in the dialog's left rail.
+ *
+ * The web draws seven: four destinations that select directly, and three
+ * *tools* whose tile opens a menu of the destinations beneath it (the
+ * "Forward in App" pattern). A tool with a single destination — D.O.D today —
+ * selects directly like a plain card, because a one-entry menu is a worse
+ * version of a button.
+ *
+ * Built from [PublishTarget.all] rather than listed again, so a destination
+ * added there cannot be missing from the rail: the grouped ones gather under
+ * their [PublishTarget.group], the ungrouped ones each get a tile of their own.
+ */
+data class PublishCard(
+    /** Stable across recompositions and language switches: the first option's category. */
+    val key: String,
+    val label: String,
+    val description: String?,
+    val options: List<PublishTarget>,
+) {
+    /** Selects on click rather than opening a menu. */
+    val single: Boolean get() = options.size == 1
+
+    /** Every option shares one rights row, so the tile's access is the first option's. */
+    val category: String get() = options.first().category
+
+    fun holds(category: String?): Boolean = options.any { it.category == category }
+
+    companion object {
+        val all: List<PublishCard> by lazy {
+            val cards = mutableListOf<PublishCard>()
+            PublishTarget.all.forEach { target ->
+                val group = target.group
+                if (group == null) {
+                    cards += PublishCard(target.category, target.label, target.description, listOf(target))
+                    return@forEach
+                }
+                val existing = cards.indexOfFirst { it.label == group }
+                if (existing >= 0) {
+                    cards[existing] = cards[existing].copy(options = cards[existing].options + target)
+                } else {
+                    cards += PublishCard(target.category, group, null, listOf(target))
+                }
+            }
+            cards.toList()
+        }
+    }
+}
+
+/**
+ * How a republish lands.
+ *
+ * Only sent where the destination republishes *and* something is already
+ * live there — [PublishDraft.mode] is null on a first publish, which is what
+ * keeps `mode` out of a body the backend would refuse.
+ */
+enum class PublishMode(val wire: String, private val labelKey: String, private val hintKey: String) {
+    /** Join what is there. Nothing moves to History. */
+    Add(
+        "addition",
+        S.dd_publish_option_addition,
+        S.dd_publish_option_addition_hint,
+    ),
+
+    /** Swap one named live file for one new one. */
+    Replace(
+        "replace",
+        S.dd_publish_option_file_names,
+        S.dd_publish_option_file_names_hint,
+    ),
+
+    /** Everything live moves to History and the new file takes its place. */
+    Resend(
+        "resend",
+        S.dd_publish_option_resend,
+        S.dd_publish_option_resend_hint,
+    ),
     ;
 
-    val label: String get() = str(labelKey)
+    /** Named with the destination, because "replace on the Call Sheet" is the real decision. */
+    fun label(module: String): String = str(labelKey, module)
+
+    fun hint(module: String): String = str(hintKey, module)
 }
 
 /** Everything a publish carries beyond the category itself. */
 data class PublishDraft(
     val documentIds: List<String> = emptyList(),
-    val mode: PublishMode = PublishMode.Add,
-    val replaceChatIds: List<String> = emptyList(),
+    /** The folder the publish came from, when it did; the web sends `folder_id` either way. */
+    val folderId: String? = null,
+    /**
+     * Null on a first publish — the destination has nothing live, so no `mode`
+     * goes out at all. Set the moment the published-files read comes back
+     * non-empty.
+     */
+    val mode: PublishMode? = null,
+    /** One live file, not a set: a replacement is one-for-one on the wire. */
+    val replaceChatId: String? = null,
+    /** Optional per-file display name, document id → name. The two republishing destinations only. */
+    val displayNames: Map<String, String> = emptyMap(),
     val note: String = "",
     val sceneNumber: String = "",
     val scheduleDate: Long? = null,
