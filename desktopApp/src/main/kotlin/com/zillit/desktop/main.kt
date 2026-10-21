@@ -69,6 +69,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.home.domain.ToolCatalogue
 import com.zillit.desktop.feature.home.domain.ToolPresentation
+import com.zillit.desktop.feature.home.domain.visibleTabs
 import com.zillit.desktop.feature.home.ui.ToolSection
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import com.zillit.desktop.core.workspace.ViewMode
@@ -167,6 +168,10 @@ import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
 import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
 import com.zillit.desktop.feature.settings.approvals.badgeUnit
 import com.zillit.desktop.feature.settings.approvals.KnownCrewMember
+import com.zillit.desktop.feature.settings.preferences.AppPreferencesRepositoryImpl
+import com.zillit.desktop.feature.settings.preferences.AppPreferencesViewModel
+import com.zillit.desktop.feature.settings.preferences.HomeUnitChoice
+import com.zillit.desktop.feature.settings.preferences.PreferencesContext
 import com.zillit.desktop.feature.settings.ui.AboutInfo
 import com.zillit.desktop.feature.settings.ui.AccountSummary
 import com.zillit.desktop.feature.settings.ui.AdminSettingsUiState
@@ -633,7 +638,6 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     // composition rather than remembered: `showMain` closes over the frame,
     // and the frame arrives after the first one.
     SideEffect { mainWindowRaiser.set(showMain) }
-    val closeToTray by preferences.observe(ZillitPreferences.CloseToTray).collectAsState(initial = true)
     val crewName: (String) -> String? = { id ->
         (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
     }
@@ -653,7 +657,9 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
             if (meetId != null) showMain()
         }
     }
-    LaunchedEffect(preferences) { LoginItem.reconcile(preferences) }
+    // Start at sign-in is always on now — no switch in Settings — so an
+    // installed copy makes sure the OS has the login item.
+    LaunchedEffect(Unit) { LoginItem.ensureEnabled() }
 
     val trayState = rememberTrayState()
 
@@ -681,20 +687,6 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
                 openProvider = { tools.chatWidget },
                 scopedProvider = { project, options, permissions ->
                     ready.scopedChatProvider(project, options, permissions, viewModels.calls)
-                },
-            )
-        }
-    }
-    val crewWidgetHost = remember(graph, viewModels, tools) {
-        (graph as? AppGraph.Ready)?.let { ready ->
-            ToolWidgetHost(
-                ready = ready,
-                scope = scope,
-                openProjectId = { authViewModel?.currentState?.activeProject?.id },
-                tag = "CrewWidget",
-                openProvider = { tools.crewWidget },
-                scopedProvider = { project, options, permissions ->
-                    ready.scopedCrewProvider(project, options, permissions)
                 },
             )
         }
@@ -738,7 +730,6 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         widgetMount = WidgetMount(
             driveHost = driveWidgetHost,
             chatHost = chatWidgetHost,
-            crewHost = crewWidgetHost,
             switches = widgets,
             showMain = showMain,
         ),
@@ -748,7 +739,9 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         crewName = crewName,
         mainVisible = mainVisible,
         onCloseMain = {
-            if (closeToTray && isTraySupported) {
+            // Always closes to the tray where there is one: Settings no
+            // longer offers to quit on close.
+            if (isTraySupported) {
                 // A meet lobby is drawn in this window: hidden, it would keep
                 // the camera lit with nobody looking at it.
                 viewModels.calls?.onEvent(MeetLobbyEvent.Close)
@@ -771,7 +764,6 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
 private class WidgetMount(
     val driveHost: DriveWidgetHost?,
     val chatHost: ToolWidgetHost?,
-    val crewHost: ToolWidgetHost?,
     val switches: WidgetSwitches,
     val showMain: () -> Unit,
 )
@@ -997,7 +989,6 @@ private fun ApplicationScope.ZillitWindows(
         IncomingCallWidget(
             ready = ready,
             calls = viewModels.calls,
-            preferences = preferences,
             frame = frame,
             darkTheme = isDark,
             showMain = showMain,
@@ -1067,21 +1058,6 @@ private fun ApplicationScope.ZillitWindows(
         darkTheme = isDark,
         graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
-        showMain = widgetMount.showMain,
-    )
-    ToolWidgetWindow(
-        title = str(S.desktop_zillit_crew),
-        what = str(S.desktop_the_crew_list_widget),
-        keys = ZillitPreferences.CrewWidget,
-        projectKey = ZillitPreferences.CrewWidgetProject,
-        host = widgetMount.crewHost,
-        route = WorkspaceRoute.Tool(CrewListToolProvider.CREW_LIST_PATH),
-        auth = authViewModel,
-        preferences = preferences,
-        visible = widgetMount.switches.isOpen(ZillitWidget.Crew),
-        darkTheme = isDark,
-        graph = graph,
-        onClose = { widgetMount.switches.close(ZillitWidget.Crew) },
         showMain = widgetMount.showMain,
     )
 }
@@ -3522,6 +3498,8 @@ internal class AppViewModels(
     val admin: AdminViewModel?,
     /** The reader's own pages behind Settings. Null without a session. */
     val account: AccountViewModel?,
+    /** Settings' App Preferences cards — Default Home Unit, Notifications, Location. Null without a session. */
+    val appPreferences: AppPreferencesViewModel? = null,
     val calls: CallViewModel?,
     /** The finance tools. Null before the graph is configured. */
     val cashExpenses: CashExpensesViewModel?,
@@ -3812,6 +3790,7 @@ internal fun buildAppViewModels(
         calendar = ready?.let(::buildCalendar),
         email = mailbox,
         settings = settings,
+        appPreferences = ready?.let { graph -> buildAppPreferences(graph, permissions) },
         approvals = ready?.let { graph ->
             ApprovalsViewModel(
                 repository = graph.approvalsRepository.readingLedger(graph),
@@ -4242,8 +4221,7 @@ private fun buildRegistry(
             ?: com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(vm, onOpenUrl = ::openInBrowser)
     }
     val crewList = viewModels.crewList?.let { vm ->
-        (graph as? AppGraph.Ready)?.crewListProvider(vm, viewModels, onOpenWidget = { openWidget(ZillitWidget.Crew) })
-            ?: CrewListToolProvider(vm, onOpenWidget = { openWidget(ZillitWidget.Crew) })
+        (graph as? AppGraph.Ready)?.crewListProvider(vm, viewModels) ?: CrewListToolProvider(vm)
     }
     val crewDood = viewModels.crewDood?.let { crewDoodProvider(it) }
     val assetRegister = viewModels.assetRegister?.let {
@@ -4434,6 +4412,7 @@ private fun buildRegistry(
         cabinetViewers = (graph as? AppGraph.Ready)
             ?.cabinetViewers { viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty }
             ?: CabinetViewers.None,
+        preferences = viewModels.appPreferences,
     )
     // The mail drawer's other two windows — Settings and Contacts.
     val mailSettings = (graph as? AppGraph.Ready)?.let { ready ->
@@ -4753,15 +4732,13 @@ private fun buildRegistry(
                 mail = emailViewModel,
             )
         },
-        crewWidget = viewModels.crewList?.let { CrewListToolProvider(it, compact = true) },
     )
 }
 
-/** The registry, plus the compact providers the Chat and Crew List widgets show. */
+/** The registry, plus the compact provider the Chat widget shows. */
 private class AppTools(
     val registry: ToolRegistry,
     val chatWidget: ToolProvider?,
-    val crewWidget: ToolProvider?,
 )
 
 /**
@@ -4997,11 +4974,6 @@ private fun notificationSettings(
     calls = preferences.observe(ZillitPreferences.NotifyCalls),
     ringtone = preferences.observe(ZillitPreferences.RingOnIncomingCall),
     activity = preferences.observe(ZillitPreferences.NotifyActivity),
-    callWidget = preferences.observe(ZillitPreferences.CallWidget),
-    messageWidget = preferences.observe(ZillitPreferences.MessageWidget),
-    closeToTray = preferences.observe(ZillitPreferences.CloseToTray),
-    startAtLogin = preferences.observe(ZillitPreferences.StartAtLogin),
-    startAtLoginAvailable = LoginItem.available,
     setMuted = { muted -> scope.launch { preferences.set(ZillitPreferences.MuteNotifications, muted) } },
     setMessages = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMessages, on) } },
     setMail = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMail, on) } },
@@ -5009,10 +4981,6 @@ private fun notificationSettings(
     setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
     setRingtone = { on -> scope.launch { preferences.set(ZillitPreferences.RingOnIncomingCall, on) } },
     setActivity = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) } },
-    setCallWidget = { on -> scope.launch { preferences.set(ZillitPreferences.CallWidget, on) } },
-    setMessageWidget = { on -> scope.launch { preferences.set(ZillitPreferences.MessageWidget, on) } },
-    setCloseToTray = { on -> scope.launch { preferences.set(ZillitPreferences.CloseToTray, on) } },
-    setStartAtLogin = { on -> scope.launch { LoginItem.sync(preferences, on) } },
     // The widgets' switches, read and written where the tray and the windows
     // read and write them — the preference file, not a copy.
     widgets = widgetToggles(preferences),
@@ -5021,6 +4989,43 @@ private fun notificationSettings(
             ?.let { widget -> scope.launch { preferences.set(widget.keys.open, on) } }
     },
 )
+
+/**
+ * Settings' App Preferences cards (the web's `PermissionSetting.jsx`).
+ *
+ * The Home units are the tabs Home itself shows — viewable and enabled — and
+ * the drawer's tool filter is `project/tools`, the list the web filters it by,
+ * both read from what Home already fetched rather than asked for again.
+ * "Where am I" is the same network lookup the maps and the place picker use:
+ * embedded Chromium cannot answer `navigator.geolocation`.
+ */
+private fun buildAppPreferences(
+    ready: AppGraph.Ready,
+    permissions: () -> ProjectPermissions,
+): AppPreferencesViewModel {
+    val locator = DeviceGeolocation(ready.httpClient) { ready.remoteConfigRepository.current()?.googleMapsKey }
+    return AppPreferencesViewModel(
+        repository = AppPreferencesRepositoryImpl(ready.apiClient, ready.config),
+        context = ready.projectContext?.context?.map {
+            PreferencesContext(
+                projectId = it.project?.projectId,
+                isTeamProject = !productionFacts(name = null, type = it.project?.type).isPersonal,
+            )
+        } ?: flowOf(PreferencesContext()),
+        homeUnits = {
+            val units = ready.homeFeedRepository.loadUnits().getOrNull()
+                ?: ready.homeFeedRepository.cachedUnits().orEmpty()
+            units.visibleTabs().map { HomeUnitChoice(id = it.id, name = it.unitName) }
+        },
+        toolNames = { permissions().tools.mapNotNullTo(mutableSetOf()) { it.unitName } },
+        locate = { locator.locate()?.let { it.lat to it.lng } },
+        // Home lands on `default_unit_id` from the profile it holds; refreshed
+        // so the choice is the one in force the next time Home opens.
+        onProfileChanged = {
+            ready.projectContext?.context?.value?.project?.projectId?.let { ready.projectContext?.refresh(it) }
+        },
+    )
+}
 
 private fun buildSettings(
     graph: AppGraph,
@@ -5342,7 +5347,6 @@ private val ZillitWidget.widgetDetail: String
     get() = when (this) {
         ZillitWidget.Drive -> str(S.desktop_widget_detail_drive)
         ZillitWidget.Chat -> str(S.desktop_widget_detail_chat)
-        ZillitWidget.Crew -> str(S.desktop_widget_detail_crew)
     }
 
 /**

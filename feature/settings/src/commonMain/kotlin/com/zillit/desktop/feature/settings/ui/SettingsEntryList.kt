@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.TagTone
@@ -221,25 +222,33 @@ private fun EntryIcon(entry: SettingsEntry) {
     val danger = entry.tone == EntryTone.Danger
     val hue = if (danger) colors.danger else avatarHue(entry.title)
 
+    // The glyph keeps its full hue even on a row that is not built yet.
+    // Dimming it too made these unreadable against the dark theme's
+    // surface — the muted title and the "Soon" tag already carry that
+    // meaning, and a glyph nobody can make out carries none.
+    SettingsIconDisc(icon = entry.icon, hue = hue, tint = if (entry.isOpenable) DISC_TINT else PLANNED_DISC_TINT)
+}
+
+/**
+ * A settings glyph on a disc tinted with its own hue — the one icon every row
+ * on the Settings page wears, destinations and switches alike. [hue] is
+ * usually `avatarHue(title)`, so a row keeps its colour wherever it appears.
+ */
+@Composable
+internal fun SettingsIconDisc(icon: ImageVector, hue: Color, tint: Float = DISC_TINT) {
     Box(
         modifier = Modifier
             .size(DISC)
             .clip(ZillitTheme.shapes.medium)
-            .background(hue.copy(alpha = if (entry.isOpenable) DISC_TINT else PLANNED_DISC_TINT)),
+            .background(hue.copy(alpha = tint)),
         contentAlignment = Alignment.Center,
     ) {
-        // The glyph keeps its full hue even on a row that is not built yet.
-        // Dimming it too made these unreadable against the dark theme's
-        // surface — the muted title and the "Soon" tag already carry that
-        // meaning, and a glyph nobody can make out carries none.
-        ZillitIcon(
-            icon = entry.icon,
-            contentDescription = null,
-            tint = hue,
-            size = GLYPH,
-        )
+        ZillitIcon(icon = icon, contentDescription = null, tint = hue, size = GLYPH)
     }
 }
+
+/** Where a row's text starts when it carries a [SettingsIconDisc] — dividers begin here. */
+internal val SETTINGS_TEXT_INSET = 58.dp
 
 /**
  * Starts under the text, not under the icon.
@@ -252,7 +261,7 @@ private fun RowDivider() {
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(start = DIVIDER_INSET)
+            .padding(start = SETTINGS_TEXT_INSET)
             .height(HAIRLINE)
             .background(ZillitTheme.colors.divider),
     )
@@ -321,7 +330,6 @@ private val INFO_GLYPH = 20.dp
 private val CHEVRON_NUDGE = 2.dp
 private val NOTICE_GLYPH = 16.dp
 private val EMPTY_GLYPH = 22.dp
-private val DIVIDER_INSET = 58.dp
 private const val DISC_TINT = 0.14f
 private const val PLANNED_DISC_TINT = 0.10f
 private const val DANGER_HOVER_TINT = 0.7f

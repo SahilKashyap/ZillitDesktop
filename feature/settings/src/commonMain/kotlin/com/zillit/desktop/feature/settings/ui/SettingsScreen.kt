@@ -6,6 +6,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
@@ -37,6 +39,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
@@ -47,7 +50,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.AppLanguage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.Strings
@@ -60,11 +62,13 @@ import com.zillit.desktop.core.strings.str
  * are three sections, and a navigation pane for three destinations is furniture.
  * It grows into one when there is something to navigate.
  *
- * Holds the web's profile tab (account, recovery email, invite, leave) and the
- * desktop's own additions to it: appearance, notifications, the desktop
+ * Holds the web's profile tab (account, recovery email, invite, leave, App
+ * Preferences) and the desktop's own additions to it: appearance, the desktop
  * widgets and the build.
  *
  * @param showTitle false under [SettingsTabsFrame], which carries the title.
+ * @param preferences the web's App Preferences cards (Default Home Unit,
+ *   Notifications, Location), when a production is open to hold them.
  */
 @Composable
 fun SettingsScreen(
@@ -72,6 +76,7 @@ fun SettingsScreen(
     onEvent: (SettingsEvent) -> Unit,
     modifier: Modifier = Modifier,
     showTitle: Boolean = true,
+    preferences: (@Composable () -> Unit)? = null,
 ) {
     // Held here, not beside the rows: the dialog is no popup, so it has to be
     // composed at the page root or it draws inline inside the scrolling column.
@@ -109,12 +114,12 @@ fun SettingsScreen(
                 }
 
                 AccountCard(state, onEvent)
-                Destinations(state, onEvent) { info = it }
+                Destinations(state, onEvent, atEnd = false) { info = it }
+                preferences?.let { cards -> AppPreferencesGroup(cards) }
                 AppearanceSection(state, onEvent)
-                ProductionSection(state, onEvent)
-                NotificationsSection(state, onEvent)
-                DesktopSection(state, onEvent)
+                DesktopWidgetsSection(state, onEvent)
                 AboutSection(state.about, onEvent)
+                Destinations(state, onEvent, atEnd = true) { info = it }
             }
         }
 
@@ -204,11 +209,13 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
 private fun Destinations(
     state: SettingsUiState,
     onEvent: (SettingsEvent) -> Unit,
+    /** The groups that sit at the foot of the page, or the ones at its head. */
+    atEnd: Boolean,
     onInfo: (SettingsEntry) -> Unit,
 ) {
     val isAdmin = state.account.isAdmin
     val production = state.admin.production
-    val groups = remember(isAdmin) { settingsEntries(isAdmin) }
+    val groups = remember(isAdmin, atEnd) { settingsEntries(isAdmin).filter { it.atEnd == atEnd } }
     groups.forEach { group ->
         SettingsEntryGroup(
             group = group,
@@ -219,12 +226,23 @@ private fun Destinations(
     }
 }
 
+/**
+ * The web's App Preferences, one card like the sections below it: settings the
+ * server keeps for this person on every device, unlike Appearance and the
+ * widgets, which are this computer's.
+ */
+@Composable
+private fun AppPreferencesGroup(rows: @Composable () -> Unit) {
+    Section(str(S.app_preferences), ZillitIcons.Settings) { rows() }
+}
+
 @Composable
 private fun AppearanceSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
     Section(str(S.dd_watermark_appearance), ZillitIcons.Sun) {
         SettingRow(
             title = str(S.theme_mode),
             detail = str(S.desktop_theme_detail),
+            icon = ZillitIcons.Moon,
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ThemeMode.entries.forEach { mode ->
@@ -244,6 +262,7 @@ private fun AppearanceSection(state: SettingsUiState, onEvent: (SettingsEvent) -
             // Says what it affects. "Scale" alone reads as a display setting
             // and people expect it to change their monitor resolution.
             detail = str(S.desktop_interface_size_detail),
+            icon = ZillitIcons.Expand,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -280,94 +299,34 @@ private fun AppearanceSection(state: SettingsUiState, onEvent: (SettingsEvent) -
     }
 }
 
+
 /**
- * The production unit this user is on.
- *
- * Absent entirely when there is nothing to choose — a production with one unit,
- * or none loaded. A dropdown holding a single option is furniture, and an empty
- * one reads as something that failed.
+ * The desktop widgets — small always-on-top windows onto Drive and Chat — each
+ * on or off. The tray offers the same switches; both write one preference.
  */
 @Composable
-private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    val unit = state.unit
-    if (!unit.isOfferable) return
-
-    Section(str(S.dm_step2_external_off), ZillitIcons.Tools) {
-        SettingRow(
-            title = str(S.desktop_your_unit),
-            // Says what it changes. "Unit" alone is a word this industry uses
-            // for four different things.
-            detail = str(S.desktop_your_unit_detail),
-        ) {
-            Column(horizontalAlignment = Alignment.End) {
-                ZillitSelect(
-                    value = unit.selected,
-                    options = unit.options,
-                    onSelect = { chosen -> chosen?.let { onEvent(SettingsEvent.UnitChanged(it.id)) } },
-                    // `unit_name` is a translation key — `main_unit_label`.
-                    label = { it?.name?.localised() ?: str(S.dm_gpr_not_set) },
-                    enabled = unit.canChange,
-                    // Fixed, or the select fills the row and crushes the
-                    // title column to a letter a line — the calendar toolbar
-                    // needed the same leash.
-                    modifier = Modifier.width(UNIT_SELECT_WIDTH),
-                )
-                if (unit.error != null) {
-                    ZillitText(
-                        text = unit.error,
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.danger,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** One category of banner, on or off. */
-
-/** What Zillit does on this computer when its window is not in front, or not open at all. */
-@Composable
-private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section(str(S.desktop_section_desktop), ZillitIcons.Monitor, collapsible = true) {
-        NotifyToggle(
-            title = str(S.desktop_incoming_call_card),
-            detail = str(S.desktop_incoming_call_card_detail),
-            on = state.callWidget,
-            onChange = { onEvent(SettingsEvent.CallWidgetChanged(it)) },
-        )
-        NotifyToggle(
-            title = str(S.desktop_new_message_card),
-            detail = str(S.desktop_new_message_card_detail),
-            on = state.messageWidget,
-            onChange = { onEvent(SettingsEvent.MessageWidgetChanged(it)) },
-        )
-        NotifyToggle(
-            title = str(S.desktop_keep_running_when_closed),
-            detail = str(S.desktop_keep_running_when_closed_detail),
-            on = state.closeToTray,
-            onChange = { onEvent(SettingsEvent.CloseToTrayChanged(it)) },
-        )
-        NotifyToggle(
-            title = str(S.desktop_start_at_sign_in),
-            detail = if (state.startAtLoginAvailable) {
-                str(S.desktop_start_at_sign_in_detail)
-            } else {
-                str(S.desktop_start_at_sign_in_unavailable)
-            },
-            on = state.startAtLogin && state.startAtLoginAvailable,
-            onChange = { onEvent(SettingsEvent.StartAtLoginChanged(it)) },
-        )
+private fun DesktopWidgetsSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
+    if (state.widgets.isEmpty()) return
+    Section(str(S.desktop_desktop_widgets), ZillitIcons.Monitor) {
         state.widgets.forEach { widget ->
             NotifyToggle(
                 title = widget.label,
                 detail = widget.detail,
+                icon = widgetIcon(widget.id),
                 on = widget.on,
                 onChange = { onEvent(SettingsEvent.WidgetChanged(widget.id, it)) },
             )
         }
     }
 }
+
+/** Each widget's glyph, by its `ZillitWidget` name. */
+private fun widgetIcon(id: String): ImageVector = when (id) {
+    "Drive" -> ZillitIcons.Drive
+    "Chat" -> ZillitIcons.Chat
+    else -> ZillitIcons.Monitor
+}
+
 /**
  * Which build this is, and a way to ask whether it is the newest.
  *
@@ -472,69 +431,10 @@ private fun NotifyToggle(
     detail: String,
     on: Boolean,
     onChange: (Boolean) -> Unit,
+    icon: ImageVector? = null,
 ) {
-    SettingRow(title = title, detail = detail) {
+    SettingRow(title = title, detail = detail, icon = icon) {
         ZillitSwitch(checked = on, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section(str(S.notifications), ZillitIcons.Bell, collapsible = true) {
-        SettingRow(
-            title = str(S.desktop_event_reminders),
-            // Says what silence costs. "Mute notifications" alone leaves the
-            // user guessing whether the reminders they set are still recorded.
-            detail = str(S.desktop_event_reminders_detail),
-        ) {
-            ZillitSwitch(
-                checked = !state.muteNotifications,
-                onCheckedChange = { onEvent(SettingsEvent.MuteNotificationsChanged(!it)) },
-            )
-        }
-
-        NotifyToggle(
-            title = str(S.desktop_chat_messages),
-            detail = str(S.desktop_chat_messages_detail),
-            on = state.notifyMessages,
-            onChange = { onEvent(SettingsEvent.NotifyMessagesChanged(it)) },
-        )
-
-        NotifyToggle(
-            title = str(S.desktop_notify_updates),
-            detail = str(S.desktop_notify_updates_detail),
-            on = state.notifyUpdates,
-            onChange = { onEvent(SettingsEvent.NotifyUpdatesChanged(it)) },
-        )
-
-        NotifyToggle(
-            title = str(S.email),
-            detail = str(S.desktop_notify_email_detail),
-            on = state.notifyMail,
-            onChange = { onEvent(SettingsEvent.NotifyMailChanged(it)) },
-        )
-
-        NotifyToggle(
-            title = str(S.desktop_production_activity),
-            detail = str(S.desktop_production_activity_detail),
-            on = state.notifyActivity,
-            onChange = { onEvent(SettingsEvent.NotifyActivityChanged(it)) },
-        )
-
-        NotifyToggle(
-            title = str(S.desktop_calls),
-            // Says plainly that this one outranks the mute above, because a
-            // missed call is the one notification with someone waiting on it.
-            detail = str(S.desktop_notify_calls_detail),
-            on = state.notifyCalls,
-            onChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
-        )
-        NotifyToggle(
-            title = str(S.desktop_ringtone),
-            detail = str(S.desktop_ringtone_detail),
-            on = state.ringOnIncomingCall,
-            onChange = { onEvent(SettingsEvent.RingtoneChanged(it)) },
-        )
     }
 }
 
@@ -666,49 +566,69 @@ internal const val SECTION_HEADING_TAG = "settings-section-heading"
  * buttons is a guess; one that says what it changes is a decision.
  */
 @Composable
-private fun SettingRow(
+internal fun SettingRow(
     title: String,
     detail: String,
+    /** The row's glyph on its tinted disc, as the destination rows wear one. */
+    icon: ImageVector? = null,
+    /** What sits under the row, aligned to its text — the location schedule. */
+    body: (@Composable ColumnScope.() -> Unit)? = null,
     trailing: @Composable () -> Unit,
 ) {
     val divider = ZillitTheme.colors.border
     val inset = ZillitTheme.spacing.md
-    Row(
+    val textInset = if (icon != null) SETTINGS_TEXT_INSET else inset
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             // A hairline above every row, inset to the text. The first row's
             // lands on the card's own top border, in the same colour, and
             // vanishes into it — so no row needs to know it is the first.
             .drawBehind {
-                val x = inset.toPx()
-                drawLine(divider, Offset(x, 0f), Offset(size.width - x, 0f), HAIRLINE.toPx())
+                drawLine(divider, Offset(textInset.toPx(), 0f), Offset(size.width - inset.toPx(), 0f), HAIRLINE.toPx())
             }
             .padding(ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitText(text = title, style = ZillitTheme.typography.bodyMedium)
-            if (detail.isNotBlank()) {
-                ZillitText(
-                    text = detail,
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
+            icon?.let { SettingsIconDisc(it, avatarHue(title)) }
+            SettingRowText(title, detail, trailing)
         }
-        // Capped, so no control can take the row from its words. The language
-        // select had no width of its own and filled the row, leaving
-        // "Language" and its explanation one letter wide, a page tall.
-        Box(modifier = Modifier.widthIn(max = TRAILING_MAX_WIDTH), contentAlignment = Alignment.CenterEnd) {
-            trailing()
+        body?.let { content ->
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(start = textInset - inset),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                content = content,
+            )
         }
     }
 }
 
+@Composable
+private fun RowScope.SettingRowText(title: String, detail: String, trailing: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        ZillitText(text = title, style = ZillitTheme.typography.bodyMedium)
+        if (detail.isNotBlank()) {
+            ZillitText(
+                text = detail,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+    }
+    // Capped, so no control can take the row from its words. The language
+    // select had no width of its own and filled the row, leaving
+    // "Language" and its explanation one letter wide, a page tall.
+    Box(modifier = Modifier.widthIn(max = TRAILING_MAX_WIDTH), contentAlignment = Alignment.CenterEnd) {
+        trailing()
+    }
+}
 
 private val ThemeMode.label: String
     get() = when (this) {
@@ -727,6 +647,7 @@ private fun LanguageRow(selected: String, onSelect: (String) -> Unit) {
     SettingRow(
         title = str(S.desktop_language),
         detail = str(S.desktop_language_detail),
+        icon = ZillitIcons.Globe,
     ) {
         LanguageSelect(selected = selected, onSelect = onSelect)
     }
@@ -762,7 +683,6 @@ private val TITLE_ACCENT_WIDTH = 4.dp
 private val TITLE_ACCENT_HEIGHT = 40.dp
 private val ACCOUNT_AVATAR = 48.dp
 private val SECTION_ICON = 14.dp
-private val UNIT_SELECT_WIDTH = 240.dp
 private val LANGUAGE_SELECT_WIDTH = 240.dp
 private val TRAILING_MAX_WIDTH = 320.dp
 

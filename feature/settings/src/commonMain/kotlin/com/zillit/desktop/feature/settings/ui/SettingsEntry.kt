@@ -121,6 +121,8 @@ data class SettingsGroup(
     /** Worn by the heading, matching the preference sections on the same page. */
     val icon: ImageVector,
     val entries: List<SettingsEntry>,
+    /** Drawn at the foot of the page, after the preferences, rather than with the account rows. */
+    val atEnd: Boolean = false,
 )
 
 /**
@@ -202,6 +204,8 @@ private fun productionGroup(): SettingsGroup =
     SettingsGroup(
         title = str(S.desktop_this_project),
         icon = ZillitIcons.Home,
+        // Help and leaving are what someone scrolls to, not what they open Settings for.
+        atEnd = true,
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.Help,

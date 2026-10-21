@@ -45,18 +45,6 @@ object ZillitPreferences {
     val WindowY = PreferenceKey.IntKey("window.y", UNSET_POSITION, PreferenceScope.Device)
     val WindowMaximized = PreferenceKey.BooleanKey("window.maximized", false, PreferenceScope.Device)
 
-    /** The floating call card with Accept and Decline, shown while Zillit's window is not in front. */
-    val CallWidget = PreferenceKey.BooleanKey("widget.calls", true, PreferenceScope.Device)
-
-    /** The floating message card, shown while Zillit's window is not in front. */
-    val MessageWidget = PreferenceKey.BooleanKey("widget.messages", true, PreferenceScope.Device)
-
-    /** Closing the window hides it; Zillit keeps running in the tray until Quit. */
-    val CloseToTray = PreferenceKey.BooleanKey("app.close_to_tray", true, PreferenceScope.Device)
-
-    /** Start Zillit hidden when the user signs in to this computer. Mirrors the OS login item. */
-    val StartAtLogin = PreferenceKey.BooleanKey("app.start_at_login", false, PreferenceScope.Device)
-
     /** `Tabs` | `Cascade` — the workspace layout mode (plan §3). */
     val WorkspaceLayoutMode = PreferenceKey.StringKey("workspace.layout", "Tabs", PreferenceScope.Device)
 
@@ -105,11 +93,8 @@ object ZillitPreferences {
      */
     val ChatWidget = WidgetKeys.named("chat.widget", width = DEFAULT_CHAT_WIDGET_WIDTH)
 
-    val CrewWidget = WidgetKeys.named("crew.widget")
-
     /** The production each tool widget last showed; falls back to the open one. */
     val ChatWidgetProject = PreferenceKey.StringKey("chat.widget.project", "", PreferenceScope.User)
-    val CrewWidgetProject = PreferenceKey.StringKey("crew.widget.project", "", PreferenceScope.User)
 
     // -- security (device-scoped) ------------------------------------------
 
@@ -334,9 +319,8 @@ object ZillitPreferences {
         HeldBadgeReads,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, EmailActiveMailbox, EmailMailboxTourSeen, ToolGroupOrder, RecentMentions, ChatFavourites,
-        CallWidget, MessageWidget, CloseToTray, StartAtLogin,
-        DriveWidgetProject, ChatWidgetProject, CrewWidgetProject,
-    ) + DriveWidget.all + ChatWidget.all + CrewWidget.all
+        DriveWidgetProject, ChatWidgetProject,
+    ) + DriveWidget.all + ChatWidget.all
 
     const val UNSET_POSITION = -1
     private const val DEFAULT_UI_SCALE = 100

@@ -71,7 +71,6 @@ internal fun ApplicationScope.MessageWidget(
     LaunchedEffect(ready, chat) {
         ready.chatRepository.incoming.collect { message ->
             if (message.isMine) return@collect
-            if (!preferences.get(ZillitPreferences.MessageWidget)) return@collect
             if (preferences.get(ZillitPreferences.MuteNotifications)) return@collect
             if (frame.isInFront()) return@collect
             toasts.admit(message.toToast(crewName, groupName))

@@ -35,7 +35,6 @@ import kotlinx.coroutines.delay
 internal fun AppGraph.Ready.crewListProvider(
     viewModel: CrewListViewModel,
     viewModels: AppViewModels,
-    onOpenWidget: () -> Unit,
 ): CrewListToolProvider {
     val permissions = { viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty }
     // Its own form model, so a contact half-added here never shows up in the
@@ -44,7 +43,6 @@ internal fun AppGraph.Ready.crewListProvider(
     val faces = crewFaceLoader(this)
     return CrewListToolProvider(
         viewModel = viewModel,
-        onOpenWidget = onOpenWidget,
         slots = { navigator ->
             CrewListSlots(
                 canvas = crewListCanvas,

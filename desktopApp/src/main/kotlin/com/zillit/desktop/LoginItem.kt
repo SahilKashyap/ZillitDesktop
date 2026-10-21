@@ -4,8 +4,6 @@ import com.zillit.desktop.core.common.OperatingSystem
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.currentPlatform
-import com.zillit.desktop.core.datastore.PreferenceStore
-import com.zillit.desktop.core.datastore.ZillitPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -41,23 +39,17 @@ object LoginItem {
         else -> false
     }
 
-    fun apply(enabled: Boolean): Result<Unit> = if (enabled) install() else remove()
-
     /**
-     * Applies [enabled] to the OS and records what is true afterwards, so the
-     * switch never shows a login item the OS refused.
+     * At start-up: installs the login item when it is missing. Starting at
+     * sign-in is always on — Settings has no switch for it — so an installed
+     * copy puts it back each launch. A Gradle run has no launcher, and skips.
      */
-    suspend fun sync(preferences: PreferenceStore, enabled: Boolean) {
-        val outcome = withContext(Dispatchers.IO) { apply(enabled) }
-        outcome.onFailure { ZillitLog.w(TAG) { "start at login ($enabled) refused: $it" } }
-        preferences.set(ZillitPreferences.StartAtLogin, if (outcome.isSuccess) enabled else isInstalled())
-    }
-
-    /** At start-up: the switch reflects the OS, which the user may have changed in System Settings. */
-    suspend fun reconcile(preferences: PreferenceStore) {
+    suspend fun ensureEnabled() {
         if (!available) return
-        val installed = withContext(Dispatchers.IO) { runCatching { isInstalled() }.getOrDefault(false) }
-        preferences.set(ZillitPreferences.StartAtLogin, installed)
+        withContext(Dispatchers.IO) {
+            if (runCatching { isInstalled() }.getOrDefault(false)) return@withContext
+            install().onFailure { ZillitLog.w(TAG) { "start at login refused: $it" } }
+        }
     }
 
     fun install(): Result<Unit> = runCatching {

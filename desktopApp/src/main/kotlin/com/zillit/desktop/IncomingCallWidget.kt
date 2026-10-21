@@ -28,8 +28,6 @@ import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
-import com.zillit.desktop.core.datastore.PreferenceStore
-import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -64,7 +62,6 @@ import kotlinx.coroutines.delay
 internal fun ApplicationScope.IncomingCallWidget(
     ready: AppGraph.Ready,
     calls: CallViewModel?,
-    preferences: PreferenceStore,
     frame: ComposeWindow?,
     darkTheme: Boolean,
     showMain: () -> Unit,
@@ -76,7 +73,6 @@ internal fun ApplicationScope.IncomingCallWidget(
     shellShowsRing: Boolean,
 ) {
     calls ?: return
-    val enabled by preferences.observe(ZillitPreferences.CallWidget).collectAsState(initial = true)
     val phase by ready.callCoordinator.phase.collectAsState()
     val session by ready.callCoordinator.session.collectAsState()
     val ringing = phase == CallPhase.Incoming
@@ -102,7 +98,8 @@ internal fun ApplicationScope.IncomingCallWidget(
     // fresh sign-in waits — there is no ring card behind this one and
     // deferring to the frame left an incoming call with nowhere at all to be
     // answered.
-    val cardHidden = !enabled || dismissed || (mainInFront && shellShowsRing)
+    // Always on: Settings no longer offers to turn the card off.
+    val cardHidden = dismissed || (mainInFront && shellShowsRing)
     if (cardHidden || !ringing || current == null) return
 
     val windowState = rememberWindowState(

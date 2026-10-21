@@ -36,7 +36,8 @@ class WidgetLaunchTest {
     fun `the command line names one widget, or none`() {
         assertEquals(ZillitWidget.Drive, WidgetLaunch.requestedBy(arrayOf("--drive-widget")))
         assertEquals(ZillitWidget.Chat, WidgetLaunch.requestedBy(arrayOf("--chat-widget")))
-        assertEquals(ZillitWidget.Crew, WidgetLaunch.requestedBy(arrayOf("--crew-widget")))
+        // The crew list widget is gone; its old shortcut opens nothing.
+        assertNull(WidgetLaunch.requestedBy(arrayOf("--crew-widget")))
         // The background flag is not a widget: starting hidden at login must
         // not also open a window, which is the whole point of starting hidden.
         assertNull(WidgetLaunch.requestedBy(arrayOf(BackgroundLaunch.FLAG)))

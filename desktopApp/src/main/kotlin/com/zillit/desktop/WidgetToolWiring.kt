@@ -17,15 +17,12 @@ import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
-import com.zillit.desktop.feature.crewlist.domain.CrewListViewer
-import com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider
-import com.zillit.desktop.feature.crewlist.ui.CrewListViewModel
 import com.zillit.desktop.feature.home.ui.MediaCapture
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import java.util.UUID
 
 /**
- * The Chat and Crew List widgets' stacks for a production the app is **not**
+ * The Chat widget's stack for a production the app is **not**
  * open on.
  *
  * Everything here is built per production and speaks only for it: the calls
@@ -174,28 +171,6 @@ private fun AppGraph.Ready.scopedChatViewModel(
     thumbnailOf = ::chatThumbnail,
     staticMap = { lat, lng -> fetchStaticMapBytes(this, lat, lng) },
     voice = capture?.let { chatVoice(this, it) },
-)
-
-/** The Crew List for another production — the roster and its PDF, both scoped. */
-internal fun AppGraph.Ready.scopedCrewProvider(
-    project: Project,
-    options: CallOptions,
-    permissions: ProjectPermissions,
-): ToolProvider = CrewListToolProvider(
-    viewModel = CrewListViewModel(
-        repository = crewListRepository(
-            permissions = { permissions },
-            options = { options },
-            // The socket's own filter: only this production's reorder frames
-            // refresh this roster.
-            projectId = { project.id },
-        ),
-        resolveViewer = { CrewListViewer.from(permissions) },
-        // The widget views and downloads the PDF only; storage keys travel with it.
-        host = crewListHost { permissions },
-        translate = { key -> key.localised() },
-    ),
-    compact = true,
 )
 
 /** The C&C tool's identifier, as the rights grid names it. */

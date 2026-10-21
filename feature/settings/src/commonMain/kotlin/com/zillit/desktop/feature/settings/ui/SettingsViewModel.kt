@@ -88,12 +88,7 @@ class SettingsViewModel(
         launch { notifications.calls.collect { on -> setState { copy(notifyCalls = on) } } }
         launch { notifications.ringtone.collect { on -> setState { copy(ringOnIncomingCall = on) } } }
         launch { notifications.activity.collect { on -> setState { copy(notifyActivity = on) } } }
-        launch { notifications.callWidget.collect { on -> setState { copy(callWidget = on) } } }
-        launch { notifications.messageWidget.collect { on -> setState { copy(messageWidget = on) } } }
-        launch { notifications.closeToTray.collect { on -> setState { copy(closeToTray = on) } } }
-        launch { notifications.startAtLogin.collect { on -> setState { copy(startAtLogin = on) } } }
         launch { notifications.widgets.collect { list -> setState { copy(widgets = list) } } }
-        setState { copy(startAtLoginAvailable = notifications.startAtLoginAvailable) }
         launch { unitContext.collect(::onUnitContext) }
         launch { language.collect { code -> setState { copy(language = code) } } }
         themeMode?.let { modes -> launch { modes.collect { mode -> setState { copy(themeMode = mode) } } } }
@@ -178,7 +173,7 @@ class SettingsViewModel(
                 notifications.setActivity(event.on)
             }
 
-            is SettingsEvent.DesktopSwitch -> onDesktopSwitch(event)
+            is SettingsEvent.WidgetChanged -> onWidgetChanged(event.id, event.on)
             is SettingsEvent.UnitChanged -> changeUnit(event.unitId)
 
 
@@ -256,31 +251,10 @@ class SettingsViewModel(
         }
     }
 
-    private fun onDesktopSwitch(event: SettingsEvent.DesktopSwitch) {
-        when (event) {
-            is SettingsEvent.CallWidgetChanged -> {
-                setState { copy(callWidget = event.on) }
-                notifications.setCallWidget(event.on)
-            }
-            is SettingsEvent.MessageWidgetChanged -> {
-                setState { copy(messageWidget = event.on) }
-                notifications.setMessageWidget(event.on)
-            }
-            is SettingsEvent.CloseToTrayChanged -> {
-                setState { copy(closeToTray = event.on) }
-                notifications.setCloseToTray(event.on)
-            }
-            is SettingsEvent.StartAtLoginChanged -> {
-                setState { copy(startAtLogin = event.on) }
-                notifications.setStartAtLogin(event.on)
-            }
-            is SettingsEvent.WidgetChanged -> {
-                setState {
-                    copy(widgets = widgets.map { if (it.id == event.id) it.copy(on = event.on) else it })
-                }
-                notifications.setWidget(event.id, event.on)
-            }
-        }
+    /** One desktop widget switched; the others keep where they are. */
+    private fun onWidgetChanged(id: String, on: Boolean) {
+        setState { copy(widgets = widgets.map { if (it.id == id) it.copy(on = on) else it }) }
+        notifications.setWidget(id, on)
     }
 
     /**

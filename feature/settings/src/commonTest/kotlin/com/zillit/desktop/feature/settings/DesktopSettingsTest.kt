@@ -3,8 +3,10 @@ package com.zillit.desktop.feature.settings
 import com.zillit.desktop.feature.settings.ui.NotificationSettings
 import com.zillit.desktop.feature.settings.ui.SettingsEvent
 import com.zillit.desktop.feature.settings.ui.SettingsViewModel
+import com.zillit.desktop.feature.settings.ui.WidgetToggle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -17,11 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * The Desktop section: the two floating cards, close-to-tray and start-at-login.
- * Each has to reach its store, and the login switch has to report when there is
- * no installed app for the OS to start.
- */
+/** The Desktop Widgets section: each widget's switch reaches its store, and only that widget moves. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DesktopSettingsTest {
     private val dispatcher = StandardTestDispatcher()
@@ -33,37 +31,29 @@ class DesktopSettingsTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `each desktop switch writes through on its own`() = runTest(dispatcher) {
-        val callWidget = mutableListOf<Boolean>()
-        val closeToTray = mutableListOf<Boolean>()
-        val startAtLogin = mutableListOf<Boolean>()
+    fun `a widget switch writes through on its own`() = runTest(dispatcher) {
+        val written = mutableListOf<Pair<String, Boolean>>()
         val settings = SettingsViewModel(
             setTheme = {},
             setScale = {},
             notifications = NotificationSettings(
-                startAtLoginAvailable = false,
-                setCallWidget = callWidget::add,
-                setCloseToTray = closeToTray::add,
-                setStartAtLogin = startAtLogin::add,
+                widgets = flowOf(
+                    listOf(
+                        WidgetToggle("Drive", "Drive widget", "", on = true),
+                        WidgetToggle("Chat", "Chat widget", "", on = true),
+                    ),
+                ),
+                setWidget = { id, on -> written += id to on },
             ),
             signOut = {},
         )
         runCurrent()
-        assertFalse(settings.state.value.startAtLoginAvailable, "a development run has no launcher to register")
-        assertTrue(settings.state.value.callWidget)
-        assertTrue(settings.state.value.closeToTray)
 
-        settings.onEvent(SettingsEvent.CallWidgetChanged(false))
-        settings.onEvent(SettingsEvent.CloseToTrayChanged(false))
-        settings.onEvent(SettingsEvent.StartAtLoginChanged(true))
+        settings.onEvent(SettingsEvent.WidgetChanged("Chat", false))
         runCurrent()
 
-        assertFalse(settings.state.value.callWidget)
-        assertFalse(settings.state.value.closeToTray)
-        assertTrue(settings.state.value.startAtLogin)
-        assertTrue(settings.state.value.messageWidget, "the message card is not touched by the others")
-        assertEquals(listOf(false), callWidget)
-        assertEquals(listOf(false), closeToTray)
-        assertEquals(listOf(true), startAtLogin)
+        assertFalse(settings.state.value.widgets.single { it.id == "Chat" }.on)
+        assertTrue(settings.state.value.widgets.single { it.id == "Drive" }.on, "the other widget is not touched")
+        assertEquals(listOf("Chat" to false), written)
     }
 }

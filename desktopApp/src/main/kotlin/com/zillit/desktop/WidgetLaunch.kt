@@ -32,7 +32,6 @@ internal enum class ZillitWidget(
 ) {
     Drive("--drive-widget", "drive-widget", "open-drive-widget", S.txt_drive, ZillitPreferences.DriveWidget),
     Chat("--chat-widget", "chat-widget", "open-chat-widget", S.chat, ZillitPreferences.ChatWidget),
-    Crew("--crew-widget", "crew-widget", "open-crew-widget", S.crew, ZillitPreferences.CrewWidget),
     ;
 
     /** What the tray and Settings call it. */
@@ -40,7 +39,7 @@ internal enum class ZillitWidget(
 }
 
 /**
- * How a "Zillit Drive" / "Zillit Chat" / "Zillit Crew" shortcut reaches its
+ * How a "Zillit Drive" / "Zillit Chat" shortcut reaches its
  * widget.
  *
  * `Zillit --chat-widget` opens the app with that widget up. When Zillit is

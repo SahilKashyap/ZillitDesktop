@@ -35,7 +35,7 @@ import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 
 /**
- * A widget onto one of the app's own tools — Chat & Calls, the Crew List —
+ * A widget onto one of the app's own tools — Chat & Calls —
  * with a production picker of its own, like the Drive widget's.
  *
  * ## Choosing the open production costs nothing

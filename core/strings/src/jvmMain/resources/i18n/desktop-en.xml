@@ -13528,4 +13528,18 @@
     <string name="desktop_cal_number_of_months">Number of Months</string>
     <string name="desktop_cal_number_of_years">Number of Years</string>
     <string name="desktop_board_live_production_report">Live production reports</string>
+    <string name="desktop_default_home_unit">Default Home Unit</string>
+    <string name="desktop_default_home_unit_detail">Choose which unit opens by default when you enter this project.</string>
+    <string name="desktop_manage_notifications">Manage Notifications</string>
+    <string name="desktop_manage_notifications_detail">Turn alerts on or off per tool and activity.</string>
+    <string name="desktop_manage_notifications_subtitle">Choose which alerts you receive</string>
+    <string name="desktop_search_module">Search module...</string>
+    <string name="desktop_no_matching_modules">No matching modules</string>
+    <string name="desktop_location_on_off_detail">Share your location during scheduled working hours.</string>
+    <string name="desktop_default_unit_updated">Default tab updated successfully</string>
+    <string name="desktop_start_after_end">Start time cannot be greater than end time</string>
+    <string name="desktop_end_before_start">End time should always be greater than start time</string>
+    <string name="desktop_location_unavailable">Could not find this computer\'s location. Try again in a moment.</string>
+    <string name="desktop_app_preferences_subtitle">Personalize your workspace defaults</string>
+    <string name="desktop_desktop_widgets">Desktop Widgets</string>
 </resources>

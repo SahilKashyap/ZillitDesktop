@@ -26,6 +26,9 @@ import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
 import com.zillit.desktop.feature.settings.approvals.ApprovalsScreen
 import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
+import com.zillit.desktop.feature.settings.preferences.AppPreferencesCards
+import com.zillit.desktop.feature.settings.preferences.AppPreferencesOverlays
+import com.zillit.desktop.feature.settings.preferences.AppPreferencesViewModel
 
 /**
  * Settings as a workspace window.
@@ -95,6 +98,11 @@ class SettingsToolProvider(
     private val admin: AdminViewModel? = null,
     /** The read-only viewers the File Cabinet opens its rows into, contributed by the tools. */
     private val cabinetViewers: CabinetViewers = CabinetViewers.None,
+    /**
+     * The web's App Preferences cards on the Profile tab. Null before sign-in:
+     * every one of them is a profile or device setting the server holds.
+     */
+    private val preferences: AppPreferencesViewModel? = null,
 ) : ToolProvider {
 
     override val path: String = SETTINGS_PATH
@@ -168,8 +176,7 @@ class SettingsToolProvider(
                     },
                 ) {
                     when (tab) {
-                        SettingsTab.Profile ->
-                            SettingsScreen(state = state, onEvent = viewModel::onEvent, showTitle = false)
+                        SettingsTab.Profile -> ProfileTab(state)
                         SettingsTab.Admin ->
                             AdminSettingsScreen(state = state, onEvent = viewModel::onEvent, showHeader = false)
                     }
@@ -177,8 +184,35 @@ class SettingsToolProvider(
                 // Composed with the listing, because the row that opens it is
                 // there — leaving is a decision, not a page.
                 LeaveDialog(state)
+                // Over the whole window, tabs included, as the web's drawer is.
+                PreferenceOverlays(tab)
             }
         }
+    }
+
+    /** Profile Settings, with the web's App Preferences cards when there is a session for them. */
+    @Composable
+    private fun ProfileTab(state: SettingsUiState) {
+        val prefs = preferences
+        SettingsScreen(
+            state = state,
+            onEvent = viewModel::onEvent,
+            showTitle = false,
+            preferences = prefs?.let {
+                {
+                    val prefState by prefs.state.collectAsState()
+                    AppPreferencesCards(prefState, prefs::onEvent)
+                }
+            },
+        )
+    }
+
+    /** The Manage Notifications drawer and the cards' toast — the Profile tab's only. */
+    @Composable
+    private fun PreferenceOverlays(tab: SettingsTab) {
+        val prefs = preferences.takeIf { tab == SettingsTab.Profile } ?: return
+        val prefState by prefs.state.collectAsState()
+        AppPreferencesOverlays(prefState, prefs::onEvent)
     }
 
     /**
