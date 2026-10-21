@@ -124,7 +124,7 @@ data class AdminSettingsUiState(
 }
 
 /**
- * What this build is, for the About row.
+ * What this build is, for the version row in "This project".
  *
  * Supplied by the app, which is the only module that knows: the version is a
  * compile-time constant generated from `zillit.version`, and the git sha rides
@@ -147,7 +147,7 @@ data class AboutInfo(
 }
 
 /**
- * The manual "Check for updates" on the About row, as one closed set.
+ * The manual "Check for updates" on the version row, as one closed set.
  *
  * Distinct from the shell's banner, which polls on its own clock and shows
  * only when there is something to say. This is the reader asking, and a
@@ -220,7 +220,7 @@ sealed interface SettingsEvent {
     data object ConfirmSignOut : SettingsEvent
     data object DismissSignOut : SettingsEvent
 
-    /** The About row's button. */
+    /** The version row's button. */
     data object CheckForUpdates : SettingsEvent
 
     /** About's licences row: the notice for the open-source software the app ships. */

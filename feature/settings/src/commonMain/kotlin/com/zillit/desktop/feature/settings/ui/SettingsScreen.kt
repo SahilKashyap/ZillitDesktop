@@ -118,7 +118,6 @@ fun SettingsScreen(
                 preferences?.let { cards -> AppPreferencesGroup(cards) }
                 AppearanceSection(state, onEvent)
                 DesktopWidgetsSection(state, onEvent)
-                AboutSection(state.about, onEvent)
                 Destinations(state, onEvent, atEnd = true) { info = it }
             }
         }
@@ -222,6 +221,13 @@ private fun Destinations(
             onOpen = { onEvent(SettingsEvent.OpenEntry(it)) },
             // The web draws no ⓘ on a personal production.
             onInfo = onInfo.takeUnless { production.isPersonal },
+            // The version heads the foot-of-page group: it is what support
+            // asks for, and it sits with Help.
+            leading = if (group.atEnd) {
+                { VersionRow(state.about, onEvent) }
+            } else {
+                null
+            },
         )
     }
 }
@@ -328,63 +334,49 @@ private fun widgetIcon(id: String): ImageVector = when (id) {
 }
 
 /**
- * Which build this is, and a way to ask whether it is the newest.
- *
- * Last on the page, as it is on the phones: nobody opens Settings for it
- * until something is wrong, and then it is the first thing support asks for.
- * The version line is a single string on purpose — it gets copied into a
- * message.
+ * Which build this is, and a way to ask whether it is the newest — the first
+ * row of "This project", beside Help: nobody opens Settings for it until
+ * something is wrong, and then it is the first thing support asks for. The
+ * version line is a single string on purpose — it gets copied into a message.
  *
  * The check's answer is written under the row rather than shown as a toast:
  * a toast is gone before the reader has decided whether to click Download,
  * and "you are up to date" is worth leaving on screen.
  */
 @Composable
-private fun AboutSection(about: AboutInfo, onEvent: (SettingsEvent) -> Unit) {
-    Section(str(S.about), ZillitIcons.Info) {
-        val check = about.updateCheck
-        SettingRow(
-            title = str(S.desktop_zillit_desktop_version, about.version).trimEnd(),
-            detail = listOfNotNull(
-                about.build.takeIf { it.isNotBlank() }?.let { str(S.desktop_build_number, it) },
-                about.platform.takeIf { it.isNotBlank() },
-            ).joinToString(" · "),
-        ) {
-            ZillitButton(
-                text = str(S.desktop_check_for_updates),
-                onClick = { onEvent(SettingsEvent.CheckForUpdates) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-                loading = check == UpdateCheck.Checking,
-            )
-        }
-        if (check != UpdateCheck.Idle && check != UpdateCheck.Checking) {
-            UpdateCheckResult(check, onEvent)
-        }
-        // The notice FFmpeg's licence asks for, where a user would look for it.
-        SettingRow(
-            title = str(S.desktop_open_source_licences),
-            detail = str(S.desktop_open_source_licences_detail),
-        ) {
-            ZillitButton(
-                text = str(S.view),
-                onClick = { onEvent(SettingsEvent.OpenLicences) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-            )
-        }
+private fun VersionRow(about: AboutInfo, onEvent: (SettingsEvent) -> Unit) {
+    val check = about.updateCheck
+    val answered = check != UpdateCheck.Idle && check != UpdateCheck.Checking
+    SettingRow(
+        title = str(S.desktop_zillit_desktop_version, about.version).trimEnd(),
+        detail = listOfNotNull(
+            about.build.takeIf { it.isNotBlank() }?.let { str(S.desktop_build_number, it) },
+            about.platform.takeIf { it.isNotBlank() },
+        ).joinToString(" · "),
+        icon = ZillitIcons.Monitor,
+        body = if (answered) {
+            { UpdateCheckResult(check, onEvent) }
+        } else {
+            null
+        },
+    ) {
+        ZillitButton(
+            text = str(S.desktop_check_for_updates),
+            onClick = { onEvent(SettingsEvent.CheckForUpdates) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            loading = check == UpdateCheck.Checking,
+        )
     }
 }
 
-/** The line under the About row once a check has answered. */
+/** The line under the version row once a check has answered. */
 @Composable
 private fun UpdateCheckResult(check: UpdateCheck, onEvent: (SettingsEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = ZillitTheme.spacing.md)
-            .padding(bottom = ZillitTheme.spacing.md)
             .testTag(UPDATE_RESULT_TAG),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -686,7 +678,7 @@ private val SECTION_ICON = 14.dp
 private val LANGUAGE_SELECT_WIDTH = 240.dp
 private val TRAILING_MAX_WIDTH = 320.dp
 
-/** The About row's answer line — so a test can read what the check said. */
+/** The version row's answer line — so a test can read what the check said. */
 internal const val UPDATE_RESULT_TAG = "settings-update-result"
 
 /** The sentence the sign-out question adds when unsent work would be lost. */

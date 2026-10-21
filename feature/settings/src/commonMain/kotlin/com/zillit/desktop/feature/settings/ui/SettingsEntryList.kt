@@ -55,6 +55,8 @@ fun SettingsEntryGroup(
     modifier: Modifier = Modifier,
     /** Asked to explain a row; null draws no ⓘ, as on a personal production. */
     onInfo: ((SettingsEntry) -> Unit)? = null,
+    /** A row of the page's own above the destinations — the app version, in "This project". */
+    leading: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = modifier,
@@ -85,8 +87,9 @@ fun SettingsEntryGroup(
                 .background(ZillitTheme.colors.surface)
                 .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.medium),
         ) {
+            leading?.invoke()
             group.entries.forEachIndexed { index, entry ->
-                if (index > 0) RowDivider()
+                if (index > 0 || leading != null) RowDivider()
                 EntryRow(
                     entry = entry,
                     onOpen = { onOpen(entry.destination) },

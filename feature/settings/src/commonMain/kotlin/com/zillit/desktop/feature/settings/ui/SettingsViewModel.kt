@@ -68,7 +68,7 @@ class SettingsViewModel(
     /**
      * Asks Firebase whether a newer build exists — the same checker the
      * shell's banner polls. Null when the build cannot check (no app id,
-     * unpackaged), in which case the About row says so instead of trying.
+     * unpackaged), in which case the version row says so instead of trying.
      */
     private val checkForUpdates: (suspend () -> UpdateStatus)? = null,
     initial: SettingsUiState = SettingsUiState(),
@@ -215,7 +215,7 @@ class SettingsViewModel(
     }
 
     /**
-     * One check, one answer, on the About row.
+     * One check, one answer, on the version row.
      *
      * A second click while one is in flight is ignored rather than queued:
      * the answer it would get is the one already coming.
