@@ -802,7 +802,13 @@ private fun DirectoryPane(
         )
 
         if (tab == DirectoryTab.Calls.name && calls != null) {
-            calls.List(inlineDetail = !compact, onOpenChat = onOpenChat)
+            calls.List(
+                inlineDetail = !compact,
+                // The same count the Calls tab above wears; looking at the
+                // Missed view reads it away (see [MissedCallsReporter]).
+                missedBadge = chatState?.callsBadge ?: 0,
+                onOpenChat = onOpenChat,
+            )
         } else if (tab == DirectoryTab.Contacts.name) {
             ListingSearch(
                 value = query,

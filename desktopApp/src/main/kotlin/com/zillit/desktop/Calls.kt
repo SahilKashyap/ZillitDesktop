@@ -367,7 +367,11 @@ internal fun rememberCallsPanes(
             override val missedOnly: Flow<Boolean> = logs.state.map { it.missedOnly }.distinctUntilChanged()
 
             @Composable
-            override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) {
+            override fun List(
+                inlineDetail: Boolean,
+                missedBadge: Int,
+                onOpenChat: (CrewContact, Boolean) -> Unit,
+            ) {
                 val state by logs.state.collectAsState()
                 CallLogPane(
                     state = state,
@@ -381,6 +385,7 @@ internal fun rememberCallsPanes(
                     lines = lines,
                     inlineDetail = inlineDetail,
                     onOpenChat = { entry -> openCallChat(ready, entry, onOpenChat) },
+                    missedBadge = missedBadge,
                 )
             }
 

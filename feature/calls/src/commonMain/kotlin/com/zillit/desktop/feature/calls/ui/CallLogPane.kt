@@ -38,6 +38,7 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
@@ -104,6 +105,13 @@ fun CallLogPane(
      * room — from the detail sheet. Null, and the sheet offers no Chat.
      */
     onOpenChat: ((CallLogEntry) -> Unit)? = null,
+    /**
+     * Unread missed calls, worn by the Missed chip — the web's badge on its
+     * "Missed Calls" segment (`CallsComponent.jsx:389-391`). Opening that
+     * view reads them, so the number is there to be seen from the All view
+     * and gone once the list it points at is in front of somebody.
+     */
+    missedBadge: Int = 0,
 ) {
     // WhatsApp's calls list: the search pill and the filters in a padded
     // block, then the rows edge to edge under a "Recent" heading.
@@ -119,7 +127,7 @@ fun CallLogPane(
                 containerColor = ZillitTheme.colors.panelGrey,
                 bordered = false,
             )
-            PaneHeader(state, onEvent)
+            PaneHeader(state, onEvent, missedBadge)
             state.error?.let { message ->
                 ZillitNotice(text = message, tone = StatusTone.Rejected)
             }
@@ -195,14 +203,16 @@ private fun PaneOverlays(
 
 /** The view chips, and the trash at the far end. */
 @Composable
-private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
+private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit, missedBadge: Int = 0) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         FilterPill(str(S.all), selected = !state.missedOnly) { onEvent(CallLogEvent.ShowAll) }
-        FilterPill(str(S.missed), selected = state.missedOnly) { onEvent(CallLogEvent.ShowMissed) }
+        FilterPill(str(S.missed), selected = state.missedOnly, count = missedBadge) {
+            onEvent(CallLogEvent.ShowMissed)
+        }
         Spacer(Modifier.weight(1f))
         // Nothing to wipe, nothing to press: Android answers an empty list
         // with a snackbar; a disabled control says the same without one.
@@ -222,17 +232,15 @@ private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
  * accent's soft tint and text colour when chosen.
  */
 @Composable
-private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun FilterPill(label: String, selected: Boolean, count: Int = 0, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    ZillitText(
-        text = label,
-        style = ZillitTheme.typography.label.copy(
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        ),
-        color = if (selected) colors.accentText else colors.textSecondary,
-        maxLines = 1,
+    // A Row rather than the text alone so a count can ride inside the pill:
+    // the chip is the hit area, and a badge beside it would be a second one.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         modifier = Modifier
             .clip(ZillitTheme.shapes.pill)
             .background(
@@ -245,7 +253,17 @@ private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
             .hoverable(interaction)
             .clickable(onClick = onClick)
             .padding(horizontal = ZillitTheme.spacing.md, vertical = PILL_PAD_V),
-    )
+    ) {
+        ZillitText(
+            text = label,
+            style = ZillitTheme.typography.label.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            color = if (selected) colors.accentText else colors.textSecondary,
+            maxLines = 1,
+        )
+        ZillitBadge(count = count)
+    }
 }
 
 /** A section's heading over its rows — "Ongoing", "Recent" — WhatsApp's. */

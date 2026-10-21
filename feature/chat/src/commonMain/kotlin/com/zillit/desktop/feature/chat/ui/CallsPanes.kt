@@ -22,9 +22,18 @@ interface CallsPanes {
      * The list. [inlineDetail] is true when [Side] is on screen beside it: a
      * row click then picks the call for the side pane instead of ringing.
      * Without it the list's own detail sheet offers [onOpenChat].
+     *
+     * [missedBadge] is the unread missed calls the list's own Missed chip
+     * wears — the number the screen already holds for the Calls tab
+     * ([ChatUiState.callsBadge]), passed down rather than counted twice, so
+     * the chip and the tab can never disagree.
      */
     @Composable
-    fun List(inlineDetail: Boolean, onOpenChat: (peer: CrewContact, isGroup: Boolean) -> Unit)
+    fun List(
+        inlineDetail: Boolean,
+        missedBadge: Int,
+        onOpenChat: (peer: CrewContact, isGroup: Boolean) -> Unit,
+    )
 
     /** Beside the list: "Voice and video calling", or the picked call's info. */
     @Composable

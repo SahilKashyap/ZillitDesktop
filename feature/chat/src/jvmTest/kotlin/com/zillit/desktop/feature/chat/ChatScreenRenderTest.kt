@@ -120,6 +120,40 @@ class ChatScreenRenderTest {
     }
 
     /**
+     * The missed-call count reaches the list, which wears it on its Missed
+     * chip — the web's badge on its "Missed Calls" segment
+     * (`CallsComponent.jsx:389-391`). The screen's own Calls-tab number is
+     * what it hands down, so the chip and the tab cannot disagree.
+     */
+    @Test
+    fun `the calls list is told the missed-call count`() = runComposeUiTest {
+        val model = ChatViewModel(
+            repository = StubChatRepository(),
+            nowMillis = { now },
+            newUniqueId = { "uid" },
+            sectionBadges = { mapOf("call_label" to 4) },
+        )
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(
+                    crew = crew,
+                    loadAvatar = { null },
+                    viewModel = model,
+                    callPanes = { MarkerCalls() },
+                )
+            }
+        }
+
+        // Chats is the refresh that asks for the split; Calls then draws it.
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        onNodeWithText("Calls").performClick()
+        waitForIdle()
+        onNodeWithText("calls-missed=4").assertExists()
+    }
+
+    /**
      * WhatsApp's Calls tab: the list in the directory column, told the side
      * pane is beside it, and the side pane in place of the thread — whose
      * Start call goes to Contacts.
@@ -745,7 +779,11 @@ private class StubChatRepository : ChatRepository {
 /** A Calls tab with nothing in it — the tab exists, its panes are blank. */
 private object NoCalls : com.zillit.desktop.feature.chat.ui.CallsPanes {
     @androidx.compose.runtime.Composable
-    override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) = Unit
+    override fun List(
+        inlineDetail: Boolean,
+        missedBadge: Int,
+        onOpenChat: (CrewContact, Boolean) -> Unit,
+    ) = Unit
 
     @androidx.compose.runtime.Composable
     override fun Side(onStartCall: () -> Unit, onOpenChat: (CrewContact, Boolean) -> Unit) = Unit
@@ -761,9 +799,14 @@ private class MarkerCalls(
     private val chatIsGroup: Boolean = false,
 ) : com.zillit.desktop.feature.chat.ui.CallsPanes {
     @androidx.compose.runtime.Composable
-    override fun List(inlineDetail: Boolean, onOpenChat: (CrewContact, Boolean) -> Unit) {
+    override fun List(
+        inlineDetail: Boolean,
+        missedBadge: Int,
+        onOpenChat: (CrewContact, Boolean) -> Unit,
+    ) {
         androidx.compose.foundation.layout.Column {
             androidx.compose.material3.Text("calls-list inline=$inlineDetail")
+            androidx.compose.material3.Text("calls-missed=$missedBadge")
             if (!inlineDetail) ChatMarker { onOpenChat(chatWith, chatIsGroup) }
         }
     }

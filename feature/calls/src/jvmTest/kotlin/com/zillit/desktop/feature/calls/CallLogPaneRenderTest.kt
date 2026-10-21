@@ -108,6 +108,48 @@ class CallLogPaneRenderTest {
         onNodeWithText("Armourer").assertDoesNotExist()
     }
 
+    /**
+     * The Missed chip wears the unread missed calls, as the web's "Missed
+     * Calls" segment does (`CallsComponent.jsx:389-391`): the one place on
+     * this pane that says there is something on the other view. Zero draws
+     * nothing — [com.zillit.desktop.core.designsystem.component.ZillitBadge]'s
+     * own rule — so a quiet log keeps the bare chips it always had.
+     */
+    @Test
+    fun `the Missed chip wears the missed-call count`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.Mediasoup, "u1"))),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    missedBadge = 3,
+                )
+            }
+        }
+
+        onNodeWithText("Missed").assertExists()
+        onNodeWithText("3").assertExists()
+    }
+
+    @Test
+    fun `no missed calls, no count beside the chip`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(entry("c1", CallLine.Mediasoup, "u1"))),
+                    onEvent = {},
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                )
+            }
+        }
+
+        onNodeWithText("Missed").assertExists()
+        onNodeWithText("0").assertDoesNotExist()
+    }
+
     /** No book, no extra line: every row reads exactly as it did before. */
     @Test
     fun `a row with no title to show is the name alone`() = runComposeUiTest {
