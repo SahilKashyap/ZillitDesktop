@@ -21,6 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -35,6 +37,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTokenField
@@ -221,6 +224,7 @@ private fun AddressRow(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         ZillitTokenField(
+            modifier = Modifier.testTag(addressFieldTag(field)),
             tokens = recipients.map { it.email },
             input = input,
             onValueChange = { tokens, text -> onEvent(DocDistEvent.ComposeAddresses(field, tokens, text)) },
@@ -228,57 +232,74 @@ private fun AddressRow(
             tokenLabel = { email -> names[email.lowercase()]?.takeIf { it.isNotBlank() } ?: email },
             isTokenValid = ::isValidEmail,
         )
-        // The address book and the crew beneath the field as you type — pick one to add it.
-        val q = input.trim().lowercase()
-        if (q.length >= TYPEAHEAD_MIN) {
-            val taken = recipients.map { it.email.lowercase() }.toSet()
-            val matches = suggestions
-                .filter { it.email.lowercase() !in taken && isValidEmail(it.email) }
-                .filter { it.email.lowercase().contains(q) || it.name.lowercase().contains(q) }
-                .sortedBy { it.displayName.lowercase() }
-                .take(TYPEAHEAD_LIMIT)
-            if (matches.isNotEmpty()) {
-                val c = ZillitTheme.colors
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = TYPEAHEAD_HEIGHT.dp)
-                        .clip(ZillitTheme.shapes.medium)
-                        .background(c.surfaceRaised)
-                        .border(0.5.dp, c.border, ZillitTheme.shapes.medium)
-                        .padding(ZillitTheme.spacing.xs),
-                ) {
-                    matches.forEach { contact ->
-                        HoverRow(
-                            onClick = { onEvent(
-                                DocDistEvent.ComposeAddresses(field, recipients.map { it.email } + contact.email, ""),
-                            ) },
-                            padding = ZillitTheme.spacing.sm,
-                        ) {
-                            com.zillit.desktop.core.designsystem.component.ZillitAvatar(
-                                name = contact.displayName,
-                                size = 22.dp,
-                            )
-                            ZillitText(text = contact.displayName, style = ZillitTheme.typography.label, maxLines = 1)
-                            // Says where the row came from, so a crew member is
-                            // never mistaken for someone already saved.
-                            if (contact.isCrew) ZillitStatusPill(label = str(S.crew), tone = StatusTone.Progress)
-                            if (contact.name.isNotBlank()) {
-                                ZillitText(
-                                    text = listOf(contact.email, contact.job).filter { it.isNotBlank() }
-                                        .joinToString(" · "),
-                                    style = ZillitTheme.typography.bodySmall,
-                                    color = c.textMuted,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
+        SuggestionList(field, recipients, input, suggestions, onEvent)
+    }
+}
+
+/**
+ * The address book and the crew beneath the field as you type — pick one to
+ * add it. Its own composable so the row above stays readable.
+ */
+@Composable
+private fun SuggestionList(
+    field: AddressField,
+    recipients: List<Recipient>,
+    input: String,
+    suggestions: List<AddressSuggestion>,
+    onEvent: (DocDistEvent) -> Unit,
+) {
+    val q = input.trim().lowercase()
+    if (q.length < TYPEAHEAD_MIN) return
+    val taken = recipients.map { it.email.lowercase() }.toSet()
+    val matches = suggestions
+        .filter { it.email.lowercase() !in taken && isValidEmail(it.email) }
+        .filter { it.email.lowercase().contains(q) || it.name.lowercase().contains(q) }
+        .sortedBy { it.displayName.lowercase() }
+        .take(TYPEAHEAD_LIMIT)
+    if (matches.isEmpty()) return
+    val c = ZillitTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = TYPEAHEAD_HEIGHT.dp)
+            .clip(ZillitTheme.shapes.medium)
+            .background(c.surfaceRaised)
+            .border(0.5.dp, c.border, ZillitTheme.shapes.medium)
+            .padding(ZillitTheme.spacing.xs),
+    ) {
+        matches.forEach { contact ->
+            HoverRow(
+                // The row must not take focus. The token field commits
+                // whatever is typed when focus leaves it, and that clears the
+                // input — which removes this list from the composition before
+                // the click can be delivered, leaving the typed NAME in the
+                // field as an invalid address (live 2026-10-21).
+                modifier = Modifier.focusProperties { canFocus = false },
+                onClick = {
+                    onEvent(DocDistEvent.ComposeAddresses(field, recipients.map { it.email } + contact.email, ""))
+                },
+                padding = ZillitTheme.spacing.sm,
+            ) {
+                ZillitAvatar(name = contact.displayName, size = 22.dp)
+                ZillitText(text = contact.displayName, style = ZillitTheme.typography.label, maxLines = 1)
+                // Says where the row came from, so a crew member is never
+                // mistaken for someone already saved.
+                if (contact.isCrew) ZillitStatusPill(label = str(S.crew), tone = StatusTone.Progress)
+                if (contact.name.isNotBlank()) {
+                    ZillitText(
+                        text = listOf(contact.email, contact.job).filter { it.isNotBlank() }.joinToString(" · "),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = c.textMuted,
+                        maxLines = 1,
+                    )
                 }
             }
         }
     }
 }
+
+/** The To / Cc / Bcc field, for a test that has to type into one of three. */
+internal fun addressFieldTag(field: AddressField): String = "composer-address-${field.name}"
 
 @Composable
 private fun InvalidHint(invalid: List<Recipient>) {

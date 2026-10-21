@@ -25,6 +25,17 @@ sealed interface SidesEvent {
     data class DownloadSides(val record: SidesRecord) : SidesEvent
     data class AskDeleteSides(val record: SidesRecord) : SidesEvent
 
+    // ── Document Distribution hand-off ──
+    /** "Send to Document Distribution" on a row: opens the confirm. */
+    data class SendToDocDist(val record: SidesRecord) : SidesEvent
+    data object ConfirmSendToDocDist : SidesEvent
+
+    /** Cancel, Later, or the dialog dismissed — all close it. */
+    data object CloseSendToDocDist : SidesEvent
+
+    /** "Distribute Now": the library, with the composer open over the new file. */
+    data object DistributeNow : SidesEvent
+
     // ── Scripts manager ──
     data object AskAddScript : SidesEvent
     data class ReplaceScript(val script: Script) : SidesEvent
@@ -110,4 +121,11 @@ sealed interface SidesEffect {
 
     /** Offer fetched bytes to save — the web's forced save-to-disk download. */
     data class SaveFile(val fileName: String, val bytes: ByteArray) : SidesEffect
+
+    /**
+     * Opens Document Distribution at [folderId] with its composer over the
+     * document just filed from here — the host navigates, since the library
+     * is another tool's window (the web's `requestDocDistOpen`).
+     */
+    data class OpenDocDistCompose(val documentId: String, val folderId: String = "") : SidesEffect
 }

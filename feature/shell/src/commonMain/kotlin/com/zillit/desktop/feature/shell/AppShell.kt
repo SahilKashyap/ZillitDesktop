@@ -668,8 +668,9 @@ data class UpdateNotice(
     val requests: Int = 0,
     /**
      * Covers the frame with [ForceUpdateScreen] instead of showing the strip.
-     * The app sets it for a mandatory update on a packaged build; a Gradle
-     * run keeps the strip, so a raised floor never locks a developer out.
+     * The app sets it for a mandatory update on a packaged build, outside a
+     * call; a Gradle run keeps the strip, so a raised floor never locks a
+     * developer out, and so does a call in progress until it ends.
      */
     val blocking: Boolean = false,
 )

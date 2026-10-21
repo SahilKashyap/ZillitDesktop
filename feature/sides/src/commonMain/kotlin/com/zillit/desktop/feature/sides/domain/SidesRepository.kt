@@ -111,6 +111,17 @@ interface SidesRepository {
      */
     suspend fun downloadUrl(id: String, countDownload: Boolean): ZillitResult<String>
 
+    /**
+     * The same PDF **without the Sides watermark** — `?for_distribution=true`,
+     * and never `count`: this is not a user download.
+     *
+     * What Send to Document Distribution files. The library stamps its own
+     * watermark when a file is distributed, so the copy filed there has to be
+     * clean — the row's stored `attachment.media` is the watermarked one and
+     * must never be handed over (the web's `fetchSideDistributionPdf`).
+     */
+    suspend fun distributionUrl(id: String): ZillitResult<String>
+
     suspend fun publish(id: String): ZillitResult<Unit>
 
     suspend fun deleteSides(id: String): ZillitResult<Unit>

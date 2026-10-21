@@ -42,9 +42,10 @@ import com.zillit.desktop.core.strings.str
  * installed in place, with the same steps and buttons as the strip (see
  * [UpdateActions]).
  *
- * The restart is still a click, here as in the strip: this screen covers a
- * call in progress, and closing the app from under it unasked would be worse
- * than a forced update that lands a minute later. There is no "Restart later"
+ * It never covers a call in progress: while one runs the app shows the red
+ * strip instead and puts this up when the call ends (`forceUpdateBlocks` in
+ * the desktop app). The restart is still a click, here as in the strip —
+ * closing the app unasked is the person's call to make. There is no "Restart later"
  * on it, though — nothing behind it is reachable to go back to — and no
  * Cancel on a download in progress and no Quit either: both lead back to this
  * same screen, so offering them only says the block can be waited out.

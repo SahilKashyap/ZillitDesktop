@@ -177,8 +177,7 @@ internal fun parseSides(obj: JsonObject?): SidesRecord? {
         generatedById = obj.obj("generatedBy")?.text("_id", "id").orEmpty(),
         downloadCount = obj.int("downloadCount", "download_count"),
         createdAt = obj.text("createdAt", "created_at"),
-        attachmentName = attachment?.text("name").orEmpty(),
-        attachmentSize = attachment?.long("file_size", "fileSize") ?: 0,
+        attachment = parseAttachment(attachment),
         sceneFolders = obj.array("sceneFolders", "scene_folders").objects().map { folder ->
             SidesPageRef(
                 sceneNumber = folder.text("sceneNumber", "scene_number"),

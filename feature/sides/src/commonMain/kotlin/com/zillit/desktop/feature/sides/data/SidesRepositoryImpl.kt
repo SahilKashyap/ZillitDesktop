@@ -253,6 +253,9 @@ class SidesRepositoryImpl(
     override suspend fun downloadUrl(id: String, countDownload: Boolean): ZillitResult<String> =
         get("/sides/$id/download", if (countDownload) mapOf("count" to "true") else emptyMap()).url()
 
+    override suspend fun distributionUrl(id: String): ZillitResult<String> =
+        get("/sides/$id/download", mapOf("for_distribution" to "true")).url()
+
     override suspend fun publish(id: String): ZillitResult<Unit> = post("/sides/$id/publish").map { }
 
     override suspend fun deleteSides(id: String): ZillitResult<Unit> = delete("/sides/$id")

@@ -78,7 +78,14 @@ class FromToolPublisher(
     private val base = "${config.baseUrl(ZillitService.DocDistribution)}/api/v2/document-distribution"
 
     /** Returns the server's document id. */
-    suspend fun publish(file: FromToolFile): ZillitResult<String> {
+    suspend fun publish(file: FromToolFile): ZillitResult<String> = publishDocument(file).map { it.id }
+
+    /**
+     * The new document, with the folder the server filed it in — what a
+     * caller needs in order to then open the library *at* that folder (the
+     * web's `requestDocDistOpen({ folderId: doc.folder_id, document: doc })`).
+     */
+    suspend fun publishDocument(file: FromToolFile): ZillitResult<FiledDocument> {
         if (!canPost()) {
             return ZillitResult.Failure(
                 ZillitError.Validation(str(S.desktop_docdist_no_distribute_permission)),
@@ -108,10 +115,21 @@ class FromToolPublisher(
             module = RequestModule.ProjectUser,
             body = jsonBody(file.toBody()),
         ).map { data ->
-            ((data as? JsonObject)?.get("_id") as? JsonPrimitive)?.contentOrNull.orEmpty()
+            val row = data as? JsonObject
+            FiledDocument(
+                id = row.field("_id"),
+                // Snake on this route, camel on some others; both seen.
+                folderId = row.field("folder_id").ifBlank { row.field("folderId") },
+            )
         }
     }
+
+    private fun JsonObject?.field(name: String): String =
+        (this?.get(name) as? JsonPrimitive)?.contentOrNull.orEmpty()
 }
+
+/** A document the library just registered: its id, and the folder it went into. */
+data class FiledDocument(val id: String, val folderId: String)
 
 /**
  * The wire body, field for field as the phones send it. Blank strings and

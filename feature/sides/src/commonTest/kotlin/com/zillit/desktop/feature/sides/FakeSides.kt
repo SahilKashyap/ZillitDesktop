@@ -11,6 +11,9 @@ import com.zillit.desktop.feature.sides.domain.ScenePageDraft
 import com.zillit.desktop.feature.sides.domain.ScheduleRef
 import com.zillit.desktop.feature.sides.domain.Script
 import com.zillit.desktop.feature.sides.domain.ScriptVersion
+import com.zillit.desktop.feature.sides.domain.FiledSides
+import com.zillit.desktop.feature.sides.domain.SidesDistribution
+import com.zillit.desktop.feature.sides.domain.SidesDocDist
 import com.zillit.desktop.feature.sides.domain.SidesPdfPage
 import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesRepository
@@ -118,6 +121,8 @@ internal open class FakeSidesRepository(
 
     override suspend fun downloadUrl(id: String, countDownload: Boolean) =
         ok("https://s3/sides/$id").also { calls += "download:$id:$countDownload" }
+    override suspend fun distributionUrl(id: String) =
+        ok("https://s3/sides/$id?clean").also { calls += "distributionUrl:$id" }
     override suspend fun publish(id: String) = ok(Unit).also { calls += "publish:$id"; published += id }
     override suspend fun deleteSides(id: String) = ok(Unit).also { calls += "deleteSides:$id"; deleted += id }
 }
@@ -135,4 +140,22 @@ internal class FakeSidesTransfer : SidesTransfer {
     override suspend fun presign(attachment: StoredAttachment) = ZillitResult.Success("https://s3/${attachment.media}")
     override fun renderPages(pdf: ByteArray, targetWidthPx: Int) =
         ZillitResult.Success(listOf(SidesPdfPage(0, ByteArray(0), 1, 1)))
+}
+
+/** The library, in memory: what was filed, and whether it refuses at all. */
+internal class FakeSidesDocDist(
+    var allowed: Boolean = true,
+    var documentId: String = "doc1",
+    var folderId: String = "folder1",
+    var failure: ZillitError? = null,
+) : SidesDocDist {
+    val filed = mutableListOf<SidesDistribution>()
+
+    override fun canDistribute(): Boolean = allowed
+
+    override suspend fun distribute(file: SidesDistribution): ZillitResult<FiledSides> {
+        filed += file
+        return failure?.let { ZillitResult.Failure(it) }
+            ?: ZillitResult.Success(FiledSides(documentId = documentId, folderId = folderId))
+    }
 }

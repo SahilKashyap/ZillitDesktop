@@ -133,8 +133,12 @@ data class SidesRecord(
     val generatedById: String = "",
     val downloadCount: Int = 0,
     val createdAt: String = "",
-    val attachmentName: String = "",
-    val attachmentSize: Long = 0,
+    /**
+     * The generated PDF as storage holds it. Its keys are what a hand-off to
+     * Document Distribution sends, so nothing is re-uploaded; a row that
+     * arrives without them falls back to fetching the signed URL.
+     */
+    val attachment: StoredAttachment = StoredAttachment(),
     val sceneFolders: List<SidesPageRef> = emptyList(),
 ) {
     /** The web's version text: the label, else `v<number>`, else nothing. */
@@ -148,6 +152,10 @@ data class SidesRecord(
             versionText.isBlank() -> scriptTitle
             else -> "${scriptTitle}_$versionText"
         }
+
+    val attachmentName: String get() = attachment.name
+
+    val attachmentSize: Long get() = attachment.fileSizeBytes
 
     /** The card's file line: the attachment, else the call sheet, else the title. */
     val fileLabel: String get() = attachmentName.ifBlank { callSheetTitle.ifBlank { title } }

@@ -2,13 +2,20 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.S3Presigner
 import com.zillit.desktop.core.network.ZillitHeaders
+import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.feature.documentdistribution.data.FromToolFile
+import com.zillit.desktop.feature.documentdistribution.data.FromToolPublisher
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
+import com.zillit.desktop.feature.sides.domain.FiledSides
+import com.zillit.desktop.feature.sides.domain.SidesDistribution
+import com.zillit.desktop.feature.sides.domain.SidesDocDist
 import com.zillit.desktop.feature.sides.domain.SidesPdfPage
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.domain.SidesTransfer
@@ -105,6 +112,50 @@ internal fun AppGraph.Ready.sidesTransfer(): SidesTransfer = object : SidesTrans
             )
         }
 }
+
+/**
+ * Sides' hand-off to Document Distribution: the same gate every tool reads
+ * (posting rights on the library, or project admin) and the library's
+ * from-tool route, which takes the storage keys and re-uploads nothing.
+ *
+ * The folder is the cross-platform root `Sides` — the server resolves
+ * folders BY NAME, so the spelling is the contract.
+ */
+internal fun AppGraph.Ready.sidesDocDist(permissions: () -> ProjectPermissions): SidesDocDist =
+    object : SidesDocDist {
+
+        override fun canDistribute(): Boolean {
+            val grid = permissions()
+            // The soft default every client has: a grid that has not loaded
+            // yet permits, so the action is not hidden for the first beat
+            // after a production opens (the web's `useDocumentDistribution-
+            // Rights`, and this app's own `DocDistViewer.from`).
+            if (!grid.access(DOC_DISTRIBUTION_TOOL).enabled && grid.visibleTools.isEmpty()) return true
+            return grid.canPost(DOC_DISTRIBUTION_TOOL) || grid.isAdmin ||
+                projectContext?.context?.value?.isAdmin == true
+        }
+
+        override suspend fun distribute(file: SidesDistribution): ZillitResult<FiledSides> = FromToolPublisher(
+            apiClient,
+            config,
+            canPost = { canDistribute() },
+        ).publishDocument(
+            FromToolFile(
+                folderPath = file.folderPath,
+                name = file.fileName,
+                media = file.media,
+                bucket = file.bucket,
+                region = file.region,
+                contentType = SIDES_CONTENT_TYPE,
+                contentSubtype = file.contentSubtype,
+                fileSizeBytes = file.fileSizeBytes,
+                folderDate = file.folderDate,
+            ),
+        ).map { filed -> FiledSides(documentId = filed.id, folderId = filed.folderId) }
+    }
+
+/** The library's `content_type` for a document, as every tool sends it. */
+private const val SIDES_CONTENT_TYPE = "document"
 
 /**
  * The raw authed GET the scenes routes need: they answer bare JSON, which the

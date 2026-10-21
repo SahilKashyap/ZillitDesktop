@@ -323,6 +323,7 @@ import com.zillit.desktop.feature.saportal.ui.SaPortalViewModel
 import com.zillit.desktop.feature.sides.ui.SidesViewModel
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureViewModel
+import com.zillit.desktop.feature.documentdistribution.ui.DOCUMENT_DISTRIBUTION_PATH
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
 import com.zillit.desktop.feature.drive.domain.DriveListQuery
 import com.zillit.desktop.feature.drive.domain.DriveScope
@@ -2380,7 +2381,11 @@ private fun UpdateStatus.downloadUrlOrNull(): String? = when (this) {
 private fun currentUpdateNotice(ready: AppGraph.Ready, status: UpdateStatus): UpdateNotice? {
     val installState by ready.inAppUpdater.state.collectAsState()
     val requests by ready.appUpdateRequests.collectAsState()
-    return status.toNotice(installedAppVersion(), ready.inAppUpdater, installState)?.copy(requests = requests)
+    // Read here so the force-update screen comes down for a call and goes back
+    // up the moment it ends.
+    val callPhase by ready.callCoordinator.phase.collectAsState()
+    return status.toNotice(installedAppVersion(), ready.inAppUpdater, installState, callPhase)
+        ?.copy(requests = requests)
 }
 
 /**
@@ -3346,6 +3351,7 @@ private fun UpdateStatus.toNotice(
     installed: String,
     updater: InAppUpdater,
     state: InstallState,
+    callPhase: CallPhase,
 ): UpdateNotice? {
     val (version, mandatory, url) = when (this) {
         is UpdateStatus.Available -> Triple(latestVersion, false, downloadUrl)
@@ -3360,8 +3366,11 @@ private fun UpdateStatus.toNotice(
     return UpdateNotice(
         version, mandatory, url,
         installedVersion = installed, install = install, manual = downloadable,
-        // Packaged builds only: a Gradle run has no floor worth locking a developer out over.
-        blocking = mandatory && !System.getProperty("jpackage.app-path").isNullOrBlank(),
+        blocking = forceUpdateBlocks(
+            mandatory = mandatory,
+            packaged = !System.getProperty("jpackage.app-path").isNullOrBlank(),
+            callPhase = callPhase,
+        ),
     )
 }
 
@@ -4070,6 +4079,7 @@ internal fun buildAppViewModels(
                     bus = graph.socketEvents,
                 ),
                 transfer = graph.sidesTransfer(),
+                docDist = graph.sidesDocDist(permissions),
                 resolveViewer = {
                     val context = graph.projectContext?.context?.value
                     SidesViewer.from(
@@ -4750,6 +4760,14 @@ private fun buildRegistry(
             onPickFile = { pdfOnly, onPicked -> scope.launch { onPicked(pickSidesDocument(pdfOnly)) } },
             onOpenUrl = ::openInBrowser,
             onSaveFile = { fileName, bytes -> scope.launch { saveSidesFile(fileName, bytes) } },
+            // "Distribute Now" after a send: the library in front, with its
+            // composer over the document that was just filed. The frame comes
+            // forward first, because Sides may be a torn-off OS window.
+            onDistributeNow = { documentId, folderId ->
+                mainWindowRaiser.get()?.invoke()
+                toolOpener.get()?.invoke(DOCUMENT_DISTRIBUTION_PATH)
+                if (documentId.isNotBlank()) viewModels.docDist?.composeDocument(documentId, folderId)
+            },
             loadAvatar = (graph as? AppGraph.Ready)?.let { crewFaceLoader(it) } ?: { null },
         )
     }

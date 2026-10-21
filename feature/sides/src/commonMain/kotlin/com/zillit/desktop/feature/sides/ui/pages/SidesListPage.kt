@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -56,6 +57,7 @@ import com.zillit.desktop.feature.sides.domain.SidesStatus
 import com.zillit.desktop.feature.sides.ui.SidesEvent
 import com.zillit.desktop.feature.sides.ui.SidesLayout
 import com.zillit.desktop.feature.sides.ui.SidesListState
+import com.zillit.desktop.feature.sides.ui.SidesSendAction
 import com.zillit.desktop.feature.sides.ui.components.CountChip
 import com.zillit.desktop.feature.sides.ui.components.CreatorAvatar
 import com.zillit.desktop.feature.sides.ui.components.GeneratingPill
@@ -70,7 +72,7 @@ import com.zillit.desktop.feature.sides.ui.components.hexColor
 
 /** The generated-sides list — the web's `SidesPage` below its header. */
 @Composable
-internal fun SidesListPage(list: SidesListState, onEvent: (SidesEvent) -> Unit) {
+internal fun SidesListPage(list: SidesListState, send: SidesSendAction, onEvent: (SidesEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -104,12 +106,12 @@ internal fun SidesListPage(list: SidesListState, onEvent: (SidesEvent) -> Unit) 
                         )
                     },
                 )
-                list.layout == SidesLayout.Table -> SidesTable(list.sides, history = false, onEvent)
+                list.layout == SidesLayout.Table -> SidesTable(list.sides, history = false, send, onEvent)
                 else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    list.sides.forEach { record -> SideCard(record, history = false, onEvent) }
+                    list.sides.forEach { record -> SideCard(record, history = false, send, onEvent) }
                 }
             }
-            HistoryPanel(list, onEvent)
+            HistoryPanel(list, send, onEvent)
         }
     }
 }
@@ -123,7 +125,12 @@ internal fun SidesListPage(list: SidesListState, onEvent: (SidesEvent) -> Unit) 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SideCard(record: SidesRecord, history: Boolean, onEvent: (SidesEvent) -> Unit) {
+private fun SideCard(
+    record: SidesRecord,
+    history: Boolean,
+    send: SidesSendAction,
+    onEvent: (SidesEvent) -> Unit,
+) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -166,7 +173,7 @@ private fun SideCard(record: SidesRecord, history: Boolean, onEvent: (SidesEvent
                     if (record.fileLabel.isNotBlank()) MetaCell(ZillitIcons.File, record.fileLabel)
                 }
             }
-            RowActions(record, history, small = false, onEvent)
+            RowActions(record, history, small = false, send, onEvent)
         }
 
         CardChips(record)
@@ -264,11 +271,21 @@ private fun StatusPill(record: SidesRecord, history: Boolean) {
 }
 
 /**
- * View, Download and Delete for a record. Every button stays on screen —
- * the handler asks an admin when the right is missing (ZL-19714).
+ * View, Download, Send via Document Distribution and Delete for a record.
+ *
+ * This tool's own controls all stay on screen and ask an admin when the
+ * right is missing (ZL-19714). The send is the exception: it belongs to
+ * another tool, and without posting rights on Document Distribution it is
+ * not drawn at all — which is what the web does.
  */
 @Composable
-private fun RowActions(record: SidesRecord, history: Boolean, small: Boolean, onEvent: (SidesEvent) -> Unit) {
+private fun RowActions(
+    record: SidesRecord,
+    history: Boolean,
+    small: Boolean,
+    send: SidesSendAction,
+    onEvent: (SidesEvent) -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (record.status == SidesStatus.Generating) GeneratingPill()
         if (record.status.viewable) {
@@ -298,6 +315,32 @@ private fun RowActions(record: SidesRecord, history: Boolean, small: Boolean, on
                     leadingIcon = ZillitIcons.Download,
                 )
             }
+            // The hand-off into the library — the web's labelled button on a
+            // card, send icon in the table. Hidden without the library's
+            // posting right, which is the one control here that is.
+            if (send.visible) {
+                val sending = send.sendingId == record.id
+                if (small) {
+                    ZillitTooltip(str(S.desktop_sides_send_to_dd)) {
+                        ZillitIconButton(
+                            icon = ZillitIcons.Send,
+                            contentDescription = str(S.desktop_sides_send_to_dd),
+                            onClick = { onEvent(SidesEvent.SendToDocDist(record)) },
+                            enabled = !sending,
+                        )
+                    }
+                } else {
+                    ZillitButton(
+                        text = str(S.desktop_sides_send_to_dd),
+                        onClick = { onEvent(SidesEvent.SendToDocDist(record)) },
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                        leadingIcon = ZillitIcons.Send,
+                        loading = sending,
+                        enabled = !sending,
+                    )
+                }
+            }
         }
         if (!history) {
             ZillitTooltip(str(S.delete)) {
@@ -316,7 +359,12 @@ private fun RowActions(record: SidesRecord, history: Boolean, small: Boolean, on
 
 /** The compact table view — the web's `SidesTable`. */
 @Composable
-private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (SidesEvent) -> Unit) {
+private fun SidesTable(
+    rows: List<SidesRecord>,
+    history: Boolean,
+    send: SidesSendAction,
+    onEvent: (SidesEvent) -> Unit,
+) {
     val colors = ZillitTheme.colors
     val columns = listOf(
         TableColumn<SidesRecord>(str(S.name), ColumnWidth.Weight(2.2f)) { record ->
@@ -382,8 +430,10 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
         TableColumn(str(S.drive_sort_size), ColumnWidth.Fixed(80.dp), numeric = true) { record ->
             ZillitText(SidesRules.formatBytes(record.attachmentSize) ?: "—", style = ZillitTheme.typography.bodySmall)
         },
-        TableColumn(str(S.dd_actions), ColumnWidth.Fixed(if (history) 100.dp else 140.dp)) { record ->
-            RowActions(record, history, small = true, onEvent)
+        // The send icon needs its own 40dp when it is drawn, as the web widened
+        // its own Actions column for it (210 → 250).
+        TableColumn(str(S.dd_actions), ColumnWidth.Fixed(actionsWidth(history, send.visible))) { record ->
+            RowActions(record, history, small = true, send, onEvent)
         },
     )
     ZillitDataTable(
@@ -396,11 +446,16 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
     )
 }
 
+private fun actionsWidth(history: Boolean, sendShown: Boolean): Dp {
+    val base = if (history) 100.dp else 140.dp
+    return if (sendShown) base + 40.dp else base
+}
+
 // ── History ────────────────────────────────────────────────────────────────
 
 /** The collapsible archived panel with its name/creator search. */
 @Composable
-private fun HistoryPanel(list: SidesListState, onEvent: (SidesEvent) -> Unit) {
+private fun HistoryPanel(list: SidesListState, send: SidesSendAction, onEvent: (SidesEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val caret by animateFloatAsState(if (list.historyOpen) 180f else 0f, label = "historyCaret")
     Column(
@@ -457,8 +512,8 @@ private fun HistoryPanel(list: SidesListState, onEvent: (SidesEvent) -> Unit) {
                                 style = ZillitTheme.typography.bodySmall,
                                 color = colors.textMuted,
                             )
-                            list.layout == SidesLayout.Table -> SidesTable(rows, history = true, onEvent)
-                            else -> rows.forEach { SideCard(it, history = true, onEvent) }
+                            list.layout == SidesLayout.Table -> SidesTable(rows, history = true, send, onEvent)
+                            else -> rows.forEach { SideCard(it, history = true, send, onEvent) }
                         }
                     }
                 }

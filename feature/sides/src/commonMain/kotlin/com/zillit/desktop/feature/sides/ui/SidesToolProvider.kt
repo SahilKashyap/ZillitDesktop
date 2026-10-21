@@ -33,6 +33,12 @@ class SidesToolProvider(
     private val onOpenUrl: (String) -> Unit,
     /** Offers fetched bytes to save under a suggested name. */
     private val onSaveFile: (fileName: String, bytes: ByteArray) -> Unit,
+    /**
+     * "Distribute Now" after a send: brings Document Distribution forward at
+     * the folder the file went into, with its composer open over it. The
+     * library is another tool's window, so the host does both.
+     */
+    private val onDistributeNow: (documentId: String, folderId: String) -> Unit = { _, _ -> },
     /** A crew member's profile picture, or null for initials. */
     private val loadAvatar: suspend (String) -> ImageBitmap? = { null },
 ) : ToolProvider {
@@ -59,6 +65,8 @@ class SidesToolProvider(
                     }
                     is SidesEffect.OpenUrl -> onOpenUrl(effect.url)
                     is SidesEffect.SaveFile -> onSaveFile(effect.fileName, effect.bytes)
+                    is SidesEffect.OpenDocDistCompose ->
+                        onDistributeNow(effect.documentId, effect.folderId)
                 }
             }
         }

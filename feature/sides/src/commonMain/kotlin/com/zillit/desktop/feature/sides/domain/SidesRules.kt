@@ -77,6 +77,15 @@ object SidesRules {
     fun downloadName(title: String, fallback: String = "sides"): String =
         title.ifBlank { fallback }.replace(Regex("""[^\w.-]+"""), "_") + ".pdf"
 
+    /**
+     * The name the library files a side under: the title as typed, minus the
+     * characters a file name cannot hold, else `Sides` — the web's
+     * `sideDocDistFileName`. Deliberately NOT [downloadName]: a save to disk
+     * flattens spaces to `_`, while the library keeps the title readable.
+     */
+    fun docDistFileName(title: String): String =
+        (title.replace(UNSAFE_IN_FILE_NAME, "-").trim().ifBlank { DOC_DIST_SIDES_FOLDER }) + ".pdf"
+
     /** A script or page file must be a PDF or Final Draft document. */
     fun isPdfOrFdx(fileName: String): Boolean = fileName.lowercase().let { it.endsWith(".pdf") || it.endsWith(".fdx") }
 
@@ -149,5 +158,8 @@ object SidesRules {
     private const val TENTHS = 10
     private const val MB = KB * KB
     private val PDF_MAGIC = "%PDF".encodeToByteArray()
+    /** The characters no file name may hold, on any platform — the web's set. */
+    private val UNSAFE_IN_FILE_NAME = Regex("""[\\/:*?"<>|]+""")
+
     private val HEX_COLOR = Regex("""^#[0-9a-fA-F]{6}$""")
 }

@@ -172,6 +172,24 @@ class DocDistViewModel(
         setState { copy(viewer = resolved) }
     }
 
+    /**
+     * Opens the library at [folderId] with the send dialog over one of its
+     * documents — the hand-off another tool makes after filing a file here
+     * from its own board ("Distribute Now" in Sides, the web's
+     * `requestDocDistOpen`). Not an event: the caller is another tool's
+     * window, not this screen.
+     *
+     * [start] is idempotent, so this works whether or not the tool has been
+     * opened yet in this session; the composer survives the load that
+     * follows.
+     */
+    fun composeDocument(documentId: String, folderId: String = "") {
+        start()
+        setState { copy(destination = DocDistDestination.Library) }
+        folderId.takeIf { it.isNotBlank() }?.let(::openFolder)
+        composer.composeDocumentById(documentId)
+    }
+
     @Suppress("LongMethod", "CyclomaticComplexMethod") // One branch per user action.
     override fun onEvent(event: DocDistEvent) {
         when (event) {

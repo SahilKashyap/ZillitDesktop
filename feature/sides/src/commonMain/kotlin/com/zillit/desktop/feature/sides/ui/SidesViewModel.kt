@@ -4,11 +4,13 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.feature.sides.domain.SidesDocDist
 import com.zillit.desktop.feature.sides.domain.SidesRepository
 import com.zillit.desktop.feature.sides.domain.SidesTransfer
 import com.zillit.desktop.feature.sides.domain.SidesViewer
 import com.zillit.desktop.feature.sides.ui.flows.AutoFlow
 import com.zillit.desktop.feature.sides.ui.flows.DialogFlow
+import com.zillit.desktop.feature.sides.ui.flows.DistributeFlow
 import com.zillit.desktop.feature.sides.ui.flows.GenerateFlow
 import com.zillit.desktop.feature.sides.ui.flows.ListFlow
 import com.zillit.desktop.feature.sides.ui.flows.PdfFlow
@@ -35,6 +37,8 @@ class SidesViewModel(
     override val repository: SidesRepository,
     override val transfer: SidesTransfer,
     private val resolveViewer: () -> SidesViewer,
+    /** Document Distribution, for the row's "Send to Document Distribution". */
+    override val docDist: SidesDocDist = SidesDocDist.None,
     private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<SidesUiState, SidesEvent, SidesEffect>(SidesUiState()), SidesStore {
 
@@ -44,6 +48,7 @@ class SidesViewModel(
     private val generate = GenerateFlow(this, pdf, onPublished = list::load)
     private val auto = AutoFlow(this, pdf, onPublished = list::load)
     private val dialogs = DialogFlow(this, list, scripts, auto)
+    private val distribute = DistributeFlow(this)
 
     private var listening = false
 
@@ -86,6 +91,10 @@ class SidesViewModel(
     }
 
     private fun refresh() {
+        // The library's posting right decides whether the send exists at all,
+        // and it arrives with the rights payload a beat after the production
+        // opens — so it is re-read on every load, not once at start.
+        setState { copy(canDistributeToLibrary = docDist.canDistribute()) }
         when (currentState.destination) {
             SidesDestination.Sides -> list.load()
             SidesDestination.Scripts -> scripts.load()
@@ -112,6 +121,11 @@ class SidesViewModel(
             is SidesEvent.ViewSides -> list.view(event.record)
             is SidesEvent.DownloadSides -> list.download(event.record)
             is SidesEvent.AskDeleteSides -> list.askDelete(event.record)
+
+            is SidesEvent.SendToDocDist -> distribute.ask(event.record)
+            SidesEvent.ConfirmSendToDocDist -> distribute.confirm()
+            SidesEvent.CloseSendToDocDist -> distribute.close()
+            SidesEvent.DistributeNow -> distribute.now()
 
             SidesEvent.AskAddScript -> scripts.askAdd()
             is SidesEvent.ReplaceScript -> scripts.replace(event.script)

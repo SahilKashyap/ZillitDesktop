@@ -59,6 +59,12 @@ class SidesRulesTest {
         assertEquals("1.5 MB", SidesRules.formatBytes(1_572_864))
         assertEquals("Day_5_sides.pdf", SidesRules.downloadName("Day 5 sides"))
         assertEquals("sides.pdf", SidesRules.downloadName(""))
+        // The library's name keeps the title readable — the web's
+        // `sideDocDistFileName`, case for case (`docDist.test.js`).
+        assertEquals("Day 3 – Unit A.pdf", SidesRules.docDistFileName("Day 3 – Unit A"))
+        assertEquals("Ep 1-2- -Final-.pdf", SidesRules.docDistFileName("Ep 1/2: \"Final\""))
+        assertEquals("Sides.pdf", SidesRules.docDistFileName("  "))
+        assertEquals("Sides.pdf", SidesRules.docDistFileName(""))
         assertEquals("Ep 1", SidesRules.titleFromFileName("Ep 1.FDX"))
         assertEquals("fdx", SidesRules.contentSubtype("a.FDX"))
         assertTrue(SidesRules.isPdfOrFdx("x.fdx") && SidesRules.isPdf("x.PDF") && !SidesRules.isPdf("x.fdx"))

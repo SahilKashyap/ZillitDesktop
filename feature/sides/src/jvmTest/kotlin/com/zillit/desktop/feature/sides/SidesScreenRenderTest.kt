@@ -18,12 +18,14 @@ import com.zillit.desktop.feature.sides.domain.SidesPageRef
 import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesStatus
 import com.zillit.desktop.feature.sides.domain.SidesViewer
+import com.zillit.desktop.feature.sides.domain.StoredAttachment
 import com.zillit.desktop.feature.sides.ui.AutoState
 import com.zillit.desktop.feature.sides.ui.DocKind
 import com.zillit.desktop.feature.sides.ui.GenerateState
 import com.zillit.desktop.feature.sides.ui.PickedDoc
 import com.zillit.desktop.feature.sides.ui.ScriptsState
 import com.zillit.desktop.feature.sides.ui.SidesDestination
+import com.zillit.desktop.feature.sides.ui.SidesDistributeTarget
 import com.zillit.desktop.feature.sides.ui.SidesDialog
 import com.zillit.desktop.feature.sides.ui.SidesEvent
 import com.zillit.desktop.feature.sides.ui.SidesLayout
@@ -51,8 +53,7 @@ class SidesScreenRenderTest {
         generatedByName = "Aisha Khan",
         downloadCount = 3,
         createdAt = "2026-09-15T10:00:00Z",
-        attachmentName = "day5.pdf",
-        attachmentSize = 204_800,
+        attachment = StoredAttachment(media = "sides/s1/day5.pdf", name = "day5.pdf", fileSizeBytes = 204_800),
         sceneFolders = listOf(SidesPageRef("12A", "#1e88e5", listOf("12A"))),
     )
     private val generating = record.copy(id = "s2", title = "Rendering", status = SidesStatus.Generating)
@@ -207,6 +208,70 @@ class SidesScreenRenderTest {
                 pdf = SidesPdfView("Day 5", "Sides", loading = false, notPdf = true, url = "u"),
             ),
         ) { onNodeWithText("Request download access").assertExists() }
+    }
+
+    @Test
+    fun `the Document Distribution send composes its confirm and its now-or-later`() {
+        val full = SidesListState(sides = listOf(record))
+        compose(SidesUiState(viewer = viewer, list = full)) {
+            onAllNodesWithText("Send via Document Distribution").assertCountEquals(0)
+        }
+        listOf(false, true).forEach { dark ->
+            compose(SidesUiState(viewer = viewer, list = full, canDistributeToLibrary = true), dark) {
+                onNodeWithText("Send via Document Distribution").assertExists()
+            }
+            compose(
+                SidesUiState(
+                    viewer = viewer,
+                    list = full,
+                    canDistributeToLibrary = true,
+                    distribute = SidesDistributeTarget(id = "s1", fileName = "Day 5 sides.pdf"),
+                ),
+                dark,
+            ) {
+                onNodeWithText("Publish to Document Distribution").assertExists()
+                onNodeWithText("Publish \"Day 5 sides.pdf\" to the Document Distribution library?").assertExists()
+            }
+            compose(
+                SidesUiState(
+                    viewer = viewer,
+                    list = full,
+                    canDistributeToLibrary = true,
+                    distribute = SidesDistributeTarget(
+                        id = "s1",
+                        fileName = "Day 5 sides.pdf",
+                        documentId = "doc1",
+                        folderId = "folder1",
+                    ),
+                ),
+                dark,
+            ) {
+                onNodeWithText("Do you want to distribute this sides now or later?").assertExists()
+                onNodeWithText("Distribute Now").assertExists()
+                onNodeWithText("Later").assertExists()
+            }
+        }
+    }
+
+    @Test
+    fun `the row's send button fires the hand-off event`() {
+        val events = mutableListOf<SidesEvent>()
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    SidesScreen(
+                        SidesUiState(
+                            viewer = viewer,
+                            list = SidesListState(sides = listOf(record)),
+                            canDistributeToLibrary = true,
+                        ),
+                        onEvent = { events += it },
+                    )
+                }
+            }
+            onNodeWithText("Send via Document Distribution").performClick()
+        }
+        assertEquals(listOf<SidesEvent>(SidesEvent.SendToDocDist(record)), events)
     }
 
     @Test

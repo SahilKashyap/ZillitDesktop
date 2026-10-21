@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.feature.sides.domain.SidesDocDist
 import com.zillit.desktop.feature.sides.domain.SidesRepository
 import com.zillit.desktop.feature.sides.domain.SidesTransfer
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +19,7 @@ internal interface SidesStore {
     val current: SidesUiState
     val repository: SidesRepository
     val transfer: SidesTransfer
+    val docDist: SidesDocDist
 
     fun update(reducer: SidesUiState.() -> SidesUiState)
     fun effect(effect: SidesEffect)

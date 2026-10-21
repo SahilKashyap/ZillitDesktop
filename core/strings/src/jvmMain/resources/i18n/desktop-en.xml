@@ -13810,12 +13810,6 @@
     <string name="desktop_docdist_document_not_in_library">That file is no longer in the library.</string>
     <string name="desktop_docdist_n_of_m_files_selected">%1$d of %2$d files selected</string>
     <string name="desktop_docdist_no_files_to_publish">No files available to publish</string>
-    <string name="desktop_email_indent_less">Decrease Indent</string>
-    <string name="desktop_email_indent_more">Increase Indent</string>
-    <string name="desktop_email_text_to_display">Text to display</string>
-    <string name="desktop_email_enter_url">Enter URL</string>
-    <string name="desktop_email_emoji">Emoji</string>
-    <string name="desktop_email_highlight_text">Highlight Text</string>
     <string name="desktop_sides_send_to_dd">Send via Document Distribution</string>
     <string name="desktop_ad_signature_pad_hint">Drag to draw, or type your name if you have no pen.</string>
     <string name="desktop_ad_signature_not_drawn">Draw or type a signature first.</string>

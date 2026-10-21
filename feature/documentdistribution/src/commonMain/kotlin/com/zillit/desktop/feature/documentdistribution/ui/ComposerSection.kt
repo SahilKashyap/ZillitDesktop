@@ -60,6 +60,29 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
         open(attachments = listOf(document), folder = null)
     }
 
+    /**
+     * The send dialog over one document named by its id, resolved from the
+     * server when the listing in hand does not hold it — the hand-off
+     * another tool makes right after filing a file here from its own board
+     * ("Distribute Now" in Sides). The caller puts the library on the page
+     * and in the folder behind it; this only opens the dialog.
+     */
+    fun composeDocumentById(documentId: String) {
+        if (documentId.isBlank()) return
+        if (vm.refusesWrite()) return
+        vm.state.documents.firstOrNull { it.id == documentId }?.let { document ->
+            open(attachments = listOf(document), folder = null)
+            return
+        }
+        library.prepare({ vm.repository.documentsByIds(listOf(documentId)) }) { documents ->
+            if (documents.isEmpty()) {
+                vm.fail(str(S.desktop_docdist_document_not_in_library))
+            } else {
+                open(attachments = documents, folder = null)
+            }
+        }
+    }
+
     fun distributeFolder(folderId: String) {
         if (vm.refusesWrite()) return
         val folder = vm.state.folders.firstOrNull { it.id == folderId } ?: return

@@ -4,6 +4,7 @@ import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesStatus
 import com.zillit.desktop.feature.sides.domain.SidesViewer
+import com.zillit.desktop.feature.sides.domain.StoredAttachment
 import com.zillit.desktop.feature.sides.ui.DocKind
 import com.zillit.desktop.feature.sides.ui.PickPurpose
 import com.zillit.desktop.feature.sides.ui.PickedDoc
@@ -50,7 +51,14 @@ class SidesViewModelTest {
         viewer: SidesViewer = SidesViewer(userId = "u1", canPost = true, canDownload = true, ready = true),
         rights: RightsRequestBus? = null,
         transfer: FakeSidesTransfer = FakeSidesTransfer(),
-    ) = SidesViewModel(repository = repo, transfer = transfer, resolveViewer = { viewer }, rights = rights)
+        docDist: FakeSidesDocDist = FakeSidesDocDist(),
+    ) = SidesViewModel(
+        repository = repo,
+        transfer = transfer,
+        resolveViewer = { viewer },
+        docDist = docDist,
+        rights = rights,
+    )
 
     @Test
     fun `a generated pulse re-runs the visible list load once`() = runTest(dispatcher) {
@@ -310,6 +318,144 @@ class SidesViewModelTest {
         assertEquals(2, model.state.value.list.history.size)
         model.onEvent(SidesEvent.HistorySearch("ben"))
         assertEquals(listOf("h2"), model.state.value.list.filteredHistory.map { it.id })
+    }
+
+    @Test
+    fun `a send files the unwatermarked copy under Sides and then offers now or later`() = runTest(dispatcher) {
+        val record = SidesRecord(
+            id = "s1",
+            title = "Day 5 sides",
+            status = SidesStatus.Ready,
+            createdAt = "2026-09-15T10:00:00Z",
+            // The watermarked copy the row carries: it must never be filed.
+            attachment = StoredAttachment(media = "sides/stamped.pdf", name = "s1.pdf"),
+        )
+        val repo = FakeSidesRepository().apply { sidesRows = listOf(record) }
+        val transfer = FakeSidesTransfer()
+        val library = FakeSidesDocDist()
+        val model = model(repo, transfer = transfer, docDist = library)
+        val compose = mutableListOf<Pair<String, String>>()
+        backgroundScope.launch {
+            model.effects.collect {
+                if (it is SidesEffect.OpenDocDistCompose) compose += it.documentId to it.folderId
+            }
+        }
+        model.start()
+        runCurrent()
+        assertTrue(model.state.value.sendAction.visible, "the library's posting right shows the action")
+
+        model.onEvent(SidesEvent.SendToDocDist(record))
+        runCurrent()
+        val asked = assertNotNull(model.state.value.distribute, "the confirm names the file")
+        assertEquals("Day 5 sides.pdf", asked.fileName, "the web's name: the title as typed")
+        assertFalse(asked.filed)
+
+        model.onEvent(SidesEvent.ConfirmSendToDocDist)
+        advanceUntilIdle()
+        assertTrue("distributionUrl:s1" in repo.calls, "for_distribution=true, so the copy has no Sides stamp")
+        assertFalse(repo.calls.any { it.startsWith("download:") }, "and never the counted download")
+        assertEquals(listOf("Day 5 sides.pdf"), transfer.uploads, "those bytes go up as a new file")
+        val filed = library.filed.single()
+        assertEquals(listOf("Sides"), filed.folderPath, "the cross-platform root folder, no sub-folder")
+        assertEquals("k/Day 5 sides.pdf", filed.media, "the upload's key — not the row's stamped copy")
+        assertEquals("2026-09-15", filed.folderDate, "dated by the day it was generated")
+        assertEquals("doc1", assertNotNull(model.state.value.distribute).documentId)
+
+        model.onEvent(SidesEvent.DistributeNow)
+        runCurrent()
+        assertEquals(listOf("doc1" to "folder1"), compose, "the library opens at the folder, composer on the file")
+        assertNull(model.state.value.distribute, "and the popup closes")
+    }
+
+    @Test
+    fun `Later closes the popup and leaves the file in the library`() = runTest(dispatcher) {
+        val record = SidesRecord(id = "s1", title = "Day 5", status = SidesStatus.Ready)
+        val repo = FakeSidesRepository().apply { sidesRows = listOf(record) }
+        val library = FakeSidesDocDist()
+        val model = model(repo, docDist = library)
+        val compose = mutableListOf<String>()
+        backgroundScope.launch {
+            model.effects.collect { if (it is SidesEffect.OpenDocDistCompose) compose += it.documentId }
+        }
+        model.start()
+        runCurrent()
+
+        model.onEvent(SidesEvent.SendToDocDist(record))
+        model.onEvent(SidesEvent.ConfirmSendToDocDist)
+        advanceUntilIdle()
+        model.onEvent(SidesEvent.CloseSendToDocDist)
+        runCurrent()
+
+        assertEquals(1, library.filed.size, "the file is already in the library")
+        assertNull(model.state.value.distribute)
+        assertTrue(compose.isEmpty(), "Later opens nothing")
+    }
+
+    @Test
+    fun `an archived side sends too, and a generating one has nothing to send`() = runTest(dispatcher) {
+        val archived = SidesRecord(id = "h1", title = "Old sides", status = SidesStatus.Archived)
+        val generating = SidesRecord(id = "g1", title = "Rendering", status = SidesStatus.Generating)
+        val repo = FakeSidesRepository().apply {
+            sidesRows = listOf(generating)
+            history = listOf(archived)
+        }
+        val library = FakeSidesDocDist()
+        val model = model(repo, docDist = library)
+        model.start()
+        model.onEvent(SidesEvent.ToggleHistory)
+        runCurrent()
+
+        model.onEvent(SidesEvent.SendToDocDist(generating))
+        runCurrent()
+        assertNull(model.state.value.distribute, "a side still generating has no file")
+
+        model.onEvent(SidesEvent.SendToDocDist(archived))
+        model.onEvent(SidesEvent.ConfirmSendToDocDist)
+        advanceUntilIdle()
+        assertEquals("Old sides.pdf", library.filed.single().fileName)
+    }
+
+    @Test
+    fun `without the library's posting right the action is hidden and a press files nothing`() = runTest(dispatcher) {
+        val record = SidesRecord(id = "s1", title = "Day 5", status = SidesStatus.Ready)
+        val repo = FakeSidesRepository().apply { sidesRows = listOf(record) }
+        val library = FakeSidesDocDist(allowed = false)
+        val model = model(repo, docDist = library)
+        val notices = mutableListOf<String>()
+        backgroundScope.launch { model.effects.collect { if (it is SidesEffect.Notice) notices += it.message } }
+        model.start()
+        runCurrent()
+        assertFalse(model.state.value.sendAction.visible, "no posting right on the library, no action")
+
+        model.onEvent(SidesEvent.SendToDocDist(record))
+        runCurrent()
+        assertNull(model.state.value.distribute)
+        assertTrue(library.filed.isEmpty())
+        assertEquals(1, notices.size, notices.toString())
+    }
+
+    @Test
+    fun `a send without the Sides download right asks an admin instead`() = runTest(dispatcher) {
+        val record = SidesRecord(id = "s1", title = "Day 5", status = SidesStatus.Ready)
+        val repo = FakeSidesRepository().apply { sidesRows = listOf(record) }
+        val library = FakeSidesDocDist()
+        val bus = RightsRequestBus()
+        val asks = mutableListOf<String>()
+        backgroundScope.launch { bus.requests.collect { asks += "${'$'}{it.moduleLabel}:${'$'}{it.kind.name}" } }
+        val model = model(
+            repo,
+            viewer = SidesViewer(canPost = true, canDownload = false, ready = true),
+            rights = bus,
+            docDist = library,
+        )
+        model.start()
+        runCurrent()
+
+        model.onEvent(SidesEvent.SendToDocDist(record))
+        runCurrent()
+        assertNull(model.state.value.distribute, "the file would leave the tool, so it needs download rights")
+        assertTrue(library.filed.isEmpty())
+        assertEquals(listOf("Sides:Download"), asks, "and an admin is asked for them")
     }
 
     @Test

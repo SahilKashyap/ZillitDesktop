@@ -288,6 +288,35 @@ sealed interface SidesDialog {
     ) : SidesDialog
 }
 
+// ── Document Distribution hand-off ────────────────────────────────────────
+
+/**
+ * A record on its way into the Document Distribution library: the confirm
+ * that names the file, then — once it has landed — the question of whether
+ * to distribute it now or later.
+ *
+ * [documentId] is the library's new document, so "Distribute Now" can open
+ * the library's composer over exactly the file that was just filed.
+ */
+data class SidesDistributeTarget(
+    val id: String,
+    val fileName: String,
+    val sending: Boolean = false,
+    val documentId: String? = null,
+    /** The library folder the server filed it in — `Sides`, by its id. */
+    val folderId: String = "",
+) {
+    /** The file is in the library; the dialog is now the now-or-later question. */
+    val filed: Boolean get() = documentId != null
+}
+
+/**
+ * What a list row needs to draw the send action: whether it exists at all
+ * (the library's posting right, which the web hides the action without) and
+ * which row's send is in flight.
+ */
+data class SidesSendAction(val visible: Boolean = false, val sendingId: String? = null)
+
 // ── PDF viewer ────────────────────────────────────────────────────────────
 
 /** The in-app preview — the web's `PdfViewerModal`. */
@@ -316,9 +345,24 @@ data class SidesUiState(
     val generate: GenerateState? = null,
     val auto: AutoState? = null,
     val dialog: SidesDialog? = null,
+    /** Non-null while a record is being sent to Document Distribution. */
+    val distribute: SidesDistributeTarget? = null,
+    /**
+     * Posting rights on Document Distribution, read when the list loads.
+     * Unlike this tool's own rights — whose controls stay on screen and ask
+     * an admin — the send is HIDDEN without it, as it is on the web.
+     */
+    val canDistributeToLibrary: Boolean = false,
     val pdf: SidesPdfView? = null,
     val error: String? = null,
 ) {
     val loading: Boolean
         get() = if (destination == SidesDestination.Sides) list.loading else scripts.loading
+
+    /** The row action's two bits, so the list does not read the whole state. */
+    val sendAction: SidesSendAction
+        get() = SidesSendAction(
+            visible = canDistributeToLibrary,
+            sendingId = distribute?.takeIf { it.sending }?.id,
+        )
 }
