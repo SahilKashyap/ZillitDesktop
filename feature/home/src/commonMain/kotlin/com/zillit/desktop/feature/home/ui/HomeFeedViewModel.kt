@@ -810,8 +810,10 @@ class HomeFeedViewModel(
     private val boards = mutableMapOf<String, List<Notice>>()
 
     /**
-     * What each production's board last showed — its tab strip, the tab that
-     * was open, and the pages behind every tab — by production id.
+     * What each production's board last showed — its tab strip and the pages
+     * behind every tab — by production id. Not the tab that was open: coming
+     * back to a production lands where opening it does, on the landing tab,
+     * not wherever the last visit left off.
      *
      * A switch used to drop all of it, so going back to a production read a
      * minute ago was the tab strip from disk and then the board from disk,
@@ -827,9 +829,7 @@ class HomeFeedViewModel(
 
     private class KeptProduction(
         val units: List<HomeUnit>,
-        val selectedUnitId: String?,
         val boards: Map<String, List<Notice>>,
-        val hasOlder: Boolean,
     )
 
     /**
@@ -1174,7 +1174,7 @@ class HomeFeedViewModel(
         val pages = boards.mapValues { (_, posts) -> posts.sentOnly() }.toMutableMap()
         state.selectedUnitId?.let { open -> pages[open] = state.notices.sentOnly() }
         keptProductions.remove(production)
-        keptProductions[production] = KeptProduction(state.units, state.selectedUnitId, pages, state.hasOlder)
+        keptProductions[production] = KeptProduction(state.units, pages)
         while (keptProductions.size > MAX_KEPT_PRODUCTIONS) keptProductions.remove(keptProductions.keys.first())
     }
 
@@ -1187,12 +1187,17 @@ class HomeFeedViewModel(
         if (readOnly || currentState.tabs.isNotEmpty()) return false
         val back = shownProduction?.let(keptProductions::get) ?: return false
         boards.putAll(back.boards)
+        // The landing tab, as on a first open — never the one last left open.
+        val landing = landingTab(back.units) ?: back.units.visibleTabs().firstOrNull()?.id
+        val page = landing?.let(back.boards::get).orEmpty()
         setState {
             copy(
                 units = back.units,
-                selectedUnitId = back.selectedUnitId,
-                notices = back.selectedUnitId?.let(back.boards::get).orEmpty(),
-                hasOlder = back.hasOlder,
+                selectedUnitId = landing,
+                notices = page,
+                // As on a tab switch to a kept page: what lies behind it is
+                // learned again by reading on.
+                hasOlder = page.size > 1,
             )
         }
         return true

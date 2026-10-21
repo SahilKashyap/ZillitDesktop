@@ -56,8 +56,8 @@ class BoardProductionSwitchTest {
     private fun post(id: String) =
         Notice(id = id, body = id, authorName = "Sam", createdAtMillis = 1_000, updatedAtMillis = 1_000)
 
-    private fun unitOf(production: String) =
-        HomeUnit("$production-u1", "general_tool", "general_label", canView = true, canPost = true)
+    private fun unitOf(production: String, n: Int = 1) =
+        HomeUnit("$production-u$n", "general_tool", "general_label", canView = true, canPost = true)
 
     /**
      * A server with two productions behind it, answering for whichever one
@@ -69,12 +69,15 @@ class BoardProductionSwitchTest {
         val noticeLoads = mutableListOf<String>()
         val peeks = mutableListOf<String>()
 
+        /** How many tabs each production's strip has. */
+        var tabs = 1
+
         /** Holds the next board answer, when set. */
         var gate: CompletableDeferred<Unit>? = null
 
         override suspend fun loadUnits(): ZillitResult<List<HomeUnit>> {
             unitLoads += open
-            return ZillitResult.Success(listOfNotNull(open?.let(::unitOf)))
+            return ZillitResult.Success(open?.let { p -> (1..tabs).map { unitOf(p, it) } }.orEmpty())
         }
 
         override suspend fun cachedNotices(unitId: String): List<Notice>? {
@@ -119,10 +122,11 @@ class BoardProductionSwitchTest {
         override suspend fun notifyUnread(unitId: String, noticeId: String) = ZillitResult.Success(Unit)
     }
 
-    private fun viewModel(board: TwoProductions) = HomeFeedViewModel(
+    private fun viewModel(board: TwoProductions, defaultUnitId: String? = null) = HomeFeedViewModel(
         repository = board,
         nowMillis = { 100_000 },
         media = MediaCapture(currentProjectId = { open }),
+        defaultUnitId = { defaultUnitId },
     )
 
     /** The switch as the host sends it: the header moves first, then the board is told and loaded. */
@@ -157,6 +161,42 @@ class BoardProductionSwitchTest {
         board.gate?.complete(Unit)
         advanceUntilIdle()
         assertEquals(listOf("p1-a", "p1-b"), model.state.value.postIds)
+    }
+
+    @Test
+    fun `coming back to a production lands on its first tab, not the one left open`() = runTest(dispatcher) {
+        val board = TwoProductions().apply { tabs = 2 }
+        val model = viewModel(board)
+        model.onEvent(HomeFeedEvent.Load)
+        advanceUntilIdle()
+        model.onEvent(HomeFeedEvent.SelectUnit("p1-u2"))
+        advanceUntilIdle()
+        assertEquals("p1-u2", model.state.value.selectedUnitId)
+
+        model.switchTo("p2")
+        advanceUntilIdle()
+        model.switchTo("p1")
+
+        assertEquals("p1-u1", model.state.value.selectedUnitId, "the tab left open came back")
+        advanceUntilIdle()
+        assertEquals("p1-u1", model.state.value.selectedUnitId, "the strip's own read moved it back")
+    }
+
+    @Test
+    fun `coming back to a production lands on the profile's default tab`() = runTest(dispatcher) {
+        val board = TwoProductions().apply { tabs = 3 }
+        val model = viewModel(board, defaultUnitId = "p1-u2")
+        model.onEvent(HomeFeedEvent.Load)
+        advanceUntilIdle()
+        model.onEvent(HomeFeedEvent.SelectUnit("p1-u3"))
+        advanceUntilIdle()
+
+        model.switchTo("p2")
+        advanceUntilIdle()
+        model.switchTo("p1")
+        advanceUntilIdle()
+
+        assertEquals("p1-u2", model.state.value.selectedUnitId)
     }
 
     @Test
