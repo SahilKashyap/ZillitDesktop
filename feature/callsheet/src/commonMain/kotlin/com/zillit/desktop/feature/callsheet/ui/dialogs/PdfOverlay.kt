@@ -52,10 +52,8 @@ import com.zillit.desktop.feature.callsheet.domain.SheetPdfPage
 import com.zillit.desktop.feature.callsheet.ui.ListEvent
 import com.zillit.desktop.feature.callsheet.ui.PdfOverlay
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
-import com.zillit.desktop.feature.callsheet.ui.components.ButtonKind
 import com.zillit.desktop.feature.callsheet.ui.components.CloseDisc
 import com.zillit.desktop.feature.callsheet.ui.components.ModalScrim
-import com.zillit.desktop.feature.callsheet.ui.components.SheetButton
 import com.zillit.desktop.feature.callsheet.ui.components.SheetIconButton
 import com.zillit.desktop.feature.callsheet.ui.components.sheetText
 import com.zillit.desktop.feature.callsheet.ui.components.swallowClicks
@@ -65,7 +63,8 @@ import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 
 /**
  * "Generating PDF", then the viewer — the web's iframe becomes page images
- * with the browser viewer's zoom and download.
+ * with the browser viewer's zoom. Read-only: it has no download, so the
+ * bytes leave this window by no route of its own.
  */
 @Composable
 internal fun PdfOverlayView(pdf: PdfOverlay?, onEvent: (SheetEvent) -> Unit) {
@@ -143,15 +142,6 @@ private fun ViewerCard(pdf: PdfOverlay, onEvent: (SheetEvent) -> Unit) {
                 )
             }
             ZoomControl(zoom, onZoom = { zoom = it })
-            SheetButton(
-                str(S.download),
-                { onEvent(ListEvent.DownloadPdf) },
-                kind = ButtonKind.Outline,
-                icon = ZillitIcons.Download,
-                height = 30.dp,
-                fontSize = 12.sp,
-                enabled = pdf.bytes != null,
-            )
             CloseDisc { onEvent(ListEvent.ClosePdf) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
