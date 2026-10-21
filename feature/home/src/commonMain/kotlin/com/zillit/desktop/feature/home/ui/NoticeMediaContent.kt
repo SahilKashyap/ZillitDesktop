@@ -756,13 +756,15 @@ internal fun VideoLightbox(
  * Looking is free, as it is for a picture; the Download beside the name is the
  * gated act, and for a file the app cannot draw (a spreadsheet, an archive) it
  * is also the way in — [onDownload] saves it and hands it over, which is the
- * one case where leaving the app is the honest answer.
+ * one case where leaving the app is the honest answer. Null leaves the viewer
+ * with no way out of the app at all: the call sheet board, whose own tool
+ * dropped the same button.
  */
 @Composable
 internal fun DocumentLightbox(
     attachment: NoticeAttachment,
     media: NoticeMediaSource?,
-    onDownload: () -> Unit,
+    onDownload: (() -> Unit)?,
     onClose: () -> Unit,
 ) {
     val document = rememberDocument(

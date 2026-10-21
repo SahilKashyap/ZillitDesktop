@@ -357,6 +357,10 @@ internal fun HomeFeedScreen(
         gallery = library.media,
         media = media,
         onOpenAttachment = { id, file -> onEvent(HomeFeedEvent.OpenAttachment(id, file)) },
+        // A call sheet is read where it is posted: the tool's own PDF viewer
+        // has no Download, and the board's viewer of the same document
+        // follows it rather than offering the way out the tool took away.
+        canSaveDocument = state.selectedUnit?.kind != HomeUnitKind.CallSheet,
         onShow = { viewer = it },
     )
     }
@@ -403,6 +407,12 @@ private fun BoardViewers(
     gallery: List<LibraryEntry.Media>,
     media: NoticeMediaSource?,
     onOpenAttachment: (noticeId: String, NoticeAttachment) -> Unit,
+    /**
+     * Whether the document viewer offers its Download at all. False on the
+     * call sheet board, whose documents are for reading here; the menu's own
+     * Download, gated on `download_access`, is untouched by this.
+     */
+    canSaveDocument: Boolean,
     /** Another item to step to, or null to close. */
     onShow: (BoardViewer?) -> Unit,
 ) {
@@ -440,8 +450,13 @@ private fun BoardViewers(
             media = media,
             // The viewer's Download is the gated save-and-open the chip used
             // to do on its own — by way of the model, so a call sheet still
-            // saves as its watermarked copy.
-            onDownload = { onOpenAttachment(viewer.noticeId, viewer.attachment) },
+            // saves as its watermarked copy. Null on the board that has no
+            // Download at all — see [canSaveDocument].
+            onDownload = if (canSaveDocument) {
+                { onOpenAttachment(viewer.noticeId, viewer.attachment) }
+            } else {
+                null
+            },
             onClose = onClose,
         )
     }

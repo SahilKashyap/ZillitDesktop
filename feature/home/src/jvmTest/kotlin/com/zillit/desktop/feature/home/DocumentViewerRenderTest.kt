@@ -46,6 +46,9 @@ class DocumentViewerRenderTest {
         canDownload = true,
     )
 
+    /** The same unit as a call sheet board — `identifier` is what names it. */
+    private val callSheetUnit = unit.copy(id = "u2", identifier = "call_sheet_tool", unitName = "call_sheet_label")
+
     private fun post(attachment: NoticeAttachment) = Notice(
         id = "n1",
         body = "day twelve",
@@ -147,6 +150,37 @@ class DocumentViewerRenderTest {
             listOf<HomeFeedEvent>(HomeFeedEvent.OpenAttachment("n1", sides)),
             events.filterIsInstance<HomeFeedEvent.OpenAttachment>(),
         )
+    }
+
+    /**
+     * The call sheet board's own viewer has no Download — the call sheet
+     * tool's PDF viewer dropped the same button, and a document read on the
+     * board it was published to should not offer the way out the tool took
+     * away. The unit's `download_access` is untouched: this is the viewer's
+     * button, not the post menu's.
+     */
+    @Test
+    fun `a call sheet is read on its board with no way to save it`() = runComposeUiTest {
+        val events = mutableListOf<HomeFeedEvent>()
+        val board = board(sides).copy(units = listOf(callSheetUnit), selectedUnitId = callSheetUnit.id)
+
+        setContent {
+            ZillitTheme {
+                HomeFeedScreen(
+                    state = board,
+                    onEvent = { events += it },
+                    media = Source("DAY 12 — CALL 07:00".encodeToByteArray()),
+                )
+            }
+        }
+
+        onNodeWithText("sides.txt").performClick()
+        waitForIdle()
+
+        // Reading is free, as everywhere else; saving has no button at all.
+        onNodeWithText("DAY 12 — CALL 07:00").assertExists("the call sheet is drawn in the app")
+        onNodeWithContentDescription("Close viewer").assertExists()
+        onNodeWithText("Download").assertDoesNotExist()
     }
 
     @Test
