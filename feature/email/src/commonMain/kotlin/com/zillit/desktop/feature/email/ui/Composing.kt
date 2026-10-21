@@ -68,4 +68,13 @@ data class Composing(
     val mailbox: () -> MailboxIdentity? = { null },
     /** The reading pane's stamp for the quoted original's "On …, X wrote:" line. */
     val nowMillis: () -> Long = { 0L },
+    /**
+     * Told when a save *created* a draft, so the mailbox can re-read Drafts
+     * and the sidebar's count move the moment the first autosave lands.
+     *
+     * Only a create: an update leaves the folder the same size, and reading it
+     * again after every keystroke's save would be a request per second of
+     * typing for a number that has not changed.
+     */
+    val onDraftCreated: () -> Unit = {},
 )

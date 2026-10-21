@@ -204,6 +204,10 @@ class EmailViewModel(
         // mail this machine already has.
         if (resuming) resumeFolder() else currentState.selectedFolder?.let { showFolder(it.name) }
 
+        // The sidebar badges Drafts with how many there are whichever folder
+        // is open, so they are read on the way in. Not when Drafts is the open
+        // folder: it has just asked for them itself.
+        if (!currentState.isViewingDrafts) loadDrafts()
         refreshFolderBadges()
         launchResult(
             block = { mailbox.syncFolders() },
@@ -299,18 +303,29 @@ class EmailViewModel(
         openRow(first.id)
     }
 
+    /**
+     * Reads the Drafts folder.
+     *
+     * The drafts themselves are kept whatever folder is open — the sidebar
+     * badges Drafts with how many there are, and a composer reopening one
+     * reads it from here. Only the *list* is Drafts' own: writing [messages]
+     * from a read that finished after the user moved on would put drafts in
+     * the Inbox, and the loading flag belongs to the list too.
+     */
     private fun loadDrafts() {
-        setState { copy(isLoadingMessages = messages.isEmpty(), error = null) }
+        if (currentState.isViewingDrafts) setState { copy(isLoadingMessages = messages.isEmpty(), error = null) }
         launchResult(
             block = { draftRepository.drafts(nowMillis()) },
             onSuccess = { drafts ->
-                if (currentState.isViewingDrafts) {
-                    setState {
+                setState {
+                    if (isViewingDrafts) {
                         copy(
                             isLoadingMessages = false,
                             drafts = drafts,
                             messages = drafts.map(EmailDraft::toSummary),
                         ).regrouped()
+                    } else {
+                        copy(drafts = drafts)
                     }
                 }
             },
@@ -490,7 +505,9 @@ class EmailViewModel(
                 }
             }
 
-            EmailRealtimeEvent.DraftsChanged -> if (currentState.isViewingDrafts) loadDrafts()
+            // Re-read wherever the user is: the sidebar's Drafts count follows
+            // a draft saved on another device, not only the open list.
+            EmailRealtimeEvent.DraftsChanged -> loadDrafts()
 
             is EmailRealtimeEvent.FolderChanged -> {
                 refreshFolders()
@@ -509,12 +526,25 @@ class EmailViewModel(
     /** Opening, closing and acting on a single message. */
     private fun onMessage(event: EmailEvent.Message) {
         when (event) {
-            is EmailEvent.SelectMessage -> openRow(event.rowId)
+            is EmailEvent.SelectMessage -> selectMessage(event.rowId)
             EmailEvent.OpenFirst -> currentState.rows.firstOrNull()?.let { openRow(it.id) }
             is EmailEvent.EditDraft -> sendEffect(EmailEffect.OpenDraft(event.draftId))
             is EmailEvent.Compose ->
                 sendEffect(EmailEffect.OpenComposer(event.mode, event.replyTo, event.addressedTo, event.about))
             EmailEvent.CloseMessage -> setState { copy(openRowId = null, thread = emptyList()) }
+            is EmailEvent.Attachment -> onAttachment(event)
+            is EmailEvent.Print -> printOpen(event.message)
+            EmailEvent.PopOut -> {
+                val newest = currentState.newestOpen ?: return
+                sendEffect(EmailEffect.PopOutThread(newest.subject, currentState.thread))
+            }
+            is EmailEvent.AddToContacts -> sendEffect(EmailEffect.AddToContacts(event.address))
+        }
+    }
+
+    /** A message's files: downloaded, previewed, or the preview closed. */
+    private fun onAttachment(event: EmailEvent.Attachment) {
+        when (event) {
             is EmailEvent.DownloadAttachment -> launch {
                 downloader.download(event.attachment, event.messageId, event.folderName)
             }
@@ -523,12 +553,6 @@ class EmailViewModel(
             }
             EmailEvent.ClosePreview -> downloader.closePreview()
             EmailEvent.DownloadPreviewed -> launch { downloader.downloadPreviewed() }
-            is EmailEvent.Print -> printOpen(event.message)
-            EmailEvent.PopOut -> {
-                val newest = currentState.newestOpen ?: return
-                sendEffect(EmailEffect.PopOutThread(newest.subject, currentState.thread))
-            }
-            is EmailEvent.AddToContacts -> sendEffect(EmailEffect.AddToContacts(event.address))
         }
     }
 
@@ -551,6 +575,35 @@ class EmailViewModel(
             val nonce = kotlin.uuid.Uuid.random().toString().replace("-", "")
             sendEffect(EmailEffect.Print(subject, printableHtml(subject, messages, nonce)))
         }
+    }
+
+    /**
+     * A row the user clicked.
+     *
+     * The pane belongs to whatever was asked for last, so a composer standing
+     * in it gives way — and closing it saves, which is why a half-written mail
+     * survives the click. This is the web's rule: every list card goes through
+     * `handleFetchEmail`, which strips `tab=compose-mail` and lets the composer
+     * unmount with its autosaved draft behind it.
+     *
+     * A draft row is left to [openRow]: it opens *in* the composer, and the
+     * deck replaces the one in the pane itself — closing first would save the
+     * draft, then reopen it from a list that has not been re-read yet.
+     *
+     * Only the user's own click does this. The auto-open paths ([openFirstIfNone],
+     * `OpenFirst`) go straight to [openRow], because a sync finishing mid-compose
+     * must not close the message being written — the web guards the same case
+     * in `useEmailListData`.
+     *
+     * One deliberate difference from the web: it returns before stripping the
+     * compose tab when the clicked row is the one already in the pane, so with a
+     * composer over it that click does nothing. Here it closes — after a reply,
+     * clicking the message being replied to is the obvious way back to reading
+     * it, and the composer is covering the only other way to see it.
+     */
+    private fun selectMessage(rowId: String) {
+        if (!currentState.isViewingDrafts) sendEffect(EmailEffect.CloseComposer)
+        openRow(rowId)
     }
 
     /**

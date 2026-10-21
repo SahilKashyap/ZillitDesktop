@@ -112,11 +112,19 @@ class EmailToolProvider(
     override val title: String get() = str(S.email)
     override val icon = ZillitIcons.Mail
 
+    /**
+     * What a composer is built with: the host's collaborators, plus the one
+     * wire the mailbox adds — a draft it creates sends the mailbox back to the
+     * Drafts folder, so the sidebar's count moves while the message is still
+     * being written.
+     */
+    private val composerDeps: Composing = composing.copy(onDraftCreated = viewModel::reloadDrafts)
+
     /** The composers, and their view models — shared with the pop-out window. */
     val composers: ComposerDeck = ComposerDeck(
         factory = { composer ->
             ComposeViewModel(
-                deps = composing,
+                deps = composerDeps,
                 mode = composer.mode,
                 replyTo = composer.replyTo,
                 // Reopening a draft reads the copy the Drafts folder already holds.
@@ -336,6 +344,9 @@ class EmailToolProvider(
                     is EmailEffect.OpenComposer ->
                         composers.open(effect.mode, effect.replyTo, effect.addressedTo, effect.about)
                     is EmailEffect.OpenDraft -> composers.openDraft(effect.draftId)
+                    // A message is taking the pane back. Closing saves, so the
+                    // half-written mail is in Drafts rather than gone.
+                    EmailEffect.CloseComposer -> composers.inline?.let { composers.close(it.id) }
                     is EmailEffect.PopOutThread -> {
                         val popped = poppedThreads.add(effect.subject, effect.messages)
                         navigator.openInNewWindow(WorkspaceRoute.Tool(popped.routePath))
@@ -390,6 +401,10 @@ class EmailToolProvider(
                 when (effect) {
                     ComposeEffect.Sent, ComposeEffect.Discarded, ComposeEffect.DraftSaved -> {
                         composers.close(composer.id, save = false)
+                        // Each of the three moves the Drafts folder: a send
+                        // takes its draft with it, Discard deletes it, Save
+                        // puts one there.
+                        this@EmailToolProvider.viewModel.reloadDrafts()
                         this@EmailToolProvider.viewModel.onEvent(EmailEvent.OpenFirst)
                         onClosed()
                     }

@@ -296,6 +296,75 @@ class DraftTest {
         assertEquals(listOf("new"), mailbox.state.value.messages.map { it.id })
     }
 
+    // -- the count on the sidebar ------------------------------------------
+
+    @Test
+    fun `the drafts are read with the Inbox open, for the sidebar's count`() = runTest {
+        // The Drafts row is badged with how many there are whichever folder is
+        // open, so the drafts cannot be something only the Drafts folder reads.
+        val server = FakeMailServer()
+        server.storedDrafts = listOf(
+            EmailDraft(id = "d1", subject = "Half written"),
+            EmailDraft(id = "d2", subject = "Also half written"),
+        )
+        val mailbox = EmailViewModel(
+            mailbox = Mailbox(server, InMemoryMailboxCache()),
+            repository = server,
+            draftRepository = server,
+            folderEditor = FolderEditor(server),
+            nowMillis = { 1_000L },
+        )
+
+        mailbox.onEvent(EmailEvent.Load)
+        advanceUntilIdle()
+
+        assertEquals(EmailFolder.INBOX, mailbox.state.value.selectedFolderName)
+        assertEquals(listOf("d1", "d2"), mailbox.state.value.drafts.map { it.id })
+        assertTrue(
+            mailbox.state.value.messages.none { it.id.startsWith("d") },
+            "the drafts went into the Inbox list",
+        )
+    }
+
+    @Test
+    fun `a draft created while typing tells the mailbox to re-read Drafts`() = runTest {
+        // How the count moves while the message is still being written. Only on
+        // a create: an update leaves the folder the same size, and re-reading it
+        // after every pause would be a request a second for an unchanged number.
+        val server = FakeMailServer()
+        var created = 0
+        val composer = ComposeViewModel(
+            Composing(server, server, server, server, onDraftCreated = { created++ }),
+            ComposeMode.New,
+            null,
+            null,
+        )
+
+        type(composer, "Call is at 6am")
+        advanceUntilIdle()
+        composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Call is at 6am, bring boots")))
+        advanceUntilIdle()
+
+        assertEquals(1, created, "the update reported a create")
+    }
+
+    @Test
+    fun `a failed create reports nothing`() = runTest {
+        val server = FakeMailServer().apply { draftSaveFails = true }
+        var created = 0
+        val composer = ComposeViewModel(
+            Composing(server, server, server, server, onDraftCreated = { created++ }),
+            ComposeMode.New,
+            null,
+            null,
+        )
+
+        type(composer, "Something")
+        advanceUntilIdle()
+
+        assertEquals(0, created, "the count would have risen for a draft the server never stored")
+    }
+
     // -- domain ------------------------------------------------------------
 
     @Test

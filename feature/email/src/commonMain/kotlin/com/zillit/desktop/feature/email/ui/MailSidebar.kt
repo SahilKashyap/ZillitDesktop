@@ -247,6 +247,49 @@ private fun FoldersHeading(hasFolders: Boolean, expanded: Boolean, onToggle: () 
 private fun EmailUiState.unreadBadge(folder: EmailFolder): Int =
     folderBadges[folder.name.trim().lowercase()] ?: folder.unreadCount
 
+/**
+ * Drafts' own number: how many unsent messages are saved, not how many are
+ * unread — a draft is something you wrote, so it can never be unread, and the
+ * IMAP folder the ledger counts is not where this client's drafts live
+ * (`EmailDraft`). Shown in plain muted type rather than the unread pill: it
+ * says "there are three of these", not "three want your attention", which is
+ * how every mail client draws the same number.
+ *
+ * The number is the drafts the mailbox holds — the newest page of
+ * `email-draft`, which is exactly what the folder itself lists, so the count
+ * and the list can never disagree.
+ */
+@Composable
+private fun DraftCount(count: Int, isActive: Boolean) {
+    if (count <= 0) return
+    val colors = ZillitTheme.colors
+    ZillitText(
+        text = count.toString(),
+        style = ZillitTheme.typography.labelSmall,
+        color = if (isActive) colors.accentText else colors.textMuted,
+        maxLines = 1,
+        modifier = Modifier.testTag(DRAFT_COUNT_TAG),
+    )
+}
+
+/**
+ * The number a folder's row ends with: for Drafts how many are saved, for
+ * every other folder how many are unread.
+ */
+@Composable
+private fun FolderTally(state: EmailUiState, folder: EmailFolder, isActive: Boolean) {
+    val colors = ZillitTheme.colors
+    if (folder.name.equals(EmailFolder.DRAFTS, ignoreCase = true)) {
+        DraftCount(state.drafts.size, isActive)
+    } else {
+        ZillitBadge(
+            count = state.unreadBadge(folder),
+            background = colors.accent,
+            contentColor = colors.textOnAccent,
+        )
+    }
+}
+
 @Composable
 @Suppress("LongParameterList")
 private fun FolderRow(
@@ -262,7 +305,6 @@ private fun FolderRow(
     val hovered by interaction.collectIsHoveredAsState()
     val isActive = folder.name == state.selectedFolder?.name
     val isDropTarget = dragTarget != null && dragTarget == folder.name
-    val badge = state.unreadBadge(folder)
     val background by animateColorAsState(
         when {
             isActive || isDropTarget -> colors.accentSoft
@@ -312,7 +354,7 @@ private fun FolderRow(
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
-        ZillitBadge(count = badge, background = colors.accent, contentColor = colors.textOnAccent)
+        FolderTally(state, folder, isActive)
         if (folder.isDeletable) FolderOptions(folder, revealed = hovered, onEvent)
     }
 }
@@ -539,6 +581,7 @@ internal const val NEW_EMAIL_TAG = "email-new"
 internal const val SETTINGS_TAG = "email-settings"
 internal const val SWITCHER_TAG = "email-mailbox-switcher"
 internal const val CREATE_FOLDER_TAG = "email-create-folder"
+internal const val DRAFT_COUNT_TAG = "email-draft-count"
 
 private val ROW_HEIGHT = 40.dp
 private val NESTED_ROW_HEIGHT = 36.dp

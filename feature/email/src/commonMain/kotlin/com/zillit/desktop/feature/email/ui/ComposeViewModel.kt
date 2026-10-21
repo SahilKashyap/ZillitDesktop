@@ -552,7 +552,12 @@ class ComposeViewModel(
         val existing = draftId
         val result = if (existing == null) {
             deps.drafts.saveDraft(message, draftKey).also { saved ->
-                if (saved is ZillitResult.Success) draftId = saved.data.takeIf { it.isNotBlank() }
+                if (saved is ZillitResult.Success) {
+                    draftId = saved.data.takeIf { it.isNotBlank() }
+                    // The Drafts folder has one more; the sidebar's count is on
+                    // screen whatever folder is open.
+                    deps.onDraftCreated()
+                }
             }
         } else {
             deps.drafts.updateDraft(existing, message)

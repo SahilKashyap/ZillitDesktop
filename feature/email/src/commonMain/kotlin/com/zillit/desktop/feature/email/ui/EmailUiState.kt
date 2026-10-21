@@ -302,25 +302,28 @@ sealed interface EmailEvent {
     /** Reopens a saved draft in the composer. */
     data class EditDraft(val draftId: String) : Message
 
+    /** Anything that acts on a message's files, all of it the downloader's. */
+    sealed interface Attachment : Message
+
     /** Fetches an attachment and writes it to the user's Downloads folder. */
     data class DownloadAttachment(
         val attachment: EmailAttachment,
         val messageId: String,
         /** The folder the message's copy lives in — a thread spans folders. */
         val folderName: String,
-    ) : Message
+    ) : Attachment
 
     /** Opens an attachment in the in-app preview — a click on its chip or picture. */
     data class PreviewAttachment(
         val attachment: EmailAttachment,
         val messageId: String,
         val folderName: String,
-    ) : Message
+    ) : Attachment
 
-    data object ClosePreview : Message
+    data object ClosePreview : Attachment
 
     /** The preview's Download, writing the bytes it already holds. */
-    data object DownloadPreviewed : Message
+    data object DownloadPreviewed : Attachment
 
     /** Prints the open conversation, or one message of it. */
     data class Print(val message: EmailMessage? = null) : Message
@@ -361,6 +364,16 @@ sealed interface EmailEffect {
 
     /** Reopen a saved draft in the composer. */
     data class OpenDraft(val draftId: String) : EmailEffect
+
+    /**
+     * The pane is wanted for a message, so the composer standing in it goes.
+     *
+     * Closing saves what it holds, so nothing typed is lost — the web's
+     * `handleFetchEmail` amounts to the same thing when it strips
+     * `tab=compose-mail` from the URL and lets the composer unmount with its
+     * autosaved draft in Drafts.
+     */
+    data object CloseComposer : EmailEffect
 
     /** Opens the conversation in a window of its own. */
     data class PopOutThread(val subject: String, val messages: List<EmailMessage>) : EmailEffect
