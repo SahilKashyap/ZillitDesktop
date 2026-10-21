@@ -1,21 +1,29 @@
 package com.zillit.desktop.feature.addashboard.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.SideNavItem
@@ -26,7 +34,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSideNav
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -36,7 +43,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.addashboard.domain.AdDates
+import com.zillit.desktop.feature.addashboard.domain.AdPhase
 import com.zillit.desktop.feature.addashboard.domain.PhaseState
 import com.zillit.desktop.feature.addashboard.ui.pages.AddExtrasPage
 import com.zillit.desktop.feature.addashboard.ui.pages.AdditionalsPage
@@ -87,6 +94,7 @@ fun AdScreen(state: AdUiState, onEvent: (AdEvent) -> Unit, modifier: Modifier = 
                 onSelect = { slug ->
                     AdDestination.fromSlug(slug)?.let { onEvent(AdEvent.Open(it)) }
                 },
+                header = { WorkspaceSwitcher(state, onEvent) },
             )
             Column(modifier = Modifier.fillMaxSize()) {
                 AdHeader(state, onEvent)
@@ -104,14 +112,13 @@ fun AdScreen(state: AdUiState, onEvent: (AdEvent) -> Unit, modifier: Modifier = 
 }
 
 /**
- * The sidebar's four groups.
+ * The groups of the half of the sidebar now showing.
  *
- * The web wraps the same set in a two-way switcher because its sidebar is
- * narrow; here every group is a card of its own and all four stay reachable.
- * A page hidden from a non-posting viewer is left out, and a group that empties
- * is dropped with it.
+ * Thirteen rows at once is a list rather than a navigation, so the web splits
+ * them in two and switches; this does the same. A page hidden from a
+ * non-posting viewer is left out, and a group that empties is dropped with it.
  */
-internal fun AdUiState.navSections(): List<SideNavSection> = AdSection.entries.mapNotNull { section ->
+internal fun AdUiState.navSections(): List<SideNavSection> = workspace.sections.mapNotNull { section ->
     val items = sectionsFor(section).map { destination ->
         SideNavItem(
             id = destination.slug,
@@ -135,77 +142,214 @@ private fun AdDestination.pendingCount(state: AdUiState): Int = when (this) {
 }
 
 /**
- * The page's own header: its title, the day it is on, and its one action.
+ * The page's own header — one line, as the web's breadcrumb bar is.
  *
- * The day pill and the phase stepper are hidden on the pages that are not
- * about one shoot day — the web's `NO_PHASE_TABS`, which exists because the
- * register and the rates are not a day.
+ * The group in accent caps, then the page's name, then the day it is on. The
+ * day pill, the counts and the phase strip are hidden on the pages that are
+ * not about one shoot day: the register and the rates are not a day.
  */
 @Composable
 private fun AdHeader(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     Column {
-        ZillitPageHeader(
-            title = state.destination.label,
-            eyebrow = str(S.desktop_ad_supporting_artistes),
-            description = state.destination.headerDescription(),
-            actions = {
-                if (state.destination.aboutOneDay()) DayPill(state)
-                ZillitButton(
-                    text = str(S.refresh_text),
-                    onClick = { onEvent(AdEvent.Refresh) },
-                    variant = ButtonVariant.Tertiary,
-                    loading = state.loading,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitText(
+                text = state.destination.section.label.uppercase(),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.accent,
+                maxLines = 1,
+            )
+            ZillitText(
+                text = BREADCRUMB_SEPARATOR,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+            ZillitText(
+                text = state.destination.label,
+                style = ZillitTheme.typography.titleSmall,
+                maxLines = 1,
+            )
+            if (state.destination.hasPhases) {
+                state.dayNumber?.let { number ->
+                    ZillitStatusPill(
+                        label = str(S.desktop_ad_day_number, number),
+                        tone = StatusTone.Progress,
+                    )
+                }
+            }
+            // Only the live day carries the counts — it is the page you stand
+            // on while the unit arrives, and the one the web counts on.
+            if (state.destination == AdDestination.LiveDay) {
+                ZillitText(
+                    text = str(S.desktop_ad_on_call_present, state.onToday, state.presentToday),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                    maxLines = 1,
                 )
-            },
-        )
-        if (state.destination.aboutOneDay() && state.onToday > 0) PhaseTracker(state)
+            }
+            Spacer(Modifier.weight(1f))
+            HeaderActions(state, onEvent)
+        }
+        if (state.destination.hasPhases) PhaseTracker(state)
     }
 }
 
-/** Whether a page is about one shoot day, and so wears the day pill. */
-private fun AdDestination.aboutOneDay(): Boolean = when (this) {
-    AdDestination.TodaysList,
-    AdDestination.AddExtras,
-    AdDestination.Attendance,
-    AdDestination.Additionals,
-    AdDestination.LiveDay,
-    AdDestination.SubmitDay,
-    -> true
-
-    else -> false
-}
-
-private fun AdDestination.headerDescription(): String? = when (this) {
-    AdDestination.WrapReport -> str(S.desktop_ad_wrap_report_description)
-    AdDestination.ExhibitG -> str(S.desktop_ad_exhibit_g_description)
-    AdDestination.Queries -> str(S.desktop_ad_queries_description)
-    AdDestination.PoQueue -> str(S.desktop_ad_po_queue_description)
-    AdDestination.Config -> str(S.desktop_ad_rates_description)
-    else -> null
-}
-
-/** Day N, its date, and its status — what every shoot-day page is showing. */
+/**
+ * The two halves of the sidebar.
+ *
+ * Each button carries the unread of the half behind it, which is the only way
+ * to see a report notification land while standing in Artistes.
+ */
 @Composable
-private fun DayPill(state: AdUiState) {
+private fun WorkspaceSwitcher(state: AdUiState, onEvent: (AdEvent) -> Unit) {
+    val colors = ZillitTheme.colors
     Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(colors.surfaceSunken)
+            .padding(SWITCHER_INSET),
+        horizontalArrangement = Arrangement.spacedBy(SWITCHER_INSET),
     ) {
-        state.dayNumber?.let { number ->
-            ZillitStatusPill(label = str(S.desktop_ad_day_number, number), tone = StatusTone.Progress)
+        AdWorkspace.entries.filter { state.firstIn(it) != null }.forEach { workspace ->
+            val active = workspace == state.workspace
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(ZillitTheme.shapes.medium)
+                    .background(if (active) colors.surface else Color.Transparent)
+                    .clickable { onEvent(AdEvent.OpenWorkspace(workspace)) }
+                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(
+                    ZillitTheme.spacing.xxs,
+                    Alignment.CenterHorizontally,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitText(
+                    text = workspace.label,
+                    style = ZillitTheme.typography.label,
+                    color = if (active) colors.textPrimary else colors.textSecondary,
+                    maxLines = 1,
+                )
+                val unread = state.unreadIn(workspace)
+                if (unread > 0) UnreadChip(unread)
+            }
         }
+    }
+}
+
+/** The red count the nav rows wear, on a switcher button. */
+@Composable
+private fun UnreadChip(count: Int) {
+    Box(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(ZillitTheme.colors.danger)
+            .padding(horizontal = CHIP_PADDING),
+        contentAlignment = Alignment.Center,
+    ) {
         ZillitText(
-            text = AdDates.formatDayFull(state.shootDate),
+            text = if (count > MAX_CHIP_COUNT) "$MAX_CHIP_COUNT+" else count.toString(),
             style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
+            color = ZillitTheme.colors.textOnAccent,
+            maxLines = 1,
         )
-        state.day?.let { day ->
-            ZillitStatusPill(
-                label = day.status.label,
-                tone = if (day.status.locked) StatusTone.Done else StatusTone.Pending,
+    }
+}
+
+/**
+ * The page's own actions, as the web's `ACTIONS` map lists them.
+ *
+ * All of them write, so a viewer who may only look gets none — which is the
+ * web's rule, not an extra guard: the pages behind them are still readable.
+ */
+@Composable
+private fun RowScope.HeaderActions(state: AdUiState, onEvent: (AdEvent) -> Unit) {
+    if (!state.viewer.canPost) return
+    when (state.destination) {
+        AdDestination.TodaysList -> {
+            // A locked day takes its two add paths away; the day's state has
+            // to have arrived first, or they flash in and vanish.
+            if (!state.statusPending && state.day?.status?.locked != true) {
+                ZillitButton(
+                    text = str(S.desktop_ad_add_direct),
+                    onClick = { onEvent(FormEvent.Open(null)) },
+                    variant = ButtonVariant.Tertiary,
+                )
+                ZillitButton(
+                    text = str(S.desktop_ad_import_list),
+                    onClick = { onEvent(AdEvent.Open(AdDestination.Onboarding)) },
+                    variant = ButtonVariant.Tertiary,
+                )
+            }
+            SubmitDayAction(state, onEvent)
+        }
+
+        AdDestination.LiveDay -> {
+            ZillitButton(
+                text = str(S.desktop_ad_todays_list),
+                onClick = { onEvent(AdEvent.Open(AdDestination.TodaysList)) },
+                variant = ButtonVariant.Tertiary,
+            )
+            SubmitDayAction(state, onEvent)
+        }
+
+        AdDestination.SubmitDay -> SubmitDayAction(state, onEvent)
+
+        AdDestination.Register -> {
+            ZillitButton(
+                text = str(S.desktop_ad_upload_agency_list),
+                onClick = { onEvent(AdEvent.Open(AdDestination.Onboarding)) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = str(S.desktop_ad_add_direct_extra),
+                onClick = { onEvent(FormEvent.Open(null)) },
+                variant = ButtonVariant.Primary,
             )
         }
+
+        AdDestination.Onboarding -> ZillitButton(
+            text = str(S.desktop_ad_manual_entry),
+            onClick = { onEvent(FormEvent.Open(null)) },
+            variant = ButtonVariant.Primary,
+        )
+
+        AdDestination.Config -> ZillitButton(
+            text = str(S.txt_save_changes),
+            onClick = { onEvent(RatesEvent.Save) },
+            variant = ButtonVariant.Primary,
+            enabled = state.rates.dirty && !state.rates.saving,
+            loading = state.rates.saving,
+        )
+
+        else -> Unit
     }
+}
+
+/**
+ * Submit Day — shown only once the day is ready for it.
+ *
+ * The web hangs it off the fourth phase being the live one, so it appears when
+ * everybody is wrapped and disappears again once the day is in.
+ */
+@Composable
+private fun RowScope.SubmitDayAction(state: AdUiState, onEvent: (AdEvent) -> Unit) {
+    val ready = state.phases.any { (phase, phaseState) ->
+        phase == AdPhase.SubmitAndPo && phaseState == PhaseState.Active
+    }
+    if (!ready) return
+    ZillitButton(
+        text = str(S.desktop_ad_submit_day),
+        onClick = { onEvent(AdEvent.Open(AdDestination.SubmitDay)) },
+        variant = ButtonVariant.Primary,
+    )
 }
 
 /**
@@ -218,53 +362,75 @@ private fun DayPill(state: AdUiState) {
  */
 @Composable
 private fun PhaseTracker(state: AdUiState) {
+    val phases = state.phases
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(ZillitTheme.colors.surfaceSunken)
             .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        state.phases.forEach { (phase, phaseState) ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                when (phaseState) {
-                    PhaseState.Done -> ZillitIcon(
-                        icon = ZillitIcons.Tick,
-                        tint = ZillitTheme.colors.success,
-                        size = ZillitTheme.spacing.md,
-                    )
-
-                    PhaseState.Active -> Box(
-                        modifier = Modifier
-                            .size(ZillitTheme.spacing.xs)
-                            .clip(CircleShape)
-                            .background(ZillitTheme.colors.accent),
-                    )
-
-                    PhaseState.Todo -> Box(
-                        modifier = Modifier
-                            .size(ZillitTheme.spacing.xs)
-                            .clip(CircleShape)
-                            .background(ZillitTheme.colors.border),
-                    )
-                }
-                ZillitText(
-                    text = "${phase.number}. ${phase.label}",
-                    style = ZillitTheme.typography.labelSmall.copy(
-                        fontWeight = if (phaseState == PhaseState.Active) FontWeight.SemiBold else null,
-                    ),
-                    color = when (phaseState) {
-                        PhaseState.Active -> ZillitTheme.colors.textPrimary
-                        PhaseState.Done -> ZillitTheme.colors.textSecondary
-                        PhaseState.Todo -> ZillitTheme.colors.textMuted
-                    },
-                )
-            }
+        phases.forEachIndexed { index, (phase, phaseState) ->
+            if (index > 0) PhaseConnector(done = phases[index - 1].second == PhaseState.Done)
+            PhaseStep(phase, phaseState)
         }
     }
+}
+
+/** One step of the strip: its dot, its name, and amber while it is the live one. */
+@Composable
+private fun PhaseStep(phase: AdPhase, phaseState: PhaseState) {
+    val colors = ZillitTheme.colors
+    val active = phaseState == PhaseState.Active
+    Row(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(if (active) colors.accentSoft else Color.Transparent)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when (phaseState) {
+            PhaseState.Done -> ZillitIcon(
+                icon = ZillitIcons.Tick,
+                tint = colors.success,
+                size = PHASE_TICK,
+            )
+
+            PhaseState.Active -> Box(
+                modifier = Modifier.size(PHASE_DOT).clip(CircleShape).background(colors.accent),
+            )
+
+            PhaseState.Todo -> Box(
+                modifier = Modifier.size(PHASE_DOT).clip(CircleShape).background(colors.border),
+            )
+        }
+        ZillitText(
+            text = phase.label,
+            style = ZillitTheme.typography.labelSmall.copy(
+                fontWeight = if (active) FontWeight.SemiBold else null,
+            ),
+            color = when (phaseState) {
+                PhaseState.Done -> colors.success
+                PhaseState.Active -> colors.accentText
+                PhaseState.Todo -> colors.textMuted
+            },
+            maxLines = 1,
+        )
+    }
+}
+
+/** The rule between two steps — green once the step behind it is done. */
+@Composable
+private fun PhaseConnector(done: Boolean) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = ZillitTheme.spacing.xs)
+            .width(PHASE_CONNECTOR_WIDTH)
+            .height(PHASE_CONNECTOR_HEIGHT)
+            .clip(ZillitTheme.shapes.pill)
+            .background(if (done) ZillitTheme.colors.success else ZillitTheme.colors.border),
+    )
 }
 
 @Composable
@@ -282,9 +448,13 @@ private fun ColumnScope.AdBody(state: AdUiState, onEvent: (AdEvent) -> Unit) {
         }
         // A locked day says so once too: every control on it is gone, and
         // without this the page would simply look oddly bare.
-        if (state.destination.aboutOneDay() && state.day?.status?.locked == true) {
+        val lockedStatus = state.day?.status?.takeIf { state.destination.hasPhases && it.locked }
+        if (lockedStatus != null) {
             ZillitNotice(
-                text = str(S.desktop_ad_day_locked_notice),
+                // The notice names the status it is locked under — the text
+                // carries a placeholder for it, and the header no longer
+                // shows the status pill the web never had.
+                text = str(S.desktop_ad_day_locked_notice, lockedStatus.label),
                 tone = StatusTone.Done,
                 icon = ZillitIcons.Lock,
                 modifier = Modifier.fillMaxWidth(),
@@ -344,3 +514,16 @@ private fun AdPage(state: AdUiState, onEvent: (AdEvent) -> Unit) {
 private val AdUiState.isEmptyEverywhere: Boolean
     get() = artistes.isEmpty() && dayList.isEmpty() && shootDays.isEmpty() &&
         reports.merged.isEmpty() && queries.rows.isEmpty()
+
+/** The "/" between the group and the page, as the web's breadcrumb draws it. */
+private const val BREADCRUMB_SEPARATOR = "/"
+
+/** Past this the chip reads "99+" rather than growing the sidebar. */
+private const val MAX_CHIP_COUNT = 99
+
+private val PHASE_DOT: Dp = 8.dp
+private val PHASE_TICK: Dp = 14.dp
+private val PHASE_CONNECTOR_WIDTH: Dp = 30.dp
+private val PHASE_CONNECTOR_HEIGHT: Dp = 2.dp
+private val SWITCHER_INSET: Dp = 3.dp
+private val CHIP_PADDING: Dp = 6.dp

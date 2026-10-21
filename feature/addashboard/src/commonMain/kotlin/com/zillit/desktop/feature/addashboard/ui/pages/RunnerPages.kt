@@ -1,14 +1,24 @@
 package com.zillit.desktop.feature.addashboard.ui.pages
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -19,13 +29,13 @@ import com.zillit.desktop.core.designsystem.component.TableColumn
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
-import com.zillit.desktop.core.designsystem.component.ZillitSegmented
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
-import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
@@ -88,15 +98,14 @@ internal fun RunnerPage(state: AdUiState, onEvent: (AdEvent) -> Unit) {
             )
         }
 
-        ZillitSegmented(
-            options = RunnerStep.entries.map { step ->
-                ZillitTab(id = step.name, label = step.label)
-            },
-            activeId = state.runner.step.name,
-            onSelect = { name ->
-                RunnerStep.entries.firstOrNull { it.name == name }?.let { onEvent(RunnerEvent.Step(it)) }
-            },
-        )
+        // Today's run is gated step by step; a day opened from the schedule
+        // has every section open, so it gets directed cards instead of a
+        // progress board that would read as complete on a day long finished.
+        if (state.runner.openedDate == null) {
+            DayProgress(state, onEvent)
+        } else {
+            SectionCards(state, onEvent)
+        }
 
         when (state.runner.step) {
             RunnerStep.Attendance -> AttendanceStep(state, onEvent)
@@ -118,51 +127,47 @@ internal fun RunnerPage(state: AdUiState, onEvent: (AdEvent) -> Unit) {
 
 @Composable
 private fun AttendanceStep(state: AdUiState, onEvent: (AdEvent) -> Unit) {
+    val pending = state.dayList.count { !it.isHandled }
+    val marked = AdPhases.attendanceComplete(state.dayList)
     ZillitSectionCard(
-        title = str(S.desktop_ad_attendance),
+        title = str(S.desktop_ad_mark_arrivals),
         meta = str(S.desktop_ad_n_of_m_marked, state.dayList.count { it.isHandled }, state.onToday),
         padded = false,
         action = {
+            ZillitSearchField(
+                value = state.attendance.search,
+                onValueChange = { onEvent(DayEvent.Search(it)) },
+                modifier = Modifier.width(SEARCH_WIDTH),
+            )
             if (state.canEditDay) {
+                // Nothing left to mark in bulk means no bar, as the web drops
+                // it rather than offering a button that would do nothing.
+                if (pending > 0) {
+                    ZillitButton(
+                        text = str(S.desktop_ad_mark_all_present),
+                        onClick = { onEvent(DayEvent.MarkAllPresent) },
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                        loading = state.runner.bulkBusy,
+                    )
+                }
+                // The step button says what is in the way while it is barred,
+                // and where it goes once it is not.
                 ZillitButton(
-                    text = str(S.desktop_ad_mark_all_present),
-                    onClick = { onEvent(DayEvent.MarkAllPresent) },
+                    text = str(
+                        if (marked) S.desktop_ad_go_to_mid_day else S.desktop_ad_mark_everyone_first_cta,
+                    ),
+                    onClick = { onEvent(RunnerEvent.Step(RunnerStep.MidDay)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
-                    loading = state.runner.bulkBusy,
+                    enabled = marked,
                 )
             }
         },
     ) {
         ZillitDataTable(
-            rows = state.dayList,
-            columns = listOf(
-                textColumn(str(S.name), width = ColumnWidth.Weight(2f)) { it.artisteName },
-                textColumn(str(S.av_category)) { it.category.label },
-                textColumn(str(S.desktop_ad_time_in), width = ColumnWidth.Fixed(TIME_WIDTH)) {
-                    it.callTime.ifBlank { EM_DASH }
-                },
-                TableColumn(str(S.status), width = ColumnWidth.Fixed(STATUS_WIDTH)) { row ->
-                    ZillitStatusPill(label = row.statusLabel(), tone = row.statusTone())
-                },
-                TableColumn(str(S.dd_actions), width = ColumnWidth.Fixed(ACTION_WIDTH)) { row ->
-                    if (!state.canEditDay) return@TableColumn
-                    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                        ZillitButton(
-                            text = str(S.desktop_call_present),
-                            onClick = { onEvent(DayEvent.MarkPresent(row.id)) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                        )
-                        ZillitButton(
-                            text = str(S.desktop_ad_absent),
-                            onClick = { onEvent(DayEvent.MarkAbsent(row.id)) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                        )
-                    }
-                },
-            ),
+            rows = state.attendanceRows,
+            columns = runnerAttendanceColumns(state, onEvent),
             key = { it.id },
             emptyTitle = str(S.desktop_ad_nobody_on_day),
             virtualised = false,
@@ -306,22 +311,32 @@ private fun WrapStep(state: AdUiState, onEvent: (AdEvent) -> Unit) {
         meta = str(S.desktop_ad_n_of_m_wrapped, state.wrappedToday, state.presentToday),
         padded = false,
         action = {
+            ZillitSearchField(
+                value = state.attendance.search,
+                onValueChange = { onEvent(DayEvent.Search(it)) },
+                modifier = Modifier.width(SEARCH_WIDTH),
+            )
             if (state.canEditDay) {
+                val wrapped = AdPhases.everyoneWrapped(state.dayList)
+                if (state.dayList.any { it.isPresent && !it.isWrapped }) {
+                    ZillitButton(
+                        text = str(S.desktop_ad_mark_all_out),
+                        onClick = { onEvent(DayEvent.MarkAllOut) },
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                        loading = state.runner.bulkBusy,
+                    )
+                }
                 ZillitButton(
-                    text = str(S.desktop_ad_mark_all_out),
-                    onClick = { onEvent(DayEvent.MarkAllOut) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    loading = state.runner.bulkBusy,
-                )
-                ZillitButton(
-                    text = str(S.desktop_ad_go_to_submit),
+                    text = str(
+                        if (wrapped) S.desktop_ad_go_to_submit else S.desktop_ad_wrap_everyone_first_cta,
+                    ),
                     onClick = { onEvent(RunnerEvent.Step(RunnerStep.Submit)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     // Writes nothing: it only moves to the Submit step, which
                     // is the one place the day is actually sent.
-                    enabled = AdPhases.everyoneWrapped(state.dayList),
+                    enabled = wrapped,
                 )
             }
         },
@@ -608,3 +623,235 @@ private val TIME_ENTRY_WIDTH = 120.dp
 private val AMOUNT_WIDTH = 120.dp
 private val STATUS_WIDTH = 130.dp
 private val ACTION_WIDTH = 200.dp
+
+
+/**
+ * Where the day has got to, and the only way through it.
+ *
+ * Four cells in a row: a numbered disc, the step's name, and a word for where
+ * it stands. A step is locked until the one before it is finished — mid-day
+ * and wrap until everybody is marked, submit until everybody is wrapped — so
+ * the board is the gate as well as the picture of it.
+ *
+ * Wrap reads done on a day with nobody present, because there is nothing left
+ * to wrap; that is the web's rule, not an oversight.
+ */
+@Composable
+private fun DayProgress(state: AdUiState, onEvent: (AdEvent) -> Unit) {
+    val rows = state.dayList
+    val marked = AdPhases.attendanceComplete(rows)
+    val wrapped = AdPhases.everyoneWrapped(rows)
+    val locked = mapOf(
+        RunnerStep.Attendance to false,
+        RunnerStep.MidDay to !marked,
+        RunnerStep.Wrap to !marked,
+        RunnerStep.Submit to !wrapped,
+    )
+    val complete = mapOf(
+        RunnerStep.Attendance to marked,
+        RunnerStep.MidDay to (state.day?.meals?.isNotEmpty() == true),
+        RunnerStep.Wrap to wrapped,
+        RunnerStep.Submit to false,
+    )
+    ZillitSectionCard(
+        title = str(S.desktop_ad_day_progress),
+        icon = ZillitIcons.Clock,
+        meta = str(S.desktop_ad_phases_complete, complete.count { it.value }, RunnerStep.entries.size),
+        padded = false,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            RunnerStep.entries.forEachIndexed { index, step ->
+                ProgressCell(
+                    step = step,
+                    number = index + 1,
+                    active = state.runner.step == step,
+                    done = complete[step] == true && state.runner.step != step,
+                    locked = locked[step] == true,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onEvent(RunnerEvent.Step(step)) },
+                )
+            }
+        }
+    }
+}
+
+/** One cell of the progress board. */
+@Composable
+private fun ProgressCell(
+    step: RunnerStep,
+    number: Int,
+    active: Boolean,
+    done: Boolean,
+    locked: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = modifier
+            .background(if (active) colors.accentSoft else Color.Transparent)
+            .alpha(if (locked) LOCKED_ALPHA else 1f)
+            .clickable(enabled = !locked, onClick = onClick)
+            .padding(ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ProgressDisc(number = number, active = active, done = done)
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            ZillitText(
+                text = step.label,
+                style = ZillitTheme.typography.titleSmall,
+                color = when {
+                    done -> colors.success
+                    active -> colors.accentText
+                    else -> colors.textPrimary
+                },
+                maxLines = 1,
+            )
+            ZillitText(
+                text = str(progressWord(locked = locked, done = done, active = active)),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * The same four steps on a day opened from the schedule.
+ *
+ * No gating and no completion marks: a past day is being corrected rather than
+ * run, so every section is open and the cards only say where you are.
+ */
+@Composable
+private fun SectionCards(state: AdUiState, onEvent: (AdEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        RunnerStep.entries.forEachIndexed { index, step ->
+            val active = state.runner.step == step
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(ZillitTheme.shapes.medium)
+                    .background(if (active) ZillitTheme.colors.accent else ZillitTheme.colors.surface)
+                    .clickable { onEvent(RunnerEvent.Step(step)) }
+                    .padding(ZillitTheme.spacing.md),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                ) {
+                    ZillitText(
+                        text = str(S.desktop_ad_section_number, index + 1),
+                        style = ZillitTheme.typography.labelSmall,
+                        color = if (active) {
+                            ZillitTheme.colors.textOnAccent
+                        } else {
+                            ZillitTheme.colors.textMuted
+                        },
+                        maxLines = 1,
+                    )
+                    ZillitText(
+                        text = step.label,
+                        style = ZillitTheme.typography.titleSmall,
+                        color = if (active) {
+                            ZillitTheme.colors.textOnAccent
+                        } else {
+                            ZillitTheme.colors.textPrimary
+                        },
+                        maxLines = 1,
+                    )
+                }
+                ZillitIcon(
+                    icon = ZillitIcons.ArrowRight,
+                    tint = if (active) ZillitTheme.colors.textOnAccent else ZillitTheme.colors.textMuted,
+                    size = SECTION_ARROW,
+                )
+            }
+        }
+    }
+}
+
+/** A locked cell is dimmed rather than hidden — the step is still coming. */
+private const val LOCKED_ALPHA = 0.5f
+
+private val PROGRESS_DISC: Dp = 30.dp
+private val PROGRESS_TICK: Dp = 15.dp
+private val SECTION_ARROW: Dp = 16.dp
+private val SEARCH_WIDTH: Dp = 240.dp
+
+
+/** The runner's own attendance columns — present or absent, and nothing typed. */
+private fun runnerAttendanceColumns(
+    state: AdUiState,
+    onEvent: (AdEvent) -> Unit,
+): List<TableColumn<SupportingArtistDay>> = listOf(
+    textColumn(str(S.name), width = ColumnWidth.Weight(2f)) { it.artisteName },
+    textColumn(str(S.av_category)) { it.category.label },
+    textColumn(str(S.desktop_ad_time_in), width = ColumnWidth.Fixed(TIME_WIDTH)) {
+        it.callTime.ifBlank { EM_DASH }
+    },
+    TableColumn(str(S.status), width = ColumnWidth.Fixed(STATUS_WIDTH)) { row ->
+        ZillitStatusPill(label = row.statusLabel(), tone = row.statusTone())
+    },
+    TableColumn(str(S.dd_actions), width = ColumnWidth.Fixed(ACTION_WIDTH)) { row ->
+        if (!state.canEditDay) return@TableColumn
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            ZillitButton(
+                text = str(S.desktop_call_present),
+                onClick = { onEvent(DayEvent.MarkPresent(row.id)) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+            ZillitButton(
+                text = str(S.desktop_ad_absent),
+                onClick = { onEvent(DayEvent.MarkAbsent(row.id)) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+        }
+    },
+)
+
+/** The numbered disc on a progress cell — a tick once the step is behind you. */
+@Composable
+private fun ProgressDisc(number: Int, active: Boolean, done: Boolean) {
+    val colors = ZillitTheme.colors
+    Box(
+        modifier = Modifier
+            .size(PROGRESS_DISC)
+            .clip(CircleShape)
+            .background(
+                when {
+                    done -> colors.success
+                    active -> colors.accent
+                    else -> colors.surfaceSunken
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (done) {
+            ZillitIcon(icon = ZillitIcons.Tick, tint = colors.textOnAccent, size = PROGRESS_TICK)
+        } else {
+            ZillitText(
+                text = number.toString(),
+                style = ZillitTheme.typography.labelSmall,
+                color = if (active) colors.textOnAccent else colors.textMuted,
+            )
+        }
+    }
+}
+
+/** The one word under a step's name. Locked wins: it says why, not just where. */
+private fun progressWord(locked: Boolean, done: Boolean, active: Boolean): String = when {
+    locked -> S.docusign_prop_locked
+    done -> S.done_text
+    active -> S.in_progress
+    else -> S.dd_csv_status_ready
+}

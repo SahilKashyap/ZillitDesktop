@@ -13818,4 +13818,14 @@
     <string name="desktop_zillit_tour">Zillit Tour</string>
     <string name="desktop_help_tour_blurb">Take a guided tour of Zillit and its features</string>
     <string name="desktop_no_embedded_browser_tour">This build has no embedded browser, so the tour opens in your browser instead.</string>
+    <string name="desktop_ad_add_direct">Add Direct</string>
+    <string name="desktop_ad_import_list">Import List</string>
+    <string name="desktop_ad_on_call_present">%1$d on call · %2$d present</string>
+    <string name="desktop_ad_day_progress">Day Progress</string>
+    <string name="desktop_ad_phases_complete">%1$d of %2$d phases complete</string>
+    <string name="desktop_ad_section_number">Section %1$d</string>
+    <string name="desktop_ad_mark_arrivals">Mark arrivals</string>
+    <string name="desktop_ad_mark_everyone_first_cta">Mark everyone first</string>
+    <string name="desktop_ad_go_to_mid_day">Go to Mid-Day</string>
+    <string name="desktop_ad_wrap_everyone_first_cta">Wrap everyone first</string>
 </resources>

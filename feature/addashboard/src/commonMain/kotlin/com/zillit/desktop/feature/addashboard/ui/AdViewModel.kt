@@ -280,6 +280,7 @@ class AdViewModel(
     override fun onEvent(event: AdEvent) {
         when (event) {
             is AdEvent.Open -> open(event.destination)
+            is AdEvent.OpenWorkspace -> openWorkspace(event.workspace)
             AdEvent.Refresh -> refresh()
             is AdEvent.WindowFocus -> onWindowFocus(event.focused)
             AdEvent.ClearNotice -> setState { copy(notice = null) }
@@ -309,6 +310,18 @@ class AdViewModel(
         setState { copy(destination = destination, error = null) }
         load(destination)
         readPage(destination)
+    }
+
+    /**
+     * Switch the sidebar to the other half.
+     *
+     * The content follows rather than the other way round: the half entered
+     * opens on its first page, which is what makes the showing half derivable
+     * from the open one.
+     */
+    private fun openWorkspace(workspace: AdWorkspace) {
+        if (currentState.workspace == workspace) return
+        currentState.firstIn(workspace)?.let { open(it) }
     }
 
     private fun changeDay(shootDate: Long) {

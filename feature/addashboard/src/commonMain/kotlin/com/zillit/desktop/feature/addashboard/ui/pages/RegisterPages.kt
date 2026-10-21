@@ -42,7 +42,6 @@ import com.zillit.desktop.feature.addashboard.domain.ArtisteStatus
 import com.zillit.desktop.feature.addashboard.domain.EngagementType
 import com.zillit.desktop.feature.addashboard.domain.ImportProblem
 import com.zillit.desktop.feature.addashboard.domain.ImportRow
-import com.zillit.desktop.feature.addashboard.ui.AdDestination
 import com.zillit.desktop.feature.addashboard.ui.AdEvent
 import com.zillit.desktop.feature.addashboard.ui.AdUiState
 import com.zillit.desktop.feature.addashboard.ui.BankField
@@ -92,22 +91,8 @@ internal fun RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Unit) {
                 selected = state.register.unionOnly,
                 onClick = { onEvent(RegisterEvent.UnionOnly(!state.register.unionOnly)) },
             )
-            if (state.viewer.canPost) {
-                ZillitButton(
-                    text = str(S.desktop_ad_add_direct_extra),
-                    onClick = { onEvent(FormEvent.Open(null)) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.UserPlus,
-                )
-                ZillitButton(
-                    text = str(S.desktop_ad_upload_agency_list),
-                    onClick = { onEvent(AdEvent.Open(AdDestination.Onboarding)) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Upload,
-                )
-            }
+            // Add and upload live in the page header, as they do on the web —
+            // not here as well, where they read as filters.
         }
 
         ZillitSectionCard(

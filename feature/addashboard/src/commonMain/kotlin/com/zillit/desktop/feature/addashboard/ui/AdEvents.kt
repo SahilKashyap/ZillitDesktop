@@ -33,6 +33,9 @@ sealed interface AdEvent {
     // -- the frame ---------------------------------------------------------
 
     data class Open(val destination: AdDestination) : AdEvent
+
+    /** The sidebar switcher — Reports, or everything to do with running the unit. */
+    data class OpenWorkspace(val workspace: AdWorkspace) : AdEvent
     data object Refresh : AdEvent
 
     /**

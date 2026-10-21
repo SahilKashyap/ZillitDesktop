@@ -44,14 +44,32 @@ import com.zillit.desktop.feature.addashboard.domain.isDateEditable
 import com.zillit.desktop.feature.addashboard.domain.isDayReadOnly
 
 /** The sidebar's groups, in the order they are shown. */
-enum class AdSection(private val labelKey: String) {
-    Reports(S.reports),
-    Schedule(S.schedule),
-    Artistes(S.desktop_ad_artistes),
-    ShootDay(S.desktop_ad_section_shoot_day),
+enum class AdSection(private val labelKey: String, val workspace: AdWorkspace) {
+    Reports(S.reports, AdWorkspace.Reports),
+    Schedule(S.schedule, AdWorkspace.Work),
+    Artistes(S.desktop_ad_artistes, AdWorkspace.Work),
+    ShootDay(S.desktop_ad_section_shoot_day, AdWorkspace.Work),
     ;
 
     val label: String get() = str(labelKey)
+}
+
+/**
+ * The two halves of the sidebar — the web's `NAV_SECTIONS`.
+ *
+ * Reports is a group on its own; everything to do with running the unit (the
+ * schedule, the artistes, the shoot day) sits under the other. The switcher
+ * exists because thirteen rows shown at once is a list, not a navigation.
+ */
+enum class AdWorkspace(private val labelKey: String) {
+    Reports(S.reports),
+    Work(S.desktop_ad_artistes),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    /** The groups this half shows, in the web's order. */
+    val sections: List<AdSection> get() = AdSection.entries.filter { it.workspace == this }
 }
 
 /**
@@ -126,6 +144,19 @@ enum class AdDestination(
     ;
 
     val label: String get() = str(labelKey)
+
+    /**
+     * Whether the page is about one shoot day.
+     *
+     * Such a page wears the day pill and the phase strip; the register, the
+     * rates and the reports are not a day and wear neither. The inverse of the
+     * web's `NO_PHASE_TABS`.
+     */
+    val hasPhases: Boolean
+        get() = when (this) {
+            TodaysList, AddExtras, Attendance, Additionals, SubmitDay, Budget, LiveDay -> true
+            else -> false
+        }
 
     /** Which socket refresh kinds reload this page. */
     val refresh: Set<AdRefresh>
@@ -641,6 +672,29 @@ data class AdUiState(
 
     fun sectionsFor(section: AdSection): List<AdDestination> =
         visibleDestinations.filter { it.section == section }
+
+    /**
+     * Which half of the sidebar is showing.
+     *
+     * Derived, never stored: the switcher jumps to a page inside the half it
+     * selects, so the half is always the one the open page belongs to. Held as
+     * a field it could disagree with the page, and did.
+     */
+    val workspace: AdWorkspace get() = destination.section.workspace
+
+    /** Where a switch to [target] lands: its first page this viewer may see. */
+    fun firstIn(target: AdWorkspace): AdDestination? =
+        target.sections.firstNotNullOfOrNull { sectionsFor(it).firstOrNull() }
+
+    /**
+     * The red chip on a switcher button.
+     *
+     * The sum of every badged page inside that half, excluding the ones this
+     * viewer cannot reach, so the total matches the nav they actually see.
+     */
+    fun unreadIn(target: AdWorkspace): Int = target.sections.sumOf { section ->
+        sectionsFor(section).sumOf { page -> page.badgeKeys.sumOf { unread[it] ?: 0 } }
+    }
 
     /** One artiste's unread updates. */
     fun artisteUnread(id: String): Int = entityUnread[AdBadges.REGISTER]?.get(id) ?: 0
