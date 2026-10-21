@@ -29,9 +29,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Clicking a date in the month grid, as the web does it: a free day from today
- * on opens a new event for that day; a busy day only selects, and a free day
- * already gone selects and says why it could not do more.
+ * Clicking a date in the month grid, as the web's `select` does it: any day
+ * from today on opens a new event for that day, busy or not, and a day already
+ * gone selects and says why it could not do more.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarDateClickTest {
@@ -104,11 +104,26 @@ class CalendarDateClickTest {
     }
 
     @Test
-    fun `a day with events only selects, so the panel can list them`() = runTest(dispatcher) {
+    fun `a day that already holds something opens a new event on it too`() = runTest(dispatcher) {
+        // The panel behind the form is on that day, so its events are still
+        // one dismissal away.
         val model = viewModel()
         advanceUntilIdle()
 
         model.onEvent(CalendarEvent2Event.ClickDate(LocalDate(2026, 8, 6)))
+        advanceUntilIdle()
+
+        val form = assertNotNull(model.state.value.form)
+        assertEquals("2026-08-06", form.draft.dateText)
+        assertEquals(LocalDate(2026, 8, 6), model.state.value.selected)
+    }
+
+    @Test
+    fun `the more link only moves the panel onto the day`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+
+        model.onEvent(CalendarEvent2Event.Select(LocalDate(2026, 8, 6)))
         advanceUntilIdle()
 
         assertNull(model.state.value.form)
@@ -116,7 +131,7 @@ class CalendarDateClickTest {
     }
 
     @Test
-    fun `a free past day selects and says why nothing opened`() = runTest(dispatcher) {
+    fun `a past day selects and says why nothing opened`() = runTest(dispatcher) {
         // Without the notice the click looks like a dead cell: the identical
         // cell one row down opens a form.
         val model = viewModel()
@@ -145,16 +160,16 @@ class CalendarDateClickTest {
     }
 
     @Test
-    fun `a past day with something on it lists it rather than explaining`() = runTest(dispatcher) {
-        // The panel has the recce to show, so the click did something and
-        // there is nothing left to explain.
+    fun `a past day with something on it is refused like any other`() = runTest(dispatcher) {
+        // The day cannot take a new event whatever it already holds, and the
+        // web refuses the same way.
         val model = viewModel()
         advanceUntilIdle()
 
         model.onEvent(CalendarEvent2Event.ClickDate(LocalDate(2026, 8, 2)))
         advanceUntilIdle()
 
-        assertFalse(model.state.value.pastDayNotice)
+        assertTrue(model.state.value.pastDayNotice)
         assertNull(model.state.value.form)
     }
 }

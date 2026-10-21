@@ -649,11 +649,19 @@ private fun DayCell(
                 EventChip(event, state, dragGrid, onEvent, onDragging)
             }
             if (events.size > MAX_CHIPS) {
+                // The rest of the day, not a new event: a cell click opens the
+                // form, so the one control that means "show me these" takes
+                // the click itself and only moves the panel onto the day.
                 ZillitText(
                     text = str(S.bs_cal_more_items, events.size - MAX_CHIPS),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.accentText,
-                    modifier = Modifier.padding(start = ZillitTheme.spacing.xs),
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onEvent(CalendarEvent2Event.Select(date)) }
+                        .padding(start = ZillitTheme.spacing.xs),
                 )
             }
         }

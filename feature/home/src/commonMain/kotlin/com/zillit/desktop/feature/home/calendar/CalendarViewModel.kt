@@ -363,13 +363,13 @@ class CalendarViewModel(
             is CalendarEvent2Event.Select -> setState { copy(selected = event.date) }
             is CalendarEvent2Event.ClickDate -> {
                 setState { copy(selected = event.date) }
-                val state = currentState
-                when {
-                    // The panel has the day's events to show; it is the empty
-                    // days that have to decide between a form and a refusal.
-                    state.eventsOn(event.date).isNotEmpty() -> Unit
-                    state.isPast(event.date) -> setState { copy(pastDayNotice = true) }
-                    else -> openForm(null)
+                // Any day from today on opens a new event on it, as the web's
+                // `select` does — whether or not the day already holds
+                // something. The panel behind the form still lists the day.
+                if (currentState.isPast(event.date)) {
+                    setState { copy(pastDayNotice = true) }
+                } else {
+                    openForm(null)
                 }
             }
             CalendarEvent2Event.DismissPastDayNotice -> setState { copy(pastDayNotice = false) }
