@@ -8390,4 +8390,6 @@
     <string name="desktop_call_line_unavailable">%1$s غير متاح هنا</string>
     <string name="desktop_pr_no_report_sections">ليست لديك صلاحية الوصول إلى أي قسم من أقسام تقارير الإنتاج.</string>
     <string name="desktop_pr_publish_no_chat_rights">ليست لديك صلاحية النشر في دردشة تقرير الإنتاج، لذا لن يُنشر ملف PDF في الدردشة.</string>
+    <string name="desktop_zillit_tour">جولة Zillit</string>
+    <string name="desktop_help_tour_blurb">قم بجولة إرشادية في Zillit وميزاته</string>
 </resources>

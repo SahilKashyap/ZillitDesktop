@@ -55,6 +55,10 @@ internal object Shutdown {
     @Volatile
     private var budgetBuilder: BudgetBuilderHost? = null
 
+    /** The Zillit Tour's browser — a fifth parking window, for the same reason. */
+    @Volatile
+    private var zillitTour: ZillitTourHost? = null
+
     /**
      * The last known window geometry.
      *
@@ -93,6 +97,11 @@ internal object Shutdown {
     /** The budget application's browser, and the gateway kept alive behind it. */
     fun budgetBuilder(host: BudgetBuilderHost) {
         this.budgetBuilder = host
+    }
+
+    /** The tour's browser, for the same letting-go. */
+    fun zillitTour(host: ZillitTourHost) {
+        this.zillitTour = host
     }
 
     /** Work that must reach the network before the process goes — see [beforeQuit]. */
@@ -173,6 +182,7 @@ internal object Shutdown {
         // closed — an app that appears to ignore ⌘Q.
         DocumentEditorWindow.closeAll()
         budgetBuilder?.releaseHolder()
+        zillitTour?.releaseHolder()
         KcefRuntime.stop()
         // After Chromium, deliberately: the budget application flushes an
         // unsaved budget on `pagehide`, which fires as its browser is torn

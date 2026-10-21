@@ -4617,6 +4617,13 @@ private fun buildRegistry(
         // that is a child row, and dialling it would ring this very computer.
         onCallSupport = callSupport(graph as? AppGraph.Ready, viewModels.calls),
     )
+    // The tour is a hosted page the phones open in their own web views, so it
+    // opens here as a window carrying embedded Chromium. One host for the
+    // process, parked between openings — see ZillitTourHost.
+    val zillitTour = ZillitTourHost(scope).let { host ->
+        Shutdown.zillitTour(host)
+        zillitTourProvider(host, ::openInBrowser)
+    }
     val cash = viewModels.cashExpenses?.let { vm ->
         CashExpensesToolProvider(
             viewModel = vm,
@@ -4800,7 +4807,7 @@ private fun buildRegistry(
     val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph) }
     val real = listOfNotNull(
         home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
-        settings, notifications, sos, help,
+        settings, notifications, sos, help, zillitTour,
         cash, cards, orders, timecards, payroll, deals, talentDeals, distribution, drive,
         accountHub, productionCompanies, dealMemoApprovers, taxFiling, bankRec, budgetBuilder, formSignature,
         esignature,

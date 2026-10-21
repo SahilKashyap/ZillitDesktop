@@ -8390,4 +8390,6 @@
     <string name="desktop_call_line_unavailable">%1$s はここでは利用できません</string>
     <string name="desktop_pr_no_report_sections">制作レポートのどのセクションにもアクセスできません。</string>
     <string name="desktop_pr_publish_no_chat_rights">制作レポートチャットへの投稿権限がないため、PDFはチャットに投稿されません。</string>
+    <string name="desktop_zillit_tour">Zillitツアー</string>
+    <string name="desktop_help_tour_blurb">Zillit とその機能をガイド付きツアーで確認する</string>
 </resources>

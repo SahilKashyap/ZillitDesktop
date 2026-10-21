@@ -8390,4 +8390,6 @@
     <string name="desktop_call_line_unavailable">%1$s tidak tersedia di sini</string>
     <string name="desktop_pr_no_report_sections">Anda tidak memiliki akses ke bagian mana pun dari laporan produksi.</string>
     <string name="desktop_pr_publish_no_chat_rights">Anda tidak memiliki hak posting di Chat Laporan Produksi, jadi PDF tidak akan diposting ke chat.</string>
+    <string name="desktop_zillit_tour">Tur Zillit</string>
+    <string name="desktop_help_tour_blurb">Ikuti tur terpandu Zillit dan fitur-fiturnya</string>
 </resources>

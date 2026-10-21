@@ -8391,4 +8391,6 @@
     <string name="desktop_call_line_unavailable">%1$s אינו זמין כאן</string>
     <string name="desktop_pr_no_report_sections">אין לך גישה לאף אחד מחלקי דוחות ההפקה.</string>
     <string name="desktop_pr_publish_no_chat_rights">אין לך הרשאת פרסום בצ\'אט של דוח ההפקה, ולכן קובץ ה-PDF לא יפורסם בצ\'אט.</string>
+    <string name="desktop_zillit_tour">סיור בזיליט</string>
+    <string name="desktop_help_tour_blurb">צא/י לסיור מודרך ב-Zillit ובתכונותיו</string>
 </resources>

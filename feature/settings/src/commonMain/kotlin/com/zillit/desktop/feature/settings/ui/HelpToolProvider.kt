@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -32,13 +33,19 @@ import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 
 /**
- * "Zillit Help": the phones' Zillit Guide — FAQs, Privacy Policy, Terms of Use
- * and Contact Us — as cards that open the browser, plus a Contact Us that both
- * rings the 24x7 support team and opens a mail to support.
+ * "Zillit Help": the phones' Zillit Guide — the Zillit Tour, FAQs, Privacy
+ * Policy, Terms of Use and Contact Us — as cards, the middle three opening
+ * the browser and Contact Us both ringing the 24x7 support team and opening a
+ * mail to support.
  *
- * The list and its order are iOS's (`ZillitGuideViewController.swift:12-22`),
+ * The list and its order are iOS's (`ZillitGuideViewController.swift:12-23`),
  * and so are the link targets, which differ from the web client's shorter
  * slugs this screen used to carry.
+ *
+ * *Zillit Tour* is the one row that does not open the browser: it is a hosted
+ * web tour, and both phones host it inside the app rather than hand it to
+ * Safari — so it opens as a window of this app, carrying embedded Chromium.
+ * See [ZillitTourToolProvider].
  *
  * Two of the phones' rows are deliberately absent. *Reviews* is commented out
  * in iOS's own list. *Tutorial for Admin* and *Tutorial for User* are not
@@ -82,6 +89,9 @@ class HelpToolProvider(
 
         HelpScreen(
             onOpenExternal = onOpenExternal,
+            // A window of its own: the tour is built for a browser's worth of
+            // room, and this one is 560pt square.
+            onOpenTour = { navigator.openInNewWindow(WorkspaceRoute.Tool(ZILLIT_TOUR_PATH)) },
             onContactSupport = writeToSupport?.let { write ->
                 { navigator.openInNewWindow(WorkspaceRoute.Tool(write())) }
             },
@@ -100,13 +110,27 @@ internal data class HelpEntry(
     val url: String?,
     /** This row can also ring the support team, not only write to them. */
     val callable: Boolean = false,
+    /**
+     * This row's page is hosted by the app itself, in a window of its own, so
+     * the card opens a tool rather than the browser. The [url] stays with the
+     * row as the fallback for a build with no embedded browser.
+     */
+    val opensInApp: Boolean = false,
+    val icon: ImageVector = ZillitIcons.Help,
 ) {
     val title: String get() = str(titleKey)
     val blurb: String get() = str(blurbKey)
 }
 
-/** The phones' four cards and links, in their order. See the class comment. */
+/** The phones' five cards and links, in their order. See the class comment. */
 internal val HELP_ENTRIES: List<HelpEntry> = listOf(
+    HelpEntry(
+        S.desktop_zillit_tour,
+        S.desktop_help_tour_blurb,
+        ZILLIT_TOUR_URL,
+        opensInApp = true,
+        icon = ZillitIcons.Globe,
+    ),
     HelpEntry(
         S.desktop_faqs,
         S.desktop_help_faqs_blurb,
@@ -135,6 +159,12 @@ internal fun HelpScreen(
     onOpenExternal: (String) -> Unit,
     onContactSupport: (() -> Unit)?,
     onCallSupport: (() -> Unit)? = null,
+    /**
+     * Opens the tour inside the app. Null where no such window is registered,
+     * and the row then opens the hosted page in the browser instead — which
+     * is what the web client does with the same card.
+     */
+    onOpenTour: (() -> Unit)? = null,
 ) {
     ZillitScrollColumn(
         modifier = Modifier
@@ -151,7 +181,7 @@ internal fun HelpScreen(
         HELP_ENTRIES.forEach { entry ->
             ZillitSectionCard(
                 title = entry.title,
-                icon = ZillitIcons.Help,
+                icon = entry.icon,
                 action = {
                     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                         if (entry.callable && onCallSupport != null) {
@@ -162,7 +192,11 @@ internal fun HelpScreen(
                                 onClick = onCallSupport,
                             )
                         }
-                        val open = entry.url?.let { url -> { onOpenExternal(url) } } ?: onContactSupport
+                        val open = when {
+                            entry.opensInApp && onOpenTour != null -> onOpenTour
+                            entry.url != null -> ({ onOpenExternal(entry.url) })
+                            else -> onContactSupport
+                        }
                         if (open != null) {
                             ZillitButton(
                                 text = if (entry.url == null) str(S.desktop_write_to_us) else str(S.recce_open),

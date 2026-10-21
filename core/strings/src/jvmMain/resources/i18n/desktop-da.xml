@@ -8391,4 +8391,6 @@
     <string name="desktop_call_line_unavailable">%1$s er ikke tilgængelig her</string>
     <string name="desktop_pr_no_report_sections">Du har ikke adgang til nogen sektioner af produktionsrapporten.</string>
     <string name="desktop_pr_publish_no_chat_rights">Du har ikke ret til at skrive i chatten for produktionsrapporten, så PDF\'en bliver ikke sendt til chatten.</string>
+    <string name="desktop_zillit_tour">Zillit Rundvisning</string>
+    <string name="desktop_help_tour_blurb">Tag en guidet rundvisning i Zillit og dets funktioner</string>
 </resources>

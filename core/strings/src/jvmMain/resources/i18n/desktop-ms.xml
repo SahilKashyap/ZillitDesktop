@@ -8391,4 +8391,6 @@
     <string name="desktop_call_line_unavailable">%1$s tidak tersedia di sini</string>
     <string name="desktop_pr_no_report_sections">Anda tiada akses kepada mana-mana bahagian laporan produksi.</string>
     <string name="desktop_pr_publish_no_chat_rights">Anda tiada hak penyiaran dalam Sembang Laporan Produksi, jadi PDF tidak akan disiarkan ke sembang.</string>
+    <string name="desktop_zillit_tour">Jelajah Zillit</string>
+    <string name="desktop_help_tour_blurb">Ikuti jelajah berpandu Zillit dan ciri-cirinya</string>
 </resources>

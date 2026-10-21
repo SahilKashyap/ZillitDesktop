@@ -1,12 +1,18 @@
 package com.zillit.desktop.feature.settings
 
 import com.zillit.desktop.feature.settings.ui.HELP_ENTRIES
+import com.zillit.desktop.feature.settings.ui.ZILLIT_TOUR_PATH
+import com.zillit.desktop.feature.settings.ui.ZILLIT_TOUR_URL
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
  * The Zillit Help cards, against the phones' Zillit Guide.
+ *
+ * The tour row is pinned here too, for the opposite reason: it is the only
+ * card that does not open the browser, and "simplifying" it into one would
+ * take the tour out of the app, which is where both phones put it.
  *
  * Pinned because the list is a plain literal that reads as harmless to edit:
  * the titles and their order are the phones' (`ZillitGuideViewController`),
@@ -18,7 +24,7 @@ class HelpListingTest {
     @Test
     fun `the cards are the phones' cards, in their order`() {
         assertEquals(
-            listOf("FAQs", "Privacy Policy", "Terms of Use", "Contact us"),
+            listOf("Zillit Tour", "FAQs", "Privacy Policy", "Terms of Use", "Contact us"),
             HELP_ENTRIES.map { it.title },
         )
     }
@@ -36,6 +42,9 @@ class HelpListingTest {
         val links = HELP_ENTRIES.mapNotNull { it.url }
         assertEquals(
             listOf(
+                // Android's `Constants.CORPORATE_TOUR_URL` and iOS's
+                // `ZillitTour.url`, which the web's sixth card also opens.
+                "https://zillit-tour.zillit.com/",
                 "https://corporate.zillit.com/frequently-asked-questions-for-zillit-application-and-web-platform",
                 "https://corporate.zillit.com/privacy-policy-for-zillit-application-and-web-platform",
                 "https://corporate.zillit.com/terms-conditions-for-zillit-application-and-web-platform",
@@ -45,6 +54,19 @@ class HelpListingTest {
         // The launcher refuses anything that is not http(s), so a card with a
         // mistyped scheme would be a button that silently does nothing.
         assertTrue(links.all { it.startsWith("https://") })
+    }
+
+    @Test
+    fun `the tour is the only card the app opens itself, and it keeps its link`() {
+        // Both phones host the tour in their own web view rather than hand it
+        // to a browser (`HelpActivity.kt:272`, `ZillitTour.open(from:)`), so
+        // this row opens a window of the app. The URL stays on the row all the
+        // same: it is the fallback where there is no embedded browser, and
+        // dropping it would leave that build with a card that does nothing.
+        val tour = HELP_ENTRIES.single { it.opensInApp }
+        assertEquals("Zillit Tour", tour.title)
+        assertEquals(ZILLIT_TOUR_URL, tour.url)
+        assertTrue(ZILLIT_TOUR_PATH.startsWith("/settings/help"))
     }
 
     @Test

@@ -8390,4 +8390,6 @@
     <string name="desktop_call_line_unavailable">%1$s no está disponible aquí</string>
     <string name="desktop_pr_no_report_sections">No tienes acceso a ninguna sección de los informes de producción.</string>
     <string name="desktop_pr_publish_no_chat_rights">No tienes permisos de publicación en el chat del informe de producción, así que el PDF no se publicará en el chat.</string>
+    <string name="desktop_zillit_tour">Tour de Zillit</string>
+    <string name="desktop_help_tour_blurb">Realice un recorrido guiado por Zillit y sus funciones</string>
 </resources>

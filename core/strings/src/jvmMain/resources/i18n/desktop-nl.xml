@@ -8391,4 +8391,6 @@
     <string name="desktop_call_line_unavailable">%1$s is hier niet beschikbaar</string>
     <string name="desktop_pr_no_report_sections">Je hebt geen toegang tot onderdelen van het productierapport.</string>
     <string name="desktop_pr_publish_no_chat_rights">Je hebt geen plaatsingsrechten in de productierapportchat, dus de pdf wordt niet in de chat geplaatst.</string>
+    <string name="desktop_zillit_tour">Zillit Tour</string>
+    <string name="desktop_help_tour_blurb">Volg een rondleiding door Zillit en de functies ervan</string>
 </resources>

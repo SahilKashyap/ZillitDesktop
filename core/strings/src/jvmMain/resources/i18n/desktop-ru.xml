@@ -8390,4 +8390,6 @@
     <string name="desktop_call_line_unavailable">%1$s здесь недоступна</string>
     <string name="desktop_pr_no_report_sections">У вас нет доступа ни к одному разделу производственных отчётов.</string>
     <string name="desktop_pr_publish_no_chat_rights">У вас нет прав на публикацию в чате производственного отчёта, поэтому PDF не будет опубликован в чате.</string>
+    <string name="desktop_zillit_tour">Тур по Zillit</string>
+    <string name="desktop_help_tour_blurb">Пройдите ознакомительный тур по Zillit и его функциям</string>
 </resources>

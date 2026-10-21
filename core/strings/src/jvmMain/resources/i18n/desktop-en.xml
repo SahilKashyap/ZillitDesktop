@@ -13815,4 +13815,7 @@
     <string name="desktop_ad_signature_not_drawn">Draw or type a signature first.</string>
     <string name="desktop_ad_agency_needed_for_po">Its artistes can only be paid by purchase order once it is registered.</string>
     <string name="desktop_cal_no_event_on_past_day">You can\'t add an event on a previous date</string>
+    <string name="desktop_zillit_tour">Zillit Tour</string>
+    <string name="desktop_help_tour_blurb">Take a guided tour of Zillit and its features</string>
+    <string name="desktop_no_embedded_browser_tour">This build has no embedded browser, so the tour opens in your browser instead.</string>
 </resources>
