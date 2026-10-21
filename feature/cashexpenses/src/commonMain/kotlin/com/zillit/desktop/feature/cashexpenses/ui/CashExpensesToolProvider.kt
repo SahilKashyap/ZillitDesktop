@@ -19,6 +19,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 
 /**
  * Cash Expenses as a workspace window.
@@ -67,6 +68,8 @@ class CashExpensesToolProvider(
         // app, before a production is open, so it resolves who the viewer is
         // here rather than in its constructor.
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Woken from sleep with this tool on show: re-read the open page.
+        ReloadOnWake { viewModel.onEvent(CashEvent.Refresh) }
 
         // A deep link lands on the page it names — the workspace resolves this
         // provider by longest prefix, so the tail arrives intact. Production

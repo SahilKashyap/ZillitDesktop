@@ -10,6 +10,7 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +67,7 @@ import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceShortcuts
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.LocalResumeToken
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.home.domain.ToolCatalogue
 import com.zillit.desktop.feature.home.domain.ToolPresentation
@@ -1032,34 +1034,40 @@ private fun ApplicationScope.ZillitWindows(
         }
     }
 
-    // The widgets: the desktop's own small windows, tied to the main window's
-    // session. Drive picks its own production; chat and the crew list follow
-    // the one the app is open on. See WidgetShell.
-    DriveWidgetWindow(
-        host = widgetMount.driveHost,
-        auth = authViewModel,
-        preferences = preferences,
-        visible = widgetMount.switches.isOpen(ZillitWidget.Drive),
-        darkTheme = isDark,
-        graph = graph,
-        onClose = { widgetMount.switches.close(ZillitWidget.Drive) },
-        showMain = widgetMount.showMain,
-    )
-    ToolWidgetWindow(
-        title = str(S.desktop_zillit_chat),
-        what = str(S.desktop_the_chat_widget),
-        keys = ZillitPreferences.ChatWidget,
-        projectKey = ZillitPreferences.ChatWidgetProject,
-        host = widgetMount.chatHost,
-        route = WorkspaceRoute.Tool("/cnc"),
-        auth = authViewModel,
-        preferences = preferences,
-        visible = widgetMount.switches.isOpen(ZillitWidget.Chat),
-        darkTheme = isDark,
-        graph = graph,
-        onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
-        showMain = widgetMount.showMain,
-    )
+    // A widget is its own OS window and so a sibling of the main one —
+    // outside the provider inside ZillitContent. Given its own, because a
+    // small always-on-top Drive or crew list is exactly the thing left
+    // visible across a sleep.
+    CompositionLocalProvider(LocalResumeToken provides rememberResumeToken(graph)) {
+        // The widgets: the desktop's own small windows, tied to the main window's
+        // session. Drive picks its own production; chat and the crew list follow
+        // the one the app is open on. See WidgetShell.
+        DriveWidgetWindow(
+            host = widgetMount.driveHost,
+            auth = authViewModel,
+            preferences = preferences,
+            visible = widgetMount.switches.isOpen(ZillitWidget.Drive),
+            darkTheme = isDark,
+            graph = graph,
+            onClose = { widgetMount.switches.close(ZillitWidget.Drive) },
+            showMain = widgetMount.showMain,
+        )
+        ToolWidgetWindow(
+            title = str(S.desktop_zillit_chat),
+            what = str(S.desktop_the_chat_widget),
+            keys = ZillitPreferences.ChatWidget,
+            projectKey = ZillitPreferences.ChatWidgetProject,
+            host = widgetMount.chatHost,
+            route = WorkspaceRoute.Tool("/cnc"),
+            auth = authViewModel,
+            preferences = preferences,
+            visible = widgetMount.switches.isOpen(ZillitWidget.Chat),
+            darkTheme = isDark,
+            graph = graph,
+            onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
+            showMain = widgetMount.showMain,
+        )
+    }
 }
 
 /**
@@ -1808,7 +1816,60 @@ private fun BackgroundWork(
     // The Accounts board's segment key is the singular "account".
     BoardRealtime(ready, "account", viewModels.accounts)
     BoardRealtime(ready, PRODUCTION_REPORT_BOARD, viewModels.productionReportChat)
+    ResyncOnWake(ready, viewModels)
 }
+
+/**
+ * What the screens re-read after the machine has been asleep.
+ *
+ * The connection, the crew, this production's details and the badge counts are
+ * already being caught up by the graph (`resyncAfterSleep`); so is chat, which
+ * refreshes its recents on every reconnect. What is left is the data a screen
+ * fetched once and would otherwise keep showing: a notice board read before
+ * the lid closed, yesterday's calendar, the mail list.
+ *
+ * **Re-read, never reset.** Every event sent here is one that re-asks for what
+ * the screen is already showing — `HomeFeedEvent.Refresh` re-reads the
+ * selected unit and no-ops on a board that has none, rather than
+ * `ProjectChanged`, which would throw away the tab and a half-typed post. A
+ * wake must cost the reader nothing: they left something open on purpose.
+ *
+ * Not the notification bell: its `Refresh` marks the page read on arrival,
+ * which is a claim somebody looked — and nobody did. Its counts come from the
+ * ledger seed instead.
+ */
+@Composable
+private fun ResyncOnWake(ready: AppGraph.Ready, viewModels: AppViewModels) {
+    LaunchedEffect(ready, viewModels) {
+        ready.resumed.collect { awayMillis ->
+            ZillitLog.i(WAKE_TAG) { "back after ${awayMillis / MILLIS_PER_SECOND}s; re-reading what is on screen" }
+            // The tools grid and this reader's rights on it — a right granted
+            // or withdrawn overnight, and what SwapInRealRights hangs off.
+            viewModels.home?.onEvent(HomeEvent.Reload)
+            // Every board: the loaded ones re-read their unit, the rest no-op.
+            listOf(
+                viewModels.homeFeed,
+                viewModels.info,
+                viewModels.confidentialInfo,
+                viewModels.reports,
+                viewModels.scriptNotes,
+                viewModels.catering,
+                viewModels.accounts,
+                viewModels.productionReportChat,
+            ).forEach { it?.onEvent(HomeFeedEvent.Refresh) }
+            viewModels.calendar?.onEvent(CalendarEvent2Event.Reload)
+            // Mail only when this session has actually opened it: `Refresh` is
+            // a full folder sync, and running one on a tool nobody has looked
+            // at would spend a wake on mail that is not on screen.
+            viewModels.email?.takeIf { it.state.value.folders.isNotEmpty() }
+                ?.onEvent(EmailEvent.Refresh)
+        }
+    }
+}
+
+/** Shared with the graph's own catch-up, so one grep finds both halves. */
+private const val WAKE_TAG = "Wake"
+private const val MILLIS_PER_SECOND = 1_000L
 
 /**
  * Sends the user back to the QR screen when their session dies.
@@ -1915,24 +1976,42 @@ private fun ZillitContent(
     val updateStatus = rememberUpdateStatus(ready)
     val updateNotice = currentUpdateNotice(ready, updateStatus)
 
-    Box {
-        if (authState.step == AuthStep.Complete) {
-            SignedInShell(
-                ready, registry, viewModels, workspaceViewModel, authViewModel,
-                themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
-                updateStatus, updateNotice,
-            )
-        } else {
-            SignedOutShell(
-                ready, viewModels, authViewModel, createViewModel, joinViewModel,
-                themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
-                updateStatus, updateNotice, authState.step,
-            )
+    // Provided over everything, so a torn-off floating window — composed
+    // inside this tree — sees the same wake as a tab does.
+    CompositionLocalProvider(LocalResumeToken provides rememberResumeToken(graph)) {
+        Box {
+            if (authState.step == AuthStep.Complete) {
+                SignedInShell(
+                    ready, registry, viewModels, workspaceViewModel, authViewModel,
+                    themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
+                    updateStatus, updateNotice,
+                )
+            } else {
+                SignedOutShell(
+                    ready, viewModels, authViewModel, createViewModel, joinViewModel,
+                    themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
+                    updateStatus, updateNotice, authState.step,
+                )
+            }
+            // Above either screen: the startup notification-permission check, as
+            // the phones make it, whatever the person is looking at.
+            NotificationPermissionPrompt()
         }
-        // Above either screen: the startup notification-permission check, as
-        // the phones make it, whatever the person is looking at.
-        NotificationPermissionPrompt()
     }
+}
+
+/**
+ * The wake counter every tool on show reads through [LocalResumeToken].
+ *
+ * A count rather than the sleep's length: two wakes could report the same
+ * number of milliseconds, and a key that repeats fires nothing.
+ */
+@Composable
+private fun rememberResumeToken(graph: AppGraph): Int {
+    val ready = graph as? AppGraph.Ready
+    var wakes by remember(ready) { mutableStateOf(0) }
+    LaunchedEffect(ready) { ready?.resumed?.collect { wakes += 1 } }
+    return wakes
 }
 
 /**

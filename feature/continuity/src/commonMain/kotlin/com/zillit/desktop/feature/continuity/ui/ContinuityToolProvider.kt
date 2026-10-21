@@ -20,6 +20,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 import com.zillit.desktop.feature.continuity.domain.ContinuityAttachment
 import com.zillit.desktop.feature.continuity.cabinet.ContinuityCabinetViewer
 import com.zillit.desktop.feature.continuity.domain.PickedContinuityFile
@@ -50,6 +51,8 @@ class ContinuityToolProvider(
         var notice by remember { mutableStateOf<ContinuityEffect.Notice?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Woken from sleep with this tool on show: re-read the open tab's folders.
+        ReloadOnWake { viewModel.onEvent(ContinuityEvent.Refresh) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

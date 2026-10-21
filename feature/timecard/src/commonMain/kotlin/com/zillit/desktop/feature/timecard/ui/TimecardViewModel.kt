@@ -178,6 +178,17 @@ enum class TimecardReasonAction { Reject, Query }
 
 sealed interface TimecardEvent {
     data object Refresh : TimecardEvent
+
+    /**
+     * Re-read the open list after the machine woke from sleep.
+     *
+     * Separate from [Refresh] for one reason: `Refresh` is a load the person
+     * *asked* for, after which the rows the list cannot show are marked read
+     * ([load]'s `entered`). A wake is nobody asking. Marking rows read because
+     * a lid opened would claim somebody looked at them, so this takes the same
+     * silent path a socket frame does.
+     */
+    data object Resynced : TimecardEvent
     data class Open(val destination: TimecardDestination) : TimecardEvent
     data class Search(val query: String) : TimecardEvent
     data class Select(val id: String?) : TimecardEvent
@@ -343,6 +354,8 @@ class TimecardViewModel(
     override fun onEvent(event: TimecardEvent) {
         when (event) {
             TimecardEvent.Refresh -> load(currentState.destination, entered = true)
+            // No `entered`: see TimecardEvent.Resynced.
+            TimecardEvent.Resynced -> load(currentState.destination)
             is TimecardEvent.Open -> {
                 setState { copy(destination = event.destination, selectedId = null, error = null, staleSince = null) }
                 load(event.destination, entered = true)

@@ -19,6 +19,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 
 /**
  * Card Expenses as a workspace window.
@@ -72,6 +73,8 @@ class CardExpensesToolProvider(
         // app, before a production is open, so it resolves who the viewer is
         // here rather than in its constructor.
         LaunchedEffect(model) { model.start() }
+        // Woken from sleep with this tool on show: re-read the open page.
+        ReloadOnWake { model.onEvent(CardEvent.Refresh) }
 
         val onEvent: (CardEvent) -> Unit = remember(model, asTool) {
             { event ->

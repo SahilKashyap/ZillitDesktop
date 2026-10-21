@@ -22,6 +22,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
@@ -82,6 +83,8 @@ class AccountHubToolProvider(
         // app, before a production is open, so it resolves who the viewer is
         // here rather than in its constructor.
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Woken from sleep with this tool on show: re-read the open area.
+        ReloadOnWake { viewModel.onEvent(AccountHubEvent.Refresh) }
 
         // The ledger's counts, mapped to the sidebar's units by the host.
         LaunchedEffect(counts) { counts?.let(viewModel::onBadges) }

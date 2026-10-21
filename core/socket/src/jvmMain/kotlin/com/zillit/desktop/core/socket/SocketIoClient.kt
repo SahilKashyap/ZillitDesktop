@@ -66,10 +66,56 @@ class SocketIoClient(
     private var reconnectJob: Job? = null
     private var deliberateDisconnect = false
 
+    /**
+     * Consecutive failed attempts, and so where the backoff currently stands.
+     *
+     * A field rather than a parameter carried through the listeners, because
+     * it has to be **reset by a success**. It used to ride [openConnection] as
+     * an argument, which every listener closed over: a socket that came up on
+     * the fifth attempt kept telling the next disconnect it was the fifth, so
+     * a connection that had been healthy for hours reconnected on the
+     * 32-second step and then the 60-second cap. After a night of sleeping,
+     * that is the minute of stale screen the reader actually sees.
+     *
+     * Volatile because the socket.io thread writes it and the reconnect
+     * coroutine reads it. A stale read would only mis-time one delay, but the
+     * barrier is free.
+     */
+    @Volatile
+    private var attempts = 0
+
     override suspend fun connect(config: SocketConfig) = lock.withLock {
         this.config = config
         deliberateDisconnect = false
-        openConnection(attempt = 0)
+        attempts = 0
+        openConnection()
+    }
+
+    /**
+     * Come back **now**, whatever the backoff was about to do.
+     *
+     * For the one case the transport cannot work out for itself: the machine
+     * slept. The socket on the other side of a lid closing is dead, but this
+     * side does not know it until the heartbeat gives up — and if the backoff
+     * had already walked out to its cap before the machine went down, the
+     * first re-read after the lid opens is another minute away. A wake redials
+     * instead (see `WakeWatcher`), and the attempt count starts over because
+     * the network this is dialling is a new one.
+     *
+     * [teardown] inside [openConnection] is what makes this safe on a socket
+     * that still *claims* to be connected, which is exactly the post-sleep
+     * state.
+     *
+     * Silently ignored with nothing to dial — no configuration yet, or a
+     * deliberate disconnect — so a wake while signed out does nothing.
+     */
+    suspend fun reconnectNow(reason: String) = lock.withLock {
+        if (config == null || deliberateDisconnect) return@withLock
+        ZillitLog.i(TAG) { "redialling: $reason" }
+        reconnectJob?.cancel()
+        reconnectJob = null
+        attempts = 0
+        openConnection()
     }
 
     override suspend fun disconnect() = lock.withLock {
@@ -154,7 +200,7 @@ class SocketIoClient(
 
     // -- connection --------------------------------------------------------
 
-    private suspend fun openConnection(attempt: Int) {
+    private suspend fun openConnection() {
         val config = this.config ?: return
         teardown()
         _connectionState.value = SocketConnectionState.Connecting
@@ -176,8 +222,8 @@ class SocketIoClient(
 
         socket = IO.socket(config.url, options).apply {
             on(Socket.EVENT_CONNECT) { onConnected() }
-            on(Socket.EVENT_DISCONNECT) { args -> onDisconnected(args, attempt) }
-            on(Socket.EVENT_CONNECT_ERROR) { args -> onConnectError(args, attempt) }
+            on(Socket.EVENT_DISCONNECT) { args -> onDisconnected(args) }
+            on(Socket.EVENT_CONNECT_ERROR) { args -> onConnectError(args) }
             // One listener for everything. No per-feature registration exists,
             // so none can be missed on reconnect.
             onAnyIncoming(anyIncomingListener)
@@ -203,20 +249,23 @@ class SocketIoClient(
     private fun onConnected() {
         val id = socket?.id()
         ZillitLog.i(TAG) { "connected (id=$id)" }
+        // The backoff starts over from here: a connection that worked is not
+        // evidence about the next failure. See [attempts].
+        attempts = 0
         _connectionState.value = SocketConnectionState.Connected(id)
     }
 
-    private fun onDisconnected(args: Array<out Any?>, attempt: Int) {
+    private fun onDisconnected(args: Array<out Any?>) {
         val reason = args.firstOrNull()?.toString().orEmpty()
         ZillitLog.i(TAG) { "disconnected: $reason" }
         if (deliberateDisconnect) {
             _connectionState.value = SocketConnectionState.Disconnected
         } else {
-            scheduleReconnect(attempt + 1, ZillitError.NoConnection(reason))
+            scheduleReconnect(ZillitError.NoConnection(reason))
         }
     }
 
-    private fun onConnectError(args: Array<out Any?>, attempt: Int) {
+    private fun onConnectError(args: Array<out Any?>) {
         val detail = args.firstOrNull()?.toString().orEmpty()
 
         // A refused token is the credential's problem, not the device's: say
@@ -224,7 +273,7 @@ class SocketIoClient(
         if (isSocketTokenRejected(detail)) {
             ZillitLog.w(TAG) { "handshake refused the token; retrying with another credential" }
             config?.onAuthRejected?.invoke(detail)
-            scheduleReconnect(attempt + 1, ZillitError.NoConnection(detail))
+            scheduleReconnect(ZillitError.NoConnection(detail))
             return
         }
 
@@ -237,11 +286,13 @@ class SocketIoClient(
             return
         }
 
-        scheduleReconnect(attempt + 1, ZillitError.NoConnection(detail))
+        scheduleReconnect(ZillitError.NoConnection(detail))
     }
 
-    private fun scheduleReconnect(attempt: Int, cause: ZillitError) {
+    private fun scheduleReconnect(cause: ZillitError) {
         val policy = config?.reconnect ?: return
+        val attempt = attempts + 1
+        attempts = attempt
         if (!policy.shouldRetry(attempt)) {
             _connectionState.value = SocketConnectionState.Failed(cause)
             return
@@ -254,7 +305,7 @@ class SocketIoClient(
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(delayMillis)
-            lock.withLock { if (!deliberateDisconnect) openConnection(attempt) }
+            lock.withLock { if (!deliberateDisconnect) openConnection() }
         }
     }
 

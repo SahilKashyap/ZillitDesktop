@@ -6,6 +6,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.appupdate.InstallerHandoff
+import com.zillit.desktop.core.common.WakeWatcher
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.config.AppConfig
@@ -50,6 +51,7 @@ import com.zillit.desktop.core.sync.SyncHandlerRegistry
 import com.zillit.desktop.core.sync.SyncScope
 import io.ktor.client.HttpClient
 import io.ktor.client.request.head
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -138,6 +140,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import com.zillit.desktop.core.security.SecureStore
 import com.zillit.desktop.feature.auth.data.ProjectLifecycle
 import com.zillit.desktop.feature.auth.data.projectLifecycle
@@ -480,6 +483,114 @@ private fun CoroutineScope.followProjectMembers(
 private const val MEMBERS_REFRESH_DEBOUNCE_MILLIS = 750L
 
 /**
+ * The lid opened: catch the app up.
+ *
+ * A machine asleep with Zillit open is an outage no part of this app can see.
+ * The socket dies with the network interface, so every frame sent while the
+ * lid was down — a notice posted, an invoice approved, a message, a read — was
+ * announced to a connection that no longer existed, and nothing replays them.
+ * The reader wakes the machine to a screen that looks current and is hours
+ * old. Neither the window (still active throughout a macOS sleep, so the badge
+ * ledger's activation seam never fires) nor the transport (which believes it is
+ * connected until its heartbeat gives up) can tell anybody. [WakeWatcher] can.
+ *
+ * **The order is the substance.** Ask whether the network is even back first:
+ * dialling into an interface that has not reassociated yet only pushes the
+ * socket's backoff out, and a probe that fails hands the job to
+ * [redialWhenNetworkReturns] below, which is the better-informed caller. Then
+ * the connection, because every reconnect-driven re-read in the app hangs off
+ * it (the crew in [followProjectMembers], chat's rejoin and recents, the badge
+ * seed, the outbox). Then this production's own context and credentials, which
+ * nothing else would ask for again. [resumed] goes last, so a screen collecting
+ * it re-reads against a connection that is already coming up.
+ *
+ * Deliberately **not** a reload of every open tool. A wake is a reason to
+ * re-read, not to throw away what the reader was in the middle of: a
+ * half-written post, a scrolled table, an open dialog. Screens that want the
+ * signal take [resumed]; the rest are no more stale than the socket's own
+ * resync leaves them.
+ */
+@Suppress("LongParameterList") // Collaborators, not configuration; each used once.
+private fun CoroutineScope.resyncAfterSleep(
+    wakes: Flow<Long>,
+    socket: SocketIoClient,
+    connectivity: ConnectivityMonitor,
+    projectContext: ProjectContextLoader?,
+    remoteConfig: com.zillit.desktop.core.remoteconfig.RemoteConfigRepository,
+    seeder: NotificationLedgerSeeder,
+    activeProject: MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>,
+    isCallActive: () -> Boolean,
+    resumed: MutableSharedFlow<Long>,
+) = launch {
+    wakes.collect { awayMillis ->
+        ZillitLog.i(WAKE_TAG) { "catching up after ${awayMillis / MILLIS_PER_SECOND}s away" }
+        // Bounded, because the probe rides a client built with NO_TIMEOUT: a
+        // HEAD into an interface that has not reassociated yet blocks until
+        // the OS gives up on the TCP connect, and everything below would wait
+        // behind it. No answer inside the budget is read as "try anyway" — the
+        // socket's own backoff copes with a dead network far better than not
+        // dialling does, and a wasted dial costs one packet.
+        val online = withTimeoutOrNull(WAKE_PROBE_BUDGET_MILLIS) { connectivity.checkNow() } ?: true
+        // A live call rides this transport for its signalling (see
+        // `SocketIoClient.openConnection`), and a call that survived the sleep
+        // must not be hung up by the catch-up.
+        if (online && !isCallActive()) socket.reconnectNow("woke after ${awayMillis / MILLIS_PER_SECOND}s")
+        val projectId = activeProject.value?.id
+        if (projectId != null && online) {
+            // The crew, the production's details and this reader's rights —
+            // the same re-read a production open makes, and the one every
+            // screen that lists people draws on.
+            projectContext?.refresh(projectId)
+            refreshRemoteConfig(remoteConfig)
+            // Counts for whatever happened overnight. Incremental and
+            // mutex-guarded, so it costs one page even when the socket's own
+            // reconnect seed asked a moment ago.
+            seeder.seed(projectId)
+        }
+        resumed.emit(awayMillis)
+    }
+}
+
+/**
+ * The network came back, so dial now rather than at the end of the backoff.
+ *
+ * The rising edge only. [ConnectivityMonitor] learns the network returned from
+ * a request succeeding or its own probe answering — both of which can land
+ * while the socket is parked in a 60-second retry step, which is then a minute
+ * of a working network and a dead realtime connection. The web does the same
+ * thing from `window.addEventListener('online', …)`.
+ *
+ * Not a loop: the socket coming up is itself one of the monitor's "online"
+ * signals, but it can only set a flag that is already set, so there is no edge
+ * for this to see.
+ */
+private fun CoroutineScope.redialWhenNetworkReturns(
+    socket: SocketIoClient,
+    connectivity: ConnectivityMonitor,
+    isCallActive: () -> Boolean,
+) = launch {
+    connectivity.online
+        // A StateFlow conflates already, so every value here is a change. The
+        // monitor starts optimistic, and only a *return* is news.
+        .drop(1)
+        .filter { it }
+        .collect { if (!isCallActive()) socket.reconnectNow("the network came back") }
+}
+
+private const val WAKE_TAG = "Wake"
+
+/** So a log line can say "away for 7h" rather than a six-digit number. */
+private const val MILLIS_PER_SECOND = 1_000L
+
+/**
+ * How long the wake catch-up will wait to be told whether the network is back.
+ *
+ * Generous enough for a Wi-Fi card that is most of the way through
+ * reassociating, short enough that nothing downstream notices the wait.
+ */
+private const val WAKE_PROBE_BUDGET_MILLIS = 3_000L
+
+/**
  * Everything that has to happen when the open production changes.
  *
  * Extracted from the graph because the **order** is the substance: the request
@@ -791,6 +902,18 @@ sealed interface AppGraph {
         val hasApiKeys: Boolean,
         /** One answer to "are we online?", fed by every REST call and the socket. */
         val connectivity: ConnectivityMonitor,
+        /**
+         * This machine woke from sleep — roughly how long it was away, in
+         * milliseconds, as a signal rather than a measurement.
+         *
+         * The app-wide catch-up has already started by the time this arrives
+         * (see `resyncAfterSleep`): the connection, the crew, the credentials
+         * and the counts. This is for a screen whose data none of that covers
+         * and which would otherwise keep showing what it read before the lid
+         * closed. Collect it to **re-read**, never to reset: the reader may be
+         * in the middle of something, and a wake is no reason to lose it.
+         */
+        val resumed: SharedFlow<Long> = MutableSharedFlow(),
         /**
          * The outbox: work done offline, sent when the network returns.
          * Null when the durable store could not be opened — the app then runs
@@ -1371,6 +1494,16 @@ sealed interface AppGraph {
             // LiveKit call rides while this is non-null and mid-call.
             var callCoordinatorForProjectSwitch: CallCoordinator? = null
 
+            // Read at call time, never captured: this is set further down, and
+            // three places need the same answer — a production switch, a wake
+            // and the network coming back. All three would otherwise tear down
+            // the transport a live call rides for its signalling.
+            val callIsActive = {
+                callCoordinatorForProjectSwitch?.phase?.value?.let {
+                    it != com.zillit.desktop.feature.calls.domain.CallPhase.Idle
+                } == true
+            }
+
             // Set when onProjectOpened skips its socket reconnect because a call
             // was active; the watcher installed after the call coordinator exists
             // below clears it by reconnecting once that call ends.
@@ -1396,11 +1529,7 @@ sealed interface AppGraph {
                         onSocketAuthRejected = socketTokenRejected,
                         projectContext = projectContext,
                         scope = appScope,
-                        isCallActive = {
-                            callCoordinatorForProjectSwitch?.phase?.value?.let {
-                                it != com.zillit.desktop.feature.calls.domain.CallPhase.Idle
-                            } == true
-                        },
+                        isCallActive = callIsActive,
                         onSocketReconnectSkippedForCall = { socketResyncNeededAfterCall.value = true },
                     )
                     // The call lines, per production, and the LiveKit region warm the phones fire on every switch.
@@ -1423,6 +1552,31 @@ sealed interface AppGraph {
 
             // Somebody joined, left or was removed: the crew is re-read.
             appScope.followProjectMembers(socketEvents, activeProject, projectContext)
+
+            // The lid closing is the one outage nothing else here notices.
+            val resumed = MutableSharedFlow<Long>(
+                extraBufferCapacity = 1,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST,
+            )
+            // The collector is wired before the watcher is told to run. The
+            // stream has no replay — a wake announced with nobody collecting
+            // is gone — and while `launch` does not promise the collect has
+            // begun by the time `start` returns, the first tick is twenty
+            // seconds out, which it comfortably is.
+            val wakeWatcher = WakeWatcher(appScope)
+            appScope.resyncAfterSleep(
+                wakes = wakeWatcher.wakes,
+                socket = socketClient,
+                connectivity = connectivity,
+                projectContext = projectContext,
+                remoteConfig = remoteConfigRepository,
+                seeder = badgeSeeder,
+                activeProject = activeProject,
+                isCallActive = callIsActive,
+                resumed = resumed,
+            )
+            wakeWatcher.start()
+            appScope.redialWhenNetworkReturns(socketClient, connectivity, callIsActive)
 
             // Notice bodies are AES-encrypted with the header key, in both
             // directions.
@@ -2011,6 +2165,7 @@ sealed interface AppGraph {
                 apiKeySetup = apiKeySetup,
                 hasApiKeys = hasApiKeys,
                 connectivity = connectivity,
+                resumed = resumed.asSharedFlow(),
                 syncEngine = syncEngine,
                 draftStore = draftStore,
                 offlineSupport = offlineSupport,

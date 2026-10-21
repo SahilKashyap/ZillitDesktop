@@ -19,6 +19,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 
 /**
  * Call Sheet Creation as a workspace tool.
@@ -55,6 +56,9 @@ class CallSheetToolProvider(
         var toast by remember { mutableStateOf<SheetEffect.Toast?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Woken from sleep with this tool on show: re-read the open tab.
+        // `Retry` is this tool's spelling of `refreshCurrent()`.
+        ReloadOnWake { viewModel.onEvent(ListEvent.Retry) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

@@ -130,6 +130,40 @@ class TimecardBadgeTest {
         assertEquals(listOf("record:$QUEUE:tc-1:null"), badges.reads, "only the decided week")
     }
 
+    /**
+     * The machine slept with this tool on show.
+     *
+     * The list has to be re-read — rows decided overnight were announced to a
+     * socket that no longer existed — but nothing may be marked read, because
+     * a lid opening is not somebody looking. That is the whole reason
+     * [TimecardEvent.Resynced] exists beside [TimecardEvent.Refresh]; the
+     * second half of this test is what would break if the wake were wired to
+     * `Refresh` instead.
+     */
+    @Test
+    fun `a wake re-reads the open list and reads nothing`() = runTest(dispatcher) {
+        val badges = Badges(listOf(row(MY, week = MONDAY_KEY, record = "tc-1")))
+        val repository = Weeks(mine = listOf(week("tc-1", MONDAY)))
+        val vm = open(repository, badges)
+        assertTrue(badges.reads.isEmpty(), "the only row is on the list, so opening reads none")
+        val loadsAtOpen = repository.mineLoads
+
+        // A row for a week this list does not carry — landed while the machine
+        // was asleep, so it is exactly what a sweep would read.
+        badges.rows.value = badges.rows.value + row(MY, week = NEXT_KEY, record = "tc-9")
+        runCurrent()
+
+        vm.onEvent(TimecardEvent.Resynced)
+        runCurrent()
+        assertEquals(loadsAtOpen + 1, repository.mineLoads, "the open list is re-read")
+        assertTrue(badges.reads.isEmpty(), "nobody looked, so nothing is read: ${badges.reads}")
+
+        // The same load when the person asks for it does read — unchanged.
+        vm.onEvent(TimecardEvent.Refresh)
+        runCurrent()
+        assertEquals(listOf("record:$MY:tc-9:$NEXT_KEY"), badges.reads)
+    }
+
     // -- harness ------------------------------------------------------------------------------
 
     private fun TestScope.open(repository: Weeks, badges: Badges): TimecardViewModel =
@@ -166,8 +200,14 @@ class TimecardBadgeTest {
     ) : TimecardRepository {
         val approved = mutableListOf<String>()
 
+        /** How many times the My Weeks list has been fetched. */
+        var mineLoads = 0
+
         override val refreshes: Flow<Unit> = emptyFlow()
-        override suspend fun myTimecards(): ZillitResult<List<Timecard>> = ZillitResult.Success(mine)
+        override suspend fun myTimecards(): ZillitResult<List<Timecard>> {
+            mineLoads += 1
+            return ZillitResult.Success(mine)
+        }
         override suspend fun approvalQueue(): ZillitResult<List<Timecard>> = ZillitResult.Success(queue)
         override suspend fun payrollProcessing(weekStarting: Long): ZillitResult<List<Timecard>> =
             ZillitResult.Success(emptyList())

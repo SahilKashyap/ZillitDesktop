@@ -20,6 +20,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 
 /**
  * Purchase Orders as a workspace window.
@@ -83,6 +84,8 @@ class PurchaseOrderToolProvider(
         LaunchedEffect(model, asTool, focused) { if (focused) model.onEvent(PoEvent.Enter(asTool)) }
 
         LaunchedEffect(model) { model.start() }
+        // Woken from sleep with this tool on show: re-read the open page and the workflow it is judged by.
+        ReloadOnWake { model.onEvent(PoEvent.Refresh) }
         // Every composition and every route change applies the route — the
         // hub re-embeds this tool on its bare path, and `start()` alone is
         // idempotent, so a route read only there was ignored on re-entry.

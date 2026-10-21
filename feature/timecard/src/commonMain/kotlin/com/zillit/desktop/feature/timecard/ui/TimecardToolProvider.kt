@@ -17,6 +17,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 
 /** Timecards as a workspace window. */
 class TimecardToolProvider(
@@ -36,6 +37,9 @@ class TimecardToolProvider(
         var failure by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Woken from sleep with this tool on show: re-read the open list,
+        // without the read sweep `Refresh` makes — see TimecardEvent.Resynced.
+        ReloadOnWake { viewModel.onEvent(TimecardEvent.Resynced) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

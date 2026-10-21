@@ -13,6 +13,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 
 /**
  * The Tasks tool, at the web's path (`/film-tools/tasks`).
@@ -41,6 +42,8 @@ class TasksToolProvider(
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
         LaunchedEffect(viewModel) { viewModel.onEvent(TasksEvent.Load) }
+        // Woken from sleep with this tool on show: re-read the list, quietly (`loadList(silent = true)`).
+        ReloadOnWake { viewModel.onEvent(TasksEvent.Refresh) }
         TasksScreen(
             state = state,
             onEvent = viewModel::onEvent,

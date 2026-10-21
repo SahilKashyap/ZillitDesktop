@@ -16,6 +16,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.ui.ReloadOnWake
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -104,6 +105,8 @@ class DriveToolProvider(
         // app, before a production is open, so it resolves who the viewer is
         // here rather than in its constructor.
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Woken from sleep with this tool on show: re-read the open folder and, if it is showing, the trash.
+        ReloadOnWake { viewModel.onEvent(DriveEvent.Refresh) }
 
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect -> failure = handle(effect, viewModel, host) ?: failure }
