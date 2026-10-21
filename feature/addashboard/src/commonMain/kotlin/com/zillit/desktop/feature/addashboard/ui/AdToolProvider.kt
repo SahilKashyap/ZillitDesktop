@@ -45,6 +45,9 @@ class AdToolProvider(private val viewModel: AdViewModel) : ToolProvider {
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is AdEffect.Failed -> failure = effect.message
+                    // A saved file and a copied link already say so in the
+                    // notice; the host only needs to hear about failures.
+                    is AdEffect.Saved, is AdEffect.Copied -> Unit
                 }
             }
         }

@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.mapNotNull
 
 /**
- * Which of the dashboard's three pages an `ad_dashboard:*` frame reloads.
+ * Which of the dashboard's pages an `ad_dashboard:*` frame reloads.
  *
  * The tool had no realtime at all until 2026-09-09 — not one subscription in
  * the module — so an artiste marked present on set, a meal added, or a day
@@ -20,13 +20,11 @@ import kotlinx.coroutines.flow.mapNotNull
  * 1:1 port of the web's `AD_HANDLERS` map — each event refreshes exactly what
  * the same action performed locally would.
  *
- * ## Two things this map does NOT carry
+ * ## One event covers reports AND templates
  *
- * `ad_dashboard:ad_report:list`, `:report_template:list` and
- * `:ad_rate_config:updated` have no desktop page: this port is Today,
- * Register and Shoot days, with no reports or rate config to reload. The
- * supporting-artiste query events belong to the portal's Queries page and
- * live in that module (`SaPortalSync`).
+ * The backend sends `ad_dashboard:ad_report:list` for both, so a remote
+ * template edit also reloads the open report — the web fans the one event out
+ * to both of its keys and so does this.
  *
  * ## An iOS spelling that is not copied
  *
@@ -67,6 +65,42 @@ internal val AD_REFRESH_BY_EVENT: Map<SocketEventName, Set<AdRefresh>> = buildMa
         "ad_dashboard:ad_shoot_day:updated",
         "ad_dashboard:ad_shoot_day:submitted",
     ).forEach { put(SocketEventName(it), setOf(AdRefresh.Today, AdRefresh.Days)) }
+
+    // The queue is server-derived from the day headers, so anything that moves
+    // a day moves it too — and submitting a day is what puts a PO on it.
+    put(
+        SocketEventName("ad_dashboard:ad_shoot_day:submitted"),
+        setOf(AdRefresh.Today, AdRefresh.Days, AdRefresh.Queue),
+    )
+
+    listOf(
+        "ad_dashboard:supporting_artiste:query:opened",
+        "ad_dashboard:supporting_artiste:query:replied",
+        "ad_dashboard:supporting_artiste:query:resolved",
+        "sa:query:opened",
+        "sa:query:received",
+        "sa:query:resolved",
+    ).forEach { put(SocketEventName(it), setOf(AdRefresh.Queries)) }
+
+    // Rates, and with them the agency lists the pickers read.
+    put(SocketEventName("ad_dashboard:ad_rate_config:updated"), setOf(AdRefresh.Rates))
+    listOf(
+        "vendor:created",
+        "vendor:updated",
+        "vendor:verified",
+        "vendor:unverified",
+        "vendor:deleted",
+    ).forEach { put(SocketEventName(it), setOf(AdRefresh.Rates)) }
+
+    // One event for reports and templates alike — the backend sends no second.
+    put(SocketEventName("ad_dashboard:ad_report:list"), setOf(AdRefresh.Reports))
+
+    // The name is the handler comment's, which says itself it is unconfirmed;
+    // both spellings are registered so a reset lands whichever it turns out to be.
+    listOf(
+        "ad-report:signatures-voided",
+        "ad_dashboard:ad_report:signatures_voided",
+    ).forEach { put(SocketEventName(it), setOf(AdRefresh.Signatures, AdRefresh.Reports)) }
 }
 
 /**

@@ -1,17 +1,16 @@
 package com.zillit.desktop.feature.addashboard
 
 import com.zillit.desktop.core.badges.TabBadgeSource
-import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.addashboard.domain.AdRepository
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.AdViewer
 import com.zillit.desktop.feature.addashboard.domain.Artiste
-import com.zillit.desktop.feature.addashboard.domain.AttendanceStatus
-import com.zillit.desktop.feature.addashboard.domain.SupportingArtistDay
+import com.zillit.desktop.feature.addashboard.domain.ArtisteQuery
 import com.zillit.desktop.feature.addashboard.ui.AdBadges
 import com.zillit.desktop.feature.addashboard.ui.AdDestination
 import com.zillit.desktop.feature.addashboard.ui.AdEvent
 import com.zillit.desktop.feature.addashboard.ui.AdViewModel
+import com.zillit.desktop.feature.addashboard.ui.QueryEvent
+import com.zillit.desktop.feature.addashboard.ui.RegisterEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -29,8 +28,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Which AD rows a screen reads, and when: the register per artiste, every
- * other page whole, and nothing behind a window nobody is looking at.
+ * Which AD rows a screen reads, and when: the register and the queries per
+ * row, every other page whole, and nothing behind a window nobody is looking
+ * at.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AdBadgeReadsTest {
@@ -56,53 +56,63 @@ class AdBadgeReadsTest {
         }
     }
 
-    private class Repo : AdRepository {
-        override suspend fun artistes() = ZillitResult.Success(listOf(Artiste(id = "a1", name = "Ada")))
-        override suspend fun verify(artisteId: String) = ZillitResult.Success(Unit)
-        override suspend fun block(artisteId: String, reason: String?) = ZillitResult.Success(Unit)
-        override suspend fun unblock(artisteId: String) = ZillitResult.Success(Unit)
-        override suspend fun deleteArtiste(artisteId: String) = ZillitResult.Success(Unit)
-        override suspend fun today(shootDate: Long) = ZillitResult.Success(AdShootDay(id = "d1"))
-        override suspend fun shootDays() = ZillitResult.Success(emptyList<AdShootDay>())
-        override suspend fun dayList(shootDate: Long) = ZillitResult.Success(emptyList<SupportingArtistDay>())
-        override suspend fun addToDay(artisteIds: List<String>, shootDate: Long, callTime: String?) =
-            ZillitResult.Success(Unit)
-        override suspend fun updateDayEntry(
-            id: String,
-            callTime: String?,
-            wrapTime: String?,
-            attendance: AttendanceStatus?,
-        ) = ZillitResult.Success(Unit)
-        override suspend fun removeFromDay(id: String) = ZillitResult.Success(Unit)
-        override suspend fun submitDay(shootDate: Long) = ZillitResult.Success(Unit)
+    private fun repo() = FakeAdRepository().apply {
+        dayHeader = AdShootDay(id = "d1")
+        artisteRows = listOf(Artiste(id = "a1", name = "Ada"))
+        queryRows = listOf(ArtisteQuery(id = "q1", artisteName = "Ada"))
     }
 
-    private fun model(badges: FakeBadges) = AdViewModel(
-        repository = Repo(),
-        viewer = { AdViewer(userId = "u1", canPost = true, ready = true) },
-        now = { NOW },
+    private fun model(badges: FakeBadges, repo: FakeAdRepository = repo()) = AdViewModel(
+        repository = repo,
         badges = badges,
+        now = { NOW },
+        viewer = { AdViewer(userId = "u1", canPost = true, ready = true) },
     ).also { it.start() }
 
+    /**
+     * The register badges per artiste.
+     *
+     * Opening the tab used to clear every dot at once, which left the
+     * sidebar's rollup counting nothing — so the row is the read, not the tab.
+     */
     @Test
     fun `the register is read per artiste, never whole`() = runTest(dispatcher) {
         val badges = FakeBadges()
-        badges.unit.value = mapOf(AdBadges.REGISTER to 2, AdBadges.QUERY to 1)
+        badges.unit.value = mapOf(AdBadges.REGISTER to 2)
         badges.tree.value = mapOf(AdBadges.REGISTER to mapOf("a1" to 1, "a2" to 1))
         val vm = model(badges)
         runCurrent()
 
         vm.onEvent(AdEvent.Open(AdDestination.Register))
         runCurrent()
-        // The queries have no list here to read one from, so they go whole.
-        assertEquals(listOf(AdBadges.QUERY), badges.reads)
+        assertTrue(badges.reads.isEmpty(), "the tab itself reads nothing: ${badges.reads}")
         assertEquals(1, vm.state.value.artisteUnread("a2"))
 
-        vm.onEvent(AdEvent.SeeArtiste("a1"))
-        // Acting on an artiste is looking at them.
-        vm.onEvent(AdEvent.Verify("a2"))
+        vm.onEvent(RegisterEvent.SeeArtiste("a1"))
+        vm.onEvent(RegisterEvent.OpenArtiste("a2"))
         runCurrent()
-        assertEquals(listOf(AdBadges.QUERY, "${AdBadges.REGISTER}/a1", "${AdBadges.REGISTER}/a2"), badges.reads)
+        assertEquals(
+            listOf("${AdBadges.REGISTER}/a1", "${AdBadges.REGISTER}/a2"),
+            badges.reads,
+        )
+    }
+
+    /** The queries badge per thread too, for the same reason. */
+    @Test
+    fun `a query is read when its thread is opened`() = runTest(dispatcher) {
+        val badges = FakeBadges()
+        badges.unit.value = mapOf(AdBadges.QUERY to 1)
+        badges.tree.value = mapOf(AdBadges.QUERY to mapOf("q1" to 1))
+        val vm = model(badges)
+        runCurrent()
+
+        vm.onEvent(AdEvent.Open(AdDestination.Queries))
+        runCurrent()
+        assertTrue(badges.reads.isEmpty(), "the tab itself reads nothing: ${badges.reads}")
+
+        vm.onEvent(QueryEvent.OpenThread("q1"))
+        runCurrent()
+        assertEquals(listOf("${AdBadges.QUERY}/q1"), badges.reads)
     }
 
     @Test
@@ -110,17 +120,39 @@ class AdBadgeReadsTest {
         val badges = FakeBadges()
         val vm = model(badges)
         runCurrent()
-        vm.onEvent(AdEvent.SeeArtiste("a1"))
+        vm.onEvent(RegisterEvent.SeeArtiste("a1"))
         runCurrent()
         assertTrue(badges.reads.isEmpty())
     }
 
+    /**
+     * Each badged page owns its unit, and the two per-row ones are left out of
+     * the page read — the web's `AD_UNIT_BY_NAV` against its `AD_ITEM_UNITS`.
+     */
     @Test
-    fun `the AD reports clear on the shoot days`() {
-        // No Reports page here: the days they report on are the nearest.
-        assertTrue(AdBadges.REPORTS in AdDestination.Days.badgeKeys)
-        assertTrue(AdBadges.REPORTS in AdDestination.Days.pageReads)
-        assertFalse(AdBadges.REGISTER in AdDestination.Register.pageReads)
+    fun `each unit belongs to the page that shows it`() {
+        assertEquals(listOf(AdBadges.TODAY_LIST), AdDestination.TodaysList.badgeKeys)
+        assertEquals(listOf(AdBadges.ADD_EXTRAS), AdDestination.AddExtras.badgeKeys)
+        assertEquals(listOf(AdBadges.REPORTS), AdDestination.WrapReport.badgeKeys)
+        assertEquals(listOf(AdBadges.SHOOT_SCHEDULE), AdDestination.Schedule.badgeKeys)
+        // Exhibit G has no unit of its own on any client.
+        assertTrue(AdDestination.ExhibitG.badgeKeys.isEmpty())
+
+        // Read whole on entry…
+        assertEquals(listOf(AdBadges.TODAY_LIST), AdDestination.TodaysList.pageReads)
+        // …except the two that read per row.
+        assertTrue(AdDestination.Register.pageReads.isEmpty())
+        assertTrue(AdDestination.Queries.pageReads.isEmpty())
+    }
+
+    /** The level marker the backend stores a tab-level read under. */
+    @Test
+    fun `a tab read carries the marker the backend files it under`() {
+        assertEquals("level_3" to "today", AdDestination.TodaysList.readLevel)
+        assertEquals("level_3" to "tomorrow", AdDestination.AddExtras.readLevel)
+        assertEquals("level_2" to "report", AdDestination.WrapReport.readLevel)
+        // Unit-scoped: the schedule sends no marker.
+        assertEquals(null, AdDestination.Schedule.readLevel)
     }
 
     @Test
@@ -128,6 +160,10 @@ class AdBadgeReadsTest {
         val badges = FakeBadges()
         val vm = model(badges)
         runCurrent()
+
+        vm.onEvent(AdEvent.Open(AdDestination.TodaysList))
+        runCurrent()
+        badges.reads.clear()
 
         badges.unit.value = mapOf(AdBadges.TODAY_LIST to 1, "rates_config_label" to 1)
         runCurrent()
@@ -137,6 +173,16 @@ class AdBadgeReadsTest {
         vm.onEvent(AdEvent.WindowFocus(true))
         runCurrent()
         assertEquals(listOf(AdBadges.TODAY_LIST, "rates_config_label"), badges.reads)
+    }
+
+    /** The dashboard opens on Wrap Report, as the web's bare path has since 2026-07-08. */
+    @Test
+    fun `the landing page is the wrap report`() = runTest(dispatcher) {
+        val vm = model(FakeBadges())
+        runCurrent()
+
+        assertEquals(AdDestination.WrapReport, vm.state.value.destination)
+        assertFalse(AdDestination.WrapReport.postingOnly)
     }
 
     private companion object {

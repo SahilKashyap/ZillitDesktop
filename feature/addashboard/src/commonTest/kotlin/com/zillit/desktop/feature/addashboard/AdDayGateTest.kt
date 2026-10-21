@@ -1,17 +1,18 @@
 package com.zillit.desktop.feature.addashboard
 
-import com.zillit.desktop.core.common.ZillitError
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.addashboard.domain.AdDayStatus
-import com.zillit.desktop.feature.addashboard.domain.AdRepository
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.AdViewer
 import com.zillit.desktop.feature.addashboard.domain.Artiste
 import com.zillit.desktop.feature.addashboard.domain.ArtisteStatus
 import com.zillit.desktop.feature.addashboard.domain.AttendanceStatus
 import com.zillit.desktop.feature.addashboard.domain.SupportingArtistDay
+import com.zillit.desktop.feature.addashboard.ui.AdDestination
 import com.zillit.desktop.feature.addashboard.ui.AdEvent
 import com.zillit.desktop.feature.addashboard.ui.AdViewModel
+import com.zillit.desktop.feature.addashboard.ui.AddExtrasEvent
+import com.zillit.desktop.feature.addashboard.ui.DayEvent
+import com.zillit.desktop.feature.addashboard.ui.RegisterEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -24,7 +25,6 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -45,63 +45,16 @@ class AdDayGateTest {
     private val midMorning = 1_772_792_100_000L
     private val thatMidnight = 1_772_755_200_000L
 
-    private class FakeRepo(private val dayStatus: AdDayStatus = AdDayStatus.InProgress) : AdRepository {
-        val edits = mutableListOf<String>()
-        val submitted = mutableListOf<Long>()
-        val added = mutableListOf<Triple<List<String>, Long, String?>>()
-        val blocked = mutableListOf<Pair<String, String?>>()
-        var artisteRows = listOf(Artiste(id = "a1", name = "Ada"))
-        var dayRows = listOf(SupportingArtistDay(id = "s1", artisteId = "a1", artisteName = "Ada"))
-        var daysAsked = mutableListOf<Long>()
-
-        override suspend fun artistes() = ZillitResult.Success(artisteRows)
-        override suspend fun verify(artisteId: String): ZillitResult<Unit> {
-            edits += "verify:$artisteId"
-            return ZillitResult.Success(Unit)
-        }
-        override suspend fun block(artisteId: String, reason: String?): ZillitResult<Unit> {
-            blocked += artisteId to reason
-            return ZillitResult.Success(Unit)
-        }
-        override suspend fun unblock(artisteId: String) = ZillitResult.Success(Unit)
-        override suspend fun deleteArtiste(artisteId: String) = ZillitResult.Success(Unit)
-        override suspend fun today(shootDate: Long): ZillitResult<AdShootDay> {
-            daysAsked += shootDate
-            return ZillitResult.Success(AdShootDay(id = "d1", shootDate = shootDate, status = dayStatus))
-        }
-        override suspend fun shootDays() = ZillitResult.Success(emptyList<AdShootDay>())
-        override suspend fun dayList(shootDate: Long) = ZillitResult.Success(dayRows)
-        override suspend fun addToDay(
-            artisteIds: List<String>,
-            shootDate: Long,
-            callTime: String?,
-        ): ZillitResult<Unit> {
-            added += Triple(artisteIds, shootDate, callTime)
-            return ZillitResult.Success(Unit)
-        }
-        override suspend fun updateDayEntry(
-            id: String,
-            callTime: String?,
-            wrapTime: String?,
-            attendance: AttendanceStatus?,
-        ): ZillitResult<Unit> {
-            edits += "update:$id:${attendance?.wire ?: callTime ?: wrapTime}"
-            return ZillitResult.Success(Unit)
-        }
-        override suspend fun removeFromDay(id: String): ZillitResult<Unit> {
-            edits += "remove:$id"
-            return ZillitResult.Success(Unit)
-        }
-        override suspend fun submitDay(shootDate: Long): ZillitResult<Unit> {
-            submitted += shootDate
-            return ZillitResult.Success(Unit)
-        }
+    private fun repo(status: AdDayStatus = AdDayStatus.InProgress) = FakeAdRepository().apply {
+        dayHeader = AdShootDay(id = "d1", status = status)
+        artisteRows = listOf(Artiste(id = "a1", name = "Ada"))
+        dayRows = listOf(SupportingArtistDay(id = "s1", artisteId = "a1", artisteName = "Ada"))
     }
 
-    private fun model(repo: FakeRepo, canPost: Boolean = true) = AdViewModel(
+    private fun model(repo: FakeAdRepository, canPost: Boolean = true) = AdViewModel(
         repository = repo,
-        viewer = { AdViewer(userId = "u1", canPost = canPost, ready = true) },
         now = { midMorning },
+        viewer = { AdViewer(userId = "u1", canPost = canPost, ready = true) },
     ).also { it.start() }
 
     // -- the date --------------------------------------------------------------
@@ -113,18 +66,17 @@ class AdDayGateTest {
      */
     @Test
     fun `it opens on today's UTC midnight`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
         assertEquals(thatMidnight, vm.state.value.shootDate)
-        assertEquals(listOf(thatMidnight), repo.daysAsked)
+        assertTrue(repo.daysAsked.all { it == thatMidnight })
     }
 
     @Test
     fun `stepping a day keeps the date flat`() = runTest(dispatcher) {
-        val repo = FakeRepo()
-        val vm = model(repo)
+        val vm = model(repo())
         runCurrent()
 
         vm.onEvent(AdEvent.ChangeDay(vm.state.value.shootDate - 1))
@@ -136,152 +88,166 @@ class AdDayGateTest {
 
     // -- the two gates ---------------------------------------------------------
 
+    /**
+     * A mark sends its time explicitly, re-stamped onto the day being run.
+     *
+     * Never left to the server: a server stamp is a real instant, so an AD
+     * marking 07:30 in Mumbai would have it render as 02:00 to everyone else.
+     */
     @Test
-    fun `an AD with posting rights may mark attendance on an open day`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+    fun `marking present sends the attendance and a call time`() = runTest(dispatcher) {
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.SetAttendance("s1", AttendanceStatus.Present))
+        vm.onEvent(DayEvent.MarkPresent("s1"))
         runCurrent()
 
-        assertEquals(listOf("update:s1:present"), repo.edits)
+        val write = repo.writes.single { it.startsWith("update:s1") }
+        assertTrue(write.contains("present"), write)
+        assertTrue(write.contains("call="), "the call time rides with the mark: $write")
+    }
+
+    /** Unmarking clears the call time too, or a cleared row still reads as present. */
+    @Test
+    fun `unmarking clears the attendance and the call time`() = runTest(dispatcher) {
+        val repo = repo()
+        val vm = model(repo)
+        runCurrent()
+
+        vm.onEvent(DayEvent.Unmark("s1"))
+        runCurrent()
+
+        val write = repo.writes.single { it.startsWith("update:s1") }
+        assertTrue(write.contains("attendance=null"), write)
+        assertTrue(write.contains("call=null"), write)
     }
 
     @Test
     fun `a viewer without posting rights changes nothing`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+        val repo = repo()
         val vm = model(repo, canPost = false)
         runCurrent()
 
-        vm.onEvent(AdEvent.SetAttendance("s1", AttendanceStatus.Present))
-        vm.onEvent(AdEvent.RemoveFromDay("s1"))
+        vm.onEvent(DayEvent.MarkPresent("s1"))
+        vm.onEvent(DayEvent.RemoveFromDay("s1"))
         runCurrent()
 
-        assertTrue(repo.edits.isEmpty())
+        assertTrue(repo.writes.isEmpty())
         assertFalse(vm.state.value.canEditDay)
     }
 
     /** Nobody may change a submitted day — not even the AD who sent it. */
     @Test
     fun `a submitted day refuses every edit`() = runTest(dispatcher) {
-        val repo = FakeRepo(dayStatus = AdDayStatus.Submitted)
+        val repo = repo(status = AdDayStatus.Submitted)
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.SetAttendance("s1", AttendanceStatus.Present))
-        vm.onEvent(AdEvent.SetCallTime("s1", "07:00"))
-        vm.onEvent(AdEvent.RemoveFromDay("s1"))
+        vm.onEvent(DayEvent.MarkPresent("s1"))
+        vm.onEvent(DayEvent.MarkOut("s1"))
+        vm.onEvent(DayEvent.RemoveFromDay("s1"))
         runCurrent()
 
-        assertTrue(repo.edits.isEmpty())
+        assertTrue(repo.writes.isEmpty())
         assertFalse(vm.state.value.canEditDay)
     }
 
     @Test
     fun `a published day is as locked as a submitted one`() = runTest(dispatcher) {
-        val repo = FakeRepo(dayStatus = AdDayStatus.Published)
+        val repo = repo(status = AdDayStatus.Published)
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.SetAttendance("s1", AttendanceStatus.Present))
+        vm.onEvent(DayEvent.MarkPresent("s1"))
         runCurrent()
 
-        assertTrue(repo.edits.isEmpty())
+        assertTrue(repo.writes.isEmpty())
     }
 
     @Test
     fun `a wrapped day is still open for corrections`() = runTest(dispatcher) {
-        val repo = FakeRepo(dayStatus = AdDayStatus.Wrapped)
+        val repo = repo(status = AdDayStatus.Wrapped)
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.SetAttendance("s1", AttendanceStatus.Present))
+        vm.onEvent(DayEvent.MarkPresent("s1"))
         runCurrent()
 
-        assertEquals(1, repo.edits.size)
+        assertEquals(1, repo.writes.count { it.startsWith("update:") })
     }
 
-    // -- submitting ------------------------------------------------------------
-
-    /** Submitting locks the day, so it is confirmed rather than done on a click. */
+    /**
+     * A future day opens read-only.
+     *
+     * Today and an unsubmitted **past** day may still be run and submitted;
+     * only the future is date-locked, which is how an upcoming day on the
+     * schedule can be looked at without being changed.
+     */
     @Test
-    fun `submitting asks first`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+    fun `a future day is read-only even on an open status`() = runTest(dispatcher) {
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.AskSubmitDay)
+        vm.onEvent(AdEvent.ChangeDay(thatMidnight + 86_400_000L))
+        runCurrent()
+        vm.onEvent(DayEvent.MarkPresent("s1"))
         runCurrent()
 
-        assertTrue(vm.state.value.confirmSubmit)
-        assertTrue(repo.submitted.isEmpty(), "nothing sent until it is confirmed")
+        assertFalse(vm.state.value.dateEditable)
+        assertFalse(vm.state.value.canEditDay)
+        assertTrue(repo.writes.isEmpty())
     }
 
     @Test
-    fun `confirming submits the open day`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+    fun `a past day is still editable`() = runTest(dispatcher) {
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.AskSubmitDay)
-        vm.onEvent(AdEvent.ConfirmSubmitDay)
+        vm.onEvent(AdEvent.ChangeDay(thatMidnight - 86_400_000L))
+        runCurrent()
+        vm.onEvent(DayEvent.MarkPresent("s1"))
         runCurrent()
 
-        assertEquals(listOf(thatMidnight), repo.submitted)
-        assertFalse(vm.state.value.confirmSubmit)
-        assertEquals("Day submitted", vm.state.value.notice)
+        assertTrue(vm.state.value.dateEditable)
+        assertEquals(1, repo.writes.count { it.startsWith("update:") })
     }
 
-    @Test
-    fun `changing one's mind sends nothing`() = runTest(dispatcher) {
-        val repo = FakeRepo()
-        val vm = model(repo)
-        runCurrent()
-
-        vm.onEvent(AdEvent.AskSubmitDay)
-        vm.onEvent(AdEvent.CancelSubmitDay)
-        runCurrent()
-
-        assertTrue(repo.submitted.isEmpty())
-        assertFalse(vm.state.value.confirmSubmit)
-    }
-
-    // -- adding to the day -----------------------------------------------------
+    // -- booking onto the day --------------------------------------------------
 
     @Test
-    fun `adding sends the chosen artistes against the open day`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+    fun `booking sends the chosen artistes against the open day`() = runTest(dispatcher) {
+        val repo = repo()
         repo.dayRows = emptyList()
         repo.artisteRows = listOf(Artiste(id = "a1", name = "Ada"), Artiste(id = "a2", name = "Ravi"))
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.OpenAddToDay)
-        vm.onEvent(AdEvent.ToggleArtiste("a1"))
-        vm.onEvent(AdEvent.ToggleArtiste("a2"))
-        vm.onEvent(AdEvent.AddCallTime("07:00"))
-        vm.onEvent(AdEvent.ConfirmAddToDay)
+        vm.onEvent(AddExtrasEvent.Toggle("a1"))
+        vm.onEvent(AddExtrasEvent.Toggle("a2"))
+        vm.onEvent(AddExtrasEvent.CallTime("07:00"))
+        vm.onEvent(AddExtrasEvent.Submit)
         runCurrent()
 
-        val (ids, date, callTime) = repo.added.single()
-        assertEquals(setOf("a1", "a2"), ids.toSet())
-        assertEquals(thatMidnight, date)
-        assertEquals("07:00", callTime)
-        assertNull(vm.state.value.addToDay)
+        val write = repo.writes.single { it.startsWith("addToDay:") }
+        assertTrue(write.contains("a1") && write.contains("a2"), write)
+        assertTrue(write.contains(thatMidnight.toString()), write)
+        assertTrue(write.endsWith("07:00"), write)
+        assertTrue(vm.state.value.addExtras.chosen.isEmpty(), "the picks clear on success")
     }
 
     @Test
-    fun `adding nobody sends nothing`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+    fun `booking nobody sends nothing`() = runTest(dispatcher) {
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.OpenAddToDay)
-        vm.onEvent(AdEvent.ConfirmAddToDay)
+        vm.onEvent(AddExtrasEvent.Submit)
         runCurrent()
 
-        assertTrue(repo.added.isEmpty())
+        assertTrue(repo.writes.none { it.startsWith("addToDay:") })
     }
 
     /**
@@ -289,8 +255,8 @@ class AdDayGateTest {
      * never offered — and neither is anyone already on the day.
      */
     @Test
-    fun `the add list leaves out the blocked and the already-booked`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+    fun `the bookable list leaves out the blocked and the already-booked`() = runTest(dispatcher) {
+        val repo = repo()
         repo.artisteRows = listOf(
             Artiste(id = "a1", name = "Ada"),
             Artiste(id = "a2", name = "Ravi", status = ArtisteStatus.Blocked),
@@ -303,65 +269,180 @@ class AdDayGateTest {
         assertEquals(listOf("a3"), vm.state.value.addable("").map { it.id })
     }
 
+    /**
+     * A new external artiste must have an e-mail address.
+     *
+     * The portal is code-gated and the code can only go to the address on
+     * file, so booking one without it leaves them unable to approve their own
+     * day. Quick add is one of the two paths that enforces this; the full form
+     * deliberately does not.
+     */
+    @Test
+    fun `a new external artiste with no e-mail is refused`() = runTest(dispatcher) {
+        val repo = repo()
+        val vm = model(repo)
+        runCurrent()
+
+        vm.onEvent(AddExtrasEvent.StartNewArtiste)
+        vm.onEvent(AddExtrasEvent.NewFirstName("Ada"))
+        vm.onEvent(AddExtrasEvent.NewLastName("Lovelace"))
+        vm.onEvent(AddExtrasEvent.Submit)
+        runCurrent()
+
+        assertTrue(repo.writes.none { it.startsWith("createWithDay:") })
+        assertTrue(vm.state.value.addExtras.error != null)
+    }
+
+    @Test
+    fun `a new external artiste with an e-mail is created and booked`() = runTest(dispatcher) {
+        val repo = repo()
+        val vm = model(repo)
+        runCurrent()
+
+        vm.onEvent(AddExtrasEvent.StartNewArtiste)
+        vm.onEvent(AddExtrasEvent.NewFirstName("Ada"))
+        vm.onEvent(AddExtrasEvent.NewLastName("Lovelace"))
+        vm.onEvent(AddExtrasEvent.NewEmail("ada@example.com"))
+        vm.onEvent(AddExtrasEvent.Submit)
+        runCurrent()
+
+        assertTrue(repo.writes.any { it.startsWith("createWithDay:ada@example.com") })
+    }
+
+    /** Add Extras allows tomorrow deliberately: a unit books its crowd the night before. */
+    @Test
+    fun `add extras can move to tomorrow`() = runTest(dispatcher) {
+        val repo = repo()
+        val vm = model(repo)
+        runCurrent()
+
+        vm.onEvent(AddExtrasEvent.PickDay(1))
+        runCurrent()
+
+        assertEquals(thatMidnight + 86_400_000L, vm.state.value.shootDate)
+    }
+
     // -- the register ----------------------------------------------------------
 
     @Test
     fun `blocking records the reason when one is given`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.StartBlock(Artiste(id = "a1", name = "Ada")))
-        vm.onEvent(AdEvent.BlockReason("Did not turn up twice"))
-        vm.onEvent(AdEvent.ConfirmBlock)
+        vm.onEvent(RegisterEvent.OpenArtiste("a1"))
+        runCurrent()
+        vm.onEvent(RegisterEvent.AskBlock)
+        vm.onEvent(RegisterEvent.BlockReason("Did not turn up twice"))
+        vm.onEvent(RegisterEvent.ConfirmBlock)
         runCurrent()
 
-        assertEquals(1, repo.blocked.size)
-        assertEquals("a1", repo.blocked.single().first)
-        assertEquals("Did not turn up twice", repo.blocked.single().second)
+        assertTrue(repo.writes.contains("block:a1:Did not turn up twice"))
     }
 
     /** An empty reason is sent as none, so no empty explanation is recorded. */
     @Test
     fun `blocking with no reason records none`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+        val repo = repo()
         val vm = model(repo)
         runCurrent()
 
-        vm.onEvent(AdEvent.StartBlock(Artiste(id = "a1", name = "Ada")))
-        vm.onEvent(AdEvent.ConfirmBlock)
+        vm.onEvent(RegisterEvent.OpenArtiste("a1"))
+        runCurrent()
+        vm.onEvent(RegisterEvent.AskBlock)
+        vm.onEvent(RegisterEvent.ConfirmBlock)
         runCurrent()
 
-        assertEquals(1, repo.blocked.size)
-        assertEquals("a1", repo.blocked.single().first)
-        assertNull(repo.blocked.single().second, "an empty reason is sent as none")
+        assertTrue(repo.writes.contains("block:a1:"), repo.writes.toString())
     }
 
     @Test
     fun `a reader cannot verify or block`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+        val repo = repo()
         val vm = model(repo, canPost = false)
         runCurrent()
 
-        vm.onEvent(AdEvent.Verify("a1"))
-        vm.onEvent(AdEvent.StartBlock(Artiste(id = "a1", name = "Ada")))
-        vm.onEvent(AdEvent.ConfirmBlock)
+        vm.onEvent(RegisterEvent.Verify("a1"))
+        vm.onEvent(RegisterEvent.OpenArtiste("a1"))
+        runCurrent()
+        vm.onEvent(RegisterEvent.AskBlock)
+        vm.onEvent(RegisterEvent.ConfirmBlock)
         runCurrent()
 
-        assertTrue(repo.edits.isEmpty())
-        assertTrue(repo.blocked.isEmpty())
+        assertTrue(repo.writes.none { it.startsWith("verify:") })
+        assertTrue(repo.writes.none { it.startsWith("block:") })
+    }
+
+    /** A verified artiste has been through onboarding and may carry signed days. */
+    @Test
+    fun `a verified artiste is not offered for deletion`() = runTest(dispatcher) {
+        val repo = repo()
+        repo.artisteRows = listOf(Artiste(id = "a1", name = "Ada", status = ArtisteStatus.Verified))
+        val vm = model(repo)
+        runCurrent()
+
+        vm.onEvent(RegisterEvent.AskDelete(repo.artisteRows.single()))
+        runCurrent()
+
+        assertTrue(vm.state.value.register.confirmDelete == null)
+        assertTrue(repo.writes.none { it.startsWith("deleteArtiste:") })
     }
 
     @Test
     fun `a blocked viewer loads nothing at all`() = runTest(dispatcher) {
-        val repo = FakeRepo()
+        val repo = repo()
         AdViewModel(
             repository = repo,
-            viewer = { AdViewer(userId = "u1", canView = false, ready = true) },
             now = { midMorning },
+            viewer = { AdViewer(userId = "u1", canView = false, ready = true) },
         ).start()
         runCurrent()
 
         assertTrue(repo.daysAsked.isEmpty())
+    }
+
+    // -- the hidden pages ------------------------------------------------------
+
+    /**
+     * Four pages are hidden from a viewer without posting rights, and every
+     * other page stays — read-only. A hide-list, not a whitelist.
+     */
+    @Test
+    fun `the four posting-only pages are hidden from a reader`() = runTest(dispatcher) {
+        val vm = model(repo(), canPost = false)
+        runCurrent()
+
+        val visible = vm.state.value.visibleDestinations
+        assertFalse(AdDestination.LiveDay in visible)
+        assertFalse(AdDestination.Onboarding in visible)
+        assertFalse(AdDestination.Config in visible)
+        assertTrue(AdDestination.TodaysList in visible, "everything else stays, read-only")
+        assertTrue(AdDestination.Queries in visible)
+    }
+
+    /** A reader who lands on a hidden page is put on Today's List instead. */
+    @Test
+    fun `a reader lands on today's list rather than a hidden page`() = runTest(dispatcher) {
+        val vm = model(repo(), canPost = false)
+        runCurrent()
+
+        vm.onEvent(AdEvent.Open(AdDestination.Config))
+        runCurrent()
+
+        assertFalse(vm.state.value.destination == AdDestination.Config)
+    }
+
+    /** Attendance marks go through the same gate from either page. */
+    @Test
+    fun `an absent mark carries no call time`() = runTest(dispatcher) {
+        val repo = repo()
+        val vm = model(repo)
+        runCurrent()
+
+        vm.onEvent(DayEvent.MarkAbsent("s1"))
+        runCurrent()
+
+        val write = repo.writes.single { it.startsWith("update:s1") }
+        assertEquals("update:s1:${AttendanceStatus.Absent.wire}", write)
     }
 }
