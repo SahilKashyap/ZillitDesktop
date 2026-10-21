@@ -84,6 +84,13 @@ object ZillitLogging {
         "DatabaseKey",
         "TokenSession",
         "AppUpdate",
+        // The gates between picking a production and its board drawing
+        // ([OpenTrace]). Here for the same reason "Startup" is: the question
+        // it answers — which gate is the wait — is only ever asked about
+        // somebody else's machine, where a log is all there is. A dozen lines
+        // per open, and the production appears as a tail, the rule
+        // "TokenSession" already logs ids under.
+        "Open",
     )
 
     private const val TAG = "Logging"

@@ -32,6 +32,9 @@ class LocalCacheWiper(
             database.readCacheQueries.deleteAll()
             database.notificationLedgerQueries.deleteAll()
             database.projectListCacheQueries.deleteProjectList()
+            // Which productions were opened, and when, is this person's too —
+            // and with their rows gone there is nothing left for it to keep.
+            ProjectVisits(database).forgetAll()
         }
         // Unsent operations and drafts are the person's too — the sign-out
         // dialog counts them and says they will be lost.

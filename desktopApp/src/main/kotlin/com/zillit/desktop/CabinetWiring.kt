@@ -89,6 +89,8 @@ private fun AppGraph.Ready.groupChatViewer(): CabinetViewer = GroupChatCabinetVi
         loadAvatar = { id -> fetchAvatar(this, id)?.let(::decodeImageBitmap) },
         loadThumbnail = { f -> fetchChatImage(this, f, preview = true) },
         loadFullImage = { f -> fetchChatImage(this, f, preview = false) },
+        // The archived thread reads its documents in the app too.
+        loadDocument = { f -> fetchChatBytes(this, f, preview = false) },
         onOpenAttachment = { f -> openChatAttachment(this, f) },
         onOpenUrl = ::openInBrowser,
     ),

@@ -334,7 +334,7 @@ class ThreadPaneRenderTest {
     }
 
     @Test
-    fun `a document chip refuses to save without the right`() = runComposeUiTest {
+    fun `a document chip opens the viewer, whose Download refuses without the right`() = runComposeUiTest {
         val doc = theirs("").copy(
             attachment = ChatAttachment(
                 media = "s3/key",
@@ -357,7 +357,14 @@ class ThreadPaneRenderTest {
             }
         }
 
+        // The chip opens the document here — looking, which no right governs
+        // — and nothing has been refused yet.
         onNodeWithText("callsheet.pdf").performClick()
+        waitForIdle()
+        onNodeWithText(DOWNLOAD_REFUSED).assertDoesNotExist()
+        onNodeWithText("Download").assertExists("the document viewer opened")
+        // Saving it is the gated act, and this viewer may not.
+        onNodeWithText("Download").performClick()
         waitForIdle()
         onNodeWithText(DOWNLOAD_REFUSED).assertExists()
         assertTrue(!opened, "the save-and-open never ran")

@@ -3,8 +3,10 @@ package com.zillit.desktop.feature.home.ui
 import com.zillit.desktop.core.permissions.RightsArea
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.common.OpenTrace
 import com.zillit.desktop.core.common.SentenceCase
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.PreviewKind
@@ -2497,7 +2499,10 @@ class HomeFeedViewModel(
     }
 
     private fun loadUnits() {
-        if (!readsShownProduction()) return
+        if (!readsShownProduction()) {
+            OpenTrace.mark("board load dropped — the production on screen is not this board's")
+            return
+        }
         setState {
             copy(
                 isLoadingUnits = true,
@@ -2507,11 +2512,15 @@ class HomeFeedViewModel(
                 currentUserId = currentUserId(),
             )
         }
+        OpenTrace.mark("board load begins")
 
         // Back in a production this board has already shown: its own tabs and
         // pages, now, with no disk and no spinner. The board under them is
         // refreshed at once; the strip is re-read below as on any load.
-        if (restoreKeptProduction()) currentState.selectedUnit?.let(::loadNotices)
+        if (restoreKeptProduction()) {
+            OpenTrace.mark("tabs and posts restored from this session's own memory")
+            currentState.selectedUnit?.let(::loadNotices)
+        }
 
         // The picker's recency memory rides along with the board's context.
         launchRead {
@@ -2526,7 +2535,7 @@ class HomeFeedViewModel(
             // is what the real read below is for.
             seedUnits()
 
-            when (val result = repository.loadUnits()) {
+            when (val result = OpenTrace.time("tab strip from the server") { repository.loadUnits() }) {
                 is ZillitResult.Success -> onUnitsLoaded(result.data)
                 is ZillitResult.Failure ->
                     setState { copy(isLoadingUnits = false, error = result.error.localised()) }
@@ -2539,13 +2548,26 @@ class HomeFeedViewModel(
         // Only ever a head start. Tabs already on screen — a refetch, or a
         // live answer that beat the disk — are never replaced by kept ones.
         if (currentState.tabs.isNotEmpty()) return
-        val kept = repository.cachedUnits()?.takeIf { it.isNotEmpty() } ?: return
+        val kept = OpenTrace.time("tab strip from disk") { repository.cachedUnits() }
+            ?.takeIf { it.isNotEmpty() }
+        if (kept == null) {
+            // The gate worth knowing about: the posts can be on disk and still
+            // not be drawable, because a board cannot seed a tab it does not
+            // know the id of. The strip and the posts are kept in different
+            // stores and pruned on their own, so one can outlive the other.
+            OpenTrace.mark("no tab strip on disk — the spinner stands until the server answers")
+            return
+        }
         if (currentState.tabs.isNotEmpty()) return
         setState { copy(units = kept, selectedUnitId = selectedUnitId ?: landingTab(kept)) }
+        OpenTrace.mark("tabs drawn from disk (${kept.size})")
         currentState.selectedUnit?.let(::loadNotices)
     }
 
     private fun onUnitsLoaded(units: List<HomeUnit>) {
+        // Which board is open as this lands, to tell the saved landing tab
+        // arriving late from an ordinary first load — see below.
+        val showing = currentState.selectedUnit
         setState {
             copy(
                 isLoadingUnits = false,
@@ -2562,6 +2584,20 @@ class HomeFeedViewModel(
         // opened it a moment ago — in which case asking again would only cost
         // a round trip for the same page.
         val open = currentState.selectedUnit ?: return
+        OpenTrace.mark("tabs drawn from the server (${units.size})")
+        // The saved landing tab rides on the profile, which on a cold open
+        // lands after the strip does: the board read whichever tab came first
+        // a moment ago, and now has to read this one as well. A whole round
+        // trip spent in front of the board the person actually asked for, and
+        // said out loud rather than traced, because it is true of any late
+        // profile and not only of the open being measured.
+        if (showing != null && showing.id != open.id) {
+            ZillitLog.w(TAG) {
+                "landing tab ${open.identifier} arrived after the strip; " +
+                    "the read of ${showing.identifier} was wasted"
+            }
+            OpenTrace.mark("landing tab arrived late — re-reading ${open.identifier}")
+        }
         if (boardReadInFlight != open.id) loadNotices(open)
     }
 
@@ -2726,7 +2762,9 @@ class HomeFeedViewModel(
             // "now" is the newest page — the endpoint reads backwards from a
             // timestamp rather than paging by offset, because a board people are
             // posting to shifts under an offset.
-            val result = repository.loadNotices(unit.id, nowMillis())
+            val result = OpenTrace.time("posts from the server (${unit.identifier})") {
+                repository.loadNotices(unit.id, nowMillis())
+            }
             if (boardReadInFlight == unit.id) boardReadInFlight = null
             when (result) {
                 is ZillitResult.Success -> onNoticesLoaded(unit.id, result.data, rereading)
@@ -2748,10 +2786,16 @@ class HomeFeedViewModel(
      */
     private suspend fun seedNotices(unitId: String) {
         if (currentState.selectedUnitId != unitId || currentState.notices.isNotEmpty()) return
-        val kept = repository.cachedNotices(unitId)?.takeIf { it.isNotEmpty() } ?: return
+        val kept = OpenTrace.time("posts from disk") { repository.cachedNotices(unitId) }
+            ?.takeIf { it.isNotEmpty() }
+        if (kept == null) {
+            OpenTrace.mark("no posts on disk for this board")
+            return
+        }
         if (currentState.selectedUnitId != unitId || currentState.notices.isNotEmpty()) return
         boards[unitId] = kept
         setState { copy(notices = kept, hasOlder = kept.size > 1) }
+        OpenTrace.settle("${kept.size} posts from disk")
     }
 
     private fun onNoticesLoaded(unitId: String, fetched: List<Notice>, rereading: Boolean) {
@@ -2782,6 +2826,7 @@ class HomeFeedViewModel(
             )
         }
         boards[unitId] = currentState.notices
+        OpenTrace.settle("${fetched.size} posts from the server")
         // The board is on screen — that is what "read" means on
         // this API, as when the web's Notices tab is visible.
         readBoard(unitId)
@@ -2929,6 +2974,9 @@ private fun List<Notice>.replacing(localId: String, replacement: Notice): List<N
         }
     }
 }
+
+/** The board's own log tag. `HomeFeedRepositoryImpl` writes under "Home". */
+private const val TAG = "HomeBoard"
 
 private const val TICK_MILLIS = 1_000L
 

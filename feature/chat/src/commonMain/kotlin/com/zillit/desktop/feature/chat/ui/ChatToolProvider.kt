@@ -69,6 +69,14 @@ class ChatToolProvider(
         suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?
     )? = null,
     /**
+     * A shared document's bytes for the in-app viewer — see
+     * [ChatSeams.loadDocument]. Null leaves it with nothing to draw, which it
+     * says, offering the Download instead.
+     */
+    private val loadDocument: (
+        suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?
+    )? = null,
+    /**
      * A clip's playable address for the viewer's player — see
      * [ChatSeams.videoUrl]. Null leaves a video with nothing to play, which
      * the viewer says, offering the save-and-open instead.
@@ -160,6 +168,7 @@ class ChatToolProvider(
                 requestDownloadRights = requestDownloadRights,
                 clipboard = clipboard,
                 loadFullImage = loadFullImage,
+                loadDocument = loadDocument,
                 videoUrl = videoUrl,
                 onOpenUrl = onOpenUrl,
                 shareAsEmail = shareAsEmail?.let { share -> { message -> share(message, navigator) } },

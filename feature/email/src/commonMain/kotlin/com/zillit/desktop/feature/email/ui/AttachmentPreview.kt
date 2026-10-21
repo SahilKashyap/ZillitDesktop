@@ -1,7 +1,8 @@
 package com.zillit.desktop.feature.email.ui
 
 import androidx.compose.ui.graphics.ImageBitmap
-import com.zillit.desktop.core.media.decodeImageBitmap
+import com.zillit.desktop.core.media.DocumentBody
+import com.zillit.desktop.core.media.renderDocumentBody
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 
 /**
@@ -42,38 +43,16 @@ sealed interface PreviewBody {
  * rasterised, text is read as text. Nothing is handed to the operating system
  * to open — see `DownloadsAttachmentStore` for why mail never does that.
  *
+ * The deciding and the drawing are [renderDocumentBody]'s, shared with the
+ * notice board's and the chat thread's document viewers; this maps its answer
+ * onto the mailbox's own [PreviewBody], which the dialog is written against.
+ *
  * Slow for a long PDF, so callers run it off the UI thread.
  */
-fun renderAttachmentPreview(fileName: String, contentType: String?, bytes: ByteArray): PreviewBody {
-    val extension = fileName.substringAfterLast('.', "").lowercase()
-    val type = contentType.orEmpty().lowercase()
-    return when {
-        bytes.isEmpty() -> PreviewBody.Unsupported
-        // The magic number first: a PDF sent as `application/octet-stream`
-        // with no extension is still a PDF.
-        bytes.startsWith(PDF_MAGIC) || extension == "pdf" || type == "application/pdf" ->
-            renderPdfPages(bytes).takeIf { it.isNotEmpty() }?.let(PreviewBody::Pages) ?: PreviewBody.Unsupported
-        extension in IMAGE_EXTENSIONS || type.startsWith("image/") ->
-            decodeImageBitmap(bytes)?.let(PreviewBody::Picture) ?: PreviewBody.Unsupported
-        extension in TEXT_EXTENSIONS || type.startsWith("text/") ->
-            PreviewBody.Text(bytes.decodeToString().take(MAX_TEXT_CHARS))
-        else -> PreviewBody.Unsupported
+fun renderAttachmentPreview(fileName: String, contentType: String?, bytes: ByteArray): PreviewBody =
+    when (val body = renderDocumentBody(fileName, contentType, bytes)) {
+        is DocumentBody.Picture -> PreviewBody.Picture(body.image)
+        is DocumentBody.Pages -> PreviewBody.Pages(body.pages)
+        is DocumentBody.Text -> PreviewBody.Text(body.text)
+        DocumentBody.Unsupported -> PreviewBody.Unsupported
     }
-}
-
-/**
- * A PDF's pages at reading resolution; empty when it will not open
- * (encrypted, truncated). Capped, so a 300-page appendix does not hold the
- * dialog while it rasterises the lot.
- */
-internal expect fun renderPdfPages(bytes: ByteArray): List<ImageBitmap>
-
-private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
-    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
-
-private val PDF_MAGIC = "%PDF".encodeToByteArray()
-private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
-private val TEXT_EXTENSIONS = setOf("txt", "csv", "tsv", "log", "md", "json", "xml", "ics", "vcf")
-
-/** Enough to read; a multi-megabyte log is not laid out in one go. */
-private const val MAX_TEXT_CHARS = 200_000

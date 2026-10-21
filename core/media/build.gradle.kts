@@ -11,6 +11,12 @@ kotlin {
             // Coroutines for the picker's off-thread dialog, and the log.
             implementation(project(":core:common"))
         }
+        jvmMain.dependencies {
+            // The document viewer rasterises PDF pages itself — the web uses
+            // pdf.js, which a Compose window has no equivalent of. JVM-only,
+            // so the renderer's interface lives in commonMain.
+            implementation(libs.pdfbox)
+        }
         jvmTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
             // Composes the real dialog in tests, as the feature modules do.

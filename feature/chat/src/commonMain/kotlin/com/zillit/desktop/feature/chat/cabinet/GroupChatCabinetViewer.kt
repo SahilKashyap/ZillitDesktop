@@ -53,6 +53,8 @@ class CabinetChatHooks(
     val onOpenAttachment: (ChatAttachment) -> Unit = {},
     /** The lightbox's full-size fetch; null falls back to the thumbnail. */
     val loadFullImage: (suspend (ChatAttachment) -> ImageBitmap?)? = null,
+    /** A document's own bytes for the in-app viewer; null leaves it nothing to draw. */
+    val loadDocument: (suspend (ChatAttachment) -> ByteArray?)? = null,
     /** A clip's playable address; null leaves video to the save-and-open. */
     val videoUrl: (suspend (ChatAttachment) -> String?)? = null,
     /** The Chat tool's download right, read per click. */
@@ -125,6 +127,7 @@ class GroupChatCabinetViewer(
 private fun CabinetChatHooks.toSeams() = ChatSeams(
     canDownload = canDownload,
     loadFullImage = loadFullImage,
+    loadDocument = loadDocument,
     videoUrl = videoUrl,
     onOpenUrl = onOpenUrl,
 )

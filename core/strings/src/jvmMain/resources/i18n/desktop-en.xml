@@ -13814,4 +13814,5 @@
     <string name="desktop_ad_signature_pad_hint">Drag to draw, or type your name if you have no pen.</string>
     <string name="desktop_ad_signature_not_drawn">Draw or type a signature first.</string>
     <string name="desktop_ad_agency_needed_for_po">Its artistes can only be paid by purchase order once it is registered.</string>
+    <string name="desktop_cal_no_event_on_past_day">You can\'t add an event on a previous date</string>
 </resources>

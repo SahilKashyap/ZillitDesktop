@@ -40,6 +40,16 @@ class ChatSeams(
      */
     val loadFullImage: (suspend (ChatAttachment) -> ImageBitmap?)? = null,
     /**
+     * A shared document's own bytes, for the in-app viewer — the pages it
+     * rasterises, the text it reads.
+     *
+     * Bytes rather than a rendition: what a document is drawn as is the
+     * viewer's decision (`core:media`'s `renderDocumentBody`), and this module
+     * has no platform to make one with. Null leaves the viewer with nothing to
+     * show, which it says, and the Download beside it is then the way in.
+     */
+    val loadDocument: (suspend (ChatAttachment) -> ByteArray?)? = null,
+    /**
      * A playable address for a clip — a presigned S3 GET, which the viewer's
      * player streams.
      *

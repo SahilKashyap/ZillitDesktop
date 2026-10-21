@@ -3131,6 +3131,8 @@ private fun chatProvider(
     loadThumbnail = { file -> fetchChatImage(ready, file, preview = true) },
     // The lightbox's fetch: the object itself, not its poster.
     loadFullImage = { file -> fetchChatImage(ready, file, preview = false) },
+    // The document viewer rasterises the file itself, so it wants bytes.
+    loadDocument = { file -> fetchChatBytes(ready, file, preview = false) },
     // A clip's address rather than its bytes — the viewer's player streams it.
     videoUrl = { file -> chatStreamUrl(ready, file) },
     // "Open in Maps" on a shared location, and the export's signed ZIP link
@@ -3176,7 +3178,7 @@ internal suspend fun fetchChatImage(
     }
 }
 
-private suspend fun fetchChatBytes(
+internal suspend fun fetchChatBytes(
     ready: AppGraph.Ready,
     file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
     preview: Boolean,

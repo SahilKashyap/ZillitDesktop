@@ -31,6 +31,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.onBackdropTap
 import com.zillit.desktop.core.designsystem.component.swallowPresses
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.media.DocumentViewer
+import com.zillit.desktop.core.media.rememberDocument
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
@@ -203,6 +205,46 @@ private fun ChatVideoViewer(
             }
         }
     }
+}
+
+/**
+ * A shared document, open over the thread: a PDF's pages stacked to scroll,
+ * text as text, a picture fitted — the same viewer the notice board opens,
+ * drawn in this window rather than handed to whatever the machine keeps for
+ * the extension. A script shared in a conversation used to leave the app to be
+ * read, which meant waiting out a download to find out it was the wrong draft.
+ *
+ * Looking is free, as it is for a picture. The Download beside the name is the
+ * gated act ([ChatSeams.canDownload]) and refuses with Android's own sentence;
+ * for a file the app cannot draw — a spreadsheet, an archive — it is also the
+ * only way in, and the stage offers it there too.
+ */
+@Composable
+internal fun ChatDocumentViewer(
+    /** The open document, or null for "none" — the thread holds the state. */
+    file: ChatAttachment?,
+    loadDocument: (suspend (ChatAttachment) -> ByteArray?)?,
+    canDownload: () -> Boolean,
+    onDownload: (ChatAttachment) -> Unit,
+    onClose: () -> Unit,
+) {
+    if (file == null) return
+    val document = rememberDocument(
+        key = file.media,
+        fileName = file.name,
+        contentType = file.contentType,
+    ) {
+        loadDocument?.invoke(file)
+    }
+
+    DocumentViewer(
+        fileName = file.name,
+        document = document,
+        onClose = onClose,
+        onDownload = { onDownload(file) },
+        canDownload = canDownload,
+        refusal = DOWNLOAD_REFUSED,
+    )
 }
 
 /**

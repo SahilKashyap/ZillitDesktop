@@ -481,14 +481,18 @@ private fun DocList(items: List<SharedFile>, media: BubbleMedia) {
     val now = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     ZillitLazyColumn(Modifier.fillMaxSize()) {
         items(items, key = { it.messageId + it.file.media }) { item ->
+            val isAudio = item.file.kind == "audio"
             ShelfRow(
-                icon = if (item.file.kind == "audio") ZillitIcons.Audio else ZillitIcons.File,
+                icon = if (isAudio) ZillitIcons.Audio else ZillitIcons.File,
                 title = item.file.name.ifBlank { item.file.kind },
                 detail = listOfNotNull(
                     item.file.sizeBytes.takeIf { it > 0 }?.let(::byteLabel),
                     chatTimeLabel(item.atMillis, now).takeIf { it.isNotBlank() },
                 ).joinToString(" · "),
-                onClick = { media.onOpen(item.file) },
+                // A document opens in the viewer, as its bubble does. A voice
+                // note has no player on this shelf, so it keeps the
+                // save-and-open its undecodable chip falls back to.
+                onClick = { if (isAudio) media.onOpen(item.file) else media.onViewDocument(item.file) },
             )
         }
     }

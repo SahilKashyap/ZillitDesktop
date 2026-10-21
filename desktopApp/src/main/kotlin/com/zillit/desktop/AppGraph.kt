@@ -7,6 +7,7 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.appupdate.InstallerHandoff
 import com.zillit.desktop.core.common.WakeWatcher
+import com.zillit.desktop.core.common.OpenTrace
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.config.AppConfig
@@ -30,6 +31,7 @@ import com.zillit.desktop.core.database.LabelCache
 import com.zillit.desktop.core.database.NoticeCache
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectListCache
+import com.zillit.desktop.core.database.ProjectVisits
 import com.zillit.desktop.core.database.ScreenplayCache
 import com.zillit.desktop.core.database.ZillitDatabase
 import com.zillit.desktop.core.database.SyncDatabaseFactory
@@ -613,6 +615,12 @@ private suspend fun onProjectOpened(
     socketAuth: suspend () -> Map<String, String>,
     onSocketAuthRejected: (detail: String) -> Unit,
     projectContext: ProjectContextLoader?,
+    /**
+     * Where this open is recorded, so the caches know this production is still
+     * in use and keep its rows. Null when the local database could not open —
+     * there is then no cache for them to protect.
+     */
+    visits: ProjectVisits?,
     scope: CoroutineScope,
     isCallActive: () -> Boolean = { false },
     onSocketReconnectSkippedForCall: () -> Unit = {},
@@ -652,22 +660,49 @@ private suspend fun onProjectOpened(
         return
     }
 
+    // From here to the board being on screen is what [OpenTrace] measures.
+    // Started here rather than on the leg above, which arrives with nothing
+    // open and so has no production to name; the two writes between them are
+    // a preference and a header field.
+    OpenTrace.begin(project.id)
+
+    // This production is in use, so its cached answers and boards are worth
+    // keeping whatever age their rows have reached — the prunes read this at
+    // the next launch. Written off the open's own path: a row nobody reads
+    // until tomorrow must not be in front of the board.
+    visits?.let { record ->
+        scope.launch(Dispatchers.IO) { record.opened(project.id, System.currentTimeMillis()) }
+    }
+
     // Who am I, what is this production, who else is on it — cache first.
     // A production this device has opened before opens NOW: the cached
     // context is enough to stand the shell up, and the network's fresher
     // answers land behind it. Only a first open, with nothing cached, waits
     // — and then only for the essentials, fetched in parallel rather than
     // the one-after-another that used to be most of the wait.
-    val warm = projectContext?.publishCached(project.id) == true
+    //
+    // Timed on both legs: the cached read is three blocking reads of the
+    // database on this coroutine, and the fetch below is the one place an
+    // open still waits on the network by design.
+    val warm = OpenTrace.time("cached context read") { projectContext?.publishCached(project.id) == true }
     if (warm) {
+        OpenTrace.mark("cached context published — the open does not wait")
         scope.launch {
-            projectContext.refresh(project.id)
-            refreshRemoteConfig(remoteConfig)
+            // Safe-called, where this used to lean on `warm` proving the
+            // loader non-null: the span's lambda is one nesting too many for
+            // that to carry, and `warm` is still what decides the leg.
+            OpenTrace.time("background context refresh") {
+                projectContext?.refresh(project.id)
+                refreshRemoteConfig(remoteConfig)
+            }
         }
     } else {
-        kotlinx.coroutines.coroutineScope {
-            launch { projectContext?.refresh(project.id) }
-            launch { refreshRemoteConfig(remoteConfig) }
+        OpenTrace.mark("nothing cached for this production — the open waits")
+        OpenTrace.time("first-open context fetch") {
+            kotlinx.coroutines.coroutineScope {
+                launch { projectContext?.refresh(project.id) }
+                launch { refreshRemoteConfig(remoteConfig) }
+            }
         }
     }
 
@@ -679,18 +714,27 @@ private suspend fun onProjectOpened(
     if (isCallActive()) {
         onSocketReconnectSkippedForCall()
     } else {
-        socket.connect(SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected))
+        OpenTrace.time("socket connect") {
+            socket.connect(
+                SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected),
+            )
+        }
     }
     // Counts never gate the open; the rail draws them when they land. The
     // ledger's own rows come first (last session's badges, instantly), then
     // the page of what the server has since.
+    //
+    // Timed because they do not gate the open but do share its host: the seed
+    // is one listing across every production a person is on, so it grows with
+    // how many that is, and the board's two reads queue behind whatever is
+    // already in flight.
     scope.launch {
-        badges.open(project.id)
-        seeder.seed(project.id)
+        OpenTrace.time("badge rows from disk") { badges.open(project.id) }
+        OpenTrace.time("notification seed") { seeder.seed(project.id) }
     }
     // Which mailbox's mail the badges may count — asked of the profile, so
     // apart from the rows: a slow answer must not hold the counts back.
-    scope.launch { learnMailbox(project.id) }
+    scope.launch { OpenTrace.time("mailbox learnt") { learnMailbox(project.id) } }
 }
 
 /**
@@ -1055,6 +1099,11 @@ sealed interface AppGraph {
             // The encrypted local cache — opened before the REST client so every
             // read can be kept for offline viewing.
             val database = StartupTrace.time("openLocalDatabase") { openLocalDatabase(secureStore) }
+            // Which productions are still in use, which is what both caches
+            // prune by. A stateless wrapper over the same file, so the caches
+            // read it through their own instances and this one is here for the
+            // other half of the bargain: recording an open.
+            val projectVisits = database?.let { ProjectVisits(it) }
             val readCache = database?.let { SqlReadCache(it) }
             readCache?.let { cache -> appScope.launch { cache.prune(System.currentTimeMillis()) } }
 
@@ -1528,6 +1577,7 @@ sealed interface AppGraph {
                         socketAuth = socketHandshake,
                         onSocketAuthRejected = socketTokenRejected,
                         projectContext = projectContext,
+                        visits = projectVisits,
                         scope = appScope,
                         isCallActive = callIsActive,
                         onSocketReconnectSkippedForCall = { socketResyncNeededAfterCall.value = true },

@@ -34,6 +34,9 @@ class NoticeCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
 
     private val queries = database.noticeCacheQueries
 
+    /** Which productions are still in use — the prune's reprieve list. */
+    private val visits = ProjectVisits(database)
+
     /**
      * Files a page, keeping everything else the unit already has.
      *
@@ -109,15 +112,23 @@ class NoticeCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
     }
 
     /**
-     * Drops boards nobody has opened in [RETENTION_MILLIS].
+     * Drops the boards of productions nobody has opened in [RETENTION_MILLIS].
      *
      * What bounds this table across productions. A switch deliberately leaves
      * rows behind — they are keyed by production, so they are safe, and a
-     * production reopened next week still draws at once — which means age is
+     * production reopened next week still draws at once — which means this is
      * the only thing stopping a year of shoots accumulating on disk.
+     *
+     * Measured by the last open ([ProjectVisits]) and not by when a row was
+     * written: on somebody carrying a dozen productions the two are nowhere
+     * near the same, and the second threw a working production's board away
+     * every month. A production with no recorded open is pruned by age, which
+     * is what this did before and so what the first launch after this landed
+     * does.
      */
     fun prune(now: Long) {
-        queries.deleteOlderThan(now - RETENTION_MILLIS)
+        val cutoff = now - RETENTION_MILLIS
+        queries.deleteAged(before = cutoff, kept = visits.openedSince(cutoff))
     }
 
     private companion object {

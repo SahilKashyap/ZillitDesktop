@@ -17,13 +17,19 @@ class NoticeCacheTest {
 
     private var clock = 1_000L
 
-    private fun cache(): NoticeCache {
+    private fun cache(): NoticeCache = caches().first
+
+    /** The cache and the visit record behind it — the prune reads both. */
+    private fun caches(): Pair<NoticeCache, ProjectVisits> {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         ZillitDatabase.Schema.create(driver)
-        return NoticeCache(ZillitDatabase(driver)) { clock }
+        val database = ZillitDatabase(driver)
+        return NoticeCache(database) { clock } to ProjectVisits(database)
     }
 
     private fun home(unit: String = "u1") = BoardScope("p1", "home", unit)
+
+    private fun board(projectId: String, unit: String = "u1") = BoardScope(projectId, "home", unit)
 
     private fun row(id: String, at: Long) = NoticeRow(id, """{"_id":"$id","message":"cipher-$id"}""", at)
 
@@ -177,6 +183,60 @@ class NoticeCacheTest {
 
         assertTrue(cache.newest(home("stale")).isEmpty())
         assertEquals(listOf("new"), cache.ids(home("fresh")))
+    }
+
+    /**
+     * The case this retention rule exists for: somebody on a dozen
+     * productions opens each one every few weeks, so every row in the one
+     * they are working on today is older than the window — and pruning by row
+     * age threw that board away under them, tab strip and all.
+     */
+    @Test
+    fun `a production still being opened keeps its board however old the rows are`() {
+        val (cache, visits) = caches()
+        clock = 0
+        cache.save(board("worked-on"), listOf(row("old", 10)))
+        cache.save(board("abandoned"), listOf(row("older", 5)))
+        clock = 40L * 24 * 60 * 60_000
+
+        // Opened this morning; its posts were last read five weeks ago.
+        visits.opened("worked-on", clock)
+
+        cache.prune(clock)
+
+        assertEquals(listOf("old"), cache.ids(board("worked-on")))
+        assertTrue(cache.newest(board("abandoned")).isEmpty())
+    }
+
+    /** A reprieve expires with the open that earned it. */
+    @Test
+    fun `a production last opened before the window loses its board`() {
+        val (cache, visits) = caches()
+        clock = 0
+        cache.save(board("p1"), listOf(row("old", 10)))
+        visits.opened("p1", clock)
+        clock = 40L * 24 * 60 * 60_000
+
+        cache.prune(clock)
+
+        assertTrue(cache.newest(board("p1")).isEmpty())
+    }
+
+    /**
+     * No record is not a reprieve. The first launch after this rule landed
+     * knows of no opens at all, and must prune exactly what the build before
+     * it would have — otherwise shipping it is a disk leak on every machine.
+     */
+    @Test
+    fun `a production with no recorded open is pruned by age, as before`() {
+        val (cache, _) = caches()
+        clock = 0
+        cache.save(board("never-recorded"), listOf(row("old", 10)))
+        clock = 40L * 24 * 60 * 60_000
+
+        cache.prune(clock)
+
+        assertTrue(cache.newest(board("never-recorded")).isEmpty())
     }
 
     @Test

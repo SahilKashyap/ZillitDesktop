@@ -91,8 +91,16 @@ DELETE FROM cachedNotice WHERE projectId = ?;
 -- production reopened later still draws at once. Age is what bounds them
 -- instead — a production nobody has opened in a month is not worth the disk,
 -- the same bargain `cachedRead` makes.
-deleteOlderThan:
-DELETE FROM cachedNotice WHERE cachedAt < ?;
+--
+-- Age is the floor and a recent open is the reprieve: [kept] names the
+-- productions somebody has opened inside the window (`ProjectVisits`), whose
+-- rows stay however old they are. Without that clause this statement measured
+-- when a row was *written*, which threw the cache away under a production
+-- still being worked on — see `ProjectVisits`. An empty [kept] deletes by age
+-- alone, which is what this did before, and `NOT IN ()` is a list SQLite
+-- allows where most engines do not.
+deleteAged:
+DELETE FROM cachedNotice WHERE cachedAt < :before AND projectId NOT IN :kept;
 
 -- sign-out -----------------------------------------------------------------
 deleteAll:

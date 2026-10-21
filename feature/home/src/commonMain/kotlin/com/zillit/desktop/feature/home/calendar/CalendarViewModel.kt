@@ -48,6 +48,12 @@ data class CalendarUiState(
     val pendingInvitations: Int = 0,
     /** Unread invitations from the badge ledger — the Invitations button and its tabs wear these. */
     val invitationUnread: InvitationUnread = InvitationUnread(),
+    /**
+     * Up when someone clicked a day that has been and gone with nothing on
+     * it: the one case where a click can neither show anything nor add
+     * anything, so it says why instead of appearing to do nothing.
+     */
+    val pastDayNotice: Boolean = false,
     /** The invitation a decline reason is being written for, or null. */
     val declining: EventInvitation? = null,
     /**
@@ -66,6 +72,15 @@ data class CalendarUiState(
     val focusedDay: LocalDate get() = selected ?: anchor
 
     fun eventsOn(date: LocalDate): List<CalendarEvent> = events.on(date, zone)
+
+    /**
+     * A day already gone.
+     *
+     * Nothing new can be put on one — the form refuses a past date and the
+     * pickers do not offer one — so the grid greys those days rather than
+     * letting someone aim at a day that is only refused on save.
+     */
+    fun isPast(date: LocalDate): Boolean = date < today
 
     val title: String
         get() = "${anchor.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${anchor.year}"
@@ -221,8 +236,13 @@ sealed interface CalendarEvent2Event {
      * A month cell clicked. Selects the day and, as the web does, goes
      * straight to a new event when that day is free and not in the past —
      * an empty day has nothing to show in the panel, only something to add.
+     * A free day already gone can do neither, so it raises the notice that
+     * says so rather than swallowing the click.
      */
     data class ClickDate(val date: LocalDate) : CalendarEvent2Event
+
+    /** The OK on the "that day has gone" notice. */
+    data object DismissPastDayNotice : CalendarEvent2Event
     data class SetMode(val mode: CalendarViewMode) : CalendarEvent2Event
     data object Reload : CalendarEvent2Event
 
@@ -344,8 +364,15 @@ class CalendarViewModel(
             is CalendarEvent2Event.ClickDate -> {
                 setState { copy(selected = event.date) }
                 val state = currentState
-                if (event.date >= state.today && state.eventsOn(event.date).isEmpty()) openForm(null)
+                when {
+                    // The panel has the day's events to show; it is the empty
+                    // days that have to decide between a form and a refusal.
+                    state.eventsOn(event.date).isNotEmpty() -> Unit
+                    state.isPast(event.date) -> setState { copy(pastDayNotice = true) }
+                    else -> openForm(null)
+                }
             }
+            CalendarEvent2Event.DismissPastDayNotice -> setState { copy(pastDayNotice = false) }
             is CalendarEvent2Event.SetMode -> setState { copy(mode = event.mode) }
             CalendarEvent2Event.Reload -> load()
             is CalendarEvent2Event.Realtime -> onRealtime(event.kind)

@@ -30,8 +30,13 @@ SELECT count(*) FROM cachedRead WHERE userId = ? AND projectId = ?;
 deleteForProject:
 DELETE FROM cachedRead WHERE userId = ? AND projectId = ?;
 
-deleteOlderThan:
-DELETE FROM cachedRead WHERE fetchedAt < ?;
+-- Age is the floor, a recent open is the reprieve — see `NoticeCache.sq`'s
+-- `deleteAged` and `ProjectVisits` for why this is not simply `fetchedAt`.
+-- The tab strip a board needs before it can draw a single kept post is one of
+-- these rows, so this statement decides whether the posts next door are
+-- reachable at all.
+deleteAged:
+DELETE FROM cachedRead WHERE fetchedAt < :before AND projectId NOT IN :kept;
 
 deleteAll:
 DELETE FROM cachedRead;
