@@ -30,4 +30,25 @@ interface RequestAuthenticator {
         path: String,
         failedToken: String,
     ): String?
+
+    /**
+     * Whether this call must not be sent at all, because it belongs to a
+     * production and none is open.
+     *
+     * The device token reaches only the device-level routes
+     * ([com.zillit.desktop.core.network.tokenauth.isDeviceRoute]); on any
+     * other route the server answers `401 libs_invalid_token_scope`, and the
+     * legacy header it used to degrade to is refused as well. So the caller
+     * is told no here instead — no request, no 401, no refresh — which is
+     * what the web's interceptor does with the same two lists.
+     *
+     * Defaults to false so an authenticator that does not model scopes (the
+     * tests' fakes, and legacy mode) keeps sending everything.
+     */
+    suspend fun refusesWithNoProject(
+        module: RequestModule,
+        projectId: String?,
+        verb: HttpVerb,
+        path: String,
+    ): Boolean = false
 }
