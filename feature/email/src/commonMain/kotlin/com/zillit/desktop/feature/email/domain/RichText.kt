@@ -23,6 +23,12 @@ sealed interface TextMark {
 
     /** Font size in CSS pixels — the unit the web composer's whitelist uses. */
     data class FontSize(val px: Int) : TextMark
+
+    /** A font stack, named as the web's picker names it. */
+    data class FontFamily(val name: String) : TextMark
+
+    /** A hyperlink's target. The link text is the document's own. */
+    data class Link(val href: String) : TextMark
 }
 
 /**
@@ -30,7 +36,7 @@ sealed interface TextMark {
  * valued styles share one per kind, because text can be red or blue but not
  * both — setting a family's value replaces whatever value the range had.
  */
-enum class MarkFamily { FontSize, TextColor, Highlight, Bold, Italic, Underline, Strike }
+enum class MarkFamily { FontFamily, FontSize, TextColor, Highlight, Link, Bold, Italic, Underline, Strike }
 
 val TextMark.family: MarkFamily
     get() = when (this) {
@@ -41,6 +47,8 @@ val TextMark.family: MarkFamily
         is TextMark.TextColor -> MarkFamily.TextColor
         is TextMark.Highlight -> MarkFamily.Highlight
         is TextMark.FontSize -> MarkFamily.FontSize
+        is TextMark.FontFamily -> MarkFamily.FontFamily
+        is TextMark.Link -> MarkFamily.Link
     }
 
 /** A run of [style] over `[start, end)`. */
@@ -66,6 +74,8 @@ data class Mark(val start: Int, val end: Int, val style: TextMark) {
 data class RichText(
     val text: String = "",
     val marks: List<Mark> = emptyList(),
+    /** Paragraph attributes — list markers and indents. See [Block]. */
+    val blocks: List<Block> = emptyList(),
 ) {
 
     /** Whether [style] covers the whole of `[start, end)` — what the toolbar shows as "on". */
@@ -157,7 +167,17 @@ data class RichText(
             Mark(start, end, mark.style).takeUnless { it.isEmpty }
         }
 
-        return RichText(updated, shifted.normalised())
+        // Paragraph attributes move by the same rule as marks, then snap back
+        // onto line boundaries: an insertion at a line's start pushes a block's
+        // edge off it, and the line would otherwise lose its bullet.
+        val moved = blocks.mapNotNull { block ->
+            block.copy(
+                start = shift(block.start, prefix, removedEnd, delta),
+                end = shift(block.end, prefix, removedEnd, delta),
+            ).takeIf { it.end >= it.start }
+        }
+
+        return RichText(updated, shifted.normalised(), moved).realignedBlocks()
     }
 
     /** The marks covering a position, for carrying formatting to newly typed text. */
@@ -165,7 +185,8 @@ data class RichText(
         marks.filter { index > it.start && index <= it.end }.mapTo(mutableSetOf()) { it.style }
 
     /** Never prints the text. */
-    override fun toString(): String = "RichText(chars=${text.length}, marks=${marks.size})"
+    override fun toString(): String =
+        "RichText(chars=${text.length}, marks=${marks.size}, blocks=${blocks.size})"
 
     companion object {
         /** Plain text, unformatted — what a reply's quoted body starts as. */

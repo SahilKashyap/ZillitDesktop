@@ -274,7 +274,12 @@ class RichTextTest {
     @Test
     fun `paragraphs and breaks both become newlines`() {
         assertEquals("one\ntwo", htmlToRichText("one<br>two").text)
-        assertEquals("one\ntwo\n", htmlToRichText("<p>one</p><p>two</p>").text)
+        // A block's close separates it from what follows, so the last one
+        // adds nothing. This used to read "one\ntwo\n": a blank line the
+        // sender never typed, which an indented line — now written as its own
+        // <div> — would have added to every paragraph in the body.
+        assertEquals("one\ntwo", htmlToRichText("<p>one</p><p>two</p>").text)
+        assertEquals("one\ntwo\n", htmlToRichText("<p>one</p><p>two</p><br>").text)
     }
 
     @Test

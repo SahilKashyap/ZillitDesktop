@@ -13828,4 +13828,10 @@
     <string name="desktop_ad_mark_everyone_first_cta">Mark everyone first</string>
     <string name="desktop_ad_go_to_mid_day">Go to Mid-Day</string>
     <string name="desktop_ad_wrap_everyone_first_cta">Wrap everyone first</string>
+    <string name="desktop_email_indent_less">Decrease Indent</string>
+    <string name="desktop_email_indent_more">Increase Indent</string>
+    <string name="desktop_email_text_to_display">Text to display</string>
+    <string name="desktop_email_enter_url">Enter URL</string>
+    <string name="desktop_email_emoji">Emoji</string>
+    <string name="desktop_email_highlight_text">Highlight Text</string>
 </resources>

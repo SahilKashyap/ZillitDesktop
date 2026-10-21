@@ -489,6 +489,9 @@ object ZillitIcons {
     private const val VIEWPORT = 24f
     private const val STROKE = 1.75f
 
+    /** [ListOrdered]'s digits only — see the note there. */
+    private const val NUMERAL_STROKE = 1.1f
+
     /** An overflow dot's radius, matching the web's `dots-vertical`. */
     private const val DOT_RADIUS = 1.6f
 
@@ -1117,6 +1120,99 @@ object ZillitIcons {
         moveTo(8f, 17f); lineTo(13f, 17f)
     }
 
+
+    // -- rich text toolbar -------------------------------------------------
+
+    /** An arrow turning back on itself — undo. */
+    val Undo: ImageVector = stroked("Undo") {
+        moveTo(8.5f, 6.5f); lineTo(4f, 11f); lineTo(8.5f, 15.5f)
+        moveTo(4f, 11f); lineTo(14f, 11f)
+        curveTo(17.3f, 11f, 20f, 13.7f, 20f, 17f)
+        lineTo(20f, 18.5f)
+    }
+
+    /** [Undo] mirrored — redo. */
+    val Redo: ImageVector = stroked("Redo") {
+        moveTo(15.5f, 6.5f); lineTo(20f, 11f); lineTo(15.5f, 15.5f)
+        moveTo(20f, 11f); lineTo(10f, 11f)
+        curveTo(6.7f, 11f, 4f, 13.7f, 4f, 17f)
+        lineTo(4f, 18.5f)
+    }
+
+    /**
+     * Three ruled lines behind three dots — a bullet list.
+     *
+     * The dots are zero-length segments rather than circles: a round cap paints
+     * a disc of the stroke's own width, where a stroked circle this small comes
+     * out as a ring.
+     */
+    val ListBullet: ImageVector = stroked("ListBullet") {
+        moveTo(9f, 6f); lineTo(20.5f, 6f)
+        moveTo(9f, 12f); lineTo(20.5f, 12f)
+        moveTo(9f, 18f); lineTo(20.5f, 18f)
+        moveTo(4.5f, 6f); lineTo(4.6f, 6f)
+        moveTo(4.5f, 12f); lineTo(4.6f, 12f)
+        moveTo(4.5f, 18f); lineTo(4.6f, 18f)
+    }
+
+    /**
+     * The same three lines behind 1, 2, 3 — a numbered list.
+     *
+     * The only icon in the set drawn at two weights. Each numeral is a third
+     * of a glyph's height, and at the shared [STROKE] the three of them touch
+     * and read as one smudged column rather than as digits.
+     */
+    val ListOrdered: ImageVector = strokedParts(
+        name = "ListOrdered",
+        STROKE to {
+            moveTo(10f, 6f); lineTo(20.5f, 6f)
+            moveTo(10f, 12f); lineTo(20.5f, 12f)
+            moveTo(10f, 18f); lineTo(20.5f, 18f)
+        },
+        // Each digit is boxed in four units centred on its own line, which
+        // leaves a clear gap between them at the sizes a toolbar uses.
+        NUMERAL_STROKE to {
+            moveTo(3.7f, 5f); lineTo(4.7f, 4f); lineTo(4.7f, 8f)
+
+            moveTo(3.4f, 10.9f)
+            curveTo(3.7f, 9.8f, 6.3f, 10.1f, 6.2f, 11.3f)
+            curveTo(6.1f, 12.4f, 3.5f, 13f, 3.4f, 14f)
+            lineTo(6.4f, 14f)
+
+            moveTo(3.5f, 16.7f)
+            curveTo(4f, 15.8f, 6.3f, 16.2f, 6.2f, 17.2f)
+            curveTo(6.1f, 17.9f, 5.2f, 18f, 4.7f, 18f)
+            curveTo(5.4f, 18f, 6.4f, 18.2f, 6.3f, 19.2f)
+            curveTo(6.2f, 20.3f, 3.9f, 20.5f, 3.5f, 19.4f)
+        },
+    )
+
+    /** Four ruled lines, the middle two pushed right, with an arrow into them. */
+    val IndentMore: ImageVector = stroked("IndentMore") {
+        moveTo(3f, 4.5f); lineTo(21f, 4.5f)
+        moveTo(10f, 9.5f); lineTo(21f, 9.5f)
+        moveTo(10f, 14.5f); lineTo(21f, 14.5f)
+        moveTo(3f, 19.5f); lineTo(21f, 19.5f)
+        moveTo(3f, 9f); lineTo(6.5f, 12f); lineTo(3f, 15f)
+    }
+
+    /** [IndentMore] with the arrow turned around. */
+    val IndentLess: ImageVector = stroked("IndentLess") {
+        moveTo(3f, 4.5f); lineTo(21f, 4.5f)
+        moveTo(10f, 9.5f); lineTo(21f, 9.5f)
+        moveTo(10f, 14.5f); lineTo(21f, 14.5f)
+        moveTo(3f, 19.5f); lineTo(21f, 19.5f)
+        moveTo(6.5f, 9f); lineTo(3f, 12f); lineTo(6.5f, 15f)
+    }
+
+    /** A marker pen over the band it has painted — highlight colour. */
+    val Highlighter: ImageVector = stroked("Highlighter") {
+        moveTo(13.5f, 3.5f); lineTo(20.5f, 10.5f)
+        moveTo(17f, 7f); lineTo(8.5f, 15.5f)
+        lineTo(5f, 15.5f); lineTo(5f, 19f); lineTo(8.5f, 19f); lineTo(12f, 15.5f)
+        moveTo(3f, 21.5f); lineTo(21f, 21.5f)
+    }
+
     /** A closed rectangle with round corners, drawn clockwise from the top-left edge. */
     /** One dot of an overflow menu: a filled circle, drawn as two half arcs. */
     private fun PathBuilder.dot(centreX: Float, centreY: Float) {
@@ -1138,6 +1234,34 @@ object ZillitIcons {
         arcTo(radius, radius, 0f, false, true, left + radius, top)
         close()
     }
+
+    /**
+     * Builds a stroke-only icon whose parts are drawn at different weights.
+     *
+     * The set is otherwise one weight throughout — see [stroked]. This exists
+     * for the one glyph that carries detail too fine for it.
+     */
+    private fun strokedParts(
+        name: String,
+        vararg parts: Pair<Float, PathBuilder.() -> Unit>,
+    ): ImageVector =
+        ImageVector.Builder(
+            name = name,
+            defaultWidth = VIEWPORT.dp,
+            defaultHeight = VIEWPORT.dp,
+            viewportWidth = VIEWPORT,
+            viewportHeight = VIEWPORT,
+        ).apply {
+            parts.forEach { (width, pathBuilder) ->
+                path(
+                    stroke = SolidColor(Color.Black),
+                    strokeLineWidth = width,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                    pathBuilder = pathBuilder,
+                )
+            }
+        }.build()
 
     private fun stroked(
         name: String,
