@@ -4,6 +4,7 @@ package com.zillit.desktop.feature.drive.ui.pages
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -99,10 +100,24 @@ internal fun ExtBadge(extension: String, modifier: Modifier = Modifier, size: Dp
     }
 }
 
-/** A folder glyph in the folder's colour, else the accent — `FolderOutlined` with `folder_color`. */
+/**
+ * A folder glyph in the folder's colour, else the accent — `FolderOutlined`
+ * with `folder_color` — on the web's tinted chip (`.drive-folder-icon-badge`:
+ * 40×26, a 6px radius and a wash of the accent behind it), which is what
+ * gives a folder row its weight beside a file's extension badge.
+ */
 @Composable
 internal fun FolderGlyph(item: DriveItem, size: Dp = ZillitTheme.spacing.xl) {
-    ZillitIcon(icon = ZillitIcons.Folder, tint = folderColour(item), size = size)
+    val colour = folderColour(item)
+    Box(
+        modifier = Modifier
+            .size(width = FOLDER_CHIP_WIDTH, height = FOLDER_CHIP_HEIGHT)
+            .clip(RoundedCornerShape(FOLDER_CHIP_RADIUS))
+            .background(colour.copy(alpha = FOLDER_CHIP_WASH)),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(icon = ZillitIcons.Folder, tint = colour, size = size)
+    }
 }
 
 @Composable
@@ -220,7 +235,7 @@ internal fun SharingCell(item: DriveItem, state: DriveUiState) {
     val others = item.accessUserIds.filter { it != viewer.userId }
     if (others.isEmpty()) {
         ZillitText(
-            text = str(S.invitees_self_title),
+            text = str(S.desktop_tasks_self_only_you),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -370,6 +385,12 @@ internal fun Filler(modifier: Modifier = Modifier) {
 
 internal val BADGE_SIZE = 36.dp
 internal val SMALL_AVATAR = 24.dp
+/** `.drive-folder-icon-badge` — 40×26 with a 6px radius and a wash of the folder's colour. */
+private val FOLDER_CHIP_WIDTH = 40.dp
+private val FOLDER_CHIP_HEIGHT = 26.dp
+private val FOLDER_CHIP_RADIUS = 6.dp
+private const val FOLDER_CHIP_WASH = 0.15f
+
 private val EMPTY_DISC = 64.dp
 private val EMPTY_TEXT_WIDTH = 360.dp
 private const val MAX_STACKED = 3

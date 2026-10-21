@@ -166,8 +166,9 @@ class DriveScreenRenderTest {
         val current = mutableStateOf(state())
         setContent { ZillitTheme { DriveScreen(state = current.value, onEvent = {}) } }
         onNodeWithText("Camera Report Day 12.pdf").assertExists()
-        // The folder is mine and shared with nobody; the PDF shows its sharees instead.
-        onNodeWithText("Only You").assertExists()
+        // The folder is mine and shared with nobody; the PDF shows its sharees
+        // instead. "Only you", as the web's sharing cell words it.
+        onNodeWithText("Only you").assertExists()
 
         current.value = state(folderId = null)
         waitForIdle()

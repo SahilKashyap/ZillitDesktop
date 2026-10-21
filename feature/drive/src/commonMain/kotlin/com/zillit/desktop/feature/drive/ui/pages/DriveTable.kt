@@ -35,6 +35,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
@@ -106,7 +108,7 @@ private fun TableHeader(
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.surfaceSunken)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -134,11 +136,28 @@ private fun TableHeader(
     }
 }
 
+/**
+ * The header face.
+ *
+ * The app sets `columnHeader` in the monospace family for its own tables;
+ * the web's Drive uses the text face at 12px/700 with a little tracking, and
+ * this tool follows the web.
+ */
+@Composable
+private fun headerStyle() = ZillitTheme.typography.columnHeader.copy(
+    fontFamily = ZillitTheme.fonts.sans,
+    fontSize = 12.sp,
+    letterSpacing = 0.04.em,
+)
+
 @Composable
 private fun HeaderLabel(text: String, modifier: Modifier) {
     ZillitText(
-        text = text,
-        style = ZillitTheme.typography.columnHeader,
+        // Upper case, as `.drive-table-panel .ant-table-thead th` sets it —
+        // the catalogue holds each label in sentence case for the screens
+        // that show it inline.
+        text = text.uppercase(),
+        style = headerStyle(),
         color = ZillitTheme.colors.textSecondary,
         maxLines = 1,
         modifier = modifier,
@@ -162,8 +181,8 @@ private fun SortableHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = text,
-            style = ZillitTheme.typography.columnHeader,
+            text = text.uppercase(),
+            style = headerStyle(),
             color = if (active) colors.accentText else colors.textSecondary,
             maxLines = 1,
         )
@@ -247,7 +266,7 @@ private fun TableRow(
                 onClick = { onEvent(DriveEvent.ToggleSelection(item.id)) },
                 onDoubleClick = { openItem(item, state, onEvent, origin) },
             )
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ROW_PADDING),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -444,6 +463,8 @@ private const val HIDDEN_ACTIONS_ALPHA = 0.18f
 private const val MENU_DROP = 28f
 private const val MENU_INSET = 24f
 private val CHECK_WIDTH: Dp = 28.dp
+/** `.ant-table-tbody td { padding: 18px 12px }` — the web's row breathing room. */
+private val ROW_PADDING = 18.dp
 private val DATE_WIDTH: Dp = 130.dp
 private val SHARING_WIDTH: Dp = 150.dp
 private val SIZE_WIDTH: Dp = 90.dp

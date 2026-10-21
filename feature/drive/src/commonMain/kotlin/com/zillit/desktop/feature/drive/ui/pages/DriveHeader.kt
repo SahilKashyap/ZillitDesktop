@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -611,74 +612,83 @@ private fun bulkLabel(verb: String, eligible: Int, selected: Int): String =
  * list. Hidden during a search and in the trash.
  */
 @Composable
-@Suppress("LongMethod") // Two tabs with counts and an indicator.
+@Suppress("LongMethod") // Two tabs, each with a count and a corner badge.
 internal fun InnerTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val (folders, files) = state.innerTotals
     val colors = ZillitTheme.colors
     Column(modifier = Modifier.fillMaxWidth().background(colors.surface)) {
+        // One rounded rail holding both tabs, as `.drive-inner-tabs` is: a
+        // 4px-padded pill with a hairline, the selected tab filled in the
+        // accent. The underline this used to draw belongs to the outer tabs.
         Row(
-            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+            modifier = Modifier
+                .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm)
+                .clip(ZillitTheme.shapes.pill)
+                .background(colors.surfaceSunken)
+                .border(1.dp, colors.border, ZillitTheme.shapes.pill)
+                .padding(TAB_RAIL_INSET),
+            horizontalArrangement = Arrangement.spacedBy(TAB_RAIL_INSET),
         ) {
             DriveInnerTab.entries.forEach { tab ->
-                val active = tab == state.innerTab
-                val total = if (tab == DriveInnerTab.Folders) folders else files
-                val unread = state.unread.tab(state.section, tab)
-                // Intrinsic width: the indicator fills its tab, and a plain
-                // fillMaxWidth there would let the first tab swallow the row.
-                Column(
+                InnerTab(
+                    tab = tab,
+                    active = tab == state.innerTab,
+                    total = if (tab == DriveInnerTab.Folders) folders else files,
+                    unread = state.unread.tab(state.section, tab),
+                    onClick = { onEvent(DriveEvent.OpenInnerTab(tab)) },
+                )
+            }
+        }
+        ZillitDivider()
+    }
+}
+
+/** One pill. Active: accent fill, white text, and a white count chip on it. */
+@Composable
+private fun InnerTab(tab: DriveInnerTab, active: Boolean, total: Int, unread: Int, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val content = if (active) colors.textOnAccent else colors.textSecondary
+    Box {
+        Row(
+            modifier = Modifier
+                .clip(ZillitTheme.shapes.pill)
+                .background(if (active) colors.accent else Color.Transparent)
+                .clickable(onClick = onClick)
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitIcon(
+                icon = if (tab == DriveInnerTab.Folders) ZillitIcons.Folder else ZillitIcons.File,
+                tint = content,
+                size = ZillitTheme.spacing.lg,
+            )
+            ZillitText(
+                text = tab.label,
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+                color = content,
+            )
+            if (total > 0) {
+                Box(
                     modifier = Modifier
-                        .width(IntrinsicSize.Max)
-                        .clickable { onEvent(DriveEvent.OpenInnerTab(tab)) }
-                        .padding(top = ZillitTheme.spacing.xs),
+                        .clip(ZillitTheme.shapes.pill)
+                        .background(if (active) colors.surface else colors.surfaceHover)
+                        .padding(horizontal = ZillitTheme.spacing.sm, vertical = 1.dp),
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(
-                            horizontal = ZillitTheme.spacing.xs,
-                            vertical = ZillitTheme.spacing.sm,
-                        ),
-                    ) {
-                        ZillitIcon(
-                            icon = if (tab == DriveInnerTab.Folders) ZillitIcons.Folder else ZillitIcons.File,
-                            tint = if (active) colors.accent else colors.textSecondary,
-                            size = ZillitTheme.spacing.lg,
-                        )
-                        ZillitText(
-                            text = tab.label,
-                            style = ZillitTheme.typography.label.copy(
-                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                            ),
-                            color = if (active) colors.textPrimary else colors.textSecondary,
-                        )
-                        if (total > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(ZillitTheme.shapes.pill)
-                                    .background(if (active) colors.accentSoft else colors.surfaceSunken)
-                                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = 1.dp),
-                            ) {
-                                ZillitText(
-                                    text = total.toString(),
-                                    style = ZillitTheme.typography.labelSmall,
-                                    color = if (active) colors.accentText else colors.textSecondary,
-                                )
-                            }
-                        }
-                        ZillitBadge(count = unread)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(INDICATOR)
-                            .clip(ZillitTheme.shapes.pill)
-                            .background(if (active) colors.accent else Color.Transparent),
+                    ZillitText(
+                        text = total.toString(),
+                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = if (active) colors.accent else colors.textSecondary,
                     )
                 }
             }
         }
-        ZillitDivider()
+        // The unread count rides the pill's corner, as the web pins it.
+        if (unread > 0) {
+            Box(modifier = Modifier.align(Alignment.TopEnd).offset(x = BADGE_NUDGE, y = -BADGE_NUDGE)) {
+                ZillitBadge(count = unread)
+            }
+        }
     }
 }
 
@@ -693,6 +703,7 @@ private val CRUMB_MIN_WIDTH = 360.dp
 /** Crumbs kept at the tail before the ancestors collapse: the parent and the folder itself. */
 private const val VISIBLE_CRUMBS = 2
 private val TOGGLE_INSET = 3.dp
-private val INDICATOR = 2.dp
+private val TAB_RAIL_INSET = 4.dp
+private val BADGE_NUDGE = 5.dp
 private const val ACTIVE_WASH = 0.15f
 private const val BULK_BORDER_ALPHA = 0.4f
