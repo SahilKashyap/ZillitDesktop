@@ -1,5 +1,6 @@
 package com.zillit.desktop.core.network.tokenauth
 
+import com.zillit.desktop.core.common.OpenTrace
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestAuthenticator
@@ -448,8 +449,15 @@ class TokenSessionManager(
     private suspend fun projectToken(projectId: String, staleValue: String?): String? {
         cachedProjectToken(projectId, staleValue)?.let { return it }
         val lock = tokensLock.withLock { mintLocks.getOrPut(projectId) { Mutex() } }
-        return lock.withLock {
-            cachedProjectToken(projectId, staleValue) ?: mintProjectTokenLocked(projectId)
+        // Traced from here, not from the mint itself: these tokens are held in
+        // memory only, so the first call into a production after a launch finds
+        // nothing and every other call of that open queues on this lock behind
+        // it. The wait and the round trip are one gate as far as the board is
+        // concerned, and this is the span that spells it.
+        return OpenTrace.time("project token (none held)") {
+            lock.withLock {
+                cachedProjectToken(projectId, staleValue) ?: mintProjectTokenLocked(projectId)
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.database.ProjectVisits
 import com.zillit.desktop.core.database.ZillitDatabase
 import com.zillit.desktop.core.network.CachedRead
 import com.zillit.desktop.core.network.ReadCache
@@ -15,8 +16,9 @@ import kotlinx.coroutines.withContext
  *
  * Cache semantics on purpose: every row is the server's own answer, so the
  * table is rebuilt on a schema change and gone with the key on sign-out, like
- * the rest of that file. Answers older than [RETENTION_MILLIS] are dropped at
- * start; a production nobody has opened in a month is not worth the disk.
+ * the rest of that file. The answers of a production nobody has opened in
+ * [RETENTION_MILLIS] are dropped at start — see [prune] for what "opened"
+ * measures, and why it is not the age of the row.
  *
  * Reads go on [readDispatcher], away from the writes: see [CacheReadLane].
  */
@@ -25,6 +27,9 @@ class SqlReadCache(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val readDispatcher: CoroutineDispatcher = CacheReadLane,
 ) : ReadCache {
+
+    /** Which productions are still in use — [prune]'s reprieve list. */
+    private val visits = ProjectVisits(database)
 
     override suspend fun get(key: String): CachedRead? = withContext(readDispatcher) {
         database.readCacheQueries.selectByKey(key).executeAsOneOrNull()?.let { CachedRead(it.body, it.fetchedAt) }
@@ -47,6 +52,14 @@ class SqlReadCache(
     }
 
     /**
+     * Drops the answers of productions nobody has opened in [RETENTION_MILLIS].
+     *
+     * By the last open ([ProjectVisits]), not by when the answer landed — see
+     * `NoticeCache.prune`. The row that matters most here is a board's tab
+     * strip: kept posts cannot be drawn until the board knows its tab ids, so
+     * this row going while the posts stayed meant a round trip in front of a
+     * board that was already on disk.
+     *
      * Guarded, unlike [get] and [put]: those are reached through `ApiClient`,
      * which already reads a throw from a store as a miss, while this runs in a
      * startup coroutine of its own, where a throw has no caller to answer to
@@ -55,7 +68,8 @@ class SqlReadCache(
      */
     suspend fun prune(now: Long): Unit = withContext(dispatcher) {
         try {
-            database.readCacheQueries.deleteOlderThan(now - RETENTION_MILLIS)
+            val cutoff = now - RETENTION_MILLIS
+            database.readCacheQueries.deleteAged(before = cutoff, kept = visits.openedSince(cutoff))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {

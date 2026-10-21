@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home.data
 
+import com.zillit.desktop.core.common.OpenTrace
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
@@ -272,8 +273,14 @@ class HomeFeedRepositoryImpl(
     override suspend fun cachedNotices(unitId: String): List<Notice>? {
         if (fileCabinet) return null
         disk?.newest(unitId)?.takeIf { it.isNotEmpty() }?.let { kept ->
+            // Which of the two stores answered is worth a line: they are
+            // pruned on their own, so a board can have lost the one and kept
+            // the other, and the fallback holds a single window where the
+            // store holds every page ever read.
+            OpenTrace.mark("${kept.size} rows in the board store")
             return kept.mapNotNull { runCatching { Json.parseToJsonElement(it) }.getOrNull() }.toNotices()
         }
+        OpenTrace.mark("board store empty — trying the kept newest page")
         return apiClient.peekCached(
             // The URL is not part of the key under a `cacheAs` name, but it is
             // what the log line says it served — so pass the real route.

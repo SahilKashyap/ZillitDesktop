@@ -13,5 +13,21 @@ SELECT value FROM appMeta WHERE key = ?;
 upsert:
 INSERT OR REPLACE INTO appMeta(key, value) VALUES (?, ?);
 
+-- Every row filed under one prefix — what makes a set of keys readable as a
+-- whole (`ProjectVisits`, which keeps one row per production). The prefixes
+-- are this module's own constants and never user input, so no LIKE escaping
+-- is owed; `_` and `%` cannot reach these patterns.
+--
+-- Aliased so the generated row spells its own columns: `value` is a name the
+-- generator is entitled to decorate, and a caller should not have to guess.
+selectByPrefix:
+SELECT key AS metaKey, value AS metaValue FROM appMeta WHERE key LIKE :prefix || '%';
+
+-- The same set, forgotten. Prefixed rather than [deleteAll] because this
+-- table holds the database's own provenance beside anything a person's
+-- session put here, and sign-out is entitled only to the latter.
+deleteByPrefix:
+DELETE FROM appMeta WHERE key LIKE :prefix || '%';
+
 deleteAll:
 DELETE FROM appMeta;

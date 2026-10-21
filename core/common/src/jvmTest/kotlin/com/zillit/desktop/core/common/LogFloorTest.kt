@@ -26,9 +26,12 @@ class LogFloorTest {
     @Test
     fun `production keeps the lines that say what this install is`() {
         // The build and the environment, the config it loaded, a replaced
-        // database key, the session's own story, an update handing over.
-        listOf("Logging", "Startup", "Shutdown", "ConfigLoader", "DatabaseKey", "TokenSession", "AppUpdate")
-            .forEach { tag -> assertTrue(production.keeps(LogLevel.INFO, tag), tag) }
+        // database key, the session's own story, an update handing over — and
+        // how long this machine took to open a production, which is a question
+        // only ever asked about somebody else's.
+        listOf(
+            "Logging", "Startup", "Shutdown", "ConfigLoader", "DatabaseKey", "TokenSession", "AppUpdate", "Open",
+        ).forEach { tag -> assertTrue(production.keeps(LogLevel.INFO, tag), tag) }
     }
 
     /**

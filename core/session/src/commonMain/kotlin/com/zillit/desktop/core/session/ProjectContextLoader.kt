@@ -1,5 +1,6 @@
 package com.zillit.desktop.core.session
 
+import com.zillit.desktop.core.common.OpenTrace
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.ZillitResult
@@ -98,6 +99,21 @@ class ProjectContextLoader(
             deletionDueAtMillis = carried,
         )
         state.value = cached
+        // Which half was missing, when it was not enough to open on. Both
+        // caches are pruned by row age at launch, so a production visited
+        // less often than that retention window comes back empty here — and
+        // this is the line that says so rather than leaving a cold open
+        // looking like a slow network.
+        if (cached.profile == null || cached.project == null) {
+            OpenTrace.mark(
+                "cached context short: " +
+                    "profile ${if (cached.profile == null) "missing" else "kept"}, " +
+                    "record ${if (cached.project == null) "missing" else "kept"}, " +
+                    "crew ${cached.users.size}",
+            )
+        } else {
+            OpenTrace.mark("cached context: profile, record and ${cached.users.size} crew")
+        }
         return cached.profile != null && cached.project != null
     }
 
@@ -107,9 +123,12 @@ class ProjectContextLoader(
      * the time a project took to open.
      */
     suspend fun refresh(projectId: String) = coroutineScope {
-        launch { refreshProfile(projectId) }
-        launch { refreshProject(projectId) }
-        launch { refreshUsers(projectId) }
+        // Timed one by one, not as a group: they are parallel, so the group's
+        // cost is the slowest of them, and knowing which one that is decides
+        // whether a cold open is worth attacking at all.
+        launch { OpenTrace.time("profile") { refreshProfile(projectId) } }
+        launch { OpenTrace.time("production record") { refreshProject(projectId) } }
+        launch { OpenTrace.time("crew list") { refreshUsers(projectId) } }
     }
 
     /** Publishes whatever is cached, then refreshes each part independently. */
