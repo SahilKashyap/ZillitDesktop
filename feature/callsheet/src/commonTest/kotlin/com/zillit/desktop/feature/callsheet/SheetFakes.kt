@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDetail
 import com.zillit.desktop.feature.callsheet.domain.CallSheetPublishing
 import com.zillit.desktop.feature.callsheet.domain.SheetQuery
+import com.zillit.desktop.feature.callsheet.domain.SheetRevision
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
@@ -110,12 +111,14 @@ internal class FakeSheetRepository : CallSheetRepository {
     var stock: List<StockTemplate> = emptyList()
     var rows: (SheetQuery) -> List<CallSheetSummary> = { emptyList() }
     val details = mutableMapOf<String, CallSheetDetail>()
+    val revisionLists = mutableMapOf<String, List<SheetRevision>>()
     val thread = mutableListOf<SheetComment>()
     var deleteAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
 
     val queries = mutableListOf<SheetQuery>()
     val metadataWrites = mutableListOf<MetadataUpdate>()
     val detailRequests = mutableListOf<String>()
+    val revisionRequests = mutableListOf<String>()
     val deleted = mutableListOf<String>()
     val created = mutableListOf<Pair<String, SheetPayload>>()
     val revisions = mutableListOf<String>()
@@ -165,6 +168,13 @@ internal class FakeSheetRepository : CallSheetRepository {
         detailRequests += id
         val detail = details[id] ?: CallSheetDetail(Samples.row(id, "Sheet $id"), SheetPayload())
         return ZillitResult.Success(detail)
+    }
+
+    /** The dedicated `…/revisions` read; unset means "answer the detail's copy". */
+    override suspend fun revisions(id: String): ZillitResult<List<SheetRevision>> {
+        revisionRequests += id
+        return revisionLists[id]?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Success(details[id]?.revisions ?: emptyList())
     }
 
     override suspend fun create(

@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportQuery
 import com.zillit.desktop.feature.productionreport.domain.ReportRepository
+import com.zillit.desktop.feature.productionreport.domain.ReportRevision
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ReportSyncEvent
 import com.zillit.desktop.feature.productionreport.domain.ReviewAssignee
@@ -126,6 +127,9 @@ class ReportRepositoryImpl(
             ReportWire.detail(data)?.let { ZillitResult.Success(it) }
                 ?: ZillitResult.Failure(ZillitError.Serialization("production report missing from the answer"))
         }
+
+    override suspend fun revisions(id: String): ZillitResult<List<ReportRevision>> =
+        call(HttpVerb.Get, "$base/production-reports/$id/revisions").mapData { ReportWire.revisions(it) }
 
     override suspend fun create(
         projectId: String,

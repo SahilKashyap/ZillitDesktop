@@ -126,6 +126,16 @@ internal object SheetWire {
         )
     }
 
+    /** `GET …/revisions` answers `{revisions: [...]}`; a bare array is accepted too. */
+    fun revisions(element: JsonElement?): List<SheetRevision> {
+        val list = when (element) {
+            is JsonArray -> element
+            is JsonObject -> element.firstOf("revisions") as? JsonArray
+            else -> null
+        }
+        return list.elements().mapNotNull { revision(it as? JsonObject) }
+    }
+
     private fun revision(obj: JsonObject?): SheetRevision? {
         if (obj == null) return null
         return SheetRevision(

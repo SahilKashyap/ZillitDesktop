@@ -130,6 +130,16 @@ internal object ReportWire {
         )
     }
 
+    /** `GET …/revisions` answers `{revisions: [...]}`; a bare array is accepted too. */
+    fun revisions(element: JsonElement?): List<ReportRevision> {
+        val list = when (element) {
+            is JsonArray -> element
+            is JsonObject -> element.firstOf("revisions") as? JsonArray
+            else -> null
+        }
+        return list.elements().mapNotNull { revision(it as? JsonObject) }
+    }
+
     private fun revision(obj: JsonObject?): ReportRevision? {
         if (obj == null) return null
         return ReportRevision(

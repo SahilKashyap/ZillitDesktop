@@ -137,6 +137,13 @@ internal class RowActionsController(private val ctx: SheetContext) {
      * History needs the detail — list rows carry neither revisions nor
      * reminders. Received builds from the row, as the web does; a failed
      * detail falls back to the row.
+     *
+     * The revisions come from their OWN read: the detail does not reliably
+     * carry `revisions[]`, and without them the timeline loses its Created
+     * and Updated lines (and every `vN` tag) — on a draft with no decision
+     * and no reminder yet, that is the whole timeline. Android and iOS both
+     * ask the dedicated route and keep the detail's copy as the fallback;
+     * the web does not, which is why its History looks thin too.
      */
     private fun history(sheet: CallSheetSummary, title: String, fromDetail: Boolean) {
         if (ctx.state.historyLoadingId != null) return
@@ -154,7 +161,12 @@ internal class RowActionsController(private val ctx: SheetContext) {
         ctx.launchWork {
             val detail = (ctx.repository.sheet(sheet.id) as? ZillitResult.Success)?.data
                 ?: CallSheetDetail(sheet, SheetPayload())
-            val entries = SheetHistory.entries(detail, ctx.state.members)
+            // A failed OR empty dedicated read keeps whatever the detail carried,
+            // so this can only ever add lines to the timeline, never remove one.
+            val revisions = (ctx.repository.revisions(sheet.id) as? ZillitResult.Success)
+                ?.data?.takeIf { it.isNotEmpty() }
+                ?: detail.revisions
+            val entries = SheetHistory.entries(detail.copy(revisions = revisions), ctx.state.members)
             ctx.update {
                 copy(historyLoadingId = null, dialog = SheetDialog.History(title, entries, emptyText))
             }

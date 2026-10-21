@@ -107,6 +107,14 @@ interface ReportRepository {
 
     suspend fun report(id: String): ZillitResult<ReportDetail>
 
+    /**
+     * The report's revisions on their own (`GET …/production-reports/{id}/revisions`).
+     * The detail does not reliably carry `revisions[]`, so the History timeline
+     * asks for them here and keeps the detail's copy as the fallback — what
+     * Android's `productionreport` `HistoryViewModel` does.
+     */
+    suspend fun revisions(id: String): ZillitResult<List<ReportRevision>>
+
     suspend fun create(
         projectId: String,
         name: String,

@@ -118,16 +118,32 @@ internal class RowActionsController(private val ctx: ReportContext) {
         }
     }
 
-    /** History needs the detail — list rows carry neither revisions nor reminders. */
+    /**
+     * History needs the detail — list rows carry neither revisions nor reminders.
+     *
+     * The revisions come from their OWN read: the detail does not reliably carry
+     * `revisions[]`, and without them the timeline loses its Created and Updated
+     * lines (and every `vN` tag) — on a draft with no decision and no reminder
+     * yet, that is the whole timeline. Android's `HistoryViewModel` asks the
+     * dedicated route and keeps the detail's copy as the fallback; the web does
+     * not, which is why its History looks thin too. A failed OR empty answer
+     * keeps what the detail carried, so this only ever adds lines.
+     */
     private fun history(report: ReportSummary, title: String) {
         if (ctx.state.historyLoadingId != null) return
         ctx.lists.readRowBadge(report, BadgeKind.Report)
         ctx.update { copy(historyLoadingId = report.id) }
         ctx.launchWork {
-            val detail = (ctx.repository.report(report.id) as? ZillitResult.Success)?.data
+            val fetched = (ctx.repository.report(report.id) as? ZillitResult.Success)?.data
+            val revisions = (ctx.repository.revisions(report.id) as? ZillitResult.Success)
+                ?.data?.takeIf { it.isNotEmpty() }
+            val detail = fetched?.let { found -> revisions?.let { found.copy(revisions = it) } ?: found }
             val members = ctx.state.members
             val entries = detail?.let { ReportHistory.entries(it, members) }
-                ?: ReportHistory.entries(ReportDetail(report, SheetPayload()), members)
+                ?: ReportHistory.entries(
+                    ReportDetail(report, SheetPayload(), revisions = revisions.orEmpty()),
+                    members,
+                )
             val publishedTab = ctx.state.tab == ManageTab.Published
             val emptyText = if (title == str(S.history) && publishedTab) {
                 str(S.desktop_pr_no_history_found)

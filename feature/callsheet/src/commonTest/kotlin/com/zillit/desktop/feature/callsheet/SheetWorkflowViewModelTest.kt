@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.callsheet.domain.SheetBadges
 import com.zillit.desktop.feature.callsheet.domain.SheetMetadata
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
 import com.zillit.desktop.feature.callsheet.domain.SheetQuery
+import com.zillit.desktop.feature.callsheet.domain.SheetRevision
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 import com.zillit.desktop.feature.callsheet.domain.UnitMessage
 import com.zillit.desktop.feature.callsheet.ui.ConfirmAction
@@ -156,6 +157,28 @@ class SheetWorkflowViewModelTest {
         assertNull(sent.createdById, "a second author must see a colleague's sent sheet")
         assertNull(sent.approverId)
     }
+
+    @Test
+    fun `History reads the revisions route, so Created survives a detail that omits them`() =
+        runTest(dispatcher) {
+            repository.rows = drafts("r1")
+            // What the service actually sends: a detail with no `revisions[]`…
+            repository.details["r1"] = CallSheetDetail(Samples.row("r1", "Day 1"), SheetPayload())
+            // …and the revisions on their own route, as Android and iOS read them.
+            repository.revisionLists["r1"] = listOf(
+                SheetRevision(id = "rev1", version = 1, createdById = "me", createdOn = Samples.NOW),
+            )
+            val vm = harness.start(this)
+
+            vm.onEvent(ListEvent.OpenHistory(Samples.row("r1", "Day 1"), "History"))
+            settle()
+
+            assertEquals(listOf("r1"), repository.revisionRequests, "the dedicated read happens once")
+            val entries = assertIs<SheetDialog.History>(vm.currentState.dialog).entries
+            assertEquals(1, entries.size, "the create line is the whole timeline of a fresh draft")
+            assertEquals("v1", entries.single().revisionText)
+            assertEquals("Author", entries.single().by, "named from the crew, not the stored string")
+        }
 
     @Test
     fun `the delete confirm stays open, busy, until the request settles`() = runTest(dispatcher) {

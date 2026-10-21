@@ -118,6 +118,15 @@ interface CallSheetRepository {
 
     suspend fun sheet(id: String): ZillitResult<CallSheetDetail>
 
+    /**
+     * The sheet's revisions on their own (`GET …/call-sheets/{id}/revisions`).
+     * The detail does not reliably carry `revisions[]`, so the History
+     * timeline asks for them here and keeps the detail's copy as the
+     * fallback — what Android (`RevisionRepository.fetchRevisions`) and iOS
+     * (`HistorySheet.loadHistory`) both do.
+     */
+    suspend fun revisions(id: String): ZillitResult<List<SheetRevision>>
+
     suspend fun create(
         projectId: String,
         name: String,

@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.productionreport.domain.ReplaceTarget
 import com.zillit.desktop.feature.productionreport.domain.ReportBadges
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportQuery
+import com.zillit.desktop.feature.productionreport.domain.ReportRevision
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ReviewAssignee
@@ -158,6 +159,28 @@ class ReportWorkflowViewModelTest {
             val failed = failing.start(this, Samples.viewer)
             assertTrue(failed.currentState.metadataFailed)
             assertEquals(listOf(ManageTab.Drafts, ManageTab.Approvals), failed.currentState.manageTabs)
+        }
+
+    @Test
+    fun `History reads the revisions route, so Created survives a detail that omits them`() =
+        runTest(dispatcher) {
+            repository.rows = drafts("r1")
+            // What the service actually sends: a detail with no `revisions[]`…
+            repository.details["r1"] = ReportDetail(Samples.row("r1", "Day 1"), SheetPayload())
+            // …and the revisions on their own route, as Android reads them.
+            repository.revisionLists["r1"] = listOf(
+                ReportRevision(id = "rev1", version = 1, createdBy = "Author", createdOn = Samples.NOW),
+            )
+            val vm = harness.start(this)
+
+            vm.onEvent(ListEvent.OpenHistory(Samples.row("r1", "Day 1"), "History"))
+            settle()
+
+            assertEquals(listOf("r1"), repository.revisionRequests, "the dedicated read happens once")
+            val entries = assertIs<ReportDialog.History>(vm.currentState.dialog).entries
+            assertEquals(1, entries.size, "the create line is the whole timeline of a fresh draft")
+            assertEquals("v1", entries.single().revisionText)
+            assertEquals("Author", entries.single().by)
         }
 
     @Test

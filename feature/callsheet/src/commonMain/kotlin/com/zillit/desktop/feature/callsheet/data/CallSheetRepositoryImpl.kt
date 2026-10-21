@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.callsheet.domain.SheetMember
 import com.zillit.desktop.feature.callsheet.domain.SheetMetadata
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
 import com.zillit.desktop.feature.callsheet.domain.SheetQuery
+import com.zillit.desktop.feature.callsheet.domain.SheetRevision
 import com.zillit.desktop.feature.callsheet.domain.SheetSyncEvent
 import com.zillit.desktop.feature.callsheet.domain.StockTemplate
 import com.zillit.desktop.feature.callsheet.domain.ToolAccessGrant
@@ -138,6 +139,9 @@ class CallSheetRepositoryImpl(
             SheetWire.detail(data)?.let { ZillitResult.Success(it) }
                 ?: ZillitResult.Failure(ZillitError.Serialization("call sheet missing from the answer"))
         }
+
+    override suspend fun revisions(id: String): ZillitResult<List<SheetRevision>> =
+        call(HttpVerb.Get, "$base/call-sheets/$id/revisions").mapData { SheetWire.revisions(it) }
 
     override suspend fun create(
         projectId: String,

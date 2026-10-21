@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.productionreport.domain.ReportDelivery
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportPublishing
 import com.zillit.desktop.feature.productionreport.domain.ReportQuery
+import com.zillit.desktop.feature.productionreport.domain.ReportRevision
 import com.zillit.desktop.feature.productionreport.domain.ReportRepository
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
@@ -118,6 +119,7 @@ internal class FakeReportRepository : ReportRepository {
     var stock: List<StockTemplate> = emptyList()
     var rows: (ReportQuery) -> List<ReportSummary> = { emptyList() }
     val details = mutableMapOf<String, ReportDetail>()
+    val revisionLists = mutableMapOf<String, List<ReportRevision>>()
     val thread = mutableListOf<ReportComment>()
     var deleteAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
     var approveAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
@@ -125,6 +127,7 @@ internal class FakeReportRepository : ReportRepository {
     val queries = mutableListOf<ReportQuery>()
     val metadataWrites = mutableListOf<MetadataUpdate>()
     val detailRequests = mutableListOf<String>()
+    val revisionRequests = mutableListOf<String>()
     val deleted = mutableListOf<String>()
     val created = mutableListOf<Pair<String, SheetPayload>>()
     val revisions = mutableListOf<String>()
@@ -187,6 +190,13 @@ internal class FakeReportRepository : ReportRepository {
         detailRequests += id
         val detail = details[id] ?: ReportDetail(Samples.row(id, "Report $id"), SheetPayload())
         return ZillitResult.Success(detail)
+    }
+
+    /** The dedicated `…/revisions` read; unset means "answer the detail's copy". */
+    override suspend fun revisions(id: String): ZillitResult<List<ReportRevision>> {
+        revisionRequests += id
+        return revisionLists[id]?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Success(details[id]?.revisions ?: emptyList())
     }
 
     override suspend fun create(
