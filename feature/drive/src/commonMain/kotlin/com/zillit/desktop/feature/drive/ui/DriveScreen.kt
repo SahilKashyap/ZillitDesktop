@@ -49,10 +49,12 @@ import com.zillit.desktop.feature.drive.ui.pages.FileRequestDialog
 import com.zillit.desktop.feature.drive.ui.pages.InnerTabs
 import com.zillit.desktop.feature.drive.ui.pages.ItemMenuHost
 import com.zillit.desktop.feature.drive.ui.pages.MoveToDialog
+import com.zillit.desktop.feature.drive.ui.pages.NotifyEditDialog
 import com.zillit.desktop.feature.drive.ui.pages.NewFolderSheet
 import com.zillit.desktop.feature.drive.ui.pages.OperationsPanel
 import com.zillit.desktop.feature.drive.ui.pages.PreviewDialog
 import com.zillit.desktop.feature.drive.ui.pages.ShareSheet
+import com.zillit.desktop.feature.drive.ui.pages.TextDocPane
 import com.zillit.desktop.feature.drive.ui.pages.TrashView
 import com.zillit.desktop.feature.drive.ui.pages.UploadSheet
 import com.zillit.desktop.feature.drive.ui.pages.VersionHistorySheet
@@ -107,7 +109,8 @@ val LocalDriveCompact = staticCompositionLocalOf { false }
 val LocalDriveNow = staticCompositionLocalOf<() -> Long> { { 0L } }
 
 @Composable
-@Suppress("LongMethod", "ComplexCondition") // The frame: header, body, panel and every overlay, in one place.
+// The frame: header, body, panel and every overlay, in one place.
+@Suppress("LongMethod", "ComplexCondition", "CyclomaticComplexMethod")
 private fun DriveScreenBody(
     state: DriveUiState,
     onEvent: (DriveEvent) -> Unit,
@@ -134,6 +137,21 @@ private fun DriveScreenBody(
                 title = str(S.desktop_drive_no_access_title),
                 message = str(S.desktop_drive_no_access_message),
                 icon = ZillitIcons.Shield,
+            )
+            return@Box
+        }
+
+        // A text or Markdown file covers the pane, as the web's viewer does:
+        // it is a place you are in, with its own way back. The history panel
+        // and the "tell the others" prompt still float above it.
+        state.textDoc?.let { doc ->
+            TextDocPane(doc, onEvent)
+            VersionHistorySheet(state, onEvent)
+            NotifyEditDialog(state, onEvent)
+            ZillitToast(
+                message = state.notice,
+                onDismiss = { onEvent(DriveEvent.ClearNotice) },
+                tone = ZillitToastTone.Success,
             )
             return@Box
         }
@@ -189,6 +207,7 @@ private fun DriveScreenBody(
         PreviewDialog(state, onEvent)
         FileRequestDialog(state, onEvent)
         DuplicatesDialog(state, onEvent)
+        NotifyEditDialog(state, onEvent)
         DrivePromptDialog(state.prompt, onEvent)
 
         ZillitToast(

@@ -23,6 +23,16 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.encodeToJsonElement
 
 /**
+ * A request body that is not JSON, with the content type it goes out as.
+ *
+ * One route needs this: Drive saves a text file by PUTting the file's own text
+ * as `text/markdown` (`saveFileTextForDrive`), not a JSON object wrapping it.
+ * Everything else on every service speaks JSON, which is why that is still the
+ * default and this has to be asked for.
+ */
+data class TextBody(val text: String, val contentType: String)
+
+/**
  * The two things a call can say about itself that most calls never need to.
  *
  * Separated from the call's own parameters because they are properties of *this
@@ -138,6 +148,7 @@ class ApiClient(
      * [CancellationException], which must propagate so coroutine cancellation
      * keeps working.
      */
+    @Suppress("LongParameterList") // One parameter per part of a request; see [TextBody].
     suspend fun <T> request(
         verb: HttpVerb,
         url: String,
@@ -146,8 +157,9 @@ class ApiClient(
         body: JsonElement? = null,
         queryParameters: Map<String, Any?> = emptyMap(),
         options: CallOptions = CallOptions(),
+        textBody: TextBody? = null,
     ): ZillitResult<T> =
-        envelope(verb, url, module, body, queryParameters, options).flatMapEnvelope { data ->
+        envelope(verb, url, module, body, queryParameters, options, textBody).flatMapEnvelope { data ->
             decode(data, serializer)
         }
 
@@ -186,6 +198,7 @@ class ApiClient(
      * See [CallOptions] for the two things a call can say about itself that
      * most calls never need to.
      */
+    @Suppress("LongParameterList") // One parameter per part of a request; see [TextBody].
     suspend fun envelope(
         verb: HttpVerb,
         url: String,
@@ -193,6 +206,7 @@ class ApiClient(
         body: JsonElement? = null,
         queryParameters: Map<String, Any?> = emptyMap(),
         options: CallOptions = CallOptions(),
+        textBody: TextBody? = null,
     ): ZillitResult<ApiEnvelope> {
         // Whose answer this is is settled as it is asked, by the same identity
         // that signs it. Worked out when the answer landed, a read still out
@@ -200,7 +214,7 @@ class ApiClient(
         // mid-switch, under nobody (seen on a real cache: a Home board page
         // filed under a blank user and production).
         val kept = readCache?.let { keptUnder(verb, url, module, queryParameters, options) }
-        val outcome = send(verb, url, module, body, queryParameters, options)
+        val outcome = send(verb, url, module, body, queryParameters, options, textBody)
         onOutcome((outcome as? ZillitResult.Failure)?.error)
         (outcome as? ZillitResult.Failure)?.let { onFailure(ApiFailure(verb.wire, url, it.error)) }
         return remembered(outcome, kept, url)
@@ -337,6 +351,7 @@ class ApiClient(
             null
         }
 
+    @Suppress("LongParameterList") // The request's parts, as [envelope] received them.
     private suspend fun send(
         verb: HttpVerb,
         url: String,
@@ -344,11 +359,16 @@ class ApiClient(
         body: JsonElement?,
         queryParameters: Map<String, Any?>,
         options: CallOptions,
+        textBody: TextBody? = null,
     ): ZillitResult<ApiEnvelope> = try {
         // The body is serialised up front because `bodyhash` is a digest over
         // it — headers cannot be built before the body exists. Ktor would
         // otherwise serialise it later, inside the builder.
         val bodyJson = body?.let { HttpClientFactory.json.encodeToString(JsonElement.serializer(), it) }
+        // A body that is not JSON is hashed and signed as it goes on the wire,
+        // exactly as the web hashes `_zRawData` — the string itself.
+        val payload = textBody ?: bodyJson?.let { TextBody(it, ContentType.Application.Json.toString()) }
+        val hashed = textBody?.text ?: bodyJson
 
         // Headers are resolved before the request builder runs: building them
         // can suspend (the provider may need to derive an encrypted header or
@@ -371,18 +391,18 @@ class ApiClient(
 
         val token = authenticator?.bearerFor(module, projectForAuth, url)
         val resolvedHeaders = if (token == null) {
-            headerProvider.headersFor(module, bodyJson, options.projectId, options.userId)
+            headerProvider.headersFor(module, hashed, options.projectId, options.userId)
         } else {
             headerProvider.plainHeaders()
         }
 
-        var response = perform(verb, url, resolvedHeaders, token, queryParameters, bodyJson)
+        var response = perform(verb, url, resolvedHeaders, token, queryParameters, payload)
         if (token != null && response.status.value == STATUS_UNAUTHORIZED) {
             // An expired token heals here, once, and the retry's answer is the
             // one reported. A second 401 is the session really being gone.
             val renewed = authenticator?.recoverFromUnauthorized(module, projectForAuth, url, token)
             if (renewed != null && renewed != token) {
-                response = perform(verb, url, resolvedHeaders, renewed, queryParameters, bodyJson)
+                response = perform(verb, url, resolvedHeaders, renewed, queryParameters, payload)
             }
         }
         response.toEnvelope(options.reportUnauthorized)
@@ -399,18 +419,18 @@ class ApiClient(
         plain: Map<String, String>,
         bearer: String?,
         queryParameters: Map<String, Any?>,
-        bodyJson: String?,
+        payload: TextBody?,
     ): HttpResponse = httpClient.request(url) {
         method = verb.toKtor()
         plain.forEach { (name, value) -> headers.append(name, value) }
         bearer?.let { headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
         queryParameters.forEach { (key, value) -> value?.let { parameter(key, it) } }
-        if (bodyJson != null) {
-            contentType(ContentType.Application.Json)
+        if (payload != null) {
+            contentType(ContentType.parse(payload.contentType))
             // The already-serialised string, so the bytes on the wire are
             // byte-identical to what `bodyhash` was computed over. Letting
             // Ktor re-serialise could reorder keys and invalidate the hash.
-            setBody(bodyJson)
+            setBody(payload.text)
         }
     }
 

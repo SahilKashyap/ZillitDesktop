@@ -7,11 +7,13 @@ import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveEditorKind
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
+import com.zillit.desktop.feature.drive.domain.DriveFileText
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DrivePermissions
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveTag
+import com.zillit.desktop.feature.drive.domain.DriveTextSave
 import com.zillit.desktop.feature.drive.domain.DriveActivityItem
 import com.zillit.desktop.feature.drive.domain.DriveActivityPerson
 import com.zillit.desktop.feature.drive.domain.DriveCellChange
@@ -89,6 +91,14 @@ internal data class DriveItemDto(
     @SerialName("parent_folder_id") val parentFolderId: String? = null,
 
     @SerialName("file_size_bytes") val sizeBytes: Long? = null,
+    /**
+     * The two older spellings of the same number. The web reads
+     * `file_size_bytes || size || file_size` and a row carrying only one of
+     * the latter two showed no size at all here — and nothing in its folder's
+     * total either, since folders are sized by summing their files.
+     */
+    @SerialName("size") val size: Long? = null,
+    @SerialName("file_size") val fileSize: Long? = null,
     @SerialName("file_extension") val extension: String? = null,
     @SerialName("mime_type") val mimeType: String? = null,
     @SerialName("file_type") val fileType: String? = null,
@@ -117,8 +127,15 @@ internal data class DriveItemDto(
      * still use; both are read.
      */
     @SerialName("_userPermissions") val userPermissions: UserPermissionsDto? = null,
-    /** Who the owner has shared this with (`_accessUserIds`) — the Sharing column. */
-    @SerialName("_accessUserIds") val accessUserIds: List<JsonElement> = emptyList(),
+    /**
+     * Who the owner has shared this with (`_accessUserIds`) — the Sharing
+     * column, and (under "Shared with me") the test of whether this person can
+     * open the folder at all. Null and empty mean different things there, so
+     * the absent list is kept absent rather than defaulted.
+     */
+    @SerialName("_accessUserIds") val accessUserIds: List<JsonElement>? = null,
+    /** When this row was shared with the person asking; absent on their own rows. */
+    @SerialName("_sharedAt") val sharedAt: JsonPrimitive? = null,
     @SerialName("_accessCount") val accessCount: Int? = null,
     @SerialName("folder_color") val folderColor: String? = null,
 
@@ -181,7 +198,7 @@ internal data class DriveItemDto(
             // latter left every file at the root, whatever folder it was in.
             parentFolderId = listOf(parentFolder, parentFolderId, folderId.takeIf { resolved == DriveItemKind.File })
                 .firstOrNull { !it.isNullOrBlank() },
-            sizeBytes = sizeBytes ?: 0,
+            sizeBytes = listOf(sizeBytes, size, fileSize).firstOrNull { (it ?: 0) > 0 } ?: 0,
             extension = extension.orEmpty().ifBlank {
                 displayName.substringAfterLast('.', "")
             }.lowercase(),
@@ -196,8 +213,10 @@ internal data class DriveItemDto(
             hasExplicitPermissions = userPermissions != null ||
                 listOf(canView, canEdit, canDownload, canDelete).any { it != null },
             isFavourite = isFavourite ?: false,
-            isShared = (isShared ?: false) || (accessCount ?: 0) > 0 || accessUserIds.isNotEmpty(),
-            accessUserIds = accessUserIds.mapNotNull { it.identifier()?.takeIf(String::isNotBlank) },
+            isShared = (isShared ?: false) || (accessCount ?: 0) > 0 || !accessUserIds.isNullOrEmpty(),
+            hasAccessList = accessUserIds != null,
+            accessUserIds = accessUserIds.orEmpty().mapNotNull { it.identifier()?.takeIf(String::isNotBlank) },
+            sharedAt = sharedAt.epochMillis(),
             tagIds = tagIds,
             itemCount = itemCount,
             folderColor = folderColor.orEmpty(),
@@ -679,6 +698,41 @@ internal data class ActivityPageDto(
 )
 
 /**
+ * `GET /files/{id}/text` — a text file as text.
+ *
+ * `content_time` is a stamp the client only ever hands back, so it is read as
+ * whatever the server sent it as (a date string on this route, a number on
+ * others) and never parsed.
+ */
+@Serializable
+internal data class FileTextDto(
+    @SerialName("content") val content: String? = null,
+    @SerialName("content_time") val contentTime: JsonPrimitive? = null,
+    @SerialName("can_edit") val canEdit: Boolean? = null,
+) {
+    fun toDomain(): DriveFileText = DriveFileText(
+        content = content.orEmpty(),
+        contentTime = contentTime.stampText(),
+        canEdit = canEdit ?: false,
+    )
+}
+
+/** `PUT /files/{id}/text` — the new stamp, and whether a version was written. */
+@Serializable
+internal data class TextSaveDto(
+    @SerialName("content_time") val contentTime: JsonPrimitive? = null,
+    @SerialName("saved") val saved: Boolean? = null,
+) {
+    fun toDomain(): DriveTextSave = DriveTextSave(
+        contentTime = contentTime.stampText(),
+        saved = saved ?: true,
+    )
+}
+
+/** The stamp as the server spelt it — quoted or bare, never reinterpreted. */
+private fun JsonPrimitive?.stampText(): String = this?.content.orEmpty()
+
+/**
  * Decodes the two inverted envelopes from raw JSON, for `DriveWireShapeTest`.
  *
  * These exist so the shapes can be pinned against *captured responses* rather
@@ -1155,3 +1209,19 @@ internal fun decodeVersionHistory(json: String): DriveVersionHistory =
 /** Decodes a captured changes body, for `DriveVersionHistoryWireTest`. */
 internal fun decodeVersionChanges(json: String): DriveVersionChanges =
     driveWireJson.decodeFromString(VersionChangesDto.serializer(), json).toDomain()
+
+/** Decodes a captured text body, for `DriveTextDocWireTest`. */
+internal fun decodeFileText(json: String): DriveFileText =
+    driveWireJson.decodeFromString(FileTextDto.serializer(), json).toDomain()
+
+/** Decodes a captured save reply, for `DriveTextDocWireTest`. */
+internal fun decodeTextSave(json: String): DriveTextSave =
+    driveWireJson.decodeFromString(TextSaveDto.serializer(), json).toDomain()
+
+/**
+ * Decodes one captured listing row, for the tests that pin what a row's own
+ * fields mean — the three spellings of its size, and the two flags that say
+ * whether a shared folder is this person's to open.
+ */
+internal fun decodeDriveItem(json: String, kind: DriveItemKind? = null): DriveItem? =
+    driveWireJson.decodeFromString(DriveItemDto.serializer(), json).toDomain(kind)

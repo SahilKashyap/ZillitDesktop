@@ -73,12 +73,42 @@ sealed interface DriveEvent {
      * file without `mode=view`, so Drive mints an editing token.
      */
     data class SwitchEditorToEdit(val fileId: String) : DriveEvent
+
+    /** The editor window for this file has been closed by the person in it. */
+    data class EditorClosed(val fileId: String) : DriveEvent
     data class Preview(val item: DriveItem) : DriveEvent
     data object ClosePreview : DriveEvent
     /** A preview this dialog cannot draw — hand its address to the browser instead. */
     data object OpenPreviewInBrowser : DriveEvent
     /** Steps the preview to the listing's previous / next image or video. */
     data class StepPreview(val forward: Boolean) : DriveEvent
+
+    // -- text and Markdown files ------------------------------------------
+
+    /** Opens a `.md` / `.txt` file in Drive's own viewer, rendered or in edit mode. */
+    data class OpenTextDoc(val item: DriveItem, val edit: Boolean = false) : DriveEvent
+    data object CloseTextDoc : DriveEvent
+    data class TextDocDraft(val text: String) : DriveEvent
+    data class TextDocEditing(val on: Boolean) : DriveEvent
+
+    /** Saves it as a new version; [overwrite] drops the stamp, taking the conflict. */
+    data class SaveTextDoc(val overwrite: Boolean = false) : DriveEvent
+
+    /** Re-reads the live file — the conflict bar's "Load the latest version". */
+    data object ReloadTextDoc : DriveEvent
+    data object KeepEditingTextDoc : DriveEvent
+
+    /** Back to the live file from a version being read. */
+    data object CloseTextDocVersion : DriveEvent
+
+    // -- "let others know" -------------------------------------------------
+
+    data class NotifyEditNote(val text: String) : DriveEvent
+    data object SendNotifyEdit : DriveEvent
+    data object DismissNotifyEdit : DriveEvent
+
+    /** A whole folder as one .zip. */
+    data class DownloadFolderZip(val item: DriveItem) : DriveEvent
 
     // -- upload drawer ----------------------------------------------------
 

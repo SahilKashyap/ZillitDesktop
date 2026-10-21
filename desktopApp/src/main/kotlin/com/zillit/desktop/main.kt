@@ -2912,7 +2912,7 @@ internal fun driveHostSeams(viewModel: DriveViewModel, scope: CoroutineScope) = 
         }
     },
     onCopy = ::copyToClipboard,
-    onOpenEditor = { url, fileName, viewOnly, onEdit ->
+    onOpenEditor = { url, fileName, viewOnly, onEdit, onClosed ->
         DocumentEditorWindow.open(
             url = url,
             fileName = fileName,
@@ -2922,8 +2922,13 @@ internal fun driveHostSeams(viewModel: DriveViewModel, scope: CoroutineScope) = 
             onUnavailable = { reason -> viewModel.onEditorUnavailable(reason) },
             viewOnly = viewOnly,
             onEdit = onEdit,
+            onClosed = onClosed,
         )
     },
+    // Chromium takes seconds to come up the first time, and a document opens
+    // into it. Started while the listing is being read, so the first file does
+    // not wait for the runtime as well as for its own config.
+    onWarmEditors = { scope.launch { KcefRuntime.start() } },
     onOpenMedia = { url, title ->
         DocumentEditorWindow.open(
             url = url,

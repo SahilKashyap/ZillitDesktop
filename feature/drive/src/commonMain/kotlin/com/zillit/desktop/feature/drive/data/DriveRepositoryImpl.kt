@@ -10,11 +10,14 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.TextBody
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveFileRequestDraft
+import com.zillit.desktop.feature.drive.domain.DriveFileText
+import com.zillit.desktop.feature.drive.domain.DriveTextSave
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DriveActivityPage
@@ -76,7 +79,7 @@ import kotlinx.serialization.json.buildJsonObject
  * returns *is* the permission filter. The lighter `Device` header omits both
  * and the service answers 406 rather than falling back.
  */
-@Suppress("TooManyFunctions") // Mirrors the server's operation surface; see the interface.
+@Suppress("TooManyFunctions", "LargeClass") // Mirrors the server's operation surface; see the interface.
 class DriveRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
@@ -254,22 +257,36 @@ class DriveRepositoryImpl(
             body = buildJsonObject { put("file_ids", fileIds.toJsonArray()) },
         ).map { rows -> rows.mapNotNull { it.url?.takeIf(String::isNotBlank) } }
 
+    /** The selection as one .zip, in two steps — see [DriveRepository.filesZipLink]. */
+    override suspend fun filesZipLink(fileIds: List<String>): ZillitResult<DriveZipLink> = zipLink(
+        url = "$base/bulk/download-zip-link",
+        body = buildJsonObject { put("file_ids", fileIds.toJsonArray()) },
+    )
+
+    /** No auth header on this one: the token is the authorisation. */
+    override fun zipDownloadUrl(token: String): String =
+        "$base/bulk/download-zip?token=${token.percentEncoded()}"
+
+    /** A whole folder as one .zip — the same two steps as a selection. */
+    override suspend fun folderZipLink(folderId: String): ZillitResult<DriveZipLink> =
+        zipLink("$base/folders/$folderId/download-zip", body = null)
+
+    override fun folderZipDownloadUrl(token: String): String =
+        "$base/folders/download-zip?token=${token.percentEncoded()}"
+
     /**
-     * The selection as one .zip, in two steps — see
-     * [DriveRepository.filesZipLink].
-     *
-     * Read off the envelope rather than through `request`, because a refusal
-     * here can arrive as a 200 with `status: 0` and no `data`: decoded as data
-     * that is the client's own "response had no data field", which throws away
-     * the one thing the user needs to be told.
+     * Both zip routes, which refuse the same way: a 200 carrying `status: 0`
+     * and no `data`. Through `request` that decodes as the client's own
+     * "response had no data field", which throws away the one thing the user
+     * needs to be told.
      */
-    override suspend fun filesZipLink(fileIds: List<String>): ZillitResult<DriveZipLink> =
+    private suspend fun zipLink(url: String, body: JsonObject?): ZillitResult<DriveZipLink> =
         apiClient.envelope(
             verb = HttpVerb.Post,
-            url = "$base/bulk/download-zip-link",
+            url = url,
             module = RequestModule.ProjectUser,
             options = callOptions(),
-            body = buildJsonObject { put("file_ids", fileIds.toJsonArray()) },
+            body = body ?: buildJsonObject { },
         ).flatMap { envelope ->
             val link = decodeZipLink(envelope.data)
             if (envelope.status == ENVELOPE_OK && link != null) {
@@ -285,9 +302,42 @@ class DriveRepositoryImpl(
             }
         }
 
-    /** No auth header on this one: the token is the authorisation. */
-    override fun zipDownloadUrl(token: String): String =
-        "$base/bulk/download-zip?token=${token.percentEncoded()}"
+    // -- text files --------------------------------------------------------
+
+    override suspend fun fileText(fileId: String, versionId: String?): ZillitResult<DriveFileText> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "$base/files/$fileId/text",
+            serializer = FileTextDto.serializer(),
+            module = RequestModule.ProjectUser,
+            queryParameters = buildMap { versionId?.let { put("version_id", it) } },
+            options = callOptions(),
+        ).map { it.toDomain() }
+
+    /**
+     * The one body on this service that is not JSON: the file's own text, as
+     * `text/markdown`, which is what the route's body parser reads (the web
+     * sends exactly this). A JSON object wrapping it arrives as no body at all.
+     */
+    override suspend fun saveFileText(
+        fileId: String,
+        content: String,
+        contentTime: String?,
+    ): ZillitResult<DriveTextSave> = apiClient.request(
+        verb = HttpVerb.Put,
+        url = "$base/files/$fileId/text",
+        serializer = TextSaveDto.serializer(),
+        module = RequestModule.ProjectUser,
+        queryParameters = buildMap { contentTime?.takeIf { it.isNotBlank() }?.let { put("content_time", it) } },
+        options = callOptions(),
+        textBody = TextBody(content, TEXT_MARKDOWN),
+    ).map { it.toDomain() }
+
+    override suspend fun announceEdit(fileId: String, note: String): ZillitResult<String> = message(
+        verb = HttpVerb.Post,
+        path = "$base/editor/$fileId/announce",
+        body = buildJsonObject { put("note", JsonPrimitive(note)) },
+    )
 
     // -- reading a file ----------------------------------------------------
 
@@ -950,6 +1000,8 @@ class DriveRepositoryImpl(
         const val TRASH_LIMIT = 200
         /** The web's details-panel fetch (`getActivityForDrive({ item_id, limit: 20 })`). */
         const val DETAIL_ACTIVITY_LIMIT = 20
+        /** What the text save goes out as; the route's parser takes text, not JSON. */
+        const val TEXT_MARKDOWN = "text/markdown; charset=utf-8"
     }
 }
 

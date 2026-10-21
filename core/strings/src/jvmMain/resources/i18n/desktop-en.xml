@@ -13834,4 +13834,23 @@
     <string name="desktop_email_enter_url">Enter URL</string>
     <string name="desktop_email_emoji">Emoji</string>
     <string name="desktop_email_highlight_text">Highlight Text</string>
+    <string name="desktop_drive_download_as_zip">Download as ZIP</string>
+    <string name="desktop_drive_download_skipped_names">Not in the download (no download permission): %1$s</string>
+    <string name="desktop_drive_edit_file">Edit file</string>
+    <string name="desktop_drive_md_placeholder">Write Markdown here…</string>
+    <string name="desktop_drive_no_folder_access">You do not have access to this folder.</string>
+    <string name="desktop_drive_notify_hint">Everyone with access to this file gets one notification.</string>
+    <string name="desktop_drive_notify_placeholder">Add a note (optional), for example: Updated the budget for Day 3</string>
+    <string name="desktop_drive_notify_sent">Everyone with access has been told.</string>
+    <string name="desktop_drive_notify_title">Let others know you updated this file?</string>
+    <string name="desktop_drive_text_back_to_current">Back to the current version</string>
+    <string name="desktop_drive_text_discard_question">You have unsaved changes. Close without saving?</string>
+    <string name="desktop_drive_text_empty_message">Nothing has been written in it yet.</string>
+    <string name="desktop_drive_text_empty_title">This file is empty</string>
+    <string name="desktop_drive_text_load_latest">Load the latest version</string>
+    <string name="desktop_drive_text_placeholder">Write here…</string>
+    <string name="desktop_drive_text_save_anyway">Save my version anyway</string>
+    <string name="desktop_drive_text_too_large">This file is over 2 MB, which is too large to save here.</string>
+    <string name="desktop_drive_text_viewing_version">You are viewing version %1$d</string>
+    <string name="desktop_drive_zipping_folder">Preparing %1$s as a .zip…</string>
 </resources>

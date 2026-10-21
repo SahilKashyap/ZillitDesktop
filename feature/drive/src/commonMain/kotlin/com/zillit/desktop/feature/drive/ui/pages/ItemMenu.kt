@@ -35,6 +35,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.drive.domain.DriveAction
 import com.zillit.desktop.feature.drive.domain.DriveItem
+import com.zillit.desktop.feature.drive.domain.isTextDocument
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import kotlin.math.roundToInt
@@ -131,6 +132,15 @@ internal fun menuEntries(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         entries += ZillitMenuEntry.Action(openFolder, ZillitIcons.Folder, ZillitMenuTone.Primary) {
             onEvent(DriveEvent.OpenFolder(item.id))
         }
+        // Owners and editors only: a folder's `can_download` comes from its
+        // role, and the server checks the role again when the token is used.
+        if (canDownload && !viewOnly) {
+            entries += ZillitMenuEntry.Action(
+                label = str(S.desktop_drive_download_as_zip),
+                icon = ZillitIcons.Download,
+                tone = ZillitMenuTone.Info,
+            ) { onEvent(DriveEvent.DownloadFolderZip(item)) }
+        }
     } else {
         entries += ZillitMenuEntry.Action(str(S.preview), ZillitIcons.Eye, ZillitMenuTone.Primary) {
             onEvent(DriveEvent.Preview(item))
@@ -140,12 +150,30 @@ internal fun menuEntries(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
                 onEvent(DriveEvent.Download(item))
             }
         }
+        // `.md` and `.txt` are edited in Drive's own viewer: the live editors
+        // refuse them, so "Open in editor" would open something that cannot
+        // save.
+        if (item.isTextDocument && canEdit && !viewOnly) {
+            entries += ZillitMenuEntry.Action(
+                label = str(S.desktop_drive_edit_file),
+                icon = ZillitIcons.Edit,
+                tone = ZillitMenuTone.Info,
+            ) { onEvent(DriveEvent.OpenTextDoc(item, edit = true)) }
+        }
         if (item.isEditableDocument && !viewOnly) {
             entries += ZillitMenuEntry.Action(
                 label = if (canEdit) str(S.desktop_drive_open_in_editor) else str(S.desktop_drive_view_in_editor),
                 icon = ZillitIcons.Edit,
                 tone = ZillitMenuTone.Info,
             ) { onEvent(DriveEvent.OpenInEditor(item, canEdit)) }
+        }
+        // Beside the editor, as the web has it: a file with versions behind it
+        // is read through its history, not only through its details panel.
+        if ((item.isEditableDocument || item.isTextDocument) && !viewOnly) {
+            entries += ZillitMenuEntry.Action(
+                label = str(S.desktop_drive_version_history),
+                icon = ZillitIcons.Clock,
+            ) { onEvent(DriveEvent.OpenVersionHistory(item)) }
         }
     }
 
@@ -191,9 +219,10 @@ internal fun menuEntries(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         tone = if (starred) ZillitMenuTone.Approve else ZillitMenuTone.Neutral,
     ) { onEvent(DriveEvent.ToggleFavourite(item.ref)) }
 
-    if (!viewOnly) {
-        entries += ZillitMenuEntry.Action(str(S.info), ZillitIcons.Info) { onEvent(DriveEvent.ShowDetails(item)) }
-    }
+    // Info is read-only — created by, shared by, size — so a view-only
+    // recipient gets it too (REL-BUG-16). It used to be withheld with the
+    // actions, which left them nothing but Preview and Favourite.
+    entries += ZillitMenuEntry.Action(str(S.info), ZillitIcons.Info) { onEvent(DriveEvent.ShowDetails(item)) }
 
     if (canDelete && !viewOnly) {
         entries += ZillitMenuEntry.Divider

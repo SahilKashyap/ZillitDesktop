@@ -27,6 +27,7 @@ import com.zillit.desktop.feature.drive.domain.breadcrumbTo
 import com.zillit.desktop.feature.drive.domain.driveMessage
 import com.zillit.desktop.feature.drive.domain.driveUnread
 import com.zillit.desktop.feature.drive.domain.eligible
+import com.zillit.desktop.feature.drive.domain.isTextDocument
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
@@ -102,9 +103,20 @@ class DriveViewModel(
 
     private val details = DriveDetails(this)
     private val versions = DriveVersions(this)
+    private val textDocs = DriveTextDocs(this)
     private val uploads = UploadQueue(this, uploader, newUploadId)
     private val drawers = DriveDrawers(this, uploads)
     private val thumbnailsInFlight = mutableSetOf<String>()
+
+    /**
+     * When an editing session was opened on a file, by file id.
+     *
+     * The editor is a window of its own here and the page saves by itself, so
+     * nothing tells this view model that the person typed anything. What it
+     * can ask, once the window closes, is whether the file gained a version
+     * while the window was open — see `DriveTextDocs.askNotifyAfterEditor`.
+     */
+    private val editorOpenedAt = mutableMapOf<String, Long>()
 
     /**
      * Files whose thumbnail could not be fetched. Without this a row that
@@ -223,8 +235,13 @@ class DriveViewModel(
 
             is DriveEvent.OpenFolder -> openFolder(event.folderId)
             DriveEvent.GoBack -> openFolder(currentState.breadcrumb.dropLast(1).lastOrNull()?.id)
-            is DriveEvent.OpenItem ->
-                if (event.item.isFolder) openFolder(event.item.id) else drawers.preview(event.item)
+            is DriveEvent.OpenItem -> when {
+                event.item.isFolder -> openFolder(event.item.id)
+                // `.md` and `.txt` open in Drive's own viewer, rendered; the
+                // live editors refuse them (`file_type_not_editable`).
+                event.item.isTextDocument -> textDocs.open(event.item, edit = false)
+                else -> drawers.preview(event.item)
+            }
 
             is DriveEvent.SearchInput -> searchInput(event.text)
             DriveEvent.CommitSearch -> commitSearch()
@@ -270,13 +287,31 @@ class DriveViewModel(
             is DriveEvent.OpenInEditor -> openEditor(event.item, event.editable)
             // Over the listing, not the rows on screen: the window that asked
             // is its own, and the tab or folder behind it may have moved on.
+            is DriveEvent.EditorClosed -> textDocs.askNotifyAfterEditor(event.fileId, editorOpenedAt[event.fileId])
             is DriveEvent.SwitchEditorToEdit -> currentState.listing.files
                 .firstOrNull { it.id == event.fileId }
                 ?.let { openEditor(it, editable = true) }
-            is DriveEvent.Preview -> drawers.preview(event.item)
+            is DriveEvent.Preview ->
+                if (event.item.isTextDocument) textDocs.open(event.item, edit = false) else drawers.preview(event.item)
             DriveEvent.ClosePreview -> setState { copy(preview = null) }
             DriveEvent.OpenPreviewInBrowser -> drawers.openPreviewOutside()
             is DriveEvent.StepPreview -> currentState.previewNeighbour(event.forward)?.let(drawers::preview)
+
+            // -- text and Markdown files -----------------------------------
+
+            is DriveEvent.OpenTextDoc -> textDocs.open(event.item, event.edit)
+            DriveEvent.CloseTextDoc -> textDocs.close()
+            is DriveEvent.TextDocDraft -> textDocs.draft(event.text)
+            is DriveEvent.TextDocEditing -> textDocs.editing(event.on)
+            is DriveEvent.SaveTextDoc -> textDocs.save(event.overwrite)
+            DriveEvent.ReloadTextDoc -> textDocs.reload()
+            DriveEvent.KeepEditingTextDoc -> textDocs.keepEditing()
+            DriveEvent.CloseTextDocVersion -> textDocs.closeVersion()
+
+            is DriveEvent.NotifyEditNote -> textDocs.note(event.text)
+            DriveEvent.SendNotifyEdit -> textDocs.sendNotify()
+            DriveEvent.DismissNotifyEdit -> textDocs.dismissNotify()
+            is DriveEvent.DownloadFolderZip -> downloadFolder(event.item)
 
             // -- uploads ---------------------------------------------------
 
@@ -466,6 +501,10 @@ class DriveViewModel(
                 // is now describing a version that is no longer the latest.
                 versions.closeDetail()
                 versions.reloadOpen()
+                // A text file open behind the panel now holds the restored
+                // text, and this person is the one who changed it.
+                textDocs.markRestored(event.fileId)
+                currentState.textDoc?.let { if (it.item.id == event.fileId) textDocs.reload() }
             }
 
             // -- version history -------------------------------------------
@@ -485,7 +524,16 @@ class DriveViewModel(
             is DriveEvent.VersionNameDraft -> versions.nameDraft(event.text)
             DriveEvent.SaveVersionName -> versions.saveName()
             DriveEvent.CancelNameVersion -> versions.cancelNaming()
-            is DriveEvent.PreviewVersion -> versions.preview(event.version)
+            is DriveEvent.PreviewVersion -> {
+                // A text file has no editor behind it, so "open read-only"
+                // means the version's text in Drive's own viewer.
+                val item = currentState.versionHistory.item
+                if (item != null && item.isTextDocument) {
+                    textDocs.showVersion(item, event.version)
+                } else {
+                    versions.preview(event.version)
+                }
+            }
 
             // -- trash -----------------------------------------------------
 
@@ -669,7 +717,20 @@ class DriveViewModel(
     internal fun mergeFolder(folderId: String?) {
         val id = folderId ?: return
         launch {
-            val fetched = repository.folderContents(id) as? ZillitResult.Success ?: return@launch
+            val fetched = when (val answer = repository.folderContents(id)) {
+                is ZillitResult.Success -> answer
+                // The server refused this folder: no role on it, nothing
+                // shared inside it. Say so and step back to the root of the
+                // section rather than standing in a folder that shows nothing
+                // and explains nothing (REL-BUG-06).
+                is ZillitResult.Failure -> {
+                    if (answer.error is ZillitError.Forbidden && currentState.folderId == id) {
+                        sendEffect(DriveEffect.Failed(str(S.desktop_drive_no_folder_access)))
+                        openFolder(null)
+                    }
+                    return@launch
+                }
+            }
             if (fetched.data.isEmpty) return@launch
             setState {
                 val merged = DriveListing(
@@ -967,7 +1028,11 @@ class DriveViewModel(
                             canSwitchToEdit = config.viewOnly && config.canSwitchToEdit,
                         ),
                     )
-                    if (config.viewOnly) setState { copy(notice = str(S.desktop_drive_opening_preview_mode)) }
+                    if (config.viewOnly) {
+                        setState { copy(notice = str(S.desktop_drive_opening_preview_mode)) }
+                    } else {
+                        editorOpenedAt[item.id] = now()
+                    }
                 }
 
                 is ZillitResult.Failure -> report(session.error)
@@ -1037,7 +1102,7 @@ class DriveViewModel(
             )
             return
         }
-        val skipped = files.size - allowed.size
+        val skippedNames = (files - allowed.toSet()).map { it.name }
         setState {
             copy(
                 notice = (
@@ -1046,10 +1111,48 @@ class DriveViewModel(
                     } else {
                         str(S.desktop_drive_downloading_many, allowed.size)
                     }
-                    ) + (if (skipped > 0) " " + str(S.desktop_drive_download_skipped, skipped) else "…"),
+                    ) +
+                    // Named, not counted: "1 file was skipped" leaves the
+                    // reader to work out which of their twenty it was.
+                    if (skippedNames.isEmpty()) {
+                        "…"
+                    } else {
+                        " " + str(S.desktop_drive_download_skipped_names, skippedNames.joinToString(", "))
+                    },
             )
         }
-        launch { saveSelection(allowed.map { it.id }) }
+        // One file and nothing left out downloads as itself; one file plus
+        // something left out still zips, so the zip's `_skipped.txt` can say
+        // what was left out and why.
+        launch { saveSelection(allowed.map { it.id }, asZip = skippedNames.isNotEmpty()) }
+    }
+
+    /**
+     * A whole folder as one .zip — the row menu's "Download as ZIP".
+     *
+     * The folder's own role decides (owner or editor), and the server checks
+     * it again when the token is redeemed; files inside it this person may not
+     * download are left out and named in the zip's `_skipped.txt`.
+     */
+    private fun downloadFolder(folder: DriveItem) {
+        setState { copy(menu = null) }
+        if (!currentState.viewer.canDownload && !currentState.viewer.isAdmin) {
+            askForRights(RightsKind.Download)
+            return
+        }
+        if (!currentState.viewer.may(DriveAction.Download, folder)) {
+            sendEffect(DriveEffect.Failed(str(S.desktop_drive_no_download_rights_file)))
+            return
+        }
+        setState { copy(notice = str(S.desktop_drive_zipping_folder, folder.name)) }
+        launch {
+            when (val link = repository.folderZipLink(folder.id)) {
+                is ZillitResult.Success ->
+                    sendEffect(DriveEffect.OpenUrl(repository.folderZipDownloadUrl(link.data.token)))
+
+                is ZillitResult.Failure -> report(link.error)
+            }
+        }
     }
 
     /**
@@ -1063,8 +1166,8 @@ class DriveViewModel(
      * Files the person may not download are left out and named in a
      * `_skipped.txt` inside the zip.
      */
-    private suspend fun saveSelection(fileIds: List<String>) {
-        if (fileIds.size == 1) {
+    private suspend fun saveSelection(fileIds: List<String>, asZip: Boolean = false) {
+        if (fileIds.size == 1 && !asZip) {
             when (val url = repository.downloadUrl(fileIds.first())) {
                 is ZillitResult.Success -> sendEffect(DriveEffect.OpenUrl(url.data))
                 is ZillitResult.Failure -> report(url.error)
@@ -1199,6 +1302,9 @@ class DriveViewModel(
     // -- seams for the collaborators ----------------------------------------
 
     internal val repo: DriveRepository get() = repository
+
+    /** The history panel, for the surfaces that make a version of their own. */
+    internal val versionsPanel: DriveVersions get() = versions
 
     internal val previews: DrivePreviewHost get() = previewHost
 

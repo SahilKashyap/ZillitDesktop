@@ -99,12 +99,69 @@ data class DriveSortSpec(val column: DriveSortColumn? = null, val ascending: Boo
 data class DriveView(
     val folderId: String? = null,
     val isSearching: Boolean = false,
+    /**
+     * Under "Shared with me": the folders this person can actually open, as
+     * [sharedAccessibleFolderIds] resolves them. Null in "My Drive", where
+     * every listed row is the person's own and a root row is simply one with
+     * no parent.
+     */
+    val accessibleIds: Set<String>? = null,
     val innerTab: DriveInnerTab = DriveInnerTab.Folders,
     val taggedIds: Set<String>? = null,
     val favouriteIds: Set<String> = emptySet(),
     val showFavouritesOnly: Boolean = false,
     val sort: DriveSortSpec = DriveSortSpec(),
 )
+
+/**
+ * Whether [item] belongs to the folder this view is showing.
+ *
+ * Inside a folder that is the plain parent test. At the root of a section it
+ * is [isDriveRootRow], which is the same test in "My Drive" and a different
+ * one under "Shared with me", where the listing also carries the *ancestors*
+ * of what was shared so the path to it can be walked.
+ */
+internal fun DriveView.holds(item: DriveItem): Boolean =
+    if (folderId == null) isDriveRootRow(item, accessibleIds) else item.parentFolderId == folderId
+
+/**
+ * Whether this person can open [folder] under "Shared with me".
+ *
+ * `GET /folders?quick_filter=shared` answers with the shared folders **and
+ * their ancestors**, so that a folder shared three levels down still has a
+ * path to walk (the backend's `listAccessibleFolderIds`). An ancestor is not
+ * the recipient's to open — asking for it answers 403 — and its
+ * `_userPermissions` default to `can_view: true`, so the flag alone cannot
+ * tell the two apart. What can: an access row of this person's own
+ * (`_accessUserIds`, inherited rows included) or a share time (`_sharedAt`).
+ * A server old enough to send no `_accessUserIds` is trusted as before.
+ */
+fun isSharedFolderAccessible(folder: DriveItem, userId: String): Boolean = when {
+    folder.hasExplicitPermissions && !folder.permissions.canView -> false
+    userId.isNotBlank() && folder.ownerId == userId -> true
+    !folder.hasAccessList -> true
+    (folder.sharedAt ?: 0L) > 0L -> true
+    else -> userId.isNotBlank() && userId in folder.accessUserIds
+}
+
+/** Ids of the folders in a "Shared with me" listing this person can open. */
+fun sharedAccessibleFolderIds(folders: List<DriveItem>, userId: String): Set<String> =
+    folders.filter { isSharedFolderAccessible(it, userId) }.map { it.id }.toSet()
+
+/**
+ * Whether [item] is a top row of its section.
+ *
+ * "My Drive": it has no parent. "Shared with me" ([accessible] given): a
+ * folder this person can open whose parent they cannot — Team › Headshots
+ * shared means Headshots is the top row and Team is never listed — and a file
+ * whose folder they cannot open.
+ */
+fun isDriveRootRow(item: DriveItem, accessible: Set<String>?): Boolean {
+    val parent = item.parentFolderId
+    if (accessible == null) return parent == null
+    if (item.isFolder && item.id !in accessible) return false
+    return parent == null || parent !in accessible
+}
 
 /**
  * The rows the table shows — `DriveManagement.combinedData`, as a function.
@@ -119,12 +176,12 @@ fun combinedRows(listing: DriveListing, view: DriveView): List<DriveItem> {
     val folders = if (view.isSearching) {
         listing.folders
     } else {
-        listing.folders.filter { it.parentFolderId == view.folderId }
+        listing.folders.filter { view.holds(it) }
     }
     val files = if (view.isSearching) {
         listing.files
     } else {
-        listing.files.filter { it.parentFolderId == view.folderId }
+        listing.files.filter { view.holds(it) }
     }
 
     val sizes = folderSizes(listing)
@@ -152,7 +209,7 @@ fun combinedRows(listing: DriveListing, view: DriveView): List<DriveItem> {
  */
 fun innerTabTotals(listing: DriveListing, view: DriveView): Pair<Int, Int> {
     fun matches(item: DriveItem): Boolean {
-        if (!view.isSearching && item.parentFolderId != view.folderId) return false
+        if (!view.isSearching && !view.holds(item)) return false
         if (view.taggedIds != null && item.id !in view.taggedIds) return false
         if (view.showFavouritesOnly && item.id !in view.favouriteIds) return false
         return true

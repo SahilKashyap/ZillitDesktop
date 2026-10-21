@@ -61,7 +61,17 @@ class DriveHostSeams(
         fileName: String,
         viewOnly: Boolean,
         onEdit: (() -> Unit)?,
-    ) -> Unit = { url, _, _, _ -> onOpenUrl(url) },
+        onClosed: () -> Unit,
+    ) -> Unit = { url, _, _, _, _ -> onOpenUrl(url) },
+    /**
+     * Gets the embedded browser ready while the Drive is being read.
+     *
+     * The web warms the editors by caching their page in a hidden frame; here
+     * the slow part is starting Chromium at all, so this is where that start
+     * is asked for — the first document then opens into a runtime that is
+     * already up (`perf(drive): warm the live editors when Drive opens`).
+     */
+    val onWarmEditors: () -> Unit = {},
     /** Plays a video or audio file at its presigned address — the same surface as the editor. */
     val onOpenMedia: (url: String, title: String) -> Unit = { url, _ -> onOpenUrl(url) },
     /** The wall clock, for "3 days ago". */
@@ -104,7 +114,10 @@ class DriveToolProvider(
         // The first time this tool is shown: the view model is built with the
         // app, before a production is open, so it resolves who the viewer is
         // here rather than in its constructor.
-        LaunchedEffect(viewModel) { viewModel.start() }
+        LaunchedEffect(viewModel) {
+            viewModel.start()
+            host.onWarmEditors()
+        }
         // Woken from sleep with this tool on show: re-read the open folder and, if it is showing, the trash.
         ReloadOnWake { viewModel.onEvent(DriveEvent.Refresh) }
 
@@ -142,6 +155,13 @@ fun handle(effect: DriveEffect, viewModel: DriveViewModel, host: DriveHostSeams)
                 { viewModel.onEvent(DriveEvent.SwitchEditorToEdit(effect.fileId)) }
             } else {
                 null
+            },
+            // Closing an editing session is when the file is asked about: a
+            // read-only one changed nothing, so it asks nothing.
+            {
+                if (!effect.viewOnly && effect.fileId.isNotBlank()) {
+                    viewModel.onEvent(DriveEvent.EditorClosed(effect.fileId))
+                }
             },
         )
     }

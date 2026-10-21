@@ -120,6 +120,58 @@ interface DriveRepository {
      */
     fun zipDownloadUrl(token: String): String = ""
 
+    /**
+     * A token for a whole folder as one .zip
+     * (`POST /folders/{id}/download-zip`).
+     *
+     * The folder's own role decides: owners and editors may, and the server
+     * checks it again when the token is redeemed. Files inside it the person
+     * may not download are left out and named in the zip's `_skipped.txt`,
+     * exactly as a selection's zip does.
+     */
+    suspend fun folderZipLink(folderId: String): ZillitResult<DriveZipLink> =
+        ZillitResult.Failure(ZillitError.Unknown("the folder zip download is not wired"))
+
+    /** Where a folder zip token is redeemed — `GET /folders/download-zip?token=…`. */
+    fun folderZipDownloadUrl(token: String): String = ""
+
+    /**
+     * A text file's text — `GET /files/{id}/text`, or one saved version of it.
+     *
+     * The route Drive's own text and Markdown viewer reads: `.md` and `.txt`
+     * never reach the live editors (`file_type_not_editable`), so this is how
+     * their content is both shown and edited. The answer carries `can_edit`,
+     * which is the server's decision and not this client's.
+     */
+    suspend fun fileText(fileId: String, versionId: String? = null): ZillitResult<DriveFileText> =
+        ZillitResult.Failure(ZillitError.Unknown("the text route is not wired"))
+
+    /**
+     * Saves the text as a new version — `PUT /files/{id}/text`.
+     *
+     * [contentTime] is the stamp the file was opened with: the server refuses
+     * a save whose stamp is older than the file's with
+     * `file_changed_since_opened` rather than writing over someone else's
+     * work. Pass null to overwrite on purpose, which is what the conflict
+     * bar's "Save my version anyway" does.
+     */
+    suspend fun saveFileText(
+        fileId: String,
+        content: String,
+        contentTime: String? = null,
+    ): ZillitResult<DriveTextSave> =
+        ZillitResult.Failure(ZillitError.Unknown("the text route is not wired"))
+
+    /**
+     * "Let others know you updated this file" — `POST /editor/{id}/announce`.
+     *
+     * One notification to everyone with access, with the optional note.
+     * Saving never notifies by itself, so nothing here can spam a share.
+     * Answers with the server's own message, which is what is shown.
+     */
+    suspend fun announceEdit(fileId: String, note: String): ZillitResult<String> =
+        ZillitResult.Failure(ZillitError.Unknown("the announce route is not wired"))
+
     // -- reading a file ----------------------------------------------------
 
     /** A presigned URL that expires in an hour. Requires download rights. */

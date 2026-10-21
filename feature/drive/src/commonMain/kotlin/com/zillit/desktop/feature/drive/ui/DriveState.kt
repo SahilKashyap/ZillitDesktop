@@ -42,6 +42,7 @@ import com.zillit.desktop.feature.drive.domain.combinedRows
 import com.zillit.desktop.feature.drive.domain.eligible
 import com.zillit.desktop.feature.drive.domain.suggestFreeName
 import com.zillit.desktop.feature.drive.domain.innerTabTotals
+import com.zillit.desktop.feature.drive.domain.sharedAccessibleFolderIds
 import com.zillit.desktop.feature.drive.domain.nextAccessLevel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -439,6 +440,68 @@ data class MoveToState(
     val targetFolderId: String? = null,
 )
 
+/**
+ * A text or Markdown file open in Drive's own viewer — `MarkdownDocument.jsx`.
+ *
+ * Covers the Drive pane rather than floating over it, as the web's does: it is
+ * a place you are in, with its own Back, not a dialog. Markdown is rendered
+ * with its source beside it in edit mode; `.txt` is shown exactly as written.
+ */
+data class TextDocState(
+    val item: DriveItem,
+    val loading: Boolean = true,
+    /** What is in the editor. */
+    val text: String = "",
+    /** What the server last confirmed; [dirty] is the difference. */
+    val savedText: String = "",
+    /** The stamp the file was opened with — see `DriveRepository.saveFileText`. */
+    val contentTime: String = "",
+    /** The server's answer, not a guess: whether this person may save. */
+    val canEdit: Boolean = false,
+    val editing: Boolean = false,
+    val saving: Boolean = false,
+    /** The load failed; the pane says so instead of showing an empty file. */
+    val error: String? = null,
+    /**
+     * Someone saved since this was opened — the server's own refusal, kept so
+     * the person can choose between their text and the latest.
+     */
+    val conflict: String? = null,
+    /** Closing with unsaved changes asks once before discarding them. */
+    val confirmDiscard: Boolean = false,
+    /** A stored version being read; null is the live file. */
+    val versionView: TextVersionView? = null,
+    /**
+     * Whether this person saved or restored while the file was open — what
+     * raises "Let others know you updated this file?" on the way out.
+     */
+    val changed: Boolean = false,
+) {
+    /** Unsaved changes. A version being read is never dirty. */
+    val dirty: Boolean get() = versionView == null && text != savedText
+
+    /** What the viewer shows: the version being read, else the live text. */
+    val shownText: String get() = versionView?.text ?: text
+
+    /** Whether the editor is up: edit mode, on the live file, with the right to save. */
+    val isEditing: Boolean get() = editing && canEdit && versionView == null
+}
+
+/** One stored version's text, read-only, with the number to name it by. */
+data class TextVersionView(val versionNumber: Int, val text: String)
+
+/**
+ * "Let others know you updated this file?" — `NotifyCollaboratorsPrompt.jsx`.
+ *
+ * Asked once, on the way out of a file this person changed. Saving never
+ * notifies by itself, so nothing here can spam a share.
+ */
+data class NotifyEditState(
+    val item: DriveItem,
+    val note: String = "",
+    val sending: Boolean = false,
+)
+
 /** The in-app preview (`DriveManagement`'s preview modal and `DocumentViewer`). */
 data class PreviewState(
     val item: DriveItem,
@@ -553,6 +616,8 @@ data class DriveUiState(
     val share: ShareState? = null,
     val moveTo: MoveToState? = null,
     val preview: PreviewState? = null,
+    val textDoc: TextDocState? = null,
+    val notifyEdit: NotifyEditState? = null,
     val menu: ItemMenuState? = null,
     val dropUpload: DropUploadState? = null,
 ) {
@@ -577,10 +642,22 @@ data class DriveUiState(
     val rows: List<DriveItem>
         get() = combinedRows(listing, view)
 
+    /**
+     * Under "Shared with me", the folders this person can actually open; null
+     * in "My Drive", where every row is their own (REL-BUG-05).
+     */
+    private val accessibleIds: Set<String>?
+        get() = if (section == DriveSection.SharedWithMe) {
+            sharedAccessibleFolderIds(listing.folders, viewer.userId)
+        } else {
+            null
+        }
+
     private val view: DriveView
         get() = DriveView(
             folderId = folderId,
             isSearching = isSearching,
+            accessibleIds = accessibleIds,
             innerTab = innerTab,
             taggedIds = taggedIds,
             favouriteIds = favouriteIds,
@@ -692,6 +769,7 @@ data class DriveUiState(
     val hasOverlay: Boolean
         get() = prompt != null || upload != null || newFolder != null || edit != null ||
             share != null || moveTo != null || preview != null || dropUpload != null ||
+            textDoc != null || notifyEdit != null ||
             activityLog.open || fileRequests.open || renameUploads.open ||
             versionHistory.open
 }

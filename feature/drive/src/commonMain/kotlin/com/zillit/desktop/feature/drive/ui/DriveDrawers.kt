@@ -566,6 +566,14 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     fun openPreviewOutside() {
         val preview = state.preview ?: return
         val url = preview.url ?: return
+        // Handing the address to the system browser IS the download for
+        // anything it cannot render — a .zip saves straight to disk — so this
+        // asks both of the download gates the Download button beside it asks
+        // (ZL-21915): the tool right and this file's own.
+        if (!vm.state.value.viewer.may(DriveAction.Download, preview.item)) {
+            vm.reportFailure(str(S.desktop_drive_no_download_rights_file))
+            return
+        }
         if (preview.kind == PreviewKind.Video) {
             vm.update { copy(preview = null) }
             vm.effect(DriveEffect.OpenMedia(url, preview.item.name))

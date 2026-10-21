@@ -78,6 +78,14 @@ internal object DocumentEditorWindow {
          * Null leaves the strip with nothing but "View only".
          */
         onEdit: (() -> Unit)? = null,
+        /**
+         * The person closed the window.
+         *
+         * Not called when "Edit" reopens the file (that is one session
+         * continuing, not one ending) and not at shutdown, so a caller can
+         * take it to mean "they have finished with this document".
+         */
+        onClosed: () -> Unit = {},
     ) {
         scope.launch {
             val client = KcefRuntime.client()
@@ -95,7 +103,7 @@ internal object DocumentEditorWindow {
                 onUnavailable(reason)
                 return@launch
             }
-            withContext(Dispatchers.Main) { show(client, url, fileName, viewOnly, onEdit) }
+            withContext(Dispatchers.Main) { show(client, url, fileName, viewOnly, onEdit, onClosed) }
         }
     }
 
@@ -108,12 +116,14 @@ internal object DocumentEditorWindow {
      * its component receives, and a frame sized before it had a child sends
      * none of them — the window comes up blank and stays blank.
      */
+    @Suppress("LongParameterList") // One window, and the three things its own chrome needs.
     private fun show(
         client: CefClient,
         url: String,
         fileName: String,
         viewOnly: Boolean = false,
         onEdit: (() -> Unit)? = null,
+        onClosed: () -> Unit = {},
     ) {
         // Load failures and page console errors land in the app log. Without
         // them a Collabora page that 404s or throws is indistinguishable from
@@ -141,6 +151,7 @@ internal object DocumentEditorWindow {
             object : WindowAdapter() {
                 override fun windowClosing(event: WindowEvent) {
                     dispose(frame, browser, client)
+                    onClosed()
                 }
             },
         )

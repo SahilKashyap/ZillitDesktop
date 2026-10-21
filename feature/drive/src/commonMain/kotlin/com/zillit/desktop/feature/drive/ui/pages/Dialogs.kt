@@ -12,6 +12,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.drive.domain.DriveSection
 import com.zillit.desktop.feature.drive.domain.descendantsOf
@@ -163,7 +164,63 @@ internal fun DrivePromptDialog(prompt: DrivePrompt?, onEvent: (DriveEvent) -> Un
     }
 }
 
+/**
+ * "Let others know you updated this file?" — `NotifyCollaboratorsPrompt.jsx`.
+ *
+ * Asked once, on the way out of a file this person actually changed. Send
+ * notifies everyone with access, with the note if there is one; Skip tells
+ * nobody. Saving never notifies on its own, so nothing here can turn a run of
+ * saves into a run of notifications.
+ */
+@Composable
+internal fun NotifyEditDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
+    val prompt = state.notifyEdit
+    ZillitDialogShell(
+        title = str(S.desktop_drive_notify_title),
+        subtitle = prompt?.item?.name,
+        visible = prompt != null,
+        onDismiss = { onEvent(DriveEvent.DismissNotifyEdit) },
+        icon = ZillitIcons.Mail,
+        width = NOTIFY_WIDTH,
+        actions = {
+            ZillitButton(
+                text = str(S.skip),
+                onClick = { onEvent(DriveEvent.DismissNotifyEdit) },
+                variant = ButtonVariant.Tertiary,
+                enabled = prompt?.sending != true,
+            )
+            ZillitButton(
+                text = str(S.send),
+                onClick = { onEvent(DriveEvent.SendNotifyEdit) },
+                leadingIcon = ZillitIcons.Send,
+                enabled = prompt?.sending != true,
+            )
+        },
+    ) {
+        if (prompt == null) return@ZillitDialogShell
+        ZillitText(
+            text = str(S.desktop_drive_notify_hint),
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        ZillitTextField(
+            value = prompt.note,
+            onValueChange = { onEvent(DriveEvent.NotifyEditNote(it)) },
+            label = str(S.dm_rule_note_hint),
+            placeholder = str(S.desktop_drive_notify_placeholder),
+            singleLine = false,
+            maxLength = NOTE_MAX_LENGTH,
+            enabled = !prompt.sending,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 private val MOVE_WIDTH = 480.dp
 private val DROP_WIDTH = 520.dp
 private val PROMPT_WIDTH = 440.dp
 private const val NAMES_MAX = 80
+private val NOTIFY_WIDTH = 460.dp
+
+/** The server trims a note to this length; the box stops there too. */
+private const val NOTE_MAX_LENGTH = 300

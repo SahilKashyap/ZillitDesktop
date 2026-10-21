@@ -280,6 +280,14 @@ data class DriveItem(
     val isShared: Boolean = false,
     /** `_accessUserIds` — who the owner has shared it with, for the Sharing column. */
     val accessUserIds: List<String> = emptyList(),
+    /**
+     * Whether the row carried `_accessUserIds` at all. An empty list and no
+     * list mean different things under "Shared with me" — see
+     * [com.zillit.desktop.feature.drive.domain.isSharedFolderAccessible].
+     */
+    val hasAccessList: Boolean = false,
+    /** `_sharedAt` — when this was shared with the person asking, if it was. */
+    val sharedAt: Long? = null,
     val tagIds: List<String> = emptyList(),
     /** Populated for folders the server counted; null when it did not. */
     val itemCount: Int? = null,
@@ -497,6 +505,27 @@ data class DriveZipLink(
     /** Files left out because this person may not download them; listed in `_skipped.txt`. */
     val skippedCount: Int = 0,
     val expiresInSeconds: Int = 0,
+)
+
+/**
+ * A text file's own text — what `GET /files/{id}/text` answers.
+ *
+ * [contentTime] is when the content was last saved, and it is sent back on a
+ * save: the server refuses one whose stamp is older than the file's, rather
+ * than writing over somebody else's work.
+ */
+data class DriveFileText(
+    val content: String = "",
+    val contentTime: String = "",
+    /** Whether this person may save it — the server's own answer, not a guess. */
+    val canEdit: Boolean = false,
+)
+
+/** What a text save answers: the new stamp, and whether it made a version. */
+data class DriveTextSave(
+    val contentTime: String = "",
+    /** False when the text was identical and the server kept the old version. */
+    val saved: Boolean = false,
 )
 
 /** A crew member, as the share and permission pickers list them. */
