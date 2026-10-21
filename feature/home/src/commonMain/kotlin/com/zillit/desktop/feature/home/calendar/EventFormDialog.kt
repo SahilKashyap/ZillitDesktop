@@ -322,6 +322,10 @@ private fun RepeatRow(form: EventFormState, change: (EventDraft) -> Unit) {
                 errorText = form.recurrenceErrors.messageFor(RecurrenceError.NoEndDate)
                     ?: form.recurrenceErrors.messageFor(RecurrenceError.EndBeforeStart),
                 modifier = Modifier.weight(REPEAT_UNTIL_SHARE),
+                // The days a repeat cannot stop on — anything up to the event,
+                // and the past with it — are greyed rather than left to be
+                // refused on save, as the start field's own grid does.
+                minDate = draft.repeatEndMinimum(form.today),
             )
             RepeatCountField(form, change, Modifier.weight(1f))
         }

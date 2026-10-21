@@ -89,6 +89,19 @@ fun EventDraft.withDate(text: String): EventDraft {
 }
 
 /**
+ * The earliest day a repeat may stop on.
+ *
+ * Strictly after the event: `validate` refuses a repeat ending on the day it
+ * starts — that is a one-off wearing a rule — and the web's picker disables
+ * everything up to the event for the same reason. With no readable date typed
+ * there is nothing to be after, so a new event falls back to today, the line
+ * its own date field draws; an edit keeps the whole grid, because last week's
+ * repeat still needs its typos fixed.
+ */
+fun EventDraft.repeatEndMinimum(today: LocalDate): LocalDate? =
+    dateText.trim().toLocalDateOrNull()?.plusDays(1) ?: today.takeUnless { isEdit }
+
+/**
  * Re-reads the typed date and times in another zone.
  *
  * The web's `convertFormTimezone`. Changing the zone keeps the *moment* and

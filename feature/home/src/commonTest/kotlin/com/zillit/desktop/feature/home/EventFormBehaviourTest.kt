@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.home.calendar.inTimezone
 import com.zillit.desktop.feature.home.calendar.isOvernight
 import com.zillit.desktop.feature.home.calendar.looksLikeGuestEmail
 import com.zillit.desktop.feature.home.calendar.newEventDraft
+import com.zillit.desktop.feature.home.calendar.repeatEndMinimum
 import com.zillit.desktop.feature.home.calendar.withDate
 import com.zillit.desktop.feature.home.calendar.withStartTime
 import kotlinx.datetime.LocalDate
@@ -17,6 +18,7 @@ import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
@@ -239,6 +241,33 @@ class EventFormBehaviourTest {
         val refused = EventDraft().addingGuest("not-an-address")
 
         assertEquals(GuestAddition.Refused("That is not an email address."), refused)
+    }
+
+    // -- the repeat's earliest end ----------------------------------------
+
+    @Test
+    fun `a repeat may stop no earlier than the day after the event`() {
+        // Ending on the start day is a one-off wearing a rule, so the picker
+        // greys that day out along with everything before it.
+        val draft = EventDraft(dateText = "2026-08-04")
+
+        assertEquals(LocalDate(2026, 8, 5), draft.repeatEndMinimum(LocalDate(2026, 8, 1)))
+    }
+
+    @Test
+    fun `a new event with no readable date still cannot repeat into the past`() {
+        val draft = EventDraft(dateText = "4 Aug")
+
+        assertEquals(LocalDate(2026, 8, 1), draft.repeatEndMinimum(LocalDate(2026, 8, 1)))
+    }
+
+    @Test
+    fun `an edit with no readable date keeps the whole grid`() {
+        // Last week's repeat still needs its typos fixed, which is the line
+        // the start date draws too.
+        val draft = EventDraft(id = "e1", dateText = "")
+
+        assertNull(draft.repeatEndMinimum(LocalDate(2026, 8, 1)))
     }
 
     @Test

@@ -13528,4 +13528,5 @@
     <string name="desktop_cal_number_of_months">Number of Months</string>
     <string name="desktop_cal_number_of_years">Number of Years</string>
     <string name="desktop_board_live_production_report">Live production reports</string>
+    <string name="desktop_cal_no_event_on_past_day">You can\'t add an event on a previous date</string>
 </resources>

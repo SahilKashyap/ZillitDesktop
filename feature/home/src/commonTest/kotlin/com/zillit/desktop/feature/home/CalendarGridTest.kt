@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.home
 
 import com.zillit.desktop.feature.home.calendar.CalendarEvent
+import com.zillit.desktop.feature.home.calendar.CalendarUiState
 import com.zillit.desktop.feature.home.calendar.MonthGrid
 import com.zillit.desktop.feature.home.calendar.monthGrid
 import com.zillit.desktop.feature.home.calendar.on
@@ -11,6 +12,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -89,6 +91,17 @@ class CalendarGridTest {
         assertEquals(7, week.size)
         assertEquals(LocalDate(2026, 8, 3), week.first())
         assertEquals(LocalDate(2026, 8, 9), week.last())
+    }
+
+    @Test
+    fun `the days already gone are the ones before today`() {
+        // What the grid greys, and what the day panel refuses to create on.
+        val state = CalendarUiState(anchor = LocalDate(2026, 8, 1), today = LocalDate(2026, 8, 4))
+
+        assertTrue(state.isPast(LocalDate(2026, 8, 3)))
+        assertTrue(state.isPast(LocalDate(2026, 7, 31)), "last month counts too")
+        assertFalse(state.isPast(LocalDate(2026, 8, 4)), "today still holds new events")
+        assertFalse(state.isPast(LocalDate(2026, 8, 5)))
     }
 
     // -- placement --------------------------------------------------------

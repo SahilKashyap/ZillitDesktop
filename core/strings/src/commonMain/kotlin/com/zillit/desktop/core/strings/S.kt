@@ -4123,6 +4123,7 @@ object S {
     const val desktop_cal_no_accepted_invitations: String = "desktop_cal_no_accepted_invitations"
     const val desktop_cal_no_call_to_join: String = "desktop_cal_no_call_to_join"
     const val desktop_cal_no_declined_invitations: String = "desktop_cal_no_declined_invitations"
+    const val desktop_cal_no_event_on_past_day: String = "desktop_cal_no_event_on_past_day"
     const val desktop_cal_no_expired_invitations: String = "desktop_cal_no_expired_invitations"
     const val desktop_cal_no_invitees_match: String = "desktop_cal_no_invitees_match"
     const val desktop_cal_no_pending_invitations: String = "desktop_cal_no_pending_invitations"

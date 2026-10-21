@@ -142,6 +142,7 @@ internal fun CalendarScreen(
         // Always composed so its exit can play; the flag drives visibility.
         DeleteEventDialog(state.detail, onEvent)
         RescheduleDialog(state, onEvent)
+        PastDayNoticeDialog(state.pastDayNotice, onEvent)
 
         // Last, so it covers whichever surface asked for the decline — the
         // invitations panel or the detail popover.
@@ -198,6 +199,36 @@ private fun DeleteEventDialog(detail: EventDetailState?, onEvent: (CalendarEvent
                 text = str(S.delete),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(CalendarEvent2Event.ConfirmDeleteEvent) },
+            )
+        }
+    }
+}
+
+/**
+ * Why clicking a day that has gone opened nothing.
+ *
+ * A free day ahead opens a new event where it was clicked, so a free day
+ * behind doing nothing at all reads as a dead cell rather than a rule. One
+ * sentence and an Ok: there is nothing here to decide, only something to
+ * know — which is also why the panel's own New Event button simply stays
+ * away on such a day instead of being shown and refused.
+ */
+@Composable
+private fun PastDayNoticeDialog(visible: Boolean, onEvent: (CalendarEvent2Event) -> Unit) {
+    ZillitDialogShell(
+        title = str(S.desktop_cal_no_event_on_past_day),
+        icon = ZillitIcons.Calendar,
+        visible = visible,
+        onDismiss = { onEvent(CalendarEvent2Event.DismissPastDayNotice) },
+        width = DIALOG_WIDTH,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+        ) {
+            ZillitButton(
+                text = str(S.ok),
+                onClick = { onEvent(CalendarEvent2Event.DismissPastDayNotice) },
             )
         }
     }
@@ -430,6 +461,7 @@ private fun MonthView(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> 
                             state = state,
                             date = day.date,
                             dimmed = !day.inMonth,
+                            isPast = state.isPast(day.date),
                             onEvent = onEvent,
                             onDragging = { active ->
                                 draggingDate = if (active) day.date else null
@@ -512,6 +544,7 @@ private fun TimeGridHeader(days: List<LocalDate>, state: CalendarUiState) {
 
             days.forEach { date ->
                 val isToday = date == state.today
+                val isPast = state.isPast(date)
 
                 Column(
                     modifier = Modifier.weight(1f),
@@ -524,12 +557,17 @@ private fun TimeGridHeader(days: List<LocalDate>, state: CalendarUiState) {
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = WEEKDAY_TRACKING,
                         ),
-                        color = if (isToday) colors.accentText else colors.textMuted,
+                        color = when {
+                            isToday -> colors.accentText
+                            isPast -> colors.textDisabled
+                            else -> colors.textMuted
+                        },
                     )
                     DateDisc(
                         day = date.day,
                         isToday = isToday,
                         isSelected = false,
+                        isPast = isPast,
                         size = HEADER_DISC,
                         style = ZillitTheme.typography.titleMedium,
                     )
@@ -571,6 +609,7 @@ private fun DayCell(
     state: CalendarUiState,
     date: LocalDate,
     dimmed: Boolean,
+    isPast: Boolean,
     onEvent: (CalendarEvent2Event) -> Unit,
     modifier: Modifier = Modifier,
     dragGrid: () -> DragGrid = { DragGrid(0f, 0f, 0) },
@@ -600,7 +639,7 @@ private fun DayCell(
             .padding(CELL_PADDING),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        DayNumber(date, isToday = isToday, isSelected = isSelected, dimmed = dimmed)
+        DayNumber(date, isToday = isToday, isSelected = isSelected, dimmed = dimmed, isPast = isPast)
 
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -624,9 +663,16 @@ private fun DayCell(
 /**
  * The cell's date: today wears the accent disc, the selected day a soft one,
  * and the first of a month names the month so a five-week grid reads at once.
+ * A day already gone is greyed, as another month's days are.
  */
 @Composable
-private fun DayNumber(date: LocalDate, isToday: Boolean, isSelected: Boolean, dimmed: Boolean) {
+private fun DayNumber(
+    date: LocalDate,
+    isToday: Boolean,
+    isSelected: Boolean,
+    dimmed: Boolean,
+    isPast: Boolean,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -636,6 +682,7 @@ private fun DayNumber(date: LocalDate, isToday: Boolean, isSelected: Boolean, di
             isToday = isToday,
             isSelected = isSelected,
             dimmed = dimmed,
+            isPast = isPast,
             size = TODAY_CIRCLE,
             style = ZillitTheme.typography.label,
         )
@@ -643,13 +690,24 @@ private fun DayNumber(date: LocalDate, isToday: Boolean, isSelected: Boolean, di
             ZillitText(
                 text = date.month.name.take(WEEKDAY_LETTERS).lowercase().replaceFirstChar { it.uppercase() },
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
-                color = if (dimmed) ZillitTheme.colors.textDisabled else ZillitTheme.colors.textSecondary,
+                color = when {
+                    dimmed -> ZillitTheme.colors.textDisabled
+                    isPast -> ZillitTheme.colors.textMuted
+                    else -> ZillitTheme.colors.textSecondary
+                },
             )
         }
     }
 }
 
-/** A date number in a disc: filled accent for today, soft accent when selected. */
+/**
+ * A date number in a disc: filled accent for today, soft accent when selected.
+ *
+ * [isPast] greys the number, the way a picker greys the days it will not offer.
+ * Today is never past, and a day wearing the accent keeps its ink: the
+ * highlight is what the eye looks for first, and fading it to say "and gone"
+ * would cost more than the greying is worth.
+ */
 @Composable
 private fun DateDisc(
     day: Int,
@@ -658,12 +716,14 @@ private fun DateDisc(
     size: androidx.compose.ui.unit.Dp,
     style: androidx.compose.ui.text.TextStyle,
     dimmed: Boolean = false,
+    isPast: Boolean = false,
 ) {
     val colors = ZillitTheme.colors
     val (fill, ink) = when {
         isToday -> colors.accent to colors.textOnAccent
         isSelected -> colors.accentSoft to colors.accentText
         dimmed -> androidx.compose.ui.graphics.Color.Transparent to colors.textDisabled
+        isPast -> androidx.compose.ui.graphics.Color.Transparent to colors.textMuted
         else -> androidx.compose.ui.graphics.Color.Transparent to colors.textPrimary
     }
     Box(
@@ -755,7 +815,7 @@ private fun DayColumn(
         if (events.isEmpty()) {
             // A day that has been and gone can hold nothing new, so the
             // button that would only be refused on save is not offered.
-            EmptyDay(onEvent, canCreate = date >= state.today)
+            EmptyDay(onEvent, canCreate = !state.isPast(date))
             return@Column
         }
 
