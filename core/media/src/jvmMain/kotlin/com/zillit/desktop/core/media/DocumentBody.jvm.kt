@@ -1,4 +1,4 @@
-package com.zillit.desktop.feature.email.ui
+package com.zillit.desktop.core.media
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -20,4 +20,4 @@ internal actual fun renderPdfPages(bytes: ByteArray): List<ImageBitmap> = try {
 
 private const val RENDER_DPI = 110f
 private const val MAX_PAGES = 30
-private const val TAG = "Email"
+private const val TAG = "Media"

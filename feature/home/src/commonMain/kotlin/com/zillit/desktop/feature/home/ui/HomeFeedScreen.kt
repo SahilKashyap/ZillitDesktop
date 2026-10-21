@@ -86,6 +86,7 @@ import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.toLibrary
 import com.zillit.desktop.feature.home.domain.LibraryEntry
 import com.zillit.desktop.feature.home.domain.NoticeLibrary
+import com.zillit.desktop.feature.home.domain.MediaNeighbours
 import com.zillit.desktop.feature.home.domain.neighboursOf
 import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.ReadReceipt
@@ -158,6 +159,9 @@ private sealed interface BoardViewer {
 
     /** The post's id rides along for the "open it outside" way out. */
     data class Clip(val noticeId: String, val attachment: NoticeAttachment) : BoardViewer
+
+    /** A document's pages, in the app. The id rides along for the Download. */
+    data class Document(val noticeId: String, val attachment: NoticeAttachment) : BoardViewer
 }
 
 private data class BoardUi(
@@ -169,6 +173,12 @@ private data class BoardUi(
      * reason [onOpen] does: the refusal's way out is that same save-and-open.
      */
     val onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
+    /**
+     * Opens a document in the in-app viewer, which is what a click on one
+     * does now. The post's id rides along for the same reason [onOpen]'s
+     * does: the viewer's Download is that save-and-open.
+     */
+    val onViewDocument: (noticeId: String, NoticeAttachment) -> Unit,
     /**
      * Save-and-open, by way of the model: the post's id rides along so a
      * call sheet's document can open as its watermarked copy.
@@ -315,8 +325,7 @@ internal fun HomeFeedScreen(
                 resolveAuthor = resolveAuthor,
                 player = player,
                 onOpenLocation = onOpenLocation,
-                onPreview = { viewer = BoardViewer.Picture(it) },
-                onPlayVideo = { id, file -> viewer = BoardViewer.Clip(id, file) },
+                onShowViewer = { viewer = it },
                 onImageReply = { imageReply = it },
                 loadAvatar = loadAvatar,
                 crewNames = crewNames,
@@ -337,8 +346,7 @@ internal fun HomeFeedScreen(
         loadAvatar = loadAvatar,
         imageReply = imageReply,
         onImageReplyClosed = { imageReply = null },
-        onPreview = { viewer = BoardViewer.Picture(it) },
-        onPlayVideo = { id, file -> viewer = BoardViewer.Clip(id, file) },
+        onShowViewer = { viewer = it },
         onOpenLink = onOpenLink,
     )
 
@@ -399,15 +407,17 @@ private fun BoardViewers(
     onShow: (BoardViewer?) -> Unit,
 ) {
     val onClose = { onShow(null) }
-    val open = when (viewer) {
-        null -> return
-        is BoardViewer.Picture -> viewer.attachment
-        is BoardViewer.Clip -> viewer.attachment
+    // Only the gallery steps: a document is not in it, so it opens alone.
+    val around = when (viewer) {
+        null, is BoardViewer.Document -> MediaNeighbours(older = null, newer = null)
+        is BoardViewer.Picture -> gallery.neighboursOf(viewer.attachment.media)
+        is BoardViewer.Clip -> gallery.neighboursOf(viewer.attachment.media)
     }
-    val around = gallery.neighboursOf(open.media)
     val onPrevious = around.older?.let { entry -> { onShow(entry.asViewer()) } }
     val onNext = around.newer?.let { entry -> { onShow(entry.asViewer()) } }
     when (viewer) {
+        null -> Unit
+
         is BoardViewer.Picture -> MediaLightbox(
             attachment = viewer.attachment,
             media = media,
@@ -423,6 +433,16 @@ private fun BoardViewers(
             onClose = onClose,
             onPrevious = onPrevious,
             onNext = onNext,
+        )
+
+        is BoardViewer.Document -> DocumentLightbox(
+            attachment = viewer.attachment,
+            media = media,
+            // The viewer's Download is the gated save-and-open the chip used
+            // to do on its own — by way of the model, so a call sheet still
+            // saves as its watermarked copy.
+            onDownload = { onOpenAttachment(viewer.noticeId, viewer.attachment) },
+            onClose = onClose,
         )
     }
 }
@@ -464,8 +484,8 @@ private fun BoardDialogs(
     loadAvatar: suspend (String) -> ByteArray?,
     imageReply: Notice?,
     onImageReplyClosed: () -> Unit,
-    onPreview: (NoticeAttachment) -> Unit,
-    onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
+    /** Raises one of the board's viewers — see [BoardViewers]. */
+    onShowViewer: (BoardViewer) -> Unit,
     onOpenLink: (String) -> Unit,
 ) {
     ForwardPicker(state, onEvent)
@@ -484,9 +504,11 @@ private fun BoardDialogs(
         library = library,
         media = media,
         resolveAuthor = resolveAuthor,
-        onPreview = onPreview,
-        onPlayVideo = onPlayVideo,
-        onOpen = { noticeId, file -> onEvent(HomeFeedEvent.OpenAttachment(noticeId, file)) },
+        onPreview = { file -> onShowViewer(BoardViewer.Picture(file)) },
+        onPlayVideo = { id, file -> onShowViewer(BoardViewer.Clip(id, file)) },
+        // The Docs tab opens its rows in the viewer too — the same click the
+        // board's own chip gets.
+        onOpen = { id, file -> onShowViewer(BoardViewer.Document(id, file)) },
         onOpenLink = onOpenLink,
         onDismiss = { onEvent(HomeFeedEvent.DismissLibrary) },
     )
@@ -2516,6 +2538,7 @@ private fun NoticeAttachment(
         onPreview = ui.onPreview,
         onPlayVideo = { file -> ui.onPlayVideo(noticeId, file) },
         onOpen = { file -> ui.onOpen(noticeId, file) },
+        onViewDocument = { file -> ui.onViewDocument(noticeId, file) },
         player = ui.player,
         location = location,
         onOpenLocation = ui.onOpenLocation,
@@ -2942,8 +2965,8 @@ private fun BoardArea(
     resolveAuthor: (String?) -> String?,
     player: AudioPlayer?,
     onOpenLocation: (GeoPoint) -> Unit,
-    onPreview: (NoticeAttachment) -> Unit,
-    onPlayVideo: (noticeId: String, NoticeAttachment) -> Unit,
+    /** Raises one of the board's viewers — see [BoardViewers]. */
+    onShowViewer: (BoardViewer) -> Unit,
     onImageReply: (Notice) -> Unit,
     loadAvatar: suspend (String) -> ByteArray?,
     crewNames: () -> List<String>,
@@ -2985,8 +3008,9 @@ private fun BoardArea(
             ui = BoardUi(
                 onEvent = onEvent,
                 media = media,
-                onPreview = onPreview,
-                onPlayVideo = onPlayVideo,
+                onPreview = { file -> onShowViewer(BoardViewer.Picture(file)) },
+                onPlayVideo = { id, file -> onShowViewer(BoardViewer.Clip(id, file)) },
+                onViewDocument = { id, file -> onShowViewer(BoardViewer.Document(id, file)) },
                 onOpen = { noticeId, file -> onEvent(HomeFeedEvent.OpenAttachment(noticeId, file)) },
                 resolveAuthor = resolveAuthor,
                 player = player,

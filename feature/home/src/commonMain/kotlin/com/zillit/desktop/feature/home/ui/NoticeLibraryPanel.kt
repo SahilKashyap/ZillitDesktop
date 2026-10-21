@@ -48,8 +48,9 @@ import com.zillit.desktop.feature.home.domain.toDateTimeLabel
 /**
  * The unit's library — Android's *Gallery* (`HomeChatLibraryActivity`):
  * three tabs, Media / Docs / Links, over the posts on the board, newest
- * first. A picture opens in the lightbox, a video or document saves and
- * opens like its bubble does, a link opens in the browser.
+ * first. Every row opens the way its bubble does — a picture or clip in the
+ * lightbox, a document in the in-app viewer ([onOpen]) — and a link opens in
+ * the browser.
  */
 @Composable
 internal fun NoticeLibraryPanel(

@@ -131,6 +131,9 @@ internal fun BudgetConversationPane(
                     canDownload = { state.viewer.canDownload(state.mode) },
                     requestDownloadRights = { ready.rightsRequests.ask(state.mode.title, RightsKind.Download) },
                     loadFullImage = { file -> fetchBudgetChatImage(ready, file, preview = false) },
+                    // Same storage, same viewer, as for a clip: a document
+                    // posted here is read in the pane.
+                    loadDocument = { file -> fetchChatBytes(ready, file, preview = false) },
                     // Same storage, same viewer: a clip posted here plays in
                     // the pane rather than leaving for the OS.
                     videoUrl = { file ->

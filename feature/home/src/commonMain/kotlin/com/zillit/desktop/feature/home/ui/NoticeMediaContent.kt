@@ -35,7 +35,9 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.media.DocumentViewer
 import com.zillit.desktop.core.media.UploadOverlay
+import com.zillit.desktop.core.media.rememberDocument
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,9 +62,10 @@ import kotlinx.coroutines.launch
  * What a post's attachment looks like inside the bubble.
  *
  * Split by [NoticeKind] exactly as the web's `RenderMessage` is: images and
- * videos show the picture, everything else shows a file chip. Both open on
- * click — images into the in-app lightbox, the rest through [onOpen], which
- * saves to Downloads and hands the file to the OS.
+ * videos show the picture, everything else shows a file chip. Everything
+ * opens in the app — a picture and a clip in the lightbox, a document in the
+ * viewer through [onViewDocument]. [onOpen] is the save-to-Downloads path,
+ * which only what the app cannot draw falls back to.
  */
 @Composable
 internal fun AttachmentContent(
@@ -72,6 +75,8 @@ internal fun AttachmentContent(
     onPreview: (NoticeAttachment) -> Unit,
     onPlayVideo: (NoticeAttachment) -> Unit,
     onOpen: (NoticeAttachment) -> Unit,
+    /** Opens a document in the in-app viewer — looking, which no right governs. */
+    onViewDocument: (NoticeAttachment) -> Unit = onOpen,
     player: AudioPlayer? = null,
     location: GeoPoint? = null,
     onOpenLocation: (GeoPoint) -> Unit = {},
@@ -114,9 +119,10 @@ internal fun AttachmentContent(
         NoticeKind.Audio -> AudioMessageContent(attachment, media, player, onOpen)
 
         // A document with a poster — a PDF's first page — shows it above the
-        // chip, as the web's DocumentMessage does. Same click either way: save
-        // and hand to the OS.
-        NoticeKind.Document -> DocumentContent(attachment, media, onOpen, uploading)
+        // chip, as the web's DocumentMessage does. Same click either way, and
+        // it opens the document here rather than in whatever the machine keeps
+        // for `.pdf`: a call sheet belongs beside the board it was posted to.
+        NoticeKind.Document -> DocumentContent(attachment, media, onViewDocument, uploading)
 
         // Only reachable for a location post whose point failed to read — a
         // row from a client that sent the map image and nothing else. The
@@ -137,7 +143,7 @@ internal fun AttachmentContent(
 private fun DocumentContent(
     attachment: NoticeAttachment,
     media: NoticeMediaSource?,
-    onOpen: (NoticeAttachment) -> Unit,
+    onView: (NoticeAttachment) -> Unit,
     uploading: (@Composable () -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
@@ -148,12 +154,12 @@ private fun DocumentContent(
                 attachment = attachment,
                 media = media,
                 overlay = uploading,
-                onClick = { onOpen(attachment) },
+                onClick = { onView(attachment) },
                 // The chip is already below; a failed poster shows nothing.
                 fallback = {},
             )
         }
-        FileChip(attachment, onClick = { onOpen(attachment) })
+        FileChip(attachment, onClick = { onView(attachment) })
     }
 }
 
@@ -740,6 +746,44 @@ internal fun VideoLightbox(
             }
         }
     }
+}
+
+/**
+ * A posted document, open over the board: a PDF's pages stacked to scroll,
+ * text as text, a picture fitted — drawn in the app's own window rather than
+ * handed to whatever the machine keeps for the extension.
+ *
+ * Looking is free, as it is for a picture; the Download beside the name is the
+ * gated act, and for a file the app cannot draw (a spreadsheet, an archive) it
+ * is also the way in — [onDownload] saves it and hands it over, which is the
+ * one case where leaving the app is the honest answer.
+ */
+@Composable
+internal fun DocumentLightbox(
+    attachment: NoticeAttachment,
+    media: NoticeMediaSource?,
+    onDownload: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val document = rememberDocument(
+        key = attachment.media,
+        fileName = attachment.fileName,
+        // The row's own type only. `contentSubtype` is an extension ("pdf"),
+        // not a media type, so it would answer none of the renderer's
+        // questions — the file name and the magic number already cover it.
+        contentType = attachment.contentType,
+    ) {
+        // An optimistic card carries its own bytes; nothing to fetch yet.
+        attachment.localBytes
+            ?: (media?.fetch(attachment, preview = false) as? ZillitResult.Success)?.data
+    }
+
+    DocumentViewer(
+        fileName = attachment.fileName,
+        document = document,
+        onClose = onClose,
+        onDownload = onDownload,
+    )
 }
 
 /** Distinguishes "not resolved yet" (null) from "resolved to nothing" (url null). */

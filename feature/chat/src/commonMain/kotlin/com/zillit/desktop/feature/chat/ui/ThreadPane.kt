@@ -156,6 +156,11 @@ internal fun ThreadPane(
     var viewing by androidx.compose.runtime.remember(peer.userId) {
         androidx.compose.runtime.mutableStateOf<ChatAttachment?>(null)
     }
+    // The document open in the in-app viewer; keyed on the thread for the
+    // same reason the lightbox is.
+    var viewingDoc by androidx.compose.runtime.remember(peer.userId) {
+        androidx.compose.runtime.mutableStateOf<ChatAttachment?>(null)
+    }
     // Saving a file to disk is what the download right governs — a chip's
     // open, the menu's Download. The refusal is Android's own sentence, and
     // it is this thread's: a refusal earned here does not follow you out.
@@ -214,6 +219,9 @@ internal fun ThreadPane(
             loadAudio = loadAudio,
             // Pictures open in-app; downloading stays a separate, gated act.
             onView = { viewing = it },
+            // So do documents — a shared script is read here, not in
+            // whatever the machine keeps for `.pdf`.
+            onViewDocument = { viewingDoc = it },
             posters = posters,
             uploadPreview = { uniqueId -> state.uploadPreviews[uniqueId] },
         )
@@ -305,6 +313,14 @@ internal fun ThreadPane(
                 onClose = { viewing = null },
             )
         }
+
+        ChatDocumentViewer(
+            file = viewingDoc,
+            loadDocument = seams.loadDocument,
+            canDownload = seams.canDownload,
+            onDownload = onOpenAttachment,
+            onClose = { viewingDoc = null },
+        )
 
         viewingFace?.let { person ->
             ProfilePhotoViewer(
@@ -1074,6 +1090,7 @@ internal fun ReadOnlyThread(
 ) {
     val seams = LocalChatSeams.current
     var viewing by remember { mutableStateOf<ChatAttachment?>(null) }
+    var viewingDoc by remember { mutableStateOf<ChatAttachment?>(null) }
     var refused by remember { mutableStateOf(false) }
     val posters = remember { PosterMemory() }
     val shared = remember(messages) { sharedContent(messages) }
@@ -1087,6 +1104,7 @@ internal fun ReadOnlyThread(
         player = player,
         loadAudio = loadAudio,
         onView = { viewing = it },
+        onViewDocument = { viewingDoc = it },
         posters = posters,
     )
     val mentions = MentionHooks(resolveMention)
@@ -1163,6 +1181,13 @@ internal fun ReadOnlyThread(
                     onClose = { viewing = null },
                 )
             }
+            ChatDocumentViewer(
+                file = viewingDoc,
+                loadDocument = seams.loadDocument,
+                canDownload = seams.canDownload,
+                onDownload = onOpenAttachment,
+                onClose = { viewingDoc = null },
+            )
         }
     }
 }
@@ -1709,6 +1734,8 @@ internal class BubbleMedia(
     val loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
     /** Opens the in-app lightbox — looking, which no right governs. */
     val onView: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = onOpen,
+    /** Opens the in-app document viewer — looking too, so ungated as well. */
+    val onViewDocument: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = onOpen,
     /** What this thread's poster fetches already answered — see [PosterMemory]. */
     val posters: PosterMemory = PosterMemory(),
     /** The local thumbnail of a file this machine is sending, by the bubble's unique id. */
@@ -2120,10 +2147,13 @@ private fun AttachmentBody(
             MediaThumb(
                 file,
                 media,
-                media.onOpen,
+                media.onViewDocument,
                 namePlate = file.kind == "document",
             )
-        else -> FileChip(file, media.onOpen)
+        // Every other file opens in the viewer too: it draws what it can and
+        // offers the save-and-open for what it cannot, so nothing clicked
+        // here leaves the app without being asked for.
+        else -> FileChip(file, media.onViewDocument)
     }
 }
 
