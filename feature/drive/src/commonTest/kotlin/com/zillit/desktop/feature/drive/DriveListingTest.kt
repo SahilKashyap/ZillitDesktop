@@ -222,10 +222,15 @@ class DriveListingTest {
     }
 
     @Test
-    fun `sizes read two decimals below ten and none above`() {
+    fun `sizes are spelt as the web spells them`() {
+        // The web's `formatFileSize`, unit for unit: "Bytes" spelt out, two
+        // decimals with the trailing zeros trimmed, and the singular byte.
         assertEquals("—", formatBytes(0))
-        assertEquals("840 B", formatBytes(840))
-        assertEquals("1.20 MB", formatBytes(1_258_300))
+        assertEquals("54 Bytes", formatBytes(54))
+        assertEquals("1 Byte", formatBytes(1))
+        assertEquals("840 Bytes", formatBytes(840))
+        assertEquals("297.85 KB", formatBytes(305_000))
+        assertEquals("1.2 MB", formatBytes(1_258_300))
         assertEquals("12 MB", formatBytes(12_582_912))
     }
 

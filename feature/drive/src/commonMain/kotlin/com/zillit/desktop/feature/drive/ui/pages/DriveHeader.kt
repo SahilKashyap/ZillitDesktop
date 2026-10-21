@@ -430,7 +430,7 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                     leadingIcon = ZillitIcons.Upload,
                 )
                 ZillitButton(
-                    text = str(S.dd_empty_create_cta),
+                    text = str(S.create_folder),
                     onClick = { onEvent(DriveEvent.OpenNewFolder) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -449,16 +449,17 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 }
             }
         }
-        val trashTip = if (state.showTrash) str(S.desktop_drive_close_trash) else str(S.desktop_drive_view_trash)
-        ZillitTooltip(text = trashTip) {
-            ToggleIcon(
-                icon = ZillitIcons.Trash,
-                description = str(S.trash_text),
-                active = state.showTrash,
-                activeTint = ZillitTheme.colors.danger,
-                onClick = { onEvent(DriveEvent.ShowTrash(!state.showTrash)) },
-            )
-        }
+        // Labelled, like Upload and Create Folder beside it: a bare bin made
+        // you hover to find out where it went, and it is a toggle, so the
+        // label also has to say which way the next click goes. No tooltip —
+        // it would only repeat the words already on the button.
+        ZillitButton(
+            text = if (state.showTrash) str(S.desktop_drive_close_trash) else str(S.desktop_drive_view_trash),
+            onClick = { onEvent(DriveEvent.ShowTrash(!state.showTrash)) },
+            variant = if (state.showTrash) ButtonVariant.Danger else ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Trash,
+        )
     }
 }
 

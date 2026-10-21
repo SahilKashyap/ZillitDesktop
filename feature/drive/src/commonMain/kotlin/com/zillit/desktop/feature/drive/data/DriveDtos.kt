@@ -90,15 +90,20 @@ internal data class DriveItemDto(
     @SerialName("parent_folder") val parentFolder: String? = null,
     @SerialName("parent_folder_id") val parentFolderId: String? = null,
 
-    @SerialName("file_size_bytes") val sizeBytes: Long? = null,
     /**
-     * The two older spellings of the same number. The web reads
-     * `file_size_bytes || size || file_size` and a row carrying only one of
-     * the latter two showed no size at all here — and nothing in its folder's
-     * total either, since folders are sized by summing their files.
+     * A size, in the three spellings the routes use — and in whatever shape
+     * each one sends it.
+     *
+     * Read as literals rather than as numbers because **`file_size` is often
+     * text**: dev answers `"297.82 KB"` on `/files`, which as a declared
+     * `Long` fails the whole listing (one row takes the page down with it:
+     * "The server sent something unexpected"). The web is accidentally immune
+     * — `Number("297.82 KB")` is `NaN`, and its `sizeBytesOf` keeps only
+     * finite values above zero, which is exactly what [bytes] does here.
      */
-    @SerialName("size") val size: Long? = null,
-    @SerialName("file_size") val fileSize: Long? = null,
+    @SerialName("file_size_bytes") val sizeBytes: JsonPrimitive? = null,
+    @SerialName("size") val size: JsonPrimitive? = null,
+    @SerialName("file_size") val fileSize: JsonPrimitive? = null,
     @SerialName("file_extension") val extension: String? = null,
     @SerialName("mime_type") val mimeType: String? = null,
     @SerialName("file_type") val fileType: String? = null,
@@ -198,7 +203,7 @@ internal data class DriveItemDto(
             // latter left every file at the root, whatever folder it was in.
             parentFolderId = listOf(parentFolder, parentFolderId, folderId.takeIf { resolved == DriveItemKind.File })
                 .firstOrNull { !it.isNullOrBlank() },
-            sizeBytes = listOf(sizeBytes, size, fileSize).firstOrNull { (it ?: 0) > 0 } ?: 0,
+            sizeBytes = listOf(sizeBytes, size, fileSize).firstNotNullOfOrNull { it.bytes() } ?: 0,
             extension = extension.orEmpty().ifBlank {
                 displayName.substringAfterLast('.', "")
             }.lowercase(),
@@ -308,7 +313,8 @@ internal data class UploadSessionDto(
     @SerialName("upload_id") val uploadId: String? = null,
     @SerialName("_id") val id: String? = null,
     @SerialName("file_name") val fileName: String? = null,
-    @SerialName("file_size_bytes") val sizeBytes: Long? = null,
+    // A literal, like every other size on this service: see [bytes].
+    @SerialName("file_size_bytes") val sizeBytes: JsonPrimitive? = null,
     @SerialName("chunk_size") val chunkSize: Long? = null,
     @SerialName("total_parts") val totalParts: Int? = null,
     @SerialName("presigned_urls") val presignedUrls: List<UploadPartDto> = emptyList(),
@@ -317,7 +323,7 @@ internal data class UploadSessionDto(
     fun toDomain(requestedSize: Long): UploadSession? {
         val identifier = (uploadId ?: id)?.takeIf { it.isNotBlank() } ?: return null
         val parts = presignedUrls.mapNotNull { it.toDomain() }.sortedBy { it.partNumber }
-        val size = sizeBytes ?: requestedSize
+        val size = sizeBytes.bytes() ?: requestedSize
         return UploadSession(
             uploadId = identifier,
             fileName = fileName.orEmpty(),
@@ -483,7 +489,7 @@ internal data class VersionDto(
     @SerialName("file_id") val fileId: String? = null,
     @SerialName("version_number") val versionNumber: Int? = null,
     @SerialName("file_name") val fileName: String? = null,
-    @SerialName("file_size_bytes") val sizeBytes: Long? = null,
+    @SerialName("file_size_bytes") val sizeBytes: JsonPrimitive? = null,
     @SerialName("uploaded_by_name") val uploadedByName: String? = null,
     @SerialName("created_on") val createdOn: JsonPrimitive? = null,
     @SerialName("created_at") val createdAt: JsonPrimitive? = null,
@@ -494,7 +500,7 @@ internal data class VersionDto(
             fileId = fileId.orEmpty(),
             versionNumber = versionNumber ?: 0,
             fileName = fileName.orEmpty(),
-            sizeBytes = sizeBytes ?: 0,
+            sizeBytes = sizeBytes.bytes() ?: 0,
             uploadedByName = uploadedByName.orEmpty(),
             createdAt = (createdOn ?: createdAt).epochMillis(),
         )
@@ -728,6 +734,17 @@ internal data class TextSaveDto(
         saved = saved ?: true,
     )
 }
+
+/**
+ * A size in bytes from whatever the field holds — the web's `sizeBytesOf`.
+ *
+ * A number, or a string that is one ("42"); null for everything else, which
+ * is how `"297.82 KB"` and `""` are turned down rather than thrown on. Zero
+ * is not a size either: the next spelling is asked instead, and a row with
+ * none of them ends at 0, as the web does.
+ */
+private fun JsonPrimitive?.bytes(): Long? =
+    this?.content?.trim()?.toDoubleOrNull()?.takeIf { it > 0 }?.toLong()
 
 /** The stamp as the server spelt it — quoted or bare, never reinterpreted. */
 private fun JsonPrimitive?.stampText(): String = this?.content.orEmpty()

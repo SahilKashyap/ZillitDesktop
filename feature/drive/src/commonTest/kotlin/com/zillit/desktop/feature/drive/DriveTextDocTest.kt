@@ -292,10 +292,29 @@ class DriveTextDocTest {
     fun `a size sent as size or file_size is still a size`() {
         assertEquals(42L, decodeDriveItem("""{"_id":"f","name":"a.pdf","size":42}""")?.sizeBytes)
         assertEquals(42L, decodeDriveItem("""{"_id":"f","name":"a.pdf","file_size":42}""")?.sizeBytes)
-        // A string, which is what one route sends; and a 0 that must not be
-        // read as "no size" and replaced by another field.
+        // A number sent as a string, which some routes do.
         assertEquals(42L, decodeDriveItem("""{"_id":"f","name":"a.pdf","file_size_bytes":"42"}""")?.sizeBytes)
         assertEquals(0L, decodeDriveItem("""{"_id":"f","name":"a.pdf"}""")?.sizeBytes)
+    }
+
+    /**
+     * Seen live on dev, 2026-10-21: `/files` answers `file_size` as the text
+     * a person reads — `"297.82 KB"` — beside the real byte count. Declared
+     * as a number it threw `Failed to parse literal` and, because a listing
+     * decodes as one object, **one such row emptied the whole Drive** with
+     * "The server sent something unexpected".
+     */
+    @Test
+    fun `a formatted size is ignored, and never takes the listing down with it`() {
+        val row = decodeDriveItem(
+            """{"_id":"f","name":"a.pdf","file_size_bytes":305000,"file_size":"297.82 KB"}""",
+        )
+        assertEquals(305_000L, row?.sizeBytes, "the byte count is still read")
+
+        // And with nothing else to go on, the text is simply not a size.
+        val textOnly = decodeDriveItem("""{"_id":"f","name":"a.pdf","file_size":"297.82 KB"}""")
+        assertEquals(0L, textOnly?.sizeBytes)
+        assertEquals("a.pdf", textOnly?.name, "the row itself still decodes")
     }
 
     // -- the Markdown it renders -------------------------------------------

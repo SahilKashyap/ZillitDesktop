@@ -325,22 +325,36 @@ fun descendantsOf(folderId: String, folders: List<DriveItem>): Set<String> {
     return out
 }
 
-/** "1.20 MB" / "840 B" — the size column, and the storage meter's caption. */
+/**
+ * "297.82 KB" / "54 Bytes" / "1 Byte" — the size column, and the storage
+ * meter's caption.
+ *
+ * The web's `formatFileSize`: the same units it names, two decimal places
+ * with the trailing zeros trimmed (`parseFloat(toFixed(2))`, so 1.20 MB reads
+ * "1.2 MB"), and the singular for exactly one byte. Nothing to show is an
+ * em dash rather than "0 Bytes" — which is what the web's own size *cell*
+ * renders for a zero or missing size, on a file and on a folder alike.
+ */
 fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "—"
-    val units = listOf("B", "KB", "MB", "GB", "TB")
+    val units = listOf("Bytes", "KB", "MB", "GB", "TB")
     var value = bytes.toDouble()
     var unit = 0
     while (value >= BYTE_STEP && unit < units.lastIndex) {
         value /= BYTE_STEP
         unit++
     }
-    val rendered = if (value < DECIMAL_CUTOFF) {
-        val hundredths = (value * HUNDRED).toLong()
-        "${hundredths / HUNDRED}.${(hundredths % HUNDRED).toString().padStart(2, '0')}"
-    } else {
-        value.toLong().toString()
+    val hundredths = (value * HUNDRED + HALF).toLong()
+    val whole = hundredths / HUNDRED
+    val fraction = (hundredths % HUNDRED).toInt()
+    val rendered = when {
+        fraction == 0 -> whole.toString()
+        fraction % TEN == 0 -> "$whole.${fraction / TEN}"
+        else -> "$whole.${fraction.toString().padStart(2, '0')}"
     }
+    // "1 Bytes" read as a typo. Only the byte unit lands on exactly one often
+    // enough to notice, but the test is on the value, so "1 KB" is right too.
+    if (hundredths == HUNDRED.toLong() && unit == 0) return "1 Byte"
     return "$rendered ${units[unit]}"
 }
 
@@ -373,8 +387,9 @@ private fun plural(count: Long, unit: AgoUnit): String =
     if (count != 1L) str(unit.manyKey, count) else str(unit.oneKey)
 
 private const val BYTE_STEP = 1024.0
-private const val DECIMAL_CUTOFF = 10.0
 private const val HUNDRED = 100
+private const val TEN = 10
+private const val HALF = 0.5
 private const val MILLIS_PER_SECOND = 1000L
 private const val SECONDS_JUST_NOW = 45L
 private const val SECONDS_PER_MINUTE = 60L
