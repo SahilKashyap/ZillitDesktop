@@ -22,11 +22,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.LinkSpan
+import com.zillit.desktop.core.common.linkSpans
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitSelectable
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -175,11 +185,60 @@ private fun ChatLineRow(line: CallChatLine) {
                     maxLines = 1,
                 )
             }
-            ZillitText(
-                text = line.text,
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textPrimary,
-            )
+            // The words only: the sender's name above would otherwise join
+            // every drag and every "select all" through the panel.
+            ZillitSelectable { ChatLineWords(line.text) }
+        }
+    }
+}
+
+/**
+ * The words of one line, selectable, with any address in them lit.
+ *
+ * This chat is where a link gets dropped mid-call — a sheet, a room, a
+ * reference — and the panel keeps nothing, so a line that cannot be clicked
+ * or copied is a line that is simply lost. Addresses are the same ones CNC's
+ * bubbles light up, by the same parser.
+ */
+@Composable
+private fun ChatLineWords(text: String) {
+    val colors = ZillitTheme.colors
+    val spans = remember(text) { linkSpans(text) }
+    val plain = spans.singleOrNull() as? LinkSpan.Words
+    if (plain != null) {
+        ZillitText(
+            text = plain.text,
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.textPrimary,
+        )
+        return
+    }
+    ZillitText(
+        text = linkedText(spans),
+        style = ZillitTheme.typography.bodySmall,
+        color = colors.textPrimary,
+    )
+}
+
+/**
+ * The spans as one string, each address clickable.
+ *
+ * A `Url` annotation opens through `LocalUriHandler` on its own — the
+ * desktop's hands the address to the default browser or mail client.
+ */
+@Composable
+private fun linkedText(spans: List<LinkSpan>): AnnotatedString {
+    val colors = ZillitTheme.colors
+    val linkStyles = TextLinkStyles(
+        style = SpanStyle(color = colors.accentText, textDecoration = TextDecoration.Underline),
+        hoveredStyle = SpanStyle(color = colors.accentHover, textDecoration = TextDecoration.Underline),
+    )
+    return buildAnnotatedString {
+        spans.forEach { span ->
+            when (span) {
+                is LinkSpan.Words -> append(span.text)
+                is LinkSpan.Link -> withLink(LinkAnnotation.Url(span.url, linkStyles)) { append(span.text) }
+            }
         }
     }
 }
