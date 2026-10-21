@@ -45,6 +45,11 @@ import org.json.JSONObject
 class SocketIoClient(
     private val scope: CoroutineScope,
     private val json: Json = SocketEventBus.DefaultJson,
+    /**
+     * Refused handshakes, for the server error log. Diagnostics only — see
+     * [SocketFailureReporter], and [reportConnectFailure] for what is sent.
+     */
+    private val reportFailure: SocketFailureReporter = SocketFailureReporter.None,
 ) : SocketClient {
 
     private val _connectionState = MutableStateFlow<SocketConnectionState>(SocketConnectionState.Disconnected)
@@ -272,6 +277,7 @@ class SocketIoClient(
         // so, and let the retry present a different one.
         if (isSocketTokenRejected(detail)) {
             ZillitLog.w(TAG) { "handshake refused the token; retrying with another credential" }
+            reportConnectFailure(detail, KIND_TOKEN_REJECTED)
             config?.onAuthRejected?.invoke(detail)
             scheduleReconnect(ZillitError.NoConnection(detail))
             return
@@ -282,11 +288,37 @@ class SocketIoClient(
         // than stopping. The app signs out on this.
         if (isHandshakeUnauthorized(detail)) {
             ZillitLog.w(TAG) { "handshake rejected — not retrying" }
+            reportConnectFailure(detail, KIND_UNAUTHORIZED)
             _connectionState.value = SocketConnectionState.Failed(ZillitError.Unauthorized(detail))
             return
         }
 
+        reportConnectFailure(detail, KIND_NETWORK)
         scheduleReconnect(ZillitError.NoConnection(detail))
+    }
+
+    /**
+     * One line in the server error log per refused handshake, as the web sends
+     * from its own `connect_error`.
+     *
+     * [kind] is what a reader needs first: a revoked device, a refused
+     * credential and a dead network all read as "the socket is down" from the
+     * outside, and only two of them are ours to fix. The attempt number rides
+     * along because the first failure and the fortieth mean different things —
+     * it is this attempt's, so [scheduleReconnect] has not counted it yet.
+     *
+     * Diagnostics only: wrapped, because a socket must not fall over on the
+     * way to describing why it could not connect, and [detail] is the
+     * library's own reason string, capped — never a header or a token.
+     */
+    private fun reportConnectFailure(detail: String, kind: String) {
+        runCatching {
+            reportFailure.report(
+                SocketFailureReporter.CONNECT_ERROR,
+                detail.take(SocketFailureReporter.MESSAGE_MAX).ifBlank { kind },
+                mapOf("kind" to kind, "attempt" to (attempts + 1).toString()),
+            )
+        }
     }
 
     private fun scheduleReconnect(cause: ZillitError) {
@@ -321,6 +353,15 @@ class SocketIoClient(
     private companion object {
         const val TAG = "Socket"
         const val MESSAGE_BUFFER = 256
+
+        /** The server refused the credential we presented; another one may work. */
+        const val KIND_TOKEN_REJECTED = "token_rejected"
+
+        /** The handshake was rejected outright — this device is not welcome. */
+        const val KIND_UNAUTHORIZED = "unauthorized"
+
+        /** Nothing refused us; the connection simply did not happen. */
+        const val KIND_NETWORK = "network"
     }
 }
 

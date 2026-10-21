@@ -25,6 +25,11 @@ import kotlinx.serialization.json.Json
 class SocketEventBus(
     private val client: SocketClient,
     private val json: Json = DefaultJson,
+    /**
+     * Payloads this build could not read, for the server error log.
+     * Diagnostics only — see [SocketFailureReporter].
+     */
+    private val reportFailure: SocketFailureReporter = SocketFailureReporter.None,
 ) {
 
     val connectionState = client.connectionState
@@ -88,6 +93,21 @@ class SocketEventBus(
                 // The event name is safe to log; the payload is not — socket
                 // messages carry chat bodies and financials (plan §8.4).
                 ZillitLog.w(TAG) { "could not decode ${message.event.value}: ${throwable::class.simpleName}" }
+                // And on the server, as the web reports its own listeners'
+                // decode failures: a payload this build cannot read is a
+                // contract change, and a dropped message leaves no other mark
+                // anywhere — the subscription simply stops updating. Nobody
+                // reads a desktop log file unless they already suspect this.
+                //
+                // The exception's CLASS, never its message: a serialization
+                // error quotes the payload it choked on.
+                runCatching {
+                    reportFailure.report(
+                        SocketFailureReporter.UNDECODABLE,
+                        throwable::class.simpleName ?: "decode failed",
+                        mapOf("event" to message.event.value),
+                    )
+                }
             }
             .getOrNull()
     }

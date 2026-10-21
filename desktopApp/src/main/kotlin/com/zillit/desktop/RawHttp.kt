@@ -3,6 +3,7 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.network.ApiFailure
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestHeaderProvider
 import com.zillit.desktop.core.network.RequestModule
@@ -39,7 +40,7 @@ internal suspend fun AppGraph.Ready.postForBytes(
     module: RequestModule = RequestModule.ProjectUser,
 ): ZillitResult<ByteArray> {
     val bodyJson = HttpClientFactory.json.encodeToString(JsonElement.serializer(), body)
-    return runCatching {
+    return logged(method = "POST", url = url) {
         val response = signedRawResponse(module, url, bodyJson) { headers, bearer ->
             httpClient.post(url) {
                 headers.forEach { (name, value) -> this.headers.append(name, value) }
@@ -49,7 +50,7 @@ internal suspend fun AppGraph.Ready.postForBytes(
             }
         }
         response.declineOrBytes()
-    }.toRawResult()
+    }
 }
 
 /**
@@ -61,7 +62,7 @@ internal suspend fun AppGraph.Ready.getForBytes(
     url: String,
     module: RequestModule = RequestModule.ProjectUser,
 ): ZillitResult<ByteArray> {
-    return runCatching {
+    return logged(method = "GET", url = url) {
         val response = signedRawResponse(module, url, bodyJson = null) { headers, bearer ->
             httpClient.get(url) {
                 headers.forEach { (name, value) -> this.headers.append(name, value) }
@@ -69,7 +70,37 @@ internal suspend fun AppGraph.Ready.getForBytes(
             }
         }
         response.declineOrBytes()
-    }.toRawResult()
+    }
+}
+
+/**
+ * Runs [block] as [postForBytes] and [getForBytes] both do — bytes, or the
+ * service's refusal — and records a failure in the error log (`POST
+ * location/log`), exactly as a failed envelope call is recorded.
+ *
+ * `ApiClient` reports its own failures from one place and never sees these,
+ * because they answer bytes rather than an envelope. It is the same class of
+ * failure and it belongs in the same store: the web's blob calls ride its
+ * axios interceptor like everything else, so a PDF that 401s is findable
+ * there and was findable nowhere here. The app-wide token-auth gap of 27 Sep —
+ * every raw export refused on every screen — is the case this exists for: it
+ * left no server-side trace at all, and the `~/.zillit/logs` line that did
+ * exist was on the one machine nobody had.
+ *
+ * Recorded here rather than inside [signedRawResponse], although that is the
+ * funnel every raw request passes through: by this point the error is whole —
+ * the status AND the service's own message, which on these routes is in the
+ * response BODY, and a soft refusal ("nothing to export") carries no status at
+ * all. GDPR as ever: the message, never the bytes.
+ */
+private suspend fun AppGraph.Ready.logged(
+    method: String,
+    url: String,
+    block: suspend () -> ByteArray,
+): ZillitResult<ByteArray> = runCatching { block() }.toRawResult().also { result ->
+    (result as? ZillitResult.Failure)?.let { failure ->
+        appLog?.log(ApiFailure(method, url, failure.error).toLogEvent())
+    }
 }
 
 /** Bytes on success; the service's own refusal otherwise — shared by [postForBytes] and [getForBytes]. */

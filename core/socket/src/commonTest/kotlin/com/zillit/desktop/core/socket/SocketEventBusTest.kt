@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
@@ -79,6 +80,41 @@ class SocketEventBusTest {
         client.deliver(ZillitSocketEvents.PrivateChat.Message, """{"id":"good","body":"ok"}""")
 
         assertEquals(listOf("good"), collector.await().map { it.id })
+    }
+
+    @Test
+    fun `an undecodable payload is reported to the error log, without the payload`() = runTest {
+        // A dropped message leaves no other mark anywhere: the subscription
+        // simply stops updating. On a machine nobody is watching, the server
+        // log is the only place a contract change shows up — which is why the
+        // web has reported its own listeners' decode failures for a year.
+        val reported = mutableListOf<Triple<String, String, Map<String, String>>>()
+        val watched = SocketEventBus(
+            client,
+            reportFailure = SocketFailureReporter { name, message, context ->
+                reported += Triple(name, message, context)
+            },
+        )
+        val collector = collectAsync(
+            watched.on(ZillitSocketEvents.PrivateChat.Message, ChatMessage.serializer()),
+            count = 1,
+        )
+        // Subscribed FIRST, and actually running: the fake keeps one replay
+        // slot, so a message delivered while nobody is reading is overwritten
+        // by the next one rather than queued — the malformed payload would
+        // never reach the decoder at all.
+        runCurrent()
+
+        client.deliver(ZillitSocketEvents.PrivateChat.Message, """{"id":42,"body":["a private chat body"]}""")
+        client.deliver(ZillitSocketEvents.PrivateChat.Message, """{"id":"good","body":"ok"}""")
+        collector.await()
+
+        val (name, message, context) = reported.single()
+        assertEquals(SocketFailureReporter.UNDECODABLE, name)
+        assertEquals(ZillitSocketEvents.PrivateChat.Message.value, context["event"])
+        // The exception's CLASS, never its message — a serialization error
+        // quotes the payload it choked on, and these carry chat bodies.
+        assertTrue("private chat body" !in message, "the payload must never reach the log: $message")
     }
 
     @Test

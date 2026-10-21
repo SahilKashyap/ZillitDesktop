@@ -70,6 +70,12 @@ class TokenSessionManager(
     /** The open production, for the warm-ups; null when none is. */
     private val activeProjectId: () -> String?,
     private val nowMillis: () -> Long,
+    /**
+     * Told when the server reports [MSG_REFRESH_REUSE], with the status it
+     * came with — the one session verdict that reaches the error log. See
+     * [rotate]; the host builds the event (`AppLogWiring`).
+     */
+    private val onRefreshReuse: (httpStatus: Int?) -> Unit = {},
 ) : RequestAuthenticator {
 
     internal data class CachedToken(val value: String, val issuedAtMillis: Long, val expiresInSeconds: Long) {
@@ -376,6 +382,17 @@ class TokenSessionManager(
                     result.serverMessage == MSG_REFRESH_REUSE ||
                     result.httpStatus == STATUS_UNAUTHORIZED -> {
                     ZillitLog.w(TAG) { "refresh token dead (${result.serverMessage}); re-establishing" }
+                    // Reuse, and only reuse, is told to the server log — the
+                    // web reports the same one. It means this refresh token
+                    // has been presented twice, so the server is about to
+                    // revoke every session on this install, and the sign-out
+                    // the user then sees has no other explanation on record.
+                    // Re-establishing below hides it from them and from here.
+                    //
+                    // Never the token: only the verdict and its status.
+                    if (result.serverMessage == MSG_REFRESH_REUSE) {
+                        runCatching { onRefreshReuse(result.httpStatus) }
+                    }
                     Rotation.Dead
                 }
                 // A transport error: keep the stored token, try again later.

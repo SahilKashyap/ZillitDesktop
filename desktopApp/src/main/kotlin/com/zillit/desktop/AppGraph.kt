@@ -968,6 +968,16 @@ sealed interface AppGraph {
         val draftStore: DraftStore?,
         /** The two above plus the online flag, for the view models that work offline. */
         val offlineSupport: OfflineSupport?,
+        /**
+         * The error log (`POST location/log`).
+         *
+         * Exposed because the failures that do NOT pass through [ApiClient]
+         * have to report their own: the raw export and download helpers read
+         * bytes rather than an envelope, so nothing else sees them fail — see
+         * [com.zillit.desktop.postForBytes]. Null in a graph assembled
+         * without a log, which is what every call site tolerates.
+         */
+        val appLog: com.zillit.desktop.core.network.applog.AppLogger? = null,
     ) : AppGraph
 
     /**
@@ -1094,7 +1104,14 @@ sealed interface AppGraph {
             // handshake carries the device id, which does not exist until the
             // device is linked.
             val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-            val socketClient = SocketIoClient(scope = appScope)
+
+            // The error log sends through the REST client and half the app
+            // reports into it, the socket and that client included, so it is
+            // built after all of them and reached through this slot. Declared
+            // here because the socket is the first thing to need it.
+            var appLog: com.zillit.desktop.core.network.applog.AppLogger? = null
+            val reportSocketFailure = socketFailureReporter(appLog = { appLog })
+            val socketClient = SocketIoClient(scope = appScope, reportFailure = reportSocketFailure)
 
             // The encrypted local cache — opened before the REST client so every
             // read can be kept for offline viewing.
@@ -1128,11 +1145,13 @@ sealed interface AppGraph {
                 scope = appScope,
                 activeProjectId = { headerContext.value.projectId },
                 nowMillis = System::currentTimeMillis,
+                // Its calls do not ride the REST client — their answers carry
+                // live tokens — so this one verdict reports itself.
+                onRefreshReuse = { status ->
+                    appLog?.log(refreshReuseLogEvent(config.apiV2() + "session/device/refresh", status))
+                },
             )
 
-            // The error log sends through this client and this client reports
-            // into it, so it is built after and reached through this slot.
-            var appLog: com.zillit.desktop.core.network.applog.AppLogger? = null
             val apiClient = ApiClient(
                 httpClient = HttpClientFactory.create(
                     engineFactory = OkHttpEngineProvider(),
@@ -1194,6 +1213,7 @@ sealed interface AppGraph {
                     scope = appScope,
                     nowMillis = System::currentTimeMillis,
                 ),
+                reportFailure = reportSocketFailure,
             )
 
             // The session decides its own mode by asking for one — there is
@@ -2070,6 +2090,7 @@ sealed interface AppGraph {
             val noticeMedia = S3NoticeMediaSource(storageClient, credentials = { awsKeyPair(remoteConfigRepository) })
             val storageTarget = SuitableRegionSource(apiClient, config)
             return Ready(
+                appLog = appLog,
                 sessionExpired = sessionExpired.asSharedFlow(),
                 config = config,
                 preferences = preferences,
