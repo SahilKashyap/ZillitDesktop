@@ -396,7 +396,10 @@ class BadgeStore(
      * having to open the ledger.
      */
     private fun logSettingsRows(visible: List<NotificationRecord>) {
-        val settings = visible.filter { it.section == BadgeSections.SETTINGS }
+        // `counts`, as the tally beside it filters — without it the line went
+        // on naming rows a read had just flipped, and read exactly like a read
+        // that had not worked.
+        val settings = visible.filter { it.counts && it.section == BadgeSections.SETTINGS }
         if (settings.isEmpty()) return
         ZillitLog.d(TAG) {
             settings.take(SETTINGS_LOG_ROWS).joinToString(
