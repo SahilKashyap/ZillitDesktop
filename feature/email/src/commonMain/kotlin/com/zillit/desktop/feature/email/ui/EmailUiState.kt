@@ -96,6 +96,18 @@ data class EmailUiState(
      * folder is small enough that keeping it in memory costs nothing.
      */
     val drafts: List<EmailDraft> = emptyList(),
+    /**
+     * How many drafts the mailbox holds in all — the drafts read's
+     * `summary.total_drafts`, not how many of them are loaded.
+     *
+     * The sidebar's number: with 300 drafts and a 50-row first page, counting
+     * [drafts] would say 50. Zero until the first read answers.
+     */
+    val draftsTotal: Int = 0,
+    /** The server has drafts older than the last loaded one. */
+    val draftsHaveMore: Boolean = false,
+    /** A page of older drafts is in flight — the spinner under the list. */
+    val isLoadingMoreDrafts: Boolean = false,
     /** Rows ticked for a bulk action, by message id (draft id in Drafts). */
     val selectedIds: Set<String> = emptySet(),
     /** A destructive action waiting on the user to confirm it. */
@@ -226,6 +238,9 @@ sealed interface EmailEvent {
 
     /** Opens the newest row of the folder, when nothing is open — the web's auto-open. */
     data object OpenFirst : Message
+
+    /** The Drafts list is near its bottom; the page before it is asked for. */
+    data object LoadMoreDrafts : EmailEvent
 
     data class QueryChanged(val value: String) : EmailEvent
     data object ToggleSearchAllFolders : EmailEvent

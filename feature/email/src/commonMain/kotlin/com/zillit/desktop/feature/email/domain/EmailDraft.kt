@@ -45,6 +45,22 @@ data class EmailDraft(
 }
 
 /**
+ * One page of drafts, with what the server said about the rest.
+ *
+ * Drafts are the one folder this client pages from the server — every other
+ * folder reads its rows whole from the cache. The list asks for the next page
+ * as it nears the bottom, and the sidebar's number is [total], not how many
+ * are loaded: a mailbox with 300 drafts shows 300 after the first page of 50.
+ */
+data class DraftPage(
+    val drafts: List<EmailDraft> = emptyList(),
+    /** `summary.total_drafts` — every draft the mailbox holds. */
+    val total: Int = 0,
+    /** `summary.pending_records` — whether anything is left beyond this page. */
+    val more: Boolean = false,
+)
+
+/**
  * How a draft shows in the message list.
  *
  * The sender column shows the recipients instead — a draft has no sender worth

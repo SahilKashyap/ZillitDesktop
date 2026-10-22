@@ -14,11 +14,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.feature.email.domain.DraftPage
 import com.zillit.desktop.feature.email.domain.DraftRepository
-import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.MailboxScope
 import com.zillit.desktop.feature.email.domain.OutgoingEmail
 import com.zillit.desktop.feature.email.domain.StoredFile
@@ -44,20 +45,31 @@ class DraftRepositoryImpl(
     // A different API generation from everything above: `email-draft` is
     // Zillit's own store, paged by timestamp, and nothing here goes near IMAP.
 
-    override suspend fun drafts(beforeMillis: Long): ZillitResult<List<EmailDraft>> =
+    override suspend fun drafts(beforeMillis: Long, firstPage: Boolean): ZillitResult<DraftPage> =
         apiClient.request(
             verb = HttpVerb.Get,
             url = "${api}email-draft/$beforeMillis/previous",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             queryParameters = scope.query(),
-            // Only ever the newest page, from "now": one name, so the Drafts
-            // folder still shows offline what it showed last time.
-            options = CallOptions(cacheAs = "${api}email-draft/newest${scope.cacheSuffix()}"),
+            // The newest page, from "now", is the one kept offline under one
+            // name, so the Drafts folder still shows what it showed last time.
+            // A later page is the middle of the list and must not take its
+            // place, so it is not cached at all.
+            options = if (firstPage) {
+                CallOptions(cacheAs = "${api}email-draft/newest${scope.cacheSuffix()}")
+            } else {
+                CallOptions()
+            },
         ).map { payload ->
-            payload.draftRows()
-                .mapNotNull(::readDraft)
-                .sortedByDescending { it.updatedAtMillis }
+            val summary = (payload as? JsonObject)?.get("summary") as? JsonObject
+            DraftPage(
+                drafts = payload.draftRows()
+                    .mapNotNull(::readDraft)
+                    .sortedByDescending { it.updatedAtMillis },
+                total = summary.count("total_drafts"),
+                more = summary.count("pending_records") > 0,
+            )
         }
 
     override suspend fun saveDraft(message: OutgoingEmail, uniqueId: String): ZillitResult<String> =
@@ -148,6 +160,15 @@ internal fun StoredFile.toWire(): JsonObject = buildJsonObject {
     put("content_length", sizeBytes)
     put("content_disposition", "attachment")
     put("size", sizeBytes)
+}
+
+/**
+ * A `summary` number — the server writes them as numbers, but a string is
+ * read too rather than silently becoming a zero that hides the count.
+ */
+private fun JsonObject?.count(name: String): Int {
+    val value = this?.get(name) as? JsonPrimitive ?: return 0
+    return value.intOrNull ?: value.content.toIntOrNull() ?: 0
 }
 
 /** Drafts come back as `{"drafts": [...]}`; a bare array is accepted too. */

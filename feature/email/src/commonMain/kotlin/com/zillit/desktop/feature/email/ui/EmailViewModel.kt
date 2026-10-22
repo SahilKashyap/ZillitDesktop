@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.email.ui
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -79,6 +80,9 @@ class EmailViewModel(
     /** The bulk actions, kept out of this class for its size. */
     private val actions = MailActions(this)
 
+    /** Reading the Drafts folder, which is the one folder paged from the server. */
+    private val draftList = MailDrafts(this)
+
     /** Messages other screens ask the mailbox to start; the window collects them. */
     val composeRequests: ComposeRequests = ComposeRequests()
 
@@ -96,6 +100,7 @@ class EmailViewModel(
                 load()
             }
             EmailEvent.Refresh -> refresh()
+            EmailEvent.LoadMoreDrafts -> draftList.loadMore()
             is EmailEvent.SelectFolder -> selectFolder(event.folderName)
             is EmailEvent.QueryChanged -> setState { copy(searchTerm = event.value).regrouped() }
             EmailEvent.ToggleSearchAllFolders -> setState { copy(searchAllFolders = !searchAllFolders).regrouped() }
@@ -207,7 +212,7 @@ class EmailViewModel(
         // The sidebar badges Drafts with how many there are whichever folder
         // is open, so they are read on the way in. Not when Drafts is the open
         // folder: it has just asked for them itself.
-        if (!currentState.isViewingDrafts) loadDrafts()
+        if (!currentState.isViewingDrafts) draftList.load()
         refreshFolderBadges()
         launchResult(
             block = { mailbox.syncFolders() },
@@ -229,7 +234,7 @@ class EmailViewModel(
             block = { mailbox.syncFolders() },
             onSuccess = { folders ->
                 setState { copy(folders = folders) }
-                if (currentState.isViewingDrafts) loadDrafts()
+                if (currentState.isViewingDrafts) draftList.load()
                 syncEverything(showProgress = true) { setState { copy(isRefreshing = false) } }
             },
             onError = { setState { copy(isRefreshing = false, error = it.localised()) } },
@@ -262,7 +267,7 @@ class EmailViewModel(
             ).regrouped()
         }
         if (currentState.isViewingDrafts) {
-            loadDrafts()
+            draftList.load()
         } else {
             openFirstIfNone()
         }
@@ -280,7 +285,7 @@ class EmailViewModel(
      */
     private fun resumeFolder() {
         if (currentState.isViewingDrafts) {
-            loadDrafts()
+            draftList.load()
             return
         }
         val folder = currentState.selectedFolderName ?: return
@@ -301,40 +306,6 @@ class EmailViewModel(
         val first = state.rows.firstOrNull() ?: return
         autoOpenedFolder = folder
         openRow(first.id)
-    }
-
-    /**
-     * Reads the Drafts folder.
-     *
-     * The drafts themselves are kept whatever folder is open — the sidebar
-     * badges Drafts with how many there are, and a composer reopening one
-     * reads it from here. Only the *list* is Drafts' own: writing [messages]
-     * from a read that finished after the user moved on would put drafts in
-     * the Inbox, and the loading flag belongs to the list too.
-     */
-    private fun loadDrafts() {
-        if (currentState.isViewingDrafts) setState { copy(isLoadingMessages = messages.isEmpty(), error = null) }
-        launchResult(
-            block = { draftRepository.drafts(nowMillis()) },
-            onSuccess = { drafts ->
-                setState {
-                    if (isViewingDrafts) {
-                        copy(
-                            isLoadingMessages = false,
-                            drafts = drafts,
-                            messages = drafts.map(EmailDraft::toSummary),
-                        ).regrouped()
-                    } else {
-                        copy(drafts = drafts)
-                    }
-                }
-            },
-            onError = { error ->
-                if (currentState.isViewingDrafts) {
-                    setState { copy(isLoadingMessages = false, error = error.localised()) }
-                }
-            },
-        )
     }
 
     // -- syncing ---------------------------------------------------------------
@@ -507,7 +478,7 @@ class EmailViewModel(
 
             // Re-read wherever the user is: the sidebar's Drafts count follows
             // a draft saved on another device, not only the open list.
-            EmailRealtimeEvent.DraftsChanged -> loadDrafts()
+            EmailRealtimeEvent.DraftsChanged -> draftList.load()
 
             is EmailRealtimeEvent.FolderChanged -> {
                 refreshFolders()
@@ -863,7 +834,17 @@ class EmailViewModel(
         }
     }
 
-    internal fun reloadDrafts() = loadDrafts()
+    internal fun reloadDrafts() = draftList.load()
+
+    /** The clock the drafts cursor starts from — "now". */
+    internal fun now(): Long = nowMillis()
+
+    /** Runs [block] against a repository call, as the view model's own reads do. */
+    internal fun <T> launchRead(
+        block: suspend () -> ZillitResult<T>,
+        onSuccess: (T) -> Unit,
+        onError: (ZillitError) -> Unit,
+    ) = launchResult(block = block, onSuccess = onSuccess, onError = onError)
 
     internal fun update(reducer: EmailUiState.() -> EmailUiState) = setState(reducer)
 

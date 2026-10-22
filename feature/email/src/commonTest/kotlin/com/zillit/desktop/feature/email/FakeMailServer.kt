@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailSignature
 import com.zillit.desktop.feature.email.domain.FolderRepository
 import com.zillit.desktop.feature.email.domain.SignatureRepository
+import com.zillit.desktop.feature.email.domain.DraftPage
 import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailMessage
@@ -221,7 +222,26 @@ class FakeMailServer(
 
     // -- DraftRepository ---------------------------------------------------
 
-    override suspend fun drafts(beforeMillis: Long) = ZillitResult.Success(storedDrafts)
+    /** Rows per page; 0 (the default) answers every stored draft in one page. */
+    var draftPageSize: Int = 0
+
+    /** Cursors asked for, newest page first — the paging a test asserts on. */
+    val draftCursors = mutableListOf<Long>()
+
+    override suspend fun drafts(beforeMillis: Long, firstPage: Boolean): ZillitResult<DraftPage> {
+        draftCursors += beforeMillis
+        val newestFirst = storedDrafts.sortedByDescending { it.updatedAtMillis }
+        // Unpaged by default, so the tests that only care what is in Drafts
+        // get the lot whatever clock they run on.
+        if (draftPageSize <= 0) {
+            return ZillitResult.Success(DraftPage(drafts = newestFirst, total = newestFirst.size))
+        }
+        val older = newestFirst.filter { it.updatedAtMillis < beforeMillis }
+        val page = older.take(draftPageSize)
+        return ZillitResult.Success(
+            DraftPage(drafts = page, total = newestFirst.size, more = older.size > page.size),
+        )
+    }
 
     override suspend fun saveDraft(message: OutgoingEmail, uniqueId: String): ZillitResult<String> {
         draftGate?.await()

@@ -38,6 +38,7 @@ class DraftCountRenderTest {
             folders = folders,
             selectedFolderName = EmailFolder.INBOX,
             drafts = listOf(EmailDraft(id = "d1"), EmailDraft(id = "d2"), EmailDraft(id = "d3")),
+            draftsTotal = 3,
         )
         setContent {
             ZillitTheme(darkTheme = false, animateThemeChange = false) {
@@ -48,8 +49,28 @@ class DraftCountRenderTest {
         // Unmerged: the folder row is clickable, so it merges its children's
         // semantics into one node.
         onNodeWithTag(DRAFT_COUNT_TAG, useUnmergedTree = true).assertIsDisplayed()
-        onNodeWithTag(DRAFT_COUNT_TAG, useUnmergedTree = true).assertTextEquals("3")
+        onNodeWithTag(DRAFT_COUNT_TAG, useUnmergedTree = true).assertTextEquals("(3)")
     }
+
+    @Test
+    fun `the number is the server total, not the page that is loaded`() =
+        runSkikoComposeUiTest(size = Size(WIDTH, HEIGHT)) {
+            // The list pages from the server 50 at a time; counting the loaded
+            // rows would say 3 for a folder of 48 (web PR #6515).
+            val state = EmailUiState(
+                folders = folders,
+                selectedFolderName = EmailFolder.INBOX,
+                drafts = listOf(EmailDraft(id = "d1"), EmailDraft(id = "d2"), EmailDraft(id = "d3")),
+                draftsTotal = 48,
+            )
+            setContent {
+                ZillitTheme(darkTheme = false, animateThemeChange = false) {
+                    EmailScreen(state = state, onEvent = {})
+                }
+            }
+
+            onNodeWithTag(DRAFT_COUNT_TAG, useUnmergedTree = true).assertTextEquals("(48)")
+        }
 
     @Test
     fun `an empty Drafts folder shows no number, and never the server's unread`() =

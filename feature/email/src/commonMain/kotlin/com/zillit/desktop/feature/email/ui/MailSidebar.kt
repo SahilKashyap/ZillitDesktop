@@ -255,16 +255,19 @@ private fun EmailUiState.unreadBadge(folder: EmailFolder): Int =
  * says "there are three of these", not "three want your attention", which is
  * how every mail client draws the same number.
  *
- * The number is the drafts the mailbox holds — the newest page of
- * `email-draft`, which is exactly what the folder itself lists, so the count
- * and the list can never disagree.
+ * The number is every draft the mailbox holds (`summary.total_drafts`), not
+ * the page of them that is loaded: the list pages from the server 50 at a
+ * time, so counting the loaded rows would stop at 50 and only catch up as
+ * somebody scrolled.
+ *
+ * Shown in brackets, as the web shows it.
  */
 @Composable
 private fun DraftCount(count: Int, isActive: Boolean) {
     if (count <= 0) return
     val colors = ZillitTheme.colors
     ZillitText(
-        text = count.toString(),
+        text = "($count)",
         style = ZillitTheme.typography.labelSmall,
         color = if (isActive) colors.accentText else colors.textMuted,
         maxLines = 1,
@@ -280,7 +283,9 @@ private fun DraftCount(count: Int, isActive: Boolean) {
 private fun FolderTally(state: EmailUiState, folder: EmailFolder, isActive: Boolean) {
     val colors = ZillitTheme.colors
     if (folder.name.equals(EmailFolder.DRAFTS, ignoreCase = true)) {
-        DraftCount(state.drafts.size, isActive)
+        // The loaded rows are the floor: a service that sends no summary
+        // would otherwise show no number at all beside a full folder.
+        DraftCount(maxOf(state.draftsTotal, state.drafts.size), isActive)
     } else {
         ZillitBadge(
             count = state.unreadBadge(folder),

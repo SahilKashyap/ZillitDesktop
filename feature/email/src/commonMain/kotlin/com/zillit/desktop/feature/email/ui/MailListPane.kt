@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -618,6 +619,18 @@ private fun MailList(
     val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     val listState = rememberLazyListState()
     FollowNewestMail(listState, itemCount = state.rows.size, folder = state.selectedFolderName)
+    // Drafts are the one folder paged from the server; every other folder
+    // already holds all its rows, so nothing is asked for at the bottom.
+    val nearEnd by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            last >= listState.layoutInfo.totalItemsCount - LOAD_MORE_AHEAD
+        }
+    }
+    val wantsOlderDrafts = state.isViewingDrafts && state.draftsHaveMore && !state.isLoadingMoreDrafts
+    LaunchedEffect(nearEnd, wantsOlderDrafts) {
+        if (nearEnd && wantsOlderDrafts) onEvent(EmailEvent.LoadMoreDrafts)
+    }
 
     ZillitLazyColumn(
         state = listState,
@@ -652,6 +665,16 @@ private fun MailList(
                     loadAvatar = loadAvatar,
                     dragModifier = drag.source(row.id),
                 )
+            }
+        }
+        if (state.isViewingDrafts && state.isLoadingMoreDrafts) {
+            item(key = DRAFTS_FOOTER_KEY) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ZillitSpinner(size = 18.dp)
+                }
             }
         }
     }
@@ -748,3 +771,9 @@ private val EMPTY_ICON = 40.dp
 
 /** Rows of slack in "at the top" — `FollowLatest`'s own two. */
 private const val AT_TOP_SLACK = 2
+
+/** How near the bottom of Drafts asks for the page before it. */
+private const val LOAD_MORE_AHEAD = 5
+
+/** The spinner under a Drafts list fetching its next page. */
+private const val DRAFTS_FOOTER_KEY = "drafts-loading-more"

@@ -73,8 +73,16 @@ interface EmailRepository {
  */
 interface DraftRepository {
 
-    /** Saved drafts, newest first. Pass "now" for the newest page. */
-    suspend fun drafts(beforeMillis: Long): ZillitResult<List<EmailDraft>>
+    /**
+     * One page of saved drafts, newest first. Pass "now" for the newest page,
+     * then the oldest loaded draft's `updated` for the one before it — the
+     * cursor the web and iOS both page by.
+     *
+     * [firstPage] is what the offline copy is kept of: only the newest page is
+     * cached, so the Drafts folder still shows offline what it showed last
+     * time, and a later page cannot overwrite that with the middle of the list.
+     */
+    suspend fun drafts(beforeMillis: Long, firstPage: Boolean = true): ZillitResult<DraftPage>
 
     /**
      * Saves a new draft and returns its id.
