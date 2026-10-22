@@ -9,16 +9,20 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.location.domain.GroupBy
 import com.zillit.desktop.feature.location.domain.Folders
 import com.zillit.desktop.feature.location.domain.LocationBadges
+import com.zillit.desktop.feature.location.domain.LatLng
 import com.zillit.desktop.feature.location.domain.LocationFolder
 import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationPick
+import com.zillit.desktop.feature.location.domain.LocationPin
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
+import com.zillit.desktop.feature.location.domain.MovePlace
+import com.zillit.desktop.feature.location.domain.PickedLocationFile
 import kotlinx.coroutines.flow.conflate
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -39,6 +43,25 @@ class LocationViewModel(
     private val nowMillis: () -> Long,
     private val badges: LocationBadges = LocationBadges.None,
     private val fileCabinet: Boolean = false,
+    /**
+     * A picture of the map around a pin.
+     *
+     * The web snapshots its live mini-map with html2canvas; this client has
+     * no live map in a dialog, so the host fetches the same still the chat
+     * location share and Recce use. It is shown in the form and then stored
+     * as the record's `link_attachment`, so a pin costs one fetch, not two.
+     * A host without a maps key answers null and the place is saved without
+     * a picture.
+     */
+    private val mapSnapshot: suspend (LatLng) -> PickedLocationFile? = { null },
+    /**
+     * A picture of several pins at once — the map view of a tab.
+     *
+     * The same seam Recce draws its route picture with. A host without it
+     * leaves the map view to its numbered list, which is still the whole
+     * answer to "which places are pinned, and where".
+     */
+    private val pinsMap: suspend (pins: List<LatLng>) -> ByteArray? = { null },
 ) : ZillitViewModel<LocationUiState, LocationEvent, LocationEffect>(LocationUiState()) {
 
     fun start() {
@@ -116,11 +139,16 @@ class LocationViewModel(
             is LocationEvent.SelectStatus -> {
                 setState { copy(status = event.status, gallery = null, browsing = null) }
                 refresh()
+                // The map view belongs to a tab; the other tab's pins are not
+                // this one's, so they are re-read rather than left on screen.
+                if (currentState.map.open) loadPins()
             }
             is LocationEvent.SelectGroupBy -> setState { copy(groupBy = event.by) }
             is LocationEvent.Search -> setState { copy(query = event.query) }
             LocationEvent.Refresh -> refresh()
             LocationEvent.DismissError -> setState { copy(error = null) }
+            LocationEvent.ToggleMapView -> toggleMapView()
+            is LocationEvent.OpenPin -> openPin(event.pin)
             is LocationEvent.OpenFolder -> openFolder(event.folder)
             is LocationEvent.OpenPick -> openGallery(event.pick)
             LocationEvent.Back -> setState { copy(gallery = null) }
@@ -141,6 +169,9 @@ class LocationViewModel(
                 )
             }
             is LocationEvent.MoveSelected -> moveSelected(event.to)
+            is LocationEvent.MovePlaceChanged -> movePlaceChanged(event.place)
+            LocationEvent.ConfirmMove -> confirmMove()
+            LocationEvent.CancelMove -> setState { copy(moving = null) }
             LocationEvent.DeleteSelected -> {
                 val ids = state.value.gallery?.selected.orEmpty().toList()
                 if (ids.isNotEmpty()) setState { copy(confirmDelete = ids) }
@@ -160,6 +191,7 @@ class LocationViewModel(
             is LocationEvent.DiscussionDraftChanged -> setState { copy(discussionDraft = event.text) }
             LocationEvent.SendDiscussion -> sendDiscussion()
             is LocationEvent.Download -> download(event.record)
+            is LocationEvent.OpenUrl -> sendEffect(LocationEffect.OpenUrl(event.url))
             LocationEvent.PickFile -> guardPost { sendEffect(LocationEffect.PickFile) }
             is LocationEvent.FilePicked -> {
                 if (!event.file.isImage && !event.file.isVideo) {
@@ -170,7 +202,7 @@ class LocationViewModel(
             }
             LocationEvent.NewLink -> guardPost { setState { copy(editor = seededEditor()) } }
             is LocationEvent.Edit -> guardPost { setState { copy(editor = LocationEditor.from(event.record)) } }
-            is LocationEvent.EditorChanged -> setState { copy(editor = event.editor) }
+            is LocationEvent.EditorChanged -> editorChanged(event.editor)
             LocationEvent.Save -> save()
             LocationEvent.CancelEdit -> setState { copy(editor = null) }
         }
@@ -188,6 +220,43 @@ class LocationViewModel(
             sceneNumber = folder.sceneNumbers.singleOrNull().orEmpty(),
             episodes = folder.episodes.singleOrNull().orEmpty(),
         )
+    }
+
+    /** Swaps the folder grid for the map of this tab's pinned locations. */
+    private fun toggleMapView() {
+        val opening = !currentState.map.open
+        setState { copy(map = map.copy(open = opening)) }
+        if (opening) loadPins()
+    }
+
+    private fun loadPins() {
+        val status = currentState.status
+        setState { copy(map = map.copy(loading = true, picture = null)) }
+        launch {
+            val pins = repository.mapPins(status).orError().orEmpty()
+            // A tab switched while this ran; those pins are the other tab's.
+            if (currentState.status != status) return@launch
+            setState { copy(map = map.copy(loading = false, pins = pins)) }
+            val picture = runCatching { pinsMap(pins.map { it.pin }) }.getOrNull()
+            setState {
+                if (status != this.status || map.pins !== pins) this else copy(map = map.copy(picture = picture))
+            }
+        }
+    }
+
+    /**
+     * A pin opens its folder — the web's View on a shoot location.
+     *
+     * The pin names its own shortlist, which need not be the open one, so the
+     * tab moves with it before the gallery is read.
+     */
+    private fun openPin(pin: LocationPin) {
+        if (pin.status != currentState.status) {
+            setState { copy(status = pin.status, browsing = null) }
+            refresh()
+        }
+        setState { copy(map = map.copy(open = false)) }
+        openGallery(LocationPick(pin.location, pin.sceneNumber))
     }
 
     private fun refresh() {
@@ -332,12 +401,80 @@ class LocationViewModel(
         }
     }
 
+    /**
+     * Moving the ticked records.
+     *
+     * A move to Shortlist or Final asks where the location is first: the Map
+     * tool draws the shortlisted and final places, and a move otherwise
+     * leaves them behind, since the server drops `link`, `location` and
+     * `link_attachment` on a move (web PR #6521). Picking is optional — the
+     * form's Move button moves with whatever it has.
+     */
     private fun moveSelected(to: LocationStatus) {
+        val s = state.value
+        val open = s.gallery ?: return
+        if (open.records.none { it.id in open.selected }) return
+        if (to in PLACE_ON_MOVE) {
+            // The folder's own pin, if one of its records already has one:
+            // the Move form opens on where the location is, not on nothing.
+            val known = open.records.firstNotNullOfOrNull { it.pin }
+            setState { copy(moving = MoveRequest(to, PlaceEditor(pin = known, address = open.records
+                .firstOrNull { it.pin != null }?.address.orEmpty()))) }
+            if (known != null) fetchMapForMove(known)
+            return
+        }
+        moveNow(to, null)
+    }
+
+    private fun movePlaceChanged(place: PlaceEditor) {
+        val request = currentState.moving ?: return
+        val moved = place.pin != request.place.pin
+        setState {
+            copy(
+                moving = request.copy(
+                    place = place.copy(
+                        moved = request.place.moved || moved,
+                        map = if (moved) null else request.place.map,
+                        mapKnown = if (moved) place.pin == null else request.place.mapKnown,
+                    ),
+                ),
+            )
+        }
+        if (moved) place.pin?.let(::fetchMapForMove)
+    }
+
+    private fun fetchMapForMove(pin: LatLng) {
+        launch {
+            val picture = runCatching { mapSnapshot(pin) }.getOrNull()
+            setState {
+                val request = moving ?: return@setState this
+                if (request.place.pin != pin) return@setState this
+                copy(moving = request.copy(place = request.place.copy(map = picture?.bytes, mapKnown = true)))
+            }
+        }
+    }
+
+    private fun confirmMove() {
+        val request = currentState.moving ?: return
+        setState { copy(moving = null) }
+        moveNow(request.to, request.place.takeIf { it.moved && it.hasPin })
+    }
+
+    /** The move itself, with a place when the Move form picked one. */
+    private fun moveNow(to: LocationStatus, place: PlaceEditor?) {
         val s = state.value
         val open = s.gallery ?: return
         val records = open.records.filter { it.id in open.selected }
         if (records.isEmpty()) return
-        run(str(S.desktop_email_moved_to, to.label)) { repository.move(records, s.status, to) }
+        run(str(S.desktop_email_moved_to, to.label)) {
+            val pin = place?.pin
+            val picked = if (pin == null) {
+                null
+            } else {
+                MovePlace(pin = pin, link = place.link, mapImage = storeMap(place))
+            }
+            repository.move(records, s.status, to, picked)
+        }
     }
 
     private fun deleteSelected() {
@@ -400,12 +537,59 @@ class LocationViewModel(
             is ZillitResult.Success -> transfer.saveAndOpen(attachment.name.ifBlank { fallbackName }, bytes.data)
         }
 
+    /**
+     * The form's place field changed.
+     *
+     * A pin that moved is remembered as moved — only then is anything
+     * place-shaped sent — and its picture is fetched once, to be shown in
+     * the form now and stored with the record on save.
+     */
+    private fun editorChanged(next: LocationEditor) {
+        val previous = currentState.editor
+        val moved = previous != null && next.place.pin != previous.place.pin
+        val place = if (moved) {
+            next.place.copy(moved = true, map = null, mapKnown = next.place.pin == null)
+        } else {
+            next.place
+        }
+        setState {
+            copy(
+                editor = next.copy(
+                    place = place,
+                    // The pin's address fills an empty Address field, as the web does.
+                    address = next.address.ifBlank { if (moved) place.address else "" },
+                ),
+            )
+        }
+        if (moved) place.pin?.let(::fetchMapForEditor)
+    }
+
+    private fun fetchMapForEditor(pin: LatLng) {
+        launch {
+            val picture = runCatching { mapSnapshot(pin) }.getOrNull()
+            setState {
+                val open = editor ?: return@setState this
+                if (open.place.pin != pin) return@setState this
+                copy(editor = open.copy(place = open.place.copy(map = picture?.bytes, mapKnown = true)))
+            }
+        }
+    }
+
+    /** Puts a picked place's map picture in the store; null when there is none to store. */
+    private suspend fun storeMap(place: PlaceEditor): MediaAttachment? {
+        val bytes = place.map ?: return null
+        val file = PickedLocationFile(MAP_FILE_NAME, "image/png", bytes)
+        return (transfer.upload(file) as? ZillitResult.Success)?.data
+    }
+
     /** The web's form checks, in its order; a shortlisted/rejected record needs a file or a link. */
     private fun saveProblem(editor: LocationEditor, status: LocationStatus): String? {
-        val bare = editor.id == null && editor.file == null && editor.link.isBlank()
+        val bare = editor.id == null && editor.file == null && !editor.place.hasPin
         return when {
             editor.location.isBlank() -> str(S.desktop_location_name_required)
             bare && status != LocationStatus.Selected -> str(S.desktop_location_media_required)
+            // A link entry is only its link, so it cannot lose its pin.
+            editor.isLinkOnly && !editor.place.hasPin -> str(S.desktop_location_link_required)
             editor.episodes.isNotBlank() && !editor.episodes.matches(EPISODES) ->
                 str(S.desktop_location_episodes_format)
             else -> null
@@ -423,8 +607,15 @@ class LocationViewModel(
         setState { copy(editor = editor.copy(saving = true), busy = true) }
         launch {
             val id = editor.id
-            val outcome =
-                if (id != null) repository.update(id, editor.toDraft(s.status)) else createNew(editor, s.status)
+            // A pin set or moved in this form sends its coordinates and a
+            // fresh picture of the map; one left alone sends neither, and
+            // the record keeps the place it had.
+            val mapImage = if (editor.place.moved) storeMap(editor.place) else null
+            val outcome = if (id != null) {
+                repository.update(id, editor.toDraft(s.status), mapImage)
+            } else {
+                createNew(editor, s.status, mapImage)
+            }
             when (outcome) {
                 is ZillitResult.Failure -> setState {
                     copy(busy = false, editor = editor.copy(saving = false), error = outcome.error.localised())
@@ -442,15 +633,26 @@ class LocationViewModel(
         }
     }
 
-    /** Upload first (if there is a file), then create the record pointing at it. */
-    private suspend fun createNew(editor: LocationEditor, status: LocationStatus): ZillitResult<Unit> {
+    /**
+     * Upload first (if there is a file), then create the record pointing at
+     * it.
+     *
+     * A record may carry a file *and* a place: the file in `attachment`, the
+     * map picture in `link_attachment`. With neither it is a place on its
+     * own — the web's link entry, whose card is the map picture.
+     */
+    private suspend fun createNew(
+        editor: LocationEditor,
+        status: LocationStatus,
+        mapImage: MediaAttachment?,
+    ): ZillitResult<Unit> {
         val stored = editor.file?.let { file ->
             when (val up = transfer.upload(file)) {
                 is ZillitResult.Failure -> return up
                 is ZillitResult.Success -> up.data
             }
         }
-        return repository.create(editor.toDraft(status), stored, null).map { }
+        return repository.create(editor.toDraft(status), stored, mapImage).map { }
     }
 
     private fun run(notice: String, block: suspend () -> ZillitResult<Unit>) {
@@ -494,12 +696,20 @@ class LocationViewModel(
         LocationEvent.PdfSelected, LocationEvent.ToggleSelecting, is LocationEvent.ToggleSelect,
         is LocationEvent.DiscussionDraftChanged, LocationEvent.SendDiscussion,
         LocationEvent.PickFile, is LocationEvent.FilePicked, LocationEvent.NewLink, is LocationEvent.Edit,
-        is LocationEvent.EditorChanged, LocationEvent.Save -> true
+        is LocationEvent.EditorChanged, LocationEvent.Save,
+        is LocationEvent.MovePlaceChanged, LocationEvent.ConfirmMove, LocationEvent.CancelMove -> true
+        LocationEvent.ToggleMapView, is LocationEvent.OpenPin -> false
         else -> false
     }
 
     private companion object {
         const val PAGE = 50
         val EPISODES = Regex("[0-9,\\s]+")
+
+        /** The shortlists the Map tool draws, and so the ones a move asks a place for. */
+        val PLACE_ON_MOVE = setOf(LocationStatus.Shortlisted, LocationStatus.Published)
+
+        /** What the map picture is stored under; the server only reads the extension. */
+        const val MAP_FILE_NAME = "location-map.png"
     }
 }

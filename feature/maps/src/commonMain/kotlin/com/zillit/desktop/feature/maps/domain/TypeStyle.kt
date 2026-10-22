@@ -23,7 +23,16 @@ val DEFAULT_TYPE_STYLES: Map<String, TypeStyle> = mapOf(
     "Dressing Room" to TypeStyle("D", "#E91E63"),
     "Production Office" to TypeStyle("O", "#607D8B"),
     "Other" to TypeStyle("O", "#795548"),
+    // Pins from the Location tool, read-only here (web PR #6517)
+    SHOOT_LOCATION_FINAL to TypeStyle("F", "#C0392B"),
+    SHOOT_LOCATION_SHORTLISTED to TypeStyle("S", "#F99300"),
 )
+
+/** The type a Final shoot location's pin wears on the map. */
+const val SHOOT_LOCATION_FINAL = "Final Shoot Location"
+
+/** The type a Shortlisted shoot location's pin wears on the map. */
+const val SHOOT_LOCATION_SHORTLISTED = "Shortlisted Shoot Location"
 
 /** The `default` entry — a navy Z. */
 val FALLBACK_TYPE_STYLE = TypeStyle("Z", "#1B4F72")

@@ -113,6 +113,16 @@ data class MapLocation(
     val centerPointType: CenterPointType = CenterPointType.Point,
     val intersection: IntersectionStreets? = null,
     val attachments: List<MapAttachment> = emptyList(),
+    /**
+     * Drawn, but not the map's to change.
+     *
+     * A shoot location from the Location tool: it is edited there, never
+     * through the map's API, so it cannot be dragged, edited or deleted here
+     * and its info window offers View instead (web PR #6517).
+     */
+    val readOnly: Boolean = false,
+    /** For a read-only shoot location: which Location tool shortlist it is in. */
+    val shootStatus: String = "",
 ) {
     val displayName: String
         get() = name.ifBlank {

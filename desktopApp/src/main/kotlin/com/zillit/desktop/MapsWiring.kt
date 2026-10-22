@@ -32,15 +32,22 @@ import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.maps.data.MapRepositoryImpl
+import com.zillit.desktop.feature.location.data.LocationRepositoryImpl
+import com.zillit.desktop.feature.location.domain.LocationStatus
+import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapAttachment
 import com.zillit.desktop.feature.maps.domain.MapBadges
 import com.zillit.desktop.feature.maps.domain.MapHost
+import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.MapLocator
 import com.zillit.desktop.feature.maps.domain.MapPhotos
 import com.zillit.desktop.feature.maps.domain.MapPrefs
 import com.zillit.desktop.feature.maps.domain.MapShareHost
+import com.zillit.desktop.feature.maps.domain.MapShootLocations
 import com.zillit.desktop.feature.maps.domain.MapStaticMaps
+import com.zillit.desktop.feature.maps.domain.SHOOT_LOCATION_FINAL
+import com.zillit.desktop.feature.maps.domain.SHOOT_LOCATION_SHORTLISTED
 import com.zillit.desktop.feature.maps.domain.PickedPhoto
 import com.zillit.desktop.feature.maps.domain.SharePerson
 import com.zillit.desktop.feature.maps.ui.MapToolProvider
@@ -95,9 +102,55 @@ internal fun AppGraph.Ready.buildMaps(permissions: () -> ProjectPermissions): Ma
         prefs = mapPrefs(),
         staticMaps = mapStaticMaps(),
         locator = mapLocator(),
+        shootLocations = mapShootLocations(permissions),
     ),
     rights = rightsRequests,
 )
+
+/**
+ * The Location tool's Shortlisted and Final places, shaped as map locations.
+ *
+ * Read straight from the location service, as the web's `useShootLocations`
+ * does, and only for a viewer who may see that tool — the map must not show
+ * places its reader has no right to (web PR #6517). They are drawn
+ * `readOnly`: the map has no call that could save one.
+ */
+private fun AppGraph.Ready.mapShootLocations(
+    permissions: () -> ProjectPermissions,
+): MapShootLocations = object : MapShootLocations {
+
+    private val repository = LocationRepositoryImpl(
+        apiClient,
+        config,
+        newUniqueId = { UUID.randomUUID().toString() },
+        currentProjectId = { projectContext?.context?.value?.project?.projectId },
+    )
+
+    override suspend fun pins(): List<MapLocation> {
+        if (!permissions().canView(LocationViewer.TOOL_IDENTIFIER)) return emptyList()
+        val pins = (repository.mapPins() as? ZillitResult.Success)?.data ?: return emptyList()
+        return pins.map { pin ->
+            MapLocation(
+                // Prefixed: a location record and a map location could share
+                // an id, and the map looks them up by id alone.
+                id = "location-tool-${pin.id}",
+                cityId = "",
+                name = pin.location,
+                type = if (pin.status == LocationStatus.Published) {
+                    SHOOT_LOCATION_FINAL
+                } else {
+                    SHOOT_LOCATION_SHORTLISTED
+                },
+                description = pin.description,
+                address = pin.address.ifBlank { pin.city },
+                sceneNumber = pin.sceneNumber,
+                point = LatLng(pin.pin.lat, pin.pin.long),
+                readOnly = true,
+                shootStatus = pin.status.wire,
+            )
+        }
+    }
+}
 
 internal fun AppGraph.Ready.mapToolProvider(viewModel: MapViewModel): MapToolProvider = MapToolProvider(
     viewModel = viewModel,

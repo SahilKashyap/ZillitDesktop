@@ -4,6 +4,7 @@ import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
@@ -11,6 +12,7 @@ import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.location.data.LocationRepositoryImpl
+import com.zillit.desktop.feature.location.domain.LatLng
 import com.zillit.desktop.feature.location.domain.LocationBadgeLeaf
 import com.zillit.desktop.feature.location.domain.LocationBadges
 import com.zillit.desktop.feature.location.domain.LocationPick
@@ -22,6 +24,9 @@ import com.zillit.desktop.feature.location.domain.PickedLocationFile
 import com.zillit.desktop.feature.location.ui.LocationToolProvider
 import com.zillit.desktop.feature.location.ui.LocationViewModel
 import com.zillit.desktop.feature.location.ui.decodeImageBitmap
+import io.ktor.client.request.get
+import io.ktor.client.statement.readRawBytes
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -119,7 +124,52 @@ internal fun AppGraph.Ready.buildLocation(permissions: () -> ProjectPermissions)
     },
     nowMillis = System::currentTimeMillis,
     badges = locationBadges(),
+    // The web snapshots its live mini-map with html2canvas; there is no live
+    // map in a dialog here, so a place's picture is the same Google still
+    // the chat location share and Recce draw.
+    mapSnapshot = { pin ->
+        fetchStaticMapBytes(this, pin.lat, pin.long)
+            ?.let { PickedLocationFile(LOCATION_MAP_NAME, "image/png", it) }
+    },
+    pinsMap = { pins -> locationPinsPicture(pins) },
 )
+
+/**
+ * One still of every pinned location in a tab, numbered as the list beside
+ * it is.
+ *
+ * Static Maps labels a marker with one character, so places past the ninth
+ * are drawn unlabelled — the same limit Recce's route picture lives with.
+ * No key, or no pins, means no picture: the map view then shows its list
+ * alone, which still says which places are pinned and where.
+ */
+private suspend fun AppGraph.Ready.locationPinsPicture(pins: List<LatLng>): ByteArray? {
+    val key = remoteConfigRepository.credentials.value?.googleMapsKey?.takeIf { it.isNotBlank() } ?: return null
+    if (pins.isEmpty()) return null
+    val markers = pins.mapIndexed { index, pin ->
+        val label = (index + 1).takeIf { it <= MAX_PIN_LABEL }?.let { "label:$it%7C" }.orEmpty()
+        "&markers=color:0x$LOCATION_PIN_COLOUR%7C$label${pin.lat},${pin.long}"
+    }.joinToString("")
+    val single = if (pins.size == 1) "&zoom=14" else ""
+    val url = "https://maps.googleapis.com/maps/api/staticmap?size=1200x480&scale=2$single$markers&key=$key"
+    return runCatching {
+        val response = httpClient.get(url)
+        if (response.status.isSuccess()) {
+            response.readRawBytes()
+        } else {
+            ZillitLog.w("Location") { "pins map refused: ${response.status}" }
+            null
+        }
+    }.onFailure { ZillitLog.w("Location") { "pins map failed: $it" } }.getOrNull()
+}
+
+/** The brand amber every Zillit pin is drawn in. */
+private const val LOCATION_PIN_COLOUR = "F99300"
+
+/** Static Maps labels one character per marker. */
+private const val MAX_PIN_LABEL = 9
+
+private const val LOCATION_MAP_NAME = "location-map.png"
 
 /**
  * The tool's ledger rows as leaves, and its two reads.
@@ -220,4 +270,5 @@ internal fun AppGraph.Ready.locationProvider(viewModel: LocationViewModel,
     resolveUser = { userId ->
         projectContext?.context?.value?.user(userId)?.authorLine()
     },
+    onOpenUrl = { url -> openInBrowser(url) },
 )

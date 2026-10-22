@@ -13,9 +13,11 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.location.domain.LocationDraft
 import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
+import com.zillit.desktop.feature.location.domain.LocationPin
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.MediaAttachment
+import com.zillit.desktop.feature.location.domain.MovePlace
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
@@ -126,8 +128,8 @@ class LocationRepositoryImpl(
             parseMedia(first as? JsonObject)
         }
 
-    override suspend fun update(id: String, draft: LocationDraft): ZillitResult<Unit> =
-        write(HttpVerb.Put, base, editWire(draft, id))
+    override suspend fun update(id: String, draft: LocationDraft, linkPreview: MediaAttachment?):
+        ZillitResult<Unit> = write(HttpVerb.Put, base, editWire(draft, id, linkPreview))
 
     override suspend fun delete(ids: List<String>, status: LocationStatus): ZillitResult<Unit> =
         write(
@@ -140,7 +142,7 @@ class LocationRepositoryImpl(
         )
 
     override suspend fun move(records: List<LocationMedia>, from: LocationStatus,
-        to: LocationStatus): ZillitResult<Unit> {
+        to: LocationStatus, place: MovePlace?): ZillitResult<Unit> {
         // The web moves one folder at a time; records from several folders
         // go in as many calls, each naming its own old folder.
         val groups = records.groupBy { Triple(it.location, it.sceneNumber, it.episodes.firstOrNull().orEmpty()) }
@@ -150,13 +152,26 @@ class LocationRepositoryImpl(
                 HttpVerb.Post,
                 "$base/move",
                 RequestModule.ProjectUser,
-                moveWire(group.map { it.id }, sample, to),
+                moveWire(group.map { it.id }, sample, to, place),
                 queryParameters = mapOf("status" to from.wire),
             ).mapData { }
             if (result is ZillitResult.Failure) return result
         }
         return ZillitResult.Success(Unit)
     }
+
+    /**
+     * `GET /v2/location/map-pins[?status=]` — the pinned locations.
+     *
+     * One row per place, Final winning a place that is in both shortlists;
+     * `status` narrows it to one stage. New with the map picker (web PR
+     * #6517, narrowed by `status` in #6521), so a service that has not got it
+     * yet answers 404 and the map simply draws nothing.
+     */
+    override suspend fun mapPins(status: LocationStatus?): ZillitResult<List<LocationPin>> = get(
+        "$base/map-pins",
+        status?.let { mapOf("status" to it.wire) } ?: emptyMap(),
+    ).mapData { data -> (data as? JsonArray).items().mapNotNull { parseLocationPin(it as? JsonObject) } }
 
     /**
      * `GET /v2/location/chat/{recordId}/{before}/previous?limit=50&page=`

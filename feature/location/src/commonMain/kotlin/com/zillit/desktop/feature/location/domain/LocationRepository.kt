@@ -55,16 +55,40 @@ interface LocationRepository {
         fileCabinet: Boolean = false,
     ): ZillitResult<List<LocationMedia>>
 
-    /** Creates one record; the stored file rides in `attachment`, a URL in `link`. */
+    /**
+     * Creates one record; the stored file rides in `attachment`, a URL in
+     * `link`, and the link's preview picture — or the map around a picked
+     * place — in `link_attachment`. A record may now carry a file *and* a
+     * link; see [LocationMedia.isLink].
+     */
     suspend fun create(draft: LocationDraft, attachment: MediaAttachment?,
         linkPreview: MediaAttachment?): ZillitResult<LocationMedia?>
 
-    suspend fun update(id: String, draft: LocationDraft): ZillitResult<Unit>
+    /** [linkPreview] is sent only when the pin moved; otherwise the stored picture stands. */
+    suspend fun update(id: String, draft: LocationDraft,
+        linkPreview: MediaAttachment? = null): ZillitResult<Unit>
 
     suspend fun delete(ids: List<String>, status: LocationStatus): ZillitResult<Unit>
 
-    /** Moves records to another shortlist, keeping their folder. */
-    suspend fun move(records: List<LocationMedia>, from: LocationStatus, to: LocationStatus): ZillitResult<Unit>
+    /**
+     * Moves records to another shortlist, keeping their folder.
+     *
+     * [place] is a place picked in the Move form: a move otherwise drops the
+     * link and the pin, and the web's Move to Shortlist / Final asks where
+     * the location is so the Map tool can draw it (PR #6521).
+     */
+    suspend fun move(records: List<LocationMedia>, from: LocationStatus, to: LocationStatus,
+        place: MovePlace? = null): ZillitResult<Unit>
+
+    /**
+     * Shortlisted and Final locations that carry a pin, one per place.
+     *
+     * [status] narrows it to one shortlist — the Location tool's own map view
+     * of a tab. Without it the Map tool's read: both stages, Final winning a
+     * place that is in both.
+     */
+    suspend fun mapPins(status: LocationStatus? = null): ZillitResult<List<LocationPin>> =
+        ZillitResult.Success(emptyList())
 
     /** Asks the server for a PDF of the records; answers a stored file. */
     suspend fun pdf(ids: List<String>, includeDetails: Boolean): ZillitResult<MediaAttachment>

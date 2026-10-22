@@ -20,7 +20,27 @@ class MapHost(
     val prefs: MapPrefs = MapPrefs.InMemory(),
     val staticMaps: MapStaticMaps? = null,
     val locator: MapLocator? = null,
+    val shootLocations: MapShootLocations? = null,
 )
+
+/**
+ * Shortlisted and Final locations from the Location tool, drawn on the map
+ * beside its own (web PR #6517).
+ *
+ * A seam rather than a repository call for the usual reason: they belong to
+ * another service and another tool, with its own view right, and this module
+ * knows nothing about either. A host that does not provide one draws only
+ * the map's own locations.
+ */
+interface MapShootLocations {
+
+    /**
+     * The pinned shoot locations, shaped as map locations and flagged
+     * [MapLocation.readOnly]. Empty for a viewer who cannot see the Location
+     * tool, and for a production with nothing pinned.
+     */
+    suspend fun pins(): List<MapLocation>
+}
 
 /** A photo chosen on this machine, before it is stored. */
 class PickedPhoto(val name: String, val contentType: String, val bytes: ByteArray) {

@@ -29,6 +29,8 @@ class LocationToolProvider(
     /** A stored image decoded — the thumbnail for tiles, the full file for the viewer. */
     private val loadImage: suspend (MediaAttachment, preview: Boolean) -> ImageBitmap?,
     private val resolveUser: (String) -> String?,
+    /** Opens a record's link, or a place's Google Maps link, in the browser. */
+    private val onOpenUrl: (String) -> Unit = {},
 ) : ToolProvider {
 
     override val path: String = LOCATION_PATH
@@ -51,6 +53,7 @@ class LocationToolProvider(
                     LocationEffect.PickFile -> onPickFile { picked ->
                         if (picked != null) viewModel.onEvent(LocationEvent.FilePicked(picked))
                     }
+                    is LocationEffect.OpenUrl -> onOpenUrl(effect.url)
                 }
             }
         }

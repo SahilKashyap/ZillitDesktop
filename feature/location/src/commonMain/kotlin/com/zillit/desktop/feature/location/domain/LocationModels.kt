@@ -107,8 +107,15 @@ data class LocationMedia(
     val countryCode: String,
     val link: String,
     val attachment: MediaAttachment?,
-    /** The link's preview image, when the record is a URL. */
+    /** The link's preview image, or the map picture of a picked place. */
     val linkAttachment: MediaAttachment?,
+    /**
+     * Where the place is, when one was picked on the map.
+     *
+     * The link is then the Google Maps link of these coordinates, and
+     * [linkAttachment] the picture of the map around them.
+     */
+    val pin: LatLng? = null,
     val status: LocationStatus,
     val uploadedBy: String,
     val createdMs: Long,
@@ -116,10 +123,28 @@ data class LocationMedia(
     val deleted: Boolean,
     val discussion: Boolean,
 ) {
-    val isLink: Boolean get() = link.isNotBlank()
+    /**
+     * A **link entry**: the record is only its link, and its card shows the
+     * link's preview picture.
+     *
+     * Not simply "has a link" any more. Since the web moved the link out of
+     * the attach menu and into the form (PR #6516) a photo or a video can
+     * carry a link of its own — a place's listing page beside its photos —
+     * and those are shown as the media they are, with the link offered beside
+     * them. The web draws the same line (`isLinkEntry`): a link and no media
+     * of its own.
+     */
+    val isLink: Boolean get() = link.isNotBlank() && attachment == null
+
+    /** A link worth offering on a media record's card, next to the picture. */
+    val hasLink: Boolean get() = link.isNotBlank()
+
     val visual: MediaAttachment? get() = attachment ?: linkAttachment
     val edited: Boolean get() = updatedMs > createdMs
 }
+
+/** A pinned place — `location: { lat, long }` on the wire. */
+data class LatLng(val lat: Double, val long: Double)
 
 /** What the create/edit form collects. */
 data class LocationDraft(
@@ -135,9 +160,52 @@ data class LocationDraft(
     val countryCode: String = "",
     val address: String = "",
     val link: String = "",
+    /**
+     * Edit only: asks the server to drop the link.
+     *
+     * An empty `link` is not the same thing — the server reads it as "leave
+     * what is there" — so a cleared link has to say so explicitly, and it can
+     * only be dropped from an entry that has media of its own (a link entry
+     * is nothing without its link).
+     */
+    val removeLink: Boolean = false,
+    /** The place picked on the map; sent as `location: { lat, long }`. */
+    val pin: LatLng? = null,
     val status: LocationStatus = LocationStatus.Selected,
 ) {
     val episodeList: List<String> get() = episodes.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+}
+
+/**
+ * A place picked in the Move form, carried onto every entry in the move.
+ *
+ * [link] is always the Google Maps link of [pin]: the web stopped storing
+ * whatever URL was typed and derives the link from the coordinates
+ * (PR #6521). [mapImage] is the picture of the map around the pin.
+ */
+data class MovePlace(val pin: LatLng, val link: String, val mapImage: MediaAttachment?)
+
+/**
+ * One pinned location as `/v2/location/map-pins` answers it: a place the
+ * Location tool holds, with coordinates, ready to be drawn on a map.
+ */
+data class LocationPin(
+    val id: String,
+    val location: String,
+    val sceneNumber: String,
+    val address: String,
+    val city: String,
+    val description: String,
+    val link: String,
+    val pin: LatLng,
+    val status: LocationStatus,
+) {
+    /** "Millennium Bridge · SC 14" — what a marker is labelled with. */
+    val label: String
+        get() = listOfNotNull(
+            location.takeIf { it.isNotBlank() },
+            sceneNumber.takeIf { it.isNotBlank() }?.let { str(S.desktop_scene_abbrev, it) },
+        ).joinToString(" · ").ifBlank { str(S.not_assigned) }
 }
 
 /** A picked file for upload. */

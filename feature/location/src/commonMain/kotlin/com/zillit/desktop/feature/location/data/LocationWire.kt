@@ -1,11 +1,19 @@
+// The tool's whole wire in one file: a body builder and a parser per shape,
+// each a few lines, read side by side. Splitting them would put a payload
+// and the answer it provokes in different files.
+@file:Suppress("TooManyFunctions")
+
 package com.zillit.desktop.feature.location.data
 
 import kotlinx.serialization.json.contentOrNull
 import com.zillit.desktop.feature.location.domain.LocationMessage
 import com.zillit.desktop.feature.location.domain.Folders
 import com.zillit.desktop.feature.location.domain.LocationDraft
+import com.zillit.desktop.feature.location.domain.LatLng
 import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
+import com.zillit.desktop.feature.location.domain.LocationPin
+import com.zillit.desktop.feature.location.domain.MovePlace
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 import kotlinx.serialization.json.JsonArray
@@ -34,20 +42,24 @@ internal fun createWire(
         // Create sends the episodes as an ARRAY; edit sends the string.
         put("episode", buildJsonArray { draft.episodeList.forEach { add(JsonPrimitive(it)) } })
     }
-    when {
-        attachment != null -> put("attachment", attachmentWire(attachment))
-        linkPreview != null -> put("link_attachment", attachmentWire(linkPreview))
-        // A folder-only record (no media, allowed on `selected`) omits both.
-        else -> Unit
-    }
+    // Both, not one or the other: since the link became a form field
+    // (web PR #6516) a photo can carry a link too, and a place picked on the
+    // map sends the map's picture as `link_attachment` beside the photo.
+    // A folder-only record (no media, allowed on `selected`) omits both.
+    if (attachment != null) put("attachment", attachmentWire(attachment))
+    if (linkPreview != null) put("link_attachment", attachmentWire(linkPreview))
 }
 
 /** `createModal(value, 'edit')` — `locationIds`, no `unique_id`, no `attachment`, episode as typed. */
-internal fun editWire(draft: LocationDraft, id: String): JsonObject = buildJsonObject {
-    putBase(draft)
-    if (draft.episodes.isNotBlank()) put("episode", draft.episodes.trim())
-    put("locationIds", buildJsonArray { add(JsonPrimitive(id)) })
-}
+internal fun editWire(draft: LocationDraft, id: String, linkPreview: MediaAttachment? = null): JsonObject =
+    buildJsonObject {
+        putBase(draft)
+        if (draft.episodes.isNotBlank()) put("episode", draft.episodes.trim())
+        // A pin moved in the form sends a fresh picture of the map; one left
+        // alone sends none, and the server keeps the picture it has.
+        if (linkPreview != null) put("link_attachment", attachmentWire(linkPreview))
+        put("locationIds", buildJsonArray { add(JsonPrimitive(id)) })
+    }
 
 /**
  * `createModal(value, 'moveByImage')`: the record's own metadata, the OLD
@@ -55,7 +67,13 @@ internal fun editWire(draft: LocationDraft, id: String): JsonObject = buildJsonO
  * between shortlists keeps the folder), `ids`, and `generatepdf:false`.
  * The name is NOT title-cased here — the web passes it raw.
  */
-internal fun moveWire(ids: List<String>, sample: LocationMedia, to: LocationStatus): JsonObject = buildJsonObject {
+internal fun moveWire(
+    ids: List<String>,
+    sample: LocationMedia,
+    to: LocationStatus,
+    /** A place picked in the Move form; every moved entry gets it. */
+    place: MovePlace? = null,
+): JsonObject = buildJsonObject {
     put("scene_number", sample.sceneNumber)
     put("city", sample.city)
     put("description", sample.description)
@@ -74,6 +92,21 @@ internal fun moveWire(ids: List<String>, sample: LocationMedia, to: LocationStat
         put("new_episode", ep)
         put("episode", ep)
     }
+    // A move drops `link`, `location` and `link_attachment` by default — the
+    // record keeps what it had. A place picked in the Move form puts them
+    // back, onto every entry in the move (web PR #6521, `keepPlace`).
+    place?.let { picked ->
+        put("link", picked.link)
+        put("location", pinWire(picked.pin))
+        picked.mapImage?.let { put("link_attachment", attachmentWire(it)) }
+    }
+}
+
+
+/** `location: { lat, long }` — `long`, not `lng`, which is what the wire names it. */
+internal fun pinWire(pin: LatLng): JsonObject = buildJsonObject {
+    put("lat", pin.lat)
+    put("long", pin.long)
 }
 
 private fun kotlinx.serialization.json.JsonObjectBuilder.putBase(draft: LocationDraft) {
@@ -82,7 +115,10 @@ private fun kotlinx.serialization.json.JsonObjectBuilder.putBase(draft: Location
     put("description", draft.description.trim())
     put("status", draft.status.wire)
     put("file_name", titleCaseWords(draft.location))
-    put("link", draft.link.trim())
+    // `null` removes the link; an empty string would leave the old one
+    // standing, which is how the server reads "unchanged".
+    if (draft.removeLink) put("link", JsonNull) else put("link", draft.link.trim())
+    draft.pin?.let { put("location", pinWire(it)) }
     put("country_code", draft.countryCode.trim())
     put("phone", draft.phone.trim())
     put("contact_name", draft.contactName.trim())
@@ -141,12 +177,49 @@ internal fun parseMedia(obj: JsonObject?): LocationMedia? {
         link = obj.text("link"),
         attachment = parseAttachment(obj["attachment"] as? JsonObject),
         linkAttachment = parseAttachment(obj["link_attachment"] as? JsonObject),
+        pin = parseLatLng(obj["location"] as? JsonObject),
         status = LocationStatus.fromWire(obj.text("status")),
         uploadedBy = obj.text("uploaded_by"),
         createdMs = obj.long("created") ?: 0L,
         updatedMs = obj.long("updated") ?: 0L,
         deleted = obj.flag("deleted"),
         discussion = obj.flag("discussion"),
+    )
+}
+
+/**
+ * `location: { lat, long }`.
+ *
+ * Only a pair of real numbers is a pin: the server writes `{}` for a record
+ * that never had one, and a half-filled pair would put the place in the sea.
+ */
+internal fun parseLatLng(obj: JsonObject?): LatLng? {
+    if (obj == null) return null
+    val lat = obj.number("lat") ?: return null
+    val long = obj.number("long", "lng") ?: return null
+    return LatLng(lat, long)
+}
+
+/**
+ * One row of `map-pins`.
+ *
+ * A row without usable coordinates is dropped rather than drawn at (0, 0),
+ * which is in the Atlantic.
+ */
+internal fun parseLocationPin(obj: JsonObject?): LocationPin? {
+    if (obj == null) return null
+    val id = obj.text("_id", "id").takeIf { it.isNotBlank() } ?: return null
+    val point = parseLatLng(obj["location"] as? JsonObject) ?: return null
+    return LocationPin(
+        id = id,
+        location = obj.text("file_name"),
+        sceneNumber = Folders.normaliseScene(obj.text("scene_number")),
+        address = obj.text("address"),
+        city = obj.text("city"),
+        description = obj.text("description"),
+        link = obj.text("link"),
+        pin = point,
+        status = LocationStatus.fromWire(obj.text("status")),
     )
 }
 
@@ -179,6 +252,10 @@ private fun JsonObject.strings(vararg names: String): List<String> = when (val v
     is JsonPrimitive -> v.content.split(',').map { it.trim() }.filter { it.isNotEmpty() }
     else -> emptyList()
 }
+
+/** A number that may arrive as a JSON number or as a string. */
+private fun JsonObject.number(vararg names: String): Double? =
+    (firstOf(*names) as? JsonPrimitive)?.let { it.doubleOrNull ?: it.content.toDoubleOrNull() }
 
 private fun JsonObject.long(vararg names: String): Long? =
     (firstOf(*names) as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() }

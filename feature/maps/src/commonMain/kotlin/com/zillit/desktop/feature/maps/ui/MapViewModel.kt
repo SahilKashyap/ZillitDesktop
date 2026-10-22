@@ -96,6 +96,7 @@ class MapViewModel(
         listenOnce()
         cities.load()
         types.reload()
+        locations.loadShootLocations(host.shootLocations)
         currentState.selectedCityId?.let { cityId ->
             locations.load(cityId)
             zones.load(cityId)
@@ -137,6 +138,9 @@ class MapViewModel(
             is MapEvent.Locations -> when (event) {
                 is MapEvent.Locations.Share -> directions.shareLocation(currentState.location(event.locationId))
                 is MapEvent.Locations.Directions -> currentState.location(event.locationId)?.let(directions::startTo)
+                // A shoot location is the Location tool's; the map hands it
+                // over rather than opening a form it could not save.
+                is MapEvent.Locations.OpenInLocationTool -> sendEffect(MapEffect.OpenTool(LOCATION_TOOL_PATH))
                 else -> locations.onListEvent(event)
             }
             is MapEvent.Zones -> zones.onEvent(event)
@@ -444,5 +448,8 @@ class MapViewModel(
 
         /** The web's zoom on a search result. */
         const val SEARCH_ZOOM = 16
+
+        /** Where a shoot location is edited — the Location tool's own path. */
+        const val LOCATION_TOOL_PATH = "/film-tools/location"
     }
 }

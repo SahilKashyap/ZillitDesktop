@@ -2873,6 +2873,11 @@
     <string name="desktop_select_reason">Select reason…</string>
     <string name="desktop_bs_event_deleted">Event deleted</string>
     <string name="desktop_location_media_required">A photo, video or link is required here</string>
+    <string name="desktop_location_paste_maps_link">Paste a Google Maps link below to place this location</string>
+    <string name="desktop_location_link_required">This record is a link, so it needs a place or a Google Maps link.</string>
+    <string name="desktop_location_map_empty">Locations with a pin show here. Set the pin with the Location field when adding, editing or moving a location.</string>
+    <string name="desktop_location_move_place_hint">Where is this location? Picked here, the place goes onto every record in the move.</string>
+    <string name="desktop_location_open_link">Open link</string>
     <string name="desktop_dm_notice_1_week">1 week</string>
     <string name="desktop_fs_no_marks_hint">Add a signature and initials to sign documents with.</string>
     <string name="desktop_pr_template_saved_as">Saved as \"%1$s\" — visible to everyone who can create production reports.</string>

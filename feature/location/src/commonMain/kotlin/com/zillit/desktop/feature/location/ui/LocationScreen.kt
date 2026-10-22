@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,8 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -53,14 +56,17 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.PickedLocation
-import com.zillit.desktop.core.locationpicker.oneLine
-import com.zillit.desktop.core.locationpicker.ZillitLocationField
+import com.zillit.desktop.core.locationpicker.PinnedPlace
+import com.zillit.desktop.core.locationpicker.ZillitPinField
 import com.zillit.desktop.feature.location.domain.GroupBy
+import com.zillit.desktop.feature.location.domain.LatLng
 import com.zillit.desktop.feature.location.domain.LocationFolder
 import com.zillit.desktop.feature.location.domain.LocationMedia
+import com.zillit.desktop.feature.location.domain.LocationPin
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.MediaAttachment
+import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -95,7 +101,16 @@ fun LocationScreen(
                 actions = {
                     ZillitButton(text = str(S.refresh_text), onClick = { onEvent(LocationEvent.Refresh) },
                         variant = ButtonVariant.Tertiary, loading = state.loading)
-                    ZillitButton(text = str(S.add_more_link), onClick = { onEvent(LocationEvent.NewLink) },
+                    ZillitButton(
+                        text = str(S.txt_map_view),
+                        onClick = { onEvent(LocationEvent.ToggleMapView) },
+                        variant = if (state.map.open) ButtonVariant.Primary else ButtonVariant.Tertiary,
+                        leadingIcon = ZillitIcons.Pin,
+                    )
+                    // Not "Add link" any more: the form asks where the place
+                    // is, and the link it saves is that pin's Google Maps
+                    // link (web PR #6521).
+                    ZillitButton(text = str(S.add_location), onClick = { onEvent(LocationEvent.NewLink) },
                         variant = ButtonVariant.Secondary)
                     ZillitButton(text = str(S.desktop_location_upload_photo_or_video),
                         onClick = { onEvent(LocationEvent.PickFile) }, leadingIcon = ZillitIcons.Upload)
@@ -135,6 +150,7 @@ fun LocationScreen(
                 )
             }
             when {
+                state.map.open -> MapViewPanel(state.map, onEvent)
                 state.loading && state.info.isEmpty() -> Box(Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center) { ZillitSpinner() }
                 state.folders.isEmpty() -> ZillitText(
@@ -154,6 +170,7 @@ fun LocationScreen(
             state.browsing != null -> PicksDialog(state.browsing, state.unread, state.status, onEvent, readOnly)
         }
         state.editor?.let { EditorDialog(state, onEvent) }
+        state.moving?.let { MoveDialog(it, state.busy, onEvent) }
         state.viewing?.let { ViewDialog(state, it, onEvent, loadImage, resolveUser, readOnly) }
         state.confirmDelete?.let { ids ->
             ZillitDialogShell(
@@ -504,13 +521,20 @@ private fun ViewDialog(
                 ZillitButton(text = str(S.download), onClick = { onEvent(LocationEvent.Download(record)) },
                     variant = ButtonVariant.Secondary)
             }
+            // A photo may carry a link of its own now, so the link is offered
+            // beside the media rather than instead of it (web PR #6516).
+            if (record.hasLink && !record.isLink) {
+                ZillitButton(text = str(S.desktop_location_open_link),
+                    onClick = { onEvent(LocationEvent.OpenUrl(record.link)) },
+                    variant = ButtonVariant.Secondary)
+            }
             ZillitButton(text = str(S.close), onClick = { onEvent(LocationEvent.CloseView) },
                 variant = ButtonVariant.Tertiary)
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             Thumbnail(record, loadImage, Modifier.fillMaxWidth().height(VIEW_HEIGHT), preview = false)
-            if (record.isLink) ZillitText(text = record.link, style = ZillitTheme.typography.bodyMedium,
+            if (record.hasLink) ZillitText(text = record.link, style = ZillitTheme.typography.bodyMedium,
                 color = colors.accentText)
             if (record.description.isNotBlank()) ZillitText(text = record.description,
                 style = ZillitTheme.typography.bodyMedium)
@@ -614,7 +638,7 @@ private fun EditorDialog(state: LocationUiState, onEvent: (LocationEvent) -> Uni
             editor.id != null -> str(S.desktop_location_edit_title)
             editor.file != null ->
                 str(if (editor.file.isVideo) S.desktop_location_add_video else S.desktop_location_add_photo)
-            else -> str(S.add_more_link)
+            else -> str(S.add_location)
         },
         subtitle = editor.file?.name,
         onDismiss = { onEvent(LocationEvent.CancelEdit) },
@@ -639,23 +663,19 @@ private fun EditorDialog(state: LocationUiState, onEvent: (LocationEvent) -> Uni
                 ZillitTextField(value = editor.city, onValueChange = { change(editor.copy(city = it)) },
                     label = str(S.city), modifier = Modifier.weight(1f))
             }
-            if (editor.id == null && editor.file == null) {
-                ZillitTextField(value = editor.link, onValueChange = { change(editor.copy(link = it)) },
-                    label = str(S.link), placeholder = "https://…", modifier = Modifier.fillMaxWidth())
-            }
-            // Picked on a map, stored as text. This tool's body is address and
-            // nothing else — `putBase` in LocationWire.kt:88, the web's
-            // `createModal` (`commonFunctionForFilmTools.js:296-311`) the same
-            // — so the pick's coordinates are dropped rather than sent under
-            // invented keys. (The 406-on-null-lat/lng trap belongs to
-            // Transportation, not here.)
-            ZillitLocationField(
-                text = editor.address,
-                onTextChange = { change(editor.copy(address = it)) },
-                onPicked = { change(editor.copy(address = it.oneLine())) },
-                label = str(S.address),
-                modifier = Modifier.fillMaxWidth(),
+            // Where the location is. The free "Link" box is gone: the web
+            // moved the link out of the attach menu and then out of the form
+            // itself (PRs #6516, #6521), and the only link a location now
+            // carries is the Google Maps link of this pin. The pin is sent
+            // as `location`, the map picture as `link_attachment`, and the
+            // pin's address fills Address when that is still empty.
+            PlaceField(
+                place = editor.place,
+                onChange = { change(editor.copy(place = it)) },
+                onOpenUrl = { onEvent(LocationEvent.OpenUrl(it)) },
             )
+            ZillitTextField(value = editor.address, onValueChange = { change(editor.copy(address = it)) },
+                label = str(S.address), modifier = Modifier.fillMaxWidth())
             ZillitTextField(value = editor.description, onValueChange = { change(editor.copy(description = it)) },
                 label = str(S.description), singleLine = false, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -672,7 +692,151 @@ private fun EditorDialog(state: LocationUiState, onEvent: (LocationEvent) -> Uni
     }
 }
 
-/** The one line a picked place reads as: its name, then its address. */
+// Map view -------------------------------------------------------------------
+
+/**
+ * This tab's pinned locations.
+ *
+ * The web draws a live map with a marker per place; this draws the same
+ * places as a still with a numbered list beside it, which is how the rest of
+ * this client shows a map it cannot make interactive. Clicking a place opens
+ * its folder either way.
+ *
+ * Only a location with a pin can be here, so an empty panel says how a pin
+ * is set rather than "nothing found".
+ */
+@Composable
+private fun MapViewPanel(map: MapView, onEvent: (LocationEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    val picture = remember(map.picture) { map.picture?.let(::decodeImageBitmap) }
+    when {
+        map.loading -> Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.xl),
+            contentAlignment = Alignment.Center) { ZillitSpinner() }
+        map.pins.isEmpty() -> ZillitText(
+            text = str(S.desktop_location_map_empty),
+            style = ZillitTheme.typography.bodyMedium,
+            color = colors.textMuted,
+        )
+        else -> Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            if (picture != null) {
+                Image(
+                    bitmap = picture,
+                    contentDescription = str(S.txt_map_view),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(MAP_HEIGHT)
+                        .clip(ZillitTheme.shapes.medium).testTag(MAP_PICTURE_TAG),
+                )
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(FOLDER_MIN_WIDTH),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                itemsIndexed(map.pins, key = { _, pin -> pin.id }) { index, pin ->
+                    PinRow(index + 1, pin, colors) { onEvent(LocationEvent.OpenPin(pin)) }
+                }
+            }
+        }
+    }
+}
+
+/** One pinned place: its number on the picture, its folder, and where it is. */
+@Composable
+private fun PinRow(
+    number: Int,
+    pin: LocationPin,
+    colors: com.zillit.desktop.core.designsystem.ZillitColors,
+    onOpen: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(colors.surface)
+            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+            .clickable(onClick = onOpen)
+            .padding(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(text = "$number", style = ZillitTheme.typography.bodyMedium, color = colors.accentText)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            ZillitText(text = pin.label, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary)
+            ZillitText(
+                text = pin.address.ifBlank { pin.city }.ifBlank { pin.link },
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
+        }
+        ZillitStatusPill(label = pin.status.label, tone = StatusTone.Neutral)
+    }
+}
+
+// Move -----------------------------------------------------------------------
+
+/**
+ * Moving to Shortlist or Final asks where the location is.
+ *
+ * The Map tool draws the shortlisted and final places, and a move otherwise
+ * leaves them behind: the server drops `link`, `location` and
+ * `link_attachment` on a move unless they are sent again (web PR #6521).
+ * Picking is optional — Move goes ahead with whatever the field holds.
+ */
+@Composable
+private fun MoveDialog(request: MoveRequest, busy: Boolean, onEvent: (LocationEvent) -> Unit) {
+    val picture = remember(request.place.map) { request.place.map?.let(::decodeImageBitmap) }
+    ZillitDialogShell(
+        title = str(S.drive_move_to_destination, request.to.label),
+        subtitle = str(S.desktop_location_move_place_hint),
+        onDismiss = { onEvent(LocationEvent.CancelMove) },
+        visible = true,
+        actions = {
+            ZillitButton(text = str(S.cancel), onClick = { onEvent(LocationEvent.CancelMove) },
+                variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.move), onClick = { onEvent(LocationEvent.ConfirmMove) }, loading = busy)
+        },
+    ) {
+        ZillitPinField(
+            place = request.place.pin?.let { PinnedPlace(it.lat, it.long, request.place.address) },
+            onPlaceChange = { picked ->
+                onEvent(
+                    LocationEvent.MovePlaceChanged(
+                        request.place.copy(pin = LatLng(picked.lat, picked.long), address = picked.address),
+                    ),
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = str(S.location),
+            preview = picture,
+            previewKnown = request.place.mapKnown,
+            onOpenUrl = { onEvent(LocationEvent.OpenUrl(it)) },
+            noPickerHint = str(S.desktop_location_paste_maps_link),
+        )
+    }
+}
+
+/**
+ * The form's place field — the pin, its picture and the Google Maps link box.
+ *
+ * The same control Recce uses, as on the web, with the name field left out:
+ * a location record is already named by its folder.
+ */
+@Composable
+private fun PlaceField(place: PlaceEditor, onChange: (PlaceEditor) -> Unit, onOpenUrl: (String) -> Unit) {
+    val picture = remember(place.map) { place.map?.let(::decodeImageBitmap) }
+    ZillitPinField(
+        place = place.pin?.let { PinnedPlace(it.lat, it.long, place.address) },
+        onPlaceChange = { picked ->
+            onChange(place.copy(pin = LatLng(picked.lat, picked.long), address = picked.address))
+        },
+        modifier = Modifier.fillMaxWidth(),
+        label = str(S.location),
+        preview = picture,
+        previewKnown = place.mapKnown,
+        onOpenUrl = onOpenUrl,
+        noPickerHint = str(S.desktop_location_paste_maps_link),
+    )
+}
 
 private val SEARCH_WIDTH = 280.dp
 private val FOLDER_MIN_WIDTH = 240.dp
@@ -682,3 +846,7 @@ private val VIEW_HEIGHT = 480.dp
 private val LABEL_WIDTH = 100.dp
 private val CODE_WIDTH = 90.dp
 private const val THUMB_RATIO = 4f / 3f
+private val MAP_HEIGHT = 320.dp
+
+/** The map picture of a tab's pins — what the render test looks for. */
+const val MAP_PICTURE_TAG = "location-map-picture"

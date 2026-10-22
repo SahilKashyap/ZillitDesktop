@@ -97,7 +97,10 @@ internal fun SearchBar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 },
             )
             if (search.query.isNotBlank()) {
-                val results = search.results(state.locations)
+                // The shoot locations are searched with the map's own, as on
+                // the web: a place the reader can see on the map must be
+                // findable by name.
+                val results = search.results(state.drawable)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
                 if (results.isEmpty()) {
                     ZillitText(

@@ -130,6 +130,12 @@ internal class PinController(
     fun moved(locationId: String, point: LatLng) {
         val state = store.state
         val location = state.location(locationId) ?: return
+        // A shoot location is drawn here but belongs to the Location tool;
+        // the map has no call that could save it, so it snaps back.
+        if (location.readOnly) {
+            snapBack()
+            return
+        }
         if (state.movingId != null) {
             // One save at a time: two overlapping PUTs on one record race,
             // and the loser silently wins on the server.

@@ -465,11 +465,21 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
                 subtitle = null,
                 onClose = { onEvent(MapEvent.Locations.CloseDetail) },
                 trailing = {
-                    HeroPillButton(
-                        str(S.edit),
-                        onClick = { onEvent(MapEvent.Locations.Edit(location.id)) },
-                        icon = ZillitIcons.Edit,
-                    )
+                    // A shoot location is edited in the Location tool, which
+                    // this opens instead of the map's own form (web PR #6517).
+                    if (location.readOnly) {
+                        HeroPillButton(
+                            str(S.view),
+                            onClick = { onEvent(MapEvent.Locations.OpenInLocationTool(location.id)) },
+                            icon = ZillitIcons.Pin,
+                        )
+                    } else {
+                        HeroPillButton(
+                            str(S.edit),
+                            onClick = { onEvent(MapEvent.Locations.Edit(location.id)) },
+                            icon = ZillitIcons.Edit,
+                        )
+                    }
                 },
                 eyebrow = if (location.hasType || location.sceneNumber.isNotBlank()) {
                     {

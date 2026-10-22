@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.maps.domain.LocationDraft
 import com.zillit.desktop.feature.maps.domain.LocationRules
 import com.zillit.desktop.feature.maps.domain.MapAttachment
 import com.zillit.desktop.feature.maps.domain.MapLocation
+import com.zillit.desktop.feature.maps.domain.MapShootLocations
 import com.zillit.desktop.feature.maps.domain.PickedPhoto
 import com.zillit.desktop.feature.maps.domain.PlaceKind
 import com.zillit.desktop.feature.maps.domain.PlacePrediction
@@ -27,6 +28,22 @@ internal class LocationController(private val store: MapStore) {
 
     private var addressJob: Job? = null
     private var photoKeys = 0
+
+    /**
+     * The Location tool's Shortlisted and Final places, drawn read-only
+     * beside the map's own (web PR #6517).
+     *
+     * Project-wide, not per city, so it is read once when the tool opens and
+     * not again on every city switch. A viewer without the Location tool, or
+     * a host with no seam, gets none and the map is as it was.
+     */
+    fun loadShootLocations(source: MapShootLocations?) {
+        if (source == null) return
+        store.spawn {
+            val pins = runCatching { source.pins() }.getOrDefault(emptyList())
+            if (pins.isNotEmpty()) store.update { copy(shootLocations = pins) }
+        }
+    }
 
     fun load(cityId: String) {
         store.update { copy(locationsLoading = true) }
@@ -52,6 +69,7 @@ internal class LocationController(private val store: MapStore) {
             is MapEvent.Locations.Edit -> store.withPost { openEdit(event.locationId) }
             is MapEvent.Locations.Delete -> store.withPost { askDelete(event.locationId) }
             is MapEvent.Locations.Share -> Unit // Routed by the view model to the share flow.
+            is MapEvent.Locations.OpenInLocationTool -> Unit // Routed by the view model to the Location tool.
             is MapEvent.Locations.Directions -> Unit // Routed by the view model to directions.
             MapEvent.Locations.CloseDetail -> store.popPanel { it is MapPanel.LocationDetail }
             is MapEvent.Locations.CopyCoordinates -> copyCoordinates(event.locationId)

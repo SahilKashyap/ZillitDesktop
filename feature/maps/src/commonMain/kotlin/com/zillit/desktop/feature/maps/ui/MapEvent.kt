@@ -97,6 +97,12 @@ sealed interface MapEvent {
         data object CloseDetail : Locations
         data class CopyCoordinates(val locationId: String) : Locations
         data class OpenPhoto(val locationId: String, val index: Int) : Locations
+
+        /**
+         * A shoot location's View: it lives in the Location tool, so the
+         * map hands it over rather than opening its own form.
+         */
+        data class OpenInLocationTool(val locationId: String) : Locations
     }
 
     /** The studio-zone list, form and details. */

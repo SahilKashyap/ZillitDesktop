@@ -38,6 +38,15 @@ data class MapUiState(
     val selectedCityId: String? = null,
     val locations: List<MapLocation> = emptyList(),
     val locationsLoading: Boolean = false,
+    /**
+     * Shortlisted and Final locations from the Location tool.
+     *
+     * Kept apart from [locations], which is the city's own list and what
+     * every create, edit and delete reads. These are drawn, searched and
+     * counted with them ([drawable]) but never written: they belong to
+     * another tool (web PR #6517).
+     */
+    val shootLocations: List<MapLocation> = emptyList(),
     val zones: List<MapLocation> = emptyList(),
     val zonesLoading: Boolean = false,
     /** Unread map badges by city id. */
@@ -91,15 +100,18 @@ data class MapUiState(
     val activeZone: MapLocation? get() = zones.firstOrNull { it.id == activeZoneId }
     val topPanel: MapPanel? get() = panels.lastOrNull()
 
+    /** Everything on the map: the city's locations and the pinned shoot locations. */
+    val drawable: List<MapLocation> get() = if (shootLocations.isEmpty()) locations else locations + shootLocations
+
     /** The locations the map draws — type filters only, never the search. */
     val filteredLocations: List<MapLocation>
-        get() = if (typeFilters.isEmpty()) locations else locations.filter { it.type in typeFilters }
+        get() = if (typeFilters.isEmpty()) drawable else drawable.filter { it.type in typeFilters }
 
     /** The types present in this city, sorted — the filter chips. */
-    val presentTypes: List<String> get() = locations.map { it.type }.filter { it.isNotBlank() }.distinct().sorted()
+    val presentTypes: List<String> get() = drawable.map { it.type }.filter { it.isNotBlank() }.distinct().sorted()
 
     val typeCounts: Map<String, Int>
-        get() = locations.filter { it.type.isNotBlank() }.groupingBy { it.type }.eachCount()
+        get() = drawable.filter { it.type.isNotBlank() }.groupingBy { it.type }.eachCount()
 
     /** Every unread map badge — the Cities control's red count. */
     val totalUnread: Int get() = cityUnread.values.sum()
@@ -112,7 +124,9 @@ data class MapUiState(
      */
     val canvasCovered: Boolean get() = dialog != null || listView != null || frameDialogOpen
 
+    /** A drawn location by id — a shoot pin among them, so its card can open. */
     fun location(id: String): MapLocation? = locations.firstOrNull { it.id == id }
+        ?: shootLocations.firstOrNull { it.id == id }
     fun zone(id: String): MapLocation? = zones.firstOrNull { it.id == id }
     fun style(typeName: String) = typeStyle(typeName, types)
 }
