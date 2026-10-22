@@ -5,6 +5,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlinx.coroutines.Job
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -352,6 +353,9 @@ class CalendarViewModel(
     /** The server's timezone list, fetched once per session — it never moves. */
     private var timezoneCache: List<TimezoneOption> = emptyList()
 
+    /** The reads [load] has out, so a production switch can drop their answers. */
+    private var reads: List<Job> = emptyList()
+
     // Exhaustive dispatch over the sealed event set — the branch count is the
     // pattern, not a complexity problem (see ChatViewModel and LiveKitWire).
     @Suppress("CyclomaticComplexMethod")
@@ -376,24 +380,7 @@ class CalendarViewModel(
             is CalendarEvent2Event.SetMode -> setState { copy(mode = event.mode) }
             CalendarEvent2Event.Reload -> load()
             is CalendarEvent2Event.Realtime -> onRealtime(event.kind)
-            CalendarEvent2Event.ProjectChanged -> {
-                // Events, invitations and any open form belong to the
-                // production that was open when they were fetched.
-                setState {
-                    copy(
-                        events = emptyList(),
-                        invitations = emptyList(),
-                        invitationsCursor = null,
-                        pendingInvitations = 0,
-                        detail = null,
-                        inviteeList = null,
-                        form = null,
-                        declining = null,
-                        error = null,
-                    )
-                }
-                load()
-            }
+            CalendarEvent2Event.ProjectChanged -> forgetProject()
             CalendarEvent2Event.DismissError -> setState { copy(error = null) }
             is CalendarEvent2Event.MoveEvent ->
                 moveEvent(event.event, event.dayDelta, event.minuteDelta)
@@ -994,6 +981,44 @@ class CalendarViewModel(
     }
 
     /**
+     * Forgets the production being left, and reads nothing.
+     *
+     * Split from the read — the shell sends [CalendarEvent2Event.Reload] behind
+     * the new production's first frame — so that the clearing can run *ahead*
+     * of that frame. Cleared and refetched in one breath behind it, this pane
+     * drew the previous production's events beside the new production's board
+     * for as long as the events call took.
+     *
+     * The reads out are cancelled rather than left to land: [load] refuses to
+     * start while one is in flight, so an unfinished read of the production
+     * being left both swallowed the next production's reload and then put its
+     * own events on the screen.
+     *
+     * What the viewer chose is not a production's: the month they are looking
+     * at, the view mode, the zone and the invitation tab all stay.
+     */
+    private fun forgetProject() {
+        reads.forEach { it.cancel() }
+        reads = emptyList()
+        // Events, invitations and any open form belong to the production that
+        // was open when they were fetched.
+        setState {
+            copy(
+                events = emptyList(),
+                invitations = emptyList(),
+                invitationsCursor = null,
+                pendingInvitations = 0,
+                detail = null,
+                inviteeList = null,
+                form = null,
+                declining = null,
+                error = null,
+                isBusy = false,
+            )
+        }
+    }
+
+    /**
      * Fetches a generous window around what is on screen.
      *
      * Three months either side, so paging between adjacent months needs no
@@ -1009,18 +1034,21 @@ class CalendarViewModel(
         val to = state.anchor.plus(WINDOW_MONTHS, DateTimeUnit.MONTH)
             .atStartOfDayIn(state.zone).toEpochMilliseconds()
 
-        launchResult(
-            block = { repository.events(from, to) },
-            onSuccess = { events -> setState { copy(isBusy = false, events = events) } },
-            onError = { setState { copy(isBusy = false, error = it.localised()) } },
-        )
-
-        // The toolbar badge — how many invitations await an answer. A failure
-        // costs the badge, never the board.
-        launchResult(
-            block = { repository.invitations(InvitationStatus.Pending) },
-            onSuccess = { page -> setState { copy(pendingInvitations = page.rows.size) } },
-            onError = { },
+        // Both handles are kept: a production switch drops whichever of them
+        // is still out, so no answer crosses into the next production.
+        reads = listOf(
+            launchResult(
+                block = { repository.events(from, to) },
+                onSuccess = { events -> setState { copy(isBusy = false, events = events) } },
+                onError = { setState { copy(isBusy = false, error = it.localised()) } },
+            ),
+            // The toolbar badge — how many invitations await an answer. A
+            // failure costs the badge, never the board.
+            launchResult(
+                block = { repository.invitations(InvitationStatus.Pending) },
+                onSuccess = { page -> setState { copy(pendingInvitations = page.rows.size) } },
+                onError = { },
+            ),
         )
     }
 

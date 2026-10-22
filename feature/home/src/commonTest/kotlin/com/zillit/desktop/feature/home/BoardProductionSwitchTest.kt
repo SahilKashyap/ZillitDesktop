@@ -259,6 +259,83 @@ class BoardProductionSwitchTest {
         assertEquals(listOf("p1-u1"), model.state.value.tabs.map { it.id })
     }
 
+    /**
+     * The switch as the shell really sends it.
+     *
+     * The production is dropped the moment it is left — `AuthViewModel`
+     * clears it before the picker is drawn — and the board is cleared there
+     * too, with the picker on screen. It used to be cleared on arrival
+     * instead, behind the new production's first frame, which put the
+     * previous production's posts under the new production's name for as long
+     * as the read took.
+     */
+    @Test
+    fun `the board is emptied as the production is left`() = runTest(dispatcher) {
+        val board = TwoProductions()
+        val model = viewModel(board)
+        model.onEvent(HomeFeedEvent.Load)
+        advanceUntilIdle()
+        assertEquals(listOf("p1-a", "p1-b"), model.state.value.postIds)
+
+        // Leaving: no production open, and nothing chosen yet.
+        open = null
+        model.onEvent(HomeFeedEvent.ProjectChanged)
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.notices.isEmpty(), "the production left takes its posts with it")
+        assertTrue(model.state.value.tabs.isEmpty(), "and its tab strip")
+    }
+
+    /**
+     * And what was filed as it was left comes back when it is reopened — the
+     * clear moving earlier must not cost the kept board, which is the whole
+     * reason a switch files one.
+     */
+    @Test
+    fun `a production left through the picker still draws its own board on return`() = runTest(dispatcher) {
+        val board = TwoProductions()
+        val model = viewModel(board)
+        model.onEvent(HomeFeedEvent.Load)
+        advanceUntilIdle()
+
+        open = null
+        model.onEvent(HomeFeedEvent.ProjectChanged)
+        advanceUntilIdle()
+        open = "p2"
+        model.onEvent(HomeFeedEvent.Load)
+        advanceUntilIdle()
+        assertEquals(listOf("p2-a", "p2-b"), model.state.value.postIds)
+
+        open = null
+        model.onEvent(HomeFeedEvent.ProjectChanged)
+        advanceUntilIdle()
+        board.gate = CompletableDeferred()
+        open = "p1"
+        model.onEvent(HomeFeedEvent.Load)
+
+        // Synchronously, before any answer: p1's own board, filed as it was left.
+        assertEquals(listOf("p1-a", "p1-b"), model.state.value.postIds, "p1's own board, from memory")
+        board.gate?.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    /** The gap between two productions: a socket arrival must not read into it. */
+    @Test
+    fun `a read asked between productions is not asked at all`() = runTest(dispatcher) {
+        val board = TwoProductions()
+        val model = viewModel(board)
+        model.onEvent(HomeFeedEvent.Load)
+        advanceUntilIdle()
+        val before = board.unitLoads.size
+
+        open = null
+        model.onEvent(HomeFeedEvent.ProjectChanged)
+        model.onEvent(HomeFeedEvent.Realtime(HomeRealtimeEvent.UnitsChanged))
+        advanceUntilIdle()
+
+        assertEquals(before, board.unitLoads.size, "a read with no production open carries no production")
+    }
+
     /** A host that does not say which production is open keeps nothing across a switch — as before. */
     @Test
     fun `without a production id nothing is kept`() = runTest(dispatcher) {

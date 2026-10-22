@@ -842,6 +842,15 @@ class HomeFeedViewModel(
     private var shownProduction: String? = null
 
     /**
+     * Whether this board has ever been read under a production's name.
+     *
+     * Tells the gap between two productions apart from a host that has no
+     * production to name — [readsShownProduction] refuses the first and
+     * allows the second, and they look alike from here.
+     */
+    private var productionScoped = false
+
+    /**
      * The reads behind the board on screen — tab strip, pages, the seeds from
      * disk. Cancelled with their production: a page still on its way when
      * the switch happens belongs to the production that asked for it, and
@@ -1213,9 +1222,18 @@ class HomeFeedViewModel(
      * board being told, when socket events from the old connection still
      * arrive — would put one production's answer into the other's board, so
      * it is not asked at all; the switch's own load follows within the frame.
+     *
+     * *No* production open is the other half of that moment: the board is
+     * cleared as a production is left, and from then until the next one is
+     * chosen a socket arrival would ask a read that carries no production at
+     * all. A board that has been shown under a production's name therefore
+     * reads nothing in the gap. A host that never names one — a records
+     * cabinet — is not scoped to a production and keeps reading, as it always
+     * has.
      */
     private fun readsShownProduction(): Boolean {
-        val open = media.currentProjectId()
+        val open = media.currentProjectId() ?: return !productionScoped
+        productionScoped = true
         if (shownProduction == null) shownProduction = open
         return open == shownProduction
     }

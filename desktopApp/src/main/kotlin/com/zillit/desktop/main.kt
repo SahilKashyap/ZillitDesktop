@@ -1613,6 +1613,19 @@ private fun ToolsRefresh(ready: AppGraph.Ready, home: HomeViewModel?) {
  * waits for the first frame of the new production ([TellTheToolsAbout]) and
  * runs behind it, where a slow tool costs that tool's own screen a skeleton
  * rather than costing the whole app its pixels.
+ *
+ * ## Why there is a third effect
+ *
+ * That split carried the *clears* behind the frame along with the fetches, and
+ * a view model holds the previous production's data until it is cleared. So
+ * the new production's shell was composed over the old production's board: its
+ * posts, its unit tabs and its calendar, under the new production's name,
+ * until each fetch answered. The app's own switch log puts the shell on screen
+ * 17 to 92ms before the tools are even told, and their answers land later
+ * still — which is the flash people report.
+ *
+ * [ForgetThePreviousProduction] is that half, taken back out: clears and no
+ * calls, so it is free and waits for nothing.
  */
 @Composable
 private fun ProjectScopedLoads(
@@ -1620,9 +1633,64 @@ private fun ProjectScopedLoads(
     viewModels: AppViewModels,
     workspace: WorkspaceViewModel,
 ) {
+    ForgetThePreviousProduction(projectId, viewModels)
     LandOnTheProduction(projectId, workspace)
     TellTheToolsAbout(projectId, viewModels)
     SwapInRealRights(projectId, viewModels)
+}
+
+/**
+ * What the production being left takes with it.
+ *
+ * Clears only — not one call goes out from here, which is what lets this run
+ * ahead of everything else rather than behind the new production's first
+ * frame. `projectId` goes `old → null → new` across a switch, because
+ * `AuthViewModel.switchProject` drops the active production before the picker
+ * is drawn; so the clearing lands on the null tick, with the picker on screen
+ * and the next production not yet chosen. However long the user spends
+ * choosing, the shell that follows is composed over nothing.
+ *
+ * Every tick clears, not only the null one, and the clears are written to be
+ * worth nothing on a board that is already empty: a production can also be
+ * opened straight over another, and then this is still the first thing that
+ * happens.
+ *
+ * Only the boards are here. Everything else a switch resets is in a window
+ * `CloseAllForProjectSwitch` has just closed, so the reset it already gets
+ * behind the first frame is early enough — nobody reopens a tool inside a
+ * frame. These are what `/home` opens on, and they are looked at.
+ */
+@Composable
+private fun ForgetThePreviousProduction(projectId: String?, viewModels: AppViewModels) {
+    // Whether a production is open, so the switch log can tell one being left
+    // from the null this effect first runs on at startup, which nobody left.
+    val open = remember { mutableStateOf(false) }
+    LaunchedEffect(projectId) {
+        // The board the production opens on, and the five that share its
+        // engine: the posts, the tab, and the half-typed draft that used to
+        // carry over into the next production's composer.
+        listOf(
+            viewModels.homeFeed,
+            viewModels.info,
+            viewModels.confidentialInfo,
+            viewModels.reports,
+            viewModels.catering,
+            viewModels.accounts,
+        ).forEach { it?.onEvent(HomeFeedEvent.ProjectChanged) }
+        // The calendar pane sits beside that board, so its events are as
+        // visible as the posts are. Its read follows behind the frame with the
+        // other fetches.
+        viewModels.calendar?.onEvent(CalendarEvent2Event.ProjectChanged)
+        if (projectId != null) {
+            open.value = true
+            return@LaunchedEffect
+        }
+        if (!open.value) return@LaunchedEffect
+        open.value = false
+        // The switch log's first line, printed before a production is even
+        // chosen — which is the whole point of it being here.
+        ZillitLog.i(SWITCH_TAG) { "the production was left; its boards forgot it while the picker is up" }
+    }
 }
 
 /**
@@ -1676,22 +1744,15 @@ private fun TellTheToolsAbout(projectId: String?, viewModels: AppViewModels) {
                 "after it was chosen; telling the tools now"
         }
         viewModels.home?.onEvent(HomeEvent.Reload)
-        // Every notice board forgets the last production — its posts, its
-        // tab, and the half-typed draft, which used to carry over into the
-        // next production's composer. Home reloads at once (it is what opens);
-        // the other boards load when their tool is next shown.
-        listOf(
-            viewModels.homeFeed,
-            viewModels.info,
-            viewModels.confidentialInfo,
-            viewModels.reports,
-            viewModels.catering,
-            viewModels.accounts,
-        ).forEach { it?.onEvent(HomeFeedEvent.ProjectChanged) }
+        // The boards forgot the last production as it was left
+        // ([ForgetThePreviousProduction]); Home reads again at once, because
+        // it is what opens, and the other five read when their tool is next
+        // shown.
         viewModels.homeFeed?.onEvent(HomeFeedEvent.Load)
         viewModels.chat?.onEvent(ChatEvent.ProjectChanged)
         viewModels.email?.onEvent(EmailEvent.ProjectChanged)
-        viewModels.calendar?.onEvent(CalendarEvent2Event.ProjectChanged)
+        // Cleared with the boards; this is the read that follows it.
+        viewModels.calendar?.onEvent(CalendarEvent2Event.Reload)
         // Rights are per-production, so both finance tools re-resolve who the
         // viewer is rather than carrying the previous production's answer.
         viewModels.cashExpenses?.onProjectChanged()
