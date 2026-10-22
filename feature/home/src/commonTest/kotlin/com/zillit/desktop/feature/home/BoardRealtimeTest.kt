@@ -300,6 +300,59 @@ class BoardRealtimeTest {
         assertEquals("n1", (seen.single() as HomeRealtimeEvent.NoticeAdded).notice.id)
     }
 
+    /**
+     * One socket serves every production this device is on. Chat has gated on
+     * that since it was ported (`ChatFrameScope`); Home never did, so a post
+     * made on another production reached this board's feed — and the
+     * notification raised for it was titled by an author this production's
+     * crew list has never heard of (user screenshot, 2026-10-22: "Someone").
+     */
+    @Test
+    fun `a post from another production is not this board's`() = runTest {
+        val client = ScriptedSocketClient()
+        val seen = mutableListOf<HomeRealtimeEvent>()
+        backgroundScope.launch {
+            HomeRealtimeSource(
+                SocketEventBus(client),
+                decryptBody = { it },
+                openProjectId = { "p-open" },
+            ).stream.collect { seen += it }
+        }
+        runCurrent()
+
+        client.deliver("home:message:added", """{"_id":"n1","message":"x","project_id":"p-other"}""")
+        runCurrent()
+        assertTrue(seen.isEmpty(), "another production's post: $seen")
+
+        client.deliver("home:message:added", """{"_id":"n2","message":"x","project_id":"p-open"}""")
+        runCurrent()
+        assertEquals("n2", (seen.single() as HomeRealtimeEvent.NoticeAdded).notice.id)
+    }
+
+    /**
+     * A frame that names no production passes, as chat's does: the gate is for
+     * frames that say they are somebody else's, not for every frame whose
+     * shape this does not recognise. Several Home events carry no row at all.
+     */
+    @Test
+    fun `a frame that names no production is still delivered`() = runTest {
+        val client = ScriptedSocketClient()
+        val seen = mutableListOf<HomeRealtimeEvent>()
+        backgroundScope.launch {
+            HomeRealtimeSource(
+                SocketEventBus(client),
+                decryptBody = { it },
+                openProjectId = { "p-open" },
+            ).stream.collect { seen += it }
+        }
+        runCurrent()
+
+        client.deliver("home:message:added", post)
+        runCurrent()
+
+        assertEquals("n1", (seen.single() as HomeRealtimeEvent.NoticeAdded).notice.id)
+    }
+
     @Test
     fun `an unknown board yields an empty flow rather than throwing`() = runTest {
         val client = ScriptedSocketClient()

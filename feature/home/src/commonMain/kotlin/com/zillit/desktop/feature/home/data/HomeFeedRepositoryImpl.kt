@@ -346,32 +346,11 @@ class HomeFeedRepositoryImpl(
         }
 
     /**
-     * Decrypts one notice body.
-     *
-     * A failure yields a placeholder rather than the ciphertext. Android returns
-     * the input unchanged on failure, which puts a hex blob on screen where a
-     * message should be — indistinguishable, to the reader, from a corrupted
-     * post.
-     *
-     * A body that cannot be ciphertext at all ([NoticeBody.isCipherShaped]) is not put
-     * through that at all, because some bodies were never encrypted: the Production
-     * Report chat's record answered 13 of them on develop (2026-10-19), and each
-     * one drew the placeholder over words the phones show. "Not hex" is not a
-     * failure to decrypt — there is nothing there to decrypt.
+     * Decrypts one notice body — see [noticeBodyText], which is the rule, and
+     * which the socket path now shares rather than keeping its own copy.
      */
-    private fun decryptBody(cipherHex: String): String {
-        if (cipherHex.isBlank()) return ""
-        if (!NoticeBody.isCipherShaped(cipherHex)) return cipherHex
-
-        return when (val result = decrypt.decryptFromHex(cipherHex)) {
-            is ZillitResult.Success -> result.data
-            is ZillitResult.Failure -> {
-                // Never the ciphertext, and never the id — just that it happened.
-                ZillitLog.w(TAG) { "a notice body did not decrypt: ${result.error.technical}" }
-                UNREADABLE
-            }
-        }
-    }
+    private fun decryptBody(cipherHex: String): String =
+        noticeBodyText(cipherHex, decrypt::decryptFromHex)
 
     /**
      * Posts a notice.

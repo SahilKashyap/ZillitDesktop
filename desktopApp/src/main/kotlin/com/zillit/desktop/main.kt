@@ -98,6 +98,7 @@ import com.zillit.desktop.feature.auth.ui.AuthViewModel
 import com.zillit.desktop.feature.shell.AppShell
 import com.zillit.desktop.feature.shell.RailItem
 import com.zillit.desktop.feature.shell.DefaultRailItems
+import com.zillit.desktop.feature.home.data.noticeBodyText
 import com.zillit.desktop.feature.home.data.boardRealtime
 import com.zillit.desktop.core.appupdate.UPDATE_CHECK_INTERVAL_MILLIS
 import com.zillit.desktop.core.appupdate.UpdateStatus
@@ -1194,12 +1195,8 @@ private fun BoardRealtime(ready: AppGraph.Ready, board: String, feed: HomeFeedVi
         boardRealtime(
             events = ready.socketEvents,
             board = board,
-            decryptBody = { hex ->
-                when (val result = ready.noticeDecryptor.decryptFromHex(hex)) {
-                    is ZillitResult.Success -> result.data
-                    is ZillitResult.Failure -> "[This message could not be decrypted]"
-                }
-            },
+            // The board's own rule — see `noticeBodyText`.
+            decryptBody = { hex -> noticeBodyText(hex, ready.noticeDecryptor::decryptFromHex) },
         ).collect { event -> feed.onEvent(HomeFeedEvent.Realtime(event)) }
     }
 }

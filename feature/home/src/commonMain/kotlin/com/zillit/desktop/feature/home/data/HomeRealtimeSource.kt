@@ -5,6 +5,7 @@ import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,11 +25,53 @@ class HomeRealtimeSource(
     private val decryptBody: (String) -> String,
     /** Who is signed in — rights events for anyone else are not this board's. */
     private val myUserId: () -> String? = { null },
+    /**
+     * Which production is open — frames for any other one are not this
+     * board's. Null means "do not filter", which is what every caller that
+     * does not know a production gets.
+     */
+    private val openProjectId: () -> String? = { null },
 ) {
 
     val stream: Flow<HomeRealtimeEvent> =
         events.onAny(ZillitSocketEvents.Home.All + ZillitSocketEvents.AccessGrid.All)
+            .filter(::isHere)
             .mapNotNull(::toEvent)
+
+    /**
+     * Whether a frame belongs to the production that is open.
+     *
+     * One socket serves every production this device is on — the rule chat
+     * has gated on since it was ported (`ChatFrameScope`), and which Home
+     * never did. So a notice posted on another production reached this
+     * board's feed and raised a notification for it, with an author this
+     * production's crew list has never heard of ("Someone") and, if that
+     * production writes plain bodies, nothing readable either.
+     *
+     * A frame that names no production passes, as chat's does: the gate is
+     * for frames that say they are somebody else's, not for every frame
+     * whose shape this does not recognise.
+     */
+    private fun isHere(message: SocketMessage): Boolean {
+        val open = openProjectId()?.takeIf { it.isNotBlank() } ?: return true
+        val named = message.payload?.framedProjectId() ?: return true
+        return named == open
+    }
+
+    /**
+     * The production a Home frame names, wherever it put it.
+     *
+     * Board rows carry `project_id` on the row itself, which is under `data`
+     * — so the row is unwrapped the same way everything else here reads it.
+     * The two outer spellings are chat's (`ChatFrameScope`), checked as well
+     * because the events in this family do not all share one envelope.
+     */
+    private fun JsonElement.framedProjectId(): String? {
+        val outer = this as? JsonObject
+        return unwrapData()?.stringField(PROJECT_ID)
+            ?: (outer?.get("detail") as? JsonObject)?.stringField(PROJECT_ID)
+            ?: outer?.stringField(PROJECT_ID)
+    }
 
     private fun toEvent(message: SocketMessage): HomeRealtimeEvent? = when {
         message.event in ZillitSocketEvents.Home.Units -> HomeRealtimeEvent.UnitsChanged
@@ -134,3 +177,6 @@ internal fun JsonElement.rightsTargetUserId(): String? {
     } ?: return null
     return row.stringField("user_id") ?: row.stringField("_id")
 }
+
+/** The key every Home row names its production under. */
+private const val PROJECT_ID = "project_id"

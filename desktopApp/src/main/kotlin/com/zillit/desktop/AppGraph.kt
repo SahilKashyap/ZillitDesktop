@@ -107,6 +107,7 @@ import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
 import com.zillit.desktop.core.socket.SocketIoClient
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.feature.home.data.noticeBodyText
 import com.zillit.desktop.feature.home.data.NotificationLedgerSeeder
 import com.zillit.desktop.core.badges.BadgeDrilldown
 import com.zillit.desktop.core.badges.BadgeSections
@@ -2025,13 +2026,14 @@ sealed interface AppGraph {
             // Home's socket traffic, decoded into events the board understands.
             val homeRealtime = HomeRealtimeSource(
                 events = socketEvents,
-                decryptBody = { hex ->
-                    when (val result = cryptoEngine.decryptFromHex(hex)) {
-                        is ZillitResult.Success -> result.data
-                        is ZillitResult.Failure -> "[This message could not be decrypted]"
-                    }
-                },
+                // The board's own rule, not a second one: a body that was
+                // never encrypted is its own text, and reading it any other
+                // way drew the placeholder over words the board was showing
+                // perfectly well two inches away.
+                decryptBody = { hex -> noticeBodyText(hex, cryptoEngine::decryptFromHex) },
                 myUserId = { projectContext.context.value.profile?.userId },
+                // Read live, not captured: this source outlives every switch.
+                openProjectId = { headerContext.value.projectId },
             )
 
             val calendarRepository = CalendarRepositoryImpl(apiClient, config)
