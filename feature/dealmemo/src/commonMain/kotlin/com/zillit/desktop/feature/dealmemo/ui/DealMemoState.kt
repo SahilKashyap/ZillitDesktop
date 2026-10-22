@@ -66,6 +66,15 @@ enum class DealBadgeUnit(val wire: String) {
 data class DealBadgeCounts(
     val tabs: Map<DealBadgeUnit, Int> = emptyMap(),
     val perDeal: Map<DealBadgeUnit, Map<String, Int>> = emptyMap(),
+    /**
+     * "Sent to you" — the rows the backend files under the Settings section
+     * rather than this tool: `settings_label` / `admin_settings_label`, unit
+     * `deal_memo_label`, actions `nda_sent_to_user`, `document_sent_to_user`,
+     * `deal_memo_received`. Counted apart from [tabs] because they are a
+     * different tree, not a tab of this one; see [DealMemoViewModel]'s
+     * entry read for why the tool is their door.
+     */
+    val sentToMe: Int = 0,
 ) {
     fun tab(unit: DealBadgeUnit): Int = tabs[unit] ?: 0
 

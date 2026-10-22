@@ -35,6 +35,13 @@ interface DealMemoBadgeSource {
 
     /** The same, narrowed to one deal (`level_3`). */
     fun readDeal(unit: DealBadgeUnit, dealId: String)
+
+    /**
+     * The "sent to you" rows under the Settings tree — see
+     * [DealBadgeCounts.sentToMe]. A read of its own because the tree is its
+     * own: tool `admin_settings_label`, unit `deal_memo_label`.
+     */
+    fun readSentToMe()
 }
 
 /** Where an exported file lands — the host saves and opens it. */
@@ -95,8 +102,8 @@ class DealMemoViewModel(
 
     /** Opens the tool: rights, metadata, directory and setups, then the first page. */
     fun start() {
-        ndaReadOnEntry = true
-        readNdas()
+        entryReadDue = true
+        readOnEntry()
         if (started) {
             // Back from the Approvers page lands here as a fresh composition of
             // the tool: it lives in the same window, so leaving it is not a
@@ -426,33 +433,42 @@ class DealMemoViewModel(
                     ) {
                         notices.reload()
                     }
-                    if (ndaReadOnEntry) readNdas()
+                    if (entryReadDue) readOnEntry()
                 }
             }
         }
     }
 
-    /** Set as the tool is shown, until the NDA unit's first count has been seen; see [readNdas]. */
-    private var ndaReadOnEntry = false
+    /** Set as the tool is shown, until the first counts have been seen; see [readOnEntry]. */
+    private var entryReadDue = false
 
     /**
-     * The NDA unit read whole — iOS `readWholeUnit(.nda)` as its NDA surface
-     * opens, when it has anything (`DMHubPage.swift:176-178`,
-     * `DealMemoModuleView.swift:282-285`; the web's `DMNdaPage.jsx:185`,
-     * `DMMyNdaPage.jsx:111`): "an NDA badge's `level_3` is the NDA id, and opening
-     * the tile is opening all of them".
+     * The two kinds of row this tool is the only door to, read whole as it is
+     * shown — once, never as one lands while the tool is open, which would
+     * read something nobody was there to see.
      *
-     * The desktop has no NDA page yet, so the tool itself is that door: its NDA
-     * rows are read as the tool is shown, once — never as they land while it is
-     * open, which would read an NDA nobody was there to see. Without it they sat
-     * on the Film Tools tile with no screen able to clear them.
+     * **NDAs.** iOS `readWholeUnit(.nda)` as its NDA surface opens, when it has
+     * anything (`DMHubPage.swift:176-178`, `DealMemoModuleView.swift:282-285`;
+     * the web's `DMNdaPage.jsx:185`, `DMMyNdaPage.jsx:111`): "an NDA badge's
+     * `level_3` is the NDA id, and opening the tile is opening all of them".
+     * The desktop has no NDA page, so the tool is that door.
+     *
+     * **"Sent to you".** The backend files `nda_sent_to_user`,
+     * `document_sent_to_user` and `deal_memo_received` under the *Settings*
+     * section (tool `admin_settings_label`, unit `deal_memo_label`), where the
+     * web shows them on its own Settings deal-memo tab
+     * (`pages/settings/statusfordealmemo`) — a tab the desktop does not have,
+     * so again the tool is the door. Found 2026-10-22: five of them from March
+     * sat on the Settings rail, which counts the whole section, with no screen
+     * in the app able to read them.
      */
-    private fun readNdas() {
+    private fun readOnEntry() {
         val source = badges ?: return
         // No counts yet: the first that arrive answer for this entry.
-        if (!ndaReadOnEntry || currentState.badges.tabs.isEmpty()) return
-        ndaReadOnEntry = false
+        if (!entryReadDue || currentState.badges.tabs.isEmpty()) return
+        entryReadDue = false
         if (currentState.badges.tab(DealBadgeUnit.Nda) > 0) source.readTab(DealBadgeUnit.Nda)
+        if (currentState.badges.sentToMe > 0) source.readSentToMe()
     }
 
     private fun onRefresh(refresh: DealRefresh) {

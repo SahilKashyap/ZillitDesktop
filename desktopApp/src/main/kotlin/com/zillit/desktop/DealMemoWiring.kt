@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.badges.BadgeDrilldownQuery
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
@@ -323,6 +324,13 @@ private fun AppGraph.Ready.dealMemoBadges(): DealMemoBadgeSource = object : Deal
                         BadgeDrilldownQuery(groupBy = "level_3", tool = DEAL_MEMO_BADGE_TOOL, unit = unit.wire),
                     )
                 },
+                sentToMe = badgeStore.split(
+                    BadgeDrilldownQuery(
+                        groupBy = "unit",
+                        section = BadgeSections.SETTINGS,
+                        tool = SENT_TO_ME_TOOL,
+                    ),
+                )[SENT_TO_ME_UNIT] ?: 0,
             )
         }
         .distinctUntilChanged()
@@ -330,6 +338,38 @@ private fun AppGraph.Ready.dealMemoBadges(): DealMemoBadgeSource = object : Deal
     override fun readTab(unit: DealBadgeUnit) = read(unit, dealId = null)
 
     override fun readDeal(unit: DealBadgeUnit, dealId: String) = read(unit, dealId)
+
+    /**
+     * The Settings tree's deal-memo rows, read whole.
+     *
+     * Named the way those rows are filed, not the way this tool's own are:
+     * section `settings_label`, tool `admin_settings_label`, unit
+     * `deal_memo_label`. A read naming `deal_memo_label` as the *tool* — the
+     * shape every other read here uses — matches none of them.
+     */
+    override fun readSentToMe() {
+        val projectId = projectContext?.context?.value?.project?.projectId ?: return
+        scope.launch {
+            val now = System.currentTimeMillis()
+            runCatching {
+                socketEvents.emit(
+                    ZillitSocketEvents.Badges.NotificationLevelRead,
+                    NotificationReadDto(
+                        projectId = projectId,
+                        section = BadgeSections.SETTINGS,
+                        tool = SENT_TO_ME_TOOL,
+                        module = SENT_TO_ME_TOOL,
+                        segment = SENT_TO_ME_UNIT,
+                        unit = SENT_TO_ME_UNIT,
+                        timestamp = now,
+                        readTime = now,
+                    ),
+                    NotificationReadDto.serializer(),
+                )
+            }
+            badgeStore.markRead(LedgerRead.Levels(tool = SENT_TO_ME_TOOL, unit = SENT_TO_ME_UNIT))
+        }
+    }
 
     private fun read(unit: DealBadgeUnit, dealId: String?) {
         val projectId = projectContext?.context?.value?.project?.projectId ?: return
@@ -375,3 +415,11 @@ private const val DEAL_MEMO_TOOL = "deal_memo_tool"
 
 /** The badge ledger's name for the tool — distinct from its rights identifier. */
 private const val DEAL_MEMO_BADGE_TOOL = "deal_memo_label"
+
+/**
+ * "Sent to you" rows live in the Settings tree with the two names swapped
+ * round: the admin tool, this tool's label as the unit. The web reads them on
+ * its Settings deal-memo tab; the desktop has no such tab, so the tool does.
+ */
+private const val SENT_TO_ME_TOOL = "admin_settings_label"
+private const val SENT_TO_ME_UNIT = "deal_memo_label"

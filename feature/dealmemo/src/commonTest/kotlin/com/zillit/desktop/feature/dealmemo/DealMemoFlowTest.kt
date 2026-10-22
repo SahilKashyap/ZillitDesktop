@@ -145,6 +145,7 @@ class DealMemoFlowTest {
 
     private val badgeCounts = MutableStateFlow(DealBadgeCounts())
     private val readTabs = mutableListOf<DealBadgeUnit>()
+    private var sentToMeReads = 0
     private val readDeals = mutableListOf<Pair<DealBadgeUnit, String>>()
     private var savedFile: String? = null
 
@@ -165,6 +166,9 @@ class DealMemoFlowTest {
             }
             override fun readDeal(unit: DealBadgeUnit, dealId: String) {
                 readDeals += unit to dealId
+            }
+            override fun readSentToMe() {
+                sentToMeReads++
             }
         },
         files = DealFileSaver { name, _ ->
@@ -241,6 +245,32 @@ class DealMemoFlowTest {
         model.start()
         advanceUntilIdle()
         assertEquals(2, readTabs.count { it == DealBadgeUnit.Nda }, "showing the tool again reads it")
+    }
+
+    /**
+     * The rows the backend files under Settings (`admin_settings_label` /
+     * `deal_memo_label`): the web shows them on a Settings tab the desktop
+     * does not have, so the tool is their only door.
+     */
+    @Test
+    fun `the sent-to-you rows are read as the tool is shown, and not when there are none`() = runTest(dispatcher) {
+        badgeCounts.value = DealBadgeCounts(tabs = DealBadgeUnit.entries.associateWith { 0 }, sentToMe = 5)
+        val model = viewModel()
+        model.start()
+        settle { model.state.value.deals.loaded }
+        assertEquals(1, sentToMeReads, "the tool is the desktop's door to them")
+        assertEquals(0, readTabs.count { it == DealBadgeUnit.Nda }, "an empty NDA unit is not read")
+
+        badgeCounts.value = DealBadgeCounts(tabs = DealBadgeUnit.entries.associateWith { 0 }, sentToMe = 6)
+        advanceUntilIdle()
+        assertEquals(1, sentToMeReads, "one that lands while the tool is open was shown to nobody")
+
+        sentToMeReads = 0
+        badgeCounts.value = DealBadgeCounts(tabs = DealBadgeUnit.entries.associateWith { 0 }, sentToMe = 0)
+        advanceUntilIdle()
+        model.start()
+        advanceUntilIdle()
+        assertEquals(0, sentToMeReads, "nothing unread, nothing to say")
     }
 
     // -- list actions ---------------------------------------------------------------------------

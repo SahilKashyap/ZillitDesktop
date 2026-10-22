@@ -375,12 +375,40 @@ class BadgeStore(
     }
 
     private fun publish() {
-        val counts = tallyBadges(shown())
+        val visible = shown()
+        val counts = tallyBadges(visible)
         if (counts != state.value) {
             ZillitLog.d(TAG) { "ledger ${rows.size} rows → sections=${counts.sectionMap()} tools=${counts.toolMap()}" }
+            logSettingsRows(visible)
         }
         state.value = counts
         changed.tryEmit(Unit)
+    }
+
+    /**
+     * The settings rows, named one by one.
+     *
+     * The rail's Settings number is the whole `settings_label` section (iOS's
+     * More tab), but only two of that section's units are ever read here —
+     * the approval queues — so a row under any other unit wears a count
+     * nothing on this client can clear. The tally line above says how many;
+     * this says which, so a stuck number names its unit without anyone
+     * having to open the ledger.
+     */
+    private fun logSettingsRows(visible: List<NotificationRecord>) {
+        val settings = visible.filter { it.section == BadgeSections.SETTINGS }
+        if (settings.isEmpty()) return
+        ZillitLog.d(TAG) {
+            settings.take(SETTINGS_LOG_ROWS).joinToString(
+                prefix = "settings rows: [",
+                postfix = "]",
+            ) { row ->
+                val unit = row.unit.ifBlank { "<no unit>" }
+                val tool = row.tool.ifBlank { "<no tool>" }
+                val action = row.action.ifBlank { "<no action>" }
+                "$unit/$tool/$action@${row.updated}"
+            }
+        }
     }
 
     /** What one seed did — for the log line that says where a badge came from. */
@@ -392,6 +420,9 @@ class BadgeStore(
 
         /** How many retired rows the prune line names before it gets unreadable. */
         const val PRUNE_LOG_ROWS = 10
+
+        /** The same cap for the settings line — a section that big is the bug, not the log. */
+        const val SETTINGS_LOG_ROWS = 10
     }
 }
 
