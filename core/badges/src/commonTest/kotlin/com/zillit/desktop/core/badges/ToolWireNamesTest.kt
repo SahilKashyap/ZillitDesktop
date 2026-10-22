@@ -43,6 +43,20 @@ class ToolWireNamesTest {
         assertEquals("weather_label", identifierToWireTool("weather_tool"))
     }
 
+    /**
+     * The newest tools keep `_tool` in the middle, as `location_tool_label`
+     * does — the web's tile reads `tasks_tool_label` and iOS spells it the
+     * same, so the fallback's `tasks_label` named nothing and the tile's
+     * count outlived every visit.
+     */
+    @Test
+    fun `tasks and still kills keep the _tool the suffix rule drops`() {
+        assertEquals("tasks_tool_label", identifierToWireTool("tasks_tool"))
+        assertEquals("still_kills_tool_label", identifierToWireTool("still_kills_tool"))
+        assertEquals("tasks_tool", wireToolToIdentifier("tasks_tool_label"))
+        assertEquals("still_kills_tool", wireToolToIdentifier("still_kills_tool_label"))
+    }
+
     @Test
     fun `every wire label round-trips through its identifier`() {
         // A label whose identifier maps back to a DIFFERENT label would key
@@ -53,7 +67,7 @@ class ToolWireNamesTest {
             "map_label", "production_report_label", "production_report_tool_chat_label",
             "casting_background_tool_label",
             "recce_label", "cost_report_label", "pre_production_label",
-            "costume_set_sync_tool_label",
+            "costume_set_sync_tool_label", "tasks_tool_label", "still_kills_tool_label",
         ).forEach { label ->
             assertEquals(label, identifierToWireTool(wireToolToIdentifier(label)), "round trip of $label")
         }

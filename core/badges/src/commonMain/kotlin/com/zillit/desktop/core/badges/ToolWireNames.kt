@@ -50,6 +50,13 @@ private val WIRE_TOOL_LABELS = listOf(
     // suffix rule turned `costume_set_sync_tool` into `costume_set_sync_label`,
     // a name no row carries, so every read this tool sent named nothing.
     "costume_set_sync_tool_label",
+    // The two newest tools keep `_tool` in the middle as well: the web reads
+    // its tile count off `tasks_tool_label` / `still_kills_tool_label`
+    // (`useAvailableFilmTools` unit_name, `notificationRouteMatcher`), and iOS
+    // spells Tasks the same (`CONSTANTS.TASKS_LABEL`). Without them the suffix
+    // rule read `tasks_label`, a name no row carries, so the tile's count
+    // survived every visit.
+    "tasks_tool_label", "still_kills_tool_label",
     "document_distribution_tool", "document_distribution_label",
 )
 
