@@ -48,6 +48,9 @@ class BudgetBuilderGatewayTest {
 
     private val exits = AtomicInteger()
 
+    /** The app's language, as the host reports it per handshake. */
+    private var language: String = "en"
+
     /** Held open to keep an upstream call in flight for the whole of a test. */
     @Volatile
     private var apiGate: CountDownLatch? = null
@@ -114,6 +117,7 @@ class BudgetBuilderGatewayTest {
         gateway = BudgetBuilderGateway(
             pageUpstream = "http://127.0.0.1:${pageUpstream.address.port}",
             apiUpstream = "http://127.0.0.1:${apiUpstream.address.port}",
+            language = { language },
             moduledata = { blob() },
             bearer = { reauth -> reauthAsks += reauth; token(reauth) },
             onExit = { exits.incrementAndGet() },
@@ -292,6 +296,46 @@ class BudgetBuilderGatewayTest {
         assertEquals(1, exits.get())
     }
 
+    /**
+     * Budget Builder in the reader's language (web PR #6519).
+     *
+     * The page is written in English and falls back to it key by key, so the
+     * only thing that must never happen is a malformed payload or a failed
+     * handshake — a language the desktop carries no words for answers an
+     * empty table, not a 404.
+     */
+    @Test
+    fun `the locale read names the language and its words`() {
+        language = "de"
+
+        val response = get("/zillit-locale")
+
+        assertEquals(200, response.statusCode())
+        val body = response.body()
+        assertTrue(""""lang":"de"""" in body, body)
+        // A real key from the bundled German dictionary, not just a shape.
+        assertTrue("bb_back_to_film_tools" in body, body.take(200))
+    }
+
+    @Test
+    fun `a language with no dictionary still answers, with no words`() {
+        language = "en"
+
+        val response = get("/zillit-locale")
+
+        assertEquals(200, response.statusCode())
+        assertEquals("""{"lang":"en","labels":{}}""", response.body())
+    }
+
+    @Test
+    fun `a language code that is not one is not pasted into the payload`() {
+        // The labels file is pasted in rather than parsed, so the one
+        // interpolated value has to be a plain code or nothing.
+        language = """de","x":""""
+
+        assertEquals("""{"lang":"en","labels":{}}""", get("/zillit-locale").body())
+    }
+
     @Test
     fun `the bridge forces embed mode and plays the host's part`() {
         val response = get("/zillit-bridge.js")
@@ -309,6 +353,9 @@ class BudgetBuilderGatewayTest {
         // The way out, and the three triggers that keep the token alive.
         assertTrue("zillit:exit" in script)
         assertTrue("/zillit-exit" in script)
+        // The page's language, pushed with the same handshake.
+        assertTrue("zillit:locale" in script)
+        assertTrue("/zillit-locale" in script)
         assertTrue("setInterval" in script)
         assertTrue("visibilitychange" in script)
         assertTrue("'online'" in script)

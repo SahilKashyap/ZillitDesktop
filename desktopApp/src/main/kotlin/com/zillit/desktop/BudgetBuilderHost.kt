@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.strings.Strings
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaders
@@ -245,6 +246,9 @@ class BudgetBuilderHost(
         gateway ?: BudgetBuilderGateway(
             pageUpstream = web,
             apiUpstream = api,
+            // The app's language, read per handshake: a language changed
+            // under a running tool reaches the page on its next reload.
+            language = { Strings.language.code },
             moduledata = ::mintModuledata,
             bearer = ::mintBearer,
             // Off the gateway's worker thread at once: the page is waiting on

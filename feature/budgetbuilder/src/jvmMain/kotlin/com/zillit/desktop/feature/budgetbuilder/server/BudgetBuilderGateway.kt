@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -63,6 +64,11 @@ import java.util.concurrent.atomic.AtomicInteger
  *    is not a one-shot hand-off: the bridge re-pushes on a timer, on the wake
  *    seam and when the network returns, and re-mints when the page asks again
  *    with `reauth` after a 401.
+ *  - `zillit:locale`, the language the app is in and Budget Builder's words
+ *    in it, once per handshake. The page speaks the reader's language rather
+ *    than always English; a key with no translation falls back to the page's
+ *    own English, so a language the desktop carries no dictionary for simply
+ *    sends its code and an empty table (web PR #6519).
  *  - `zillit:moduledata`, the legacy encrypted blob, once per load. Sent
  *    first and un-gated because a **cached** older copy of the page
  *    understands nothing else — `public/` is deployed with no content hash,
@@ -80,9 +86,19 @@ import java.util.concurrent.atomic.AtomicInteger
  * beyond the two it is asked to hand the page, both of which any process
  * signed in as this user could obtain for itself.
  */
+// A loopback HTTP server: one small handler per path it answers, plus the
+// upstream proxies. Splitting them would scatter one request table.
+@Suppress("TooManyFunctions")
 class BudgetBuilderGateway(
     pageUpstream: String,
     apiUpstream: String,
+    /**
+     * The language the app is in, as a two-letter code.
+     *
+     * Read per handshake, not once at start: the language can change under a
+     * running tool, and the page re-handshakes when it reloads.
+     */
+    private val language: () -> String = { "en" },
     /**
      * Mints a fresh moduledata blob, or null when one cannot be built (no
      * key, no open production). Called per handshake rather than once at
@@ -166,6 +182,7 @@ class BudgetBuilderGateway(
                 path == BRIDGE_PATH -> respond(exchange, HTTP_OK, JS_TYPE, bridgeScript().encodeToByteArray())
                 path == MODULEDATA_PATH -> serveCredential(exchange) { moduledata() }
                 path == TOKEN_PATH -> serveCredential(exchange) { bearer(exchange.asksReauth()) }
+                path == LOCALE_PATH -> serveLocale(exchange)
                 path == EXIT_PATH -> serveExit(exchange)
                 path.startsWith(PAGE_PREFIX) -> proxyPage(exchange)
                 path.startsWith(API_PREFIX) -> proxyApi(exchange)
@@ -200,6 +217,53 @@ class BudgetBuilderGateway(
             respond(exchange, HTTP_OK, TEXT_TYPE, value.encodeToByteArray())
         }
     }
+
+    /**
+     * `{ "lang": "de", "labels": { "bb_…": "…" } }` — the page's own
+     * `zillit:locale` payload.
+     *
+     * The words are a bundled resource per language, not app strings: they
+     * belong to the embedded page, never appear in this app's own UI, and
+     * putting 1,500 of them through the string catalogue would mean carrying
+     * English copies of keys only the page knows how to use. A language with
+     * no file answers an empty table, and the page shows its own English —
+     * which is also what English itself gets, since the page is written in it.
+     *
+     * The file is already JSON, so it is pasted in rather than parsed and
+     * re-printed: nothing here needs to read a label, and a 100KB round trip
+     * through a parser per handshake would buy nothing. [LANGUAGE_CODE] is
+     * what keeps the only interpolated value from being able to break out.
+     */
+    private fun serveLocale(exchange: HttpExchange) {
+        val lang = runCatching { language() }.getOrNull()
+            ?.lowercase()
+            ?.takeIf { it.matches(LANGUAGE_CODE) }
+            ?: DEFAULT_LANGUAGE
+        val body = """{"lang":"$lang","labels":${labelsFor(lang)}}"""
+        respond(exchange, HTTP_OK, JSON_TYPE, body.encodeToByteArray())
+    }
+
+    /**
+     * Budget Builder's words in [lang] as raw JSON, read once and kept.
+     *
+     * A missing file is an empty table rather than a failed handshake: the
+     * page is perfectly usable in English, and a budget session must not die
+     * over a dictionary.
+     */
+    private fun labelsFor(lang: String): String = labelCache.getOrPut(lang) {
+        val resource = "$LABELS_PREFIX$lang.json"
+        val text = runCatching {
+            javaClass.classLoader?.getResourceAsStream(resource)?.use { it.readBytes().decodeToString() }
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            ZillitLog.i(TAG) { "no budget labels for $lang; the page keeps its own English" }
+            EMPTY_LABELS
+        } else {
+            text
+        }
+    }
+
+    private val labelCache = ConcurrentHashMap<String, String>()
 
     private fun serveExit(exchange: HttpExchange) {
         runCatching { onExit() }
@@ -423,6 +487,8 @@ class BudgetBuilderGateway(
      * own; the page's own `reauth` retry is what makes a stale token correct,
      * and these only make it rare.
      */
+    // One script, read top to bottom; every line of it is the page's.
+    @Suppress("LongMethod")
     private fun bridgeScript(): String = """
         |// Injected by Zillit Desktop. Forces the app's Zillit embed mode and
         |// plays the host's part of its identity handshake, in place of a
@@ -455,12 +521,24 @@ class BudgetBuilderGateway(
         |      })
         |      .catch(function () {});
         |  }
+        |  // The app's language and Budget Builder's words in it. Read per
+        |  // handshake rather than cached here, so a language changed under a
+        |  // running tool reaches the page on its next reload.
+        |  function pushLocale() {
+        |    fetch('$LOCALE_PATH')
+        |      .then(function (r) { return r.ok ? r.json() : null; })
+        |      .then(function (locale) {
+        |        if (locale) post({ type: 'zillit:locale', lang: locale.lang, labels: locale.labels || {} });
+        |      })
+        |      .catch(function () {});
+        |  }
         |  window.addEventListener('message', function (event) {
         |    if (event.source !== window) return;
         |    var data = event.data;
         |    if (!data) return;
         |    if (data.type === 'zillit:ready') {
         |      pushBlob();
+        |      pushLocale();
         |      pushToken(data.reauth === true);
         |    } else if (data.type === 'zillit:exit') {
         |      fetch('$EXIT_PATH', { method: 'POST' }).catch(function () {});
@@ -485,6 +563,18 @@ class BudgetBuilderGateway(
         private const val MODULEDATA_PATH = "/zillit-moduledata"
         private const val TOKEN_PATH = "/zillit-token"
         private const val EXIT_PATH = "/zillit-exit"
+        private const val LOCALE_PATH = "/zillit-locale"
+
+        /** Budget Builder's own words, one file per language, beside this class. */
+        private const val LABELS_PREFIX = "budgetbuilder/bb-"
+
+        /** What the page falls back to, and what it already speaks. */
+        private const val DEFAULT_LANGUAGE = "en"
+
+        /** A plain language code; anything else is not pasted into the payload. */
+        private val LANGUAGE_CODE = Regex("[a-z]{2,3}")
+
+        private const val EMPTY_LABELS = "{}"
         private const val REAUTH_PARAM = "reauth"
         private const val API_PARAM = "api"
         private const val BRIDGE_TAG = "<script src=\"$BRIDGE_PATH\"></script>"
@@ -537,6 +627,7 @@ class BudgetBuilderGateway(
         private const val HTML_TYPE_MARKER = "text/html"
         private const val JS_TYPE = "text/javascript; charset=utf-8"
         private const val TEXT_TYPE = "text/plain; charset=utf-8"
+        private const val JSON_TYPE = "application/json; charset=utf-8"
 
         /** Headers `java.net.http` refuses to set, or that name this hop. */
         private val RESTRICTED_HEADERS = setOf(
