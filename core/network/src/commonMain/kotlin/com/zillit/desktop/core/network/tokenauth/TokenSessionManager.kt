@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestAuthenticator
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.idTail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -559,10 +560,14 @@ class TokenSessionManager(
      *
      * This tag's INFO is now kept in production, because the scope on the line
      * above is what tells a refused call apart from a wrong one (see
-     * `ZillitLogging.FIELD_TAGS`). The id itself is not needed for that, and
-     * iOS prints the same line the same way (`projectId.suffix(6)`).
+     * `ZillitLogging.FIELD_TAGS`).
+     *
+     * One convention, in one place: `ApiClient`'s refusal log now names the
+     * production a refused call rode too, and two tails of different lengths
+     * would stop a reader matching the mint line to the refusal it explains —
+     * which is the whole reason both lines exist.
      */
-    private fun String.tail(): String = if (length <= ID_TAIL) this else "…" + takeLast(ID_TAIL)
+    private fun String.tail(): String = idTail()
 
     private fun SessionCallResult<*>.isNoAccess(): Boolean =
         this is SessionCallResult.Failure && (serverMessage == MSG_NO_MEMBERSHIP || serverMessage == MSG_ACCESS_DENIED)
@@ -615,8 +620,6 @@ class TokenSessionManager(
         const val MSG_REFRESH_INVALID = "session_refresh_invalid"
         const val MSG_REFRESH_REUSE = "session_refresh_reuse_detected"
 
-        /** How much of a production id a log line keeps — see `String.tail`. */
-        private const val ID_TAIL = 6
         const val MSG_TOKEN_AUTH_DISABLED = "session_token_auth_disabled"
         const val MSG_NO_MEMBERSHIP = "session_project_no_membership"
         const val MSG_ACCESS_DENIED = "session_project_access_denied"

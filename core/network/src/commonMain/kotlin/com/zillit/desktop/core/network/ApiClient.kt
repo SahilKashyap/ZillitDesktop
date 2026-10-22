@@ -423,15 +423,23 @@ class ApiClient(
         }
 
         var response = perform(verb, url, resolvedHeaders, token, queryParameters, payload)
+        // The credential the reported answer actually came back from, which a
+        // heal below replaces. Its scope is the same either way, but the log
+        // should describe what went out rather than what was first built.
+        var sent = token
         if (token != null && response.status.value == STATUS_UNAUTHORIZED) {
             // An expired token heals here, once, and the retry's answer is the
             // one reported. A second 401 is the session really being gone.
             val renewed = authenticator?.recoverFromUnauthorized(module, project, url, token)
             if (renewed != null && renewed != token) {
+                sent = renewed
                 response = perform(verb, url, resolvedHeaders, renewed, queryParameters, payload)
             }
         }
-        response.toEnvelope(options.reportUnauthorized)
+        // The credential travels to the log with the answer: which one went
+        // out is only known here, and on a refusal it is the first thing a
+        // reader needs. See [credentialNote].
+        response.toEnvelope(options.reportUnauthorized, sent, project)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
@@ -541,7 +549,11 @@ class ApiClient(
         }
     }
 
-    private suspend fun HttpResponse.toEnvelope(reportUnauthorized: Boolean): ZillitResult<ApiEnvelope> {
+    private suspend fun HttpResponse.toEnvelope(
+        reportUnauthorized: Boolean,
+        token: String? = null,
+        projectId: String? = null,
+    ): ZillitResult<ApiEnvelope> {
         if (!status.isSuccess()) {
             val raw = runCatching { bodyAsText() }.getOrNull()
             // Decoded once, for both halves: the message names the failure and
@@ -564,7 +576,10 @@ class ApiClient(
             // same one `TokenSession` already logs.
             ZillitLog.w(TAG) {
                 val why = serverMessage?.takeIf(String::isNotBlank)?.let { " $it" }.orEmpty()
-                "${status.value} $path$why${blankPairNote(status.value, readScope())}"
+                "${status.value} $path$why" +
+                    envelopeNote(serverMessage, raw) +
+                    blankPairNote(status.value, readScope()) +
+                    credentialNote(status.value, token, projectId)
             }
             if (status.value == STATUS_UNAUTHORIZED && reportUnauthorized) onUnauthorized()
 
@@ -743,3 +758,74 @@ internal fun blankPairNote(status: Int, scope: ReadScope?): String {
 
 /** The server's answer to a `moduledata` it will not accept. */
 private const val STATUS_NOT_ACCEPTABLE = 406
+
+/**
+ * Which credential a refused call actually rode, said on the line that
+ * reports it. Empty for every status where the credential is not the
+ * question.
+ *
+ * `401 libs_invalid_token_scope` is the server saying "this credential does
+ * not reach this route", and the one thing that tells a reader *why* is which
+ * credential went out: the device token, which no production's route accepts,
+ * or a production's token, which reaches only that production. The line said
+ * neither, so the two could not be told apart in a field log at all.
+ *
+ * What that cost: a week of those refusals (2026-10-21) read as a token minted
+ * for one production while the request named another, because the only other
+ * thing in the log was `TokenSession`'s mint lines and the nearest one named a
+ * different production. It was neither — the mints belonged to the badge
+ * seed, which names the *last* production on purpose while none is open
+ * (`seedFromLastProduction`), and the refused reads were project-scoped reads
+ * firing with nothing open at all, on the device token. Settling that took a
+ * version timeline and three source files; this line would have said it.
+ *
+ * The production is named by its tail only, the convention `TokenSession`
+ * already logs ids under: enough to tell two apart, not a record of which
+ * productions somebody is on.
+ */
+internal fun credentialNote(status: Int, token: String?, projectId: String?): String = when {
+    status !in CREDENTIAL_STATUSES -> ""
+    token == null -> " — on moduledata"
+    projectId.isNullOrBlank() -> " — on the device token, which no production's route accepts"
+    else -> " — on the token for production ${projectId.idTail()}"
+}
+
+/**
+ * Whether the refusal even came from this API, said on the line that reports
+ * it. Empty whenever the server named its own failure.
+ *
+ * A refusal with no `message` is not this backend refusing a call — every
+ * route of it answers the envelope, and the key in that envelope is the whole
+ * of the diagnosis. A refusal without one came from something in front of the
+ * app, or from a route that does not speak this shape, and the two want
+ * completely different people looking at them.
+ *
+ * What the gap cost: 155 bare `401 /api/v2/chat-room` and
+ * `401 /api/v2/chat/users-group` across two machines and six days
+ * (2026-10-14 to 10-19), always as a pair and never with any other route
+ * beside them. Read against the refusals that *do* carry a key, they looked
+ * like the same fault and were not, and there was no way to tell from the log
+ * which of the two it was.
+ *
+ * The size only, never the body: a refusal body can carry a session, a crew
+ * name or a sign-in page. That it did not parse, and roughly how much of it
+ * there was, is the finding.
+ */
+internal fun envelopeNote(serverMessage: String?, raw: String?): String = when {
+    !serverMessage.isNullOrBlank() -> ""
+    raw == null -> " — the answer could not be read at all"
+    raw.isBlank() -> " — an empty answer, with no envelope in it"
+    else -> " — ${raw.length} bytes that are not this API's envelope"
+}
+
+/**
+ * The last few characters of an id — enough to tell two apart in a log, not
+ * enough to be a record of what somebody is on. iOS prints the same line the
+ * same way (`projectId.suffix(6)`).
+ */
+internal fun String.idTail(): String = if (length <= ID_TAIL) this else "…" + takeLast(ID_TAIL)
+
+private const val ID_TAIL = 6
+
+/** The statuses where which credential went out is the first thing a reader needs. */
+private val CREDENTIAL_STATUSES = setOf(401, 403)

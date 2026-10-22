@@ -14,8 +14,9 @@ import kotlin.test.assertTrue
  * working on the production list — which is the failure mode of a fail-closed
  * list and the reason this test names them one by one rather than sampling.
  *
- * The refused half is the three routes the server was observed refusing there,
- * `401 libs_invalid_token_scope`, 21 times across two days.
+ * The refused half is the routes the server was observed refusing there,
+ * `401 libs_invalid_token_scope` — 21 times across two days on one machine,
+ * and 15 more on a second whose build predated this gate.
  */
 class DeviceRoutesTest {
 
@@ -43,11 +44,20 @@ class DeviceRoutesTest {
     }
 
     @Test
-    fun `the three routes the server refuses there are not device routes`() {
+    fun `the routes the server refuses there are not device routes`() {
         val refused = listOf(
             HttpVerb.Get to "https://cncapi-dev.zillit.com/api/v2/chat-room",
             HttpVerb.Get to "https://cncapi-dev.zillit.com/api/v2/chat/users-group",
             HttpVerb.Get to "https://callapi-dev.zillit.com/api/v2/mediasoup-call/active-group-calls",
+            // A second machine's logs, from a build that predates this gate
+            // (1.2.4 was tagged two hours before it landed), caught three more
+            // being refused the same way with nothing open: 2026-10-21/22,
+            // `401 libs_invalid_token_scope`, 15 times between them. Named
+            // here because this list is only ever as good as the sweep behind
+            // it, and these are the routes that sweep missed.
+            HttpVerb.Get to "https://driveapi-dev.zillit.com/api/v2/drive/files",
+            HttpVerb.Get to "https://driveapi-dev.zillit.com/api/v2/drive/folders",
+            HttpVerb.Post to "https://projectapi-dev.zillit.com/api/v2/user/join-project",
         )
         refused.forEach { (verb, url) ->
             assertFalse(isDeviceRoute(verb, url), "should NOT be a device route: $verb $url")

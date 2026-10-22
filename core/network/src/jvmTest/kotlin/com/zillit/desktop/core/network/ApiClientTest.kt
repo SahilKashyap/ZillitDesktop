@@ -320,6 +320,70 @@ class ApiClientTest {
         assertEquals("", blankPairNote(503, null))
     }
 
+    /**
+     * `libs_invalid_token_scope` is the server refusing the credential, and
+     * which credential went out is the whole of the explanation. Without it,
+     * a week of those refusals (2026-10-21) read as a token minted for one
+     * production while the request named another; they were project-scoped
+     * reads firing with nothing open, on the device token.
+     */
+    @Test
+    fun `a refusal names the credential it rode`() {
+        assertEquals(" — on moduledata", credentialNote(401, token = null, projectId = "p1"))
+        assertEquals(
+            " — on the device token, which no production's route accepts",
+            credentialNote(401, token = "tok", projectId = null),
+        )
+        assertEquals(
+            " — on the device token, which no production's route accepts",
+            credentialNote(401, token = "tok", projectId = ""),
+        )
+        assertEquals(
+            " — on the token for production …06d432",
+            credentialNote(403, token = "tok", projectId = "678108b934a30d92ea06d432"),
+        )
+    }
+
+    /**
+     * Only where the credential is the question. A 404 or a 500 rode a
+     * credential the server accepted, and naming it there would put a reader
+     * onto the one thing that was not wrong.
+     */
+    @Test
+    fun `a status the credential does not explain adds nothing`() {
+        assertEquals("", credentialNote(406, token = "tok", projectId = null))
+        assertEquals("", credentialNote(404, token = null, projectId = "p1"))
+        assertEquals("", credentialNote(500, token = "tok", projectId = "p1"))
+    }
+
+    /**
+     * A refusal carrying no key did not come from this backend, and the line
+     * now says so. 155 of these (two machines, 2026-10-14 to 10-19) sat beside
+     * refusals that did carry one and read as the same fault.
+     */
+    @Test
+    fun `a refusal with no key says the answer was not this API's`() {
+        assertEquals(" — the answer could not be read at all", envelopeNote(null, null))
+        assertEquals(" — an empty answer, with no envelope in it", envelopeNote(null, ""))
+        assertEquals(" — 18 bytes that are not this API's envelope", envelopeNote(null, "<html>unauthorized"))
+        assertEquals(" — 18 bytes that are not this API's envelope", envelopeNote("", "<html>unauthorized"))
+    }
+
+    /** Silent when the server named its own failure: the key is the diagnosis. */
+    @Test
+    fun `a refusal the server explained adds nothing`() {
+        assertEquals("", envelopeNote("libs_invalid_token_scope", """{"message":"libs_invalid_token_scope"}"""))
+        assertEquals("", envelopeNote("libs_module_data_invalid", null))
+    }
+
+    /** Short ids are not padded, and nothing longer than the tail is printed. */
+    @Test
+    fun `an id is named by its tail only`() {
+        assertEquals("abc", "abc".idTail())
+        assertEquals("abcdef", "abcdef".idTail())
+        assertEquals("…bcdefg", "abcdefg".idTail())
+    }
+
     private companion object {
         const val URL = "https://api.example.com/project"
         const val SIMPLE_BODY = """{"status":200,"data":{"id":"p1","name":"F"}}"""
