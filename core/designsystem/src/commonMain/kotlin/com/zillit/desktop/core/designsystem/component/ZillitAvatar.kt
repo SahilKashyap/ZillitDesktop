@@ -48,6 +48,16 @@ fun ZillitAvatar(
      * else the hue from the name is the right answer and this stays null.
      */
     colour: Color? = null,
+    /**
+     * The photo's accessible name.
+     *
+     * Null — the default — leaves the disc decorative, which is right
+     * wherever the name it stands for is printed beside it. A disc that is
+     * ALSO a control needs one: an operable thing with no name is worse to
+     * meet than no control at all. The initials never carry it; they repeat
+     * a name that is already on screen.
+     */
+    contentDescription: String? = null,
 ) {
     val cleaned = name.trim()
     val background = colour ?: avatarHue(cleaned)
@@ -60,7 +70,7 @@ fun ZillitAvatar(
         if (shown != null) {
             Image(
                 bitmap = shown,
-                contentDescription = null,
+                contentDescription = contentDescription,
                 modifier = Modifier.size(size),
                 contentScale = ContentScale.Crop,
             )

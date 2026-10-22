@@ -672,6 +672,39 @@ internal fun MediaLightbox(
 }
 
 /**
+ * Somebody's profile picture, full size.
+ *
+ * The avatar beside a post is a 28dp disc, which is enough to recognise a
+ * face you know and not enough to read one you do not. Clicking it opens the
+ * photo the same way a posted picture opens (web PR #6520).
+ *
+ * Takes bytes rather than an attachment: a profile picture is not a notice's
+ * media and never goes through [NoticeMediaSource] — the shared avatar loader
+ * has already fetched and cached it for the disc.
+ */
+@Composable
+internal fun AvatarLightbox(name: String, photo: ImageBitmap, onClose: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = LIGHTBOX_SCRIM))
+            .onBackdropTap(onClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            bitmap = photo,
+            contentDescription = name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().padding(LIGHTBOX_PADDING),
+        )
+        ZillitViewerClose(
+            onClose = onClose,
+            modifier = Modifier.align(Alignment.TopEnd).padding(ZillitTheme.spacing.md),
+        )
+    }
+}
+
+/**
  * A clip, playing where the picture would be: the file's name, the cross, and
  * the video under them.
  *

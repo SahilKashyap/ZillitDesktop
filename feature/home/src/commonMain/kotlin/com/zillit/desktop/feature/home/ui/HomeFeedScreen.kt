@@ -121,6 +121,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
@@ -162,6 +164,15 @@ private sealed interface BoardViewer {
 
     /** A document's pages, in the app. The id rides along for the Download. */
     data class Document(val noticeId: String, val attachment: NoticeAttachment) : BoardViewer
+
+    /**
+     * A sender's profile picture, full size.
+     *
+     * Carries the decoded picture rather than a key: the avatar beside the
+     * post already has it, and a profile picture is not in the board's media
+     * gallery to be fetched from.
+     */
+    data class Avatar(val name: String, val photo: ImageBitmap) : BoardViewer
 }
 
 private data class BoardUi(
@@ -206,6 +217,8 @@ private data class BoardUi(
     val crewNames: () -> List<String>,
     /** One crew member's profile picture, or null for the initials fallback. */
     val loadAvatar: suspend (String) -> ByteArray?,
+    /** Opens a sender's photo full size; a disc with only initials does nothing. */
+    val onOpenAvatar: (name: String, photo: ImageBitmap) -> Unit,
     /** Upload percent for an in-flight post's local id — see [HomeFeedUiState.uploadProgress]. */
     val uploadProgress: (String) -> Int? = { null },
     /** An archive: no read receipts to ask for, on top of nothing to write. See [HomeFeedUiState.readOnly]. */
@@ -419,7 +432,8 @@ private fun BoardViewers(
     val onClose = { onShow(null) }
     // Only the gallery steps: a document is not in it, so it opens alone.
     val around = when (viewer) {
-        null, is BoardViewer.Document -> MediaNeighbours(older = null, newer = null)
+        // Neither is in the board's gallery, so neither steps to a neighbour.
+        null, is BoardViewer.Document, is BoardViewer.Avatar -> MediaNeighbours(older = null, newer = null)
         is BoardViewer.Picture -> gallery.neighboursOf(viewer.attachment.media)
         is BoardViewer.Clip -> gallery.neighboursOf(viewer.attachment.media)
     }
@@ -434,6 +448,12 @@ private fun BoardViewers(
             onClose = onClose,
             onPrevious = onPrevious,
             onNext = onNext,
+        )
+
+        is BoardViewer.Avatar -> AvatarLightbox(
+            name = viewer.name,
+            photo = viewer.photo,
+            onClose = onClose,
         )
 
         is BoardViewer.Clip -> VideoLightbox(
@@ -3043,6 +3063,7 @@ private fun BoardArea(
                 onImageReply = onImageReply,
                 crewNames = crewNames,
                 loadAvatar = loadAvatar,
+                onOpenAvatar = { name, photo -> onShowViewer(BoardViewer.Avatar(name, photo)) },
                 uploadProgress = { localId -> state.uploadProgress[localId] },
                 readOnly = state.readOnly,
                 selected = state.selection?.ids,
@@ -3068,10 +3089,25 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
         // is simply absent, as the phones leave it, never "Unknown".
         val author = ui.resolveAuthor(notice.authorId) ?: notice.authorName
         notice.authorId?.let { authorId ->
+            // A photo opens full size, as the web's does (PR #6520); a disc
+            // showing initials has nothing to open, so it stays inert rather
+            // than offering a click that would do nothing.
+            val photo = rememberAvatarBitmap(authorId, ui.loadAvatar)
             ZillitAvatar(
                 name = author,
                 size = HEADER_AVATAR,
-                image = rememberAvatarBitmap(authorId, ui.loadAvatar),
+                image = photo,
+                // Named only when it is a control; the initials repeat the
+                // name printed beside them and stay decorative.
+                contentDescription = author.takeIf { photo != null },
+                modifier = if (photo == null) {
+                    Modifier
+                } else {
+                    Modifier
+                        .clip(CircleShape)
+                        .clickable { ui.onOpenAvatar(author, photo) }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                },
             )
         }
         // Name in the page's ink, time beside it in the margin's grey: who
