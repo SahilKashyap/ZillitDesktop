@@ -267,15 +267,21 @@ internal class FakeChatRepository(
     /** Every warm ask made, so a test can prove which rows were (not) asked about. */
     val lastMessageAsks = mutableListOf<String>()
 
-    /** Refuses every warm ask — the lever for "the server did not answer". */
-    var lastMessageFails: Boolean = false
+    /**
+     * Fails every warm ask with this, or answers normally when null.
+     *
+     * The error itself is the lever, not a boolean: the warm pass reads it to
+     * decide whether the rest of the pass is worth making, and a lost ack and
+     * a dead socket pull that decision opposite ways.
+     */
+    var lastMessageFailure: ZillitError? = null
 
     override suspend fun lastMessage(
         conversationId: String,
         isGroup: Boolean,
     ): ZillitResult<ChatMessage?> {
         lastMessageAsks += conversationId
-        if (lastMessageFails) return ZillitResult.Failure(ZillitError.Unknown("ack failed"))
+        lastMessageFailure?.let { return ZillitResult.Failure(it) }
         val answer = serverLast[conversationId] ?: return ZillitResult.Success(null)
         // Keyed by the conversation, not by the sender: a room's line comes
         // from a person and belongs to the room, exactly as the real

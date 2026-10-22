@@ -14,6 +14,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.database.ChatCache
 import com.zillit.desktop.core.database.ChatMessageRow
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -894,6 +896,35 @@ class ChatRepositoryImpl(
     }
 
     /**
+     * `private-chat:get-messages` / `group-chat:get-messages`, asked twice if
+     * the first ack is lost.
+     *
+     * A timed-out ack is neither an answer nor a refusal. The socket WAS
+     * connected — [SocketClient.emitForAck] answers `NoConnection` at once
+     * when it is not — so the frame went out and nothing came back inside the
+     * window: a room this socket had not been put into yet after a reconnect,
+     * or an ack that simply lost its race. Field logs caught four of these in
+     * a week, and each one was a listing line or a thread that then sat at
+     * whatever it already had, because a lost ack read as a flat failure.
+     *
+     * Asking again is safe — `get-messages` reads and writes nothing — and
+     * once, because two lost acks in a row is the connection, not the race.
+     *
+     * Only a timeout is retried: `NoConnection` has nothing to ask over, and
+     * a server that refused once refuses again.
+     */
+    private suspend fun askForMessages(
+        event: SocketEventName,
+        payload: JsonObject,
+    ): ZillitResult<JsonElement> {
+        val first = bus.emitForAck(event, payload, JsonElement.serializer())
+        val lostAck = first is ZillitResult.Failure && first.error is ZillitError.Timeout
+        if (!lostAck) return first
+        ZillitLog.i(TAG) { "${event.value} lost its ack; asking once more" }
+        return bus.emitForAck(event, payload, JsonElement.serializer())
+    }
+
+    /**
      * `private-chat:get-messages` / `group-chat:get-messages` with
      * `max_records: 1` — the web's warm fetch (`CNCSyncHelper.fetchUserData`).
      *
@@ -912,9 +943,9 @@ class ChatRepositoryImpl(
         val me = myUserId()
         val project = projectId()
         if (me == null || project == null) return ZillitResult.Success(null)
-        val answer = bus.emitForAck(
-            if (isGroup) groupGetMessages else privateGetMessages,
-            lastMessagesEnvelope(
+        val answer = askForMessages(
+            event = if (isGroup) groupGetMessages else privateGetMessages,
+            payload = lastMessagesEnvelope(
                 projectId = project,
                 senderId = me,
                 receiverId = conversationId,
@@ -923,7 +954,6 @@ class ChatRepositoryImpl(
                 departmentId = scope.departmentId,
                 budgetDocumentId = scope.budgetDocumentId,
             ),
-            JsonElement.serializer(),
         )
         // Every outcome says so. This ask IS a wire contract taken from
         // another client, and it was silent on success and silent on a lost

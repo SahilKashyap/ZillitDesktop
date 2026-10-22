@@ -593,6 +593,20 @@ private const val MILLIS_PER_SECOND = 1_000L
 private const val WAKE_PROBE_BUDGET_MILLIS = 3_000L
 
 /**
+ * How long a project-scoped read will wait for a production to be open.
+ *
+ * The wait exists for the gap in the middle of a switch (`onProjectOpened`
+ * runs with null first and the new production second). Spent only by a read
+ * that would otherwise be refused outright, so the cost of being wrong is a
+ * delayed refusal, never a delayed answer.
+ *
+ * Three seconds because the gap is a person reaching the production list and
+ * clicking a card, not a function returning: the two gaps in the log this
+ * came from were 0.5s and 2.4s (2026-10-21).
+ */
+private const val PROJECT_SCOPE_SETTLE_MILLIS = 3_000L
+
+/**
  * Everything that has to happen when the open production changes.
  *
  * Extracted from the graph because the **order** is the substance: the request
@@ -1175,6 +1189,13 @@ sealed interface AppGraph {
                 },
                 nowMillis = System::currentTimeMillis,
                 authenticator = tokenSession,
+                // The blank production between a switch's two legs, waited
+                // out rather than refused — see ApiClient.awaitProjectOpen.
+                awaitProjectOpen = {
+                    withTimeoutOrNull(PROJECT_SCOPE_SETTLE_MILLIS) {
+                        headerContext.map { it.projectId }.first { !it.isNullOrBlank() }
+                    } != null
+                },
                 onFailure = { failure -> appLog?.log(failure.toLogEvent()) },
             )
             StartupTrace.mark("apiClient built")

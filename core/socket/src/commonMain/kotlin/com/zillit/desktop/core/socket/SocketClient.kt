@@ -65,6 +65,15 @@ interface SocketClient {
     /**
      * Emit and wait for the server's acknowledgement payload — the CNC
      * handlers answer queries through the ack, not through events.
+     *
+     * Three failures, and callers tell them apart:
+     * [com.zillit.desktop.core.common.ZillitError.NoConnection] when there was
+     * no socket to emit over, so there is nothing to ask again;
+     * [com.zillit.desktop.core.common.ZillitError.Timeout] when the frame went
+     * out and the window closed with nothing back, which an idempotent read
+     * may ask again; and
+     * [com.zillit.desktop.core.common.ZillitError.Unknown] for everything
+     * else, which will fail the same way however often it is tried.
      */
     suspend fun <T> emitForAck(
         event: SocketEventName,

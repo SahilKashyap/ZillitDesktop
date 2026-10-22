@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -190,9 +191,34 @@ class SocketIoClient(
                 // that needs a server-side answer can be told apart from the
                 // one that needs a retry.
                 ZillitLog.w(TAG) { "no ack for ${event.value}: ${it::class.simpleName}" }
-                ZillitResult.Failure(ZillitError.Unknown("ack failed: ${it::class.simpleName}"))
+                ZillitResult.Failure(ackFailure(event, it))
             },
         )
+    }
+
+    /**
+     * What a failed [emitForAck] becomes.
+     *
+     * A lost ack is a **timeout**, and now says so. It used to arrive as
+     * [ZillitError.Unknown] with the exception's name in the text, which made
+     * "the window closed with nothing back" indistinguishable from "the frame
+     * could not be built" to everyone except a caller willing to read that
+     * text — and the two want opposite things. One is worth asking again
+     * (`get-messages` timed out four times in a week of field logs, each one
+     * a chat thread or a listing line that then stayed as it was); the other
+     * will fail identically however many times it is tried.
+     *
+     * `RetryPolicy.isRetryable` already answers true for [ZillitError.Timeout],
+     * so the outbox now holds a timed-out send on that rather than on
+     * `ChatSendHandler`'s `ack failed` text match. That match stays, because
+     * it is still the only thing covering the ack failures that are not
+     * timeouts.
+     */
+    private fun ackFailure(event: SocketEventName, cause: Throwable): ZillitError = when (cause) {
+        is TimeoutCancellationException ->
+            ZillitError.Timeout("no ack for ${event.value} within ${ACK_TIMEOUT_MILLIS}ms")
+
+        else -> ZillitError.Unknown("ack failed: ${cause::class.simpleName}")
     }
 
     override suspend fun emit(event: SocketEventName): ZillitResult<Unit> {

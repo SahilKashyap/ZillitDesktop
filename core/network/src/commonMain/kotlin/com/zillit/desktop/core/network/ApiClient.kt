@@ -97,6 +97,7 @@ data class CallOptions(
  * error handling. This collapses them into [request], with the differences
  * expressed as parameters.
  */
+@Suppress("LongParameterList") // One collaborator per parameter, all defaulted, and every call site names them.
 class ApiClient(
     private val httpClient: HttpClient,
     private val headerProvider: RequestHeaderProvider,
@@ -134,6 +135,26 @@ class ApiClient(
      * for every call — see [RequestAuthenticator].
      */
     private val authenticator: RequestAuthenticator? = null,
+    /**
+     * Suspends until a production is open, bounded; true when one arrived.
+     *
+     * Switching productions is two legs — nothing open, then the new one —
+     * and anything in flight or fired between them is a project-scoped call
+     * with no project, which [refusedWithNoProject] drops where it stands.
+     * That is right on the production list, where no production is coming,
+     * and wrong in the middle of a switch, where one is about to: a real
+     * switch refused sixteen reads across Drive, the Account Hub, Payroll,
+     * Card Expenses, Document Distribution and the mailbox in one second,
+     * none of which was retried, so those screens came up empty and the
+     * mailbox stopped syncing until the app was restarted (2026-10-21 log).
+     *
+     * Waiting costs the production list a bounded delay on calls it was
+     * going to refuse anyway, behind a screen that is not showing them.
+     *
+     * Reads only — see [settleProjectScope]. Defaults to false at once,
+     * which is the behaviour before this existed.
+     */
+    private val awaitProjectOpen: suspend () -> Boolean = { false },
     /**
      * Told about every call that failed — the error log (`location/log`)
      * records these, as the phones do from their own network layer.
@@ -208,6 +229,11 @@ class ApiClient(
         options: CallOptions = CallOptions(),
         textBody: TextBody? = null,
     ): ZillitResult<ApiEnvelope> {
+        // Before the key below, not merely before the request: the key is the
+        // scope as it stands, so settling after it would file the answer under
+        // the very blank production this is waiting out.
+        settleProjectScope(module, verb, url, options)
+
         // Whose answer this is is settled as it is asked, by the same identity
         // that signs it. Worked out when the answer landed, a read still out
         // across a production switch was kept under the next production — or,
@@ -377,7 +403,7 @@ class ApiClient(
         // Token mode rides a Bearer and drops the encrypted header — the
         // server reads one or the other, never both. Legacy mode, and any
         // call the authenticator declines, carries `moduledata` as before.
-        val projectForAuth = options.projectId ?: readScope()?.projectId?.takeIf { it.isNotBlank() }
+        val project = projectForAuth(options)
 
         // A production's route with no production open: refused here rather
         // than sent. The device token is refused on it and the legacy header
@@ -385,11 +411,11 @@ class ApiClient(
         // it in a 401 also spends a token refresh on a call that was never
         // going to be answered. The web refuses the same calls in its request
         // interceptor, off the same two lists.
-        if (authenticator?.refusesWithNoProject(module, projectForAuth, verb, url) == true) {
+        if (authenticator?.refusesWithNoProject(module, project, verb, url) == true) {
             return refusedWithNoProject(verb, url)
         }
 
-        val token = authenticator?.bearerFor(module, projectForAuth, url)
+        val token = authenticator?.bearerFor(module, project, url)
         val resolvedHeaders = if (token == null) {
             headerProvider.headersFor(module, hashed, options.projectId, options.userId)
         } else {
@@ -400,7 +426,7 @@ class ApiClient(
         if (token != null && response.status.value == STATUS_UNAUTHORIZED) {
             // An expired token heals here, once, and the retry's answer is the
             // one reported. A second 401 is the session really being gone.
-            val renewed = authenticator?.recoverFromUnauthorized(module, projectForAuth, url, token)
+            val renewed = authenticator?.recoverFromUnauthorized(module, project, url, token)
             if (renewed != null && renewed != token) {
                 response = perform(verb, url, resolvedHeaders, renewed, queryParameters, payload)
             }
@@ -443,6 +469,10 @@ class ApiClient(
      * request leaves, no token is refreshed over it, and `onUnauthorized` is
      * never reached, so a refusal here cannot be mistaken for a dead session.
      *
+     * [settleProjectScope] has already waited by the time this is reached, so
+     * the line below now means "and none opened while we waited" — not
+     * "a production happened to be between its two legs".
+     *
      * Named once per route, as the web names it: a device-level route missing
      * from [com.zillit.desktop.core.network.tokenauth.isDeviceRoute] would
      * otherwise just stop working with no trace. Once, because the callers
@@ -454,6 +484,61 @@ class ApiClient(
             ZillitLog.w(TAG) { "refused with no production open: $route" }
         }
         return ZillitResult.Failure(ZillitError.Http(status = STATUS_UNAUTHORIZED, serverMessage = NO_PROJECT_KEY))
+    }
+
+    /** The production a call rides, or null for the device's own credential. */
+    private fun projectForAuth(options: CallOptions): String? =
+        options.projectId ?: readScope()?.projectId?.takeIf { it.isNotBlank() }
+
+    /**
+     * Waits out the blank production in the middle of a production switch.
+     *
+     * Only for a call that would otherwise be dropped: a project-scoped route
+     * with nothing open. A device-level route works with no production open
+     * and must not wait, which is what asking the authenticator settles — the
+     * same question [send] asks before refusing, so the two cannot drift.
+     *
+     * A call naming its own production ([CallOptions.projectId]) has nothing
+     * to wait for, and is also the one call that must NOT be re-pointed at
+     * whatever opens next.
+     *
+     * **Reads only.** A call that names no production is asking about "the
+     * production that is open", so re-pointing a GET at the one that opens is
+     * the answer to the question it asked — and it mutates nothing either
+     * way. A write is not like that: a notice posted into the production
+     * being left would land in the production being entered, which is worse
+     * than the refusal it gets today. The same goes for the mailbox's
+     * POST-shaped reads, whose sync loop writes what it fetches into the
+     * production it was started for; those keep the refusal until that loop
+     * is told about switches.
+     *
+     * Named once per route, as [refusedWithNoProject] names its own: the
+     * callers caught by this poll, and a line per poll would say nothing a
+     * line per route does not.
+     */
+    private suspend fun settleProjectScope(
+        module: RequestModule,
+        verb: HttpVerb,
+        url: String,
+        options: CallOptions,
+    ) {
+        val authenticator = this.authenticator ?: return
+
+        // One exit for "there is nothing to wait for" — a write, a production
+        // already open, or a route that reaches the server without one. Four
+        // `return`s put this over detekt's ReturnCount, and the four say one
+        // thing, not four. The authenticator is asked last because it is the
+        // only suspending half.
+        val project = projectForAuth(options)
+        val waitable = verb == HttpVerb.Get &&
+            project.isNullOrBlank() &&
+            authenticator.refusesWithNoProject(module, project, verb, url)
+        if (!waitable || !awaitProjectOpen()) return
+
+        val route = "${verb.wire} ${url.substringBefore('?')}"
+        if (settledRoutes.add(route)) {
+            ZillitLog.i(TAG) { "sent after waiting for a production to open: $route" }
+        }
     }
 
     private suspend fun HttpResponse.toEnvelope(reportUnauthorized: Boolean): ZillitResult<ApiEnvelope> {
@@ -544,6 +629,9 @@ class ApiClient(
 
     /** Routes [refusedWithNoProject] has already named. */
     private val refusedRoutes = mutableSetOf<String>()
+
+    /** Routes [settleProjectScope] has already named. */
+    private val settledRoutes = mutableSetOf<String>()
 
     private companion object {
         const val TAG = "ApiClient"

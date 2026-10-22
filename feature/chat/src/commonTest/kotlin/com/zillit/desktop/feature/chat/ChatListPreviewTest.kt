@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.feature.chat.data.ConversationBacklog
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.ui.ChatEvent
@@ -179,28 +180,89 @@ class ChatListPreviewTest {
         assertEquals("on my way", model.currentState.previews["u-a"]?.text)
     }
 
+    /**
+     * One row's bad luck is not the pass's.
+     *
+     * This used to stop at the first failure, to spare the remaining rows an
+     * ack timeout each. But the pass runs newest-first, so the row most
+     * likely to fail is the one the user is most likely to be looking at, and
+     * giving up on it gave up on everything behind it — most of the listing
+     * ("latest messages do not show up"). The ask itself already retries a
+     * lost ack, so by the time the pass sees a failure it is a row that
+     * really is not answering, and the rest deserve their turn.
+     */
     @Test
-    fun `a refused ask stops the pass and is retried on the next repaint`() = runTest(dispatcher) {
+    fun `a row that does not answer does not cost the rows behind it`() = runTest(dispatcher) {
         val repository = FakeChatRepository().apply {
             recents = listOf("u-a", "u-b")
             backlog = ConversationBacklog(activity = mapOf("u-a" to 300L, "u-b" to 200L))
-            lastMessageFails = true
+            lastMessageFailure = ZillitError.Unknown("ack failed")
         }
         val model = viewModel(repository)
 
         model.onEvent(ChatEvent.RefreshRecents)
         advanceUntilIdle()
 
-        // The newest row first, then nothing: a refusal means the remaining
-        // rows are not worth an ack timeout each.
-        assertEquals(listOf("u-a"), repository.lastMessageAsks)
+        assertEquals(listOf("u-a", "u-b"), repository.lastMessageAsks, "both rows were asked about")
 
-        repository.lastMessageFails = false
+        repository.lastMessageFailure = null
         repository.serverLast = mapOf("u-a" to line("m-new", "u-a", "running late", at = 300L))
         model.onEvent(ChatEvent.RefreshRecents)
         advanceUntilIdle()
 
-        assertEquals(listOf("u-a", "u-a", "u-b"), repository.lastMessageAsks, "the refusal was not memoised")
+        assertEquals(
+            listOf("u-a", "u-b", "u-a", "u-b"),
+            repository.lastMessageAsks,
+            "neither failure was memoised",
+        )
         assertEquals("running late", model.currentState.previews["u-a"]?.text)
+    }
+
+    /**
+     * Except when the failure is the connection itself: then every remaining
+     * ask would fail the same way, and the socket's connect edge re-runs the
+     * whole pass once it is back.
+     */
+    @Test
+    fun `no connection stops the pass at the first row`() = runTest(dispatcher) {
+        val repository = FakeChatRepository().apply {
+            recents = listOf("u-a", "u-b")
+            backlog = ConversationBacklog(activity = mapOf("u-a" to 300L, "u-b" to 200L))
+            lastMessageFailure = ZillitError.NoConnection("socket is not connected")
+        }
+        val model = viewModel(repository)
+
+        model.onEvent(ChatEvent.RefreshRecents)
+        advanceUntilIdle()
+
+        assertEquals(listOf("u-a"), repository.lastMessageAsks)
+
+        repository.lastMessageFailure = null
+        repository.serverLast = mapOf("u-a" to line("m-new", "u-a", "running late", at = 300L))
+        model.onEvent(ChatEvent.RefreshRecents)
+        advanceUntilIdle()
+
+        assertEquals(listOf("u-a", "u-a", "u-b"), repository.lastMessageAsks, "the row was asked again")
+    }
+
+    /**
+     * And a pass does not spend an ack window on all thirty rows to learn
+     * what the first few already said.
+     */
+    @Test
+    fun `a pass gives up once enough rows have gone unanswered`() = runTest(dispatcher) {
+        val rows = (1..8).map { "u-$it" }
+        val repository = FakeChatRepository().apply {
+            recents = rows
+            // Descending, so the pass's newest-first order is the list's own.
+            backlog = ConversationBacklog(activity = rows.withIndex().associate { (i, id) -> id to (900L - i) })
+            lastMessageFailure = ZillitError.Unknown("ack failed")
+        }
+        val model = viewModel(repository)
+
+        model.onEvent(ChatEvent.RefreshRecents)
+        advanceUntilIdle()
+
+        assertEquals(rows.take(3), repository.lastMessageAsks, "three unanswered rows end the pass")
     }
 }

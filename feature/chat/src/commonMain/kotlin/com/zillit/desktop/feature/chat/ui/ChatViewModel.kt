@@ -2199,31 +2199,80 @@ class ChatViewModel(
         ZillitLog.i(TAG) { "warm pass: asking ${stale.size} of ${stamps.size} conversations" }
         warming = true
         launch {
-            var answered = false
-            try {
-                for ((id, at) in stale) {
-                    warmedTo[id] = at
-                    if (repository.lastMessage(id, isGroup = id in rooms) is ZillitResult.Failure) {
-                        // Asked and not answered. Forget the stamp so a later
-                        // repaint can try again, and stop the pass rather than
-                        // spending an ack timeout on every remaining row — and
-                        // without the repaint below, which would start another
-                        // pass on the rows this one gave up on.
-                        warmedTo.remove(id)
-                        return@launch
-                    }
+            val pass = try {
+                askEachStaleRow(stale, rooms)
+            } finally {
+                warming = false
+            }
+            ZillitLog.i(TAG) { "warm pass: done, answered=${pass.answered} unanswered=${pass.askAgainLater.size}" }
+            // The stamps moved with the lines, so the order is re-read once.
+            if (pass.answered) showRecents(currentState.recents)
+            // After the repaint, never before: see [askEachStaleRow].
+            pass.askAgainLater.forEach(warmedTo::remove)
+        }
+    }
+
+    /** What one warm pass managed: whether any line landed, and what to ask again later. */
+    private class WarmPass(val answered: Boolean, val askAgainLater: List<String>)
+
+    /**
+     * Asks each stale row in turn, newest first.
+     *
+     * **A row that does not answer does not end the pass.** It used to: the
+     * first failure stopped everything, to spare the rows behind it an ack
+     * window each. But the order is newest-first, so the row most likely to
+     * be slow is the one the reader is most likely to be looking at, and
+     * giving up on it gave up on the rest of the listing with it (user:
+     * "latest messages do not show up"). [ChatRepository.lastMessage] already
+     * asks a second time when an ack is lost, so a failure arriving here is a
+     * row that really is not answering, and the others deserve their turn.
+     *
+     * Two things still end it early. [ZillitError.NoConnection] means there is
+     * nothing to ask over at all, and the socket's connect edge re-runs the
+     * whole pass once it is back. And [WARM_FAILURE_BUDGET] unanswered rows
+     * means the connection rather than the rows, which is not worth another
+     * ack window each for the thirty a pass may hold.
+     *
+     * The rows to un-stamp are **returned rather than cleared here**. The
+     * repaint in [warmPreviews] re-enters this pass synchronously, so a row
+     * un-stamped before it would be asked again at once, and again, for ever.
+     * The row that ended the pass for want of a connection is the exception —
+     * nothing repaints after that, so it is un-stamped where it fails.
+     */
+    private suspend fun askEachStaleRow(
+        stale: List<Pair<String, Long>>,
+        rooms: Map<String, Long>,
+    ): WarmPass {
+        var answered = false
+        val askAgainLater = mutableListOf<String>()
+        // A flag rather than `break`, so the two ways this pass can end read
+        // as what they are — reasons to stop asking — instead of jumps.
+        var keepAsking = true
+        val queue = stale.iterator()
+        while (keepAsking && queue.hasNext()) {
+            val (id, at) = queue.next()
+            warmedTo[id] = at
+            val failure = (repository.lastMessage(id, isGroup = id in rooms) as? ZillitResult.Failure)?.error
+            when {
+                failure == null -> {
                     answered = true
                     // Each line appears as its answer lands, rather than the
                     // whole shelf waiting on the slowest ask.
                     setState { copy(previews = previewsFor(recents)) }
                 }
-            } finally {
-                warming = false
+
+                failure is ZillitError.NoConnection -> {
+                    warmedTo.remove(id)
+                    keepAsking = false
+                }
+
+                else -> {
+                    askAgainLater += id
+                    keepAsking = askAgainLater.size < WARM_FAILURE_BUDGET
+                }
             }
-            ZillitLog.i(TAG) { "warm pass: done, answered=$answered" }
-            // The stamps moved with the lines, so the order is re-read once.
-            if (answered) showRecents(currentState.recents)
         }
+        return WarmPass(answered, askAgainLater)
     }
 
     /**
@@ -3118,6 +3167,17 @@ internal data class CachedRecents(
  * looking at, newest first, and the rest on the next repaint.
  */
 private const val WARM_PREVIEW_LIMIT = 30
+
+/**
+ * How many rows may go unanswered before a warm pass gives up on the rest.
+ *
+ * A single lost ack is one row's bad luck and the pass carries on; three in
+ * one pass is the connection, not the row, and every further ask would spend
+ * another ack window — thirty of those is ten minutes of a coroutine asking
+ * questions nothing is answering. A later trigger (an arrival, a tab click, a
+ * reconnect) runs the pass again on the rows it skipped.
+ */
+private const val WARM_FAILURE_BUDGET = 3
 
 /** How long the server gets to apply a read before the tab split is re-asked. */
 private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L

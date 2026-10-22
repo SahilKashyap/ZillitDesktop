@@ -56,28 +56,54 @@ class ApiClientTokenAuthTest {
             return renewed
         }
 
-        /** Set by the no-production tests; the default keeps every other test's behaviour. */
+        /**
+         * Whether this route needs a production — set by the no-production
+         * tests; the default keeps every other test's behaviour.
+         */
         var refuses = false
 
+        /**
+         * The real rule's two halves, because the switch-window tests turn on
+         * the second: a route that needs a production is refused only while
+         * none is open (`TokenSessionManager.refusesWithNoProject`).
+         */
         override suspend fun refusesWithNoProject(
             module: RequestModule,
             projectId: String?,
             verb: HttpVerb,
             path: String,
-        ): Boolean = refuses
+        ): Boolean = refuses && projectId.isNullOrBlank()
     }
 
-    private fun client(engine: MockEngine, authenticator: RequestAuthenticator?, onUnauthorized: () -> Unit = {}) =
-        ApiClient(
-            httpClient = HttpClient(engine) {
-                install(ContentNegotiation) { json(HttpClientFactory.json) }
-                expectSuccess = false
-            },
-            headerProvider = headerProvider,
-            onUnauthorized = onUnauthorized,
-            readScope = { ReadScope(userId = "u", projectId = "p-open") },
-            authenticator = authenticator,
-        )
+    /** Remembers the scope each answer was filed under, which is the point of two tests below. */
+    private class MemoryCache : ReadCache {
+        val rows = mutableMapOf<String, ReadScope>()
+        override suspend fun get(key: String): CachedRead? = null
+        override suspend fun put(key: String, scope: ReadScope, body: String, fetchedAt: Long) {
+            rows[key] = scope
+        }
+    }
+
+    @Suppress("LongParameterList") // A fixture: each argument is one collaborator a test swaps.
+    private fun client(
+        engine: MockEngine,
+        authenticator: RequestAuthenticator?,
+        onUnauthorized: () -> Unit = {},
+        readScope: () -> ReadScope? = { ReadScope(userId = "u", projectId = "p-open") },
+        awaitProjectOpen: suspend () -> Boolean = { false },
+        readCache: ReadCache? = null,
+    ) = ApiClient(
+        httpClient = HttpClient(engine) {
+            install(ContentNegotiation) { json(HttpClientFactory.json) }
+            expectSuccess = false
+        },
+        headerProvider = headerProvider,
+        onUnauthorized = onUnauthorized,
+        readCache = readCache,
+        readScope = readScope,
+        authenticator = authenticator,
+        awaitProjectOpen = awaitProjectOpen,
+    )
 
     private fun ok() = MockEngine { respond(OK_BODY, HttpStatusCode.OK, JSON) }
 
@@ -87,8 +113,12 @@ class ApiClientTokenAuthTest {
         val auth = FakeAuthenticator(token = "tok-1").also { it.refuses = true }
         var expired = 0
 
-        val outcome = client(engine, auth, onUnauthorized = { expired++ })
-            .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+        val outcome = client(
+            engine,
+            auth,
+            onUnauthorized = { expired++ },
+            readScope = { ReadScope(userId = "u", projectId = "") },
+        ).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
 
         assertTrue(engine.requestHistory.isEmpty(), "no request, no 401, no refresh")
         assertTrue(auth.asked.isEmpty(), "and no token minted for a call that was never sent")
@@ -97,6 +127,122 @@ class ApiClientTokenAuthTest {
         val error = (outcome as ZillitResult.Failure).error as ZillitError.Http
         assertEquals(401, error.status)
         assertEquals("libs_invalid_token_scope", error.serverMessage)
+    }
+
+    /**
+     * The middle of a production switch: `onProjectOpened` runs with null
+     * first and the new production second, and a call that lands between the
+     * two used to be dropped where it stood.
+     */
+    @Test
+    fun `a call caught between a switch's two legs waits and goes out under the production that opened`() = runTest {
+        val engine = ok()
+        val auth = FakeAuthenticator(token = "tok-next").also { it.refuses = true }
+        var open: String? = null
+        val cache = MemoryCache()
+
+        val outcome = client(
+            engine,
+            auth,
+            readScope = { ReadScope(userId = "u", projectId = open.orEmpty()) },
+            awaitProjectOpen = {
+                // What the switch's second leg does, from this call's point of view.
+                open = "p-next"
+                true
+            },
+            readCache = cache,
+        ).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertTrue(outcome.isSuccess, "$outcome")
+        assertEquals(RequestModule.ProjectUser to "p-next", auth.asked.single(), "the production that opened")
+        assertEquals("Bearer tok-next", engine.requestHistory.single().headers[HttpHeaders.Authorization])
+        // The key is taken from the scope as it stands, so a wait that
+        // happened after it would file this answer under the blank production
+        // it was waiting out — and the next open would never find it.
+        assertEquals(listOf("p-next"), cache.rows.values.map(ReadScope::projectId))
+    }
+
+    @Test
+    fun `a call with no production coming is still refused once the wait is over`() = runTest {
+        val engine = ok()
+        val auth = FakeAuthenticator(token = "tok-1").also { it.refuses = true }
+        var waits = 0
+
+        val outcome = client(
+            engine,
+            auth,
+            readScope = { ReadScope(userId = "u", projectId = "") },
+            awaitProjectOpen = { waits++; false },
+        ).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertEquals(1, waits, "waited once, not once per retry")
+        assertTrue(engine.requestHistory.isEmpty(), "still no request, no 401, no refresh")
+        val error = (outcome as ZillitResult.Failure).error as ZillitError.Http
+        assertEquals("libs_invalid_token_scope", error.serverMessage)
+    }
+
+    /**
+     * A read that names no production is asking about whichever is open, so
+     * answering it from the one that opens is no surprise. A write is not
+     * like that: posted into the production being left, it would land in the
+     * production being entered.
+     */
+    @Test
+    fun `a write caught in the same window is refused rather than re-pointed`() = runTest {
+        val engine = ok()
+        val auth = FakeAuthenticator(token = "tok-next").also { it.refuses = true }
+        var waits = 0
+
+        val outcome = client(
+            engine,
+            auth,
+            readScope = { ReadScope(userId = "u", projectId = "") },
+            awaitProjectOpen = { waits++; true },
+        ).request(HttpVerb.Post, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertEquals(0, waits, "a write must not be held for a production it was not addressed to")
+        assertTrue(engine.requestHistory.isEmpty())
+        val error = (outcome as ZillitResult.Failure).error as ZillitError.Http
+        assertEquals("libs_invalid_token_scope", error.serverMessage)
+    }
+
+    @Test
+    fun `a device-level route does not wait for a production it does not need`() = runTest {
+        val engine = ok()
+        // `refuses = false` is the authenticator saying this route is reachable
+        // with no production open — the production list's own reads.
+        val auth = FakeAuthenticator(token = "tok-device")
+        var waits = 0
+
+        val outcome = client(
+            engine,
+            auth,
+            readScope = { ReadScope(userId = "u", projectId = "") },
+            awaitProjectOpen = { waits++; true },
+        ).request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertTrue(outcome.isSuccess, "$outcome")
+        assertEquals(0, waits, "the production list must not stall behind a production it is not opening")
+    }
+
+    @Test
+    fun `a call naming its own production is never re-pointed at whatever opens next`() = runTest {
+        val engine = ok()
+        val auth = FakeAuthenticator(token = "tok-other").also { it.refuses = true }
+        var waits = 0
+
+        client(
+            engine,
+            auth,
+            readScope = { ReadScope(userId = "u", projectId = "") },
+            awaitProjectOpen = { waits++; true },
+        ).request(
+            HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser,
+            options = CallOptions(projectId = "p-other"),
+        )
+
+        assertEquals(0, waits)
+        assertEquals(RequestModule.ProjectUser to "p-other", auth.asked.single())
     }
 
     @Test
@@ -148,7 +294,8 @@ class ApiClientTokenAuthTest {
         val auth = FakeAuthenticator(token = "tok-old", renewed = "tok-new")
         var signedOut = 0
 
-        val result = client(engine, auth) { signedOut++ }.request(HttpVerb.Get, URL, String.serializer())
+        val result = client(engine, auth, onUnauthorized = { signedOut++ })
+            .request(HttpVerb.Get, URL, String.serializer())
 
         assertTrue(result.isSuccess, "$result")
         assertEquals(listOf("tok-old"), auth.recovered)
@@ -163,7 +310,8 @@ class ApiClientTokenAuthTest {
         val auth = FakeAuthenticator(token = "tok-old", renewed = null)
         var signedOut = 0
 
-        val result = client(engine, auth) { signedOut++ }.request(HttpVerb.Get, URL, String.serializer())
+        val result = client(engine, auth, onUnauthorized = { signedOut++ })
+            .request(HttpVerb.Get, URL, String.serializer())
 
         assertIs<ZillitError.Unauthorized>(result.errorOrNull())
         assertEquals(1, engine.requestHistory.size)

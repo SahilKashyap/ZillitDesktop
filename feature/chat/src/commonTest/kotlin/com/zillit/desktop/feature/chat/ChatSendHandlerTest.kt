@@ -53,7 +53,13 @@ class ChatSendHandlerTest {
         assertIs<SyncOutcome.RetryLater>(outcomeFor(ZillitError.Storage("message encryption failed")))
         assertIs<SyncOutcome.RetryLater>(outcomeFor(ZillitError.Unauthorized("no open project")))
         assertIs<SyncOutcome.RetryLater>(outcomeFor(ZillitError.NoConnection("socket is not connected")))
-        assertIs<SyncOutcome.RetryLater>(outcomeFor(ZillitError.Unknown("ack failed: timed out")))
+        // A lost ack, as the socket now reports one: held on
+        // `RetryPolicy.isRetryable`, which already answered true for a
+        // timeout, rather than on the text match below.
+        assertIs<SyncOutcome.RetryLater>(outcomeFor(ZillitError.Timeout("no ack within 10000ms")))
+        // And the text match, still the only thing covering an ack failure
+        // that is NOT a timeout — a frame that could not be built or read.
+        assertIs<SyncOutcome.RetryLater>(outcomeFor(ZillitError.Unknown("ack failed: JSONException")))
     }
 
     @Test

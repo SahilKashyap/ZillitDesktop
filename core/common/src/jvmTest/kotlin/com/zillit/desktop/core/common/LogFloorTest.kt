@@ -35,15 +35,37 @@ class LogFloorTest {
     }
 
     /**
+     * And whether it has a connection, which is the same kind of fact.
+     *
+     * `Socket` was held out with the tags below until a week of field logs
+     * arrived with no socket line in them at all, while `Chat` warned over
+     * and over that a read had no connection to go out on — the one question
+     * those logs were sent in to answer was the one they could not be asked.
+     * It earns its place on the same terms as the rest: the only id it prints
+     * is the transport's own session id.
+     */
+    @Test
+    fun `production keeps whether this install had a connection`() {
+        listOf("Socket", "Connectivity").forEach { tag ->
+            assertTrue(production.keeps(LogLevel.INFO, tag), tag)
+        }
+        // And not what travelled over it: the frame traces are DEBUG, which
+        // is what keeps this tag affordable at INFO.
+        assertFalse(production.keeps(LogLevel.DEBUG, "Socket"))
+    }
+
+    /**
      * And not the lines that say what was done on it. `CallCoordinator`'s
      * roster names who was on a call, `MediasoupSession`'s peers name the
-     * device each joined from, and `Auth` records every production opened —
-     * a standing record of who did what and when, which is the thing the file
-     * logger declines to leave on someone's machine.
+     * device each joined from, `Chat` names who a message came from,
+     * `LiveKitLine` names the device behind a handshake, and `Auth` records
+     * every production opened — a standing record of who did what and when,
+     * which is the thing the file logger declines to leave on someone's
+     * machine.
      */
     @Test
     fun `production keeps no INFO that is a record of the user`() {
-        listOf("CallCoordinator", "MediasoupSession", "CallStatusPlane", "Auth", "Chat", "LiveKitLine", "Socket")
+        listOf("CallCoordinator", "MediasoupSession", "CallStatusPlane", "Auth", "Chat", "LiveKitLine")
             .forEach { tag -> assertFalse(production.keeps(LogLevel.INFO, tag), tag) }
     }
 
@@ -58,7 +80,7 @@ class LogFloorTest {
     /** Debug is for a developer's machine, including from the kept tags. */
     @Test
     fun `production keeps no debug at all`() {
-        listOf("Startup", "TokenSession", "DatabaseKey", "Badges", "Presence", null).forEach { tag ->
+        listOf("Startup", "TokenSession", "DatabaseKey", "Badges", "Presence", "Socket", null).forEach { tag ->
             assertFalse(production.keeps(LogLevel.DEBUG, tag), tag)
         }
     }

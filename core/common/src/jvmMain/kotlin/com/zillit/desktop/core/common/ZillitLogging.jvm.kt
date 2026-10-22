@@ -91,6 +91,30 @@ object ZillitLogging {
         // per open, and the production appears as a tail, the rule
         // "TokenSession" already logs ids under.
         "Open",
+
+        // Whether this install has a connection, and what keeps happening to
+        // it. Both were held out with the tags whose INFO really is a record
+        // of the user, and neither belongs there: the only id "Socket" prints
+        // is the transport's own session id, which identifies no person, no
+        // production and no room, and "Connectivity" prints a fixed phrase
+        // and an exception's class name.
+        //
+        // The cost of leaving them out was a log that could not be read. A
+        // week of field logs (2026-10-15 to 10-21) carried not one socket
+        // line — no connect, no disconnect, no reconnect attempt — while
+        // "Chat" warned over and over that a read had no connection to go
+        // out on. "Why do the latest messages not arrive" is what those logs
+        // were sent in to answer, and it was the one question they could not
+        // be asked; the fault behind it — a backoff that never reset, so
+        // every reconnect waited out the 60s cap — reads at a glance in a
+        // verbose log and was invisible in theirs.
+        //
+        // Cheap, too. What makes this tag noisy is its frame tracing, and
+        // that is DEBUG (`<- event`, `-> event`), below this floor: what
+        // lands is a few lines per disconnect, around 350 across the five
+        // verbose days of the same log.
+        "Socket",
+        "Connectivity",
     )
 
     private const val TAG = "Logging"
