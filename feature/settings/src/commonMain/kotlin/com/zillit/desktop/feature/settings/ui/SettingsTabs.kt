@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName") // The tabs surface; SettingsTab is one declaration in it.
+
 package com.zillit.desktop.feature.settings.ui
 
 import androidx.compose.foundation.background

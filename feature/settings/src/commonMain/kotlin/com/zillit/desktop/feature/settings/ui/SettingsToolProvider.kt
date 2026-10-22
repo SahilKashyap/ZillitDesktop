@@ -134,23 +134,11 @@ class SettingsToolProvider(
             viewModel.effects.collect { effect -> handle(effect, navigator) }
         }
 
-        val path = route.path
-        // The admin tree first: its queues and pages share a prefix, and an
-        // account page's slug must never shadow one of them.
-        val queue = ApprovalQueue.entries.firstOrNull { path.startsWith(it.path) }
-        val adminPage = if (queue == null) AdminDestination.entries.firstOrNull { path == it.path } else null
-        val onAdminTree = path.startsWith(ADMIN_SETTINGS_PATH)
-        val accountPage = if (onAdminTree) null else AccountPage.fromPath(path)
-        val tab = SettingsTab.forPath(path, state.account.isAdmin)
+        val here = SettingsRoute.of(route.path, state.account.isAdmin)
 
         // The tab says which page it is on. Two identically-titled tabs are the
         // reason tearing one off stops being useful.
-        LaunchedEffect(queue, adminPage, accountPage, tab) {
-            navigator.setTitle(
-                queue?.tabTitle ?: adminPage?.title ?: accountPage?.tabTitle
-                    ?: if (tab == SettingsTab.Admin) SettingsTab.Admin.label else title,
-            )
-        }
+        LaunchedEffect(here) { navigator.setTitle(here.windowTitle(title)) }
 
         // Back always means the tab the page hangs off, never history alone: a
         // restored window can open straight onto a page, and then there is
@@ -161,33 +149,43 @@ class SettingsToolProvider(
         }
 
         when {
-            queue != null -> ApprovalsPage(queue) { backTo(ADMIN_SETTINGS_PATH) }
+            here.queue != null -> ApprovalsPage(here.queue) { backTo(ADMIN_SETTINGS_PATH) }
 
-            adminPage != null -> AdminPage(adminPage, state) { backTo(ADMIN_SETTINGS_PATH) }
+            here.adminPage != null -> AdminPage(here.adminPage, state) { backTo(ADMIN_SETTINGS_PATH) }
 
-            accountPage != null -> AccountPage(accountPage) { backTo(SETTINGS_PATH) }
+            here.accountPage != null -> AccountPage(here.accountPage) { backTo(SETTINGS_PATH) }
 
-            else -> {
-                SettingsTabsFrame(
-                    active = tab,
-                    state = state,
-                    onSelect = { chosen ->
-                        if (chosen != tab) navigator.navigate(WorkspaceRoute.Tool(chosen.path))
-                    },
-                ) {
-                    when (tab) {
-                        SettingsTab.Profile -> ProfileTab(state)
-                        SettingsTab.Admin ->
-                            AdminSettingsScreen(state = state, onEvent = viewModel::onEvent, showHeader = false)
-                    }
-                }
-                // Composed with the listing, because the row that opens it is
-                // there — leaving is a decision, not a page.
-                LeaveDialog(state)
-                // Over the whole window, tabs included, as the web's drawer is.
-                PreferenceOverlays(tab)
+            else -> TabsPage(here.tab, state, navigator)
+        }
+    }
+
+    /**
+     * The two tabs, the selected one's page, and what sits over them both.
+     *
+     * Apart from [Content] only to keep the routing above readable: a reader
+     * following a deep link wants the four-way choice, not the frame's
+     * arguments.
+     */
+    @Composable
+    private fun TabsPage(tab: SettingsTab, state: SettingsUiState, navigator: WindowNavigator) {
+        SettingsTabsFrame(
+            active = tab,
+            state = state,
+            onSelect = { chosen ->
+                if (chosen != tab) navigator.navigate(WorkspaceRoute.Tool(chosen.path))
+            },
+        ) {
+            when (tab) {
+                SettingsTab.Profile -> ProfileTab(state)
+                SettingsTab.Admin ->
+                    AdminSettingsScreen(state = state, onEvent = viewModel::onEvent, showHeader = false)
             }
         }
+        // Composed with the listing, because the row that opens it is there —
+        // leaving is a decision, not a page.
+        LeaveDialog(state)
+        // Over the whole window, tabs included, as the web's drawer is.
+        PreferenceOverlays(tab)
     }
 
     /** Profile Settings, with the web's App Preferences cards when there is a session for them. */
@@ -378,6 +376,38 @@ class SettingsToolProvider(
             // This same window, onto a page another feature supplies.
             is SettingsEffect.OpenPage ->
                 navigator.navigate(WorkspaceRoute.Tool(effect.path))
+        }
+    }
+}
+
+/**
+ * What a route under `/settings` points at.
+ *
+ * Read in one place so the order of the reads stays visible: the admin tree
+ * comes first, because its queues and its pages share a prefix and an account
+ * page's slug must never shadow one of them.
+ */
+private data class SettingsRoute(
+    val queue: ApprovalQueue?,
+    val adminPage: AdminDestination?,
+    val accountPage: AccountPage?,
+    val tab: SettingsTab,
+) {
+
+    /** The window's name: the open page's, else the tab's own. */
+    fun windowTitle(fallback: String): String =
+        queue?.tabTitle ?: adminPage?.title ?: accountPage?.tabTitle
+            ?: if (tab == SettingsTab.Admin) SettingsTab.Admin.label else fallback
+
+    companion object {
+        fun of(path: String, isAdmin: Boolean): SettingsRoute {
+            val queue = ApprovalQueue.entries.firstOrNull { path.startsWith(it.path) }
+            return SettingsRoute(
+                queue = queue,
+                adminPage = if (queue == null) AdminDestination.entries.firstOrNull { path == it.path } else null,
+                accountPage = if (path.startsWith(ADMIN_SETTINGS_PATH)) null else AccountPage.fromPath(path),
+                tab = SettingsTab.forPath(path, isAdmin),
+            )
         }
     }
 }

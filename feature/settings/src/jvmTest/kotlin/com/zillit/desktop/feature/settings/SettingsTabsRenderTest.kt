@@ -34,7 +34,11 @@ class SettingsTabsRenderTest {
         var chosen: SettingsTab? = null
         setContent {
             ZillitTheme {
-                SettingsTabsFrame(active = SettingsTab.Profile, state = state(isAdmin = true), onSelect = { chosen = it }) {
+                SettingsTabsFrame(
+                    active = SettingsTab.Profile,
+                    state = state(isAdmin = true),
+                    onSelect = { chosen = it },
+                ) {
                     SettingsScreen(state = state(isAdmin = true), onEvent = {}, showTitle = false)
                 }
             }
