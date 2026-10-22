@@ -32,17 +32,17 @@ enum class SettingsDestination {
     ApproveProfileChanges,
     PreApprovedCrew,
 
-    // -- admin: people -----------------------------------------------------
+    // -- admin: permission & user management -------------------------------
     CrewAndAdmins,
     PermissionGrid,
-    Departments,
-    JobTitles,
     CrewListOrder,
 
-    // -- admin: units ------------------------------------------------------
+    // -- admin: creation ---------------------------------------------------
     ShootingUnits,
     RemoteUnit,
     JoinedUnits,
+    Departments,
+    JobTitles,
 
     // -- admin: tools ------------------------------------------------------
     ToolAvailability,
@@ -55,7 +55,6 @@ enum class SettingsDestination {
     FileCabinet,
     CompanyDetails,
     SosRecipients,
-    SetupNotes,
     DeleteProduction,
 }
 
@@ -301,7 +300,7 @@ fun adminSettingsEntries(
     pendingProfileChanges: Int = 0,
 ): List<SettingsGroup> = listOf(
     SettingsGroup(
-        title = str(S.desktop_waiting_on_you),
+        title = str(S.cs_approvals),
         icon = ZillitIcons.Clock,
         entries = listOf(
             SettingsEntry(
@@ -327,7 +326,7 @@ fun adminSettingsEntries(
         ),
     ),
     SettingsGroup(
-        title = str(S.section_people),
+        title = str(S.desktop_section_permission_user_management),
         icon = ZillitIcons.User,
         entries = listOf(
             SettingsEntry(
@@ -343,18 +342,6 @@ fun adminSettingsEntries(
                 icon = ZillitToolIcons.PostingRights,
             ),
             SettingsEntry(
-                destination = SettingsDestination.Departments,
-                title = str(S.create_new_department),
-                detail = str(S.desktop_departments_detail),
-                icon = ZillitIcons.LayoutCascade,
-            ),
-            SettingsEntry(
-                destination = SettingsDestination.JobTitles,
-                title = str(S.create_new_designation),
-                detail = str(S.desktop_designations_detail),
-                icon = ZillitToolIcons.Casting,
-            ),
-            SettingsEntry(
                 destination = SettingsDestination.CrewListOrder,
                 // "Crew list" is a film production's word for it; corporate and
                 // event productions call the same page a staff list, and both
@@ -366,27 +353,39 @@ fun adminSettingsEntries(
         ),
     ),
     SettingsGroup(
-        title = str(S.desktop_section_units),
+        title = str(S.desktop_section_creation),
         icon = ZillitIcons.Home,
         entries = listOf(
-                SettingsEntry(
-                    destination = SettingsDestination.ShootingUnits,
-                    title = str(S.desktop_admin_create_update_on_home_unit),
-                    detail = str(S.desktop_home_units_detail),
-                    icon = ZillitToolIcons.IcContinuity,
-                ),
-                SettingsEntry(
-                    destination = SettingsDestination.RemoteUnit,
-                    title = str(S.desktop_admin_create_remote_shooting_unit),
-                    detail = str(S.desktop_remote_units_detail),
-                    icon = ZillitToolIcons.Location,
-                ),
-                SettingsEntry(
-                    destination = SettingsDestination.JoinedUnits,
-                    title = str(S.create_join_unit),
-                    detail = str(S.desktop_shooting_units_detail),
-                    icon = ZillitToolIcons.PreProduction,
-                ),
+            SettingsEntry(
+                destination = SettingsDestination.ShootingUnits,
+                title = str(S.desktop_admin_create_update_on_home_unit),
+                detail = str(S.desktop_home_units_detail),
+                icon = ZillitToolIcons.IcContinuity,
+            ),
+            SettingsEntry(
+                destination = SettingsDestination.RemoteUnit,
+                title = str(S.desktop_admin_create_remote_shooting_unit),
+                detail = str(S.desktop_remote_units_detail),
+                icon = ZillitToolIcons.Location,
+            ),
+            SettingsEntry(
+                destination = SettingsDestination.JoinedUnits,
+                title = str(S.create_join_unit),
+                detail = str(S.desktop_shooting_units_detail),
+                icon = ZillitToolIcons.PreProduction,
+            ),
+            SettingsEntry(
+                destination = SettingsDestination.Departments,
+                title = str(S.create_new_department),
+                detail = str(S.desktop_departments_detail),
+                icon = ZillitIcons.LayoutCascade,
+            ),
+            SettingsEntry(
+                destination = SettingsDestination.JobTitles,
+                title = str(S.create_new_designation),
+                detail = str(S.desktop_designations_detail),
+                icon = ZillitToolIcons.Casting,
+            ),
         ),
     ),
     SettingsGroup(
@@ -410,7 +409,7 @@ fun adminSettingsEntries(
     SettingsGroup(
         title = str(S.desktop_section_the_project),
         icon = ZillitIcons.File,
-        entries = listOfNotNull(
+        entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ProductionName,
                 title = str(S.edit_project_name),
@@ -450,15 +449,6 @@ fun adminSettingsEntries(
                 detail = str(S.desktop_sos_receivers_detail),
                 icon = ZillitIcons.Phone,
             ),
-            // Hidden on "other" productions, as the web's hub does
-            // (`AdminSetting.jsx` `isOtherProject()`): the notes walk a film
-            // production's setup.
-            SettingsEntry(
-                destination = SettingsDestination.SetupNotes,
-                title = str(S.desktop_admin_project_set_up_notes),
-                detail = str(S.desktop_setup_notes_detail),
-                icon = ZillitIcons.Info,
-            ).takeUnless { production.isOtherType },
         ),
     ),
     SettingsGroup(
@@ -519,9 +509,6 @@ private fun List<SettingsGroup>.availableOn(production: ProductionFacts): List<S
             .takeIf { it.isNotEmpty() }
             ?.let { group.copy(entries = it) }
     }
-
-/** The admin walkthrough iOS links from its own "project setup notes" row. */
-const val SETUP_NOTES_URL = "https://documentation.zillit.com/#project-setup-notes"
 
 /**
  * Production Setup's page — the web's `/settings/production-setup`, which hosts

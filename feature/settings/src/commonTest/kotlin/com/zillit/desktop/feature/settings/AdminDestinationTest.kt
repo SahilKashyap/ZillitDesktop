@@ -186,14 +186,13 @@ class AdminDestinationTest {
         /**
          * Rows that are not administration pages.
          *
-         * The approval queues have their own screens, the documentation links
-         * open a browser, and Production Setup is a page of the Account Hub.
+         * The approval queues have their own screens, Help is the app's own
+         * guide, and Production Setup is a page of the Account Hub.
          */
         val HANDLED_ELSEWHERE = setOf(
             SettingsDestination.ApproveNewCrew,
             SettingsDestination.ApproveProfileChanges,
             SettingsDestination.Help,
-            SettingsDestination.SetupNotes,
             SettingsDestination.ProductionSetup,
             // Opens the Film Tools rights grid, as the web's admin button does.
             SettingsDestination.PermissionGrid,

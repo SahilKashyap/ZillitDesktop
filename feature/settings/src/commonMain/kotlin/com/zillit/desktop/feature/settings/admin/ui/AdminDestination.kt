@@ -103,14 +103,13 @@ enum class AdminDestination(val slug: String, private val titleKey: String) {
             SettingsDestination.FileCabinet -> FileCabinet
 
             // Handled elsewhere: the approval queues have their own screens,
-            // the documentation rows open a browser, the rights grid is the
-            // Film Tools window, and the rest are the reader's own settings
-            // rather than the production's.
+            // Help is the app's own guide, the rights grid is the Film Tools
+            // window, and the rest are the reader's own settings rather than
+            // the production's.
             SettingsDestination.PermissionGrid,
             SettingsDestination.ApproveNewCrew,
             SettingsDestination.ApproveProfileChanges,
             SettingsDestination.Help,
-            SettingsDestination.SetupNotes,
             SettingsDestination.ProductionSetup,
             SettingsDestination.EditProfile,
             SettingsDestination.RecoveryEmail,

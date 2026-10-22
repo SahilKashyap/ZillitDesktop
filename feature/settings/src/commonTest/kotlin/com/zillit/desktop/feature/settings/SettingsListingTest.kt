@@ -9,7 +9,6 @@ import com.zillit.desktop.feature.settings.ui.AdminSettingsUiState
 import com.zillit.desktop.feature.settings.ui.EntryStatus
 import com.zillit.desktop.feature.settings.ui.EntryTone
 import com.zillit.desktop.feature.settings.ui.ProductionFacts
-import com.zillit.desktop.feature.settings.ui.SETUP_NOTES_URL
 import com.zillit.desktop.feature.settings.ui.SettingsDestination
 import com.zillit.desktop.feature.settings.ui.SettingsEffect
 import com.zillit.desktop.feature.settings.ui.SettingsEvent
@@ -158,53 +157,21 @@ class SettingsListingTest {
      *
      * It used to open documentation.zillit.com in a tab, which meant the app's
      * own guide page — the phones' four links, plus the support call and the
-     * mail to support — was reachable only from the rail. Setup notes are
-     * still a web page and still open in a browser.
+     * mail to support — was reachable only from the rail. Nothing on these
+     * listings opens a browser now that Project Setup Notes is gone, so a
+     * row that leads nowhere is covered by
+     * `every openable row has somewhere to go` alone.
      */
     @Test
-    fun `help opens the app's own guide, and setup notes still go to the browser`() = runTest {
+    fun `help opens the app's own guide, not a browser tab`() = runTest {
         val settings = viewModel()
         val effects = mutableListOf<SettingsEffect>()
         val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
 
         settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.Help))
-        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.SetupNotes))
         advanceUntilIdle()
 
-        assertEquals(
-            listOf<SettingsEffect>(
-                SettingsEffect.OpenHelp,
-                SettingsEffect.OpenExternal(SETUP_NOTES_URL),
-            ),
-            effects.toList(),
-        )
-        job.cancel()
-    }
-
-    @Test
-    fun `a row that leads nowhere yet does nothing at all`() = runTest {
-        // The list does not attach a click to a planned row; this is the
-        // second line of defence, so a mis-wired row is inert rather than
-        // opening whatever the last branch happened to be.
-        //
-        // Every administration destination now has a page, so this asks the
-        // question with a row the *listing* never offers: the queues and the
-        // account pages are routed, and JoinedUnits is only absent on a
-        // production that cannot have it. LeaveProduction is routed too — so
-        // the honest probe is a destination the admin catalogue does not carry
-        // and AdminDestination.of() answers null for.
-        val settings = viewModel()
-        val effects = mutableListOf<SettingsEffect>()
-        val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
-
-        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.SetupNotes))
-        advanceUntilIdle()
-
-        // SetupNotes *is* routed, to the browser — so this is the positive
-        // half. The negative half is now covered by
-        // `every openable row has somewhere to go`, which clicks the real
-        // catalogue and asserts nothing is inert.
-        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenExternal(SETUP_NOTES_URL)), effects)
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenHelp), effects.toList())
         job.cancel()
     }
 

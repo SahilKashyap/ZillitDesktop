@@ -33,7 +33,6 @@ private val ADMIN_INFO: Map<SettingsDestination, Pair<String, InfoGuide>> = mapO
     SettingsDestination.Watermark to (S.watermark_info to InfoGuide.Watermark),
     SettingsDestination.FileCabinet to (S.file_cabinet_info to InfoGuide.FileCabinet),
     SettingsDestination.SosRecipients to (S.sos_recipients_info to InfoGuide.Sos),
-    SettingsDestination.SetupNotes to (S.project_set_up_notes_info to InfoGuide.SetupNotes),
     SettingsDestination.DeleteProduction to (S.delete_project_info to InfoGuide.DeleteProduction),
 )
 

@@ -84,7 +84,6 @@ data class InfoGuide(val docs: String, val video: String? = null) {
         val CompanyDetails = InfoGuide("${DOCS}company-details", "${VIDEOS}How%20to%20make%20Company%20Details%20Web.mp4")
 
         val ProductionSetup = InfoGuide("${DOCS}production-setup-guide", "${VIDEOS}How%20to%20set%20Production%20Setup%28Admin%20Settings%29%20Web.mp4")
-        val SetupNotes = InfoGuide("${DOCS}project-setup-notes", "${VIDEOS}Project%20Set%20Up%20Notes%20Web.mp4")
         val DeleteProduction = InfoGuide("${DOCS}delete-project", "${VIDEOS}How%20to%20Delete%20project%20%20Web.mp4")
     }
 }

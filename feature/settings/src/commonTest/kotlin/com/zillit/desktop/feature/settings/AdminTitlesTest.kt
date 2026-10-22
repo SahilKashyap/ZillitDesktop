@@ -5,7 +5,12 @@ import com.zillit.desktop.feature.settings.ui.adminSettingsEntries
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** The administration rows are named as the web's `AdminSetting.jsx` names its buttons. */
+/**
+ * The administration rows are named as the web's `AdminSetting.jsx` names its buttons.
+ *
+ * "Project Set Up Notes" is the one name the web has and this page does not: the
+ * row was taken off the desktop's listing, so there is nothing here to name.
+ */
 class AdminTitlesTest {
 
     private val titles = adminSettingsEntries(ProductionFacts()).flatMap { it.entries }.map { it.title }
@@ -31,7 +36,6 @@ class AdminTitlesTest {
             "Watermark Logo of Company",
             "Company Details",
             "Production Setup",
-            "Project Set Up Notes",
             "Delete Project",
         ).forEach { name -> assertEquals(1, titles.count { it == name }, "no row is named \"$name\"") }
     }

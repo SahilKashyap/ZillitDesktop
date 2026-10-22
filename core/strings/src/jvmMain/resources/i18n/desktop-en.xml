@@ -13853,4 +13853,6 @@
     <string name="desktop_drive_text_too_large">This file is over 2 MB, which is too large to save here.</string>
     <string name="desktop_drive_text_viewing_version">You are viewing version %1$d</string>
     <string name="desktop_drive_zipping_folder">Preparing %1$s as a .zip…</string>
+    <string name="desktop_section_permission_user_management">Permission &amp; User Management</string>
+    <string name="desktop_section_creation">Creation</string>
 </resources>

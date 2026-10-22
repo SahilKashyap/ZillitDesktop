@@ -273,7 +273,6 @@ class SettingsViewModel(
             // links the phones' Zillit Guide does, plus the support call and
             // the mail to support, which a browser tab cannot offer.
             SettingsDestination.Help -> sendEffect(SettingsEffect.OpenHelp)
-            SettingsDestination.SetupNotes -> sendEffect(SettingsEffect.OpenExternal(SETUP_NOTES_URL))
 
             // A page of this window, as on the web — the Account Hub's
             // Companies section alone, not the console.
