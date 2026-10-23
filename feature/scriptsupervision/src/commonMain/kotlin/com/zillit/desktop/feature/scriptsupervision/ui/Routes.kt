@@ -24,6 +24,9 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.ContinuityP
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.LooksRoutes
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.PropsWardrobeScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.quicklog.QuickLogScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ElementManagerScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ProductionScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptRevisionsScreen
 
 /**
  * Which screen each page of the menu opens — the web's inner `<Routes>`.
@@ -41,8 +44,23 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.quicklog.QuickLog
 internal fun SsRoutes(page: SsPage, onOpen: (SsPage) -> Unit) {
     when (page) {
         SsPage.QuickLog -> QuickLogScreen()
+        SsPage.Production -> ProductionScreen(onOpen)
         SsPage.Scenes -> ScenesScreen()
         SsPage.Takes -> TakesScreen()
+        else -> SsDepartmentRoutes(page, onOpen)
+    }
+}
+
+/**
+ * The department pages: the cast and the three look boards.
+ *
+ * Split from [SsRoutes] for the same reason [SsLogRoutes] is — one `when`
+ * over every page of the menu is one branch too complex for the gate — and
+ * along the menu's own group lines, so the split says something.
+ */
+@Composable
+private fun SsDepartmentRoutes(page: SsPage, onOpen: (SsPage) -> Unit) {
+    when (page) {
         SsPage.Characters -> CharactersRoutes(onOpen)
         SsPage.Actors -> ActorsScreen(onOpen)
         SsPage.StoryDays -> StoryDaysScreen()
@@ -54,6 +72,16 @@ internal fun SsRoutes(page: SsPage, onOpen: (SsPage) -> Unit) {
         SsPage.PropsWardrobe -> PropsWardrobeScreen()
         SsPage.Boxes -> BoxesScreen()
         SsPage.ContinuityPhotos -> ContinuityPhotosScreen()
+        else -> SsScriptRoutes(page)
+    }
+}
+
+/** The script group's pages. */
+@Composable
+private fun SsScriptRoutes(page: SsPage) {
+    when (page) {
+        SsPage.ScriptRevisions -> ScriptRevisionsScreen()
+        SsPage.ElementManager -> ElementManagerScreen()
         else -> SsLogRoutes(page)
     }
 }
