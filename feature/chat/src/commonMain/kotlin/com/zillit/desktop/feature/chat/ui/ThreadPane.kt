@@ -193,6 +193,8 @@ internal fun ThreadPane(
     var groupDialog by remember(peer.userId) { mutableStateOf<GroupDialog?>(null) }
     // The person whose profile photo is open large; null keeps it shut.
     var viewingFace by remember(peer.userId) { mutableStateOf<CrewContact?>(null) }
+    // The peer the tracking question is open about; null keeps it shut.
+    var locationAsk by remember(peer.userId) { mutableStateOf<CrewContact?>(null) }
     val shared = remember(state.messages) { sharedContent(state.messages) }
     val callable = state.isCallable(peer)
 
@@ -232,6 +234,7 @@ internal fun ThreadPane(
             people = forwardPeople,
             onGroupDialog = { groupDialog = it },
             onViewFace = { viewingFace = it },
+            onLocation = rememberLocationAction(onEvent) { locationAsk = it },
         )
         // Wide enough, the panel takes a column of its own beside the
         // thread; narrower, it covers the thread until it is closed.
@@ -326,6 +329,13 @@ internal fun ThreadPane(
                 onClose = { viewingFace = null },
             )
         }
+
+        LocationRequestDialog(
+            target = locationAsk,
+            askerName = selfId?.let { resolveContact(it)?.fullName }.orEmpty(),
+            onEvent = onEvent,
+            onDismiss = { locationAsk = null },
+        )
 
         ChatPreviewHost(state, onEvent)
 

@@ -3154,6 +3154,9 @@ private fun chatProvider(
                     hasLeft = user.status == "left" || user.status == "removed",
                     inDirectory = !user.keepNamePrivate && user.hasJoined(),
                     sortingActivity = user.sortingActivity,
+                    // Where they last were, for the contact panel's Location
+                    // tile; the schedule inside it decides who may look.
+                    location = user.location,
                 )
             }
     },
@@ -3215,6 +3218,12 @@ private fun chatProvider(
     isSocketConnected = { ready.socketEvents.connectionState.value.isConnected },
     // An export covers one production, and the sheet says which.
     projectName = { ready.projectContext?.context?.value?.project?.name.orEmpty() },
+    // A member whose own join is still pending gets no Location tile — the
+    // same standing the web and Android gate that button on.
+    viewerIsPending = {
+        val context = ready.projectContext?.context?.value
+        context?.user(context.profile?.userId)?.status == "pending"
+    },
 )
 
 /**

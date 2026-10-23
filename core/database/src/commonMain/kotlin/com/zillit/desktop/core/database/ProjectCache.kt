@@ -181,6 +181,48 @@ data class UserSnapshot(
      * happens not to know. Not cached: offline, the kept listing stands in.
      */
     val sortingActivity: Long = 0L,
+    /**
+     * Where they last were, and the schedule that governs who may look —
+     * `last_location` plus the `show_location` block on `project/users`.
+     * Not cached, like [mailboxAddress]: a stale position is worse than
+     * none, so offline this is null and the surfaces that read it say so.
+     */
+    val location: UserLocation? = null,
+)
+
+/**
+ * A crew member's shared position and the window it may be read in.
+ *
+ * The same four wire fields the Settings card writes for the signed-in user
+ * (`feature:settings`' `LocationSharing`), kept here as the server sends them
+ * because this is the *other* side of that card: what one person scheduled is
+ * what everyone else is allowed to see.
+ *
+ * [everydayStart]/[everydayEnd] and a day's stamps are whole epoch
+ * milliseconds carrying the date they were saved on — the web writes
+ * `dayjs().valueOf()`. Only their TIME OF DAY means anything; Android maps
+ * each onto today before comparing (`Extensions.getTimeCalendar`), and so
+ * does the reader here. Zero on both ends is the server's "never scheduled",
+ * not midnight.
+ */
+data class UserLocation(
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    /** `show_location` — they have turned sharing on at all. */
+    val shared: Boolean = false,
+    /** `location_tracking_mode`: "Everyday" or "SelectDays". */
+    val mode: String? = null,
+    val everydayStart: Long = 0L,
+    val everydayEnd: Long = 0L,
+    /** `select_days`, each keyed by the server's `day_of_week` — 0 = Sunday. */
+    val days: List<UserLocationDay> = emptyList(),
+)
+
+/** One scheduled day of [UserLocation.days]. */
+data class UserLocationDay(
+    val dayOfWeek: Int,
+    val startMillis: Long = 0L,
+    val endMillis: Long = 0L,
 )
 
 data class ToolSnapshot(

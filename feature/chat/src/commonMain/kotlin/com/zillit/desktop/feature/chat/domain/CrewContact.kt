@@ -47,6 +47,12 @@ data class CrewContact(
      * how Android builds its chat list (`MembersVM.kt:215-217`).
      */
     val sortingActivity: Long = 0L,
+    /**
+     * Where they last were and when it may be read — the contact panel's
+     * Location button. Null when the listing carried no sharing block at
+     * all, which reads the same as sharing turned off.
+     */
+    val location: com.zillit.desktop.core.database.UserLocation? = null,
 )
 
 /**

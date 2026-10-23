@@ -57,6 +57,18 @@ interface LocationPicker {
         title: String = str(S.desktop_pick_location),
         near: PickerStart? = null,
     ): PickedLocation?
+
+    /**
+     * Shows [place] on the same map, read-only, and returns when the reader
+     * closes it — the viewing half of this service.
+     *
+     * Nothing is chosen and nothing comes back: the caller already knows the
+     * position and only wants it looked at, which is what "see where this
+     * person is" asks for. The default does nothing, so a host with no map
+     * (a test, a build with no embedded browser) is simply a host whose
+     * callers fall back to whatever they did before.
+     */
+    suspend fun view(place: PickedLocation, title: String = place.name): Unit = Unit
 }
 
 /** A coordinate pair to open the map near; no name, because nothing is picked. */

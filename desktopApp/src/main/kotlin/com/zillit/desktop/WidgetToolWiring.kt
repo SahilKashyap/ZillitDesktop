@@ -69,6 +69,7 @@ internal fun List<UserSnapshot>.toCrewContacts(): List<CrewContact> = this
             hasLeft = user.status == "left" || user.status == "removed",
             inDirectory = !user.keepNamePrivate && user.hasJoined(),
             sortingActivity = user.sortingActivity,
+            location = user.location,
         )
     }
 
@@ -87,10 +88,13 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
 ): ToolProvider? {
     val loader = projectContext ?: return null
     val meThere = project.userId.orEmpty().ifBlank { return null }
-    val crew = when (val users = loader.usersOf(project.id, meThere)) {
-        is ZillitResult.Success -> users.data.toCrewContacts()
+    val roster = when (val users = loader.usersOf(project.id, meThere)) {
+        is ZillitResult.Success -> users.data
         is ZillitResult.Failure -> return null
     }
+    val crew = roster.toCrewContacts()
+    // This user's standing on THAT production, not the open one's.
+    val pendingThere = roster.firstOrNull { it.userId == meThere }?.status == "pending"
 
     // This production's own storage decides where a file lands, so its
     // details are asked of it rather than of the open production. Without
@@ -141,6 +145,11 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
         callPanes = calls?.let { vm ->
             { rememberCallsPanes(this, vm, otherProjectId = project.id, otherUserId = meThere) }
         },
+        // The guarded launcher, so the widget's threads offer "Open in Maps"
+        // and the contact panel's Location tile, as the rail's chat does.
+        onOpenUrl = ::openInBrowser,
+        // This production's own standing for this user, not the open one's.
+        viewerIsPending = { pendingThere },
         compact = true,
     )
 }

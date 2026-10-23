@@ -8,6 +8,8 @@ import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.database.ProfileSnapshot
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectSnapshot
+import com.zillit.desktop.core.database.UserLocation
+import com.zillit.desktop.core.database.UserLocationDay
 import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
@@ -500,6 +502,17 @@ internal data class ProjectUserDto(
     // chat list shows a DM by (`JoinProjectResponse.kt:122`). A number on the
     // wire; read loosely so a string-typed value cannot fail the crew list.
     @SerialName("sorting_activity") val sortingActivity: JsonElement? = null,
+    // Where they last were and when it may be read — the block the chat's
+    // contact panel opens Maps from (web `InfoSider.handleLocationRedirect`,
+    // Android `LocationTrackingViewExtensions`). `show_location_timing` is
+    // the older spelling of `everyday_timing`; Android still falls back to
+    // it (`isLocationAllowedNow`), so this does too.
+    @SerialName("last_location") val lastLocation: UserPointDto? = null,
+    @SerialName("show_location") val showLocation: Boolean? = null,
+    @SerialName("location_tracking_mode") val locationMode: String? = null,
+    @SerialName("everyday_timing") val everydayTiming: UserTimingDto? = null,
+    @SerialName("show_location_timing") val showLocationTiming: UserTimingDto? = null,
+    @SerialName("select_days") val selectDays: List<UserDayTimingDto>? = null,
 ) {
     fun toSnapshot(): UserSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -526,9 +539,56 @@ internal data class ProjectUserDto(
             sortingActivity = (sortingActivity as? JsonPrimitive)
                 ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }
                 ?.takeIf { it > 0 } ?: 0L,
+            location = readLocation(),
+        )
+    }
+
+    /**
+     * The sharing block, or null when this row carries none at all — nothing
+     * to show and nothing to schedule, which the readers treat as "not
+     * shared" rather than as an empty allowance.
+     */
+    private fun readLocation(): UserLocation? {
+        val timing = everydayTiming ?: showLocationTiming
+        val days = selectDays.orEmpty().mapNotNull { day ->
+            day.day?.let { UserLocationDay(it, day.start ?: 0L, day.end ?: 0L) }
+        }
+        val point = lastLocation
+        val absent = listOf(showLocation, point, locationMode, timing).all { it == null }
+        if (absent && days.isEmpty()) return null
+        return UserLocation(
+            latitude = point?.lat,
+            longitude = point?.long,
+            shared = showLocation == true,
+            mode = locationMode?.takeIf { it.isNotBlank() },
+            everydayStart = timing?.start ?: 0L,
+            everydayEnd = timing?.end ?: 0L,
+            days = days,
         )
     }
 }
+
+/** `last_location` — `{lat, long}`, Android's `LocationModel`. */
+@Serializable
+internal data class UserPointDto(
+    @SerialName("lat") val lat: Double? = null,
+    @SerialName("long") val long: Double? = null,
+)
+
+/** `everyday_timing` / `show_location_timing` — stamps whose time of day is the schedule. */
+@Serializable
+internal data class UserTimingDto(
+    @SerialName("start_time") val start: Long? = null,
+    @SerialName("end_time") val end: Long? = null,
+)
+
+/** One row of `select_days`. */
+@Serializable
+internal data class UserDayTimingDto(
+    @SerialName("day_of_week") val day: Int? = null,
+    @SerialName("start_time") val start: Long? = null,
+    @SerialName("end_time") val end: Long? = null,
+)
 
 /**
  * Reads an avatar URL from a field that is sometimes a string and sometimes an

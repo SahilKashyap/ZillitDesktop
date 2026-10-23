@@ -16965,6 +16965,7 @@ object S {
     const val desktop_video_quality_unsupported: String = "desktop_video_quality_unsupported"
     const val desktop_video_send_original: String = "desktop_video_send_original"
     const val desktop_view_file: String = "desktop_view_file"
+    const val desktop_view_location_hint: String = "desktop_view_location_hint"
     const val desktop_view_reminder: String = "desktop_view_reminder"
     const val desktop_view_status: String = "desktop_view_status"
     const val desktop_viewing_rights_updated: String = "desktop_viewing_rights_updated"

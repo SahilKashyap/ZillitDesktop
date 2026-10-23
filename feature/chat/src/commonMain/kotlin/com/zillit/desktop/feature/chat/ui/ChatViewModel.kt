@@ -288,8 +288,27 @@ sealed interface ChatEvent {
      * has no business holding. Null sends the draft as typed.
      */
     data class Send(val body: String? = null) : ChatEvent
+
+    /**
+     * "Yes" on the contact panel's tracking question: post [body] into this
+     * 1:1 thread asking the peer to turn their location on.
+     *
+     * Its own event rather than [Send] with a body, because that send belongs
+     * to the composer — it clears the draft and consumes a pending reply, and
+     * neither has anything to do with a button in the info panel. The words
+     * are built where the asker's name is known (the panel), as the web's
+     * `handleSendMessage` builds them before calling `sendPrivateChat`.
+     */
+    data class AskToShareLocation(val body: String) : ChatEvent
     data class Arrived(val message: ChatMessage) : ChatEvent
     data object DismissError : ChatEvent
+
+    /**
+     * A refusal the screen decided for itself — the contact panel's location
+     * gate — shown through the thread's one error toast rather than a second
+     * one of its own.
+     */
+    data class Refuse(val message: String) : ChatEvent
 
     /** The Chats tab asking for the thread list. */
     data object RefreshRecents : ChatEvent
@@ -792,6 +811,7 @@ class ChatViewModel(
                 }
             }
             is ChatEvent.Send -> send(bodyOverride = event.body)
+            is ChatEvent.AskToShareLocation -> askToShareLocation(event.body)
             is ChatEvent.ToggleFavourite -> toggleFavourite(event.id)
             is ChatEvent.MissedCallsShown -> onMissedCallsShown(event)
             ChatEvent.AttachFile -> launch { pickForPreview() }
@@ -850,6 +870,7 @@ class ChatViewModel(
             ChatEvent.CancelRecording -> finishRecording(discard = true)
             is ChatEvent.Arrived -> arrived(event.message)
             ChatEvent.DismissError -> setState { copy(error = null) }
+            is ChatEvent.Refuse -> setState { copy(error = event.message) }
             is ChatEvent.Receipt -> applyReceipt(event.peerId, event.state)
             is ChatEvent.PeerTyping ->
                 if (currentState.peer?.userId == event.peerId) {
@@ -1501,6 +1522,29 @@ class ChatViewModel(
             }
             send(attachment = picture, location = where, bodyOverride = label)
         }
+    }
+
+    /**
+     * The tracking request, straight into the open 1:1 thread: a bubble of
+     * our own, then the wire. Nothing of the composer is touched.
+     */
+    private fun askToShareLocation(body: String) {
+        val peer = currentState.peer ?: return
+        if (currentState.peerIsGroup || peer.hasLeft || body.isBlank()) return
+        val optimistic = appendOptimistic(peer, body, attachment = null)
+        launchResult(
+            block = {
+                sendOnWire(
+                    peer.userId, body, optimistic,
+                    isGroup = false, attachment = null, reply = null, location = null,
+                )
+            },
+            onSuccess = { setSendState(optimistic.uniqueId, ChatSendState.Sent) },
+            onError = { error ->
+                setSendState(optimistic.uniqueId, ChatSendState.Failed)
+                setState { copy(error = error.localised()) }
+            },
+        )
     }
 
     private fun send(

@@ -97,6 +97,12 @@ internal class InfoHooks(
     val onGroupDialog: (GroupDialog) -> Unit = {},
     /** Opens a person's profile photo large, over the thread. */
     val onViewFace: (CrewContact) -> Unit = {},
+    /**
+     * The Location tile: where this person last was, if their schedule lets
+     * anyone look. Null leaves the tile off — a viewer whose own join is
+     * still pending, as the web gates it (`InfoSider.jsx:620`).
+     */
+    val onLocation: ((CrewContact) -> Unit)? = null,
 )
 
 /**
@@ -281,7 +287,13 @@ private fun IdentityBlock(state: ChatUiState, peer: CrewContact, hooks: InfoHook
             )
         }
         // No line on this production (Remote Config): no Voice or Video tile.
-        hooks.onCall?.takeIf { hooks.lines.isNotEmpty() }?.let { ring -> CallActions(ring, hooks.lines) }
+        // Location joins them for a person — never a room, which has no
+        // position of its own (the web puts the three in one strip too).
+        val ring = hooks.onCall?.takeIf { hooks.lines.isNotEmpty() }
+        val locate = hooks.onLocation?.takeIf { !state.peerIsGroup }
+        if (ring != null || locate != null) {
+            IdentityActions(ring, hooks.lines, locate?.let { open -> { open(peer) } })
+        }
     }
 }
 
@@ -295,15 +307,28 @@ private fun CentredLine(text: String) {
     )
 }
 
-/** Voice and Video as WhatsApp's labelled tiles; each asks which line first. */
+/**
+ * The labelled tiles under a name: Voice and Video, each asking which line
+ * first, and Location beside them — the three the web's contact drawer puts
+ * in one strip. Any of them may be absent.
+ */
 @Composable
-private fun CallActions(ring: (video: Boolean, line: CallLine) -> Unit, lines: List<CallLine>) {
+private fun IdentityActions(
+    ring: ((video: Boolean, line: CallLine) -> Unit)?,
+    lines: List<CallLine>,
+    onLocation: (() -> Unit)?,
+) {
     Row(
         modifier = Modifier.padding(top = ZillitTheme.spacing.md),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        CallTile(ZillitIcons.Phone, str(S.desktop_voice), lines) { line -> ring(false, line) }
-        CallTile(ZillitIcons.Camera, str(S.video), lines) { line -> ring(true, line) }
+        if (ring != null) {
+            CallTile(ZillitIcons.Phone, str(S.desktop_voice), lines) { line -> ring(false, line) }
+            CallTile(ZillitIcons.Camera, str(S.video), lines) { line -> ring(true, line) }
+        }
+        onLocation?.let { open ->
+            ActionTile(ZillitIcons.Pin, str(S.location), open)
+        }
     }
 }
 
@@ -311,19 +336,7 @@ private fun CallActions(ring: (video: Boolean, line: CallLine) -> Unit, lines: L
 private fun CallTile(icon: ImageVector, label: String, lines: List<CallLine>, onPick: (CallLine) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        Column(
-            modifier = Modifier
-                .width(CALL_TILE)
-                .clip(RoundedCornerShape(TILE_CORNER))
-                .border(HAIRLINE, ZillitTheme.colors.border, RoundedCornerShape(TILE_CORNER))
-                .clickable { if (lines.size == 1) onPick(lines.first()) else open = true }
-                .padding(vertical = ZillitTheme.spacing.sm),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            ZillitIcon(icon = icon, contentDescription = null, tint = ZillitTheme.colors.accentText, size = TILE_ICON)
-            ZillitText(text = label, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textPrimary)
-        }
+        ActionTile(icon, label) { if (lines.size == 1) onPick(lines.first()) else open = true }
         ZillitActionMenu(
             expanded = open,
             onDismissRequest = { open = false },
@@ -331,6 +344,24 @@ private fun CallTile(icon: ImageVector, label: String, lines: List<CallLine>, on
                 ZillitMenuEntry.Action(label = line.label, icon = icon, tone = ZillitMenuTone.Approve) { onPick(line) }
             },
         )
+    }
+}
+
+/** One of the bordered tiles under a name — WhatsApp's Voice / Video shape. */
+@Composable
+private fun ActionTile(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(CALL_TILE)
+            .clip(RoundedCornerShape(TILE_CORNER))
+            .border(HAIRLINE, ZillitTheme.colors.border, RoundedCornerShape(TILE_CORNER))
+            .clickable(onClick = onClick)
+            .padding(vertical = ZillitTheme.spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIcon(icon = icon, contentDescription = null, tint = ZillitTheme.colors.accentText, size = TILE_ICON)
+        ZillitText(text = label, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textPrimary)
     }
 }
 

@@ -89,8 +89,8 @@ class KcefLocationPickerHost(
     private val scope: CoroutineScope,
 ) : LocationPicker {
 
-    /** One opening of the dialog: what to call it, and where to start. */
-    data class Request(val title: String, val initial: PickedLocation?)
+    /** One opening of the dialog: what to call it, where to start, and whether anything may be chosen. */
+    data class Request(val title: String, val initial: PickedLocation?, val readOnly: Boolean = false)
 
     private val _request = MutableStateFlow<Request?>(null)
 
@@ -201,6 +201,34 @@ class KcefLocationPickerHost(
             continuation.invokeOnCancellation { withdraw() }
             scope.launch { open() }
         }
+
+    /**
+     * The viewing half: the same dialog over the same browser, with the pin
+     * already dropped and nothing to choose.
+     *
+     * It goes through the one pending continuation like a [pick] does, so a
+     * viewer and a picker displace each other properly rather than fighting
+     * over one dialog — and the resumed value is simply thrown away here.
+     */
+    override suspend fun view(place: PickedLocation, title: String) {
+        // Typed explicitly: it shares the one `pending` slot with pick(), and
+        // the value it resumes with is the one nobody here reads.
+        suspendCancellableCoroutine<PickedLocation?> { continuation ->
+            val displaced = synchronized(pendingLock) {
+                pending.also { pending = continuation }
+            }
+            displaced?.takeIf { it.isActive }?.resume(null)
+
+            seed = place
+            nearby = null
+            _picked.value = place
+            _failure.value = null
+            _hint.value = null
+            _request.value = Request(title = title, initial = place, readOnly = true)
+            continuation.invokeOnCancellation { withdraw() }
+            scope.launch { open() }
+        }
+    }
 
     /** Hands back the current pick and closes, remembering where it was. */
     fun confirm() {
@@ -492,7 +520,11 @@ class KcefLocationPickerHost(
     private fun replaySeed() {
         val target = browser ?: return
         val place = seed ?: return
-        run(target, LocationPickerWire.searchTextScript(place.address))
+        // Stated every time, both ways round: one browser serves pickers and
+        // viewers in turn, and it keeps whatever the last opening set.
+        val readOnly = _request.value?.readOnly == true
+        run(target, LocationPickerWire.viewOnlyScript(readOnly))
+        if (!readOnly) run(target, LocationPickerWire.searchTextScript(place.address))
         run(target, LocationPickerWire.setPinScript(place.lat, place.lng))
         run(target, LocationPickerWire.centerScript(place.lat, place.lng, PLACE_ZOOM))
     }

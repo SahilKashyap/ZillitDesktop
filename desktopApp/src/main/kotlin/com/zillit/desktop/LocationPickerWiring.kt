@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -99,45 +100,25 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
     // on every theme change, including the first composition.
     LaunchedEffect(colors) { host.useTheme(colors.asPickerTheme()) }
 
+    // Viewing somebody's position rather than choosing one: the same map,
+    // without the three controls that would change it.
+    val viewing = request?.readOnly == true
     ZillitDialogShell(
         title = request?.title ?: str(S.desktop_pick_location),
         onDismiss = host::cancel,
         visible = request != null,
         icon = ZillitIcons.Pin,
-        subtitle = str(S.desktop_pick_location_hint),
+        subtitle = if (viewing) str(S.desktop_view_location_hint) else str(S.desktop_pick_location_hint),
         width = DIALOG_WIDTH,
         maxHeight = DIALOG_HEIGHT,
         // The map takes a fixed height of its own; nothing here scrolls, and a
         // scrolling parent would only give the heavyweight surface a second
         // coordinate system to disagree with.
         scrollable = false,
-        actions = {
-            // The web keeps My Location in the row above the map, beside the
-            // search box (PlacePicker.jsx:224-231). Here the search box is
-            // inside the page — Compose cannot paint over the heavyweight
-            // surface at all — so the one place a Compose control can go is
-            // the action row, and it leads the row rather than sitting among
-            // the ways out.
-            ZillitButton(
-                text = str(S.my_location),
-                onClick = host::useMyLocation,
-                variant = ButtonVariant.Secondary,
-                leadingIcon = ZillitIcons.Pin,
-                enabled = !locating && failure == null,
-            )
-            // Pushed away from the two ways out: the row is end-aligned, and a
-            // "My Location" sitting against Cancel reads as a third way out.
-            Spacer(Modifier.weight(1f))
-            ZillitButton(text = str(S.cancel), onClick = host::cancel, variant = ButtonVariant.Secondary)
-            ZillitButton(
-                text = str(S.recce_picker_use),
-                onClick = host::confirm,
-                enabled = picked != null,
-            )
-        },
+        actions = { DialogActions(viewing, host, picked, failure, locating) },
     ) {
         MapSurface(host = host, failure = failure, locating = startLocating)
-        PickedSummary(picked)
+        PickedSummary(picked, chosen = !viewing)
         if (hint != null) {
             ZillitText(
                 text = hint.orEmpty(),
@@ -207,6 +188,63 @@ private fun MapSurface(host: KcefLocationPickerHost, failure: String?, locating:
 }
 
 /**
+ * The way out of the dialog, and what else the row offers.
+ *
+ * A viewer may leave, or carry the place on to the browser for Street View
+ * and directions. A picker may find itself, give up, or commit — the web's
+ * three (PlacePicker.jsx:224-231), with My Location pushed clear of the two
+ * ways out so it does not read as a third.
+ */
+@Composable
+private fun RowScope.DialogActions(
+    viewing: Boolean,
+    host: KcefLocationPickerHost,
+    picked: PickedLocation?,
+    failure: String?,
+    locating: Boolean,
+) {
+    if (viewing) {
+        ZillitButton(
+            text = str(S.desktop_open_in_maps),
+            onClick = {
+                picked?.let { place -> openInBrowser(mapsUrlFor(place)) }
+                host.cancel()
+            },
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Pin,
+            enabled = picked != null && failure == null,
+        )
+        Spacer(Modifier.weight(1f))
+        ZillitButton(text = str(S.close), onClick = host::cancel)
+        return
+    }
+    // The search box is inside the page — Compose cannot paint over the
+    // heavyweight surface at all — so the one place a Compose control can go
+    // is this row.
+    ZillitButton(
+        text = str(S.my_location),
+        onClick = host::useMyLocation,
+        variant = ButtonVariant.Secondary,
+        leadingIcon = ZillitIcons.Pin,
+        enabled = !locating && failure == null,
+    )
+    Spacer(Modifier.weight(1f))
+    ZillitButton(text = str(S.cancel), onClick = host::cancel, variant = ButtonVariant.Secondary)
+    ZillitButton(
+        text = str(S.recce_picker_use),
+        onClick = host::confirm,
+        enabled = picked != null,
+    )
+}
+
+/**
+ * The same link the chat bubbles and the boards use — `?q=lat,long`, which
+ * Maps resolves to a place page wherever it can.
+ */
+private fun mapsUrlFor(place: PickedLocation): String =
+    "https://www.google.com/maps?q=${place.lat},${place.lng}"
+
+/**
  * The chosen place, under the map.
  *
  * The web shows the same three things on its green card — name, address, and
@@ -215,9 +253,10 @@ private fun MapSurface(host: KcefLocationPickerHost, failure: String?, locating:
  * settled on.
  */
 @Composable
-private fun PickedSummary(picked: PickedLocation?) {
+private fun PickedSummary(picked: PickedLocation?, chosen: Boolean) {
     val colors = ZillitTheme.colors
     if (picked == null) {
+        if (!chosen) return
         ZillitText(
             text = str(S.desktop_no_place_chosen),
             style = ZillitTheme.typography.bodySmall,
@@ -229,12 +268,14 @@ private fun PickedSummary(picked: PickedLocation?) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(ZillitTheme.shapes.medium)
-            .background(colors.successSoft)
+            // Green says "you chose this". A viewer chose nothing — the card
+            // is just where they are — so it stays a plain surface there.
+            .background(if (chosen) colors.successSoft else colors.surfaceSunken)
             .padding(ZillitTheme.spacing.md),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.Top,
     ) {
-        ZillitIcon(ZillitIcons.Pin, tint = colors.success)
+        ZillitIcon(ZillitIcons.Pin, tint = if (chosen) colors.success else colors.accentText)
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitText(
                 text = picked.name.ifBlank { picked.address }.ifBlank { str(S.desktop_dropped_pin) },

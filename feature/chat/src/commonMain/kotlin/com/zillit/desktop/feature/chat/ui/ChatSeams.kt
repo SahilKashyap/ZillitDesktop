@@ -14,6 +14,7 @@ import com.zillit.desktop.feature.chat.domain.ChatAttachment
  * by another session: threading new parameters through it would collide,
  * while a local provided by [ChatToolProvider] flows past it untouched.
  */
+@Suppress("LongParameterList") // One named seam per host thing; a bag would only rename them.
 class ChatSeams(
     /**
      * The viewer's download right on the C&C tool — `ProjectPermissions`'
@@ -87,6 +88,15 @@ class ChatSeams(
      * header. This module knows nothing about calls; null keeps the buttons.
      */
     val roomCall: (@Composable (chatRoomId: String, callButtons: @Composable () -> Unit) -> Unit)? = null,
+    /**
+     * Whether the viewer's own join of this production is still pending.
+     *
+     * Only the contact panel's Location tile reads it: the web hides that
+     * button for a pending member (`InfoSider.jsx:620`), and Android hides it
+     * for a pending project (`ChatAndGroupPage.kt:406`) — somebody who has not
+     * been let in does not get to look up where the crew are.
+     */
+    val viewerIsPending: () -> Boolean = { false },
 )
 
 internal val LocalChatSeams = staticCompositionLocalOf { ChatSeams() }

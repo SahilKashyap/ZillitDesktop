@@ -14131,4 +14131,5 @@
     <string name="desktop_ss_weather_lighting">Weather &amp; lighting</string>
     <string name="desktop_tool_info_script_supervision_tool_tooltip">Script supervision on set: scenes, takes, continuity notes, coverage and reports for every shooting day.</string>
     <string name="desktop_ss_page_range">{first}–{last} of {total}</string>
+    <string name="desktop_view_location_hint">Where they last reported from. Drag to look around; nothing here is saved.</string>
 </resources>

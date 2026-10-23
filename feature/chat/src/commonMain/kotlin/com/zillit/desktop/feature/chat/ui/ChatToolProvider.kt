@@ -135,6 +135,11 @@ class ChatToolProvider(
     private val isSocketConnected: () -> Boolean = { false },
     /** The open production's name, for the export sheet's header. */
     private val projectName: () -> String = { "" },
+    /**
+     * Whether the viewer's own join of this production is still pending —
+     * see [ChatSeams.viewerIsPending]. Hides the contact panel's Location.
+     */
+    private val viewerIsPending: () -> Boolean = { false },
 ) : ToolProvider {
 
     /**
@@ -173,6 +178,7 @@ class ChatToolProvider(
                 onOpenUrl = onOpenUrl,
                 shareAsEmail = shareAsEmail?.let { share -> { message -> share(message, navigator) } },
                 roomCall = roomCall,
+                viewerIsPending = viewerIsPending,
             ),
         ) {
             // Read so this recomposes when the crew is re-fetched; see [crewChanges].

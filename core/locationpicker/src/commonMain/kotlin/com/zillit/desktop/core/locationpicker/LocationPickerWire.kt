@@ -138,6 +138,13 @@ object LocationPickerWire {
     fun setPinScript(lat: Double, lng: Double): String = "zillitPicker.setPin($lat, $lng)"
 
     /**
+     * Read-only: the page hides its search box, the pin stops being draggable
+     * and a click on the map does nothing. Sent on every opening, both ways
+     * round, because one browser serves pickers and viewers in turn.
+     */
+    fun viewOnlyScript(on: Boolean): String = "zillitPicker.viewOnly($on)"
+
+    /**
      * "My Location": the pin moved to where this machine is, and its address
      * read back off it — the web's `handleMyLocation`
      * (boxScheduleV2/components/PlacePicker.jsx:163-175).

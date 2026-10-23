@@ -150,6 +150,8 @@
     var marker = null;
     var geocoder = null;
     var booted = false;
+    /* Set by zillitPicker.viewOnly: the map shows a position, it does not take one. */
+    var readOnly = false;
     var pendingCenter = null;
     var pendingPin = null;
     var pendingHere = null;
@@ -204,14 +206,15 @@
         if (!map) { pendingPin = { lat: lat, lng: lng }; return; }
         var position = { lat: lat, lng: lng };
         if (!marker) {
-            marker = new google.maps.Marker({ map: map, position: position, draggable: true });
+            marker = new google.maps.Marker({ map: map, position: position, draggable: !readOnly });
             marker.addListener('dragend', function (e) {
-                if (!e.latLng) { return; }
+                if (readOnly || !e.latLng) { return; }
                 var p = e.latLng.toJSON();
                 reverseGeocode(p.lat, p.lng);
             });
         } else {
             marker.setPosition(position);
+            marker.setDraggable(!readOnly);
             marker.setMap(map);
         }
         map.panTo(position);
@@ -277,7 +280,7 @@
         });
         geocoder = new google.maps.Geocoder();
         map.addListener('click', function (e) {
-            if (!e.latLng) { return; }
+            if (readOnly || !e.latLng) { return; }
             var p = e.latLng.toJSON();
             reverseGeocode(p.lat, p.lng);
         });
@@ -348,6 +351,17 @@
             reverseGeocode(lat, lng);
         },
 
+        /* Viewing somebody else's position rather than choosing one: the
+           search box goes away, the pin cannot be dragged, and a click on the
+           map does nothing. The same page and the same browser — only what the
+           reader is allowed to change differs. */
+        viewOnly: function (on) {
+            readOnly = !!on;
+            var bar = document.getElementById('searchbar');
+            if (bar) { bar.style.display = readOnly ? 'none' : ''; }
+            if (marker) { marker.setDraggable(!readOnly); }
+        },
+
         /* Lets the host put the saved address back in the box on reopen. */
         setSearchText: function (text) {
             document.getElementById('search').value = text;
@@ -359,6 +373,9 @@
             document.getElementById('search').value = '';
             if (marker) { marker.setMap(null); }
             pendingHere = null;
+            /* Back to a picker: the next opening states its own mode, but a
+               page left read-only would ignore the first click if it did not. */
+            window.zillitPicker.viewOnly(false);
         }
     };
 
