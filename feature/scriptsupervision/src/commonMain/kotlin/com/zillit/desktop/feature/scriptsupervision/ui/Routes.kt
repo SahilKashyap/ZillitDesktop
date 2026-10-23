@@ -16,22 +16,44 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.StuntSafetyScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.TakesScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.VfxPlatesScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.WeatherLightingScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.characters.ActorsScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.characters.CharactersRoutes
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.characters.StoryDaysScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.BoxesScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.ContinuityPhotosScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.LooksRoutes
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.PropsWardrobeScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.quicklog.QuickLogScreen
 
 /**
  * Which screen each page of the menu opens — the web's inner `<Routes>`.
  *
+ * A page whose inner position is not the page's own screen asks [SsNav] for
+ * it, rather than taking an id in [SsPage]: see [SsView] for why the menu and
+ * the detail screens are kept apart.
+ *
  * The pages NOT yet ported say so by name rather than opening blank: this
- * module arrived on the web on 2026-10-23 as forty screens at once, and the
- * ones listed in [NotPorted] are the heavy half (the quick-log form, the
- * character and look books, the lined script and the breakdown, the dashboard
- * and the template editor). Naming each one is the point — a reader who opens
- * Characters learns that it is coming, not that the tool is broken.
+ * module arrived on the web on 2026-10-23 as forty screens at once, and
+ * [NotPorted] names the ones still coming. Naming each one is the point — a
+ * reader who opens it learns that it is coming, not that the tool is broken.
  */
 @Composable
-internal fun SsRoutes(page: SsPage) {
+internal fun SsRoutes(page: SsPage, onOpen: (SsPage) -> Unit) {
     when (page) {
+        SsPage.QuickLog -> QuickLogScreen()
         SsPage.Scenes -> ScenesScreen()
         SsPage.Takes -> TakesScreen()
+        SsPage.Characters -> CharactersRoutes(onOpen)
+        SsPage.Actors -> ActorsScreen(onOpen)
+        SsPage.StoryDays -> StoryDaysScreen()
+        // Three menu rows, one screen: the departments are one folder on the
+        // service, told apart by `department`.
+        SsPage.CostumeLooks -> LooksRoutes("costume", onOpen)
+        SsPage.HairLooks -> LooksRoutes("hair", onOpen)
+        SsPage.MakeupLooks -> LooksRoutes("makeup", onOpen)
+        SsPage.PropsWardrobe -> PropsWardrobeScreen()
+        SsPage.Boxes -> BoxesScreen()
+        SsPage.ContinuityPhotos -> ContinuityPhotosScreen()
         else -> SsLogRoutes(page)
     }
 }

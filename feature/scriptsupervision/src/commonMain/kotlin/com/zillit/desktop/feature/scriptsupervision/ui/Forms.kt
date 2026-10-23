@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -17,10 +21,15 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.component.ZillitTokenField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -149,6 +158,85 @@ fun PickInput(
     }
 }
 
+/**
+ * A list of short values typed one after another — the web's
+ * `<Select mode="tags" tokenSeparators={[',']} open={false}>`, which is a
+ * tag box with no menu behind it: a character's aliases, an actor's allergies,
+ * a story day's scene numbers.
+ *
+ * `open={false}` is the web saying "these are typed, not chosen", so this is a
+ * token field rather than a picker. A comma ends a token here as it does
+ * there.
+ */
+@Composable
+fun TagInput(
+    tokens: List<String>,
+    onChange: (List<String>) -> Unit,
+    label: String?,
+    modifier: Modifier = FormCell,
+    placeholder: String? = null,
+    help: String? = null,
+) {
+    var typed by remember { mutableStateOf("") }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        label?.let { ZillitText(it, style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary) }
+        ZillitTokenField(
+            tokens = tokens,
+            input = typed,
+            onValueChange = { next, input ->
+                // A comma in the input is a finished token, as the web's
+                // tokenSeparators makes it.
+                val cut = input.split(',')
+                if (cut.size > 1) {
+                    val finished = cut.dropLast(1).map { it.trim() }.filter { it.isNotBlank() }
+                    onChange((next + finished).distinct())
+                    typed = cut.last()
+                } else {
+                    if (next != tokens) onChange(next)
+                    typed = input
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = placeholder,
+        )
+        help?.let { ZillitText(it, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textSecondary) }
+    }
+}
+
+/**
+ * A pick-MANY over `value to label` pairs — the web's
+ * `<Select mode="multiple">`: a look's story days and scenes, a photo's
+ * characters.
+ *
+ * The value order is the order they were picked in, which is the order the
+ * service stores and the web shows them in.
+ */
+@Composable
+fun MultiPickInput(
+    values: List<String>,
+    options: List<Pair<String, String>>,
+    onChange: (List<String>) -> Unit,
+    label: String?,
+    modifier: Modifier = FormCell,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        label?.let { ZillitText(it, style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary) }
+        ZillitMultiSelect(
+            // Only the options that still EXIST: a look keeps the id of a
+            // scene somebody deleted, and offering it back would re-save it.
+            selected = options.filter { it.first in values },
+            options = options,
+            label = { it.second },
+            onChange = { picked -> onChange(picked.map { it.first }) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = placeholder ?: (str(S.select) + "…"),
+            enabled = enabled,
+        )
+    }
+}
+
 /** A yes/no field, as the web's `Switch` is. */
 @Composable
 fun SwitchInput(value: Boolean, onChange: (Boolean) -> Unit, label: String, modifier: Modifier = FormCell) {
@@ -197,6 +285,10 @@ private fun Any?.toJson(): JsonElement = when (this) {
     is Int -> JsonPrimitive(this)
     is Long -> JsonPrimitive(this)
     is Double -> JsonPrimitive(this)
+    // A list field is a JSON ARRAY, never its own `toString`: aliases,
+    // allergies and scene numbers all travel this way, and `[a, b]` as a
+    // string is what the service would otherwise store for them.
+    is List<*> -> JsonArray(map { it.toJson() })
     else -> JsonPrimitive(toString())
 }
 

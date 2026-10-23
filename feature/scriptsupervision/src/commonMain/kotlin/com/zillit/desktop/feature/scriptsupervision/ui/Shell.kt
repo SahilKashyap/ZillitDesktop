@@ -68,12 +68,29 @@ fun ScriptSupervisionShell(viewModel: ScriptSupervisionViewModel, onOpenTools: (
         )
     }
     val scenes = remember(ctx) { ScenesState(scope, ctx) }
+    val cast = remember(ctx) { CastState(scope, ctx) }
+    val nav = remember(ctx) { SsNav() }
     // Not before the rights list has confirmed the tool: a call into a
     // production that has it switched off answers 403, and a 403 anywhere in
     // this app reads as "no longer a member".
-    LaunchedEffect(ctx, state.viewer.canCall) { if (state.viewer.canCall) scenes.reload() }
+    LaunchedEffect(ctx, state.viewer.canCall) {
+        if (state.viewer.canCall) {
+            scenes.reload()
+            cast.reload()
+        }
+    }
+    // The stack the menu's page owns, set here so a screen reads one page's
+    // position without being told which page it is on. Guarded, because
+    // writing state during a composition that did not change it would ask for
+    // another one on every frame.
+    if (nav.page != state.page) nav.page = state.page
 
-    CompositionLocalProvider(LocalSs provides ctx, LocalScenes provides scenes) {
+    CompositionLocalProvider(
+        LocalSs provides ctx,
+        LocalScenes provides scenes,
+        LocalCast provides cast,
+        LocalNav provides nav,
+    ) {
         Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
             when {
                 !state.viewer.resolved -> ShellLoading()
@@ -123,7 +140,7 @@ private fun ShellBody(page: SsPage, onOpen: (SsPage) -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                SsRoutes(page)
+                SsRoutes(page, onOpen)
             }
         }
     }

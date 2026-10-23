@@ -10,6 +10,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
 import com.zillit.desktop.feature.scriptsupervision.domain.asRec
 import com.zillit.desktop.feature.scriptsupervision.domain.asRows
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -121,6 +122,15 @@ class ContinuityCrud(private val api: ScriptSupervisionApi, private val folder: 
     suspend fun list(query: Map<String, Any?> = emptyMap()): ZillitResult<Answer> =
         api.project()?.let { api.get("/continuity/$folder/$it", query) } ?: noProject()
 
+    /**
+     * One record, by id.
+     *
+     * The segment is `detail/{id}`, not `{id}`: a bare id in that position is
+     * where the project goes, so `/continuity/characters/{id}` would be read
+     * as a LIST of a production that does not exist.
+     */
+    suspend fun one(id: String): ZillitResult<Answer> = api.get("/continuity/$folder/detail/$id")
+
     suspend fun create(body: JsonObject): ZillitResult<Answer> =
         api.project()?.let { api.post("/continuity/$folder/$it", body) } ?: noProject()
 
@@ -139,3 +149,12 @@ class ContinuityCrud(private val api: ScriptSupervisionApi, private val folder: 
 internal fun noProject(): ZillitResult<Answer> = ZillitResult.Failure(
     ZillitError.Http(status = 200, serverMessage = "libs_something_went_wrong"),
 )
+
+/**
+ * An empty answer, for a fetch a screen decides NOT to make.
+ *
+ * The look board is the case: only the costume board has garments, so the
+ * other two answer this rather than carrying a nullable resource that every
+ * reader would have to test.
+ */
+fun emptyRows(): ZillitResult<Answer> = ZillitResult.Success(Answer(JsonArray(emptyList()), null))

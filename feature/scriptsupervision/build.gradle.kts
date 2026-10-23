@@ -16,6 +16,7 @@ kotlin {
             implementation(project(":core:network"))
             implementation(project(":core:permissions"))
             implementation(project(":core:localization"))
+            implementation(project(":core:media"))
             implementation(project(":core:workspace"))
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)

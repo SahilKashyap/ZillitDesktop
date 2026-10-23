@@ -64,3 +64,18 @@ fun sceneStatusTone(status: String): StatusTone = when (status) {
     "postponed" -> StatusTone.Escalated
     else -> StatusTone.Neutral
 }
+
+/**
+ * How a look's stage is drawn — the web's `LOOK_STATUS_TAG`.
+ *
+ * `broken` is the one that has to shout: a look recorded as broken is
+ * continuity that will not match on the day, which is the whole reason the
+ * script supervisor keeps these.
+ */
+fun lookStatusTone(status: String): StatusTone = when (status) {
+    "established" -> StatusTone.Progress
+    "active" -> StatusTone.Done
+    "broken" -> StatusTone.Escalated
+    // `planned` and `wrapped` are both quiet: nothing to do about either.
+    else -> StatusTone.Neutral
+}

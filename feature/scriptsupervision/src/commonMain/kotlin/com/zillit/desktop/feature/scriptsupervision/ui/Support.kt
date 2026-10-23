@@ -19,6 +19,7 @@ import com.zillit.desktop.feature.scriptsupervision.data.Answer
 import com.zillit.desktop.feature.scriptsupervision.data.ScriptSupervisionApi
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
 import com.zillit.desktop.feature.scriptsupervision.domain.ScriptSupervisionViewer
+import com.zillit.desktop.feature.scriptsupervision.domain.SsHost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -42,6 +43,8 @@ class SsCtx(
     val askRights: (RightsKind) -> Unit = {},
     /** Opens the Film Tools window (the web's Tools button goes back to the grid). */
     val openTools: () -> Unit = {},
+    /** The few things the JSON client cannot do — fetching a signed photo, opening a PDF. */
+    val host: SsHost = SsHost.None,
 ) {
     val canPost: Boolean get() = viewer.canPost
     val canDownload: Boolean get() = viewer.canDownload
