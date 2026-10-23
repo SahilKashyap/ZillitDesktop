@@ -14,7 +14,6 @@ import com.zillit.desktop.feature.tasks.domain.TaskChange
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskFilter
 import com.zillit.desktop.feature.tasks.domain.TaskHistoryEntry
-import com.zillit.desktop.feature.tasks.domain.TaskKind
 import com.zillit.desktop.feature.tasks.domain.TaskLookup
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
@@ -277,12 +276,13 @@ class TaskLogicTest {
     }
 
     @Test
-    fun `the board filter narrows by kind, department and assignee`() {
+    fun `the board filter narrows by department and assignee, and has no kind switch`() {
         val project = task("p1", assignee = "p").copy(departmentId = "d1")
         val self = task("s1", isSelf = true)
 
-        assertFalse(matchesFilter(self, TaskFilter(kind = TaskKind.Project), lookup))
-        assertTrue(matchesFilter(self, TaskFilter(kind = TaskKind.Self), lookup))
+        // The All / Project tasks / Self tasks switch is gone: the tabs are the views.
+        assertTrue(matchesFilter(self, TaskFilter(), lookup))
+        assertTrue(matchesFilter(project, TaskFilter(), lookup))
         assertTrue(matchesFilter(project, TaskFilter(department = "d1", assignee = "p"), lookup))
         assertFalse(matchesFilter(project, TaskFilter(assignee = TaskFilter.NO_ASSIGNEE), lookup))
         assertTrue(matchesFilter(self, TaskFilter(assignee = TaskFilter.NO_ASSIGNEE), lookup))

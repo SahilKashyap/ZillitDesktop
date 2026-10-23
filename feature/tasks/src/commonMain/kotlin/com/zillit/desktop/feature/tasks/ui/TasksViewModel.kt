@@ -15,6 +15,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.data.httpStatus
 import com.zillit.desktop.feature.tasks.data.tasksSyncEvents
 import com.zillit.desktop.feature.tasks.domain.DueProblem
+import com.zillit.desktop.feature.tasks.domain.SavedTaskDraft
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.PickedTaskFile
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
@@ -30,6 +31,7 @@ import com.zillit.desktop.feature.tasks.domain.diffDraft
 import com.zillit.desktop.feature.tasks.domain.dropTask
 import com.zillit.desktop.feature.tasks.domain.dueLimits
 import com.zillit.desktop.feature.tasks.domain.dueProblem
+import com.zillit.desktop.feature.tasks.domain.formSig
 import com.zillit.desktop.feature.tasks.domain.mentionIds
 import com.zillit.desktop.feature.tasks.domain.mergeTask
 import com.zillit.desktop.feature.tasks.domain.rebaseDraft
@@ -86,6 +88,9 @@ class TasksViewModel(
     /** Images and files in the open panel's description. */
     private val attachments = TaskAttachmentsWork(this, repository) { imagesOnly -> pickFiles(imagesOnly) }
 
+    /** Drafts — a new task saved to finish later. */
+    private val drafts = TaskDraftsWork(this, repository)
+
     /** The tool has been opened at least once: rights changes from then on reload it. */
     private var started = false
 
@@ -105,7 +110,8 @@ class TasksViewModel(
         when (event) {
             TasksEvent.Load -> load()
             TasksEvent.Refresh -> loadList(silent = true)
-            is TasksEvent.ViewChanged -> setState { copy(view = event.view) }
+            is TasksEvent.ViewChanged -> viewChanged(event.view)
+            is TasksEvent.ScopeChanged -> scopeChanged(event)
             is TasksEvent.BoardFilterChanged -> setState { copy(boardFilter = event.filter) }
             is TasksEvent.MineQueryChanged -> setState { copy(mineQuery = event.query) }
             is TasksEvent.SelfQueryChanged -> setState { copy(selfQuery = event.query) }
@@ -119,15 +125,18 @@ class TasksViewModel(
             TasksEvent.AskForRights -> askForRights()
             is TasksEvent.OpenChooser -> openChooser(event.status)
             TasksEvent.CloseChooser -> setState { copy(chooser = null) }
-            is TasksEvent.OpenTask -> leave { openTask(event.taskId) }
-            is TasksEvent.NewTask -> newTask(event.seed, event.pickAssignee)
-            is TasksEvent.NewSubtask -> leave { newSubtask(event.main) }
-            TasksEvent.BackToParent -> leave { backToParent() }
+            is TasksEvent.OpenTask -> leave(event) { openTask(event.taskId) }
+            is TasksEvent.NewTask -> leave(event) { newTask(event.seed, event.pickAssignee) }
+            is TasksEvent.NewSubtask -> leave(event) { newSubtask(event.main) }
+            TasksEvent.BackToParent -> leave(TasksEvent.BackToParent) { backToParent() }
             TasksEvent.ClosePanel -> closePanel()
             TasksEvent.CancelCreate -> cancelCreate()
             is TasksEvent.DraftChanged -> editPanel { copy(draft = event.draft, nag = false) }
             is TasksEvent.PickStatus -> pickStatus(event.status)
-            is TasksEvent.PickVisibility -> editPanel { copy(draft = draft?.copy(visibility = event.visibility), nag = false) }
+            // Picking one on a new task *makes* the choice; on a task that exists it waits for Save changes.
+            is TasksEvent.PickVisibility -> editPanel {
+                copy(draft = draft?.copy(visibility = event.visibility), nag = false, visPending = false, visNag = 0)
+            }
             is TasksEvent.ChooseStatus -> chooseStatus(event.status)
             is TasksEvent.ChooseVisibility -> chooseVisibility(event.visibility)
             is TasksEvent.TabChanged -> editPanel { copy(tab = event.tab) }
@@ -141,13 +150,34 @@ class TasksViewModel(
             is TasksEvent.PickAttachments -> attachments.pick(event.imagesOnly)
             is TasksEvent.AddAttachments -> attachments.add(event.files)
             is TasksEvent.RemoveAttachment -> attachments.remove(event.attachment)
-            is TasksEvent.RemovePendingAttachment -> attachments.removePending(event.key)
+            // One waiting in the browser, or one a saved draft keeps: that one
+            // leaves the draft on Save draft or just before Create, so "Don't
+            // save" keeps it.
+            is TasksEvent.RemovePendingAttachment -> removeWaiting(event.key)
             is TasksEvent.OpenAttachment -> editPanel { copy(viewing = event.attachmentId) }
             TasksEvent.CloseAttachment -> editPanel { copy(viewing = null) }
             is TasksEvent.LoadAttachment -> attachments.load(event.attachment)
             is TasksEvent.ReloadAttachment -> attachments.reload(event.attachment)
             is TasksEvent.DownloadAttachment -> attachments.download(event.attachment)
             TasksEvent.OpenedUrl -> editPanel { copy(openUrl = null) }
+            else -> onDraftEvent(event)
+        }
+    }
+
+    /** The drafts of a new task, and the question asked before one is let go. */
+    private fun onDraftEvent(event: TasksEvent) {
+        when (event) {
+            TasksEvent.LoadDrafts -> drafts.load()
+            is TasksEvent.DraftsScopeDecided -> setState { copy(draftsScope = event.scope, draftsScopeDecided = true) }
+            is TasksEvent.OpenDraft -> leave(event) { openDraft(event.draft) }
+            TasksEvent.SaveDraft -> saveDraft()
+            is TasksEvent.DeleteDraft -> deleteDraft(event.draft)
+            TasksEvent.DeleteOpenDraft -> deleteOpenDraft()
+            TasksEvent.DisarmDeleteDraft -> editPanel { copy(deleteArmed = false) }
+            TasksEvent.LeaveSave -> leaveSave()
+            TasksEvent.LeaveDiscard -> leaveDiscard()
+            TasksEvent.LeaveStay -> setState { copy(leaveAsk = null) }
+            else -> Unit
         }
     }
 
@@ -207,6 +237,7 @@ class TasksViewModel(
         val now = viewer()
         if (now == before) return
         setState { copy(viewer = now, panel = if (now.canCall) panel else null) }
+        leaveDraftsIfGone()
         if (now.resolved) rightsPoll?.cancel()
         if (now.canCall && !before.canCall) loadAll()
     }
@@ -227,8 +258,13 @@ class TasksViewModel(
                     // no `dpr` where the service cannot store one, so cards,
                     // rows and the search need no check of their own.
                     val said = answer.data.features
+                    val draftsWereOff = !currentState.draftsOn
                     setState { copy(features = said) }
                     setTasks { answer.data.tasks.map { task -> applyFeatures(task, said) } }
+                    // The list is what says whether this deployment keeps
+                    // drafts, so mine can only be read once it has answered.
+                    if (draftsWereOff) drafts.load()
+                    leaveDraftsIfGone()
                 }
                 is ZillitResult.Failure -> if (!silent) fail(answer.error)
             }
@@ -300,6 +336,18 @@ class TasksViewModel(
     // list, the panel and every write. These are what it needs of this one.
 
     internal fun panelEdit(change: TaskPanel.() -> TaskPanel) = editPanel(change)
+
+    /**
+     * The drafts list, and whether a read has answered. [loaded] null leaves
+     * that alone: dropping a row says nothing about whether a read has landed.
+     */
+    internal fun setDrafts(loaded: Boolean?, change: (List<SavedTaskDraft>) -> List<SavedTaskDraft>) =
+        setState { copy(drafts = change(drafts), draftsLoaded = loaded ?: draftsLoaded) }
+
+    internal fun setDraftsScope(scope: TaskScope) = setState { copy(draftsScope = scope) }
+
+    /** Closes the panel, but only if it is still the one [panelKey] names. */
+    internal fun closePanelAt(panelKey: Long) = setState { copy(panel = panel?.takeIf { it.key != panelKey }) }
 
     internal fun work(block: suspend () -> Unit): Job = launch { block() }
 
@@ -472,6 +520,8 @@ class TasksViewModel(
                 val before = currentState.byId
                 val mainTaskId = task.parentId?.takeIf { it in before }
                 remove(task.id)
+                // The service deletes the shared-task drafts under a deleted main task.
+                if (!task.isSubtask) drafts.dropUnder(task.id)
                 setState {
                     val open = panel
                     val showsDeleted = open != null && !open.creating &&
@@ -496,8 +546,16 @@ class TasksViewModel(
         if (title.isEmpty() || currentState.quickAdding || !currentState.canPost) return
         setState { copy(quickAdding = true) }
         launch {
-            val draft = TaskDraft(title = title, dueDate = event.dueDate, assigneeId = event.assigneeId, isSelf = true)
-            val write = repository.create(draft, quickId, quick = true)
+            val draft = TaskDraft(
+                title = title,
+                dueDate = event.dueDate,
+                assigneeId = event.assigneeId,
+                isSelf = true,
+                visibility = event.visibility ?: TaskVisibility.Private,
+            )
+            // `features` decides whether the row's Public | Private is in the
+            // body at all: the row only offers it where the service keeps it.
+            val write = repository.create(draft, quickId, quick = true, features = currentState.features)
             setState { copy(quickAdding = false) }
             if (write is TaskWrite.Saved) {
                 upsert(write.task)
@@ -520,6 +578,33 @@ class TasksViewModel(
 
     // -- the panel: opening and closing -------------------------------------------------
 
+    /**
+     * A tab in the bar. Moving between views never asks about a started new
+     * task: the panel stays open over the view, as the web's does.
+     *
+     * Drafts is only reachable where they are offered, and opening it catches
+     * up with drafts saved somewhere else.
+     */
+    private fun viewChanged(view: TasksView) {
+        if (view == TasksView.Drafts && !currentState.draftsOn) return
+        setState { copy(view = view) }
+        if (view == TasksView.Drafts) drafts.load()
+    }
+
+    /** Drafts switched off under the Drafts tab (a right taken away): back to the Board. */
+    private fun leaveDraftsIfGone() {
+        if (currentState.view == TasksView.Drafts && !currentState.draftsOn) {
+            setState { copy(view = TasksView.Board) }
+        }
+    }
+
+    private fun scopeChanged(event: TasksEvent.ScopeChanged) = setState {
+        when (event.view) {
+            TasksView.Drafts -> copy(draftsScope = event.scope, draftsScopeDecided = true)
+            else -> copy(mineScope = event.scope)
+        }
+    }
+
     private fun editPanel(change: TaskPanel.() -> TaskPanel) {
         setState { copy(panel = panel?.change()) }
     }
@@ -527,19 +612,55 @@ class TasksViewModel(
     /** A new panel instance pointed at an existing task. */
     private fun pointedAt(taskId: String) = TaskPanel(key = ++panelKeys, creating = false, taskId = taskId)
 
-    /** Leaving this task for another replaces what the panel holds: never with unsaved edits. */
-    private fun leave(move: () -> Unit) {
+    /**
+     * Leaving this task for another replaces what the panel holds, so neither
+     * unsaved edits nor a started new task is thrown away without a word:
+     * edits turn the save bar red, and a started new task is asked about
+     * ("Save this task as a draft?"), with [then] run once that is answered.
+     */
+    private fun leave(then: TasksEvent?, move: () -> Unit) {
         val open = currentState.panel
-        if (open != null && open.dirty(currentState.features)) {
-            editPanel { copy(nag = true) }
-            return
+        when {
+            open == null -> move()
+            askToLeave(open, then) -> Unit
+            open.dirty(currentState.features) -> editPanel { copy(nag = true) }
+            else -> move()
         }
-        move()
+    }
+
+    /**
+     * Puts "Save this task as a draft?" up when a started new task would be
+     * let go. Answers true when it did — nothing else may happen until it is
+     * answered. Without drafts (the service, or posting rights) a new task
+     * closes as it always did, so nothing is asked.
+     */
+    private fun askToLeave(open: TaskPanel, then: TasksEvent?): Boolean {
+        val worthAsking = open.creating && open.started && !open.released
+        if (!worthAsking || !currentState.draftsOn) return false
+        setState { copy(leaveAsk = LeaveAsk(fromDraft = open.draftId != null, then = then)) }
+        return true
+    }
+
+    /**
+     * Let go of a new task's form: a new shared task goes back to its main
+     * task (when it is still there, and [toMain]), anything else closes.
+     * Nothing more is asked about it.
+     */
+    private fun finishClose(toMain: Boolean) {
+        val open = currentState.panel ?: return
+        editPanel { copy(released = true) }
+        val main = open.draft?.parentId?.takeIf { it in currentState.byId }
+        if (toMain && main != null) openTask(main) else setState { copy(panel = null, leaveAsk = null) }
+    }
+
+    /** As [finishClose], but only while the panel is still the one [panelKey] names. */
+    private fun finishCloseAt(panelKey: Long, toMain: Boolean = true) {
+        if (currentState.panel?.key == panelKey) finishClose(toMain)
     }
 
     private fun openTask(taskId: String) {
         val next = pointedAt(taskId)
-        setState { copy(panel = next) }
+        setState { copy(panel = next, leaveAsk = null) }
         fetchTask(next.key, taskId)
     }
 
@@ -550,12 +671,17 @@ class TasksViewModel(
      */
     private fun newTask(seed: TaskDraft, pickAssignee: Boolean = false) {
         val draft = seed.copy(visibility = if (seed.isSelf) TaskVisibility.Private else TaskVisibility.Public)
+        // A new MAIN task has no Public / Private yet: that value is only a
+        // placeholder until the creator picks one. A subtask follows its main task.
+        val pending = seed.parentId == null
         setState {
             copy(
                 chooser = null,
+                leaveAsk = null,
                 panel = TaskPanel(
                     key = ++panelKeys, creating = true, orig = draft, draft = draft,
                     uniqueId = newId(), pickAssignee = pickAssignee,
+                    visPending = pending, savedSig = formSig(draft, pending),
                 ),
             )
         }
@@ -576,12 +702,84 @@ class TasksViewModel(
         )
         setState {
             copy(
+                leaveAsk = null,
                 panel = TaskPanel(
                     key = ++panelKeys, creating = true, orig = seed, draft = seed,
                     parentId = main.id, parentTitle = main.title, uniqueId = newId(),
+                    savedSig = formSig(seed),
                 ),
             )
         }
+    }
+
+    /**
+     * The form of a saved draft, to finish it: the draft is read first, so its
+     * images and files come with it. A shared-task draft goes under its main
+     * task while the list still has it (the read decides that).
+     */
+    private fun openDraft(saved: SavedTaskDraft) {
+        if (!currentState.draftsOn) return
+        val seed = TaskDraft(isSelf = saved.isSelf, parentId = saved.parentId)
+        val key = ++panelKeys
+        setState {
+            copy(
+                chooser = null,
+                leaveAsk = null,
+                panel = TaskPanel(
+                    key = key, creating = true, orig = seed, draft = seed,
+                    parentId = saved.parentId, parentTitle = saved.parentTitle,
+                    uniqueId = newId(), draftId = saved.id, draftReady = false,
+                ),
+            )
+        }
+        drafts.fetch(key, saved.id)
+    }
+
+    /** Save draft, from the panel's footer. The form closes once it is kept. */
+    private fun saveDraft() {
+        val open = currentState.panel ?: return
+        launch { if (drafts.save(open.key)) finishCloseAt(open.key) }
+    }
+
+    /** "Save as draft" in the question: keep it, then carry on with what was asked for. */
+    private fun leaveSave() {
+        val ask = currentState.leaveAsk ?: return
+        val open = currentState.panel ?: return
+        setState { copy(leaveAsk = null) }
+        launch {
+            if (drafts.save(open.key)) {
+                finishCloseAt(open.key)
+                ask.then?.let(::onEvent)
+            }
+        }
+    }
+
+    /** "Discard" / "Don't save": the form goes, and a saved draft stays as it was. */
+    private fun leaveDiscard() {
+        val ask = currentState.leaveAsk ?: return
+        val wasDraft = currentState.panel?.draftId != null
+        setState { copy(leaveAsk = null) }
+        finishClose(toMain = ask.then == null)
+        if (wasDraft) notice(str(S.desktop_tasks_draft_not_saved))
+        ask.then?.let(::onEvent)
+    }
+
+    /** 🗑 on a draft row: the first press arms it, the second deletes. */
+    private fun deleteDraft(saved: SavedTaskDraft) {
+        launch { drafts.delete(saved.id) }
+    }
+
+    /** Delete draft in the panel's footer: pressed twice, then the form closes. */
+    private fun deleteOpenDraft() {
+        val open = currentState.panel ?: return
+        val draftId = open.draftId ?: return
+        if (open.saving) return
+        if (!open.deleteArmed) {
+            editPanel { copy(deleteArmed = true) }
+            return
+        }
+        editPanel { copy(deleteArmed = false) }
+        launch { if (drafts.delete(draftId)) finishCloseAt(open.key, toMain = false) }
     }
 
     /** From a subtask (open, or being created) back to its main task; with none to go to, the panel closes. */
@@ -594,13 +792,23 @@ class TasksViewModel(
 
     private fun closePanel() {
         val open = currentState.panel ?: return
-        if (open.dirty(currentState.features)) editPanel { copy(nag = true) } else setState { copy(panel = null) }
+        when {
+            // The ✕ and the scrim on a new task do what Cancel does, as the web's do.
+            open.creating -> cancelCreate()
+            open.dirty(currentState.features) -> editPanel { copy(nag = true) }
+            else -> setState { copy(panel = null) }
+        }
     }
 
+    /**
+     * Close a new task (Cancel, ✕, Escape, a press outside, the main task's
+     * name). With something in it, ask first; otherwise a new shared task goes
+     * back to its main task (when it is still there), anything else closes.
+     */
     private fun cancelCreate() {
         val open = currentState.panel ?: return
-        val parent = open.draft?.parentId
-        if (parent != null && parent in currentState.byId) backToParent() else setState { copy(panel = null) }
+        if (askToLeave(open, then = null)) return
+        finishClose(toMain = true)
     }
 
     // -- the panel: reading ------------------------------------------------------------
@@ -820,20 +1028,47 @@ class TasksViewModel(
     }
 
     private fun create() {
-        val open = currentState.panel ?: return
+        val state = currentState
+        val open = state.panel ?: return
         val draft = open.draft ?: return
-        if (open.saving || !currentState.canPost || draft.title.isBlank()) return
+        if (open.saving || !state.canPost || draft.title.isBlank()) return
+        // No default: the creator picks Public or Private. Each press outlines
+        // the control in amber and brings it into view (the panel reads `visNag`).
+        if (open.visUnchosen(state.features)) {
+            editPanel { copy(visNag = visNag + 1) }
+            notice(str(S.desktop_tasks_visibility_choose_notice))
+            return
+        }
         if (dueNotice(draft.dueDate, draft.parentId, null)) return
+        val fromDraft = open.draftId
         editPanel { copy(saving = true) }
         launch {
-            val answer = repository.create(draft, open.uniqueId, features = currentState.features)
-            when (answer) {
+            // Images and files taken out of the form leave the DRAFT first, or
+            // the service would move them onto the new task with the rest.
+            if (fromDraft != null && open.droppedFiles.isNotEmpty() &&
+                !drafts.dropFilesBeforeCreate(fromDraft, open.droppedFiles)
+            ) {
+                editPanel { copy(saving = false) }
+                return@launch
+            }
+            val answer = repository.create(draft, open.uniqueId, features = state.features, draftId = fromDraft)
+            created(open, draft, fromDraft, answer)
+        }
+    }
+
+    /** What a create answered, and where the panel goes next. */
+    private suspend fun created(open: TaskPanel, draft: TaskDraft, fromDraft: String?, answer: TaskWrite) {
+        when (answer) {
                 is TaskWrite.Saved -> {
+                    editPanel { if (key == open.key) copy(released = true) else this }
                     upsert(answer.task)
                     announce(answer.message)
+                    // The service moved the draft's images and files onto the
+                    // task and deleted the draft, in that same request.
+                    fromDraft?.let(drafts::drop)
                     // The images and files added while creating go up now that
                     // the task exists, one after another — awaited, so the
-                    // button still says "Creating…" while they do and the
+                    // button still says "Saving…" while they do and the
                     // panel does not close over them.
                     attachments.sendQueued(answer.task.id, open.key)
                 }
@@ -854,12 +1089,33 @@ class TasksViewModel(
                 }
                 is TaskWrite.Refused -> {
                     fail(answer.error)
+                    // The draft is gone — deleted elsewhere — and nothing was
+                    // created: the form stays as a new task, without the
+                    // draft's images and files.
+                    if (fromDraft != null && answer.message == DRAFT_NOT_EXISTS) {
+                        drafts.drop(fromDraft)
+                        editPanel {
+                            if (key == open.key) {
+                                copy(draftId = null, draftFiles = emptyList(), droppedFiles = emptyList())
+                            } else {
+                                this
+                            }
+                        }
+                    }
                     // A subtask refused because its main task is gone, or no longer a main task:
                     // the list is behind. The form stays, with what was typed.
                     if (draft.parentId != null) loadList(silent = true)
                 }
                 is TaskWrite.Conflict -> Unit
             }
+    }
+
+    private fun removeWaiting(key: String) {
+        if (key.startsWith(DRAFT_FILE_PREFIX)) {
+            val attachmentId = key.removePrefix(DRAFT_FILE_PREFIX)
+            editPanel { copy(droppedFiles = droppedFiles + attachmentId) }
+        } else {
+            attachments.removePending(key)
         }
     }
 
@@ -905,6 +1161,7 @@ class TasksViewModel(
         const val RIGHTS_POLLS = 20
         const val RIGHTS_POLL_MS = 400L
         const val NOT_FOUND = 404
+        const val DRAFT_NOT_EXISTS = "task_draft_not_exists"
 
         fun randomId(): String =
             "t-${currentMillis().toString(RADIX)}-${Random.nextLong().toULong().toString(RADIX)}"

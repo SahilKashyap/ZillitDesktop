@@ -44,6 +44,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -62,10 +67,10 @@ import com.zillit.desktop.feature.tasks.domain.DueBucket
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskFilter
-import com.zillit.desktop.feature.tasks.domain.TaskKind
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.TaskVisibility
+import com.zillit.desktop.feature.tasks.domain.assignedByMeToOther
 import com.zillit.desktop.feature.tasks.domain.boardColumn
 import com.zillit.desktop.feature.tasks.domain.closeBlocker
 import com.zillit.desktop.feature.tasks.domain.compareBoard
@@ -98,7 +103,7 @@ internal fun TasksUiState.actions(today: LocalDate, onEvent: (TasksEvent) -> Uni
 private val PageScroll = PaddingValues(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 40.dp)
 
 @Composable
-private fun Page(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+internal fun Page(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     ZillitScrollColumn(Modifier.fillMaxSize(), contentPadding = PageScroll, verticalArrangement = Arrangement.spacedBy(16.dp), content = content)
 }
 
@@ -191,17 +196,6 @@ internal fun BoardView(state: TasksUiState, today: LocalDate, onEvent: (TasksEve
                         Pill(str(S.desktop_tasks_open_count, open.size), k.chipFg, k.chip)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(Modifier.clip(RoundedCornerShape(9.dp)).background(k.chip).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            listOf(TaskKind.All to str(S.desktop_tasks_filter_all), TaskKind.Project to str(S.desktop_tasks_filter_project), TaskKind.Self to str(S.desktop_tasks_filter_self)).forEach { (kind, label) ->
-                                val on = filter.kind == kind
-                                TText(
-                                    label, 13, if (on) SemiBold else FontWeight.Normal, if (on) k.fg else k.muted,
-                                    Modifier.height(30.dp).clip(RoundedCornerShape(7.dp)).background(if (on) k.surface else Color.Transparent)
-                                        .clickable { set(filter.copy(kind = kind)) }.padding(horizontal = 12.dp, vertical = 5.dp),
-                                    maxLines = 1,
-                                )
-                            }
-                        }
                         TPicker(
                             value = filter.department.ifEmpty { null },
                             picks = deptPicks(state.departments, state.crew),
@@ -328,30 +322,55 @@ private fun DraggableCard(
 
 
 /**
- * Everything assigned to me — main tasks AND subtasks — grouped by when it is
- * due, with the closed ones folded away under "Closed". A subtask carries a
- * "Subtask of …" line. The search looks through closed tasks too.
+ * Assigned Tasks: "To Me | To Other", each with its open count — To Me is
+ * everything assigned to me (main tasks AND subtasks), To Other every task I
+ * assigned to someone else. Both are grouped by when they are due, with the
+ * closed ones folded away under "Closed".
+ *
+ * A To Other row's assign line starts with who the task is for. A subtask
+ * carries a "Subtask of …" line. The search looks through closed tasks too,
+ * within the tab that is open.
  */
 @Composable
 internal fun MineView(state: TasksUiState, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
     val k = TasksTheme.c
     val actions = state.actions(today, onEvent)
     val query = state.mineQuery
-    val rows = remember(state.tasks, state.me, query, state.crew, state.departments) {
-        listRows(state.tasks.filter { it.assigneeId == state.me }, query, state.lookup)
+    val toOther = state.mineScope == TaskScope.Other
+    val lists = remember(state.tasks, state.me) {
+        mapOf(
+            TaskScope.Me to state.tasks.filter { it.assigneeId == state.me },
+            TaskScope.Other to state.tasks.filter { assignedByMeToOther(it, state.me) },
+        )
+    }
+    val counts = remember(lists) { lists.mapValues { (_, list) -> list.count { it.status.isOpen } } }
+    val rows = remember(lists, toOther, query, state.crew, state.departments) {
+        listRows(lists.getValue(if (toOther) TaskScope.Other else TaskScope.Me), query, state.lookup)
     }
     val searching = query.isNotBlank()
     val first = state.crewById[state.me]?.fullName?.substringBefore(' ')
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             Page {
-                ViewLine(if (first != null) str(S.desktop_tasks_top_mine_sub, first) else str(S.desktop_tasks_nav_mine_sub))
+                // "Everything assigned to Anika" / "Tasks Anika assigned to
+                // other people"; "you" until the crew list knows my name.
+                ViewLine(
+                    when {
+                        toOther && first != null -> str(S.desktop_tasks_top_mine_sub_other, first)
+                        toOther -> str(S.desktop_tasks_nav_mine_sub_other)
+                        first != null -> str(S.desktop_tasks_top_mine_sub, first)
+                        else -> str(S.desktop_tasks_nav_mine_sub)
+                    },
+                )
                 if (state.loading && !state.loaded) {
                     Loading()
                     return@Page
                 }
                 Column(Modifier.widthIn(max = NARROW), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    TSearch(query, { onEvent(TasksEvent.MineQueryChanged(it)) }, str(S.desktop_tasks_search_mine_placeholder), Modifier.widthIn(max = 320.dp).fillMaxWidth())
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ScopeTabs(state.mineScope, counts, { next -> onEvent(TasksEvent.ScopeChanged(TasksView.Mine, next)) })
+                        TSearch(query, { onEvent(TasksEvent.MineQueryChanged(it)) }, str(S.desktop_tasks_search_mine_placeholder), Modifier.widthIn(max = 320.dp).weight(1f, fill = false))
+                    }
                     DueBucket.entries.forEach { bucket ->
                         val group = rows.open.filter { dueBucket(it.dueDate, today) == bucket }
                         if (group.isEmpty()) return@forEach
@@ -363,11 +382,13 @@ internal fun MineView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
                                 else -> null
                             },
                             count = group.size, late = bucket == DueBucket.Overdue,
-                        ) { group.forEach { task -> MineRow(task, state, actions) } }
+                        ) { group.forEach { task -> MineRow(task, state, actions, toOther) } }
                     }
                     if (searching && rows.open.isEmpty() && rows.closed.isEmpty()) NoMatch(query, onClear = { onEvent(TasksEvent.MineQueryChanged("")) })
-                    if (!searching && rows.open.isEmpty()) TText(str(S.desktop_tasks_mine_empty), 14, color = k.faint)
-                    ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { MineRow(it, state, actions) } }
+                    if (!searching && rows.open.isEmpty()) {
+                        TText(str(if (toOther) S.desktop_tasks_mine_empty_other else S.desktop_tasks_mine_empty), 14, color = k.faint)
+                    }
+                    ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { MineRow(it, state, actions, toOther) } }
                 }
             }
         }
@@ -375,7 +396,7 @@ internal fun MineView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
 }
 
 @Composable
-private fun MineRow(task: Task, state: TasksUiState, actions: TaskActions) {
+private fun MineRow(task: Task, state: TasksUiState, actions: TaskActions, toOther: Boolean) {
     TaskRow(
         task = task, actions = actions, parentTitle = parentTitle(task, state.byId),
         tags = {
@@ -385,9 +406,8 @@ private fun MineRow(task: Task, state: TasksUiState, actions: TaskActions) {
                 DeptTag(task.departmentId, state.departmentName(task.departmentId))
             }
             SceneChip(task.scenes)
-            DprChip(task.dpr)
             SubtaskCount(state.subtasksOf(task.id))
-            AssignLine(task, state.me, state.crewById)
+            AssignLine(task, state.me, state.crewById, withAssignee = toOther)
         },
         right = {
             DueChip(task, actions.today)
@@ -398,10 +418,14 @@ private fun MineRow(task: Task, state: TasksUiState, actions: TaskActions) {
 }
 
 /**
- * Self tasks: my private to-dos — main tasks only; their subtasks live inside
- * them. A self task stays hidden until I assign it to someone; then it shows in
- * their My Tasks and on their Board, and only I can change who it is assigned
- * to. Changing the person on a row shows Save / Cancel on that row.
+ * Self tasks: my own to-dos — main tasks only; their subtasks live inside
+ * them. A private self task stays hidden until I assign it to someone; then it
+ * shows in their Assigned Tasks and on their Board, and only I can change who
+ * it is assigned to. Changing the person on a row shows Save / Cancel on that row.
+ *
+ * Where the service keeps visibility the quick-add row has its own Public |
+ * Private with **nothing chosen**: Add without a choice keeps what was typed
+ * and shows an amber hint, and the choice resets after each task.
  */
 @Composable
 internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
@@ -419,6 +443,10 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
     var title by remember { mutableStateOf("") }
     var due by remember { mutableStateOf<String?>(today.toString()) }
     var who by remember { mutableStateOf<String?>(null) }
+    // No default: Public or Private is picked for every new task (null = not yet).
+    var vis by remember { mutableStateOf<TaskVisibility?>(null) }
+    var visNag by remember { mutableStateOf(false) }
+    val visibilityOn = state.features.visibility
     val titleFocus = remember { FocusRequester() }
     val sharable = state.assignableCrew
     // Typed text goes only once the server has saved the task: a refused add keeps it to try again.
@@ -427,15 +455,28 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
         if (state.quickAdded != added.value) {
             added.value = state.quickAdded
             title = ""
+            vis = null
+            visNag = false
             runCatching { titleFocus.requestFocus() }
         }
     }
-    val add = { if (title.isNotBlank() && !state.quickAdding) onEvent(TasksEvent.QuickAdd(title, due, who)) }
+    val add = {
+        when {
+            title.isBlank() || state.quickAdding -> Unit
+            // The name stays; the choice is outlined, with a hint under the row.
+            visibilityOn && vis == null -> visNag = true
+            else -> onEvent(TasksEvent.QuickAdd(title, due, who, vis.takeIf { visibilityOn }))
+        }
+    }
+    val pickVis = { value: TaskVisibility ->
+        vis = value
+        visNag = false
+    }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             Page {
-                ViewLine(str(S.desktop_tasks_nav_self_sub))
+                ViewLine(str(if (visibilityOn) S.desktop_tasks_nav_self_sub_visibility else S.desktop_tasks_nav_self_sub))
                 if (state.loading && !state.loaded) {
                     Loading()
                     return@Page
@@ -443,17 +484,24 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
                 Column(Modifier.widthIn(max = NARROW), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (state.canPost) {
                         val shape = RoundedCornerShape(12.dp)
-                        Row(
-                            Modifier.fillMaxWidth().clip(shape).background(k.surface).border(BorderStroke(1.dp, k.line2), shape).padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            TInput(title, { title = it }, Modifier.weight(1f).padding(horizontal = 6.dp).focusRequester(titleFocus), placeholder = str(S.desktop_tasks_self_add_placeholder), style = txt(15), maxLength = TITLE_MAX, onEnter = add)
-                            TDate(due, dueText(dueLabel(due, today)), { due = it }, today, compact = true, min = today.toString(), hint = str(S.desktop_tasks_due_note_past))
-                            TPicker(
-                                who, crewPicks(sharable, state.hodIds, exclude = state.me, me = state.me), str(S.desktop_tasks_self_just_me), { who = it },
-                                compact = true, avatars = true, searchHint = str(S.desktop_tasks_search_people),
-                            )
-                            TBtn(str(if (state.quickAdding) S.desktop_tasks_adding else S.desktop_tasks_self_add), add, enabled = title.isNotBlank() && !state.quickAdding)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth().clip(shape).background(k.surface).border(BorderStroke(1.dp, k.line2), shape).padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                TInput(title, { title = it }, Modifier.weight(1f).padding(horizontal = 6.dp).focusRequester(titleFocus), placeholder = str(S.desktop_tasks_self_add_placeholder), style = txt(15), maxLength = TITLE_MAX, onEnter = add)
+                                TDate(due, dueText(dueLabel(due, today)), { due = it }, today, compact = true, min = today.toString(), hint = str(S.desktop_tasks_due_note_past))
+                                TPicker(
+                                    who, crewPicks(sharable, state.hodIds, exclude = state.me, me = state.me),
+                                    str(if (visibilityOn) S.desktop_tasks_self_just_me_only else S.desktop_tasks_self_just_me), { who = it },
+                                    compact = true, avatars = true, searchHint = str(S.desktop_tasks_search_people),
+                                )
+                                if (visibilityOn) QuickVisibility(vis, visNag, pickVis)
+                                TBtn(str(if (state.quickAdding) S.desktop_tasks_adding else S.desktop_tasks_self_add), add, enabled = title.isNotBlank() && !state.quickAdding)
+                            }
+                            if (visibilityOn && visNag) {
+                                TText(str(S.desktop_tasks_self_quick_visibility_nag), 13, color = k.warn)
+                            }
                         }
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -463,7 +511,7 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ZillitIcon(ZillitIcons.Lock, tint = k.muted, size = 12.dp)
-                        TText(str(if (state.features.visibility) S.desktop_tasks_self_note_visibility else S.desktop_tasks_self_note), 13, color = k.muted)
+                        TText(str(if (visibilityOn) S.desktop_tasks_self_note_choose else S.desktop_tasks_self_note_assigned), 13, color = k.muted)
                     }
                     TSearch(query, { onEvent(TasksEvent.SelfQueryChanged(it)) }, str(S.desktop_tasks_search_self_placeholder), Modifier.widthIn(max = 320.dp).fillMaxWidth())
                     DueBucket.entries.forEach { bucket ->
@@ -487,6 +535,43 @@ internal fun SelfView(state: TasksUiState, today: LocalDate, onEvent: (TasksEven
                     }
                     ClosedGroup(rows.closed.size, forced = searching) { rows.closed.forEach { SelfRow(it, state, actions, sharable, pending, onEvent) } }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The quick-add row's own Public | Private, with **nothing chosen**: Add
+ * without a choice outlines it in amber (the hint under the row says what each
+ * means), and the arrow keys move the choice as a radio group's do.
+ */
+@Composable
+private fun QuickVisibility(value: TaskVisibility?, nag: Boolean, onPick: (TaskVisibility) -> Unit) {
+    val k = TasksTheme.c
+    Row(
+        Modifier.clip(RoundedCornerShape(9.dp)).background(k.chip)
+            .border(BorderStroke(if (nag) 2.dp else 0.dp, if (nag) k.warn else Color.Transparent), RoundedCornerShape(9.dp))
+            .padding(3.dp)
+            .onPreviewKeyEvent { event ->
+                val arrow = event.type == KeyEventType.KeyDown &&
+                    event.key in setOf(Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown)
+                if (arrow) onPick(if (value == TaskVisibility.Public) TaskVisibility.Private else TaskVisibility.Public)
+                arrow
+            },
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        TaskVisibility.entries.forEach { choice ->
+            val on = value == choice
+            val dot = if (choice == TaskVisibility.Private) k.warn else k.ok
+            Row(
+                Modifier.height(30.dp).clip(RoundedCornerShape(7.dp))
+                    .background(if (on) k.surface else Color.Transparent)
+                    .clickable { onPick(choice) }.padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ZillitIcon(if (choice == TaskVisibility.Private) ZillitIcons.Lock else ZillitIcons.Globe, tint = if (on) dot else k.muted, size = 13.dp)
+                TText(visibilityText(choice), 13, if (on) SemiBold else FontWeight.Normal, if (on) k.fg else k.muted, maxLines = 1)
             }
         }
     }
@@ -562,7 +647,7 @@ private fun SelfRow(
     )
 }
 
-private val NARROW = 980.dp
+internal val NARROW = 980.dp
 private const val GHOST_ALPHA = 0.35f
 private const val CARRIED_ALPHA = 0.92f
 private const val TITLE_MAX = 300

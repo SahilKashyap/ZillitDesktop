@@ -11,14 +11,27 @@ import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.AttachmentKind
 import com.zillit.desktop.feature.tasks.domain.PickedTaskFile
 import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
+import com.zillit.desktop.feature.tasks.domain.SavedTaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
+import com.zillit.desktop.feature.tasks.domain.formHasContent
+import com.zillit.desktop.feature.tasks.domain.formSig
 import com.zillit.desktop.feature.tasks.domain.isDirty
 import com.zillit.desktop.feature.tasks.domain.subtasksOf as subtasksIn
 
-/** The three views of the sidebar. */
-enum class TasksView { Board, Mine, Self }
+/**
+ * The tool's views, as the tab bar lists them: Board · Assigned · Self ·
+ * Drafts. [Drafts] is only ever reachable where the service keeps drafts and
+ * the viewer may post ([TasksUiState.draftsOn]).
+ */
+enum class TasksView { Board, Mine, Self, Drafts }
+
+/**
+ * The "To Me | To Other" tab on Assigned Tasks and on Drafts. Remembered per
+ * view while the tool is open, as the web's `scope` is.
+ */
+enum class TaskScope { Me, Other }
 
 /**
  * Who is looking, and the crew around them. Fed by the host from the project
@@ -62,6 +75,42 @@ data class TaskPanel(
     /** A new task opened from "Assign to someone" starts with the crew picker open. */
     val pickAssignee: Boolean = false,
 
+    // -- a new task: Public / Private, and the draft behind it ---------------
+
+    /**
+     * A new MAIN task has no Public / Private until its creator picks one: the
+     * form's [TaskDraft.visibility] is only a placeholder meanwhile. A subtask
+     * follows its main task, and a saved draft that already chose one opens
+     * with it.
+     */
+    val visPending: Boolean = false,
+    /**
+     * How many Creates were pressed without a choice. Each one outlines the
+     * control in amber and brings it into view, so a second press says it
+     * again rather than nothing.
+     */
+    val visNag: Int = 0,
+    /** The saved draft this form is, if any. */
+    val draftId: String? = null,
+    /** False while that draft is still being read (its form is not on screen yet). */
+    val draftReady: Boolean = true,
+    /** The draft's own images and files, as the service has them. */
+    val draftFiles: List<TaskAttachment> = emptyList(),
+    /**
+     * Ones taken out of the form, by id. They leave the draft only on Save
+     * draft or just before Create, so "Don't save" keeps them.
+     */
+    val droppedFiles: List<String> = emptyList(),
+    /** Delete draft was pressed once: the next press deletes. */
+    val deleteArmed: Boolean = false,
+    /** What the form looked like when it opened, or was last saved as a draft. */
+    val savedSig: String = "",
+    /**
+     * Set once this form has been let go — saved as a draft, discarded or
+     * created: there is nothing left to ask before the move that follows.
+     */
+    val released: Boolean = false,
+
     // -- images and files in the description --------------------------------
 
     /**
@@ -98,7 +147,7 @@ data class TaskPanel(
      */
     val openUrl: String? = null,
 ) {
-    val ready: Boolean get() = draft != null && (creating || task != null)
+    val ready: Boolean get() = draft != null && (if (creating) draftReady else task != null)
 
     /** The task's own images and files, in the order the service keeps them. */
     val attachments: List<TaskAttachment> get() = task?.attachments.orEmpty()
@@ -106,6 +155,38 @@ data class TaskPanel(
     val images: List<TaskAttachment> get() = attachments.filter { it.isImage }
 
     val files: List<TaskAttachment> get() = attachments.filterNot { it.isImage }
+
+    /** The draft's images and files still in the form: they go with Create, or stay with Save draft. */
+    val keptDraftFiles: List<TaskAttachment> get() = draftFiles.filterNot { it.id in droppedFiles }
+
+    /**
+     * The keys of everything the form holds that a draft would keep: the saved
+     * draft's own images and files, then the ones waiting in the browser.
+     */
+    val fileKeys: List<String>
+        get() = keptDraftFiles.map { DRAFT_FILE_PREFIX + it.id } + pending.map { it.key }
+
+    /**
+     * A new task with something in it, changed since it opened or was last
+     * saved as a draft — the only kind that is worth asking about on the way out.
+     */
+    val started: Boolean
+        get() = creating && ready && formHasContent(draft, fileKeys.size, draftId) &&
+            formSig(draft, visPending, fileKeys) != savedSig
+
+    /**
+     * Public / Private still to choose: a new MAIN task, where the service
+     * keeps the field. A subtask follows its main task, so there is nothing to
+     * choose for one.
+     */
+    fun visUnchosen(features: TasksFeatures): Boolean =
+        creating && features.visibility && visPending && draft?.parentId == null
+
+    /** A saved draft's own images, still in the form. */
+    val keptDraftImages: List<TaskAttachment> get() = keptDraftFiles.filter { it.isImage }
+
+    /** A saved draft's own files, still in the form. */
+    val keptDraftDocs: List<TaskAttachment> get() = keptDraftFiles.filterNot { it.isImage }
 
     /** What a new task's description shows under the box until Create. */
     val pendingImages: List<PreparedAttachment> get() = pending.filter { it.kind == AttachmentKind.Image }
@@ -120,8 +201,24 @@ data class TaskPanel(
     fun dirty(features: TasksFeatures): Boolean = !creating && isDirty(orig, draft, features)
 }
 
+/**
+ * What a saved draft's own image or file is keyed by in the form, so the one
+ * waiting in the browser and the one the draft already holds can share a list.
+ */
+const val DRAFT_FILE_PREFIX = "draft:"
+
 /** The two tabs at the bottom of the panel. Every task opens on [Comments]. */
 enum class PanelTab { Comments, History }
+
+/**
+ * "Save this task as a draft?" — asked before a started new task is let go,
+ * and drawn over the panel (the web's `LeavePrompt`).
+ *
+ * [fromDraft] words it as "Save changes to your draft?" instead. [then] is
+ * what the user was doing when the question came up (open another task, close
+ * the tool…): it runs once the question is answered, and a bare close has none.
+ */
+data class LeaveAsk(val fromDraft: Boolean, val then: TasksEvent? = null)
 
 /**
  * The "Create Task" popup: what kind of task this is to be. [status] is the
@@ -135,10 +232,10 @@ data class TasksUiState(
     val loading: Boolean = false,
     val loaded: Boolean = false,
     /**
-     * What this deployment of the service can keep. Both are off until a list
+     * What this deployment of the service can keep. All are off until a list
      * has answered, and **off means gone**: no Visibility row, tag or menu
-     * item without [TasksFeatures.visibility], no DPR row or chip without
-     * [TasksFeatures.dpr].
+     * item without [TasksFeatures.visibility]; no Save draft, Drafts tab or
+     * "Save this task as a draft?" without [TasksFeatures.drafts].
      */
     val features: TasksFeatures = TasksFeatures(),
     val tasks: List<Task> = emptyList(),
@@ -152,6 +249,18 @@ data class TasksUiState(
     val boardFilter: TaskFilter = TaskFilter(),
     val mineQuery: String = "",
     val selfQuery: String = "",
+    /** My drafts, newest first; only ever mine, because nobody else sees one. */
+    val drafts: List<SavedTaskDraft> = emptyList(),
+    /** A drafts read has answered at least once. */
+    val draftsLoaded: Boolean = false,
+    /** "To Me | To Other" on Assigned Tasks. */
+    val mineScope: TaskScope = TaskScope.Me,
+    /** "To Me | To Other" on Drafts. */
+    val draftsScope: TaskScope = TaskScope.Me,
+    /** The Drafts tab decided for itself once which tab to open on (the web's `decided`). */
+    val draftsScopeDecided: Boolean = false,
+    /** "Save this task as a draft?", over the panel; null when nothing is asked. */
+    val leaveAsk: LeaveAsk? = null,
     val panel: TaskPanel? = null,
     /** The "Create Task" popup; it never opens while the panel is open. */
     val chooser: TaskChooser? = null,
@@ -175,6 +284,13 @@ data class TasksUiState(
 ) {
     val canPost: Boolean get() = viewer.canPost
 
+    /**
+     * Whether drafts are offered at all: the service keeps them and this
+     * viewer may create tasks. Off means gone — no Drafts tab, no Save draft
+     * and no question on the way out.
+     */
+    val draftsOn: Boolean get() = viewer.canCall && viewer.canPost && features.drafts
+
     /** Whether the open panel has unsaved edits, judged against what the service keeps. */
     val panelDirty: Boolean get() = panel?.dirty(features) == true
     // Looked up once per state, not once per row.
@@ -190,16 +306,20 @@ data class TasksUiState(
 
     val lookup: TaskLookup get() = TaskLookup(crewById, ::departmentName)
 
-    /** Open main tasks · open tasks assigned to me, subtasks included · my open main self tasks. */
+    /**
+     * Open main tasks · open tasks assigned to me, subtasks included · my open
+     * main self tasks · how many drafts I have.
+     */
     val counts: TaskCounts
         get() = TaskCounts(
             board = mainTasks.count { it.status.isOpen },
             mine = tasks.count { it.assigneeId == me && it.status.isOpen },
             self = mainTasks.count { it.isSelf && it.createdBy == me && it.status.isOpen },
+            drafts = drafts.size,
         )
 }
 
-data class TaskCounts(val board: Int, val mine: Int, val self: Int)
+data class TaskCounts(val board: Int, val mine: Int, val self: Int, val drafts: Int = 0)
 
 sealed interface TasksEvent {
     /** Resolve the rights and load. Safe to send again. */
@@ -211,6 +331,9 @@ sealed interface TasksEvent {
     data class BoardFilterChanged(val filter: TaskFilter) : TasksEvent
     data class MineQueryChanged(val query: String) : TasksEvent
     data class SelfQueryChanged(val query: String) : TasksEvent
+
+    /** "To Me | To Other" on Assigned Tasks or on Drafts. */
+    data class ScopeChanged(val view: TasksView, val scope: TaskScope) : TasksEvent
     data object DismissMessage : TasksEvent
 
     // -- one-click writes, from a card, a row or the ⋯ menu --
@@ -228,7 +351,17 @@ sealed interface TasksEvent {
 
     /** Share a self task (or take it back, with a null person) straight from its row. */
     data class Share(val taskId: String, val assigneeId: String?) : TasksEvent
-    data class QuickAdd(val title: String, val dueDate: String?, val assigneeId: String?) : TasksEvent
+    /**
+     * The Self Tasks quick-add row. [visibility] is the Public | Private it
+     * picked — null where the service does not keep the field, and the row
+     * refuses to add without a choice where it does.
+     */
+    data class QuickAdd(
+        val title: String,
+        val dueDate: String?,
+        val assigneeId: String?,
+        val visibility: TaskVisibility? = null,
+    ) : TasksEvent
     /** Ask an admin for posting rights; the panel closes first, as the web's does. */
     data object AskForRights : TasksEvent
 
@@ -250,6 +383,34 @@ sealed interface TasksEvent {
 
     /** Cancel a new task; a new subtask goes back to its main task. */
     data object CancelCreate : TasksEvent
+
+    // -- drafts --
+
+    /** Catch up with drafts saved somewhere else; does nothing where drafts are off. */
+    data object LoadDrafts : TasksEvent
+
+    /** The Drafts tab opened on an empty tab while the other had some: show the other. */
+    data class DraftsScopeDecided(val scope: TaskScope) : TasksEvent
+
+    /** Open a saved draft in the panel, to finish it. */
+    data class OpenDraft(val draft: SavedTaskDraft) : TasksEvent
+
+    /** Keep the open new-task form as a draft (new, or an update of the one it is). */
+    data object SaveDraft : TasksEvent
+
+    /** 🗑 on a draft row: pressed twice, the second press deletes. */
+    data class DeleteDraft(val draft: SavedTaskDraft) : TasksEvent
+
+    /** Delete draft in the panel's footer: pressed twice, as the row's 🗑 is. */
+    data object DeleteOpenDraft : TasksEvent
+
+    /** Lets go of the first press of a Delete draft that was never confirmed. */
+    data object DisarmDeleteDraft : TasksEvent
+
+    /** "Save this task as a draft?": its three answers. */
+    data object LeaveSave : TasksEvent
+    data object LeaveDiscard : TasksEvent
+    data object LeaveStay : TasksEvent
     data class DraftChanged(val draft: TaskDraft) : TasksEvent
 
     /** The header button and the status buttons: into the editable copy. */

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -31,6 +32,12 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
@@ -132,25 +139,47 @@ internal fun SceneChip(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * The DPR a task belongs to, as a dashed chip after the scenes. Text that
- * does not already start with "DPR" gets it in front.
- *
- * Nothing is drawn where the service cannot keep one: the list holds its
- * tasks through `applyFeatures`, so [dpr] is null then.
+ * "To Me | To Other", on Assigned Tasks and on Drafts: two tabs, each with its
+ * count, the chosen one filled. The arrow keys move between them, as tabs do.
  */
 @Composable
-internal fun DprChip(dpr: String?, modifier: Modifier = Modifier) {
-    val text = dprText(dpr)
-    if (text.isEmpty()) return
+internal fun ScopeTabs(
+    value: TaskScope,
+    counts: Map<TaskScope, Int>,
+    onChange: (TaskScope) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val k = TasksTheme.c
-    ZillitTooltip(str(S.desktop_tasks_dpr_full)) {
-        Row(
-            modifier.dashedEdge(k.line2, DPR_RADIUS).padding(horizontal = 7.dp, vertical = 1.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            ZillitIcon(ZillitIcons.File, tint = k.faint, size = 11.dp)
-            TText(text, 12, SemiBold, k.chipFg, maxLines = 1)
+    Row(
+        modifier.clip(RoundedCornerShape(9.dp)).background(k.chip).padding(3.dp)
+            .onPreviewKeyEvent { event ->
+                val arrow = event.type == KeyEventType.KeyDown &&
+                    event.key in setOf(Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown)
+                if (arrow) onChange(if (value == TaskScope.Me) TaskScope.Other else TaskScope.Me)
+                arrow
+            },
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        TaskScope.entries.forEach { scope ->
+            val on = value == scope
+            Row(
+                Modifier.height(30.dp).clip(RoundedCornerShape(7.dp))
+                    .background(if (on) k.surface else Color.Transparent)
+                    .clickable { onChange(scope) }.padding(horizontal = 12.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TText(
+                    str(if (scope == TaskScope.Me) S.desktop_tasks_scope_me else S.desktop_tasks_scope_other),
+                    13, if (on) SemiBold else FontWeight.Normal, if (on) k.fg else k.muted, maxLines = 1,
+                )
+                TText(
+                    (counts[scope] ?: 0).toString(), 11, SemiBold, if (on) k.accentFg else k.chipFg,
+                    Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) k.accent else k.chip)
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -180,8 +209,8 @@ internal fun PrivateTag(show: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
-/** A dashed border, for the DPR chip (Compose has no dashed `border`). */
-private fun Modifier.dashedEdge(color: Color, radius: Float): Modifier = drawBehind {
+/** A dashed border, for a draft's row (Compose has no dashed `border`). */
+internal fun Modifier.dashedEdge(color: Color, radius: Float = DASH_RADIUS): Modifier = drawBehind {
     drawRoundRect(
         color = color,
         cornerRadius = CornerRadius(radius, radius),
@@ -189,7 +218,7 @@ private fun Modifier.dashedEdge(color: Color, radius: Float): Modifier = drawBeh
     )
 }
 
-private const val DPR_RADIUS = 5f
+private const val DASH_RADIUS = 5f
 private const val DASH_ON = 3f
 private const val DASH_OFF = 3f
 
@@ -236,11 +265,34 @@ internal fun PersonAvatar(person: TaskPerson?, size: androidx.compose.ui.unit.Dp
  * Who assigned the task, for cards and rows: "Assigned by Sameer Khan ·
  * 2nd Assistant Director" (with "(you)" when it was me), or "Self-assigned"
  * when the assignee took it themselves. Nothing for an unassigned task.
+ *
+ * [withAssignee] puts who the task is FOR in front (Assigned Tasks → To
+ * Other): their avatar, name and designation, then the "Assigned by …" line.
  */
 @Composable
-internal fun AssignLine(task: Task, me: String?, crewById: Map<String, TaskPerson>) {
+internal fun AssignLine(
+    task: Task,
+    me: String?,
+    crewById: Map<String, TaskPerson>,
+    withAssignee: Boolean = false,
+) {
     if (task.assigneeId == null) return
     val by = assignerOf(task) ?: return
+    if (!withAssignee) {
+        AssignedByLine(task, by, me, crewById)
+        return
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PersonAvatar(crewById[task.assigneeId], 22.dp)
+        Column {
+            PersonName(crewById[task.assigneeId], me)
+            AssignedByLine(task, by, me, crewById)
+        }
+    }
+}
+
+@Composable
+private fun AssignedByLine(task: Task, by: String, me: String?, crewById: Map<String, TaskPerson>) {
     val k = TasksTheme.c
     if (by == task.assigneeId) {
         TText(str(S.desktop_tasks_self_assigned), 12, color = k.faint, maxLines = 1)

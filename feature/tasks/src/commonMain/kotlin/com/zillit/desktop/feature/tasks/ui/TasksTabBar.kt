@@ -54,13 +54,20 @@ import com.zillit.desktop.feature.tasks.domain.TaskStatus
  * The bar across the top of the tool and the popup that asks what kind of task
  * a new one is — the web's `components/TabBar.jsx` and `CreateChooser.jsx`.
  *
- * The three views are tabs here, not a sidebar: the screens reproduce the
- * standalone Zillit Tasks app, whose tab bar sits across the top with Create
- * Task at its right end. The bar stays in place while a view scrolls, and each
- * view then starts with its tab's one-line description ([ViewLine]).
+ * The views are tabs here, not a sidebar: the screens reproduce the standalone
+ * Zillit Tasks app, whose tab bar sits across the top with Create Task at its
+ * right end. The bar stays in place while a view scrolls, and each view then
+ * starts with its tab's one-line description ([ViewLine]).
+ *
+ * Board · Assigned Tasks · Self Tasks · Drafts. Assigned and Self show how
+ * many of their tasks are open once the list has loaded, Drafts how many
+ * drafts I have when I have any. On a narrow tool the two middle tabs show
+ * their short names (Assigned · Self), so they all fit. Drafts is there only
+ * where the service keeps drafts and I may create tasks
+ * ([TasksUiState.draftsOn]).
  */
 
-/** One tab: its name, the open count on the last two, and an underline on the one on screen. */
+/** One tab: its name, the count on the last three, and an underline on the one on screen. */
 @Composable
 internal fun TasksTabBar(state: TasksUiState, counts: TaskCounts, onEvent: (TasksEvent) -> Unit) {
     val k = TasksTheme.c
@@ -75,8 +82,19 @@ internal fun TasksTabBar(state: TasksUiState, counts: TaskCounts, onEvent: (Task
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Tab(str(S.desktop_tasks_nav_board), null, state.view == TasksView.Board) { onEvent(TasksEvent.ViewChanged(TasksView.Board)) }
-                Tab(str(S.desktop_tasks_nav_mine), counts.mine.takeIf { state.loaded }, state.view == TasksView.Mine) { onEvent(TasksEvent.ViewChanged(TasksView.Mine)) }
-                Tab(str(S.desktop_tasks_nav_self), counts.self.takeIf { state.loaded }, state.view == TasksView.Self) { onEvent(TasksEvent.ViewChanged(TasksView.Self)) }
+                Tab(
+                    str(if (narrow) S.assigned else S.desktop_tasks_nav_assigned),
+                    counts.mine.takeIf { state.loaded }, state.view == TasksView.Mine,
+                ) { onEvent(TasksEvent.ViewChanged(TasksView.Mine)) }
+                Tab(
+                    str(if (narrow) S.self_user else S.desktop_tasks_nav_self),
+                    counts.self.takeIf { state.loaded }, state.view == TasksView.Self,
+                ) { onEvent(TasksEvent.ViewChanged(TasksView.Self)) }
+                if (state.draftsOn) {
+                    Tab(str(S.cs_drafts), counts.drafts.takeIf { it > 0 }, state.view == TasksView.Drafts) {
+                        onEvent(TasksEvent.ViewChanged(TasksView.Drafts))
+                    }
+                }
                 Box(Modifier.weight(1f))
                 Box(Modifier.padding(bottom = 6.dp)) {
                     if (state.canPost) {

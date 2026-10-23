@@ -18,7 +18,11 @@ import com.zillit.desktop.feature.tasks.domain.AttachmentKind
 import com.zillit.desktop.feature.tasks.domain.AttachmentStep
 import com.zillit.desktop.feature.tasks.domain.AttachmentUploadTicket
 import com.zillit.desktop.feature.tasks.domain.AttachmentWrite
+import com.zillit.desktop.feature.tasks.domain.DraftAttachmentWrite
+import com.zillit.desktop.feature.tasks.domain.DraftWrite
 import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
+import com.zillit.desktop.feature.tasks.domain.SavedDraftData
+import com.zillit.desktop.feature.tasks.domain.SavedTaskDraft
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskAssignees
 import com.zillit.desktop.feature.tasks.domain.TaskDepartment
@@ -109,7 +113,13 @@ class TasksRepositoryImpl(
     override suspend fun task(taskId: String): ZillitResult<Task> =
         call(HttpVerb.Get, "/$taskId").mapTask()
 
-    override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean, features: TasksFeatures): TaskWrite {
+    override suspend fun create(
+        draft: TaskDraft,
+        uniqueId: String,
+        quick: Boolean,
+        features: TasksFeatures,
+        draftId: String?,
+    ): TaskWrite {
         // The Self Tasks quick-add row sends only what it asks for, as the web's
         // does; the server fills in the rest.
         if (quick) {
@@ -119,6 +129,8 @@ class TasksRepositoryImpl(
                 put("due_date", draft.dueDate)
                 put("assignee_id", draft.assigneeId)
                 put("is_self", true)
+                // The row's own Public | Private, only where the service keeps it.
+                if (features.visibility) put("visibility", draft.visibility.wire)
             }
             return call(HttpVerb.Post, "", body = body).asWrite()
         }
@@ -137,8 +149,10 @@ class TasksRepositoryImpl(
             draft.parentId?.let { put("parent_id", it) }
             // Neither reaches a service that does not keep it, and `visibility`
             // never goes for a subtask: it takes its main task's, whatever the body says.
-            if (features.dpr) put("dpr", draft.dpr)
             if (features.visibility && draft.parentId == null) put("visibility", draft.visibility.wire)
+            // Created from a saved draft: the service moves its images and
+            // files onto the new task and deletes the draft, in this request.
+            draftId?.let { put("draft_id", it) }
         }
         return call(HttpVerb.Post, "", body = body).asWrite()
     }
@@ -174,6 +188,42 @@ class TasksRepositoryImpl(
         return call(HttpVerb.Post, "/$taskId/comments", body = body).mapTask()
     }
 
+    // -- drafts: a new task saved to finish later ----------------------------
+
+    override suspend fun drafts(): ZillitResult<List<SavedTaskDraft>> =
+        call(HttpVerb.Get, "/drafts").mapData { it.toDrafts() }
+
+    override suspend fun draft(draftId: String): ZillitResult<SavedTaskDraft> =
+        call(HttpVerb.Get, "/drafts/$draftId").mapDraft()
+
+    override suspend fun createDraft(isSelf: Boolean, parentId: String?, data: SavedDraftData): DraftWrite {
+        val body = buildJsonObject {
+            put("is_self", isSelf)
+            // Only for a shared task: a null would be refused as a malformed id.
+            parentId?.let { put("parent_id", it) }
+            put("data", data.toJson())
+        }
+        return call(HttpVerb.Post, "/drafts", body = body).asDraftWrite()
+    }
+
+    override suspend fun updateDraft(draftId: String, data: SavedDraftData): DraftWrite =
+        call(HttpVerb.Put, "/drafts/$draftId", body = buildJsonObject { put("data", data.toJson()) }).asDraftWrite()
+
+    override suspend fun deleteDraft(draftId: String): ZillitResult<String?> =
+        when (val answer = call(HttpVerb.Delete, "/drafts/$draftId")) {
+            is ZillitResult.Failure -> ZillitResult.Failure(answer.error)
+            is ZillitResult.Success -> ZillitResult.Success(answer.data.message)
+        }
+
+    override suspend fun addDraftAttachment(draftId: String, item: PreparedAttachment): DraftAttachmentWrite =
+        when (val stored = storeAttachment("/drafts/$draftId/attachments", item)) {
+            is Stored.Refused -> DraftAttachmentWrite.Refused(stored.step, stored.message, stored.httpStatus, stored.error)
+            is Stored.Attached -> stored.reply.asDraftAttachmentWrite()
+        }
+
+    override suspend fun removeDraftAttachment(draftId: String, attachmentId: String): DraftAttachmentWrite =
+        call(HttpVerb.Delete, "/drafts/$draftId/attachments/$attachmentId").asDraftAttachmentWrite()
+
     // -- images and files in the description ---------------------------------
 
     /**
@@ -184,28 +234,49 @@ class TasksRepositoryImpl(
      * were never attached are invisible to everyone. The same `key` attached
      * twice attaches it once, so a retry of the last step is safe.
      */
-    override suspend fun addAttachment(taskId: String, item: PreparedAttachment): AttachmentWrite {
+    override suspend fun addAttachment(taskId: String, item: PreparedAttachment): AttachmentWrite =
+        when (val stored = storeAttachment("/$taskId/attachments", item)) {
+            is Stored.Refused -> AttachmentWrite.Refused(stored.step, stored.message, stored.httpStatus, stored.error)
+            is Stored.Attached -> stored.reply.asAttachmentWrite(AttachmentStep.Attach)
+        }
+
+    /** How far [storeAttachment] got: the "attach" answer, or why it stopped before it. */
+    private sealed interface Stored {
+        class Attached(val reply: ZillitResult<Reply>) : Stored
+        class Refused(val step: AttachmentStep, val message: String?, val httpStatus: Int, val error: ZillitError) : Stored
+    }
+
+    /**
+     * The three steps, in order, under [base] — a task's `attachments` path or
+     * a draft's. The only difference between the two is that path: the ticket,
+     * the bytes and the "attach" body are the same.
+     */
+    private suspend fun storeAttachment(base: String, item: PreparedAttachment): Stored {
         val body = buildJsonObject {
             put("name", item.name)
             put("size", item.sizeBytes)
             put("mime", item.mimeType)
         }
-        val ticket = when (val asked = call(HttpVerb.Post, "/$taskId/attachments/uploads", body = body)) {
-            is ZillitResult.Failure -> return refusal(AttachmentStep.Link, asked.error)
+        val ticket = when (val asked = call(HttpVerb.Post, "$base/uploads", body = body)) {
+            is ZillitResult.Failure -> return Stored.Refused(
+                AttachmentStep.Link,
+                (asked.error as? ZillitError.Http)?.serverMessage,
+                asked.error.httpStatus ?: 0,
+                asked.error,
+            )
             is ZillitResult.Success -> asked.data.data.toUploadTicket()
         }
         if (ticket == null || ticket.key.isBlank() || ticket.url.isBlank()) {
-            return AttachmentWrite.Refused(
+            return Stored.Refused(
                 step = AttachmentStep.Link,
                 message = null,
                 httpStatus = 0,
                 error = ZillitError.Serialization("the upload link answer had no link in it"),
             )
         }
-        val stored = attachmentBytes.put(ticket.url, ticket.headers, item.bytes, item.mimeType)
-        if (!stored) {
+        if (!attachmentBytes.put(ticket.url, ticket.headers, item.bytes, item.mimeType)) {
             // Storage says nothing a user could read, so the caller words this one.
-            return AttachmentWrite.Refused(
+            return Stored.Refused(
                 step = AttachmentStep.Upload,
                 message = null,
                 httpStatus = 0,
@@ -222,7 +293,7 @@ class TasksRepositoryImpl(
                 put("height", item.height)
             }
         }
-        return call(HttpVerb.Post, "/$taskId/attachments", body = attach).asAttachmentWrite(AttachmentStep.Attach)
+        return Stored.Attached(call(HttpVerb.Post, base, body = attach))
     }
 
     override suspend fun removeAttachment(taskId: String, attachmentId: String): AttachmentWrite =
@@ -280,6 +351,28 @@ class TasksRepositoryImpl(
         is ZillitResult.Success -> ZillitResult.Success(transform(data.data))
     }
 
+    private fun ZillitResult<Reply>.mapDraft(): ZillitResult<SavedTaskDraft> = when (this) {
+        is ZillitResult.Failure -> ZillitResult.Failure(error)
+        is ZillitResult.Success -> (data.data as? JsonObject)?.toDraft()
+            ?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("the draft answer had no draft in it"))
+    }
+
+    private fun ZillitResult<Reply>.asDraftWrite(): DraftWrite = when (val draft = mapDraft()) {
+        is ZillitResult.Success -> DraftWrite.Saved(draft.data, (this as? ZillitResult.Success)?.data?.message)
+        is ZillitResult.Failure -> DraftWrite.Refused(draft.error.serverMessageOrNull, draft.error.httpStatus ?: 0, draft.error)
+    }
+
+    private fun ZillitResult<Reply>.asDraftAttachmentWrite(): DraftAttachmentWrite = when (val draft = mapDraft()) {
+        is ZillitResult.Success -> DraftAttachmentWrite.Saved(draft.data, (this as? ZillitResult.Success)?.data?.message)
+        is ZillitResult.Failure -> DraftAttachmentWrite.Refused(
+            step = AttachmentStep.Attach,
+            message = draft.error.serverMessageOrNull,
+            httpStatus = draft.error.httpStatus ?: 0,
+            error = draft.error,
+        )
+    }
+
     private fun ZillitResult<Reply>.mapTask(): ZillitResult<Task> = when (this) {
         is ZillitResult.Failure -> ZillitResult.Failure(error)
         is ZillitResult.Success -> (data.data as? JsonObject)?.toTask()
@@ -331,6 +424,25 @@ val ZillitError.httpStatus: Int?
     }
 
 private val ZillitError.serverMessageOrNull: String? get() = (this as? ZillitError.Http)?.serverMessage
+
+/**
+ * A draft's `data` on the wire: the form as it is, every field present.
+ *
+ * `visibility` goes as null while Public / Private has not been chosen (and
+ * for a shared task): that null is what makes the draft open again with the
+ * choice still to make.
+ */
+private fun SavedDraftData.toJson(): JsonObject = buildJsonObject {
+    put("title", title)
+    put("description", description)
+    put("assignee_id", assigneeId)
+    put("visibility", visibility?.wire)
+    put("due_date", dueDate)
+    put("status", status.wire)
+    put("priority", priority.wire)
+    put("department_id", departmentId)
+    put("scenes", scenes)
+}
 
 /** Step 1's answer: `{ key, url, headers }` — the headers it was signed for. */
 private fun JsonElement?.toUploadTicket(): AttachmentUploadTicket? {

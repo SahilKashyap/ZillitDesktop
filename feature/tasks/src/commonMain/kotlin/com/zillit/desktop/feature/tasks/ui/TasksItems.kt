@@ -111,7 +111,6 @@ internal fun TaskCard(
         TaskTitle(task, maxLines = Int.MAX_VALUE)
         MetaRow {
             SceneChip(task.scenes)
-            DprChip(task.dpr)
             DueChip(task, actions.today)
             SubtaskCount(subtasks)
             CommentCount(task.commentCount)

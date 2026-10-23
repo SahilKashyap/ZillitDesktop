@@ -36,13 +36,15 @@ import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 
 /**
- * The Tasks tool, laid out as the web's: the three views as tabs across the
- * top with Create Task at the right end, the open view under them, and the
- * task panel sliding in over it.
+ * The Tasks tool, laid out as the web's: the views as tabs across the top
+ * (Board · Assigned Tasks · Self Tasks · Drafts) with Create Task at the right
+ * end, the open view under them, the task panel sliding in over it, and over
+ * that the "Save this task as a draft?" question.
  *
  * Rights gate everything. Until the tool's row has answered nothing is shown or
  * requested; a production without the tool, or a viewer without view rights,
@@ -75,11 +77,7 @@ fun TasksScreen(
                         !state.viewer.resolved -> GatePage { GateLoading() }
                         !state.viewer.enabled -> GatePage { Gate(str(S.desktop_tasks_gate_disabled_title), str(S.desktop_tasks_gate_disabled_hint), null, onEvent) }
                         !state.viewer.canView -> GatePage { Gate(str(S.desktop_tasks_gate_noview_title), str(S.desktop_tasks_gate_noview_hint), str(S.desktop_request_access), onEvent) }
-                        else -> when (state.view) {
-                            TasksView.Board -> BoardView(state, today, onEvent)
-                            TasksView.Mine -> MineView(state, today, onEvent)
-                            TasksView.Self -> SelfView(state, today, onEvent)
-                        }
+                        else -> OpenView(state, today, onEvent)
                     }
                 }
             }
@@ -87,6 +85,8 @@ fun TasksScreen(
             // opens over the panel's unsaved edits (the view model refuses it).
             if (state.viewer.canCall) CreateChooser(state, onEvent)
             if (state.viewer.canCall) TaskPanelOverlay(state, today, onEvent, mentionable, onOpenUrl = onOpenUrl)
+            // "Save this task as a draft?": over the panel, inside the tool's own area.
+            if (state.viewer.canCall) LeavePromptOverlay(state, onEvent)
             // A refusal from the service, or a rule the client checked first ("2 subtasks are still open");
             // otherwise what the server announced for a write it saved.
             val problem = state.error ?: state.notice
@@ -97,6 +97,17 @@ fun TasksScreen(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
             )
         }
+    }
+}
+
+/** The view the tab bar has open. */
+@Composable
+private fun OpenView(state: TasksUiState, today: LocalDate, onEvent: (TasksEvent) -> Unit) {
+    when (state.view) {
+        TasksView.Board -> BoardView(state, today, onEvent)
+        TasksView.Mine -> MineView(state, today, onEvent)
+        TasksView.Self -> SelfView(state, today, onEvent)
+        TasksView.Drafts -> DraftsView(state, onEvent)
     }
 }
 

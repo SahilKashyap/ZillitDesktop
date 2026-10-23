@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.tasks
 
+import com.zillit.desktop.feature.tasks.data.toDraft
+import com.zillit.desktop.feature.tasks.data.toDrafts
 import com.zillit.desktop.feature.tasks.data.toTask
 import com.zillit.desktop.feature.tasks.data.toTaskPage
 import com.zillit.desktop.feature.tasks.domain.AttachmentKind
@@ -107,55 +109,54 @@ class TasksWireTest {
     fun `features are read only when the service says exactly true`() {
         fun features(body: String) = Json.parseToJsonElement(body).toTaskPage().features
 
-        val on = features("""{"tasks":[],"features":{"visibility":true,"dpr":true}}""")
+        val on = features("""{"tasks":[],"features":{"visibility":true,"attachments":true,"drafts":true}}""")
         assertTrue(on.visibility)
-        assertTrue(on.dpr)
+        assertTrue(on.attachments)
+        assertTrue(on.drafts)
 
         // A service from before the fields sends no `features` at all.
         assertFalse(features("""{"tasks":[]}""").visibility)
-        assertFalse(features("""{"tasks":[]}""").dpr)
+        assertFalse(features("""{"tasks":[]}""").drafts)
         // And anything that is not exactly `true` is "no": it would otherwise
         // show a Private switch against a service that ignores the field.
         listOf(
-            """{"tasks":[],"features":{"visibility":false,"dpr":false}}""",
-            """{"tasks":[],"features":{"visibility":"true","dpr":"true"}}""",
-            """{"tasks":[],"features":{"visibility":1,"dpr":1}}""",
+            """{"tasks":[],"features":{"visibility":false,"drafts":false}}""",
+            """{"tasks":[],"features":{"visibility":"true","drafts":"true"}}""",
+            """{"tasks":[],"features":{"visibility":1,"drafts":1}}""",
             """{"tasks":[],"features":{}}""",
         ).forEach { body ->
             assertFalse(features(body).visibility, body)
-            assertFalse(features(body).dpr, body)
+            assertFalse(features(body).drafts, body)
         }
     }
 
     @Test
-    fun `the two features are read apart`() {
-        val one = Json.parseToJsonElement("""{"tasks":[],"features":{"visibility":true,"dpr":false}}""").toTaskPage().features
+    fun `the features are read apart`() {
+        val one = Json.parseToJsonElement("""{"tasks":[],"features":{"visibility":true,"drafts":false}}""").toTaskPage().features
         assertTrue(one.visibility)
-        assertFalse(one.dpr)
+        assertFalse(one.drafts)
+        val two = Json.parseToJsonElement("""{"tasks":[],"features":{"drafts":true}}""").toTaskPage().features
+        assertFalse(two.visibility)
+        assertTrue(two.drafts)
     }
 
     @Test
-    fun `visibility, the DPR and who may switch it are read off a task`() {
+    fun `visibility and who may switch it are read off a task`() {
         val task = parse(
             """
-            {"_id":"t1","title":"x","visibility":"private","dpr":"DPR 12 Oct",
+            {"_id":"t1","title":"x","visibility":"private",
              "permissions":{"can_delete":false,"can_reassign":false,"can_change_visibility":true}}
             """.trimIndent(),
         )!!
         assertEquals(TaskVisibility.Private, task.visibility)
-        assertEquals("DPR 12 Oct", task.dpr)
         assertTrue(task.canChangeVisibility)
     }
 
     @Test
-    fun `a task that carries neither field reads as null, not as empty`() {
-        // Null is "the service cannot keep one"; an empty string would be "no DPR".
+    fun `a task that carries no visibility reads as null`() {
         val task = parse("""{"_id":"t1","title":"x"}""")!!
         assertNull(task.visibility)
-        assertNull(task.dpr)
         assertFalse(task.canChangeVisibility)
-        // An empty `dpr` the service did send is "no DPR", which is not the same thing.
-        assertEquals("", parse("""{"_id":"t1","title":"x","dpr":""}""")!!.dpr)
         // A word that is neither of the two is no visibility at all.
         assertNull(parse("""{"_id":"t1","title":"x","visibility":"secret"}""")!!.visibility)
     }
@@ -211,6 +212,63 @@ class TasksWireTest {
         assertFalse(features("""{"tasks":[],"features":{"attachments":false}}""").attachments)
         assertFalse(features("""{"tasks":[],"features":{}}""").attachments)
         assertFalse(features("""{"tasks":[]}""").attachments)
+    }
+
+    /**
+     * A draft is an unfinished form, so every field inside its `data` reads as
+     * empty when it is missing — and `visibility` only as one of the two
+     * words, because null there means "not chosen yet".
+     */
+    @Test
+    fun `a draft reads in the service's own shape`() {
+        val saved = (
+            Json.parseToJsonElement(
+                """
+                {"_id":"dr1","is_self":true,"parent_id":"m1","parent_title":"Dress the set",
+                 "data":{"title":"Hose","description":"d","assignee_id":"u1","visibility":"private",
+                         "due_date":"2026-10-06T00:00:00Z","status":"cancelled","priority":"high",
+                         "department_id":"d1","scenes":"12"},
+                 "attachments":[{"_id":"a1","name":"recce.jpg","content_type":"image","file_size":120}],
+                 "created":1780000000000,"updated":1790000000000}
+                """.trimIndent(),
+            ) as JsonObject
+            ).toDraft()!!
+
+        assertEquals("dr1", saved.id)
+        assertTrue(saved.isSelf)
+        assertEquals("m1", saved.parentId)
+        assertEquals("Dress the set", saved.parentTitle)
+        assertEquals("Hose", saved.data.title)
+        assertEquals("u1", saved.data.assigneeId)
+        assertEquals(TaskVisibility.Private, saved.data.visibility)
+        // A day, not an instant, as a task's due date is.
+        assertEquals("2026-10-06", saved.data.dueDate)
+        assertEquals(TaskStatus.Cancelled, saved.data.status)
+        assertEquals(TaskPriority.High, saved.data.priority)
+        assertEquals(1, saved.attachments.size)
+        assertEquals(1790000000000, saved.updatedMillis)
+    }
+
+    @Test
+    fun `an unfinished draft reads as empty, and no choice of visibility as null`() {
+        val saved = (Json.parseToJsonElement("""{"_id":"dr1"}""") as JsonObject).toDraft()!!
+        assertEquals("", saved.data.title)
+        assertNull(saved.data.assigneeId)
+        assertNull(saved.data.dueDate)
+        assertNull(saved.data.visibility)
+        assertEquals(TaskStatus.Todo, saved.data.status)
+        assertFalse(saved.isSelf)
+        // A word that is neither of the two is still "not chosen".
+        assertNull((Json.parseToJsonElement("""{"_id":"d","data":{"visibility":"secret"}}""") as JsonObject).toDraft()!!.data.visibility)
+        // A row with no id is no draft at all, rather than a broken one.
+        assertNull((Json.parseToJsonElement("""{"data":{}}""") as JsonObject).toDraft())
+    }
+
+    @Test
+    fun `the drafts list reads off data drafts`() {
+        val drafts = Json.parseToJsonElement("""{"drafts":[{"_id":"a"},{"_id":"b"},{"no_id":1}]}""").toDrafts()
+        assertEquals(listOf("a", "b"), drafts.map { it.id })
+        assertEquals(emptyList(), Json.parseToJsonElement("""{}""").toDrafts())
     }
 
     /** `meta: { name, kind }` is what a history line about an attachment carries. */

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.tasks.data
 
 import com.zillit.desktop.feature.tasks.domain.AttachmentKind
+import com.zillit.desktop.feature.tasks.domain.SavedDraftData
+import com.zillit.desktop.feature.tasks.domain.SavedTaskDraft
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TaskChange
@@ -56,8 +58,6 @@ internal fun JsonObject.toTask(): Task? {
         description = text("description").orEmpty(),
         departmentId = text("department_id").blankToNull(),
         scenes = text("scenes").orEmpty(),
-        // Absent where the service cannot keep one; an empty string is "no DPR".
-        dpr = if ("dpr" in this) text("dpr").orEmpty() else null,
         dueDate = text("due_date").blankToNull()?.take(DAY_LENGTH),
         priority = TaskPriority.fromWire(text("priority")),
         status = TaskStatus.fromWire(text("status")),
@@ -151,10 +151,44 @@ internal fun JsonElement?.toFeatures(): TasksFeatures {
     val features = (this as? JsonObject)?.obj("features") ?: return TasksFeatures()
     return TasksFeatures(
         visibility = features.strictFlag("visibility"),
-        dpr = features.strictFlag("dpr"),
         attachments = features.strictFlag("attachments"),
+        drafts = features.strictFlag("drafts"),
     )
 }
+
+/**
+ * One saved draft. Its `data` is an unfinished form, so every field inside it
+ * is read as "empty" when it is missing — and `visibility` only as one of the
+ * two words, because null there means "not chosen yet".
+ */
+internal fun JsonObject.toDraft(): SavedTaskDraft? {
+    val id = text("_id")?.takeIf { it.isNotBlank() } ?: return null
+    val data = obj("data")
+    return SavedTaskDraft(
+        id = id,
+        isSelf = flag("is_self"),
+        parentId = text("parent_id").blankToNull(),
+        parentTitle = text("parent_title").orEmpty(),
+        data = SavedDraftData(
+            title = data?.text("title").orEmpty(),
+            description = data?.text("description").orEmpty(),
+            assigneeId = data?.text("assignee_id").blankToNull(),
+            visibility = TaskVisibility.fromWire(data?.text("visibility")),
+            dueDate = data?.text("due_date").blankToNull()?.take(DAY_LENGTH),
+            status = TaskStatus.fromWire(data?.text("status")),
+            priority = TaskPriority.fromWire(data?.text("priority")),
+            departmentId = data?.text("department_id").blankToNull(),
+            scenes = data?.text("scenes").orEmpty(),
+        ),
+        attachments = list("attachments").mapNotNull { it.toAttachment() },
+        createdMillis = millis("created"),
+        updatedMillis = millis("updated"),
+    )
+}
+
+/** `{ drafts: [...] }` — mine, as the service lists them. */
+internal fun JsonElement?.toDrafts(): List<SavedTaskDraft> =
+    (this as? JsonObject)?.list("drafts").orEmpty().mapNotNull { it.toDraft() }
 
 /** `{ tasks: [...], total, features }` — one page of a list read. */
 internal class TaskPage(val tasks: List<Task>, val total: Int?, val features: TasksFeatures)

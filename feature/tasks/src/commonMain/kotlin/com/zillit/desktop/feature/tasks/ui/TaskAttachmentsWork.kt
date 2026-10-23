@@ -80,7 +80,13 @@ internal class TaskAttachmentsWork(
     fun add(files: List<PickedTaskFile>) {
         if (files.isEmpty() || !canAdd()) return
         val open = vm.currentState.panel ?: return
-        val room = roomForAttachments(open.attachments.size, open.pending.size, open.uploading)
+        // A new task made from a saved draft already holds the draft's own:
+        // they count towards the limit of 20 just as the task's do.
+        val room = roomForAttachments(
+            open.attachments.size + open.keptDraftFiles.size,
+            open.pending.size,
+            open.uploading,
+        )
         if (room <= 0) {
             vm.warn(str(S.desktop_tasks_attachment_limit, MAX_ATTACHMENTS))
             return

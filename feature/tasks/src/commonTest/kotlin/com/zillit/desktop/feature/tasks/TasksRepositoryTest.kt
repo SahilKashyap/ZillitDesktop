@@ -9,7 +9,11 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.feature.tasks.data.TasksRepositoryImpl
+import com.zillit.desktop.feature.tasks.domain.DraftAttachmentWrite
+import com.zillit.desktop.feature.tasks.domain.DraftWrite
+import com.zillit.desktop.feature.tasks.domain.SavedDraftData
 import com.zillit.desktop.feature.tasks.domain.TaskDraft
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
 import com.zillit.desktop.feature.tasks.domain.TaskWrite
 import io.ktor.client.engine.HttpClientEngine
@@ -64,6 +68,83 @@ class TasksRepositoryTest {
     }
 
     private fun ok(data: String) = HttpStatusCode.OK to """{"status":1,"data":$data}"""
+
+    // -- drafts --------------------------------------------------------------------
+
+    @Test
+    fun `the draft calls sit under the tasks path, and a draft's data goes whole`() = runTest {
+        val repo = repository { ok("""{"_id":"dr1","data":{"title":"Hose"}}""") }
+
+        repo.drafts()
+        repo.draft("dr1")
+        repo.createDraft(isSelf = true, parentId = null, data = SavedDraftData(title = "Hose"))
+        repo.updateDraft("dr1", SavedDraftData(title = "Hose and rig", visibility = TaskVisibility.Private))
+        repo.deleteDraft("dr1")
+
+        assertEquals("https://tasks.test/api/v2/tasks/drafts", sent[0].url)
+        assertEquals(HttpMethod.Get, sent[0].method)
+        assertEquals("https://tasks.test/api/v2/tasks/drafts/dr1", sent[1].url)
+
+        // A create says what the task will be; `parent_id` only for a shared
+        // task, since a null would be refused as a malformed id.
+        val created = sent[2].body!!
+        assertEquals(HttpMethod.Post, sent[2].method)
+        assertTrue(created["is_self"]!!.jsonPrimitive.boolean)
+        assertFalse(created.containsKey("parent_id"))
+        // The whole form, with no choice of Public / Private made.
+        val data = created["data"] as JsonObject
+        assertEquals("Hose", data["title"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, data["visibility"])
+        assertEquals("todo", data["status"]!!.jsonPrimitive.content)
+
+        // An update replaces the fields, and nothing else.
+        assertEquals(HttpMethod.Put, sent[3].method)
+        assertEquals(setOf("data"), sent[3].body!!.keys)
+        assertEquals("private", (sent[3].body!!["data"] as JsonObject)["visibility"]!!.jsonPrimitive.content)
+
+        assertEquals(HttpMethod.Delete, sent[4].method)
+        assertEquals("https://tasks.test/api/v2/tasks/drafts/dr1", sent[4].url)
+    }
+
+    @Test
+    fun `a shared-task draft names its main task`() = runTest {
+        val repo = repository { ok("""{"_id":"dr1","data":{}}""") }
+        repo.createDraft(isSelf = false, parentId = "m1", data = SavedDraftData())
+        assertEquals("m1", sent.single().body!!["parent_id"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a create from a draft names it, and only then`() = runTest {
+        val repo = repository { ok("""{"_id":"t1","title":"x"}""") }
+        repo.create(TaskDraft(title = "Hose"), "uid-1", draftId = "dr1")
+        repo.create(TaskDraft(title = "Hose"), "uid-2")
+        assertEquals("dr1", sent[0].body!!["draft_id"]!!.jsonPrimitive.content)
+        assertFalse(sent[1].body!!.containsKey("draft_id"))
+    }
+
+    /** A draft's images and files go the same three steps, under the draft's own path. */
+    @Test
+    fun `a draft attachment goes under the draft, and a remove answers the draft`() = runTest {
+        val repo = repository { call ->
+            when {
+                call.url.endsWith("/uploads") -> ok("""{"key":"k1","url":"https://storage.test/put","headers":{}}""")
+                else -> ok("""{"_id":"dr1","data":{},"attachments":[]}""")
+            }
+        }
+        val answer = repo.removeDraftAttachment("dr1", "a1")
+        assertIs<DraftAttachmentWrite.Saved>(answer)
+        assertEquals("dr1", answer.draft.id)
+        assertEquals("https://tasks.test/api/v2/tasks/drafts/dr1/attachments/a1", sent.single().url)
+        assertEquals(HttpMethod.Delete, sent.single().method)
+    }
+
+    @Test
+    fun `a refused draft read says it is gone`() = runTest {
+        val repo = repository { HttpStatusCode.NotFound to """{"status":0,"message":"task_draft_not_exists"}""" }
+        val answer = repo.updateDraft("dr1", SavedDraftData())
+        assertIs<DraftWrite.Refused>(answer)
+        assertTrue(answer.isGone)
+    }
 
     @Test
     fun `a create names its client id and is a subtask only when it has a parent`() = runTest {

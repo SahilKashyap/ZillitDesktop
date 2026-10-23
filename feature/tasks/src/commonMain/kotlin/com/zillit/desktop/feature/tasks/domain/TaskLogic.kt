@@ -13,24 +13,18 @@ package com.zillit.desktop.feature.tasks.domain
  * silent refresh then confirms it.
  */
 
-// -- what the service can keep: Public / Private, and the DPR field --------------
+// -- what the service can keep: Public / Private -------------------------------
 
 /**
  * A task as this deployment really keeps it: without its `visibility` where
- * the service cannot keep one, without its `dpr` where it cannot keep that.
- * Everything below then falls back by itself ([visibilityOf] reads a self task
- * as private; nothing has a DPR).
+ * the service cannot keep one. Everything below then falls back by itself
+ * ([visibilityOf] reads a self task as private).
  *
  * The list is held this way, so cards, rows and the search need no check of
  * their own.
  */
-fun applyFeatures(task: Task, features: TasksFeatures): Task = when {
-    features.visibility && features.dpr -> task
-    else -> task.copy(
-        visibility = task.visibility.takeIf { features.visibility },
-        dpr = task.dpr.takeIf { features.dpr },
-    )
-}
+fun applyFeatures(task: Task, features: TasksFeatures): Task =
+    if (features.visibility) task else task.copy(visibility = null)
 
 /**
  * Who can see a task: [TaskVisibility.Public], or the task's own word. A task
@@ -69,7 +63,6 @@ data class TaskDraft(
     val description: String = "",
     val departmentId: String? = null,
     val scenes: String = "",
-    val dpr: String = "",
     val dueDate: String? = null,
     val priority: TaskPriority = TaskPriority.Med,
     val status: TaskStatus = TaskStatus.Todo,
@@ -84,7 +77,6 @@ fun Task.toDraft() = TaskDraft(
     description = description,
     departmentId = departmentId,
     scenes = scenes,
-    dpr = dpr.orEmpty(),
     dueDate = dueDate,
     priority = priority,
     status = status,
@@ -104,7 +96,6 @@ private fun TaskDraft.fields(features: TasksFeatures): Map<String, String?> = bu
     put("description", description)
     put("department_id", departmentId)
     put("scenes", scenes)
-    if (features.dpr) put("dpr", dpr)
     put("due_date", dueDate)
     put("priority", priority.wire)
     put("status", status.wire)
@@ -121,7 +112,7 @@ private fun String?.norm(): String? = if (isNullOrEmpty()) null else trim()
  * person or department as null (the draft never holds `""` for those).
  *
  * [features] is what the service can keep: called without it — the default —
- * neither `visibility` nor `dpr` is ever part of a diff.
+ * `visibility` is never part of a diff.
  */
 fun diffDraft(orig: TaskDraft, draft: TaskDraft, features: TasksFeatures = TasksFeatures()): Map<String, String?> {
     val before = orig.fields(features)
@@ -143,7 +134,6 @@ fun rebaseDraft(current: TaskDraft, sent: TaskDraft, server: TaskDraft): TaskDra
     description = if (current.description.norm() != sent.description.norm()) current.description else server.description,
     departmentId = if (current.departmentId.norm() != sent.departmentId.norm()) current.departmentId else server.departmentId,
     scenes = if (current.scenes.norm() != sent.scenes.norm()) current.scenes else server.scenes,
-    dpr = if (current.dpr.norm() != sent.dpr.norm()) current.dpr else server.dpr,
     dueDate = if (current.dueDate.norm() != sent.dueDate.norm()) current.dueDate else server.dueDate,
     priority = if (current.priority != sent.priority) current.priority else server.priority,
     status = if (current.status != sent.status) current.status else server.status,
@@ -374,13 +364,9 @@ class TaskLookup(
 )
 
 /**
- * Task search: every word typed must be in the title, scenes, DPR,
- * description, department name, or the name / designation / department of the
- * assignee or of whoever assigned it. A subtask is also found by its main
- * task's title.
- *
- * The DPR is searched only where the service keeps one: the list holds its
- * tasks through [applyFeatures], so a task carries none when it cannot.
+ * Task search: every word typed must be in the title, scenes, description,
+ * department name, or the name / designation / department of the assignee or
+ * of whoever assigned it. A subtask is also found by its main task's title.
  */
 fun matchesTask(task: Task, query: String, lookup: TaskLookup): Boolean {
     val list = words(query)
@@ -388,7 +374,6 @@ fun matchesTask(task: Task, query: String, lookup: TaskLookup): Boolean {
     val haystack = listOf(
         task.title,
         task.scenes,
-        task.dpr.orEmpty(),
         task.description,
         task.parentTitle,
         lookup.departmentName(task.departmentId),
@@ -410,11 +395,12 @@ fun listRows(tasks: List<Task>, query: String, lookup: TaskLookup): ListRows {
     )
 }
 
-enum class TaskKind { All, Project, Self }
-
-/** The Board's filter. [assignee] is `""` (anyone), [NO_ASSIGNEE], or a user id. */
+/**
+ * The Board's filter. [assignee] is `""` (anyone), [NO_ASSIGNEE], or a user id.
+ *
+ * There is no project / self switch: the tabs above the Board are the views.
+ */
 data class TaskFilter(
-    val kind: TaskKind = TaskKind.All,
     val department: String = "",
     val assignee: String = "",
     val query: String = "",
@@ -425,18 +411,13 @@ data class TaskFilter(
 }
 
 fun matchesFilter(task: Task, filter: TaskFilter, lookup: TaskLookup): Boolean {
-    val kindOk = when (filter.kind) {
-        TaskKind.Project -> !task.isSelf
-        TaskKind.Self -> task.isSelf
-        TaskKind.All -> true
-    }
     val assigneeOk = when (filter.assignee) {
         "" -> true
         TaskFilter.NO_ASSIGNEE -> task.assigneeId == null
         else -> task.assigneeId == filter.assignee
     }
     val departmentOk = filter.department.isEmpty() || task.departmentId == filter.department
-    return kindOk && assigneeOk && departmentOk && matchesTask(task, filter.query, lookup)
+    return assigneeOk && departmentOk && matchesTask(task, filter.query, lookup)
 }
 
 /** One department's people in the crew picker. */
@@ -572,9 +553,6 @@ sealed interface HistoryLine {
      */
     data class VisibilityChanged(val visibility: TaskVisibility, val isSubtask: Boolean) : HistoryLine
 
-    /** "Set / Changed the Daily Production Report to DPR 13 Oct", or removed it ([dpr] null). */
-    data class DprChanged(val dpr: String?, val wasSet: Boolean) : HistoryLine
-
     /** [from] is null where there was nothing to show before (the line then reads only [to]). */
     data class Field(val field: String, val from: String?, val to: String?, val isSubtask: Boolean) : HistoryLine
 
@@ -617,7 +595,6 @@ fun historyLines(entry: TaskHistoryEntry, isSubtask: Boolean): List<HistoryLine>
                 TaskVisibility.fromWire(change.to) ?: TaskVisibility.Public,
                 isSubtask,
             )
-            "dpr" -> HistoryLine.DprChanged(change.to?.takeIf { it.isNotEmpty() }, wasSet = !change.from.isNullOrEmpty())
             else -> HistoryLine.Field(change.field, change.from, change.to, isSubtask)
         }
     }.toMutableList()
@@ -625,6 +602,25 @@ fun historyLines(entry: TaskHistoryEntry, isSubtask: Boolean): List<HistoryLine>
     entry.reason?.takeIf { it in HISTORY_REASONS }?.let { lines += HistoryLine.Note(it) }
     return lines
 }
+
+/** Fields that are no longer shown anywhere, so not in the history either. */
+private val GONE_FIELDS = setOf("dpr")
+
+/**
+ * The entries the History tab lists: a change to a field that is gone (the
+ * DPR) is left out of its entry, and an entry that changed nothing else is
+ * left out altogether.
+ */
+fun visibleHistory(history: List<TaskHistoryEntry>?): List<TaskHistoryEntry> =
+    history.orEmpty().mapNotNull { entry ->
+        if (entry.action != "updated") return@mapNotNull entry
+        val changes = entry.changes.filterNot { it.field in GONE_FIELDS }
+        when {
+            changes.size == entry.changes.size -> entry
+            changes.isEmpty() -> null
+            else -> entry.copy(changes = changes)
+        }
+    }
 
 /** The reasons the server marks a change of its own with; anything else is not worded. */
 private val HISTORY_REASONS = setOf("main_cancelled", "subtask_open", "main_visibility")

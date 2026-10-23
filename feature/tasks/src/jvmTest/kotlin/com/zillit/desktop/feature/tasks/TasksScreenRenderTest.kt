@@ -14,18 +14,24 @@ import androidx.compose.ui.test.assertIsDisplayed
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import androidx.compose.runtime.mutableStateOf
 import com.zillit.desktop.feature.tasks.domain.AttachmentKind
+import com.zillit.desktop.feature.tasks.domain.SavedDraftData
+import com.zillit.desktop.feature.tasks.domain.SavedTaskDraft
 import com.zillit.desktop.feature.tasks.domain.PreparedAttachment
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskAttachment
 import com.zillit.desktop.feature.tasks.domain.TaskComment
 import com.zillit.desktop.feature.tasks.domain.TaskDepartment
+import com.zillit.desktop.feature.tasks.domain.TaskDraft
 import com.zillit.desktop.feature.tasks.domain.TaskPerson
 import com.zillit.desktop.feature.tasks.domain.TaskPriority
 import com.zillit.desktop.feature.tasks.domain.TaskStatus
+import com.zillit.desktop.feature.tasks.domain.TaskVisibility
 import com.zillit.desktop.feature.tasks.domain.TasksFeatures
 import com.zillit.desktop.feature.tasks.domain.TasksViewer
 import com.zillit.desktop.feature.tasks.domain.toDraft
+import com.zillit.desktop.feature.tasks.ui.LeaveAsk
 import com.zillit.desktop.feature.tasks.ui.TaskPanel
+import com.zillit.desktop.feature.tasks.ui.TaskScope
 import com.zillit.desktop.feature.tasks.ui.TasksScreen
 import com.zillit.desktop.feature.tasks.ui.TasksUiState
 import com.zillit.desktop.feature.tasks.ui.TasksView
@@ -139,6 +145,139 @@ class TasksScreenRenderTest {
             setContent { ZillitTheme(darkTheme = false) { TasksScreen(withPanel, onEvent = {}, mentionable = { crew }) } }
             onAllNodesWithText("Former crew member").onFirst().assertExists()
         }
+    }
+
+    // -- the 2026-10-23 web change: four tabs, drafts, no default visibility -------
+
+    private fun saved(
+        id: String = "dr1",
+        title: String = "Book rain machine",
+        isSelf: Boolean = true,
+        assignee: String? = null,
+        parent: String? = null,
+        visibility: TaskVisibility? = null,
+    ) = SavedTaskDraft(
+        id = id, isSelf = isSelf, parentId = parent, parentTitle = "Dress the hero set", updatedMillis = 1,
+        data = SavedDraftData(title = title, assigneeId = assignee, visibility = visibility),
+    )
+
+    @Test
+    fun `the tab bar reads Board, Assigned Tasks, Self Tasks and Drafts`() = runComposeUiTest {
+        val withDrafts = state().copy(features = TasksFeatures(drafts = true), drafts = listOf(saved()), draftsLoaded = true)
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(withDrafts, onEvent = {}, mentionable = { crew }) } }
+        onNodeWithText("Board").assertExists()
+        onNodeWithText("Assigned Tasks").assertExists()
+        onNodeWithText("Self Tasks").assertExists()
+        onNodeWithText("Drafts").assertExists()
+        // The old project / self switch is gone from the Board.
+        onNodeWithText("Project tasks").assertDoesNotExist()
+    }
+
+    @Test
+    fun `Drafts has no tab where the service does not keep them`() = runComposeUiTest {
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(state(), onEvent = {}, mentionable = { crew }) } }
+        onNodeWithText("Drafts").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the Drafts tab lists my drafts under To Me and To Other`() = runComposeUiTest {
+        val drafts = listOf(saved(), saved(id = "dr2", title = "Hire a crane", isSelf = false, assignee = "u1"))
+        val current = mutableStateOf(
+            state(TasksView.Drafts).copy(features = TasksFeatures(drafts = true), drafts = drafts, draftsLoaded = true, draftsScopeDecided = true),
+        )
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(current.value, onEvent = {}, mentionable = { crew }) } }
+
+        onNodeWithText("To Me").assertExists()
+        onNodeWithText("To Other").assertExists()
+        onNodeWithText("Book rain machine").assertExists()
+        onAllNodesWithText("DRAFT").onFirst().assertExists()
+        onNodeWithText("Self task").assertExists()
+        // The other side's draft is not on this one.
+        onNodeWithText("Hire a crane").assertDoesNotExist()
+
+        current.value = current.value.copy(draftsScope = TaskScope.Other)
+        waitForIdle()
+        onNodeWithText("Hire a crane").assertExists()
+        // To Other says who each draft is for.
+        onAllNodesWithText("Una One").onFirst().assertExists()
+    }
+
+    @Test
+    fun `no drafts at all says what Save draft is for`() = runComposeUiTest {
+        val empty = state(TasksView.Drafts).copy(features = TasksFeatures(drafts = true), draftsLoaded = true)
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(empty, onEvent = {}, mentionable = { crew }) } }
+        onNodeWithText("No drafts").assertExists()
+        onAllNodesWithText("Save draft", substring = true).onFirst().assertExists()
+    }
+
+    /**
+     * A new main task has no Public / Private until its creator picks one: a
+     * Create pressed without a choice says "Please choose one".
+     */
+    @Test
+    fun `a new task offers Public and Private with neither chosen, and nags on Create`() = runComposeUiTest {
+        val form = TaskDraft()
+        val panel = TaskPanel(key = 1, creating = true, orig = form, draft = form, visPending = true)
+        val current = mutableStateOf(state().copy(panel = panel, features = TasksFeatures(visibility = true, drafts = true)))
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(current.value, onEvent = {}, mentionable = { crew }) } }
+
+        onAllNodesWithText("Choose one:", substring = true).onFirst().assertExists()
+        // Create is offered, and so is Save draft beside it.
+        onNodeWithText("Create task").assertExists()
+        onAllNodesWithText("Save draft").onFirst().assertExists()
+
+        current.value = current.value.copy(panel = panel.copy(visNag = 1))
+        waitForIdle()
+        onAllNodesWithText("Please choose one:", substring = true).onFirst().assertExists()
+
+        // Once one is picked the line says who can see it instead.
+        current.value = current.value.copy(panel = panel.copy(visPending = false, draft = form.copy(visibility = TaskVisibility.Public)))
+        waitForIdle()
+        onAllNodesWithText("Choose one:", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a draft form says DRAFT and offers Delete draft`() = runComposeUiTest {
+        val form = TaskDraft(title = "Book rain machine", isSelf = true, visibility = TaskVisibility.Private)
+        val panel = TaskPanel(key = 1, creating = true, orig = form, draft = form, draftId = "dr1")
+        val withPanel = state().copy(panel = panel, features = TasksFeatures(visibility = true, drafts = true))
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(withPanel, onEvent = {}, mentionable = { crew }) } }
+        onAllNodesWithText("DRAFT").onFirst().assertExists()
+        onNodeWithText("Delete draft").assertExists()
+        onAllNodesWithText("Save draft").onFirst().assertExists()
+    }
+
+    @Test
+    fun `the question before a started task is let go names its three answers`() = runComposeUiTest {
+        val form = TaskDraft(title = "Book rain machine", isSelf = true)
+        val panel = TaskPanel(key = 1, creating = true, orig = form, draft = form)
+        val current = mutableStateOf(
+            state().copy(panel = panel, features = TasksFeatures(drafts = true), leaveAsk = LeaveAsk(fromDraft = false)),
+        )
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(current.value, onEvent = {}, mentionable = { crew }) } }
+        onNodeWithText("Save this task as a draft?").assertExists()
+        onNodeWithText("Keep editing").assertExists()
+        onNodeWithText("Discard").assertExists()
+        onNodeWithText("Save as draft").assertExists()
+
+        // On a saved draft it is worded as its changes.
+        current.value = current.value.copy(leaveAsk = LeaveAsk(fromDraft = true))
+        waitForIdle()
+        onNodeWithText("Save changes to your draft?").assertExists()
+        onNodeWithText("Don’t save").assertExists()
+    }
+
+    @Test
+    fun `Assigned Tasks to other lists what I assigned to someone else`() = runComposeUiTest {
+        val mine = state(TasksView.Mine).copy(
+            tasks = listOf(task("a", "Dress the hero set", assignee = "u1").copy(assignedBy = "me")),
+            mineScope = TaskScope.Other,
+        )
+        setContent { ZillitTheme(darkTheme = false) { TasksScreen(mine, onEvent = {}, mentionable = { crew }) } }
+        onNodeWithText("Tasks Me assigned to other people").assertExists()
+        onNodeWithText("Dress the hero set").assertExists()
+        // The row starts with who it is for.
+        onAllNodesWithText("Una One").onFirst().assertExists()
     }
 
     @Test

@@ -6,6 +6,10 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.tasks.domain.AttachmentBytes
 import com.zillit.desktop.feature.tasks.domain.AttachmentKind
 import com.zillit.desktop.feature.tasks.domain.PickedTaskFile
+import com.zillit.desktop.feature.tasks.domain.DraftAttachmentWrite
+import com.zillit.desktop.feature.tasks.domain.DraftWrite
+import com.zillit.desktop.feature.tasks.domain.SavedDraftData
+import com.zillit.desktop.feature.tasks.domain.SavedTaskDraft
 import com.zillit.desktop.feature.tasks.domain.Task
 import com.zillit.desktop.feature.tasks.domain.TaskAssignees
 import com.zillit.desktop.feature.tasks.domain.TaskAttachment
@@ -250,7 +254,13 @@ class TaskAttachmentsFlowTest {
             held.firstOrNull { it.id == taskId }?.let { ZillitResult.Success(it.copy(comments = emptyList(), history = emptyList())) }
                 ?: ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Http(404, "task_not_exists"))
 
-        override suspend fun create(draft: TaskDraft, uniqueId: String, quick: Boolean, features: TasksFeatures): TaskWrite {
+        override suspend fun create(
+            draft: TaskDraft,
+            uniqueId: String,
+            quick: Boolean,
+            features: TasksFeatures,
+            draftId: String?,
+        ): TaskWrite {
             made += 1
             val task = Task(id = "made-$made", title = draft.title, isSelf = draft.isSelf, parentId = draft.parentId)
             held = held + task
@@ -261,6 +271,26 @@ class TaskAttachmentsFlowTest {
             TaskWrite.Saved(held.first { it.id == taskId }, null)
 
         override suspend fun delete(taskId: String) = ZillitResult.Success(null)
+
+        // Drafts are not what this test is about: nothing here keeps any.
+        override suspend fun drafts() = ZillitResult.Success(emptyList<SavedTaskDraft>())
+
+        override suspend fun draft(draftId: String): ZillitResult<SavedTaskDraft> =
+            ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Http(404, "task_draft_not_exists"))
+
+        override suspend fun createDraft(isSelf: Boolean, parentId: String?, data: SavedDraftData): DraftWrite =
+            DraftWrite.Refused("task_draft_not_exists", 404, com.zillit.desktop.core.common.ZillitError.Http(404, "task_draft_not_exists"))
+
+        override suspend fun updateDraft(draftId: String, data: SavedDraftData): DraftWrite =
+            DraftWrite.Refused("task_draft_not_exists", 404, com.zillit.desktop.core.common.ZillitError.Http(404, "task_draft_not_exists"))
+
+        override suspend fun deleteDraft(draftId: String) = ZillitResult.Success(null)
+
+        override suspend fun addDraftAttachment(draftId: String, item: PreparedAttachment): DraftAttachmentWrite =
+            DraftAttachmentWrite.Refused(AttachmentStep.Attach, "task_draft_not_exists", 404, com.zillit.desktop.core.common.ZillitError.Http(404, "task_draft_not_exists"))
+
+        override suspend fun removeDraftAttachment(draftId: String, attachmentId: String): DraftAttachmentWrite =
+            DraftAttachmentWrite.Refused(AttachmentStep.Attach, "task_draft_not_exists", 404, com.zillit.desktop.core.common.ZillitError.Http(404, "task_draft_not_exists"))
 
         override suspend fun comment(taskId: String, text: String, mentions: List<String>) =
             ZillitResult.Success(held.first { it.id == taskId })

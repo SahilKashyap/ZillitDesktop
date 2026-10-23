@@ -65,10 +65,14 @@ internal fun TaskAttachmentsSection(
     readOnly: Boolean,
     onEvent: (TasksEvent) -> Unit,
 ) {
-    if (panel.images.isNotEmpty() || panel.pendingImages.isNotEmpty() || panel.uploading > 0) {
+    // A form opened from a saved draft also shows what the draft already holds:
+    // those move onto the task when it is created (the service does it).
+    val images = panel.images + panel.keptDraftImages
+    val files = panel.files + panel.keptDraftDocs
+    if (images.isNotEmpty() || panel.pendingImages.isNotEmpty() || panel.uploading > 0) {
         Thumbs(state, panel, readOnly, onEvent)
     }
-    if (panel.files.isNotEmpty() || panel.pendingFiles.isNotEmpty()) {
+    if (files.isNotEmpty() || panel.pendingFiles.isNotEmpty()) {
         Files(state, panel, readOnly, onEvent)
     }
 }
@@ -95,6 +99,19 @@ private fun Thumbs(
                 onEvent = onEvent,
             )
         }
+        // The draft's own: shown from the link the single-draft read carried,
+        // and removed by its draft key (it leaves the draft on Save draft, or
+        // just before Create — so "Don't save" keeps it).
+        panel.keptDraftImages.forEach { attachment ->
+            Thumb(
+                attachment = attachment,
+                panel = panel,
+                removable = !readOnly,
+                onOpen = { onEvent(TasksEvent.OpenAttachment(attachment.id)) },
+                onEvent = onEvent,
+                removeEvent = TasksEvent.RemovePendingAttachment(DRAFT_FILE_PREFIX + attachment.id),
+            )
+        }
         panel.pendingImages.forEach { item ->
             PendingThumb(item, readOnly, onEvent)
         }
@@ -110,6 +127,8 @@ private fun Thumb(
     removable: Boolean,
     onOpen: () -> Unit,
     onEvent: (TasksEvent) -> Unit,
+    /** What removing it sends; a task's own asks the service to take it off. */
+    removeEvent: TasksEvent = TasksEvent.RemoveAttachment(attachment),
 ) {
     val k = TasksTheme.c
     val bytes = panel.imageBytes[attachment.id]
@@ -147,7 +166,7 @@ private fun Thumb(
             RemoveCorner(
                 name = attachment.name,
                 confirm = str(S.desktop_tasks_remove_image_confirm),
-                onRemove = { onEvent(TasksEvent.RemoveAttachment(attachment)) },
+                onRemove = { onEvent(removeEvent) },
             )
         }
     }
@@ -275,8 +294,22 @@ private fun Files(state: TasksUiState, panel: TaskPanel, readOnly: Boolean, onEv
                 pending = false,
             )
         }
-        panel.pendingFiles.forEachIndexed { index, item ->
+        panel.keptDraftDocs.forEachIndexed { index, attachment ->
             if (index > 0 || panel.files.isNotEmpty()) Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+            FileRow(
+                name = attachment.name,
+                sizeBytes = attachment.fileSizeBytes,
+                meta = str(S.desktop_tasks_attachment_saved_when_created),
+                onDownload = null,
+                onRemove = { onEvent(TasksEvent.RemovePendingAttachment(DRAFT_FILE_PREFIX + attachment.id)) }
+                    .takeIf { !readOnly },
+                pending = true,
+            )
+        }
+        panel.pendingFiles.forEachIndexed { index, item ->
+            if (index > 0 || panel.files.isNotEmpty() || panel.keptDraftDocs.isNotEmpty()) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+            }
             FileRow(
                 name = item.name,
                 sizeBytes = item.sizeBytes,

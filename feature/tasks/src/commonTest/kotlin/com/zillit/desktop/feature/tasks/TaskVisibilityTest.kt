@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  */
 class TaskVisibilityTest {
 
-    private val both = TasksFeatures(visibility = true, dpr = true)
+    private val all = TasksFeatures(visibility = true, attachments = true, drafts = true)
 
     private fun task(
         id: String = "t1",
@@ -96,39 +96,26 @@ class TaskVisibilityTest {
     // -- what the deployment can keep ------------------------------------------------
 
     @Test
-    fun `a feature that is off strips the field from the task`() {
-        val full = task(visibility = TaskVisibility.Private).copy(dpr = "DPR 12 Oct")
+    fun `visibility off strips the field from the task`() {
+        val full = task(visibility = TaskVisibility.Private)
         val none = applyFeatures(full, TasksFeatures())
         assertNull(none.visibility)
-        assertNull(none.dpr)
-        // And the fallbacks then apply by themselves.
+        // And the fallback then applies by itself.
         assertEquals(TaskVisibility.Public, visibilityOf(none))
+        // On, the task is left exactly as it came.
+        assertEquals(TaskVisibility.Private, applyFeatures(full, all).visibility)
     }
 
     @Test
-    fun `the two features are independent`() {
-        val full = task(visibility = TaskVisibility.Private).copy(dpr = "DPR 12 Oct")
-        val onlyDpr = applyFeatures(full, TasksFeatures(dpr = true))
-        assertNull(onlyDpr.visibility)
-        assertEquals("DPR 12 Oct", onlyDpr.dpr)
-        val onlyVisibility = applyFeatures(full, TasksFeatures(visibility = true))
-        assertEquals(TaskVisibility.Private, onlyVisibility.visibility)
-        assertNull(onlyVisibility.dpr)
-    }
-
-    @Test
-    fun `a diff never mentions a field the service cannot keep`() {
+    fun `a diff never mentions visibility the service cannot keep`() {
         val orig = task().toDraft()
-        val changed = orig.copy(visibility = TaskVisibility.Private, dpr = "DPR 12 Oct")
-        // Called without features — the default — neither field is ever sent.
+        val changed = orig.copy(visibility = TaskVisibility.Private)
+        // Called without features — the default — it is never sent.
         assertTrue(diffDraft(orig, changed).isEmpty())
         assertFalse(isDirty(orig, changed))
-        // With them, both are.
-        assertEquals(
-            mapOf("dpr" to "DPR 12 Oct", "visibility" to "private"),
-            diffDraft(orig, changed, both),
-        )
-        assertTrue(isDirty(orig, changed, both))
+        // With it, it is.
+        assertEquals(mapOf("visibility" to "private"), diffDraft(orig, changed, all))
+        assertTrue(isDirty(orig, changed, all))
     }
 
     @Test

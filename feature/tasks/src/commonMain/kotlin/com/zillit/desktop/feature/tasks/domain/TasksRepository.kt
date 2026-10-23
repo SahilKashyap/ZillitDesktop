@@ -19,8 +19,8 @@ interface TasksRepository {
      * all filter this one list.
      *
      * The answer also carries `data.features`: whether this deployment keeps
-     * Public / Private and the DPR field. Nothing offers either before a list
-     * has said so.
+     * Public / Private, attachments and drafts. Nothing offers any of them
+     * before a list has said so.
      */
     suspend fun tasks(): ZillitResult<TaskList>
 
@@ -39,14 +39,20 @@ interface TasksRepository {
      * [quick] is the Self Tasks quick-add row: only title, due date and assignee
      * go, as the web sends them, and the server fills in the rest.
      *
-     * [features] decides whether `visibility` and `dpr` are in the body at
-     * all; `visibility` never goes for a subtask, which takes its main task's.
+     * [features] decides whether `visibility` is in the body at all; it never
+     * goes for a subtask, which takes its main task's.
+     *
+     * [draftId] names the saved draft this form came from: the service then
+     * moves that draft's images and files onto the new task and deletes the
+     * draft, in this same request (404 `task_draft_not_exists` when it is
+     * already gone, and nothing is created then).
      */
     suspend fun create(
         draft: TaskDraft,
         uniqueId: String,
         quick: Boolean = false,
         features: TasksFeatures = TasksFeatures(),
+        draftId: String? = null,
     ): TaskWrite
 
     /**
@@ -64,6 +70,40 @@ interface TasksRepository {
 
     /** Adds a comment; answers the task with every comment on it. */
     suspend fun comment(taskId: String, text: String, mentions: List<String>): ZillitResult<Task>
+
+    // -- drafts: a new task saved to finish later ---------------------------
+
+    /**
+     * My drafts, newest `updated` first. Their attachments carry no `url`
+     * here: only an answer about one draft does.
+     */
+    suspend fun drafts(): ZillitResult<List<SavedTaskDraft>>
+
+    /** One draft, its attachments with their links. */
+    suspend fun draft(draftId: String): ZillitResult<SavedTaskDraft>
+
+    /**
+     * Keeps a started form as a new draft. The service cleans the `data`
+     * rather than refusing an unfinished form; it does refuse past the limit
+     * of 50 a person a project (422 `task_draft_limit`).
+     */
+    suspend fun createDraft(isSelf: Boolean, parentId: String?, data: SavedDraftData): DraftWrite
+
+    /** Replaces the draft's fields. */
+    suspend fun updateDraft(draftId: String, data: SavedDraftData): DraftWrite
+
+    /** Deletes one; its images and files go with it. */
+    suspend fun deleteDraft(draftId: String): ZillitResult<String?>
+
+    /**
+     * Adds one prepared image or file to a DRAFT, the same three steps as
+     * [addAttachment] under the draft's own path. They move onto the task when
+     * it is created from the draft.
+     */
+    suspend fun addDraftAttachment(draftId: String, item: PreparedAttachment): DraftAttachmentWrite
+
+    /** Takes one off a draft; answers the draft. */
+    suspend fun removeDraftAttachment(draftId: String, attachmentId: String): DraftAttachmentWrite
 
     // -- images and files in the description ---------------------------------
 
@@ -114,6 +154,18 @@ sealed interface AttachmentWrite {
         val httpStatus: Int,
         val error: com.zillit.desktop.core.common.ZillitError,
     ) : AttachmentWrite
+}
+
+/** What an attachment write on a draft answered; see [AttachmentWrite] for the task's own. */
+sealed interface DraftAttachmentWrite {
+    data class Saved(val draft: SavedTaskDraft, val message: String?) : DraftAttachmentWrite
+
+    data class Refused(
+        val step: AttachmentStep,
+        val message: String?,
+        val httpStatus: Int,
+        val error: com.zillit.desktop.core.common.ZillitError,
+    ) : DraftAttachmentWrite
 }
 
 /** How far adding one got. */

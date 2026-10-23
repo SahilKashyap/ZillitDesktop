@@ -19,8 +19,8 @@ import com.zillit.desktop.core.workspace.ui.ReloadOnWake
  * The Tasks tool, at the web's path (`/film-tools/tasks`).
  *
  * The views are the tool's own tabs, not routes: the web nests
- * `/film-tools/tasks/mine` and `/self`, but nothing outside the tool links to
- * them, so one window owns all three.
+ * `/film-tools/tasks/mine`, `/self` and `/drafts`, but nothing outside the
+ * tool links to them, so one window owns them all.
  *
  * [openUrl] is the host's guarded external-URL launcher, behind a link in a
  * description or a comment. A seam rather than a launcher of this module's
@@ -44,6 +44,11 @@ class TasksToolProvider(
         LaunchedEffect(viewModel) { viewModel.onEvent(TasksEvent.Load) }
         // Woken from sleep with this tool on show: re-read the list, quietly (`loadList(silent = true)`).
         ReloadOnWake { viewModel.onEvent(TasksEvent.Refresh) }
+        // Unsaved edits, or a new task with something in it: closing the window
+        // asks first. This is the desktop's own "Leave site?" — the web's
+        // `beforeunload` on the panel, and the question its side menu asks.
+        val unsaved = state.panelDirty || state.panel?.started == true
+        LaunchedEffect(unsaved) { navigator.setDirty(unsaved) }
         TasksScreen(
             state = state,
             onEvent = viewModel::onEvent,

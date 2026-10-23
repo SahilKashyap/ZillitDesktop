@@ -91,6 +91,8 @@ import com.zillit.desktop.feature.tasks.domain.mentionAt
 import com.zillit.desktop.feature.tasks.domain.mentionMatches
 import com.zillit.desktop.feature.tasks.domain.subtaskStats
 import com.zillit.desktop.feature.tasks.domain.visibilityOf
+import com.zillit.desktop.feature.tasks.domain.visibleHistory
+import kotlinx.coroutines.delay
 import com.zillit.desktop.feature.tasks.domain.whoCanSee
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -153,6 +155,7 @@ internal fun TaskPanelOverlay(
                 // also hear keys while the panel itself (not a field in it) has the focus.
                 // Ctrl/Cmd+S saves (or creates), wherever the focus is in the panel.
                 .onPreviewKeyEvent { event ->
+                    if (state.leaveAsk != null) return@onPreviewKeyEvent false
                     if (event.type != KeyEventType.KeyDown || !(event.isCtrlPressed || event.isMetaPressed) || event.key != Key.S) {
                         return@onPreviewKeyEvent false
                     }
@@ -163,6 +166,9 @@ internal fun TaskPanelOverlay(
                 // inside used it: the @mention list takes it first to close itself.
                 .onKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown || event.key != Key.Escape) return@onKeyEvent false
+                    // While "Save this task as a draft?" is up, its keys are
+                    // its own: Escape there keeps editing.
+                    if (state.leaveAsk != null) return@onKeyEvent false
                     escape()
                     true
                 }
@@ -209,7 +215,9 @@ private fun ColumnScope.PanelContent(
     val shown = Task(
         id = task?.id.orEmpty(), title = "", isSelf = draft.isSelf, assigneeId = draft.assigneeId,
         createdBy = task?.createdBy ?: state.me, assignedBy = task?.assignedBy,
-        visibility = draft.visibility.takeIf { visibilityOn },
+        // A new main task with no choice yet carries none: the placeholder in
+        // the form is not an answer, so the header falls back on `is_self`.
+        visibility = draft.visibility.takeIf { visibilityOn && !panel.visUnchosen(state.features) },
     )
     val priv = isPrivate(shown) && (main == null || isPrivate(main))
     val canReassign = creating || task?.canReassign == true
@@ -368,7 +376,8 @@ private fun ColumnScope.PanelContent(
             val assigner = if (!creating && task != null && task.assigneeId != null && draft.assigneeId == task.assigneeId) assignerOf(task) else null
             if (assigner != null && task != null) Prop(ZillitIcons.Tick, str(S.desktop_tasks_assigned_by)) { AssignedBy(task, assigner, state, today) }
             if (visibilityOn) {
-                Prop(if (draft.visibility == TaskVisibility.Private) ZillitIcons.Lock else ZillitIcons.Globe, str(S.visibility)) {
+                val unchosen = panel.visUnchosen(state.features)
+                Prop(if (!unchosen && draft.visibility == TaskVisibility.Private) ZillitIcons.Lock else ZillitIcons.Globe, str(S.visibility)) {
                     VisibilityRow(state, panel, draft, task, main, isSub, readOnly, onEvent)
                 }
             }
@@ -423,12 +432,6 @@ private fun ColumnScope.PanelContent(
                 Prop(ZillitIcons.Camera, str(S.av_scenes)) {
                     FieldInput(draft.scenes, { set(draft.copy(scenes = it)) }, str(S.desktop_tasks_scenes_placeholder), SCENES_MAX, !readOnly)
                 }
-                // The DPR, under Scenes, only where the service keeps one.
-                if (state.features.dpr) {
-                    Prop(ZillitIcons.File, str(S.desktop_tasks_field_dpr)) {
-                        FieldInput(draft.dpr, { set(draft.copy(dpr = it)) }, str(S.desktop_tasks_dpr_placeholder), DPR_MAX, !readOnly)
-                    }
-                }
             }
         }
 
@@ -447,11 +450,23 @@ private fun ColumnScope.PanelContent(
     // Footer ---------------------------------------------------------------------------
     Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
     when {
-        creating -> Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            TBtn(str(S.cancel), { onEvent(TasksEvent.CancelCreate) }, kind = BtnKind.Ghost)
+        creating -> Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Delete draft, pressed twice: the first press asks, and the view
+            // model forgets it after three seconds.
+            if (panel.draftId != null && state.canPost) {
+                DeleteDraftButton(panel, onEvent)
+            }
+            Box(Modifier.weight(1f))
+            TBtn(str(S.cancel), { onEvent(TasksEvent.CancelCreate) }, kind = BtnKind.Ghost, enabled = !panel.saving)
+            // Save draft: only where the service keeps drafts and this viewer may post.
+            if (state.draftsOn) {
+                ZillitTooltip(str(S.desktop_tasks_draft_save_hint)) {
+                    TBtn(str(S.desktop_ad_save_draft), { onEvent(TasksEvent.SaveDraft) }, kind = BtnKind.Ghost, icon = ZillitIcons.Edit, enabled = !panel.saving)
+                }
+            }
             if (state.canPost) {
                 TBtn(
-                    str(when { panel.saving -> S.desktop_tasks_creating; isSub -> S.desktop_tasks_create_subtask; else -> S.desktop_tasks_create_task }),
+                    str(when { panel.saving -> S.desktop_tasks_saving; isSub -> S.desktop_tasks_create_subtask; else -> S.desktop_tasks_create_task }),
                     { onEvent(TasksEvent.Create) }, enabled = !panel.saving && draft.title.isNotBlank(),
                 )
             } else {
@@ -495,13 +510,24 @@ private fun Crumb(
 ) {
     val k = TasksTheme.c
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (panel.creating) Pill(str(S.continue_new).uppercase(), k.accent, k.accentSoft, size = 11)
+        // "NEW", or "DRAFT" on a form opened from a saved draft.
+        if (panel.creating) {
+            if (panel.draftId != null) {
+                Pill(str(S.draft).uppercase(), k.warn, k.warnBg, size = 11)
+            } else {
+                Pill(str(S.continue_new).uppercase(), k.accent, k.accentSoft, size = 11)
+            }
+        }
         when {
             draft.parentId != null -> {
                 TText("↳", 13, color = k.muted)
                 TText(str(S.desktop_tasks_subtask), 13, SemiBold, k.fg, maxLines = 1)
                 TText("/", 13, color = k.line2)
-                TText(mainTitle, 13, if (main != null) SemiBold else FontWeight.Normal, if (main != null) k.accent else k.muted, if (main != null) Modifier.clickable { onEvent(TasksEvent.BackToParent) } else Modifier, maxLines = 1)
+                // On a NEW shared task the main task's name does what Cancel
+                // does: with something in the form it asks first, then goes
+                // back to the main task — never straight past the question.
+                val toMain = if (panel.creating) TasksEvent.CancelCreate else TasksEvent.BackToParent
+                TText(mainTitle, 13, if (main != null) SemiBold else FontWeight.Normal, if (main != null) k.accent else k.muted, if (main != null) Modifier.clickable { onEvent(toMain) } else Modifier, maxLines = 1)
             }
             panel.creating -> TText(str(if (draft.isSelf) S.desktop_tasks_self_task else S.desktop_tasks_project_task), 14, SemiBold, maxLines = 1)
             draft.isSelf -> {
@@ -511,7 +537,8 @@ private fun Crumb(
                 val first = { p: TaskPerson? -> p?.fullName?.substringBefore(' ') ?: str(S.desktop_tasks_former_member) }
                 TText(
                     when {
-                        visibilityOn && draft.visibility == TaskVisibility.Public -> str(S.desktop_tasks_self_public_lc)
+                        visibilityOn && !panel.visUnchosen(state.features) && draft.visibility == TaskVisibility.Public ->
+                            str(S.desktop_tasks_self_public_lc)
                         priv -> str(S.desktop_tasks_self_only_you)
                         task?.assigneeId == state.me -> "${str(S.fromText)} ${first(state.crewById[task?.createdBy])}"
                         else -> "${str(S.desktop_tasks_field_assignee)} ${first(state.crewById[draft.assigneeId])}"
@@ -522,7 +549,7 @@ private fun Crumb(
             else -> {
                 Dot(Color(deptColour(draft.departmentId)))
                 TText(state.departmentName(draft.departmentId).ifEmpty { str(S.desktop_tasks_no_department) }, 13, SemiBold, k.fg, maxLines = 1)
-                PrivateTag(visibilityOn && draft.visibility == TaskVisibility.Private)
+                PrivateTag(visibilityOn && !panel.visUnchosen(state.features) && draft.visibility == TaskVisibility.Private)
             }
         }
     }
@@ -661,9 +688,12 @@ private fun SubtaskSection(state: TasksUiState, task: Task, today: LocalDate, on
                 if (stats.todo > 0) Box(Modifier.weight(stats.todo.toFloat()).fillMaxHeight())
             }
         }
+        // My own shared-task drafts under this main task: dashed DRAFT rows
+        // after the subtasks. Nobody else ever sees one.
+        val subDrafts = if (state.draftsOn) state.drafts.filter { it.parentId == task.id } else emptyList()
         // Nothing to show and nothing to add: say so. For someone who can post
         // the add row IS the list, so no empty line is needed.
-        if (subtasks.isEmpty() && !state.canPost) {
+        if (subtasks.isEmpty() && subDrafts.isEmpty() && !state.canPost) {
             if (state.loaded) TText(str(S.desktop_tasks_subtasks_empty), 13, color = k.faint)
             return@Column
         }
@@ -690,8 +720,20 @@ private fun SubtaskSection(state: TasksUiState, task: Task, today: LocalDate, on
                     )
                 }
             }
+            subDrafts.forEach { saved ->
+                Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+                DraftRow(
+                    saved = saved,
+                    mainTitle = task.title,
+                    crewById = state.crewById,
+                    onOpen = { onEvent(TasksEvent.OpenDraft(saved)) },
+                    onDelete = { onEvent(TasksEvent.DeleteDraft(saved)) },
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    compact = true,
+                )
+            }
             if (state.canPost) {
-                if (subtasks.isNotEmpty()) Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
+                if (subtasks.isNotEmpty() || subDrafts.isNotEmpty()) Box(Modifier.fillMaxWidth().height(1.dp).background(k.line))
                 Row(
                     Modifier.fillMaxWidth().clickable { onEvent(TasksEvent.NewSubtask(task)) }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -841,7 +883,9 @@ private fun Composer(panel: TaskPanel, state: TasksUiState, people: List<TaskPer
 @Composable
 private fun HistorySection(state: TasksUiState, task: Task, today: LocalDate, key: Long) {
     val k = TasksTheme.c
-    val history = task.history.orEmpty()
+    // A change to a field that is gone (the DPR an older service recorded) is
+    // left out, and an entry that changed nothing else with it.
+    val history = visibleHistory(task.history)
     var all by remember(key) { mutableStateOf(false) }
     val shown = if (all) history else history.take(HISTORY_PREVIEW)
     val now = remember(history.size) { Clock.System.now().toEpochMilliseconds() }
@@ -871,12 +915,14 @@ private fun HistorySection(state: TasksUiState, task: Task, today: LocalDate, ke
     }
 }
 
+private const val DELETE_ARM_MS = 3000L
+
 private val PANEL_WIDTH = 640.dp
 private const val TITLE_MAX = 300
 private const val SCENES_MAX = 200
 private val MENTION_LIST_MAX = 240.dp
 
-/** A one-line field in the details (the scenes, the DPR): a box that only shows itself when focused. */
+/** A one-line field in the details (the scenes): a box that only shows itself when focused. */
 @Composable
 private fun FieldInput(value: String, onChange: (String) -> Unit, placeholder: String, maxLength: Int, enabled: Boolean) {
     val k = TasksTheme.c
@@ -936,20 +982,67 @@ private fun VisibilityRow(
     }
     // A new task's switch is the creator's to set; an existing one's is the server's call.
     val allowed = !readOnly && (panel.creating || task?.canChangeVisibility == true)
+    // A new MAIN task has no default: neither is chosen, and a Create pressed
+    // without one outlines the control in amber and says "Please choose one".
+    val unchosen = panel.visUnchosen(state.features)
+    val nagging = unchosen && panel.visNag > 0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         ZillitTooltip(if (allowed) "" else str(S.desktop_tasks_visibility_locked)) {
-            Segs {
-                TaskVisibility.entries.forEach { choice ->
-                    val on = draft.visibility == choice
-                    val dot = if (choice == TaskVisibility.Private) k.warn else k.ok
-                    Seg(visibilityText(choice), on, dot, if (on) dot else k.muted, if (choice == TaskVisibility.Private) k.warnBg else k.okBg, dot, enabled = allowed) {
-                        onEvent(TasksEvent.PickVisibility(choice))
+            Box(
+                Modifier.border(
+                    BorderStroke(if (nagging) 2.dp else 0.dp, if (nagging) k.warn else Color.Transparent),
+                    RoundedCornerShape(9.dp),
+                ).padding(if (nagging) 2.dp else 0.dp),
+            ) {
+                Segs {
+                    TaskVisibility.entries.forEach { choice ->
+                        val on = !unchosen && draft.visibility == choice
+                        val dot = if (choice == TaskVisibility.Private) k.warn else k.ok
+                        Seg(visibilityText(choice), on, dot, if (on) dot else k.muted, if (choice == TaskVisibility.Private) k.warnBg else k.okBg, dot, enabled = allowed) {
+                            onEvent(TasksEvent.PickVisibility(choice))
+                        }
                     }
                 }
             }
         }
-        TText(whoCanSeeText(draft, task, state, isSub = false), 12, color = k.muted)
+        if (unchosen) {
+            // Until one is picked, what each means rather than who can see it.
+            TText(
+                buildString {
+                    append(str(if (panel.visNag > 0) S.desktop_tasks_visibility_choose_nag else S.desktop_tasks_visibility_choose))
+                    append(" ").append(str(S.desktop_tasks_visibility_public)).append(" ")
+                    append(str(S.desktop_tasks_visibility_choose_public)).append(" ")
+                    append(str(S.desktop_hub_private)).append(" ")
+                    append(str(if (draft.isSelf) S.desktop_tasks_visibility_choose_private_self else S.desktop_tasks_visibility_choose_private))
+                },
+                12, color = if (panel.visNag > 0) k.warn else k.muted, maxLines = Int.MAX_VALUE,
+            )
+        } else {
+            TText(whoCanSeeText(draft, task, state, isSub = false), 12, color = k.muted)
+        }
     }
+}
+
+/**
+ * Delete draft in a draft form's footer: pressed twice, the first press asking
+ * "Press again to delete" (the view model forgets it after three seconds).
+ */
+@Composable
+private fun DeleteDraftButton(panel: TaskPanel, onEvent: (TasksEvent) -> Unit) {
+    // A press that was never confirmed is let go, as the draft rows' 🗑 is.
+    LaunchedEffect(panel.deleteArmed) {
+        if (panel.deleteArmed) {
+            delay(DELETE_ARM_MS)
+            onEvent(TasksEvent.DisarmDeleteDraft)
+        }
+    }
+    TBtn(
+        str(if (panel.deleteArmed) S.desktop_tasks_draft_delete_again else S.ah_cd_delete_draft),
+        { onEvent(TasksEvent.DeleteOpenDraft) },
+        kind = BtnKind.Ghost,
+        icon = ZillitIcons.Trash,
+        enabled = !panel.saving,
+    )
 }
 
 /**
@@ -1043,5 +1136,3 @@ private fun ActivityTab(label: String, count: Int?, on: Boolean, onClick: () -> 
     }
 }
 
-/** The service's own limit on the DPR field. */
-private const val DPR_MAX = 200

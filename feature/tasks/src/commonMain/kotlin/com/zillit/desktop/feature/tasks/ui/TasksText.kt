@@ -33,16 +33,6 @@ fun visibilityText(visibility: TaskVisibility): String = when (visibility) {
     TaskVisibility.Private -> str(S.desktop_hub_private)
 }
 
-/**
- * A DPR as a chip or a history line reads it: text that does not already
- * start with "DPR" gets it in front, as the web does.
- */
-fun dprText(dpr: String?): String {
-    val text = dpr?.trim().orEmpty()
-    if (text.isEmpty()) return ""
-    return if (text.startsWith("DPR", ignoreCase = true)) text else "DPR $text"
-}
-
 // The weather tool's "High" / "Low" are the same words; they carry the same translations.
 fun priorityText(priority: TaskPriority): String = when (priority) {
     TaskPriority.High -> str(S.desktop_weather_uv_high)
@@ -112,7 +102,6 @@ fun fieldText(field: String, isSubtask: Boolean): String = when (field) {
     "priority" -> str(S.priority)
     "department_id" -> str(S.department)
     "scenes" -> str(S.av_scenes)
-    "dpr" -> str(S.desktop_tasks_field_dpr)
     "visibility" -> str(S.visibility)
     else -> field
 }
@@ -163,25 +152,18 @@ fun historyText(
     is HistoryLine.SubtaskDeleted -> str(S.desktop_tasks_history_subtask_deleted, line.title)
     HistoryLine.DescriptionChanged -> str(S.desktop_tasks_history_description)
     HistoryLine.Changed -> str(S.desktop_tasks_history_changed)
-    // Visibility and the DPR are sentences rather than "Field: from → to",
-    // as the standalone app writes them.
+    // Visibility is a sentence rather than "Field: from → to", as the
+    // standalone app writes it.
     is HistoryLine.VisibilityChanged -> str(
         if (line.isSubtask) S.desktop_tasks_history_visibility_subtask else S.desktop_tasks_history_visibility,
         visibilityText(line.visibility),
     )
-    is HistoryLine.DprChanged -> dprHistoryText(line)
     is HistoryLine.Note -> noteText(line.reason)
     is HistoryLine.Field -> {
         val from = historyValue(line.field, line.from, crewById, departmentName, today)
         val to = historyValue(line.field, line.to, crewById, departmentName, today)
         "${fieldText(line.field, line.isSubtask)}: $from → $to"
     }
-}
-
-private fun dprHistoryText(line: HistoryLine.DprChanged): String = when {
-    line.dpr == null -> str(S.desktop_tasks_history_dpr_removed)
-    line.wasSet -> str(S.desktop_tasks_history_dpr_changed, dprText(line.dpr))
-    else -> str(S.desktop_tasks_history_dpr_set, dprText(line.dpr))
 }
 
 /** Why the server made a change of its own. */

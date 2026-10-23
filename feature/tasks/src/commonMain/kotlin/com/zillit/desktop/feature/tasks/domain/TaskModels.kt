@@ -52,14 +52,16 @@ enum class TaskVisibility(val wire: String) {
  * `data.features`).
  *
  * The desktop ships separately from the service, and a service from before
- * these fields **ignores `visibility` and `dpr` in a request without a word**:
- * a Private switch shown against it would call a task private that everybody
- * can see. So each is on only where the service said exactly `true`, and both
- * are off until a list has answered. Off means *gone*, not greyed out.
+ * these fields **ignores `visibility` in a request without a word**: a Private
+ * switch shown against it would call a task private that everybody can see. So
+ * each is on only where the service said exactly `true`, and all are off until
+ * a list has answered. Off means *gone*, not greyed out.
+ *
+ * There is no `dpr` any more: the field is gone from the tool altogether, so a
+ * deployment that still answers `features.dpr` is not asked about it.
  */
 data class TasksFeatures(
     val visibility: Boolean = false,
-    val dpr: Boolean = false,
     /**
      * Whether images and files may be **added**. Off where the service cannot
      * store them, or a production keeps its files in Box: no Add image, no
@@ -67,6 +69,12 @@ data class TasksFeatures(
      * way, so nothing a colleague attached disappears here.
      */
     val attachments: Boolean = false,
+    /**
+     * Whether a started task may be kept as a draft to finish later. Off means
+     * no Save draft, no Drafts tab and no "Save this task as a draft?": a new
+     * task closes as it always did.
+     */
+    val drafts: Boolean = false,
 )
 
 /** Declared high-first: the order [compareTasks] sorts by. */
@@ -95,8 +103,6 @@ data class Task(
     val description: String = "",
     val departmentId: String? = null,
     val scenes: String = "",
-    /** The Daily Production Report this task belongs to, free text; null where the service cannot keep one. */
-    val dpr: String? = null,
     val dueDate: String? = null,
     val priority: TaskPriority = TaskPriority.Med,
     val status: TaskStatus = TaskStatus.Todo,
