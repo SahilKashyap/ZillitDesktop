@@ -17,6 +17,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.PickerStart
 import com.zillit.desktop.feature.transportation.ui.PassengerEditor
 import com.zillit.desktop.feature.transportation.ui.TransportEvent
 import com.zillit.desktop.feature.transportation.ui.TransportUiState
@@ -49,7 +50,11 @@ class TransportPlaceFieldRenderTest {
         var openedWith: PickedLocation? = null
         var opened = 0
 
-        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? {
+        override suspend fun pick(
+            initial: PickedLocation?,
+            title: String,
+            near: PickerStart?,
+        ): PickedLocation? {
             opened++
             openedWith = initial
             return place
