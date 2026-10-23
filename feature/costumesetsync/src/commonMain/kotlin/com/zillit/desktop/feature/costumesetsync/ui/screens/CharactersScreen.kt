@@ -42,6 +42,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.Phone
 import com.zillit.desktop.feature.costumesetsync.domain.humanize
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.Clear
@@ -53,6 +54,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.ListRow
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
+import com.zillit.desktop.feature.costumesetsync.ui.PhoneInput
 import com.zillit.desktop.feature.costumesetsync.ui.RowTitle
 import com.zillit.desktop.feature.costumesetsync.ui.SectionCard
 import com.zillit.desktop.feature.costumesetsync.ui.SocketRefresh
@@ -288,7 +290,12 @@ private fun ActorRows(actors: List<Rec>, q: String) {
     val shown = actors.filter { a ->
         needle.isEmpty() ||
             (
-                listOf(a.str("name"), a.str("agency"), a.str("phone"), a.str("email")) +
+                listOf(
+                    a.str("name"),
+                    a.str("agency"),
+                    Phone.format(a.str("phone"), a.str("country_code")),
+                    a.str("email"),
+                ) +
                     a.recs("characters").map { it.str("name") }
             )
                 .any { it.lowercase().contains(needle) }
@@ -299,7 +306,8 @@ private fun ActorRows(actors: List<Rec>, q: String) {
     }
     Column(Modifier.heightIn(max = LIST_MAX_HEIGHT.dp).verticalScroll(rememberScrollState())) {
         shown.forEachIndexed { index, a ->
-            val phone = a.str("phone").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
+            val phone = Phone.format(a.str("phone"), a.str("country_code"))
+                .takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
             CharListRow(
                 onClick = null,
                 leading = { SquareAvatar(nameInitials(a.str("name"))) },
@@ -481,11 +489,13 @@ private fun NewCharacterFull(open: Boolean, onClose: () -> Unit, actors: List<Re
 }
 
 /** The Actors tab's "+ Actor": name, contact, agency, the standard measurements and notes. */
+@Suppress("LongMethod") // Name, contact and agency, then the standard measurements.
 @Composable
 private fun QuickActorDialog(open: Boolean, onClose: () -> Unit, onDone: () -> Unit) {
     val ctx = LocalSync.current
     var name by remember(open) { mutableStateOf("") }
     var phone by remember(open) { mutableStateOf("") }
+    var code by remember(open) { mutableStateOf("") }
     var email by remember(open) { mutableStateOf("") }
     var agency by remember(open) { mutableStateOf("") }
     var notes by remember(open) { mutableStateOf("") }
@@ -508,7 +518,8 @@ private fun QuickActorDialog(open: Boolean, onClose: () -> Unit, onDone: () -> U
                         "/actors",
                         body(
                             "name" to name.trim(),
-                            "phone" to phone,
+                            "phone" to phone.trim(),
+                            "country_code" to code.trim(),
                             "email" to email,
                             "agency" to agency,
                             "measurements" to measurements,
@@ -528,7 +539,13 @@ private fun QuickActorDialog(open: Boolean, onClose: () -> Unit, onDone: () -> U
     ) {
         FormGrid {
             TextInput(name, { name = it }, t("csync_field_name"), FullCell)
-            TextInput(phone, { phone = it }, t("csync_field_phone"), HalfCell)
+            PhoneInput(
+                code = code,
+                number = phone,
+                onChange = { c, n -> code = c; phone = n },
+                label = t("csync_field_phone"),
+                modifier = HalfCell,
+            )
             TextInput(email, { email = it }, t("csync_field_email"), HalfCell)
             TextInput(agency, { agency = it }, t("csync_field_agency"), HalfCell)
         }

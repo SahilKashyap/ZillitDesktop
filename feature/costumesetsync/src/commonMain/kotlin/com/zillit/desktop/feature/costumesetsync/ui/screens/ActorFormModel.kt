@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.domain.DialCode
+import com.zillit.desktop.feature.costumesetsync.domain.Phone
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
@@ -48,7 +50,10 @@ internal data class ActorFormState(
     val nextFittingAt: Long = 0,
     val fittingComment: String = "",
     val phone: String = "",
+    /** The dial code beside [phone] (ZL-21942); each of the three phones carries its own. */
+    val countryCode: String = "",
     val phone2: String = "",
+    val phone2CountryCode: String = "",
     val email: String = "",
     val email2: String = "",
     val startWorkDate: Long = 0,
@@ -56,6 +61,7 @@ internal data class ActorFormState(
     val talentRep: String = "",
     val talentRepEmail: String = "",
     val talentRepPhone: String = "",
+    val talentRepCountryCode: String = "",
     val talentRepDetails: List<LabelValue> = emptyList(),
     val measurements: Map<String, String> = emptyMap(),
     val extraMeasures: List<LabelValue> = emptyList(),
@@ -71,12 +77,26 @@ internal fun newActorForm(forCharacterId: String? = null): ActorFormState =
 
 private fun Long.setOrZero(): Long = if (this > 0) this else 0
 
-/** An actor from the service → the form. The first word is the first name. */
-internal fun toActorForm(actor: Rec?): ActorFormState {
+/**
+ * An actor from the service → the form. The first word is the first name.
+ *
+ * Each phone is split into its code and its number (ZL-21942). An actor saved
+ * before 2026-10-22 has no code and often has it typed inside the number
+ * instead, so [dialCodes] is what lets those be pulled apart and the picker
+ * opened on the right country; without the list the number is left whole.
+ */
+internal fun toActorForm(actor: Rec?, dialCodes: List<DialCode> = emptyList()): ActorFormState {
     if (actor == null) return ActorFormState()
     val words = actor.str("name").trim().split(Regex("\\s+"))
     val measurements = actor.rec("measurements")
     val measured = measurements?.keys.orEmpty().associateWith { measurements?.str(it).orEmpty() }
+    val (code, number) = Phone.split(actor.str("phone"), actor.str("country_code"), dialCodes)
+    val (code2, number2) = Phone.split(actor.str("phone2"), actor.str("phone2_country_code"), dialCodes)
+    val (repCode, repNumber) = Phone.split(
+        actor.str("talent_rep_phone"),
+        actor.str("talent_rep_country_code"),
+        dialCodes,
+    )
     return ActorFormState(
         first = words.firstOrNull().orEmpty(),
         last = words.drop(1).joinToString(" "),
@@ -86,15 +106,18 @@ internal fun toActorForm(actor: Rec?): ActorFormState {
         notes = actor.str("notes"),
         nextFittingAt = actor.long("next_fitting_at").setOrZero(),
         fittingComment = actor.str("fitting_comment"),
-        phone = actor.str("phone"),
-        phone2 = actor.str("phone2"),
+        phone = number,
+        countryCode = code,
+        phone2 = number2,
+        phone2CountryCode = code2,
         email = actor.str("email"),
         email2 = actor.str("email2"),
         startWorkDate = actor.long("start_work_date").setOrZero(),
         agency = actor.str("agency"),
         talentRep = actor.str("talent_rep"),
         talentRepEmail = actor.str("talent_rep_email"),
-        talentRepPhone = actor.str("talent_rep_phone"),
+        talentRepPhone = repNumber,
+        talentRepCountryCode = repCode,
         talentRepDetails = actor.recs("talent_rep_details").map { LabelValue(it.str("label"), it.str("value")) },
         measurements = measured.filterKeys { it in ActorMeasures },
         extraMeasures = measured.filterKeys { it !in ActorMeasures }.map { LabelValue(it.key, it.value) },
@@ -122,15 +145,20 @@ internal fun toActorBody(f: ActorFormState): JsonObject {
         put("notes", JsonPrimitive(f.notes))
         put("next_fitting_at", JsonPrimitive(f.nextFittingAt.setOrZero()))
         put("fitting_comment", JsonPrimitive(f.fittingComment))
-        put("phone", JsonPrimitive(f.phone))
-        put("phone2", JsonPrimitive(f.phone2))
+        put("phone", JsonPrimitive(f.phone.trim()))
+        // '' rather than left out: omitting a code key keeps a stale code on
+        // the record, and the service reads '' as "clear it".
+        put("country_code", JsonPrimitive(f.countryCode.trim()))
+        put("phone2", JsonPrimitive(f.phone2.trim()))
+        put("phone2_country_code", JsonPrimitive(f.phone2CountryCode.trim()))
         put("email", JsonPrimitive(f.email))
         put("email2", JsonPrimitive(f.email2))
         put("start_work_date", JsonPrimitive(f.startWorkDate.setOrZero()))
         put("agency", JsonPrimitive(f.agency))
         put("talent_rep", JsonPrimitive(f.talentRep))
         put("talent_rep_email", JsonPrimitive(f.talentRepEmail))
-        put("talent_rep_phone", JsonPrimitive(f.talentRepPhone))
+        put("talent_rep_phone", JsonPrimitive(f.talentRepPhone.trim()))
+        put("talent_rep_country_code", JsonPrimitive(f.talentRepCountryCode.trim()))
         put(
             "talent_rep_details",
             JsonArray(

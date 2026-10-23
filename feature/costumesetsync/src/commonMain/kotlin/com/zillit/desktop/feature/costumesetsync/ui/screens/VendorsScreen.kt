@@ -29,6 +29,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.AhIcons
@@ -37,6 +38,8 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.BudgetModel
+import com.zillit.desktop.feature.costumesetsync.domain.Phone
+import com.zillit.desktop.feature.costumesetsync.domain.Validate
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
 import com.zillit.desktop.feature.costumesetsync.domain.fmtMoney
@@ -52,6 +55,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormWide
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
+import com.zillit.desktop.feature.costumesetsync.ui.PhoneInput
 import com.zillit.desktop.feature.costumesetsync.ui.SectionCard
 import com.zillit.desktop.feature.costumesetsync.ui.SocketRefresh
 import com.zillit.desktop.feature.costumesetsync.ui.StatusBadge
@@ -69,6 +73,7 @@ private const val DAY_MS = 86_400_000L
 private val SEARCH_WIDTH = 420.dp
 private val CARD_WIDTH = 330.dp
 private val AVATAR = 34.dp
+private val CARD_ACTION = 26.dp
 private val ROW_WEIGHTS = listOf(2.2f, 1.3f, 1f, 1.3f, 0.9f, 1f, 2.5f)
 private val ROW_WEIGHTS_NO_RATE = ROW_WEIGHTS.filterIndexed { i, _ -> i != RATE_AT }
 private const val RATE_AT = 4
@@ -81,6 +86,7 @@ private class VendorData(val vendors: List<Rec>, val rentals: List<Rec>)
  * recorded here, moved to Picked up / Returned, and chased with "Send return reminders". Vendors are shown
  * as cards. (The web page has no external-contacts tab; contacts are picked in the send-request dialog.)
  */
+@Suppress("LongMethod") // Two tabs, the search, and four dialogs over them.
 @Composable
 fun VendorsScreen() {
     val ctx = LocalSync.current
@@ -101,6 +107,11 @@ fun VendorsScreen() {
     var tab by remember { mutableStateOf("rentals") }
     var q by remember { mutableStateOf("") }
     var vendorOpen by remember { mutableStateOf(false) }
+    // ZL-21946: the vendor being edited, or null for a new one. The service
+    // has had PATCH and DELETE on /vendors all along; this screen only ever
+    // posted, so a typo in a vendor's name was permanent.
+    var vendorEditing by remember { mutableStateOf<Rec?>(null) }
+    var vendorDeleting by remember { mutableStateOf<Rec?>(null) }
     var rentalOpen by remember { mutableStateOf(false) }
     var remindOpen by remember { mutableStateOf(false) }
     val reload = { data.reload(silent = true) }
@@ -110,7 +121,7 @@ fun VendorsScreen() {
             rentalsTab = tab == "rentals",
             onRemind = { remindOpen = true },
             onRental = { rentalOpen = true },
-            onVendor = { vendorOpen = true },
+            onVendor = { vendorEditing = null; vendorOpen = true },
         )
         KitTabs(
             listOf(
@@ -131,9 +142,24 @@ fun VendorsScreen() {
                     placeholder = t(if (tab == "rentals") "csync_rentals_search" else "csync_vendors_search"),
                 )
             }
-            if (tab == "rentals") RentalsTab(ctx, book.rentals, q, reload) else VendorsTab(book.vendors, q)
+            if (tab == "rentals") {
+                RentalsTab(ctx, book.rentals, q, reload)
+            } else {
+                VendorsTab(
+                    vendors = book.vendors,
+                    q = q,
+                    onEdit = { vendorEditing = it; vendorOpen = true },
+                    onDelete = { vendorDeleting = it },
+                )
+            }
         }
-        VendorDialog(vendorOpen, { vendorOpen = false }, reload)
+        VendorDialog(
+            open = vendorOpen,
+            editing = vendorEditing,
+            onClose = { vendorOpen = false; vendorEditing = null },
+            reload = reload,
+        )
+        DeleteVendorDialog(vendorDeleting, { vendorDeleting = null }, reload)
         RentalDialog(rentalOpen, book.vendors, { rentalOpen = false }, reload)
         ReminderDialog(ctx, remindOpen, book.rentals) { remindOpen = false }
     }
@@ -252,8 +278,9 @@ private fun RentalActions(ctx: SyncCtx, r: Rec, reload: () -> Unit) {
  * Zillit's own composer addressed to them, as the web's `EmailOpener`), their
  * note, then what we hold from them in a footer, so a row of cards lines up.
  */
+@Suppress("LongMethod") // One card: the avatar, three contact lines, the note and the footer.
 @Composable
-private fun VendorCard(v: Rec) {
+private fun VendorCard(v: Rec, onEdit: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalSync.current
     val colors = ZillitTheme.colors
     val counts = v.rec("counts")
@@ -281,7 +308,9 @@ private fun VendorCard(v: Rec) {
                     }
                 }
             }
-            if (v.str("phone").isNotBlank()) VendorLine(ZillitIcons.Phone, v.str("phone"))
+            if (v.str("phone").isNotBlank()) {
+                VendorLine(ZillitIcons.Phone, Phone.format(v.str("phone"), v.str("country_code")))
+            }
             if (v.str("email").isNotBlank()) {
                 VendorLine(
                     ZillitIcons.Mail,
@@ -307,7 +336,25 @@ private fun VendorCard(v: Rec) {
                     ).joinToString(" · ") { (key, n) ->
                         t(if (n == 1L) "${key}_one" else key, "n" to n)
                     },
+                    modifier = Modifier.weight(1f),
                 )
+                // ZL-21946. Posting rights gate both, as they do everywhere
+                // else in this module.
+                if (ctx.canPost) {
+                    ZillitIconButton(
+                        icon = ZillitIcons.Edit,
+                        contentDescription = t("csync_edit_vendor"),
+                        onClick = onEdit,
+                        size = CARD_ACTION,
+                    )
+                    ZillitIconButton(
+                        icon = ZillitIcons.Trash,
+                        contentDescription = t("csync_delete_vendor"),
+                        onClick = onDelete,
+                        tint = colors.danger,
+                        size = CARD_ACTION,
+                    )
+                }
             }
         }
     }
@@ -333,12 +380,19 @@ private fun VendorLine(icon: ImageVector, text: String, onClick: (() -> Unit)? =
 }
 
 @Composable
-private fun VendorsTab(vendors: List<Rec>, q: String) {
+private fun VendorsTab(
+    vendors: List<Rec>,
+    q: String,
+    onEdit: (Rec) -> Unit,
+    onDelete: (Rec) -> Unit,
+) {
     val shown = vendors.filter { matches(
         q,
         it.str("name"),
         it.str("contact_name"),
-        it.str("phone"),
+        // The code is searched with the number: somebody looking for
+        // "+91 98765" is looking for one vendor, not two fields.
+        Phone.format(it.str("phone"), it.str("country_code")),
         it.str("email"),
         it.str("address"),
     ) }
@@ -350,41 +404,64 @@ private fun VendorsTab(vendors: List<Rec>, q: String) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            shown.forEach { v -> VendorCard(v) }
+            shown.forEach { v -> VendorCard(v, onEdit = { onEdit(v) }, onDelete = { onDelete(v) }) }
         }
     }
 }
 
+/**
+ * One form for both: a new vendor, or [editing] one that already exists.
+ *
+ * The confirm reads Add when creating and Save when editing, and the phone and
+ * email state their own rules (ZL-21945) — both are optional, so an empty one
+ * is still fine; a filled one has to be usable, and Save stays off until it is.
+ * The rules live in [Validate] so every form in the module states them the
+ * same way.
+ */
+@Suppress("LongMethod") // The vendor's six fields, and the create/edit split over them.
 @Composable
-private fun VendorDialog(open: Boolean, onClose: () -> Unit, reload: () -> Unit) {
+private fun VendorDialog(open: Boolean, editing: Rec?, onClose: () -> Unit, reload: () -> Unit) {
     val ctx = LocalSync.current
-    var name by remember(open) { mutableStateOf("") }
-    var contact by remember(open) { mutableStateOf("") }
-    var phone by remember(open) { mutableStateOf("") }
-    var email by remember(open) { mutableStateOf("") }
-    var address by remember(open) { mutableStateOf("") }
-    var notes by remember(open) { mutableStateOf("") }
+    // Keyed on the record as well as on `open`: pressing Edit on a second
+    // vendor while the form is open must re-read the fields.
+    var name by remember(open, editing) { mutableStateOf(editing?.str("name").orEmpty()) }
+    var contact by remember(open, editing) { mutableStateOf(editing?.str("contact_name").orEmpty()) }
+    val stored = remember(open, editing) {
+        Phone.split(editing?.str("phone"), editing?.str("country_code"))
+    }
+    var code by remember(open, editing) { mutableStateOf(stored.first) }
+    var phone by remember(open, editing) { mutableStateOf(stored.second) }
+    var email by remember(open, editing) { mutableStateOf(editing?.str("email").orEmpty()) }
+    var address by remember(open, editing) { mutableStateOf(editing?.str("address").orEmpty()) }
+    var notes by remember(open, editing) { mutableStateOf(editing?.str("notes").orEmpty()) }
     var saving by remember { mutableStateOf(false) }
+    val phoneError = Validate.phoneError(phone)
+    val emailError = Validate.emailError(email)
     FormDialog(
         open = open,
-        title = t("csync_new_vendor"),
+        title = if (editing != null) t("csync_edit_vendor") else t("csync_new_vendor"),
         onDismiss = onClose,
-        confirmLabel = t("csync_add"),
+        confirmLabel = if (editing != null) t("csync_save") else t("csync_add"),
         onConfirm = {
             saving = true
             ctx.scope.launch {
+                val fields = body(
+                    "name" to name.trim(),
+                    "contact_name" to contact,
+                    "phone" to phone.trim(),
+                    // '' rather than left out: omitting the key keeps a stale
+                    // code on the record, and the service reads '' as "clear".
+                    "country_code" to code.trim(),
+                    "email" to email,
+                    "address" to address,
+                    "notes" to notes,
+                )
                 val done = ctx.write {
-                    ctx.api.post(
-                        "/vendors",
-                        body(
-                            "name" to name.trim(),
-                            "contact_name" to contact,
-                            "phone" to phone,
-                            "email" to email,
-                            "address" to address,
-                            "notes" to notes,
-                        ),
-                    )
+                    if (editing != null) {
+                        ctx.api.patch("/vendors/${editing.id}", fields)
+                    } else {
+                        ctx.api.post("/vendors", fields)
+                    }
                 }
                 saving = false
                 if (done != null) {
@@ -393,19 +470,58 @@ private fun VendorDialog(open: Boolean, onClose: () -> Unit, reload: () -> Unit)
                 }
             }
         },
-        confirmEnabled = name.isNotBlank(),
+        confirmEnabled = name.isNotBlank() && Validate.noErrors(phoneError, emailError),
         busy = saving,
         width = VENDOR_DIALOG,
     ) {
         FormGrid {
             TextInput(name, { name = it }, t("csync_field_name"), FORM_WIDE)
             TextInput(contact, { contact = it }, t("csync_contact_person"))
-            TextInput(phone, { phone = it }, t("csync_field_phone"))
-            TextInput(email, { email = it }, t("csync_field_email"))
+            PhoneInput(
+                code = code,
+                number = phone,
+                onChange = { c, n -> code = c; phone = n },
+                label = t("csync_field_phone"),
+                error = phoneError?.let { str(it) },
+            )
+            TextInput(email, { email = it }, t("csync_field_email"), error = emailError?.let { str(it) })
             TextInput(address, { address = it }, t("csync_field_address"))
             TextInput(notes, { notes = it }, t("csync_field_notes"), FORM_WIDE, multiline = true)
         }
     }
+}
+
+/**
+ * Deleting a vendor asks first, and says what goes with it.
+ *
+ * Verified on dev 2026-10-23 (web): `DELETE /vendors/{id}` CASCADES to the
+ * vendor's rentals — `/rentals` came back empty afterwards while the costume
+ * survived. Those rows are financial history and the delete cannot be undone,
+ * so the confirm names how many are about to go.
+ */
+@Composable
+private fun DeleteVendorDialog(vendor: Rec?, onClose: () -> Unit, reload: () -> Unit) {
+    val ctx = LocalSync.current
+    ConfirmDialog(
+        vendor?.let { v ->
+            val rentals = v.rec("counts")?.long("rentals") ?: 0L
+            // Those rows are financial history and the delete cannot be
+            // undone, so the count is named rather than implied.
+            val cascade = when {
+                rentals <= 0L -> ""
+                rentals == 1L -> "\n\n" + t("csync_delete_vendor_rentals_one")
+                else -> "\n\n" + t("csync_delete_vendor_rentals", "n" to rentals)
+            }
+            Confirm(
+                title = t("csync_delete_vendor"),
+                body = t("csync_delete_vendor_confirm", "name" to v.str("name")) + cascade,
+                okLabel = t("csync_delete"),
+                danger = true,
+            ) {
+                ctx.launchWrite({ ctx.api.delete("/vendors/${v.id}") }) { reload() }
+            }
+        },
+    ) { onClose() }
 }
 
 private val VENDOR_DIALOG = 640.dp
@@ -441,6 +557,7 @@ private fun rentalBody(
     "notes" to notes.trim(),
 )
 
+@Suppress("LongMethod") // The rental's fields plus the costume picker it opens.
 @Composable
 private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit, reload: () -> Unit) {
     val ctx = LocalSync.current
@@ -452,6 +569,7 @@ private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit,
     var notes by remember(open) { mutableStateOf("") }
     var pick by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    val dateError = Validate.dateOrderError(pickup, ret)
     FormDialog(
         open = open,
         title = t("csync_record_rental"),
@@ -470,7 +588,10 @@ private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit,
                 }
             }
         },
-        confirmEnabled = costume != null && vendorId.isNotEmpty() && pickup.isNotEmpty() && ret.isNotEmpty(),
+        // ZL-21938: a same-day rental is fine; a return before the pickup is
+        // not, and the form refused nothing before this.
+        confirmEnabled = costume != null && vendorId.isNotEmpty() && pickup.isNotEmpty() &&
+            ret.isNotEmpty() && dateError == null,
         busy = saving,
         width = VENDOR_DIALOG,
     ) {
@@ -484,7 +605,16 @@ private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit,
                 number = true,
             )
             DateInput(pickup, { pickup = it }, t("csync_pickup"))
-            DateInput(ret, { ret = it }, t("csync_return_by"))
+            // The calendar greys the impossible days AND the message says so:
+            // picking the return first and then a later pickup inverts the
+            // pair without the calendar ever reopening.
+            DateInput(
+                ret,
+                { ret = it },
+                t("csync_return_by"),
+                error = dateError?.let { str(it) },
+                minYmd = pickup,
+            )
             TextInput(notes, { notes = it }, t("csync_field_notes"), FORM_WIDE, multiline = true)
         }
     }

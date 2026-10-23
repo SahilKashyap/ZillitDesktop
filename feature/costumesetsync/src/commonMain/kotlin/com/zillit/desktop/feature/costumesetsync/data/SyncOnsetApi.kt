@@ -7,6 +7,7 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.costumesetsync.domain.DialCode
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.asRec
 import com.zillit.desktop.feature.costumesetsync.domain.asRows
@@ -100,6 +101,43 @@ class SyncOnsetApi(
 
     /** `GET /v2/meta` — every enum the service knows. Not project-scoped. */
     suspend fun meta() = call(HttpVerb.Get, "$root/meta", null, emptyMap())
+
+    /**
+     * `GET /v2/preset/isd-codes` — the countries the phone fields' code picker
+     * offers (ZL-21942).
+     *
+     * On the CORE host, not this service's: the whole `preset` namespace sits
+     * outside the project-scoped API, which is also why it rides
+     * [RequestModule.Default] (device scope) rather than the project Bearer.
+     * The web does not fetch it here at all — boot already put the list in its
+     * store — so this is the one call in the module that answers something the
+     * Costumes service never heard of.
+     *
+     * A failure answers an empty list rather than an error: the code is
+     * optional everywhere it appears, and the number alone still saves, so
+     * nobody is blocked on it.
+     */
+    suspend fun dialCodes(): List<DialCode> {
+        val url = "${config.apiV2(ZillitService.Core).trimEnd('/')}/preset/isd-codes"
+        // NOT this class's own `call`, which rides the project bearer: the
+        // preset namespace is device-scoped, and the two other readers of this
+        // very route (the invoice address picker, the Account Hub vendor form)
+        // both send `Default` for exactly that reason — `moduledata` is
+        // refused on develop, and a 401 here would leave the code picker
+        // empty with nothing on screen to say why.
+        val answer = apiClient.envelope(HttpVerb.Get, url, RequestModule.Default)
+        val rows = (answer as? ZillitResult.Success)
+            ?.data
+            ?.takeIf { it.status == 1 }
+            ?.data
+            .asRows()
+        return rows.mapNotNull { row ->
+            val dial = row.str("dial_code").trim()
+            val name = row.str("name").trim()
+            if (dial.isEmpty() || name.isEmpty()) return@mapNotNull null
+            DialCode(name = name, dialCode = dial, code = row.str("code"))
+        }
+    }
 
     /** The full address of project-scoped [path], for a raw file the JSON client cannot fetch; null with no project. */
     fun url(path: String): String? = scoped(path)

@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
@@ -29,7 +33,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.costumesetsync.domain.DialCode
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -182,8 +190,29 @@ fun TextInput(
 
 /** A `YYYY-MM-DD` date field. */
 @Composable
-fun DateInput(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = FormCell) {
-    ZillitDateField(value = value, onValueChange = onChange, label = label, modifier = modifier)
+fun DateInput(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = FormCell,
+    error: String? = null,
+    /**
+     * The earliest day the calendar offers (`YYYY-MM-DD`), the web's
+     * `disabledDate`. Greying the impossible days is never the whole rule —
+     * pick the later date first and then an even later earlier one and the
+     * pair inverts without the calendar reopening — so a caller that sets
+     * this states its [error] too.
+     */
+    minYmd: String? = null,
+) {
+    ZillitDateField(
+        value = value,
+        onValueChange = onChange,
+        label = label,
+        modifier = modifier,
+        errorText = error,
+        minDate = minYmd?.takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+    )
 }
 
 /**
@@ -272,6 +301,91 @@ fun PickInput(
         help?.let { MutedText(it, maxLines = 2) }
     }
 }
+
+/**
+ * A phone number and its country code, side by side (ZL-21942).
+ *
+ * The caller holds the pair and gets both back, as every form in this module
+ * does. The code is OPTIONAL and clearable: a record saved before 2026-10-22
+ * may carry the code inside the number, and forcing one on would duplicate it
+ * — see [com.zillit.desktop.feature.costumesetsync.domain.Phone].
+ *
+ * While the catalogue is empty (the preset call not back, or refused) the
+ * number alone still works, so nobody is blocked on it: the picker simply has
+ * no options to offer.
+ *
+ * ⚠ The code select is given a width of its own. A `ZillitSearchSelect` with
+ * no width beside a `weight(1f)` sibling composes one letter wide.
+ */
+@Composable
+fun PhoneInput(
+    code: String,
+    number: String,
+    onChange: (code: String, number: String) -> Unit,
+    label: String?,
+    modifier: Modifier = FormCell,
+    error: String? = null,
+    enabled: Boolean = true,
+) {
+    val codes = rememberDialCodes()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        label?.let { ZillitText(it, style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary) }
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitSearchSelect(
+                value = codes.firstOrNull { it.dialCode == code },
+                options = codes,
+                onSelect = { onChange(it.dialCode, number) },
+                // The closed field shows the dial code alone; the full country
+                // name would not fit beside the number.
+                label = { it.label },
+                placeholder = str(S.code),
+                enabled = enabled && codes.isNotEmpty(),
+                // Optional, so it must be clearable; typing "+91" or "india"
+                // both find it, as the web's `showSearch` does.
+                onClear = { onChange("", number) }.takeIf { code.isNotBlank() },
+                dropdownWidth = DROPDOWN_WIDTH,
+                modifier = Modifier.width(CODE_WIDTH),
+            )
+            ZillitTextField(
+                value = number,
+                onValueChange = { onChange(code, it.take(PHONE_MAX_CHARS)) },
+                label = null,
+                errorText = error,
+                singleLine = true,
+                enabled = enabled,
+                keyboardType = KeyboardType.Phone,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/**
+ * The country catalogue, loaded once for the whole tool.
+ *
+ * The web reads it out of the boot store, where the app already put it; this
+ * client has no such store, so the first form that needs it fetches
+ * `preset/isd-codes` and every later one reads the same list. Held at module
+ * level rather than in [SyncCtx] because the context is rebuilt per screen and
+ * several tests construct it by hand.
+ */
+@Composable
+fun rememberDialCodes(): List<DialCode> {
+    val ctx = LocalSync.current
+    LaunchedEffect(Unit) {
+        if (dialCodeCache.isEmpty()) dialCodeCache = ctx.api.dialCodes()
+    }
+    return dialCodeCache
+}
+
+private var dialCodeCache by mutableStateOf<List<DialCode>>(emptyList())
+
+/** Wide enough for "+1242"; the open list is wider, where the names are read. */
+private val CODE_WIDTH = 116.dp
+private val DROPDOWN_WIDTH = 280.dp
+
+/** What the service stores; the same cap the web's field sets. */
+private const val PHONE_MAX_CHARS = 40
 
 /** A pick-one over a `/meta` enum list, shown in the service's own words. */
 @Composable

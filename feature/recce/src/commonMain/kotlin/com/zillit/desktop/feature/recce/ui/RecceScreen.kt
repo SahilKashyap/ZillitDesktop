@@ -63,7 +63,7 @@ fun RecceScreen(
         DeleteDialog(state, onEvent)
         DistributeDialogs(state, onEvent)
         LeaveDialog(state, onEvent)
-        ReccePdfOverlay(state.pdf, onEvent)
+        ReccePdfOverlay(state.pdf, canDownload = state.viewer.mayDownload, onEvent = onEvent)
     }
 }
 

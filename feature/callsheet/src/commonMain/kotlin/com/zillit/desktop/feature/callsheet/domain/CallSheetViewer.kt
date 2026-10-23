@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.callsheet.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Who is looking at the call sheet tool.
@@ -21,6 +23,12 @@ data class CallSheetViewer(
     /** `callsheet_tool.posting_access` as issued — no admin bypass. */
     val canPost: Boolean = false,
     val isAdmin: Boolean = false,
+    /**
+     * `callsheet_tool.download_access` as issued — the viewer's Download
+     * (ZL-21947). Fails CLOSED, like [canPost]: the one way a PDF leaves this
+     * tool is the preview, so an unknown right must not hand out the file.
+     */
+    val canDownload: Boolean = false,
     /** `permission_grid_tool.view_access` as issued — opens the Permission tab. */
     val canViewGrid: Boolean = false,
     /** `permission_grid_tool.posting_access` as issued — enables its checkboxes. */
@@ -36,6 +44,9 @@ data class CallSheetViewer(
 
     companion object {
         const val TOOL_IDENTIFIER = "callsheet_tool"
+
+        /** What a rights request names this tool, in the reader's language. */
+        val TOOL_IDENTIFIER_LABEL: String get() = str(S.cs_title_creation)
         const val GRID_IDENTIFIER = "permission_grid_tool"
 
         /**
@@ -65,6 +76,7 @@ data class CallSheetViewer(
                 designation = designation,
                 canView = sheet?.let { it.enabled && it.canView } ?: permissions.isAdmin,
                 canPost = sheet?.let { it.enabled && it.canPost } == true,
+                canDownload = sheet?.let { it.enabled && it.canDownload } == true,
                 isAdmin = permissions.isAdmin,
                 canViewGrid = grid?.let { it.enabled && it.canView } == true,
                 canEditGrid = grid?.let { it.enabled && it.canPost } == true,

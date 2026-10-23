@@ -63,8 +63,12 @@ import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 
 /**
  * "Generating PDF", then the viewer — the web's iframe becomes page images
- * with the browser viewer's zoom. Read-only: it has no download, so the
- * bytes leave this window by no route of its own.
+ * with the browser viewer's zoom.
+ *
+ * The pages are drawn, so nothing here hands out the file: the only way out
+ * is the toolbar's Download, which asks for the download right on the press
+ * (ZL-21947) — the web's own preview was a bare iframe, whose Save As passed
+ * through nothing of theirs at all.
  */
 @Composable
 internal fun PdfOverlayView(pdf: PdfOverlay?, onEvent: (SheetEvent) -> Unit) {
@@ -142,6 +146,16 @@ private fun ViewerCard(pdf: PdfOverlay, onEvent: (SheetEvent) -> Unit) {
                 )
             }
             ZoomControl(zoom, onZoom = { zoom = it })
+            // ZL-21947: the preview is the only way a call sheet's PDF leaves
+            // this tool, and it had no Download of its own. Always shown and
+            // refused on the press, which is what asks an admin for the right
+            // — a control that vanishes reads as a missing feature.
+            SheetIconButton(
+                ZillitIcons.Download,
+                str(S.download),
+                { onEvent(ListEvent.DownloadPdf) },
+                enabled = pdf.bytes != null,
+            )
             CloseDisc { onEvent(ListEvent.ClosePdf) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))

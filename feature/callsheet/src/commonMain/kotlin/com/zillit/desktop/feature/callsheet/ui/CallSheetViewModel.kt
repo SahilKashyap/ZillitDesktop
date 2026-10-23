@@ -6,6 +6,9 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
 import com.zillit.desktop.feature.callsheet.domain.CallSheetPublishing
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.feature.callsheet.domain.CallSheetViewer
 import com.zillit.desktop.feature.callsheet.domain.CompanySeed
 import com.zillit.desktop.feature.callsheet.domain.SheetBadgeSource
@@ -47,6 +50,13 @@ internal interface SheetContext {
     fun projectId(): String?
     fun members(): List<SheetMember>
     fun viewer(): CallSheetViewer
+
+    /**
+     * Opens the app's "ask an admin for this right" flow for the download
+     * right, and says so. Nothing happens if no bus is wired (a test).
+     */
+    fun askDownloadRight()
+
     fun now(): Long
     fun todayMs(): Long = SheetTime.todayMidnight(now())
 }
@@ -64,6 +74,8 @@ class CallSheetViewModel(
     private val projectIdProvider: () -> String?,
     private val membersProvider: () -> List<SheetMember>,
     private val nowMillis: () -> Long,
+    /** Where a refused Download asks an admin; null in tests and unwired builds. */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<SheetUiState, SheetEvent, SheetEffect>(SheetUiState()) {
 
     private val context: SheetContext = object : SheetContext {
@@ -78,6 +90,21 @@ class CallSheetViewModel(
         override fun projectId(): String? = projectIdProvider()?.takeIf { it.isNotBlank() }
         override fun members(): List<SheetMember> = membersProvider().filter { it.isAccepted }
         override fun viewer(): CallSheetViewer = resolveViewer()
+
+        override fun askDownloadRight() {
+            rights?.ask(CallSheetViewer.TOOL_IDENTIFIER_LABEL, RightsKind.Download)
+            sendEffect(
+                SheetEffect.Toast(
+                    rightsRefusalMessage(
+                        CallSheetViewer.TOOL_IDENTIFIER_LABEL,
+                        RightsKind.Download,
+                        asked = rights != null,
+                    ),
+                    isError = true,
+                ),
+            )
+        }
+
         override fun now(): Long = nowMillis()
     }
 

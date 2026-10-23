@@ -3,7 +3,6 @@ package com.zillit.desktop.feature.sides.ui.flows
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
-import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.SidesDistribution
@@ -44,14 +43,19 @@ internal class DistributeFlow(private val store: SidesStore) {
     /** Names the file and opens the confirm. */
     fun ask(record: SidesRecord) {
         if (!record.status.viewable) return
-        // The web's gate, in its order: the library's posting right hides the
-        // action altogether, and the Sides download right is what a press
-        // then asks an admin for — the file is leaving this tool.
+        // The library's POSTING right is the whole gate: publishing is
+        // posting, not downloading.
+        //
+        // The Sides download right was asked for here too until 2026-10-22,
+        // copied from Recce — and both dropped it. Six of the eight tools
+        // that publish to the library never asked for it, the refusal talked
+        // about downloading to someone who was posting, and the copy filed is
+        // the UNWATERMARKED one (see below), so "a PDF this user cannot
+        // download here" never described it.
         if (!store.docDist.canDistribute()) {
             store.failed(str(S.desktop_docdist_no_distribute_permission))
             return
         }
-        if (store.refuses(RightsKind.Download)) return
         if (store.current.distribute?.sending == true) return
         store.update {
             copy(

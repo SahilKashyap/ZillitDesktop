@@ -27,6 +27,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.Phone
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDateTime
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
@@ -57,7 +58,8 @@ private const val MENU_COL = 56
 @Composable
 private fun TalentRep(a: Rec) {
     val extra = a.recs("talent_rep_details")
-    val contact = listOf(a.str("talent_rep"), a.str("talent_rep_email"), a.str("talent_rep_phone"))
+    val repPhone = Phone.format(a.str("talent_rep_phone"), a.str("talent_rep_country_code"))
+    val contact = listOf(a.str("talent_rep"), a.str("talent_rep_email"), repPhone)
     if (contact.all { it.isEmpty() } && extra.isEmpty()) {
         MutedText("—")
         return
@@ -69,7 +71,7 @@ private fun TalentRep(a: Rec) {
             maxLines = 1,
         )
         if (a.str("talent_rep_email").isNotEmpty()) MutedText(a.str("talent_rep_email"))
-        if (a.str("talent_rep_phone").isNotEmpty()) MutedText(a.str("talent_rep_phone"))
+        if (repPhone.isNotEmpty()) MutedText(repPhone)
         extra.forEach { MutedText("${it.str("label")}: ${it.str("value")}") }
     }
 }
@@ -90,7 +92,9 @@ internal fun actorMatches(a: Rec, needle: String): Boolean {
         a.str("notes"),
         a.str("talent_rep"),
         a.str("talent_rep_email"),
-        a.str("talent_rep_phone"),
+        // Searched with its code: somebody typing "+91 98765" is looking for
+        // one actor's representative, not for two fields.
+        Phone.format(a.str("talent_rep_phone"), a.str("talent_rep_country_code")),
     ) +
         a.recs("characters").map { it.str("name") } + a.recs("talent_rep_details").map {
             "${it.str("label")} ${it.str("value")}"

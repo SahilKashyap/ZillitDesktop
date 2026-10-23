@@ -518,9 +518,20 @@ class RecceViewModel(
 
     // ------------------------------------------------------------------- pdf
 
+    /**
+     * Opens the report in the viewer. Reading a recce needs the VIEW right,
+     * which getting this far already proved — not the download right.
+     *
+     * The two were the same thing while the PDF opened in a browser tab: S3
+     * stores no ContentType, so the object is served as
+     * application/octet-stream and a tab pointed at it downloads the file.
+     * The bytes are drawn here instead, so they separate (web 2026-10-22);
+     * only the viewer's own Download still asks for the right, and the server
+     * watermarks each copy with the requesting user's name, which is what
+     * makes showing it safe.
+     */
     private fun generatePdf() {
         val recce = currentState.selected ?: return
-        if (refuses(RightsKind.Download)) return
         val name = reportName(recce)
         setState { copy(pdf = ReccePdfViewer(name = name)) }
         launch {
@@ -588,14 +599,21 @@ class RecceViewModel(
      * Names the file and opens the confirm — the web's `handleSendToDocDist`.
      *
      * Published recces only (a draft is still changing, and the library has
-     * no draft root for Recce), and it takes BOTH rights: the recce download
-     * right, because the library would otherwise hand out a PDF this user may
-     * not download here, and Document Distribution's own posting right.
+     * no draft root for Recce), and the gate is Document Distribution's own
+     * POSTING right alone: publishing is posting, not downloading.
+     *
+     * It also asked for the recce download right until 2026-10-22, on the
+     * grounds that the library would otherwise hand out a PDF this user may
+     * not download here. The web dropped it, and so does this: six of the
+     * eight tools that publish to the library never had it, the refusal it
+     * raised talked about downloading to someone who was posting, and the
+     * copy filed is the UNWATERMARKED one, so "a PDF this user cannot
+     * download here" never described it. The library applies its own
+     * per-recipient watermark and its own download rights.
      */
     private fun askToDistribute() {
         val recce = currentState.selected ?: return
         if (!recce.isPublished) return
-        if (refuses(RightsKind.Download)) return
         if (!host.canDistribute()) {
             sendEffect(RecceEffect.Notice(str(S.desktop_docdist_no_distribute_permission), success = false))
             return

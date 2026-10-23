@@ -94,11 +94,16 @@ internal fun RecceDetailPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit)
             titleExtra = { recce?.let { RecceStatusTag(it) } },
             actions = {
                 if (recce != null) {
+                    // Says what it will actually do. Without the download
+                    // right the report opens in the viewer and Download is
+                    // not offered there, so "Generate PDF" would promise a
+                    // file this user cannot have.
+                    val mayDownload = state.viewer.mayDownload
                     ZillitButton(
-                        text = str(S.generate_pdf),
+                        text = if (mayDownload) str(S.generate_pdf) else str(S.sides_view_pdf),
                         onClick = { onEvent(RecceEvent.GeneratePdf) },
                         variant = ButtonVariant.Secondary,
-                        leadingIcon = ZillitIcons.Download,
+                        leadingIcon = if (mayDownload) ZillitIcons.Download else ZillitIcons.Eye,
                     )
                     ZillitButton(
                         text = str(S.print),

@@ -31,6 +31,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.Phone
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDateTime
 import com.zillit.desktop.feature.costumesetsync.domain.humanize
@@ -310,7 +311,10 @@ private fun ActorCard(ch: Rec, reload: () -> Unit) {
     SectionCard(title = t("csync_actor_measurements")) {
         if (actor != null) {
             ZillitText(actor.str("name"), style = ZillitTheme.typography.titleSmall)
-            val contact = listOf(actor.str("phone"), actor.str("agency")).filter { it.isNotEmpty() }.joinToString(" · ")
+            val contact = listOf(
+                Phone.format(actor.str("phone"), actor.str("country_code")),
+                actor.str("agency"),
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
             if (contact.isNotEmpty()) MutedText(contact)
             val m = actor.rec("measurements")
             if (m != null && m.keys.isNotEmpty()) {

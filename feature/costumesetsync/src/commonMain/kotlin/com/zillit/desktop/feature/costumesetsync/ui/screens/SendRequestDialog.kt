@@ -39,6 +39,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.domain.CrewMember
+import com.zillit.desktop.feature.costumesetsync.domain.Phone
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.digitsOnly
 import com.zillit.desktop.feature.costumesetsync.domain.fill
@@ -48,6 +49,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
+import com.zillit.desktop.feature.costumesetsync.ui.PhoneInput
 import com.zillit.desktop.feature.costumesetsync.ui.RowTitle
 import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.SyncDialogShell
@@ -398,14 +400,14 @@ private fun recipients(
             it.str("name"),
             it.str("contact_name"),
             it.str("email"),
-            it.str("phone"),
+            it.fullPhone(),
         ) }
             .map { Recipient(
                 it.id,
                 it.str("name"),
                 listOf(
                     it.str("contact_name"),
-                    it.str("phone"),
+                    it.fullPhone(),
                     it.str("email"),
                 ).filter(String::isNotBlank).joinToString(" · "),
             ) }
@@ -414,7 +416,7 @@ private fun recipients(
             it.str("company"),
             it.str("role"),
             it.str("email"),
-            it.str("phone"),
+            it.fullPhone(),
         ) }
             .map { Recipient(
                 it.id,
@@ -422,7 +424,7 @@ private fun recipients(
                 listOf(
                     it.str("role"),
                     it.str("company"),
-                    it.str("phone"),
+                    it.fullPhone(),
                     it.str("email"),
                 ).filter(String::isNotBlank).joinToString(" · "),
             ) }
@@ -504,11 +506,16 @@ private fun SentView(sent: Sent, text: String, subject: String, message: String)
     }
 }
 
+/** A vendor's or contact's number with its country code (ZL-21942). */
+private fun Rec.fullPhone(): String = Phone.format(str("phone"), str("country_code"))
+
 /** One person who is not on the app: who they are, and the ways to pass the message on. */
 @Composable
 private fun OffAppRow(r: Rec, text: String, subject: String, message: String) {
     val ctx = LocalSync.current
-    val phone = r.str("phone")
+    // The code is part of the number everywhere it is shown, dialled or
+    // passed to WhatsApp — wa.me wants the full international number.
+    val phone = Phone.format(r.str("phone"), r.str("country_code"))
     val email = r.str("email")
     Row(
         Modifier.fillMaxWidth(),
@@ -562,6 +569,7 @@ private fun QuickAddContact(open: Boolean, onClose: () -> Unit, onCreated: (Stri
     var role by remember(open) { mutableStateOf("") }
     var email by remember(open) { mutableStateOf("") }
     var phone by remember(open) { mutableStateOf("") }
+    var code by remember(open) { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     FormDialog(
         open = open,
@@ -580,6 +588,7 @@ private fun QuickAddContact(open: Boolean, onClose: () -> Unit, onCreated: (Stri
                             "role" to role.trim(),
                             "email" to email.trim(),
                             "phone" to phone.trim(),
+                            "country_code" to code.trim(),
                         ),
                     )
                 }
@@ -599,7 +608,13 @@ private fun QuickAddContact(open: Boolean, onClose: () -> Unit, onCreated: (Stri
             TextInput(company, { company = it }, t("csync_field_company"), Modifier.width(QUICK_HALF))
             TextInput(role, { role = it }, t("csync_field_what_they_do"), Modifier.width(QUICK_HALF))
             TextInput(email, { email = it }, t("csync_field_email"), Modifier.width(QUICK_HALF))
-            TextInput(phone, { phone = it }, t("csync_field_phone"), Modifier.width(QUICK_HALF))
+            PhoneInput(
+                code = code,
+                number = phone,
+                onChange = { c, n -> code = c; phone = n },
+                label = t("csync_field_phone"),
+                modifier = Modifier.width(QUICK_HALF),
+            )
         }
     }
 }

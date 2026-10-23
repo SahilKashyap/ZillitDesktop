@@ -522,6 +522,45 @@ class RecceViewModelTest {
     }
 
     @Test
+    fun `without the download right the report still opens, and so does the send to the library`() =
+        runTest(dispatcher) {
+            val bus = RightsRequestBus()
+            val asked = mutableListOf<RightsRequest>()
+            backgroundScope.launch { bus.requests.toList(asked) }
+            runCurrent()
+            val host = FakeHost()
+            val model = viewModel(
+                FakeRepository(all = 1, published = 1),
+                viewer = RecceViewer(canView = true, canPost = true, canDownload = false, ready = true),
+                host = host,
+                rights = bus,
+            )
+            model.start()
+            advanceUntilIdle()
+            model.onEvent(RecceEvent.Open("r1"))
+            advanceUntilIdle()
+
+            // Reading is the view right, which opening the recce already
+            // proved. Nothing is asked of an admin for a read.
+            model.onEvent(RecceEvent.GeneratePdf)
+            advanceUntilIdle()
+            val viewer = assertNotNull(model.state.value.pdf)
+            assertEquals(1, viewer.pages.size)
+            assertTrue(asked.isEmpty())
+
+            // Publishing is posting: the library's own right is the only gate.
+            model.onEvent(RecceEvent.SendToDocDist)
+            runCurrent()
+            assertNotNull(model.state.value.distribute)
+            assertTrue(asked.isEmpty())
+
+            // Keeping a copy is still the download right, and still asks.
+            model.onEvent(RecceEvent.DownloadPdf)
+            runCurrent()
+            assertEquals(listOf(RightsRequest("Recce", RightsKind.Download)), asked)
+        }
+
+    @Test
     fun `reopening the tool lands on the list unless a form was left mid-edit`() = runTest(dispatcher) {
         val model = viewModel(FakeRepository(all = 1, published = 1))
         model.start()

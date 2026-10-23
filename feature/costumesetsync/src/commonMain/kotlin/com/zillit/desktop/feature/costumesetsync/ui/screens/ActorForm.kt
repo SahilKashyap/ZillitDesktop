@@ -32,6 +32,8 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
+import com.zillit.desktop.feature.costumesetsync.ui.PhoneInput
+import com.zillit.desktop.feature.costumesetsync.ui.rememberDialCodes
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.mapRows
 import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
@@ -70,8 +72,12 @@ fun ActorFormDialog(
     allowAddAnother: Boolean = true,
 ) {
     val ctx = LocalSync.current
-    var form by remember(open, editing) {
-        mutableStateOf(if (editing != null) toActorForm(editing) else newActorForm(forCharacter?.id))
+    // The code list is what splits an old record's phone apart (ZL-21942), so
+    // the form is re-read once it lands rather than opening on a whole number
+    // the picker cannot match.
+    val dialCodes = rememberDialCodes()
+    var form by remember(open, editing, dialCodes) {
+        mutableStateOf(if (editing != null) toActorForm(editing, dialCodes) else newActorForm(forCharacter?.id))
     }
     var characters by remember { mutableStateOf(emptyList<Rec>()) }
     var saving by remember { mutableStateOf(false) }
@@ -231,9 +237,21 @@ private fun ActorFormBody(
                 )
                 TextInput(form.last, { onChange(form.copy(last = it)) }, t("csync_last_name"), Modifier.width(200.dp))
             }
-            TextInput(form.phone, { onChange(form.copy(phone = it)) }, t("csync_field_phone"), Cell)
+            PhoneInput(
+                code = form.countryCode,
+                number = form.phone,
+                onChange = { c, n -> onChange(form.copy(countryCode = c, phone = n)) },
+                label = t("csync_field_phone"),
+                modifier = Cell,
+            )
             GenderAgeRow(form, onChange)
-            TextInput(form.phone2, { onChange(form.copy(phone2 = it)) }, t("csync_field_phone_2"), Cell)
+            PhoneInput(
+                code = form.phone2CountryCode,
+                number = form.phone2,
+                onChange = { c, n -> onChange(form.copy(phone2CountryCode = c, phone2 = n)) },
+                label = t("csync_field_phone_2"),
+                modifier = Cell,
+            )
             CharacterPicks(form, onChange, characters, editingId, forCharacter, onAddCharacter)
             Column(Cell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
                 TextInput(
@@ -368,7 +386,13 @@ private fun MeasurementsAndRep(form: ActorFormState, onChange: (ActorFormState) 
     FormGrid {
         TextInput(form.talentRep, { onChange(form.copy(talentRep = it)) }, t("csync_field_name"), Cell)
         TextInput(form.talentRepEmail, { onChange(form.copy(talentRepEmail = it)) }, t("csync_field_email"), Cell)
-        TextInput(form.talentRepPhone, { onChange(form.copy(talentRepPhone = it)) }, t("csync_field_phone"), Cell)
+        PhoneInput(
+            code = form.talentRepCountryCode,
+            number = form.talentRepPhone,
+            onChange = { c, n -> onChange(form.copy(talentRepCountryCode = c, talentRepPhone = n)) },
+            label = t("csync_field_phone"),
+            modifier = Cell,
+        )
     }
     // Anything else about the rep (agency office, assistant), named by the user.
     LabelValueRows(form.talentRepDetails, t("csync_detail_name")) { onChange(form.copy(talentRepDetails = it)) }

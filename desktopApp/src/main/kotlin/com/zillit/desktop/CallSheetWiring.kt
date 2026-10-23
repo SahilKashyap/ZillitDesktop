@@ -97,6 +97,8 @@ internal fun AppGraph.Ready.buildCallSheet(permissions: () -> ProjectPermissions
         projectIdProvider = { projectContext?.context?.value?.project?.projectId },
         membersProvider = { callSheetMembers() },
         nowMillis = System::currentTimeMillis,
+        // Where the viewer's refused Download asks an admin (ZL-21947).
+        rights = rightsRequests,
     )
 
 /** The tool window: crew photos on every face. */

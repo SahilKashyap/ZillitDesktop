@@ -51,7 +51,11 @@ import com.zillit.desktop.feature.recce.ui.ReccePdfViewer
  * pages on a slate canvas.
  */
 @Composable
-internal fun ReccePdfOverlay(viewer: ReccePdfViewer?, onEvent: (RecceEvent) -> Unit) {
+internal fun ReccePdfOverlay(
+    viewer: ReccePdfViewer?,
+    canDownload: Boolean,
+    onEvent: (RecceEvent) -> Unit,
+) {
     val held = remember { arrayOfNulls<ReccePdfViewer>(1) }
     viewer?.let { held[0] = it }
     AnimatedVisibility(visible = viewer != null, enter = fadeIn(tween(ENTER_MS)), exit = fadeOut(tween(EXIT_MS))) {
@@ -82,7 +86,7 @@ internal fun ReccePdfOverlay(viewer: ReccePdfViewer?, onEvent: (RecceEvent) -> U
                         onClick = {},
                     ),
             ) {
-                ViewerBar(shown, onEvent)
+                ViewerBar(shown, canDownload, onEvent)
                 Pages(shown)
             }
         }
@@ -90,7 +94,7 @@ internal fun ReccePdfOverlay(viewer: ReccePdfViewer?, onEvent: (RecceEvent) -> U
 }
 
 @Composable
-private fun ViewerBar(viewer: ReccePdfViewer, onEvent: (RecceEvent) -> Unit) {
+private fun ViewerBar(viewer: ReccePdfViewer, canDownload: Boolean, onEvent: (RecceEvent) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().background(BAR).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -103,22 +107,28 @@ private fun ViewerBar(viewer: ReccePdfViewer, onEvent: (RecceEvent) -> Unit) {
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
+        // Reading is one right and keeping a copy is another: both of these
+        // save the file (printing saves one too), so without the download
+        // right they say what a press will actually do — ask an admin for it,
+        // which is what the handlers do. Sides' viewer reads the same way.
         ZillitButton(
-            text = str(S.download),
+            text = if (canDownload) str(S.download) else str(S.desktop_request_download_access),
             onClick = { onEvent(RecceEvent.DownloadPdf) },
             variant = ButtonVariant.Secondary,
-            leadingIcon = ZillitIcons.Download,
+            leadingIcon = if (canDownload) ZillitIcons.Download else ZillitIcons.Lock,
             enabled = viewer.bytes != null,
             loading = viewer.downloading,
         )
-        ZillitButton(
-            text = str(S.print),
-            onClick = { onEvent(RecceEvent.PrintPdf) },
-            variant = ButtonVariant.Secondary,
-            leadingIcon = ZillitIcons.Print,
-            enabled = viewer.bytes != null,
-            loading = viewer.printing,
-        )
+        if (canDownload) {
+            ZillitButton(
+                text = str(S.print),
+                onClick = { onEvent(RecceEvent.PrintPdf) },
+                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Print,
+                enabled = viewer.bytes != null,
+                loading = viewer.printing,
+            )
+        }
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = str(S.close),

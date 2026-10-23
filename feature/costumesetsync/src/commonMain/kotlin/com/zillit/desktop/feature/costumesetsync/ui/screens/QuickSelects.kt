@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormCell
 import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
 import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
+import com.zillit.desktop.feature.costumesetsync.ui.PhoneInput
 import com.zillit.desktop.feature.costumesetsync.ui.PickInput
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -235,6 +236,7 @@ fun NewVendorDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> Unit
     var name by remember(open) { mutableStateOf("") }
     var contact by remember(open) { mutableStateOf("") }
     var phone by remember(open) { mutableStateOf("") }
+    var code by remember(open) { mutableStateOf("") }
     var email by remember(open) { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     FormDialog(
@@ -252,6 +254,7 @@ fun NewVendorDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> Unit
                             "name" to name.trim(),
                             "contact_name" to contact.trim(),
                             "phone" to phone.trim(),
+                            "country_code" to code.trim(),
                             "email" to email.trim(),
                         ),
                     )
@@ -270,7 +273,13 @@ fun NewVendorDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> Unit
         FormGrid {
             TextInput(name, { name = it }, t("csync_field_name"), Full)
             TextInput(contact, { contact = it }, t("csync_field_contact"), Half)
-            TextInput(phone, { phone = it }, t("csync_field_phone"), Half)
+            PhoneInput(
+                code = code,
+                number = phone,
+                onChange = { c, n -> code = c; phone = n },
+                label = t("csync_field_phone"),
+                modifier = Half,
+            )
             TextInput(email, { email = it }, t("csync_field_email"), Full)
         }
     }

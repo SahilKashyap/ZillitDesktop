@@ -11,7 +11,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.Validate
 import com.zillit.desktop.feature.costumesetsync.ui.Clear
 import com.zillit.desktop.feature.costumesetsync.ui.EnumInput
 import com.zillit.desktop.feature.costumesetsync.ui.FormDialog
@@ -31,6 +33,16 @@ import com.zillit.desktop.feature.costumesetsync.ui.numOrNull
 import com.zillit.desktop.feature.costumesetsync.ui.rememberResource
 import com.zillit.desktop.feature.costumesetsync.ui.t
 import kotlinx.coroutines.launch
+
+/**
+ * Whether the money fields will be accepted (ZL-21937).
+ *
+ * The two costs are finance-only, so with the section not drawn there is
+ * nothing to judge: a non-finance user's draft carries whatever the record
+ * already held, which [moneyBody] leaves alone.
+ */
+private fun costsOk(isFinance: Boolean, draft: CostumeDraft): Boolean =
+    !isFinance || Validate.noErrors(Validate.costError(draft.purchaseCost), Validate.costError(draft.rentalPerDay))
 
 /** The fields of the costume form, as text, the way the web's `f` state holds them. */
 private data class CostumeDraft(
@@ -180,7 +192,7 @@ private fun CostumeFormContent(
         onDismiss = onClose,
         confirmLabel = if (initial != null) t("csync_save") else t("csync_add_to_inventory"),
         onConfirm = save,
-        confirmEnabled = draft.name.isNotBlank(),
+        confirmEnabled = draft.name.isNotBlank() && costsOk(ctx.isFinance, draft),
         busy = saving,
         width = FORM_WIDTH.dp,
     ) {
@@ -290,12 +302,17 @@ private fun CostumeMoneyFields(draft: CostumeDraft, onChange: (CostumeDraft) -> 
     val ctx = LocalSync.current
     val inCurrency = ctx.currency.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
     if (ctx.isFinance) {
+        // ZL-21937: the service refuses a negative cost and the form used to
+        // show nothing at all, so the save simply appeared not to work. Zero
+        // is a legitimate cost and is accepted; only the offending field
+        // reddens. The gate is skipped entirely where these are not drawn.
         TextInput(
             draft.purchaseCost,
             { onChange(draft.copy(purchaseCost = it)) },
             "${t("csync_field_purchase_cost")}$inCurrency",
             CELL,
             number = true,
+            error = Validate.costError(draft.purchaseCost)?.let { str(it) },
         )
         TextInput(
             draft.rentalPerDay,
@@ -303,6 +320,7 @@ private fun CostumeMoneyFields(draft: CostumeDraft, onChange: (CostumeDraft) -> 
             "${t("csync_rental_per_day")}$inCurrency",
             CELL,
             number = true,
+            error = Validate.costError(draft.rentalPerDay)?.let { str(it) },
         )
     }
     TextInput(

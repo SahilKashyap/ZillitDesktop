@@ -14484,4 +14484,13 @@
     <string name="desktop_ss_soon">soon</string>
     <string name="desktop_ss_total_pages_after">Total pages after</string>
     <string name="desktop_ss_revision_no">Revision #</string>
+    <string name="desktop_csync_err_phone_length">Enter a phone number between 5 and 20 digits.</string>
+    <string name="desktop_csync_err_email_format">Enter a valid email address, like name@company.com.</string>
+    <string name="desktop_csync_err_negative">This cannot be a negative amount.</string>
+    <string name="desktop_csync_err_return_before_pickup">The return date cannot be before the pickup date.</string>
+    <string name="desktop_csync_edit_vendor">Edit vendor</string>
+    <string name="desktop_csync_delete_vendor">Delete vendor</string>
+    <string name="desktop_csync_delete_vendor_confirm">Delete {name}? Its costumes stay and simply stop naming a vendor, but every rental recorded against it is deleted with it. This cannot be undone.</string>
+    <string name="desktop_csync_delete_vendor_rentals">{n} rentals recorded against this vendor will be deleted too.</string>
+    <string name="desktop_csync_delete_vendor_rentals_one">1 rental recorded against this vendor will be deleted too.</string>
 </resources>

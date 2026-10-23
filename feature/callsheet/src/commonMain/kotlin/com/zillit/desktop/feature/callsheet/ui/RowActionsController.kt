@@ -92,9 +92,29 @@ internal class RowActionsController(private val ctx: SheetContext) {
     private fun pdfTitle(sheet: CallSheetSummary): String =
         "CallSheet_${sheet.serialNo.ifBlank { sheet.id }}"
 
+    /**
+     * Saves the open PDF (ZL-21947).
+     *
+     * The preview is the only way a call sheet's PDF leaves this tool, and
+     * until 2026-10-22 nothing asked for a right on the way out — the web's
+     * preview was a bare iframe, whose own Save As never passed through
+     * anything of ours. This client draws the pages instead, so there is no
+     * file to take from the view itself; what was missing here was the
+     * Download action and its gate.
+     *
+     * Refused ON THE PRESS rather than hidden: a control that vanishes reads
+     * as a missing feature, and the admin request is what the user actually
+     * needs. The preview closes first, as the web's does, or the request
+     * dialog would open behind it.
+     */
     private fun download() {
         val overlay = ctx.state.pdf ?: return
         val bytes = overlay.bytes ?: return
+        if (!ctx.viewer().canDownload) {
+            ctx.update { copy(pdf = null) }
+            ctx.askDownloadRight()
+            return
+        }
         val fileName = overlay.title.let { if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf" }
         ctx.launchWork {
             when (val saved = ctx.services.delivery.savePdf(fileName, bytes)) {
