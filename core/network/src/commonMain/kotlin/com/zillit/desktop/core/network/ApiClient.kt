@@ -427,19 +427,27 @@ class ApiClient(
         // heal below replaces. Its scope is the same either way, but the log
         // should describe what went out rather than what was first built.
         var sent = token
+        // The refusal body, read here because the recovery below has to know
+        // WHY the server said no. Handed to [toEnvelope] so the body is read
+        // exactly once — a second `bodyAsText` is not guaranteed to answer,
+        // and the log line's envelope note depends on it.
+        var refusal: String? = null
         if (token != null && response.status.value == STATUS_UNAUTHORIZED) {
+            refusal = runCatching { response.bodyAsText() }.getOrNull()
             // An expired token heals here, once, and the retry's answer is the
             // one reported. A second 401 is the session really being gone.
-            val renewed = authenticator?.recoverFromUnauthorized(module, project, url, token)
+            val renewed = authenticator?.recoverFrom(module, project, url, token, refusal)
             if (renewed != null && renewed != token) {
                 sent = renewed
                 response = perform(verb, url, resolvedHeaders, renewed, queryParameters, payload)
+                // The retry's own answer is what gets reported, body included.
+                refusal = null
             }
         }
         // The credential travels to the log with the answer: which one went
         // out is only known here, and on a refusal it is the first thing a
         // reader needs. See [credentialNote].
-        response.toEnvelope(options.reportUnauthorized, sent, project)
+        response.toEnvelope(options.reportUnauthorized, sent, project, refusal)
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
@@ -553,9 +561,11 @@ class ApiClient(
         reportUnauthorized: Boolean,
         token: String? = null,
         projectId: String? = null,
+        /** The refusal body, when the caller had to read it before deciding what to do about it. */
+        readBody: String? = null,
     ): ZillitResult<ApiEnvelope> {
         if (!status.isSuccess()) {
-            val raw = runCatching { bodyAsText() }.getOrNull()
+            val raw = readBody ?: runCatching { bodyAsText() }.getOrNull()
             // Decoded once, for both halves: the message names the failure and
             // `messageElements` fills the blanks in it. Reading only the first
             // leaves a reader looking at `{{status}}`.
@@ -581,7 +591,19 @@ class ApiClient(
                     blankPairNote(status.value, readScope()) +
                     credentialNote(status.value, token, projectId)
             }
-            if (status.value == STATUS_UNAUTHORIZED && reportUnauthorized) onUnauthorized()
+            // A scope refusal is the server judging the CREDENTIAL, not the
+            // session: the session behind it is alive, and the swap above is
+            // what answers it. Raising "the session expired" over one sent a
+            // `confirmDevice` round trip after every such refusal — 98 of them
+            // in one day on one machine (2026-10-15) — to be told each time
+            // that the device is still registered. The web declines to read a
+            // scope 401 as a dead session for the same reason, and the
+            // refusal this client synthesises for a production's route with
+            // none open ([refusedWithNoProject], under the very same key)
+            // already never reached here.
+            if (status.value == STATUS_UNAUTHORIZED && reportUnauthorized && !raw.refusedTheScope()) {
+                onUnauthorized()
+            }
 
             return ZillitResult.Failure(
                 when (status.value) {
@@ -655,7 +677,7 @@ class ApiClient(
          * The server's own key for "a device token on a production's route",
          * reused for the refusal so a caller cannot tell the two apart.
          */
-        const val NO_PROJECT_KEY = "libs_invalid_token_scope"
+        const val NO_PROJECT_KEY = SCOPE_REFUSED_KEY
 
         /** What this backend calls success in the envelope. */
         const val STATUS_OK = 1
@@ -726,6 +748,62 @@ internal fun readKey(scope: ReadScope, projectId: String, url: String, query: Ma
 
 /** The failures that mean "could not reach the server", as opposed to "the server said no". */
 internal fun ZillitError.isUnreachable(): Boolean = this is ZillitError.NoConnection || this is ZillitError.Timeout
+
+/**
+ * The server's key for "this credential does not reach this route" — the one
+ * 401 that a refresh cannot help and a sign-out must not follow.
+ */
+internal const val SCOPE_REFUSED_KEY = "libs_invalid_token_scope"
+
+/**
+ * What to do about a 401, decided by the key the server refused with.
+ *
+ * Two different failures arrive under one status, and until this they got one
+ * answer. `libs_invalid_token_scope` says the credential is of the wrong TYPE
+ * for the route — a device token on a production's route, or a production's
+ * token after the open production moved under a call already in flight. A
+ * refresh cannot change a token's scope, so refreshing was always doomed;
+ * worse, it rotated the SINGLE-USE device refresh token to re-send a request
+ * certain to be refused again, and a rotation nobody needed is a chance to be
+ * left holding a token the server has retired. One production log caught it
+ * plainly: three calendar variants refused in 0.9 seconds, with three
+ * device-session rotations between them (2026-10-21 04:23:34–35).
+ *
+ * So a scope refusal goes to the swap, which is the thing that can actually
+ * succeed, and everything else — a genuinely expired token — goes to the
+ * refresh as before. The web splits them in the same place and for the same
+ * reason, off the backend's own word (`api/interceptor.js`: "A scope 401 is
+ * about the token's TYPE, not its age", BE 2026-09-24).
+ */
+@Suppress("LongParameterList") // One request's identity, as `send` already holds it.
+private suspend fun RequestAuthenticator.recoverFrom(
+    module: RequestModule,
+    projectId: String?,
+    url: String,
+    token: String,
+    refusal: String?,
+): String? = if (refusal.refusedTheScope()) {
+    recoverFromScopeRefusal(module, projectId, url, token)
+} else {
+    recoverFromUnauthorized(module, projectId, url, token)
+}
+
+/**
+ * Whether this refusal body is a scope refusal.
+ *
+ * Read off the envelope rather than matched as a substring: the key has to be
+ * the server's verdict on the call, and a body that merely mentions it — a
+ * gateway's error page, a nested message quoting one — is not that. A body
+ * that is absent or not this API's envelope is not one either, so both take
+ * the ordinary path.
+ */
+internal fun String?.refusedTheScope(): Boolean {
+    val body = this?.takeIf(String::isNotBlank) ?: return false
+    val envelope = runCatching {
+        HttpClientFactory.json.decodeFromString(ApiEnvelope.serializer(), body)
+    }.getOrNull()
+    return envelope?.message == SCOPE_REFUSED_KEY
+}
 
 /**
  * What this client can already tell about a 406, said on the line that reports

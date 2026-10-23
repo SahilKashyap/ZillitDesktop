@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
@@ -130,6 +131,14 @@ class CalendarRepositoryImpl(
                 is ZillitResult.Failure -> {
                     ZillitLog.w(TAG) { "events fetch failed with params ${window.keys}" }
                     lastFailure = result
+                    // The next shape is only worth sending if the shape was
+                    // the problem. A refused credential is not about the
+                    // query, so walking the list only asks the same question
+                    // two more times and is refused two more times: one log
+                    // caught all three variants refused inside a second, and
+                    // each of them spent a device-session rotation on the way
+                    // (2026-10-21 04:23:34–35). Report the refusal instead.
+                    if (result.error.refusesTheCaller()) return result
                 }
             }
         }
@@ -511,3 +520,13 @@ private fun JsonObject.readRecurrence(): Recurrence {
 }
 
 private fun JsonArray?.orEmpty(): List<JsonElement> = this ?: emptyList()
+
+/**
+ * Whether the server refused the caller rather than the request.
+ *
+ * The events read walks several query shapes because the server has been seen
+ * refusing some of them; it must not walk them over a verdict about who is
+ * asking, which every shape gets alike. See [CalendarRepositoryImpl.events].
+ */
+private fun ZillitError.refusesTheCaller(): Boolean =
+    this is ZillitError.Unauthorized || this is ZillitError.Forbidden || this is ZillitError.DeviceRevoked

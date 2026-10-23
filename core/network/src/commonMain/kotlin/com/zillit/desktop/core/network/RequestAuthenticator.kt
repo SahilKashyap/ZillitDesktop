@@ -32,6 +32,35 @@ interface RequestAuthenticator {
     ): String?
 
     /**
+     * After a 401 whose envelope reads `libs_invalid_token_scope`: a token of
+     * the OTHER scope to retry once with, or null when there is none to swap
+     * to.
+     *
+     * A scope refusal is the server judging the credential's TYPE, not its
+     * age — the device token on a production's route, or a production's token
+     * after the open production moved under a call already in flight.
+     * [recoverFromUnauthorized] is the wrong answer to it twice over: a
+     * refresh cannot turn one scope into another, and it rotates the
+     * single-use device refresh token to re-send a request certain to be
+     * refused again. So the caller comes here instead, and the swap is what
+     * can actually succeed.
+     *
+     * This is the web's `_zForceScope` retry (`api/interceptor.js`), including
+     * its guard: device → project needs a production to mint for, and with
+     * none there is nothing to swap to, so the 401 stands rather than
+     * presenting the same device token twice.
+     *
+     * Defaults to null so an authenticator that does not model scopes (the
+     * tests' fakes, and legacy mode) simply lets the refusal stand.
+     */
+    suspend fun recoverFromScopeRefusal(
+        module: RequestModule,
+        projectId: String?,
+        path: String,
+        failedToken: String,
+    ): String? = null
+
+    /**
      * Whether this call must not be sent at all, because it belongs to a
      * production and none is open.
      *

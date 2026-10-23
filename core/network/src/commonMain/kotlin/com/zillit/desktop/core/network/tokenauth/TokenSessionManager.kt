@@ -220,6 +220,41 @@ class TokenSessionManager(
     ): String? = scopeFor(module, projectId, path)?.let { recoverFromUnauthorized(it, failedToken) }
 
     /**
+     * The other scope's token after a `libs_invalid_token_scope`, or null when
+     * there is none to swap to.
+     *
+     * Rotates nothing. A device token refused on a production's route is
+     * answered with that production's token; a production's token refused
+     * because the open production moved is answered with the device token.
+     * Mirrors the web's `_zForceScope` swap and its `canSwap` guard — see
+     * [com.zillit.desktop.core.network.RequestAuthenticator.recoverFromScopeRefusal].
+     */
+    override suspend fun recoverFromScopeRefusal(
+        module: RequestModule,
+        projectId: String?,
+        path: String,
+        failedToken: String,
+    ): String? {
+        if (!tokenMode) return null
+        val swapped = when (scopeFor(module, projectId, path)) {
+            // The device token was refused. [tokenScope] only answers Device
+            // for a project-scoped module when no production was named, so the
+            // production to mint for can only come from the open one — which
+            // is the web reading `project_id` out of local storage. None open,
+            // nothing to swap to.
+            TokenScope.Device ->
+                activeProjectId()?.takeIf(String::isNotBlank)?.let(TokenScope::Project) ?: return null
+            // A production's token was refused, which the server does when the
+            // request's production is not the one the token was minted for.
+            // The device token is the only other credential there is.
+            is TokenScope.Project -> TokenScope.Device
+            // The route never rode a token; its refusal is not about scope.
+            null -> return null
+        }
+        return bearerTokenFor(swapped)?.takeIf { it != failedToken }
+    }
+
+    /**
      * The web's `isDeviceRoute` gate, in the one place every call passes.
      *
      * Only in token mode, and only for a module that rides a token at all: a

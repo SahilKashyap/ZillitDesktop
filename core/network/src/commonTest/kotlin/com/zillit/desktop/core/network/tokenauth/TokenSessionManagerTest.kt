@@ -338,6 +338,62 @@ class TokenSessionManagerTest {
         assertEquals(1, api.count("refresh"), "one rotation, however many 401s carried the old token")
     }
 
+    /**
+     * `libs_invalid_token_scope` is the route refusing the credential's TYPE.
+     * The answer is the other scope, and no rotation: refreshing cannot turn a
+     * device token into a production's one, and spending the single-use
+     * refresh token on a request certain to be refused again is how three
+     * calendar variants rotated the session three times in a second
+     * (2026-10-21).
+     */
+    @Test
+    fun `a device token refused for scope is answered with the open production's token`() = runTest {
+        val api = FakeApi()
+        val manager = manager(api, FakeStore())
+        runCurrent()
+        // No production named, so the call rode the device token.
+        assertEquals("dev-1", manager.bearerFor(RequestModule.ProjectUser, null, path))
+
+        val swapped = manager.recoverFromScopeRefusal(RequestModule.ProjectUser, null, path, "dev-1")
+
+        assertEquals("proj-p1", swapped, "the production that is open is the one to mint for")
+        assertEquals(0, api.count("refresh"), "a scope refusal must not rotate the device session")
+    }
+
+    @Test
+    fun `a project token refused for scope is answered with the device token`() = runTest {
+        val api = FakeApi()
+        val manager = manager(api, FakeStore())
+        runCurrent()
+
+        val swapped = manager.recoverFromScopeRefusal(RequestModule.ProjectUser, "p1", path, "proj-p1")
+
+        assertEquals("dev-1", swapped, "the device token is the only other credential there is")
+        assertEquals(0, api.count("refresh"))
+    }
+
+    /** The web's `canSwap` guard: device → project needs a production to mint for. */
+    @Test
+    fun `a device token refused with no production open has nothing to swap to`() = runTest {
+        val api = FakeApi()
+        val manager = manager(api, FakeStore(), project = null)
+        runCurrent()
+
+        assertNull(manager.recoverFromScopeRefusal(RequestModule.ProjectUser, null, path, "dev-1"))
+        assertEquals(0, api.count("refresh"), "and still no rotation over it")
+        assertEquals(0, api.count("mint"), "nor a mint for a production that is not open")
+    }
+
+    /** A module that never rode a token has no scope to swap. */
+    @Test
+    fun `a moduledata route's refusal is not a scope swap`() = runTest {
+        val api = FakeApi()
+        val manager = manager(api, FakeStore())
+        runCurrent()
+
+        assertNull(manager.recoverFromScopeRefusal(RequestModule.Telemetry, "p1", path, "whatever"))
+    }
+
     @Test
     fun `a refused project token is re-minted with the device session`() = runTest {
         val api = FakeApi()

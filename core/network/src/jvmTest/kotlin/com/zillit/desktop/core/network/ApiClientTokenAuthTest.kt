@@ -37,9 +37,15 @@ class ApiClientTokenAuthTest {
         override suspend fun plainHeaders(): Map<String, String> = mapOf("timezone" to "Europe/London")
     }
 
-    private class FakeAuthenticator(var token: String?, var renewed: String? = null) : RequestAuthenticator {
+    private class FakeAuthenticator(
+        var token: String?,
+        var renewed: String? = null,
+        /** The other scope's token, for the scope-refusal tests. */
+        var swapped: String? = null,
+    ) : RequestAuthenticator {
         val asked = mutableListOf<Pair<RequestModule, String?>>()
         val recovered = mutableListOf<String>()
+        val swapsAsked = mutableListOf<String>()
 
         override suspend fun bearerFor(module: RequestModule, projectId: String?, path: String): String? {
             asked += module to projectId
@@ -54,6 +60,16 @@ class ApiClientTokenAuthTest {
         ): String? {
             recovered += failedToken
             return renewed
+        }
+
+        override suspend fun recoverFromScopeRefusal(
+            module: RequestModule,
+            projectId: String?,
+            path: String,
+            failedToken: String,
+        ): String? {
+            swapsAsked += failedToken
+            return swapped
         }
 
         /**
@@ -318,9 +334,101 @@ class ApiClientTokenAuthTest {
         assertEquals(1, signedOut)
     }
 
+    /**
+     * The refusal that is about the credential's TYPE, not its age. Three of
+     * these inside a second each rotated the single-use device refresh token
+     * and re-sent a request certain to be refused again (2026-10-21).
+     */
+    @Test
+    fun `a scope refusal swaps the scope instead of rotating the session`() = runTest {
+        val engine = MockEngine { request ->
+            if (request.headers[HttpHeaders.Authorization] == "Bearer tok-project") {
+                respond(OK_BODY, HttpStatusCode.OK, JSON)
+            } else {
+                respond(SCOPE_REFUSED_BODY, HttpStatusCode.Unauthorized, JSON)
+            }
+        }
+        val auth = FakeAuthenticator(token = "tok-device", renewed = "tok-rotated", swapped = "tok-project")
+        var signedOut = 0
+
+        val result = client(engine, auth, onUnauthorized = { signedOut++ })
+            .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertTrue(result.isSuccess, "$result")
+        assertEquals(listOf("tok-device"), auth.swapsAsked, "the swap is what answers a scope refusal")
+        assertTrue(auth.recovered.isEmpty(), "and a refresh cannot turn one scope into another")
+        assertEquals(2, engine.requestHistory.size, "one retry, with the other scope's token")
+        assertEquals("Bearer tok-project", engine.requestHistory.last().headers[HttpHeaders.Authorization])
+        assertEquals(0, signedOut, "the server judged the credential, not the session")
+    }
+
+    @Test
+    fun `a scope refusal with nothing to swap to is reported once, unretried`() = runTest {
+        val engine = MockEngine { respond(SCOPE_REFUSED_BODY, HttpStatusCode.Unauthorized, JSON) }
+        // No production to mint for: the web's `canSwap` guard, and the real
+        // authenticator answers null for the same reason.
+        val auth = FakeAuthenticator(token = "tok-device", renewed = "tok-rotated", swapped = null)
+        var signedOut = 0
+
+        val result = client(engine, auth, onUnauthorized = { signedOut++ })
+            .request(HttpVerb.Get, URL, String.serializer(), RequestModule.ProjectUser)
+
+        assertIs<ZillitError.Unauthorized>(result.errorOrNull())
+        assertEquals(1, engine.requestHistory.size, "the same question is not asked twice")
+        assertTrue(auth.recovered.isEmpty(), "and the refresh token stays unspent")
+        assertEquals(0, signedOut)
+    }
+
+    /**
+     * The other half of the same rule: a 401 that is NOT a scope refusal is
+     * still an expired token, and still heals by refreshing once.
+     */
+    @Test
+    fun `an expired token is still refreshed, not swapped`() = runTest {
+        val engine = MockEngine { request ->
+            if (request.headers[HttpHeaders.Authorization] == "Bearer tok-new") {
+                respond(OK_BODY, HttpStatusCode.OK, JSON)
+            } else {
+                respond(EXPIRED_BODY, HttpStatusCode.Unauthorized, JSON)
+            }
+        }
+        val auth = FakeAuthenticator(token = "tok-old", renewed = "tok-new", swapped = "tok-never")
+
+        val result = client(engine, auth).request(HttpVerb.Get, URL, String.serializer())
+
+        assertTrue(result.isSuccess, "$result")
+        assertEquals(listOf("tok-old"), auth.recovered)
+        assertTrue(auth.swapsAsked.isEmpty(), "an age problem is not a scope problem")
+        assertEquals("Bearer tok-new", engine.requestHistory.last().headers[HttpHeaders.Authorization])
+    }
+
+    /**
+     * The key has to be the server's verdict on this call. A body that merely
+     * contains the string — a gateway page, a nested quote — is not that, and
+     * reading one as a scope refusal would strand a genuinely dead session.
+     */
+    @Test
+    fun `a refusal that only mentions the key is treated as an ordinary 401`() = runTest {
+        val engine = MockEngine {
+            respond("""{"status":0,"message":"libs_token_expired","detail":"libs_invalid_token_scope"}""",
+                HttpStatusCode.Unauthorized, JSON)
+        }
+        val auth = FakeAuthenticator(token = "tok-old", renewed = null)
+        var signedOut = 0
+
+        client(engine, auth, onUnauthorized = { signedOut++ })
+            .request(HttpVerb.Get, URL, String.serializer())
+
+        assertEquals(listOf("tok-old"), auth.recovered)
+        assertTrue(auth.swapsAsked.isEmpty())
+        assertEquals(1, signedOut, "a dead session still reaches the sign-out signal")
+    }
+
     private companion object {
         const val URL = "https://api.test/api/v2/thing"
         const val OK_BODY = """{"status":1,"message":"ok","data":"fine"}"""
+        const val SCOPE_REFUSED_BODY = """{"status":0,"message":"libs_invalid_token_scope"}"""
+        const val EXPIRED_BODY = """{"status":0,"message":"libs_token_expired"}"""
         val JSON = headersOf(HttpHeaders.ContentType, "application/json")
     }
 }
