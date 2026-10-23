@@ -113,6 +113,20 @@ fun rememberPhoto(stored: String): ImageBitmap? {
 }
 
 /**
+ * Remembers a just-uploaded picture under the storage key the service gave
+ * it, so its thumbnail draws without a round trip — the web's
+ * `rememberUpload`.
+ *
+ * Not only speed: the key may not be servable the instant the upload answers,
+ * and without this the new photo would sit as a placeholder until something
+ * re-signed it.
+ */
+suspend fun rememberUploadedPhoto(key: String, bytes: ByteArray) {
+    val picture = withContext(Dispatchers.Default) { decodeImageBitmap(bytes) } ?: return
+    cache(key, picture)
+}
+
+/**
  * A character's or an actor's square photo, falling back to the initial on its
  * own colour — the web's `CharacterAvatar`, whose fallback is the same letter.
  */

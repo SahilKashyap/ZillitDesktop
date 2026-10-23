@@ -55,8 +55,16 @@ interface SsHost {
      *
      * The body hash covers a JSON body, so a multipart call is signed with no
      * body — the web's own interceptor does the same for its `FormData` posts.
+     *
+     * [fields] are the extra multipart parts the route reads beside the file.
+     * The two import routes take none; `/upload/file` takes `folder`, and
+     * leaving it out puts the file in the wrong place in project storage.
      */
-    suspend fun upload(url: String, file: SsPickedFile): ZillitResult<JsonElement> = noHost()
+    suspend fun upload(
+        url: String,
+        file: SsPickedFile,
+        fields: Map<String, String> = emptyMap(),
+    ): ZillitResult<JsonElement> = noHost()
 
     companion object {
         /** No host: picks nothing, uploads nothing, fetches nothing. */

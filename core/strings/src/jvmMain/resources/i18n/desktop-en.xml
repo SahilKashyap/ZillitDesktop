@@ -14517,4 +14517,5 @@
     <string name="desktop_ss_supported_formats">Supported formats</string>
     <string name="desktop_ss_total_scenes">Total scenes</string>
     <string name="desktop_ss_unique_characters">Unique characters</string>
+    <string name="desktop_ss_add_image_url">Add image URL</string>
 </resources>

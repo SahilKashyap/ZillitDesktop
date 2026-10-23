@@ -94,8 +94,11 @@ private fun AppGraph.Ready.scriptSupervisionHost(): SsHost = object : SsHost {
 
     override suspend fun pick(extensions: Set<String>): SsPickedFile? = pickScriptSupervisionFile(extensions)
 
-    override suspend fun upload(url: String, file: SsPickedFile): ZillitResult<JsonElement> =
-        uploadScriptSupervisionFile(url, file)
+    override suspend fun upload(
+        url: String,
+        file: SsPickedFile,
+        fields: Map<String, String>,
+    ): ZillitResult<JsonElement> = uploadScriptSupervisionFile(url, file, fields)
 }
 
 /**
@@ -160,6 +163,7 @@ private fun mimeOf(name: String): String = when (name.substringAfterLast('.', ""
 private suspend fun AppGraph.Ready.uploadScriptSupervisionFile(
     url: String,
     file: SsPickedFile,
+    fields: Map<String, String>,
 ): ZillitResult<JsonElement> = withContext(Dispatchers.IO) {
     runCatching {
         val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
@@ -169,6 +173,10 @@ private suspend fun AppGraph.Ready.uploadScriptSupervisionFile(
                 setBody(
                     MultiPartFormDataContent(
                         formData {
+                            // Beside the file: `/upload/file` reads `folder`,
+                            // and without it the file lands in the wrong
+                            // place in project storage.
+                            fields.forEach { (name, value) -> append(name, value) }
                             append(
                                 "file",
                                 file.bytes,

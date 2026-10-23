@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.scriptsupervision.domain.CharacterSection
 import com.zillit.desktop.feature.scriptsupervision.domain.Characters
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
 import com.zillit.desktop.feature.scriptsupervision.domain.lookStatusTone
+import com.zillit.desktop.feature.scriptsupervision.ui.AddPhotoRow
 import com.zillit.desktop.feature.scriptsupervision.ui.Await
 import com.zillit.desktop.feature.scriptsupervision.ui.DeleteDialog
 import com.zillit.desktop.feature.scriptsupervision.ui.Field
@@ -46,6 +47,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.MutedText
 import com.zillit.desktop.feature.scriptsupervision.ui.PhotoStrip
 import com.zillit.desktop.feature.scriptsupervision.ui.PickInput
 import com.zillit.desktop.feature.scriptsupervision.ui.SsPageHeader
+import com.zillit.desktop.feature.scriptsupervision.ui.SsCtx
 import com.zillit.desktop.feature.scriptsupervision.ui.SsTag
 import com.zillit.desktop.feature.scriptsupervision.ui.SsView
 import com.zillit.desktop.feature.scriptsupervision.ui.TextInput
@@ -188,7 +190,6 @@ private fun SceneLooksCard(characterId: String, scene: Rec) {
 private fun ScenePhotosCard(characterName: String, scene: Rec) {
     val ctx = LocalSs.current
     val project = ctx.api.project().orEmpty()
-    var adding by remember { mutableStateOf(false) }
     val photos = rememberRows(scene.id, project) {
         api.get("/continuity-photos/$project", mapOf("scene_id" to scene.id))
     }
@@ -199,63 +200,45 @@ private fun ScenePhotosCard(characterName: String, scene: Rec) {
         } else {
             PhotoStrip(rows.map { it.str("url") })
         }
-        ZillitButton(
-            text = t("add_photo_by_url"),
-            onClick = { ctx.whenPost { adding = true } },
-            variant = ButtonVariant.Secondary,
-            leadingIcon = ZillitIcons.Link,
-        )
-    }
-    if (adding) {
-        AddScenePhotoDialog(
-            characterName = characterName,
-            scene = scene,
-            onClose = { adding = false },
-            onSaved = { photos.reload(silent = true) },
+        // Straight from a camera roll, or by address. Either way the record
+        // is created here with this scene and this character on it.
+        AddPhotoRow(
+            folder = "continuity-photos",
+            onAdded = { value -> saveScenePhoto(ctx, scene, characterName, value) { photos.reload(silent = true) } },
         )
     }
 }
 
-@Composable
-private fun AddScenePhotoDialog(characterName: String, scene: Rec, onClose: () -> Unit, onSaved: () -> Unit) {
-    val ctx = LocalSs.current
-    var url by remember { mutableStateOf("") }
-    var saving by remember { mutableStateOf(false) }
-    FormDialog(
-        open = true,
-        title = t("add_reference_photo"),
-        onDismiss = onClose,
-        confirmLabel = t("save"),
-        onConfirm = {
-            saving = true
-            ctx.scope.launch {
-                val done = ctx.write {
-                    ctx.api.post(
-                        "/continuity-photos/${ctx.api.project().orEmpty()}",
-                        body(
-                            "url" to url.trim(),
-                            "scene_id" to scene.id,
-                            // The number travels with the id so a photo list
-                            // can name its scene without the scene record.
-                            "scene_number" to scene.str("scene_number"),
-                            "characters" to listOfNotNull(characterName.takeIf { it.isNotBlank() }),
-                            "category" to "reference",
-                        ),
-                    )
-                }
-                saving = false
-                if (done != null) {
-                    onClose()
-                    onSaved()
-                }
-            }
+/**
+ * Files one photo against this scene, with the character whose page it was
+ * added from.
+ *
+ * [value] is a storage key when it was uploaded and an address when it was
+ * pasted; the service takes either in `url`.
+ */
+private fun saveScenePhoto(
+    ctx: SsCtx,
+    scene: Rec,
+    characterName: String,
+    value: String,
+    onSaved: () -> Unit,
+) {
+    ctx.launchWrite(
+        {
+            ctx.api.post(
+                "/continuity-photos/${ctx.api.project().orEmpty()}",
+                body(
+                    "url" to value,
+                    "scene_id" to scene.id,
+                    // The number travels with the id so a photo list can name
+                    // its scene without the scene record.
+                    "scene_number" to scene.str("scene_number"),
+                    "characters" to listOfNotNull(characterName.takeIf { it.isNotBlank() }),
+                    "category" to "reference",
+                ),
+            )
         },
-        confirmEnabled = url.trim().startsWith("http"),
-        busy = saving,
-        width = SMALL_DIALOG,
-    ) {
-        FormGrid { TextInput(url, { url = it }, t("image_url"), FormWide) }
-    }
+    ) { onSaved() }
 }
 
 /**

@@ -23,6 +23,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.scriptsupervision.data.ContinuityCrud
 import com.zillit.desktop.feature.scriptsupervision.domain.Looks
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
+import com.zillit.desktop.feature.scriptsupervision.ui.AddPhotoRow
 import com.zillit.desktop.feature.scriptsupervision.ui.Await
 import com.zillit.desktop.feature.scriptsupervision.ui.DeleteDialog
 import com.zillit.desktop.feature.scriptsupervision.ui.Field
@@ -35,6 +36,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.MutedText
 import com.zillit.desktop.feature.scriptsupervision.ui.PhotoStrip
 import com.zillit.desktop.feature.scriptsupervision.ui.PickInput
 import com.zillit.desktop.feature.scriptsupervision.ui.RowActions
+import com.zillit.desktop.feature.scriptsupervision.ui.SsCtx
 import com.zillit.desktop.feature.scriptsupervision.ui.SsPageHeader
 import com.zillit.desktop.feature.scriptsupervision.ui.SsTag
 import com.zillit.desktop.feature.scriptsupervision.ui.SsView
@@ -104,7 +106,6 @@ private fun ItemDetail(
     val siblings = rememberRows(folder) { crud.list() }
     var editing by remember(itemId) { mutableStateOf(false) }
     var deleting by remember(itemId) { mutableStateOf(false) }
-    var editingPhotos by remember(itemId) { mutableStateOf(false) }
 
     Await(siblings) { items ->
         val ordered = items.sortedWith(Looks.byNatural { it.str("name") })
@@ -180,18 +181,16 @@ private fun ItemDetail(
         }
 
         ZillitSectionLabel(t("photos"))
-        ZillitSectionCard(
-            modifier = Modifier.fillMaxWidth(),
-            action = {
-                ZillitButton(
-                    text = t("add_photo_by_url"),
-                    onClick = { ctx.whenPost { editingPhotos = true } },
-                    variant = ButtonVariant.Secondary,
-                    leadingIcon = ZillitIcons.Link,
-                )
-            },
-        ) {
+        ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
             if (photos.isEmpty()) MutedText(t("no_photo_loaded")) else PhotoStrip(photos)
+            // ⚠ BOTH photo fields are written together: `photo_urls` is the
+            // list and `image_url` is the cover, and [Looks.coverOf] decides
+            // what the cover becomes. Writing the list alone would leave the
+            // cover pointing at a photo the record no longer has.
+            AddPhotoRow(
+                folder = if (folder == "garments") "garments" else "props",
+                onAdded = { key -> savePhotos(ctx, crud, itemId, item, photos + key, reload) },
+            )
         }
 
         if (editing) {
@@ -202,23 +201,6 @@ private fun ItemDetail(
                 characterName = castState::characterName,
                 onClose = { editing = false },
                 onSaved = reload,
-            )
-        }
-        if (editingPhotos) {
-            ItemPhotosDialog(
-                photos = photos,
-                onClose = { editingPhotos = false },
-                onSave = { list ->
-                    ctx.launchWrite(
-                        {
-                            crud.update(
-                                itemId,
-                                // BOTH fields, together: the cover follows the list.
-                                body("photo_urls" to list, "image_url" to Looks.coverOf(item, list)),
-                            )
-                        },
-                    ) { reload() }
-                },
             )
         }
         if (deleting) {
@@ -232,6 +214,26 @@ private fun ItemDetail(
             )
         }
     }
+}
+
+/**
+ * Writes the photo list AND its cover, which have to travel together.
+ *
+ * `photo_urls` is the list, `image_url` the cover, and [Looks.coverOf] keeps
+ * the old cover while it is still in the list. Writing the list alone leaves
+ * the cover naming a photo that is gone.
+ */
+private fun savePhotos(
+    ctx: SsCtx,
+    crud: ContinuityCrud,
+    itemId: String,
+    item: Rec,
+    photos: List<String>,
+    reload: () -> Unit,
+) {
+    ctx.launchWrite(
+        { crud.update(itemId, body("photo_urls" to photos, "image_url" to Looks.coverOf(item, photos))) },
+    ) { reload() }
 }
 
 private fun viewFor(folder: String, id: String): SsView =
@@ -387,34 +389,7 @@ private fun ItemForm(
     }
 }
 
-@Composable
-private fun ItemPhotosDialog(photos: List<String>, onClose: () -> Unit, onSave: (List<String>) -> Unit) {
-    var values by remember { mutableStateOf(photos) }
-    FormDialog(
-        open = true,
-        title = t("photos"),
-        onDismiss = onClose,
-        confirmLabel = t("save"),
-        onConfirm = {
-            onSave(values)
-            onClose()
-        },
-        width = DIALOG_WIDTH,
-    ) {
-        FormGrid {
-            TagInput(
-                tokens = values,
-                onChange = { values = it },
-                label = t("image_url"),
-                modifier = FormWide,
-                help = t("add_photo_by_url"),
-            )
-        }
-    }
-}
-
 /** A prop's kind, as the scene-assets card names them. */
 private val PROP_CATEGORIES = listOf("prop", "vehicle", "animal")
 
 private val FORM_WIDTH = 680.dp
-private val DIALOG_WIDTH = 520.dp

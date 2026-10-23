@@ -15314,6 +15314,7 @@ object S {
     const val desktop_ss_add_editor_note: String = "desktop_ss_add_editor_note"
     const val desktop_ss_add_facing_page: String = "desktop_ss_add_facing_page"
     const val desktop_ss_add_hair_look: String = "desktop_ss_add_hair_look"
+    const val desktop_ss_add_image_url: String = "desktop_ss_add_image_url"
     const val desktop_ss_add_log_entry: String = "desktop_ss_add_log_entry"
     const val desktop_ss_add_makeup_look: String = "desktop_ss_add_makeup_look"
     const val desktop_ss_add_matching_note: String = "desktop_ss_add_matching_note"

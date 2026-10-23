@@ -22,6 +22,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.scriptsupervision.domain.Looks
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
+import com.zillit.desktop.feature.scriptsupervision.ui.AddPhotoRow
 import com.zillit.desktop.feature.scriptsupervision.ui.Await
 import com.zillit.desktop.feature.scriptsupervision.ui.CardGrid
 import com.zillit.desktop.feature.scriptsupervision.ui.DeleteDialog
@@ -32,6 +33,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.FormWide
 import com.zillit.desktop.feature.scriptsupervision.ui.LocalSs
 import com.zillit.desktop.feature.scriptsupervision.ui.MultiPickInput
 import com.zillit.desktop.feature.scriptsupervision.ui.MutedText
+import com.zillit.desktop.feature.scriptsupervision.ui.isPhotoLink
 import com.zillit.desktop.feature.scriptsupervision.ui.PhotoThumb
 import com.zillit.desktop.feature.scriptsupervision.ui.PickInput
 import com.zillit.desktop.feature.scriptsupervision.ui.RowActions
@@ -244,15 +246,27 @@ private fun PhotoForm(photo: Rec?, presetScene: String, onClose: () -> Unit, onS
                 }
             }
         },
-        confirmEnabled = photo != null || url.trim().startsWith("http"),
+        // An uploaded photo leaves a storage KEY here, not an address, so the
+        // gate is "something is set", not "it looks like a link".
+        confirmEnabled = photo != null || url.isNotBlank(),
         busy = saving,
         width = FORM_WIDTH,
     ) {
-        FormGrid {
-            // A create only: the stored image and its record belong together.
-            if (photo == null) {
-                TextInput(url, { url = it }, t("image_url"), FormWide)
+        // A create only: the stored image and its record belong together, so
+        // an EDIT sends metadata alone and never re-points the picture.
+        if (photo == null) {
+            // An upload leaves a storage key, which means nothing to a
+            // reader — so it is shown as the PICTURE, the way the web's
+            // picture-card shows it, and the address field is for the other
+            // way in.
+            if (url.isNotBlank() && !isPhotoLink(url)) {
+                PhotoThumb(url, width = CHOSEN_W, height = CHOSEN_H)
+            } else {
+                FormGrid { TextInput(url, { url = it }, t("image_url"), FormWide) }
             }
+            AddPhotoRow(folder = "continuity-photos", onAdded = { url = it })
+        }
+        FormGrid {
             PickInput(
                 value = sceneId,
                 options = sceneState.options,
@@ -284,4 +298,6 @@ private val NARROW_FILTER = 180.dp
 private val PHOTO_CARD = 280.dp
 private val CARD_PHOTO_W = 240.dp
 private val CARD_PHOTO_H = 160.dp
+private val CHOSEN_W = 200.dp
+private val CHOSEN_H = 140.dp
 private val FORM_WIDTH = 640.dp

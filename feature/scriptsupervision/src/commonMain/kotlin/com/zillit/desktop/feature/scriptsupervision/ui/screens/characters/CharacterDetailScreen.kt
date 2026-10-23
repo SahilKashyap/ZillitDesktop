@@ -29,6 +29,7 @@ import com.zillit.desktop.feature.scriptsupervision.domain.CharacterSection
 import com.zillit.desktop.feature.scriptsupervision.domain.Characters
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
 import com.zillit.desktop.feature.scriptsupervision.domain.SectionGroup
+import com.zillit.desktop.feature.scriptsupervision.ui.AddPhotoRow
 import com.zillit.desktop.feature.scriptsupervision.ui.Await
 import com.zillit.desktop.feature.scriptsupervision.ui.CardGrid
 import com.zillit.desktop.feature.scriptsupervision.ui.DeleteDialog
@@ -168,7 +169,6 @@ private fun IdentityCard(character: Rec, others: List<Rec>, onChanged: () -> Uni
     val navState = nav()
     val photos = character.recs("photos")
     val type = Characters.typeOf(character)
-    var byUrl by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(-1) }
     val write = { next: JsonArray ->
         ctx.launchWrite(
@@ -259,21 +259,12 @@ private fun IdentityCard(character: Rec, others: List<Rec>, onChanged: () -> Uni
                     }
                 }
             }
-            ZillitButton(
-                text = t("add_photo_by_url"),
-                onClick = { ctx.whenPost { byUrl = true } },
-                variant = ButtonVariant.Secondary,
-                leadingIcon = ZillitIcons.Link,
-            )
         }
+        // Upload a picture, or paste the address of one that already lives
+        // somewhere. The FIRST photo a character gets becomes its primary.
+        AddPhotoRow(folder = "characters", onAdded = { write(photosPlus(photos, it)) })
     }
 
-    if (byUrl) {
-        AddPhotoByUrlDialog(
-            onClose = { byUrl = false },
-            onAdd = { url -> write(photosPlus(photos, url)) },
-        )
-    }
     if (removing >= 0) {
         DeleteDialog(
             title = t("remove_photo_title"),
@@ -327,28 +318,6 @@ private fun photosPlus(photos: List<Rec>, url: String): JsonArray = buildJsonArr
             put("is_primary", photos.isEmpty())
         },
     )
-}
-
-@Composable
-private fun AddPhotoByUrlDialog(onClose: () -> Unit, onAdd: (String) -> Unit) {
-    var url by remember { mutableStateOf("") }
-    FormDialog(
-        open = true,
-        title = t("add_reference_photo"),
-        onDismiss = onClose,
-        confirmLabel = t("save"),
-        onConfirm = {
-            onAdd(url)
-            onClose()
-        },
-        // An address, as the web's `type: 'url'` rule asks for.
-        confirmEnabled = url.trim().startsWith("http"),
-        width = URL_DIALOG,
-    ) {
-        FormGrid {
-            TextInput(url, { url = it }, t("image_url"), FormWide, placeholder = PHOTO_URL_HINT)
-        }
-    }
 }
 
 /**
@@ -509,10 +478,8 @@ private val RELATION_PRESETS = listOf("stunt_performer", "body_double", "stand_i
 private const val SWITCHER = 3
 
 private const val TILE_HELP_LINES = 2
-private const val PHOTO_URL_HINT = "https://…/headshot.jpg"
 
 private val BIG_AVATAR = 96.dp
 private val SWITCH_AVATAR = 40.dp
 private val REF_PHOTO = 72.dp
 private val TILE_MIN = 240.dp
-private val URL_DIALOG = 480.dp

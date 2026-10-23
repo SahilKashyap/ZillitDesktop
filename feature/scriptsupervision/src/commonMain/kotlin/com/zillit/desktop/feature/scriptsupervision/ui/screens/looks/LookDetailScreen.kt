@@ -24,6 +24,7 @@ import com.zillit.desktop.feature.scriptsupervision.data.ContinuityCrud
 import com.zillit.desktop.feature.scriptsupervision.domain.Looks
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
 import com.zillit.desktop.feature.scriptsupervision.domain.lookStatusTone
+import com.zillit.desktop.feature.scriptsupervision.ui.AddPhotoRow
 import com.zillit.desktop.feature.scriptsupervision.ui.Await
 import com.zillit.desktop.feature.scriptsupervision.ui.DeleteDialog
 import com.zillit.desktop.feature.scriptsupervision.ui.Field
@@ -262,65 +263,22 @@ private fun LookSection(
 
 @Composable
 private fun PhotosSection(photos: List<String>, onChange: (List<String>) -> Unit, onClear: () -> Unit) {
-    var adding by remember { mutableStateOf(false) }
     LookSection(
         title = t("photos"),
         action = {
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            if (photos.isNotEmpty()) {
                 ZillitIconButton(
-                    icon = ZillitIcons.Add,
-                    contentDescription = t("add_photo_by_url"),
-                    onClick = { adding = true },
+                    icon = ZillitIcons.Trash,
+                    contentDescription = t("delete"),
+                    onClick = onClear,
+                    tint = ZillitTheme.colors.danger,
                 )
-                if (photos.isNotEmpty()) {
-                    ZillitIconButton(
-                        icon = ZillitIcons.Trash,
-                        contentDescription = t("delete"),
-                        onClick = onClear,
-                        tint = ZillitTheme.colors.danger,
-                    )
-                }
             }
         },
     ) {
         if (photos.isEmpty()) MutedText(t("no_photo_loaded")) else PhotoStrip(photos)
-    }
-    if (adding) {
-        PhotoUrlsDialog(photos, onClose = { adding = false }, onSave = onChange)
-    }
-}
-
-/**
- * The look's photo list, edited as addresses.
- *
- * The web uploads here (`PhotoField`, folder `looks`); this edits the list of
- * addresses instead, because the camera upload wants a file picker this module
- * has no seam for yet. A look photographed on the web shows here either way —
- * the field is the same list of storage keys.
- */
-@Composable
-private fun PhotoUrlsDialog(photos: List<String>, onClose: () -> Unit, onSave: (List<String>) -> Unit) {
-    var values by remember { mutableStateOf(photos) }
-    FormDialog(
-        open = true,
-        title = t("reference_photos"),
-        onDismiss = onClose,
-        confirmLabel = t("save"),
-        onConfirm = {
-            onSave(values)
-            onClose()
-        },
-        width = DIALOG_WIDTH,
-    ) {
-        FormGrid {
-            TagInput(
-                tokens = values,
-                onChange = { values = it },
-                label = t("image_url"),
-                modifier = FormWide,
-                help = t("add_photo_by_url"),
-            )
-        }
+        // One at a time, and the array is written whole: see [AddPhotoRow].
+        AddPhotoRow(folder = "looks", onAdded = { onChange(photos + it) })
     }
 }
 
