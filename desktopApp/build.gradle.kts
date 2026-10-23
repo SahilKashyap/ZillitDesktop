@@ -115,6 +115,7 @@ dependencies {
     implementation(project(":feature:talentdeals"))
     implementation(project(":feature:selectstills"))
     implementation(project(":feature:costumesetsync"))
+    implementation(project(":feature:scriptsupervision"))
     implementation(project(":feature:bankrec"))
     implementation(project(":feature:invoices"))
     implementation(project(":feature:transportation"))

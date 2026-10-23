@@ -280,6 +280,7 @@ import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
 import com.zillit.desktop.feature.tasks.ui.TasksViewModel
 import com.zillit.desktop.feature.costumesetsync.ui.SyncOnsetViewModel
+import com.zillit.desktop.feature.scriptsupervision.ui.ScriptSupervisionViewModel
 import com.zillit.desktop.feature.weather.ui.WeatherViewModel
 import com.zillit.desktop.feature.budget.ui.DEPARTMENT_BUDGET_PATH
 import com.zillit.desktop.feature.budget.ui.MAIN_BUDGET_PATH
@@ -3754,6 +3755,8 @@ internal class AppViewModels(
     val selectStills: com.zillit.desktop.feature.selectstills.ui.StillsViewModel?,
     /** Costumes & Set Sync: breakdown, inventory, fittings, sink, continuity. */
     val costumeSetSync: SyncOnsetViewModel?,
+    /** Continuity Script Supervision: scenes, takes and the on-set logs. */
+    val scriptSupervision: ScriptSupervisionViewModel?,
     /** Characters and who is up for them — one board, both casting lists. */
     val casting: CastingViewModel?,
     /** The same board, for costumes. */
@@ -4210,6 +4213,7 @@ internal fun buildAppViewModels(
         tasks = ready?.buildTasks(permissions),
         selectStills = ready?.buildSelectStills(permissions),
         costumeSetSync = ready?.buildCostumeSetSync(permissions),
+        scriptSupervision = ready?.buildScriptSupervision(permissions),
         casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
         wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
         invoices = ready?.buildInvoices(permissions, scope),
@@ -4403,6 +4407,7 @@ private fun buildRegistry(
     val tasks = viewModels.tasks?.let(::tasksProvider)
     val selectStills = viewModels.selectStills?.let { vm -> (graph as? AppGraph.Ready)?.selectStillsProvider(vm) }
     val costumeSetSync = viewModels.costumeSetSync?.let { costumeSetSyncProvider(it, emailViewModel) }
+    val scriptSupervision = viewModels.scriptSupervision?.let(::scriptSupervisionProvider)
     // Three casting tiles, one board: whichever tile is clicked, the lists
     // this viewer's rights allow are what open.
     val castingTools = viewModels.casting?.let { vm ->
@@ -4881,7 +4886,8 @@ private fun buildRegistry(
         assetRegister, transport, transportHub, location, continuity, costReport, costReportWorksheet,
         costReportAnalytics,
         invoices, draft,
-        mainBudget, departmentBudget, weather, tasks, selectStills, costumeSetSync, adDashboard,
+        mainBudget, departmentBudget, weather, tasks, selectStills, costumeSetSync, scriptSupervision,
+        adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()

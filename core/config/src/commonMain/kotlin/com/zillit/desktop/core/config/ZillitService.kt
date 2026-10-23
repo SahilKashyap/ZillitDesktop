@@ -197,6 +197,28 @@ enum class ZillitService(val configKey: String) {
     SyncOnset("SYNC_ONSET_BASE_URL"),
 
     /**
+     * Continuity Script Supervision (`zillit_continuity_script_supervision`) —
+     * the script supervisor's tool on set: scenes and takes, the on-set logs,
+     * coverage and the lined script, characters and looks, reports.
+     *
+     * Its own host, `scriptsupervisionapi`, live in all three environments
+     * (probed 2026-10-23: `-dev` answers 401 `libs_moduledata_not_accepted`,
+     * `-qa` and unsuffixed answer 406).
+     *
+     * ⚠ Its moduledata guard runs BEFORE routing, so the 406/404 endpoint
+     * probe cannot tell a real route from an invented one here — on dev,
+     * `/api/v2/invented-nonsense` answers 401 exactly as `/api/v2/health`
+     * does. Routes have to be read off the web's own api.js.
+     *
+     * The web's `VITE_SCRIPT_SUPERVISION_BASE_URL` ends at `/api` and appends
+     * `/v2`, the same split [AppConfig.apiV2] makes. Every route carries the
+     * project id, and the service answers 403
+     * `script_supervision_project_mismatch` when that is not the token's
+     * project.
+     */
+    ScriptSupervision("SCRIPT_SUPERVISION_BASE_URL"),
+
+    /**
      * File Cabinet (`zillit_file_cabinate`) — the admin's ZIP of a production's
      * records: request one, watch it prepare, download it.
      *

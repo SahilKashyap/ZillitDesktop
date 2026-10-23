@@ -144,6 +144,7 @@ private val WEB: List<WebEntry> = listOf(
     WebEntry("document_distribution_tool", always(S.document_distribution_module_title)),
     WebEntry("sides_tool", always(S.desktop_tool_info_sides_tool_tooltip)),
     WebEntry("costume_set_sync_tool", always(S.desktop_tool_info_costume_set_sync_tool_tooltip)),
+    WebEntry("script_supervision_tool", always(S.desktop_tool_info_script_supervision_tool_tooltip)),
     WebEntry("tasks_tool", always(S.desktop_tool_info_tasks_tool_tooltip)),
     WebEntry("ad_dashboard_tool", always(S.desktop_tool_info_ad_dashboard_tool_tooltip)),
     WebEntry("supporting_artistes_extras_tool", always(S.desktop_tool_info_supporting_artistes_tool_tooltip)),

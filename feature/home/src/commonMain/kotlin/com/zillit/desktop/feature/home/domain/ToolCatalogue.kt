@@ -196,6 +196,12 @@ object ToolCatalogue {
             (ZillitToolIcons.ScriptNote to WorkspaceRoute.Tool("/film-tools/sides")),
         "script_notes_tool" to
             (ZillitToolIcons.ScriptNote to WorkspaceRoute.Tool("/film-tools/script-notes")),
+        // Continuity Script Supervision (the web's Departments group, 2026-10-23).
+        // The identifier is the FULL `script_supervision_tool`: the grid's
+        // matcher is a substring test, so one holding `continuity` or
+        // `script_notes` would open Continuity or Script Notes instead.
+        "script_supervision_tool" to
+            (ZillitToolIcons.Script to WorkspaceRoute.Tool("/film-tools/script-supervision")),
         "supporting_artistes_extras_tool" to
             (ZillitToolIcons.AdDashboard to WorkspaceRoute.Tool("/film-tools/supporting-artistes")),
         "costume_set_sync_tool" to
