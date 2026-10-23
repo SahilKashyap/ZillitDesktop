@@ -65,6 +65,7 @@ fun ScriptSupervisionShell(viewModel: ScriptSupervisionViewModel, onOpenTools: (
             toast = viewModel::toast,
             askRights = viewModel::askRights,
             openTools = onOpenTools,
+            host = viewModel.host,
         )
     }
     val scenes = remember(ctx) { ScenesState(scope, ctx) }

@@ -154,6 +154,13 @@ class PagesSmokeTest {
             "counts":{"scenes":1,"script_days":1,"shooting_days":1,"costume_looks":1,
             "hair_looks":0,"makeup_looks":0,"wardrobe_items":1,"props_items":1}}"""
         path.contains("/upload/download-url") -> """{"presigned_url":""}"""
+        // The production summary behind the Production tiles.
+        path.contains("/dashboard/summary/") -> """{"counts":{"characters":1,"scenes":1,
+            "story_days":1,"boxes":1,"shooting_days":1,"actors":1,"documents":1},"filmed_pct":12,
+            "recent_activity":[{"_id":"h1","user_name":"Asha","action":"create","module":"scene_notes",
+            "description":"Added a note","timestamp":1761250000000}]}"""
+        path.contains("/breakdown/elements/") -> """[{"_id":"e1","name":"Steel tiffin",
+            "category_slug":"props","description":"Hero prop","scene_count":9}]"""
         // The quick log asks for the scene's last take before it draws its
         // form: the take number and the carried camera settings come out of
         // it, so a canned one is what makes that screen testable at all.

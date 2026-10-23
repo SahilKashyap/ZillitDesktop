@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.scriptsupervision.data.ScriptSupervisionApi
 import com.zillit.desktop.feature.scriptsupervision.domain.Rec
 import com.zillit.desktop.feature.scriptsupervision.domain.ScriptSupervisionViewer
 import com.zillit.desktop.feature.scriptsupervision.domain.SsHost
+import com.zillit.desktop.feature.scriptsupervision.domain.SsPickedFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -72,6 +73,19 @@ class SsCtx(
     fun launchWrite(call: suspend () -> ZillitResult<Answer>, onDone: (Answer) -> Unit = {}) {
         scope.launch { write(call)?.let(onDone) }
     }
+
+    /**
+     * Uploads [file] to one of this service's own multipart routes and reads
+     * the answer as an [Answer], the way every other call here is read.
+     *
+     * The host does the HTTP because `ApiClient` speaks only JSON envelopes;
+     * this keeps the call site looking like the rest of the module.
+     */
+    suspend fun upload(path: String, file: SsPickedFile): ZillitResult<Answer> =
+        when (val answer = host.upload(api.url(path), file)) {
+            is ZillitResult.Failure -> ZillitResult.Failure(answer.error)
+            is ZillitResult.Success -> ZillitResult.Success(Answer(answer.data, null))
+        }
 
     /** A press that needs posting rights: runs [block], or asks an admin for them. */
     fun whenPost(block: () -> Unit) {

@@ -6,6 +6,7 @@ import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.feature.scriptsupervision.data.ScriptSupervisionApi
 import com.zillit.desktop.feature.scriptsupervision.domain.ScriptSupervisionViewer
+import com.zillit.desktop.feature.scriptsupervision.domain.SsHost
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 
@@ -44,6 +45,13 @@ class ScriptSupervisionViewModel(
     private val viewer: () -> ScriptSupervisionViewer,
     private val rights: RightsRequestBus? = null,
     private val projectId: () -> String? = { null },
+    /**
+     * The file chooser, the multipart uploads and the signed byte fetches —
+     * the three things a feature module cannot do for itself. [SsHost.None]
+     * for a test or an unwired build; every screen then draws its placeholder
+     * rather than failing.
+     */
+    val host: SsHost = SsHost.None,
 ) : ZillitViewModel<SsState, SsEvent, Nothing>(SsState()) {
 
     private var rightsPoll: Job? = null

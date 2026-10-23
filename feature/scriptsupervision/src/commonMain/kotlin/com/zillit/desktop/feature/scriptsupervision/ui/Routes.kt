@@ -24,8 +24,10 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.ContinuityP
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.LooksRoutes
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.PropsWardrobeScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.quicklog.QuickLogScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.CallSheetImportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ElementManagerScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ProductionScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptImportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptRevisionsScreen
 
 /**
@@ -80,6 +82,8 @@ private fun SsDepartmentRoutes(page: SsPage, onOpen: (SsPage) -> Unit) {
 @Composable
 private fun SsScriptRoutes(page: SsPage) {
     when (page) {
+        SsPage.ScriptImport -> ScriptImportScreen()
+        SsPage.CallSheetImport -> CallSheetImportScreen()
         SsPage.ScriptRevisions -> ScriptRevisionsScreen()
         SsPage.ElementManager -> ElementManagerScreen()
         else -> SsLogRoutes(page)

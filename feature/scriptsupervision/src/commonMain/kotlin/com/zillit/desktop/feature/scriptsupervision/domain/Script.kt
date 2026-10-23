@@ -47,6 +47,28 @@ object Script {
      */
     fun revisionHex(colour: String): String? = PAPER[colour.removePrefix("2nd_")]
 
+    /**
+     * Script pages as a production measures them: eighths of a page.
+     *
+     * A scene is timed in eighths because that is how a day's work is
+     * estimated, and the notation is mixed: 12 eighths reads "1 4/8", 8 reads
+     * "1", 3 reads "3/8". Zero reads BLANK rather than "0", because the
+     * service stores 0 for a scene nobody has measured and "0" on a schedule
+     * would read as a scene with no length.
+     */
+    fun formatEighths(eighths: Int): String {
+        if (eighths <= 0) return ""
+        val whole = eighths / EIGHTHS_PER_PAGE
+        val rest = eighths % EIGHTHS_PER_PAGE
+        return when {
+            rest == 0 -> whole.toString()
+            whole == 0 -> "$rest/$EIGHTHS_PER_PAGE"
+            else -> "$whole $rest/$EIGHTHS_PER_PAGE"
+        }
+    }
+
+    private const val EIGHTHS_PER_PAGE = 8
+
     private val PAPER: Map<String, String> = mapOf(
         "white" to "#ffffff",
         "blue" to "#1890ff",
