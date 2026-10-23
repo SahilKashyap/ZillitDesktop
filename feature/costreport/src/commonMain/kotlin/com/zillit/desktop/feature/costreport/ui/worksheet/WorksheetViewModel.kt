@@ -71,6 +71,10 @@ class WorksheetViewModel(
     private val paneJobs = mutableMapOf<WorksheetPane, Job>()
     private var listening = false
     private var syncJob: Job? = null
+    private var autoJob: Job? = null
+
+    /** When the burst of source events began, so [MAX_WAIT_MILLIS] can cap it. */
+    private var burstStartedAt: Long? = null
 
     fun start() {
         update { copy(viewer = resolveViewer(), projectName = projectName(), generatedBy = signedInUser()) }
@@ -93,7 +97,8 @@ class WorksheetViewModel(
             WorksheetEvent.Back -> emit(WorksheetEffect.Back)
             WorksheetEvent.OpenAnalytics -> emit(WorksheetEffect.OpenAnalytics)
             WorksheetEvent.RefreshSource -> {
-                update { copy(sourceStale = false) }
+                cancelAutoRefresh()
+                update { copy(sourceStale = false, autoRefreshed = false) }
                 silentRefresh()
             }
             WorksheetEvent.Retry -> if (ui.reference.error != null) loadReference() else reloadBoth()
@@ -369,8 +374,9 @@ class WorksheetViewModel(
 
     /**
      * A lock or a post elsewhere re-pulls silently, debounced because a post
-     * emits both events back to back; a feeder tool's approval only raises
-     * the stale pill — the recompute is heavy, so the reader picks the moment.
+     * emits both events back to back; a feeder tool's approval raises the
+     * pill and then refreshes itself once the events stop — see
+     * [autoRefreshSoon].
      */
     private fun listenOnce() {
         if (listening) return
@@ -378,8 +384,10 @@ class WorksheetViewModel(
         launch {
             repository.syncs.collect { sync ->
                 when (sync) {
-                    CostReportSync.Source -> update { copy(sourceStale = true) }
+                    CostReportSync.Source -> autoRefreshSoon()
                     CostReportSync.Report -> {
+                        // This re-pull covers whatever the quiet window held.
+                        cancelAutoRefresh()
                         syncJob?.cancel()
                         syncJob = launch {
                             delay(SYNC_DEBOUNCE_MILLIS)
@@ -389,6 +397,37 @@ class WorksheetViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * The pill now, the refresh shortly — the web's `useCostReportAutoRefresh`.
+     *
+     * A fresh event restarts the [QUIET_MILLIS] wait, so a burst settles into
+     * one refresh; [MAX_WAIT_MILLIS] after the first of them it goes anyway.
+     * A frozen snapshot ignores the event: nothing it shows can change.
+     */
+    private fun autoRefreshSoon() {
+        if (ui.snapshot != null) return
+        update { copy(sourceStale = true, autoRefreshed = false) }
+        val startedAt = burstStartedAt ?: nowMillis().also { burstStartedAt = it }
+        val wait = (startedAt + MAX_WAIT_MILLIS - nowMillis()).coerceIn(0L, QUIET_MILLIS)
+        autoJob?.cancel()
+        autoJob = launch {
+            delay(wait)
+            autoJob = null
+            burstStartedAt = null
+            update { copy(sourceStale = false) }
+            silentRefresh()
+            update { copy(autoRefreshed = true) }
+            delay(CHIP_MILLIS)
+            update { copy(autoRefreshed = false) }
+        }
+    }
+
+    private fun cancelAutoRefresh() {
+        autoJob?.cancel()
+        autoJob = null
+        burstStartedAt = null
     }
 
     private class Fetched(
@@ -403,5 +442,14 @@ class WorksheetViewModel(
     companion object {
         /** The web's refetch coalescing window — `accountHubListeners.js` `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+
+        /** No further source event for this long, and the worksheet refreshes itself. */
+        const val QUIET_MILLIS = 3_500L
+
+        /** However long the burst runs, the refresh goes this long after its first event. */
+        const val MAX_WAIT_MILLIS = 15_000L
+
+        /** How long "Auto-refreshed" stays up afterwards. */
+        const val CHIP_MILLIS = 2_500L
     }
 }

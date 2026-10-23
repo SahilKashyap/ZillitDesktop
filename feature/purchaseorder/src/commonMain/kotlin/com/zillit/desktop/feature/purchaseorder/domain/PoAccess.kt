@@ -125,31 +125,57 @@ object PoAccess {
     fun isAmendment(status: PoStatus): Boolean = status in FULLY_APPROVED && status != PoStatus.Posted
 
     /**
-     * May [viewer] delete this order? The web's two gates, and nothing wider.
+     * PA/FC in the console, or the accountant this order is assigned to — the
+     * web's `isPOAssigneeOrSenior`.
      *
-     * - **The raiser**, before full approval — and not once it is rejected: the
-     *   required flow there is edit and resubmit, so the rejection trail stays
-     *   on the same number (`PODetailModal`'s `canDelete`). Closed and cancelled
-     *   are finished records and stay, which is stricter than the web by those
-     *   two statuses.
-     * - **Accounts**, only on an order they entered and have not posted (`Acct
-     *   Entered`): a senior from the detail, and the processing accountant from
-     *   the processing page ([onProcessingPage] — the web wires Delete there for
-     *   whoever may process it).
-     *
-     * Everything posted, closed or in flight is off-limits to everybody: the old
-     * "any senior, any status" let the ledger lose a posted order.
+     * These are the people working the order, and they delete it on the
+     * raiser's terms (web PR #6542). The assignee branch is console-only for
+     * the same reason the senior branch is: `assignedTo` names an accountant,
+     * and the department module offers none of these actions.
      */
-    fun canDelete(order: PurchaseOrder, viewer: PoViewer, onProcessingPage: Boolean = false): Boolean {
-        val accountsEntered = order.status == PoStatus.AccountsEntered || order.status == PoStatus.Queued
-        if (onProcessingPage) return accountsEntered && canProcess(order, viewer)
-        val isCreator = order.raisedBy != null && order.raisedBy == viewer.userId
-        val raiserMay = isCreator && order.status !in FULLY_APPROVED && order.status !in RAISER_KEEPS
-        return raiserMay || (viewer.isSeniorAccountant && accountsEntered)
+    fun isAssigneeOrSenior(order: PurchaseOrder, viewer: PoViewer): Boolean {
+        if (viewer.isConsoleSenior) return true
+        return viewer.isAccountant && order.assignedTo != null && order.assignedTo == viewer.userId
     }
 
-    /** Statuses the raiser may not delete even before approval — see [canDelete]. */
-    private val RAISER_KEEPS = setOf(PoStatus.Rejected, PoStatus.Closed, PoStatus.Cancelled)
+    /**
+     * Approved but not yet posted — the statuses the server will take back
+     * through the chain (`PO_RETURNABLE_STATUSES`).
+     *
+     * `rejected` is deliberately out: the server allows it, but the action is
+     * for un-approving (user, 2026-10-21). Posted and closed are refused
+     * server-side (`po_cannot_return_to_approval`): posting has downstream
+     * data a status flip would strand.
+     */
+    private val RETURNABLE = setOf(PoStatus.Approved, PoStatus.Queued, PoStatus.AccountsEntered)
+
+    /**
+     * May [viewer] send this order back through its approval chain —
+     * `POST /:id/return-to-approval`, the web's `canReturnPOToApproval`?
+     *
+     * Whoever may Process it: PA/FC or the assignee, the people working the
+     * order (web PR #6519).
+     */
+    fun canReturnToApproval(order: PurchaseOrder, viewer: PoViewer): Boolean =
+        order.status in RETURNABLE && canProcess(order, viewer)
+
+    /**
+     * May [viewer] delete this order?
+     *
+     * The raiser, at **any status and in any period** — posted and closed
+     * included: the backend reverses whatever was posted, to the ledger, the
+     * cost report and the bank rec (web PR #6519, user 2026-10-21; it was
+     * "before full approval, never rejected" until then). On the accountant
+     * side PA/FC and the order's assignee get exactly the same
+     * ([isAssigneeOrSenior], web PR #6542).
+     *
+     * The same answer wherever it is asked: the detail modal and the
+     * processing page agree, which is why there is no longer a page to pass.
+     */
+    fun canDelete(order: PurchaseOrder, viewer: PoViewer): Boolean {
+        val isCreator = order.raisedBy != null && order.raisedBy == viewer.userId
+        return isCreator || isAssigneeOrSenior(order, viewer)
+    }
 
     /**
      * Purchase-order amendments after approval: built, wired, and hidden.

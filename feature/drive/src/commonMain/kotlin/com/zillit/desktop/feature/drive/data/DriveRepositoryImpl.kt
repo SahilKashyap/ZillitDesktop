@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.drive.domain.DriveListQuery
 import com.zillit.desktop.feature.drive.domain.DriveListing
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.DriveShareLinkDraft
+import com.zillit.desktop.feature.drive.domain.NewFileType
 import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
@@ -189,6 +190,26 @@ class DriveRepositoryImpl(
     ).flatMap { dto ->
         dto.toDomain(DriveItemKind.Folder)?.let { ZillitResult.Success(it) }
             ?: ZillitResult.Failure(ZillitError.Serialization("created folder had no id"))
+    }
+
+    override suspend fun createNewFile(
+        type: NewFileType,
+        name: String,
+        folderId: String?,
+    ): ZillitResult<DriveItem> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/files/new",
+        serializer = DriveItemDto.serializer(),
+        module = RequestModule.ProjectUser,
+        options = callOptions(),
+        body = buildJsonObject {
+            put("type", JsonPrimitive(type.extension))
+            name.trim().takeIf { it.isNotEmpty() }?.let { put("name", JsonPrimitive(it)) }
+            put("folder_id", folderId.orJsonNull())
+        },
+    ).flatMap { dto ->
+        dto.toDomain(DriveItemKind.File)?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("new file had no id"))
     }
 
     override suspend fun rename(

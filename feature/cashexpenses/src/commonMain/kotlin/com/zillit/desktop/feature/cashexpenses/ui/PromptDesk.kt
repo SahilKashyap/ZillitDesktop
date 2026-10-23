@@ -50,6 +50,15 @@ internal class PromptDesk(
                 host.noRights()
             }
 
+            // Accountants only, and the float must still be in the safe.
+            ConfirmAction.ReturnFloatToApproval -> if (host.state.viewer.isAccountant) {
+                host.act(str(S.desktop_ce_float_returned_to_approval), after = { floats.readApproval(id) }) {
+                    host.repository.returnFloatToApproval(id)
+                }
+            } else {
+                host.noRights()
+            }
+
             ConfirmAction.CollectFloat -> floats.collect(id)
             ConfirmAction.CloseFloat -> floats.close(id)
             ConfirmAction.ApproveBatch -> batches.approve(id)

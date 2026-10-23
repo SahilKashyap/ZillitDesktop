@@ -29,6 +29,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -185,6 +186,8 @@ private fun LiveHeading(state: CostReportUiState, onEvent: (CostReportEvent) -> 
         query = current.query,
         onQuery = { onEvent(CostReportEvent.SearchCurrent(it)) },
         trailing = {
+            // The pill while the figures are stale, then "Auto-refreshed" for
+            // a moment after the report refreshed itself (web PR #6543).
             if (state.sourceStale) {
                 ZillitButton(
                     text = str(S.desktop_cr_source_updated),
@@ -193,6 +196,8 @@ private fun LiveHeading(state: CostReportUiState, onEvent: (CostReportEvent) -> 
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Reload,
                 )
+            } else if (state.autoRefreshed) {
+                ZillitStatusPill(label = str(S.desktop_cr_auto_refreshed), tone = StatusTone.Ready)
             }
         },
     )

@@ -635,3 +635,31 @@ data class NewFolder(
     val access: List<DriveAccessEntry> = emptyList(),
     val color: String = "",
 )
+
+/**
+ * A blank file Drive can make and then open — the web's `NEW_FILE_TYPES`.
+ *
+ * Only formats the editors keep: no `.doc` / `.xls` / `.ppt`, which they save
+ * as the new format, so a file made in one would be renamed on its first save
+ * (web PR #6527).
+ */
+enum class NewFileType(
+    val extension: String,
+    private val labelKey: String,
+    private val defaultNameKey: String,
+) {
+    Document("docx", S.document, S.docusign_send_confirm_untitled),
+    Spreadsheet("xlsx", S.desktop_file_kind_spreadsheet, S.desktop_drive_untitled_spreadsheet),
+    Presentation("pptx", S.desktop_file_kind_presentation, S.desktop_drive_untitled_presentation),
+    Markdown("md", S.desktop_drive_new_markdown, S.untitled),
+    Text("txt", S.desktop_tasks_file_kind_text, S.untitled),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    /** The name the prompt starts with — the server's own default too. */
+    val defaultName: String get() = str(defaultNameKey)
+
+    /** Whether the file opens in Drive's own text editor rather than the live one. */
+    val isText: Boolean get() = this == Markdown || this == Text
+}

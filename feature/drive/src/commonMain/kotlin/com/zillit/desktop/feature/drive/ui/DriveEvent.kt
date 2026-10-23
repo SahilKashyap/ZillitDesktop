@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveSection
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
+import com.zillit.desktop.feature.drive.domain.NewFileType
 import com.zillit.desktop.feature.drive.domain.DriveSortColumn
 import com.zillit.desktop.feature.drive.domain.FileAccessLevel
 import com.zillit.desktop.feature.drive.domain.LinkPermission
@@ -161,6 +162,14 @@ sealed interface DriveEvent {
     data class NewFolderDestination(val pickExisting: Boolean, val folderId: String?) : DriveEvent
     data class NewFolderAccess(val access: AccessDraft) : DriveEvent
     data object SubmitNewFolder : DriveEvent
+
+    // -- New: a blank file of a type Drive can edit ------------------------
+
+    /** The "New" menu's choice; opens the name prompt. */
+    data class OpenNewFile(val type: NewFileType) : DriveEvent
+    data class NewFileName(val text: String) : DriveEvent
+    data object SubmitNewFile : DriveEvent
+    data object CloseNewFile : DriveEvent
 
     // -- edit info --------------------------------------------------------
 

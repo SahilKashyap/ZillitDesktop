@@ -293,23 +293,55 @@ class PoParityFixesTest {
     // -- 7. delete ---------------------------------------------------------------------
 
     @Test
-    fun `delete is the raiser's before approval and accounts' only on Acct Entered`() {
+    fun `delete is the raiser's at any status, and PA-FC's or the assignee's`() {
         val senior = PoViewer("s", "department_accounts", "designation_production_accountant_accounts")
         val raiser = PoViewer("raiser", "department_camera", null)
-        listOf(PoStatus.Posted, PoStatus.Closed, PoStatus.Approved, PoStatus.AwaitingApproval).forEach { status ->
-            assertFalse(PoAccess.canDelete(parityOrder(status = status), senior), "a senior deleted $status")
+        // The raiser deletes at any status, posted and rejected included: the
+        // backend reverses whatever was posted (web PR #6519).
+        listOf(
+            PoStatus.Draft, PoStatus.AwaitingApproval, PoStatus.Approved,
+            PoStatus.AccountsEntered, PoStatus.Queued, PoStatus.Posted,
+            PoStatus.Rejected, PoStatus.Closed,
+        ).forEach { status ->
+            assertTrue(PoAccess.canDelete(parityOrder(status = status), raiser), "the raiser kept $status")
+            assertTrue(PoAccess.canDelete(parityOrder(status = status), senior), "PA/FC kept $status")
         }
-        assertTrue(PoAccess.canDelete(parityOrder(status = PoStatus.AccountsEntered), senior))
-        assertTrue(PoAccess.canDelete(parityOrder(status = PoStatus.Queued), senior))
-        assertTrue(PoAccess.canDelete(parityOrder(status = PoStatus.AwaitingApproval), raiser))
-        assertTrue(PoAccess.canDelete(parityOrder(status = PoStatus.Draft), raiser))
-        assertFalse(PoAccess.canDelete(parityOrder(status = PoStatus.Rejected), raiser), "rejected: edit, resubmit")
-        assertFalse(PoAccess.canDelete(parityOrder(status = PoStatus.Approved), raiser))
 
+        // The assignee, on the same terms, from any surface (web PR #6542).
         val assignee = PoViewer("acc", "department_accounts", null)
-        val entered = parityOrder(status = PoStatus.AccountsEntered, assignedTo = "acc")
-        assertFalse(PoAccess.canDelete(entered, assignee), "not from the detail")
-        assertTrue(PoAccess.canDelete(entered, assignee, onProcessingPage = true), "from the page they process on")
+        assertTrue(PoAccess.canDelete(parityOrder(status = PoStatus.Posted, assignedTo = "acc"), assignee))
+        assertFalse(
+            PoAccess.canDelete(parityOrder(status = PoStatus.Posted, assignedTo = "someone-else"), assignee),
+            "another accountant's order is not this one's to delete",
+        )
+        val outsider = PoViewer("nobody", "department_camera", null)
+        assertFalse(PoAccess.canDelete(parityOrder(status = PoStatus.Draft), outsider))
+    }
+
+    @Test
+    fun `Return to Approval is offered on an approved, unposted order to whoever works it`() {
+        val senior = PoViewer("s", "department_accounts", "designation_production_accountant_accounts")
+        val assignee = PoViewer("acc", "department_accounts", null)
+
+        // Approved but not posted: the chain can be re-run (web PR #6519).
+        listOf(PoStatus.Approved, PoStatus.Queued, PoStatus.AccountsEntered).forEach { status ->
+            assertTrue(PoAccess.canReturnToApproval(parityOrder(status = status), senior), "PA/FC on $status")
+            assertTrue(
+                PoAccess.canReturnToApproval(parityOrder(status = status, assignedTo = "acc"), assignee),
+                "the assignee on $status",
+            )
+        }
+
+        // Posted and closed are refused server-side; rejected is for
+        // un-approving, which a rejected order has not had.
+        listOf(PoStatus.Posted, PoStatus.Closed, PoStatus.Rejected, PoStatus.Draft, PoStatus.AwaitingApproval)
+            .forEach { status ->
+                assertFalse(PoAccess.canReturnToApproval(parityOrder(status = status), senior), "kept $status")
+            }
+
+        // The raiser alone is not enough: it takes the people working the order.
+        val raiser = PoViewer("raiser", "department_camera", null)
+        assertFalse(PoAccess.canReturnToApproval(parityOrder(status = PoStatus.Approved), raiser))
     }
 
     // -- 8. the period lock --------------------------------------------------------------

@@ -790,8 +790,8 @@ class PurchaseOrderViewModel(
      *   order must be outside the locked period. The old "the approval queue is
      *   scoped by data" reasoning held for one tab only, and accountants who sit
      *   on a tier never see that tab.
-     * - **Delete** — [PoAccess.canDelete], with the processing page's own rule
-     *   when the page is on that order, and never a locked order.
+     * - **Delete** — [PoAccess.canDelete], the same answer from every surface
+     *   and in any period.
      * - A rule is a senior's.
      */
     @Suppress("CyclomaticComplexMethod") // One branch per confirm action.
@@ -810,6 +810,8 @@ class PurchaseOrderViewModel(
             is PoPrompt.Confirm -> when (prompt.action) {
                 PoConfirmAction.Approve -> decides()
                 PoConfirmAction.Delete -> order != null && state.mayDelete(order)
+                PoConfirmAction.ReturnToApproval ->
+                    order != null && PoAccess.canReturnToApproval(order, state.viewer)
                 PoConfirmAction.RemoveRule -> state.viewer.isSeniorAccountant
                 PoConfirmAction.AmendOrder -> mayAmend()
                 PoConfirmAction.SendToVendor -> order != null &&
@@ -823,12 +825,11 @@ class PurchaseOrderViewModel(
     }
 
     /**
-     * [PoAccess.canDelete] from wherever the ask came — the processing page's
-     * own rule when the page is on this order — and never a locked order.
+     * [PoAccess.canDelete], whoever asked and whatever period the order sits
+     * in: the backend reverses what was posted (web PR #6519).
      */
     private fun PoUiState.mayDelete(order: PurchaseOrder): Boolean {
-        if (isLocked(order)) return false
-        if (PoAccess.canDelete(order, viewer, onProcessingPage = entry?.orderId == order.id)) return true
+        if (PoAccess.canDelete(order, viewer)) return true
         // A draft of one's own on the Drafts tab: the server lists only the
         // viewer's drafts, and some of them carry no raiser.
         return order.status == PoStatus.Draft && order.raisedBy == null
@@ -852,6 +853,11 @@ class PurchaseOrderViewModel(
                         setState { copy(entry = null, destination = PoDestination.Queue) }
                     }
                     act(str(S.desktop_order_deleted)) { repository.delete(prompt.targetId) }
+                    setState { copy(detail = null) }
+                }
+
+                PoConfirmAction.ReturnToApproval -> {
+                    act(str(S.desktop_po_returned_to_approval)) { repository.returnToApproval(prompt.targetId) }
                     setState { copy(detail = null) }
                 }
 

@@ -21,7 +21,6 @@ import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
-import com.zillit.desktop.feature.location.domain.MovePlace
 import com.zillit.desktop.feature.location.domain.PickedLocationFile
 import kotlinx.coroutines.flow.conflate
 import com.zillit.desktop.core.strings.S
@@ -169,9 +168,6 @@ class LocationViewModel(
                 )
             }
             is LocationEvent.MoveSelected -> moveSelected(event.to)
-            is LocationEvent.MovePlaceChanged -> movePlaceChanged(event.place)
-            LocationEvent.ConfirmMove -> confirmMove()
-            LocationEvent.CancelMove -> setState { copy(moving = null) }
             LocationEvent.DeleteSelected -> {
                 val ids = state.value.gallery?.selected.orEmpty().toList()
                 if (ids.isNotEmpty()) setState { copy(confirmDelete = ids) }
@@ -404,77 +400,25 @@ class LocationViewModel(
     /**
      * Moving the ticked records.
      *
-     * A move to Shortlist or Final asks where the location is first: the Map
-     * tool draws the shortlisted and final places, and a move otherwise
-     * leaves them behind, since the server drops `link`, `location` and
-     * `link_attachment` on a move (web PR #6521). Picking is optional — the
-     * form's Move button moves with whatever it has.
+     * The move carries no place. Each record has its own pin and Maps link,
+     * and one place picked for a whole folder overwrote them all — so the
+     * Move form's location field went back out again (web PR #6522). Add and
+     * Edit keep it.
      */
     private fun moveSelected(to: LocationStatus) {
         val s = state.value
         val open = s.gallery ?: return
         if (open.records.none { it.id in open.selected }) return
-        if (to in PLACE_ON_MOVE) {
-            // The folder's own pin, if one of its records already has one:
-            // the Move form opens on where the location is, not on nothing.
-            val known = open.records.firstNotNullOfOrNull { it.pin }
-            setState { copy(moving = MoveRequest(to, PlaceEditor(pin = known, address = open.records
-                .firstOrNull { it.pin != null }?.address.orEmpty()))) }
-            if (known != null) fetchMapForMove(known)
-            return
-        }
-        moveNow(to, null)
+        moveNow(to)
     }
 
-    private fun movePlaceChanged(place: PlaceEditor) {
-        val request = currentState.moving ?: return
-        val moved = place.pin != request.place.pin
-        setState {
-            copy(
-                moving = request.copy(
-                    place = place.copy(
-                        moved = request.place.moved || moved,
-                        map = if (moved) null else request.place.map,
-                        mapKnown = if (moved) place.pin == null else request.place.mapKnown,
-                    ),
-                ),
-            )
-        }
-        if (moved) place.pin?.let(::fetchMapForMove)
-    }
-
-    private fun fetchMapForMove(pin: LatLng) {
-        launch {
-            val picture = runCatching { mapSnapshot(pin) }.getOrNull()
-            setState {
-                val request = moving ?: return@setState this
-                if (request.place.pin != pin) return@setState this
-                copy(moving = request.copy(place = request.place.copy(map = picture?.bytes, mapKnown = true)))
-            }
-        }
-    }
-
-    private fun confirmMove() {
-        val request = currentState.moving ?: return
-        setState { copy(moving = null) }
-        moveNow(request.to, request.place.takeIf { it.moved && it.hasPin })
-    }
-
-    /** The move itself, with a place when the Move form picked one. */
-    private fun moveNow(to: LocationStatus, place: PlaceEditor?) {
+    /** The move itself. */
+    private fun moveNow(to: LocationStatus) {
         val s = state.value
         val open = s.gallery ?: return
         val records = open.records.filter { it.id in open.selected }
         if (records.isEmpty()) return
-        run(str(S.desktop_email_moved_to, to.label)) {
-            val pin = place?.pin
-            val picked = if (pin == null) {
-                null
-            } else {
-                MovePlace(pin = pin, link = place.link, mapImage = storeMap(place))
-            }
-            repository.move(records, s.status, to, picked)
-        }
+        run(str(S.desktop_email_moved_to, to.label)) { repository.move(records, s.status, to) }
     }
 
     private fun deleteSelected() {
@@ -696,8 +640,7 @@ class LocationViewModel(
         LocationEvent.PdfSelected, LocationEvent.ToggleSelecting, is LocationEvent.ToggleSelect,
         is LocationEvent.DiscussionDraftChanged, LocationEvent.SendDiscussion,
         LocationEvent.PickFile, is LocationEvent.FilePicked, LocationEvent.NewLink, is LocationEvent.Edit,
-        is LocationEvent.EditorChanged, LocationEvent.Save,
-        is LocationEvent.MovePlaceChanged, LocationEvent.ConfirmMove, LocationEvent.CancelMove -> true
+        is LocationEvent.EditorChanged, LocationEvent.Save -> true
         LocationEvent.ToggleMapView, is LocationEvent.OpenPin -> false
         else -> false
     }
@@ -705,9 +648,6 @@ class LocationViewModel(
     private companion object {
         const val PAGE = 50
         val EPISODES = Regex("[0-9,\\s]+")
-
-        /** The shortlists the Map tool draws, and so the ones a move asks a place for. */
-        val PLACE_ON_MOVE = setOf(LocationStatus.Shortlisted, LocationStatus.Published)
 
         /** What the map picture is stored under; the server only reads the extension. */
         const val MAP_FILE_NAME = "location-map.png"

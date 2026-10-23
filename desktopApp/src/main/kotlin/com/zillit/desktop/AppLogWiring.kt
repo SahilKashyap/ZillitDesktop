@@ -53,6 +53,10 @@ internal fun appLogger(
     encryptToHex: (String) -> ZillitResult<String>,
     deviceId: () -> String,
     online: StateFlow<Boolean>,
+    /** The open production's name; null between productions. */
+    projectName: () -> String?,
+    /** The signed-in person's name; null before a production is open. */
+    userName: () -> String?,
     scope: CoroutineScope,
 ): AppLogger {
     fun osLabel(second: String?) = "${System.getProperty("os.name").orEmpty()} ${second.orEmpty()}".trim()
@@ -72,6 +76,13 @@ internal fun appLogger(
             },
             // A desktop cannot cheaply tell wifi from ethernet; say only what is known.
             network = { if (online.value) "unknown" else "none" },
+            // Read at event time, as the web reads them out of storage: the
+            // log carries names now, not only ids (web PR #6523).
+            projectName = projectName,
+            userName = userName,
+            // What the device is registered under at sign-in — the phones
+            // send their own name here too.
+            deviceDisplayName = DesktopDevice.name,
         ),
         scope = scope,
         newId = { UUID.randomUUID().toString().lowercase() },

@@ -97,6 +97,7 @@ internal class FakeCardRepository(
     override suspend fun approveCard(cardId: String, step: TierVisibility, userId: String) = ok("approveCard")
     override suspend fun rejectCard(cardId: String, reason: String, userId: String) = ok("rejectCard")
     override suspend fun overrideCard(cardId: String, userId: String, reason: String) = ok("overrideCard")
+    override suspend fun returnCardToApproval(cardId: String) = ok("returnCardToApproval")
     override suspend fun activateCard(cardId: String, activation: CardActivation): ZillitResult<Unit> {
         activations += activation
         return ok("activateCard")

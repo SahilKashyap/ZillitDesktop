@@ -200,6 +200,10 @@ class PurchaseOrderRepositoryImpl(
     override suspend fun reject(id: String, reason: String): ZillitResult<Unit> =
         post("$base/$id/reject", buildJsonObject { put("reason", JsonPrimitive(reason)) })
 
+    /** No body: the server resets the chain and re-notifies tier 1 itself. */
+    override suspend fun returnToApproval(id: String): ZillitResult<Unit> =
+        apiClient.envelope(HttpVerb.Post, "$base/$id/return-to-approval", RequestModule.ProjectUser).map { }
+
     override suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit> =
         post("$base/$id/post", request.body())
 

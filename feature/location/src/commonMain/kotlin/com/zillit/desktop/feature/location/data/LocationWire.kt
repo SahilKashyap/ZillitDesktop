@@ -13,7 +13,6 @@ import com.zillit.desktop.feature.location.domain.LatLng
 import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationPin
-import com.zillit.desktop.feature.location.domain.MovePlace
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 import kotlinx.serialization.json.JsonArray
@@ -71,8 +70,6 @@ internal fun moveWire(
     ids: List<String>,
     sample: LocationMedia,
     to: LocationStatus,
-    /** A place picked in the Move form; every moved entry gets it. */
-    place: MovePlace? = null,
 ): JsonObject = buildJsonObject {
     put("scene_number", sample.sceneNumber)
     put("city", sample.city)
@@ -92,14 +89,10 @@ internal fun moveWire(
         put("new_episode", ep)
         put("episode", ep)
     }
-    // A move drops `link`, `location` and `link_attachment` by default — the
-    // record keeps what it had. A place picked in the Move form puts them
-    // back, onto every entry in the move (web PR #6521, `keepPlace`).
-    place?.let { picked ->
-        put("link", picked.link)
-        put("location", pinWire(picked.pin))
-        picked.mapImage?.let { put("link_attachment", attachmentWire(it)) }
-    }
+    // A move sends no `link`, `location` or `link_attachment`: the server
+    // leaves each entry's own place as it was. One place picked for a whole
+    // folder overwrote them all, which is why the Move form's location field
+    // went back out (web PR #6522).
 }
 
 

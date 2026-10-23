@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.DriveShareLinkDraft
 import com.zillit.desktop.feature.drive.domain.FileAccessLevel
+import com.zillit.desktop.feature.drive.domain.NewFileType
 import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.PreviewKind
 import com.zillit.desktop.feature.drive.domain.UploadPlan
@@ -235,6 +236,53 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
                     val taken = made.error.isDuplicateName()
                     updateNewFolder { copy(submitting = false, nameError = made.error.localised().takeIf { taken }) }
                     if (!taken) vm.reportError(made.error)
+                }
+            }
+        }
+    }
+
+    // -- New: a blank file of a type Drive can edit -----------------------------
+
+    /**
+     * "New → Document": the name prompt, started on the type's own default
+     * ("Untitled document") so Enter is enough (web PR #6530).
+     */
+    fun openNewFile(type: NewFileType) {
+        if (!vm.requirePosting()) return
+        vm.update { copy(newFile = NewFileDraft(type = type, name = type.defaultName), menu = null) }
+    }
+
+    fun updateNewFile(change: NewFileDraft.() -> NewFileDraft) =
+        vm.update { copy(newFile = newFile?.change()) }
+
+    /**
+     * Makes the file in the open folder and opens it straight away — the
+     * office types in the live editor, Markdown and text in Drive's own.
+     *
+     * The listing is re-read as it is after an upload: the server does not
+     * echo `drive:file:added` back to the device that made it.
+     */
+    fun submitNewFile() {
+        val draft = state.newFile ?: return
+        if (!draft.canSubmit) return
+        val folderId = state.folderId
+        updateNewFile { copy(submitting = true) }
+        vm.run {
+            val typed = draft.name.trim().ifEmpty { draft.type.defaultName }
+            when (val made = vm.repo.createNewFile(draft.type, typed, folderId)) {
+                is ZillitResult.Success -> {
+                    vm.update { copy(newFile = null) }
+                    vm.loadListing()
+                    if (draft.type.isText) {
+                        vm.textDocs.open(made.data, edit = true)
+                    } else {
+                        vm.openEditor(made.data, editable = true)
+                    }
+                }
+
+                is ZillitResult.Failure -> {
+                    updateNewFile { copy(submitting = false) }
+                    vm.reportError(made.error)
                 }
             }
         }

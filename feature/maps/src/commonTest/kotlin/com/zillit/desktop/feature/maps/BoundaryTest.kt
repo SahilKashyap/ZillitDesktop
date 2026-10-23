@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapCity
 import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.buildBoundaryPrompt
+import com.zillit.desktop.feature.maps.domain.cityIdForPoint
 import com.zillit.desktop.feature.maps.domain.evaluatePinBoundary
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -187,5 +188,38 @@ class BoundaryTest {
             "Location is outside the studio zone. Do you want to pin the location?",
             buildBoundaryPrompt(BoundaryStatus.OutsideZone, BoundaryMode.Add)!!.message,
         )
+    }
+
+    // -- which city a pin is filed under (web PR #6543) ---------------------
+
+    @Test
+    fun `a pin inside two overlapping cities is filed under the nearer one`() {
+        // Delhi and Noida, whose circles overlap; the pin sits closer to Noida.
+        val delhi = MapCity(id = "delhi", name = "Delhi", coordinates = LatLng(28.6139, 77.2090), radiusMiles = 30.0)
+        val noida = MapCity(id = "noida", name = "Noida", coordinates = LatLng(28.5355, 77.3910), radiusMiles = 30.0)
+        val cities = listOf(delhi, noida)
+
+        assertEquals("noida", cityIdForPoint(LatLng(28.5400, 77.3800), cities))
+        assertEquals("delhi", cityIdForPoint(LatLng(28.6100, 77.2100), cities))
+    }
+
+    @Test
+    fun `a pin in no city's circle belongs to none, so it shows under every city`() {
+        val cities = listOf(MapCity(id = "c", name = "Gurugram", coordinates = centre, radiusMiles = 15.0))
+
+        assertNull(cityIdForPoint(at(200.0), cities), "far outside: no city holds it")
+        assertNull(cityIdForPoint(null, cities), "no point, no answer")
+        assertNull(cityIdForPoint(centre, emptyList()), "no cities, no answer")
+    }
+
+    @Test
+    fun `a city with no coordinates and a zero radius are read as the boundary check reads them`() {
+        // No usable centre: the city cannot hold anything.
+        assertNull(cityIdForPoint(centre, listOf(MapCity(id = "c", name = "Nowhere"))))
+        // A radius of zero means 30 miles, not "no boundary" — the same rule
+        // evaluatePinBoundary applies.
+        val zeroRadius = listOf(MapCity(id = "c", name = "Gurugram", coordinates = centre, radiusMiles = 0.0))
+        assertEquals("c", cityIdForPoint(at(20.0), zeroRadius))
+        assertNull(cityIdForPoint(at(40.0), zeroRadius))
     }
 }

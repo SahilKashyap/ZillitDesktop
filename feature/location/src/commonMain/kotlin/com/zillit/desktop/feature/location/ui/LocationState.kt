@@ -86,9 +86,6 @@ data class PlaceEditor(
     }
 }
 
-/** Moving the ticked records, with the place the Move form asks for. */
-data class MoveRequest(val to: LocationStatus, val place: PlaceEditor = PlaceEditor())
-
 /** The create/edit form: metadata plus, on create, the picked file or a link. */
 data class LocationEditor(
     val id: String? = null,
@@ -178,15 +175,6 @@ data class LocationUiState(
     val browsing: OpenFolder? = null,
     val gallery: OpenGallery? = null,
     val editor: LocationEditor? = null,
-    /**
-     * A move waiting on the Move form.
-     *
-     * Moving to Shortlist or Final asks where the location is, so the Map
-     * tool can draw it; a place picked there rides onto every record in the
-     * move (web PR #6521). A move to any other shortlist goes straight
-     * through and never sets this.
-     */
-    val moving: MoveRequest? = null,
     /** The record opened full-size. */
     val viewing: LocationMedia? = null,
     val confirmDelete: List<String>? = null,
@@ -259,11 +247,6 @@ sealed interface LocationEvent {
     data object ToggleSelecting : LocationEvent
     data class ToggleSelect(val id: String) : LocationEvent
     data class MoveSelected(val to: LocationStatus) : LocationEvent
-
-    /** The Move form's place field. */
-    data class MovePlaceChanged(val place: PlaceEditor) : LocationEvent
-    data object ConfirmMove : LocationEvent
-    data object CancelMove : LocationEvent
     data object DeleteSelected : LocationEvent
     data object ConfirmDelete : LocationEvent
     data object CancelDelete : LocationEvent

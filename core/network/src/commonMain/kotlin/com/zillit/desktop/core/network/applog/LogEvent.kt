@@ -61,7 +61,30 @@ data class LogIdentity(
     val installId: () -> String,
     /** "wifi", "cellular", "none" or "unknown" — only what is actually knowable. */
     val network: () -> String,
+    /**
+     * The open production's name, read at event time — the Logs dashboard
+     * reads names now, not ids (web `log-event.js`). Null, and left out of the
+     * JSON, when no production is open: the project picker and the sign-in
+     * screen have none.
+     */
+    val projectName: () -> String? = { null },
+    /** The signed-in person's name, same rule as [projectName]. */
+    val userName: () -> String? = { null },
+    /**
+     * What this machine calls itself — the same value the device is registered
+     * under at sign-in. Sent as `device_display_name`, because `device_name`
+     * already means something else in the log store.
+     */
+    val deviceDisplayName: String? = null,
 )
+
+/**
+ * The Logs dashboard's rule for a name: plain text, trimmed, at most 100
+ * characters. Blank reads as absent, so the key drops out of the JSON rather
+ * than carrying an empty string.
+ */
+private fun displayText(value: String?): String? =
+    value?.trim()?.takeIf { it.isNotEmpty() }?.take(DISPLAY_TEXT_MAX)
 
 /** The `data` object of one wire record. The record's `unique_id` is the engine's. */
 fun LogEvent.envelope(identity: LogIdentity, eventTimeMillis: Long): JsonObject = buildJsonObject {
@@ -70,6 +93,9 @@ fun LogEvent.envelope(identity: LogIdentity, eventTimeMillis: Long): JsonObject 
     put("app_version", identity.appVersion)
     put("os_version", identity.osVersion)
     put("device_model", identity.deviceModel)
+    displayText(identity.projectName())?.let { put("project_name", it) }
+    displayText(identity.userName())?.let { put("user_name", it) }
+    displayText(identity.deviceDisplayName)?.let { put("device_display_name", it) }
     put("install_id", identity.installId())
     put("network", identity.network())
     put("event_time", eventTimeMillis)
@@ -120,3 +146,5 @@ private fun pathOf(url: String): String {
 }
 
 private const val SCHEMA_VERSION = 1
+
+private const val DISPLAY_TEXT_MAX = 100

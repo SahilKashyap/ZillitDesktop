@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.drive.domain.DriveShareLink
 import com.zillit.desktop.feature.drive.domain.DriveSortSpec
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveUnread
+import com.zillit.desktop.feature.drive.domain.NewFileType
 import com.zillit.desktop.feature.drive.domain.DriveChangeAuthorCount
 import com.zillit.desktop.feature.drive.domain.DriveChangeGroup
 import com.zillit.desktop.feature.drive.domain.DriveFileKind
@@ -371,6 +372,23 @@ data class NewFolderDraft(
 
 const val MAX_FOLDER_NAME = 100
 
+/**
+ * "New → Document" asks for the name first — the web's `NewFileNameModal`.
+ *
+ * [name] starts at the type's default and comes selected, so typing replaces
+ * it and Enter creates. The extension is shown beside the box, never typed,
+ * and the server still adds " (1)" when the name is taken.
+ */
+data class NewFileDraft(
+    val type: NewFileType,
+    val name: String,
+    val submitting: Boolean = false,
+) {
+    val canSubmit: Boolean get() = !submitting && name.length <= MAX_FILE_NAME
+}
+
+const val MAX_FILE_NAME = 190
+
 /** The edit-info drawer (`EditItemDrawer.jsx`): a file's name is shown without its extension. */
 data class EditDraft(
     val item: DriveItem,
@@ -612,6 +630,8 @@ data class DriveUiState(
     val prompt: DrivePrompt? = null,
     val upload: UploadDraft? = null,
     val newFolder: NewFolderDraft? = null,
+    /** The "New" menu's name prompt, once a type has been picked. */
+    val newFile: NewFileDraft? = null,
     val edit: EditDraft? = null,
     val share: ShareState? = null,
     val moveTo: MoveToState? = null,
@@ -767,7 +787,7 @@ data class DriveUiState(
 
     /** Whether anything modal is up — the listing's own shortcuts stand down then. */
     val hasOverlay: Boolean
-        get() = prompt != null || upload != null || newFolder != null || edit != null ||
+        get() = prompt != null || upload != null || newFolder != null || newFile != null || edit != null ||
             share != null || moveTo != null || preview != null || dropUpload != null ||
             textDoc != null || notifyEdit != null ||
             activityLog.open || fileRequests.open || renameUploads.open ||

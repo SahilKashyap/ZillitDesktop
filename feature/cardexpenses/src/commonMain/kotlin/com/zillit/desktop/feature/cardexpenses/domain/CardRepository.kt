@@ -61,6 +61,14 @@ interface CardRepository : CardInboxApi {
     /** Approves a request over its chain; [reason] is on the record. */
     suspend fun overrideCard(cardId: String, userId: String, reason: String): ZillitResult<Unit>
 
+    /**
+     * Sends a decided card back to pending — `POST /cards/:id/return-to-approval`,
+     * no body. The server clears the approvals and re-notifies tier 1
+     * (web PR #6519; the backend refuses anything else with
+     * `card_cannot_return_to_approval`).
+     */
+    suspend fun returnCardToApproval(cardId: String): ZillitResult<Unit>
+
     /** Brings an approved card into use with its type, its number and — if it has none — a provider. */
     suspend fun activateCard(cardId: String, activation: CardActivation): ZillitResult<Unit>
 

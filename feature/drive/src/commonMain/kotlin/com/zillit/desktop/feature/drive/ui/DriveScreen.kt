@@ -50,6 +50,7 @@ import com.zillit.desktop.feature.drive.ui.pages.InnerTabs
 import com.zillit.desktop.feature.drive.ui.pages.ItemMenuHost
 import com.zillit.desktop.feature.drive.ui.pages.MoveToDialog
 import com.zillit.desktop.feature.drive.ui.pages.NotifyEditDialog
+import com.zillit.desktop.feature.drive.ui.pages.NewFileNameDialog
 import com.zillit.desktop.feature.drive.ui.pages.NewFolderSheet
 import com.zillit.desktop.feature.drive.ui.pages.OperationsPanel
 import com.zillit.desktop.feature.drive.ui.pages.PreviewDialog
@@ -198,6 +199,7 @@ private fun DriveScreenBody(
 
         UploadSheet(state, onEvent)
         NewFolderSheet(state, onEvent)
+        NewFileNameDialog(state, onEvent)
         EditItemSheet(state, onEvent)
         ShareSheet(state, onEvent)
         ActivityLogSheet(state, onEvent)

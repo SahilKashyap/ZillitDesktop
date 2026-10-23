@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cashexpenses
 
+import com.zillit.desktop.feature.cashexpenses.domain.FLOAT_RETURNABLE_STATUSES
 import com.zillit.desktop.feature.cashexpenses.domain.ApprovalTier
 import com.zillit.desktop.feature.cashexpenses.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
@@ -239,6 +240,53 @@ class CashFloatsParityTest {
 
         assertTrue("collectFloat:ready" in repository.calls)
         assertTrue("closeFloat:spent" in repository.calls)
+    }
+
+    // -- Return to Approval (web PR #6519) ---------------------------------
+
+    @Test
+    fun `a decided float goes back through its chain while the cash is still in the safe`() =
+        runTest(dispatcher) {
+            FLOAT_RETURNABLE_STATUSES.forEach { status ->
+                val repository = FakeCash(writesSucceed = true).apply {
+                    activeFloatRows = listOf(float("f1", status))
+                }
+                val vm = viewModel(repository, accountant())
+                vm.onEvent(CashEvent.Open(CashDestination.ApprovalQueue))
+                advanceUntilIdle()
+
+                vm.onEvent(
+                    CashEvent.ActNow(CashPrompt.Confirm(ConfirmAction.ReturnFloatToApproval, "f1", "", "")),
+                )
+                advanceUntilIdle()
+
+                assertTrue("returnFloatToApproval:f1" in repository.calls, "$status should be returnable")
+            }
+        }
+
+    @Test
+    fun `collected cash and a viewer who is not an accountant are both refused`() = runTest(dispatcher) {
+        // Once it is out of the safe, the approval chain is not the question.
+        assertTrue(FloatStatus.Collected !in FLOAT_RETURNABLE_STATUSES)
+        assertTrue(FloatStatus.Spent !in FLOAT_RETURNABLE_STATUSES)
+        assertTrue(FloatStatus.AwaitingApproval !in FLOAT_RETURNABLE_STATUSES)
+
+        val crew = CashViewer(
+            userId = "u1",
+            departmentIdentifier = "department_art",
+            designationIdentifier = "designation_art_director",
+        )
+        val repository = FakeCash(writesSucceed = true).apply {
+            activeFloatRows = listOf(float("f1", FloatStatus.Approved))
+        }
+        val vm = viewModel(repository, crew)
+        vm.onEvent(CashEvent.Open(CashDestination.MyOverview))
+        advanceUntilIdle()
+
+        vm.onEvent(CashEvent.ActNow(CashPrompt.Confirm(ConfirmAction.ReturnFloatToApproval, "f1", "", "")))
+        advanceUntilIdle()
+
+        assertTrue(repository.calls.none { it.startsWith("returnFloatToApproval") }, "accountants only")
     }
 
     private fun float(id: String, status: FloatStatus) = CashFloat(

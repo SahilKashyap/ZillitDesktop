@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -19,6 +20,7 @@ import com.zillit.desktop.feature.drive.domain.descendantsOf
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DrivePrompt
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.feature.drive.ui.MAX_FILE_NAME
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -224,3 +226,69 @@ private val NOTIFY_WIDTH = 460.dp
 
 /** The server trims a note to this length; the box stops there too. */
 private const val NOTE_MAX_LENGTH = 300
+
+/**
+ * "New → Document" asks for the name first — the web's `NewFileNameModal`
+ * (PR #6530).
+ *
+ * The default ("Untitled document") is already in the box, so typing replaces
+ * it and Enter creates. The extension is shown beside it, never typed: the
+ * format is the type that was chosen. The server still adds " (1)" when a
+ * sibling has the name.
+ */
+@Composable
+internal fun NewFileNameDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
+    val draft = state.newFile
+    ZillitDialogShell(
+        title = str(S.continue_new) + " " + draft?.type?.label?.lowercase().orEmpty(),
+        subtitle = if (state.folderId != null) {
+            str(S.desktop_drive_inside_folder, state.currentFolderName)
+        } else {
+            null
+        },
+        visible = draft != null,
+        onDismiss = { onEvent(DriveEvent.CloseNewFile) },
+        icon = ZillitIcons.Add,
+        width = NEW_FILE_WIDTH,
+        actions = {
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = { onEvent(DriveEvent.CloseNewFile) },
+                variant = ButtonVariant.Tertiary,
+                enabled = draft?.submitting != true,
+            )
+            ZillitButton(
+                text = str(S.dd_empty_create_cta),
+                onClick = { onEvent(DriveEvent.SubmitNewFile) },
+                enabled = draft?.canSubmit == true,
+                loading = draft?.submitting == true,
+                leadingIcon = ZillitIcons.Add,
+            )
+        },
+    ) {
+        if (draft == null) return@ZillitDialogShell
+        ZillitTextField(
+            value = draft.name,
+            onValueChange = { onEvent(DriveEvent.NewFileName(it)) },
+            label = str(S.docusign_compose_file_name_hint),
+            placeholder = draft.type.defaultName,
+            // The format, where the web puts the extension: beside the box,
+            // so it reads as part of the name without being editable.
+            trailingContent = {
+                ZillitText(
+                    text = "." + draft.type.extension,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+            },
+            errorText = str(S.desktop_drive_folder_name_too_long, MAX_FILE_NAME)
+                .takeIf { draft.name.length > MAX_FILE_NAME },
+            enabled = !draft.submitting,
+            // Enter creates, which is the point of starting on the default.
+            imeAction = ImeAction.Done,
+            onImeAction = { onEvent(DriveEvent.SubmitNewFile) },
+        )
+    }
+}
+
+private val NEW_FILE_WIDTH = 420.dp

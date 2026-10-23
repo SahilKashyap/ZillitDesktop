@@ -114,25 +114,38 @@ object InvoiceRules {
         return InvoiceBadge(label, BadgeTone.Rejected)
     }
 
-    /** Department view: only my own, still-pending uploads. */
+    /**
+     * Department view: my own, at any status and in any period.
+     *
+     * It was "my own, still pending" until the creator was given the delete
+     * outright — the backend reverses whatever was posted (web PR #6521 /
+     * `DepartmentInvoiceModule.jsx:965`).
+     */
     fun canDeleteOwn(invoice: Invoice, viewer: InvoiceViewer): Boolean =
-        invoice.userId == viewer.userId && invoice.approvalStatus == ApprovalStatus.Pending &&
-            invoice.status != InvoiceStatus.Approved && invoice.status != InvoiceStatus.Rejected
+        viewer.userId.isNotBlank() && invoice.userId == viewer.userId
 
     /**
      * Delete from an approval queue — the web's `canDeleteInvoice`
-     * (`utils/approval-helpers.js:404-418`), rule for rule. The delete is a
+     * (`utils/approval-helpers.js:404-424`), rule for rule. The delete is a
      * hard one, so the gate is tighter than "can see the row":
      *
+     * 0. the person who raised it — always: any status, paid and posted
+     *    included, and any period. The backend reverses whatever was posted.
+     *    On the accountant side the invoice's assignee and invoice seniors get
+     *    the same ([accountantSide]);
      * 1. never in a closed cost-report period ([locked]);
      * 2. never once approved (`approval_status`), or approved / overridden (`status`);
      * 3. part-approved (any tier signed) — override rights only;
-     * 4. untouched chain — override rights, the creator, or anyone configured
-     *    on any tier of this invoice's chain ([tiers]).
+     * 4. untouched chain — override rights, or anyone configured on any tier
+     *    of this invoice's chain ([tiers]).
      *
      * [canOverride] is the surface's own override right: the department
      * board passes [InvoiceViewer.serverOverride], the accountant queue
      * [InvoiceViewer.canOverride].
+     *
+     * [accountantSide] is the web's `InvoiceSeniorContext`, which only the
+     * accountant module provides: the crew board stays creator-only, so the
+     * assignee and seniority never widen it there.
      */
     fun canDeleteFromQueue(
         invoice: Invoice,
@@ -140,13 +153,39 @@ object InvoiceRules {
         viewer: InvoiceViewer,
         canOverride: Boolean,
         locked: Boolean,
+        accountantSide: Boolean = false,
     ): Boolean {
-        if (locked) return false
-        if (invoice.approvalStatus == ApprovalStatus.Approved) return false
-        if (invoice.status == InvoiceStatus.Approved || invoice.status == InvoiceStatus.Override) return false
+        if (deletesOutright(invoice, viewer, accountantSide)) return true
+        if (!stillOpenToDeletion(invoice, locked)) return false
         if (invoice.approvedCount > 0) return canOverride
-        val isCreator = viewer.userId.isNotBlank() && invoice.userId == viewer.userId
-        return canOverride || isCreator || ApprovalChain.isApprover(tiers, viewer.userId)
+        return canOverride || ApprovalChain.isApprover(tiers, viewer.userId)
+    }
+
+    /**
+     * Rules 1 and 2 of [canDeleteFromQueue]: a closed cost-report period, and
+     * a chain that has finished, put the invoice beyond deleting by anyone
+     * but the people rule 0 names. Once the chain completes the invoice
+     * belongs to the ledger.
+     */
+    private fun stillOpenToDeletion(invoice: Invoice, locked: Boolean): Boolean = when {
+        locked -> false
+        invoice.approvalStatus == ApprovalStatus.Approved -> false
+        else -> invoice.status != InvoiceStatus.Approved && invoice.status != InvoiceStatus.Override
+    }
+
+    /**
+     * Rule 0 of [canDeleteFromQueue]: who deletes whatever the status and
+     * whatever the period.
+     *
+     * The person who raised it, always. On the accountant side the invoice's
+     * assignee and invoice seniors too — the web's `InvoiceSeniorContext`,
+     * which the crew module does not provide.
+     */
+    private fun deletesOutright(invoice: Invoice, viewer: InvoiceViewer, accountantSide: Boolean): Boolean {
+        if (viewer.userId.isBlank()) return false
+        if (invoice.userId == viewer.userId) return true
+        if (!accountantSide) return false
+        return invoice.assignedTo == viewer.userId || viewer.isSenior
     }
 
     /**

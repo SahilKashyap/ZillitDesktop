@@ -237,8 +237,14 @@ data class WorksheetUiState(
     val ledger: LedgerView? = null,
     /** A posted snapshot opened from the CR History tab. */
     val snapshot: SnapshotView? = null,
-    /** A feeder tool approved or posted something; the figures may be stale until refreshed. */
+    /**
+     * A feeder tool approved or posted something; the figures may be stale.
+     * The pill shows at once, and the worksheet refreshes itself once the
+     * events stop (the web's `useCostReportAutoRefresh`).
+     */
     val sourceStale: Boolean = false,
+    /** Shown for a moment after a refresh nobody asked for — the web's green chip. */
+    val autoRefreshed: Boolean = false,
     /** The Overages dialog's notes for the producer, by header code. Local, as on the web. */
     val flagNotes: Map<String, String> = emptyMap(),
 ) {

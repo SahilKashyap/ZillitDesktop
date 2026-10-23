@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.costreport
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.costreport.data.CR_SOURCE_SYNC_EVENTS
 import com.zillit.desktop.feature.costreport.data.CrSyncEnvelope
 import com.zillit.desktop.feature.costreport.data.costReportSyncFor
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
@@ -60,11 +61,12 @@ class CostReportSyncTest {
     // -- the wire ----------------------------------------------------------
 
     @Test
-    fun `report events reload, source events only flag`() {
+    fun `report events reload at once, the one source event waits out its quiet window`() {
         assertEquals(CostReportSync.Report, costReportSyncFor(SocketEventName("cost_report:locked")))
         assertEquals(CostReportSync.Report, costReportSyncFor(SocketEventName("cost_report:posted")))
-        assertEquals(CostReportSync.Source, costReportSyncFor(SocketEventName("po:posted")))
-        assertEquals(CostReportSync.Source, costReportSyncFor(SocketEventName("timecard:final_approved")))
+        // One event now, not the twelve feeder events it replaced (web PR #6543).
+        assertEquals(CostReportSync.Source, costReportSyncFor(SocketEventName("cost_report:refresh")))
+        assertEquals(listOf(SocketEventName("cost_report:refresh")), CR_SOURCE_SYNC_EVENTS)
     }
 
     @Test
@@ -107,13 +109,97 @@ class CostReportSyncTest {
 
         events.emit(CostReportSync.Source)
         runCurrent()
-        assertTrue(model.state.value.sourceStale, "a feeder tool's post raises the pill")
-        assertEquals(2, repository.liveLoads, "and deliberately does not reload")
+        assertTrue(model.state.value.sourceStale, "a feeder tool's post raises the pill at once")
+        assertEquals(2, repository.liveLoads, "and nothing is fetched yet")
 
+        // A second event inside the window restarts it, so a burst settles
+        // into one refresh rather than one per event.
+        advanceTimeBy(CostReportViewModel.QUIET_MILLIS / 2)
+        events.emit(CostReportSync.Source)
+        runCurrent()
+        advanceTimeBy(CostReportViewModel.QUIET_MILLIS / 2)
+        runCurrent()
+        assertEquals(2, repository.liveLoads, "the window was restarted, not run down")
+
+        // runCurrent, not advanceUntilIdle: the latter would run the chip's
+        // own window down too, and the chip is what is being checked.
+        advanceTimeBy(CostReportViewModel.QUIET_MILLIS)
+        runCurrent()
+        assertFalse(model.state.value.sourceStale, "the report refreshed itself")
+        assertEquals(3, repository.liveLoads, "once, for the whole burst")
+        assertTrue(model.state.value.autoRefreshed, "and says so")
+
+        advanceTimeBy(CostReportViewModel.CHIP_MILLIS)
+        runCurrent()
+        assertFalse(model.state.value.autoRefreshed, "the chip does not stay up")
+    }
+
+    @Test
+    fun `a burst that never stops still refreshes, fifteen seconds after its first event`() =
+        runTest(dispatcher) {
+            val events = MutableSharedFlow<CostReportSync>()
+            val repository = SyncFakeRepository(events)
+            // A clock that follows the virtual one, or the cap cannot be
+            // measured at all: with a fixed `nowMillis` the max-wait
+            // arithmetic is a no-op and every wait is the full quiet window.
+            val model = CostReportViewModel(
+                repository = repository,
+                exporter = NoExporter,
+                files = NoFiles,
+                resolveViewer = { CostReportViewer(userId = "me", canView = true, ready = true) },
+                projectName = { "Sunset Boulevard" },
+                resolveUser = { null },
+                nowMillis = { NOW + dispatcher.scheduler.currentTime },
+            )
+            model.start()
+            advanceUntilIdle()
+            val before = repository.liveLoads
+
+            // An event every two seconds: the quiet window never runs down,
+            // so without the cap this would wait for ever.
+            val step = CostReportViewModel.QUIET_MILLIS - 1_500
+            repeat(12) {
+                events.emit(CostReportSync.Source)
+                runCurrent()
+                advanceTimeBy(step)
+                runCurrent()
+            }
+
+            assertEquals(
+                before + 1,
+                repository.liveLoads,
+                "the cap fired once, ${CostReportViewModel.MAX_WAIT_MILLIS}ms after the first event",
+            )
+        }
+
+    @Test
+    fun `pressing the pill refreshes now, with no chip`() = runTest(dispatcher) {
+        val events = MutableSharedFlow<CostReportSync>()
+        val repository = SyncFakeRepository(events)
+        val model = CostReportViewModel(
+            repository = repository,
+            exporter = NoExporter,
+            files = NoFiles,
+            resolveViewer = { CostReportViewer(userId = "me", canView = true, ready = true) },
+            projectName = { "Sunset Boulevard" },
+            resolveUser = { null },
+            nowMillis = { NOW },
+        )
+        model.start()
+        advanceUntilIdle()
+
+        events.emit(CostReportSync.Source)
+        runCurrent()
         model.onEvent(CostReportEvent.Refresh)
         advanceUntilIdle()
         assertFalse(model.state.value.sourceStale, "pressing Refresh answers the pill")
-        assertEquals(3, repository.liveLoads)
+        assertEquals(2, repository.liveLoads)
+        assertFalse(model.state.value.autoRefreshed, "a read the person asked for says nothing")
+
+        // The waiting refresh was cancelled by that read, not left to fire.
+        advanceTimeBy(CostReportViewModel.MAX_WAIT_MILLIS)
+        advanceUntilIdle()
+        assertEquals(2, repository.liveLoads)
     }
 
     private object NoExporter : CostReportExporter {

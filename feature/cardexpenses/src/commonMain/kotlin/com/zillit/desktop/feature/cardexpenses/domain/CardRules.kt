@@ -4,6 +4,17 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
 /** Where a card is in its own lifecycle. */
+/**
+ * The card statuses Return to Approval may be offered on — approved, rejected
+ * and overridden.
+ *
+ * The backend's email names approved and rejected; the web offers it on
+ * override cards too (user, 2026-10-22, web PR #6542). Anything else is
+ * refused server-side with `card_cannot_return_to_approval`.
+ */
+val CARD_RETURNABLE_STATUSES: Set<CardStatus>
+    get() = setOf(CardStatus.Approved, CardStatus.Override, CardStatus.Rejected)
+
 enum class CardStatus(val wire: String, private val labelKey: String) {
     Requested("requested", S.av_chip_requested),
     /** "Pending Approval" on every card surface (`adminUi.jsx:120`, `CardRegisterPage.jsx:83`). */

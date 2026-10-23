@@ -170,7 +170,6 @@ fun LocationScreen(
             state.browsing != null -> PicksDialog(state.browsing, state.unread, state.status, onEvent, readOnly)
         }
         state.editor?.let { EditorDialog(state, onEvent) }
-        state.moving?.let { MoveDialog(it, state.busy, onEvent) }
         state.viewing?.let { ViewDialog(state, it, onEvent, loadImage, resolveUser, readOnly) }
         state.confirmDelete?.let { ids ->
             ZillitDialogShell(
@@ -769,49 +768,6 @@ private fun PinRow(
             )
         }
         ZillitStatusPill(label = pin.status.label, tone = StatusTone.Neutral)
-    }
-}
-
-// Move -----------------------------------------------------------------------
-
-/**
- * Moving to Shortlist or Final asks where the location is.
- *
- * The Map tool draws the shortlisted and final places, and a move otherwise
- * leaves them behind: the server drops `link`, `location` and
- * `link_attachment` on a move unless they are sent again (web PR #6521).
- * Picking is optional — Move goes ahead with whatever the field holds.
- */
-@Composable
-private fun MoveDialog(request: MoveRequest, busy: Boolean, onEvent: (LocationEvent) -> Unit) {
-    val picture = remember(request.place.map) { request.place.map?.let(::decodeImageBitmap) }
-    ZillitDialogShell(
-        title = str(S.drive_move_to_destination, request.to.label),
-        subtitle = str(S.desktop_location_move_place_hint),
-        onDismiss = { onEvent(LocationEvent.CancelMove) },
-        visible = true,
-        actions = {
-            ZillitButton(text = str(S.cancel), onClick = { onEvent(LocationEvent.CancelMove) },
-                variant = ButtonVariant.Tertiary)
-            ZillitButton(text = str(S.move), onClick = { onEvent(LocationEvent.ConfirmMove) }, loading = busy)
-        },
-    ) {
-        ZillitPinField(
-            place = request.place.pin?.let { PinnedPlace(it.lat, it.long, request.place.address) },
-            onPlaceChange = { picked ->
-                onEvent(
-                    LocationEvent.MovePlaceChanged(
-                        request.place.copy(pin = LatLng(picked.lat, picked.long), address = picked.address),
-                    ),
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = str(S.location),
-            preview = picture,
-            previewKnown = request.place.mapKnown,
-            onOpenUrl = { onEvent(LocationEvent.OpenUrl(it)) },
-            noPickerHint = str(S.desktop_location_paste_maps_link),
-        )
     }
 }
 

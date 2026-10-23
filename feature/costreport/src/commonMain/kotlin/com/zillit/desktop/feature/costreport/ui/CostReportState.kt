@@ -141,12 +141,16 @@ data class CostReportUiState(
     val ledger: LedgerView? = null,
     /**
      * A feeder tool approved or posted something elsewhere, so the actuals
-     * and committed columns may be stale. Deliberately a flag rather than an
-     * auto-refresh — the worksheet recompute is heavy, and the web makes the
-     * same call (`CostReportWorksheetModule.jsx:5606-5615`): the Refresh
-     * button turns into a pill until pressed.
+     * and committed columns may be stale.
+     *
+     * The pill shows at once and the report then refreshes itself once the
+     * events stop arriving — the recompute is heavy, so a burst is waited out
+     * rather than answered per event (the web's `useCostReportAutoRefresh`).
+     * A click on the pill refreshes now.
      */
     val sourceStale: Boolean = false,
+    /** Shown for a moment after a refresh nobody asked for — the web's green chip. */
+    val autoRefreshed: Boolean = false,
     /** Unread Posted CRs in all — the tab chip (`CostReportToolModule.jsx:68-80`). */
     val postedTotal: Int = 0,
     /** Unread per posted snapshot, by its id (the ledger's `level_3`) — the timeline rows' red counts. */

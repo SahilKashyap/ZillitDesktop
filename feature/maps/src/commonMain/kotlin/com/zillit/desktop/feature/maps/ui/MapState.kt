@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.maps.domain.SceneGuide
 import com.zillit.desktop.feature.maps.domain.ScenePin
 import com.zillit.desktop.feature.maps.domain.SharePerson
 import com.zillit.desktop.feature.maps.domain.ZoneRules
+import com.zillit.desktop.feature.maps.domain.cityIdForPoint
 import com.zillit.desktop.feature.maps.domain.typeStyle
 
 /**
@@ -100,8 +101,27 @@ data class MapUiState(
     val activeZone: MapLocation? get() = zones.firstOrNull { it.id == activeZoneId }
     val topPanel: MapPanel? get() = panels.lastOrNull()
 
-    /** Everything on the map: the city's locations and the pinned shoot locations. */
-    val drawable: List<MapLocation> get() = if (shootLocations.isEmpty()) locations else locations + shootLocations
+    /**
+     * The Location tool's pins that belong to the selected city.
+     *
+     * Each pin is filed under the nearest city whose circle holds it
+     * ([cityIdForPoint]), so overlapping cities such as Delhi and Noida do not
+     * both draw and count it. A pin inside no city's circle shows under every
+     * city, so none ever disappears (web PR #6543).
+     */
+    val cityShootLocations: List<MapLocation>
+        get() {
+            val city = selectedCityId ?: return shootLocations
+            if (shootLocations.isEmpty()) return shootLocations
+            return shootLocations.filter { pin ->
+                val filedUnder = cityIdForPoint(pin.point, cities)
+                filedUnder == null || filedUnder == city
+            }
+        }
+
+    /** Everything on the map: the city's locations and its pinned shoot locations. */
+    val drawable: List<MapLocation>
+        get() = cityShootLocations.let { if (it.isEmpty()) locations else locations + it }
 
     /** The locations the map draws — type filters only, never the search. */
     val filteredLocations: List<MapLocation>

@@ -89,6 +89,9 @@ enum class DriveSaveType(val wire: String) {
     Restore("restore"),
     Upload("upload"),
 
+    /** The first version of a file made with Drive's New — a blank template. */
+    Created("created"),
+
     /** A version from before the editor recorded any of this. */
     Legacy("legacy"),
     ;

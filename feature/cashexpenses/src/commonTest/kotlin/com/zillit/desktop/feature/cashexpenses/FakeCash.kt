@@ -126,6 +126,8 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
     override suspend fun rejectFloat(floatId: String, reason: String): ZillitResult<Unit> =
         write("rejectFloat:$floatId")
     override suspend fun overrideFloat(floatId: String): ZillitResult<Unit> = write("overrideFloat:$floatId")
+    override suspend fun returnFloatToApproval(floatId: String): ZillitResult<Unit> =
+        write("returnFloatToApproval:$floatId")
     override suspend fun markFloatReadyToCollect(
         floatId: String,
         companyId: String?,

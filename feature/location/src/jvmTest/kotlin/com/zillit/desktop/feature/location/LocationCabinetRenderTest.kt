@@ -14,7 +14,6 @@ import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
-import com.zillit.desktop.feature.location.domain.MovePlace
 import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 import com.zillit.desktop.feature.location.domain.PickedLocationFile
@@ -86,7 +85,6 @@ class LocationCabinetRenderTest {
             records: List<LocationMedia>,
             from: LocationStatus,
             to: LocationStatus,
-            place: MovePlace?,
         ) = ZillitResult.Success(Unit)
         override suspend fun pdf(ids: List<String>, includeDetails: Boolean) =
             ZillitResult.Failure(ZillitError.Unknown("no pdf"))

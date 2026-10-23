@@ -39,6 +39,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
@@ -207,6 +208,12 @@ private fun TopBar(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Unit) {
                         color = CrPalette.FORECAST,
                     )
                 }
+            }
+        } else if (state.autoRefreshed) {
+            // The moment after the worksheet refreshed itself — the web's
+            // green "Auto-refreshed" chip (PR #6543).
+            Box(Modifier.height(60.dp), contentAlignment = Alignment.Center) {
+                ZillitStatusPill(label = str(S.desktop_cr_auto_refreshed), tone = StatusTone.Ready)
             }
         }
         if (onWorksheet) {

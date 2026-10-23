@@ -63,6 +63,14 @@ interface CashRepository {
     suspend fun overrideFloat(floatId: String): ZillitResult<Unit>
 
     /**
+     * Sends a decided float back through its approval chain —
+     * `POST /float-requests/:id/return-to-approval`, no body. Only before the
+     * cash is collected (web PR #6519); the server clears the approvals and
+     * asks tier 1 again.
+     */
+    suspend fun returnFloatToApproval(floatId: String): ZillitResult<Unit>
+
+    /**
      * Marks the float collectable.
      *
      * [companyId] is not optional in practice: the server refuses the

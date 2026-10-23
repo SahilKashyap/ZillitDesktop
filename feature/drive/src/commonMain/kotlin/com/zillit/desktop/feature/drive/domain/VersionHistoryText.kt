@@ -28,6 +28,7 @@ fun saveTypeLabel(version: DriveFileVersion): String {
         DriveSaveType.Exit -> str(S.desktop_drive_version_saved_on_close)
         DriveSaveType.Restore -> str(S.desktop_drive_restored)
         DriveSaveType.Upload -> str(S.sides_uploaded)
+        DriveSaveType.Created -> str(S.drive_created)
         DriveSaveType.Legacy -> str(S.desktop_drive_version_earlier)
         DriveSaveType.Manual -> str(S.saved)
     }

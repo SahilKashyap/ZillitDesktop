@@ -103,7 +103,7 @@ class DriveViewModel(
 
     private val details = DriveDetails(this)
     private val versions = DriveVersions(this)
-    private val textDocs = DriveTextDocs(this)
+    internal val textDocs = DriveTextDocs(this)
     private val uploads = UploadQueue(this, uploader, newUploadId)
     private val drawers = DriveDrawers(this, uploads)
     private val thumbnailsInFlight = mutableSetOf<String>()
@@ -377,6 +377,10 @@ class DriveViewModel(
 
             is DriveEvent.NewFolderAccess -> drawers.updateNewFolder { copy(access = event.access) }
             DriveEvent.SubmitNewFolder -> drawers.submitNewFolder()
+            is DriveEvent.OpenNewFile -> drawers.openNewFile(event.type)
+            is DriveEvent.NewFileName -> drawers.updateNewFile { copy(name = event.text) }
+            DriveEvent.SubmitNewFile -> drawers.submitNewFile()
+            DriveEvent.CloseNewFile -> setState { copy(newFile = null) }
 
             // -- edit info -------------------------------------------------
 

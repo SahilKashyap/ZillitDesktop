@@ -1125,6 +1125,13 @@ sealed interface AppGraph {
             // built after all of them and reached through this slot. Declared
             // here because the socket is the first thing to need it.
             var appLog: com.zillit.desktop.core.network.applog.AppLogger? = null
+
+            // Every log event names the production and the person, read when
+            // the event is built. Slots for the same reason as `appLog` above:
+            // the open production and the profile are wired further down, and
+            // the log is built before them.
+            var logProjectName: () -> String? = { null }
+            var logUserName: () -> String? = { null }
             val reportSocketFailure = socketFailureReporter(appLog = { appLog })
             val socketClient = SocketIoClient(scope = appScope, reportFailure = reportSocketFailure)
 
@@ -1207,6 +1214,8 @@ sealed interface AppGraph {
                 encryptToHex = cryptoEngine::encryptToHex,
                 deviceId = { headerContext.value.deviceId },
                 online = connectivity.online,
+                projectName = { logProjectName() },
+                userName = { logUserName() },
                 scope = appScope,
             )
 
@@ -1569,6 +1578,9 @@ sealed interface AppGraph {
             // Rights are per-production and per-person, so the admin flag is
             // read at call time from whichever production is open.
             val activeProject = MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>(null)
+            // Now that both exist, the log can name them (see the slots above).
+            logProjectName = { activeProject.value?.name }
+            logUserName = { projectContext?.context?.value?.profile?.fullName }
 
             // Needs the production, so it waits for activeProject rather than
             // sitting with the other socket wiring above.

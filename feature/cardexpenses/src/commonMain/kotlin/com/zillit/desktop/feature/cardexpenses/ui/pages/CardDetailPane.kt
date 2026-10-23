@@ -46,6 +46,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cardexpenses.domain.CARD_RETURNABLE_STATUSES
 import com.zillit.desktop.feature.cardexpenses.domain.CardChain
 import com.zillit.desktop.feature.cardexpenses.domain.CardChainStep
 import com.zillit.desktop.feature.cardexpenses.domain.CardNumbers
@@ -57,7 +58,9 @@ import com.zillit.desktop.feature.cardexpenses.domain.ChainStepStatus
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.domain.ScoreBands
 import com.zillit.desktop.feature.cardexpenses.domain.matchRaw
+import com.zillit.desktop.feature.cardexpenses.ui.CardConfirmAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
+import com.zillit.desktop.feature.cardexpenses.ui.CardPrompt
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.CardsEvent
 import com.zillit.desktop.feature.cardexpenses.ui.WorkflowStatusPill
@@ -297,6 +300,28 @@ private fun ApprovalPanel(state: CardUiState, card: ExpenseCard, onEvent: (CardE
             Spacer(Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            // Un-approving: a decided card goes back to pending with its
+            // approvals cleared, accountants only (web PR #6519 / #6542).
+            if (viewer.isAccountant && card.status in CARD_RETURNABLE_STATUSES) {
+                ZillitButton(
+                    text = str(S.desktop_inv_return_to_approval),
+                    onClick = {
+                        onEvent(
+                            CardEvent.Ask(
+                                CardPrompt.Confirm(
+                                    CardConfirmAction.ReturnCardToApproval,
+                                    card.id,
+                                    str(S.desktop_inv_return_to_approval),
+                                    str(S.desktop_card_return_to_approval_confirm),
+                                ),
+                            ),
+                        )
+                    },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    enabled = !busy,
+                )
+            }
             if (viewer.isAccountant && viewer.canOverrideCard && !step.canApprove) {
                 ZillitButton(
                     text = str(S.dm_nom_table_override),

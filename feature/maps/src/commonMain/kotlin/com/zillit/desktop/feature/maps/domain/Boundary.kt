@@ -63,6 +63,35 @@ fun evaluatePinBoundary(point: LatLng?, city: MapCity?, activeZone: MapLocation?
 /** 0 / missing means 30 miles, NOT "no boundary" (spec §2.2). */
 private fun radiusOrDefault(miles: Double): Double = miles.takeIf { it > 0 } ?: DEFAULT_ZONE_MILES
 
+/**
+ * Which city [point] belongs to — `boundaryGeometry.cityIdForPoint`.
+ *
+ * The nearest city (by centre) whose circle contains the point, so a point
+ * inside two overlapping circles — Delhi and Noida — is filed under one city
+ * only. Same centre and radius as [evaluatePinBoundary], since a pin judged
+ * inside a city must also be counted under it.
+ *
+ * Returns null when no city's circle holds the point, or when the point or
+ * the cities carry no usable coordinates. Null means "every city", not "no
+ * city": a pin outside all of them must not disappear from the map.
+ */
+fun cityIdForPoint(point: LatLng?, cities: List<MapCity>): String? {
+    if (point == null) return null
+    var bestId: String? = null
+    var bestDistance = Double.MAX_VALUE
+    cities.forEach { city ->
+        val centre = city.centerPoint ?: city.coordinates ?: return@forEach
+        if (city.id.isBlank()) return@forEach
+        val distance = Geo.distanceMeters(centre, point)
+        if (distance > radiusOrDefault(city.radiusMiles) * Geo.METERS_PER_MILE) return@forEach
+        if (distance < bestDistance) {
+            bestId = city.id
+            bestDistance = distance
+        }
+    }
+    return bestId
+}
+
 /** Adding a new pin, or moving an existing one — the two ask differently. */
 enum class BoundaryMode { Add, Move }
 

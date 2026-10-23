@@ -13860,4 +13860,14 @@
     <string name="desktop_drive_zipping_folder">Preparing %1$s as a .zip…</string>
     <string name="desktop_section_permission_user_management">Permission &amp; User Management</string>
     <string name="desktop_section_creation">Creation</string>
+    <string name="desktop_cr_auto_refreshed">Auto-refreshed</string>
+    <string name="desktop_drive_new_markdown">Markdown file</string>
+    <string name="desktop_drive_untitled_spreadsheet">Untitled spreadsheet</string>
+    <string name="desktop_drive_untitled_presentation">Untitled presentation</string>
+    <string name="desktop_po_return_to_approval_confirm">This sends the order back through its approval chain. Approvals already recorded are cleared.</string>
+    <string name="desktop_po_returned_to_approval">Returned to approval</string>
+    <string name="desktop_card_return_to_approval_confirm">This clears the approvals recorded on this card and asks the first level again.</string>
+    <string name="desktop_card_returned_to_approval_toast">Card returned to approval</string>
+    <string name="desktop_ce_float_return_to_approval_confirm">This clears the approvals recorded on this float and asks the first level again. Only possible before the cash is collected.</string>
+    <string name="desktop_ce_float_returned_to_approval">Float returned to approval</string>
 </resources>

@@ -95,6 +95,19 @@ enum class BatchStatus(val wire: String) {
  * server treats them identically and flips either to [Spending] on the first
  * receipt — so both are accepted and both read as cash in hand.
  */
+/**
+ * The float statuses Return to Approval may be offered on — decided, but the
+ * cash not collected yet (web PR #6519). Once it is out of the safe the
+ * approval chain is no longer the question.
+ */
+val FLOAT_RETURNABLE_STATUSES: Set<FloatStatus>
+    get() = setOf(
+        FloatStatus.Approved,
+        FloatStatus.AcctOverride,
+        FloatStatus.ReadyToCollect,
+        FloatStatus.Rejected,
+    )
+
 enum class FloatStatus(val wire: String) {
     AwaitingApproval("AWAITING_APPROVAL"),
     Approved("APPROVED"),

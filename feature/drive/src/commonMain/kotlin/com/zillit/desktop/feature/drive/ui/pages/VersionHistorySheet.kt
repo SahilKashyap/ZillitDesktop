@@ -46,6 +46,7 @@ import com.zillit.desktop.feature.drive.domain.groupHistory
 import com.zillit.desktop.feature.drive.domain.isCurrentVersion
 import com.zillit.desktop.feature.drive.domain.joinNames
 import com.zillit.desktop.feature.drive.domain.saveTypeLabel
+import com.zillit.desktop.feature.drive.domain.sessionSummary
 import com.zillit.desktop.feature.drive.domain.sessionTimeRange
 import com.zillit.desktop.feature.drive.domain.versionDateTime
 import com.zillit.desktop.feature.drive.domain.versionTime
@@ -220,7 +221,7 @@ private fun VersionRow(
     // A save inside a session lists everyone whose edits it holds
     // (co-editing), not only the browser that happened to write it.
     val people = if (nested) version.people else session.editorIds.ifEmpty { version.people }
-    val summary = describeChanges(version.changes, panel.fileKind, nameOf)
+    val summary = rowSummary(panel, session, version, nested, nameOf)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -576,3 +577,24 @@ private val FACE = 22.dp
 private val EMPTY_ICON = 32.dp
 private const val MAX_FACES = 4
 private const val NAME_MAX = 80
+
+/**
+ * The one line a row prints about what changed.
+ *
+ * A session row stands for ALL its saves, not only the newest one's: a session
+ * read "2 saves · Made 1 edit" while the other save held eleven. The session's
+ * own line is shown only when every save that changed something agrees
+ * ([sessionSummary]); otherwise the session is expanded and each save speaks
+ * for itself (web PR #6530).
+ */
+private fun rowSummary(
+    panel: VersionHistoryState,
+    session: DriveVersionSession,
+    version: DriveFileVersion,
+    nested: Boolean,
+    nameOf: (String) -> String,
+): String = if (nested || session.size <= 1) {
+    describeChanges(version.changes, panel.fileKind, nameOf)
+} else {
+    sessionSummary(session.versions, panel.fileKind, nameOf)
+}

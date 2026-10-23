@@ -8,7 +8,6 @@ import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationPick
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
-import com.zillit.desktop.feature.location.domain.MovePlace
 import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
@@ -135,7 +134,7 @@ class LocationCabinetViewModelTest {
         }
 
         override suspend fun move(records: List<LocationMedia>, from: LocationStatus,
-            to: LocationStatus, place: MovePlace?): ZillitResult<Unit> {
+            to: LocationStatus): ZillitResult<Unit> {
             writes += "move"
             return ZillitResult.Success(Unit)
         }

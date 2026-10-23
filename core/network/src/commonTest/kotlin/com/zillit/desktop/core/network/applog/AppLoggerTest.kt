@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AppLoggerTest {
@@ -109,5 +110,32 @@ class AppLoggerTest {
         assertEquals("500", body["error"]!!.jsonObject["code"]!!.jsonPrimitive.content)
         // Round-trips as the JSON the queue stores.
         Json.parseToJsonElement(body.toString())
+    }
+
+    @Test
+    fun envelopeNamesTheProductionTheUserAndThisMachine() {
+        val named = identity.copy(
+            projectName = { "  ZL-Test-Backend  " },
+            userName = { "A".repeat(150) },
+            deviceDisplayName = "Sahil's MacBook Pro",
+        )
+        val body = failure("device").envelope(named, eventTimeMillis = 7L)
+
+        // Trimmed, and capped at the dashboard's 100 characters.
+        assertEquals("ZL-Test-Backend", body["project_name"]!!.jsonPrimitive.content)
+        assertEquals("A".repeat(100), body["user_name"]!!.jsonPrimitive.content)
+        // `device_name` already means something else in the log store.
+        assertEquals("Sahil's MacBook Pro", body["device_display_name"]!!.jsonPrimitive.content)
+        assertNull(body["device_name"])
+    }
+
+    @Test
+    fun envelopeLeavesTheNamesOutWithNoProductionOpen() {
+        val body = failure("projects").envelope(identity, eventTimeMillis = 7L)
+
+        // The project picker and the sign-in screen have neither, and an
+        // empty string would read as a production called "".
+        assertNull(body["project_name"])
+        assertNull(body["user_name"])
     }
 }

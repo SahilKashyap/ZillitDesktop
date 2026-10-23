@@ -28,11 +28,16 @@ val DEFAULT_TYPE_STYLES: Map<String, TypeStyle> = mapOf(
     SHOOT_LOCATION_SHORTLISTED to TypeStyle("S", "#F99300"),
 )
 
-/** The type a Final shoot location's pin wears on the map. */
-const val SHOOT_LOCATION_FINAL = "Final Shoot Location"
+/**
+ * The type a Final shoot location's pin wears on the map.
+ *
+ * Just the stage, not "Final Shoot Location": the pin card shows the type as
+ * its tag, and the longer name wrapped it (web PR #6531).
+ */
+const val SHOOT_LOCATION_FINAL = "Final"
 
-/** The type a Shortlisted shoot location's pin wears on the map. */
-const val SHOOT_LOCATION_SHORTLISTED = "Shortlisted Shoot Location"
+/** The type a Shortlisted shoot location's pin wears — see [SHOOT_LOCATION_FINAL]. */
+const val SHOOT_LOCATION_SHORTLISTED = "Shortlisted"
 
 /** The `default` entry — a navy Z. */
 val FALLBACK_TYPE_STYLE = TypeStyle("Z", "#1B4F72")

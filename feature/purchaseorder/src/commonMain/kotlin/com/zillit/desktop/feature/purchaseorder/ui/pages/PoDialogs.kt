@@ -451,8 +451,12 @@ internal fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoE
             enabled = !state.busy,
         )
     }
+    ReturnToApprovalButton(state, order, locked, onEvent)
     ViewPdfButton(state, order, onEvent)
-    if (!locked && PoAccess.canDelete(order, viewer)) {
+    // Delete is the exception to the locked-period rule above: the raiser,
+    // PA/FC and the assignee delete in any period, and the backend reverses
+    // whatever was posted (web PR #6519).
+    if (PoAccess.canDelete(order, viewer)) {
         ZillitButton(
             text = str(S.desktop_po_delete_po),
             onClick = {
@@ -979,3 +983,40 @@ internal fun PoDocumentPanel(state: PoUiState, order: PurchaseOrder) {
 private val DETAIL_WIDTH = 720.dp
 private val TILE_LABEL = 170.dp
 private val PHONE_CODE = 90.dp
+
+/**
+ * Un-approving: an approved, unposted order goes back through its chain, for
+ * whoever may Process it (web PR #6519).
+ *
+ * Its own composable, and it owns its gate, so the two footers that offer it —
+ * the detail modal and the processing page — cannot drift apart and neither
+ * grows a branch for it.
+ */
+@Composable
+internal fun ReturnToApprovalButton(
+    state: PoUiState,
+    order: PurchaseOrder,
+    locked: Boolean,
+    onEvent: (PoEvent) -> Unit,
+) {
+    if (locked || !PoAccess.canReturnToApproval(order, state.viewer)) return
+    ZillitButton(
+        text = str(S.desktop_inv_return_to_approval),
+        onClick = {
+            onEvent(
+                PoEvent.Ask(
+                    PoPrompt.Confirm(
+                        action = PoConfirmAction.ReturnToApproval,
+                        targetId = order.id,
+                        title = str(S.desktop_inv_return_to_approval),
+                        message = str(S.desktop_po_return_to_approval_confirm),
+                    ),
+                ),
+            )
+        },
+        variant = ButtonVariant.Secondary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Reload,
+        enabled = !state.busy,
+    )
+}

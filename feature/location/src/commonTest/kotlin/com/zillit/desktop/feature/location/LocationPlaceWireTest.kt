@@ -11,7 +11,6 @@ import com.zillit.desktop.feature.location.domain.LatLng
 import com.zillit.desktop.feature.location.domain.LocationDraft
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.MediaAttachment
-import com.zillit.desktop.feature.location.domain.MovePlace
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -84,19 +83,7 @@ class LocationPlaceWireTest {
     }
 
     @Test
-    fun `a move carries a picked place onto every record`() {
-        val record = parseMedia(
-            Json.parseToJsonElement("""{"_id":"m1","file_name":"bridge","scene_number":"12","status":"selected"}""") as JsonObject,
-        )!!
-        val place = MovePlace(pin, "https://www.google.com/maps?q=51.5079,-0.0877", mapPicture)
-        val body = moveWire(listOf("m1", "m2"), record, LocationStatus.Published, place)
-        assertEquals("https://www.google.com/maps?q=51.5079,-0.0877", body["link"]!!.jsonPrimitive.content)
-        assertEquals("51.5079", body["location"]!!.jsonObject["lat"]!!.jsonPrimitive.content)
-        assertEquals("k/map.png", body["link_attachment"]!!.jsonObject["media"]!!.jsonPrimitive.content)
-    }
-
-    @Test
-    fun `a move with no place picked sends none`() {
+    fun `a move sends no place, so every entry keeps its own`() {
         val record = parseMedia(
             Json.parseToJsonElement("""{"_id":"m1","file_name":"bridge","scene_number":"12","status":"selected"}""") as JsonObject,
         )!!

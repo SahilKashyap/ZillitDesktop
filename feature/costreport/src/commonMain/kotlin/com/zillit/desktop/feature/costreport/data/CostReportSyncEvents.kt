@@ -18,25 +18,18 @@ val CR_REPORT_SYNC_EVENTS: List<SocketEventName> = listOf(
 )
 
 /**
- * Feeder-tool events that make the worksheet's actuals/committed columns
- * stale — the web's `COST_REPORT_SOURCE_EVENTS` set
- * (`accountHubListeners.js:2005-2013`), fanned into a staleness signal by the
- * registration wrapper (`accountHubListeners.js:2087-2091`). These flip the
- * Refresh pill rather than reloading — see `CostReportSync.Source`.
+ * The one event that says the figures behind the report moved — the backend's
+ * `cost_report:refresh`, emitted when a PO is posted or fully approved
+ * (invoices, cards and cash to follow).
+ *
+ * It replaces the twelve PO / invoice / card / cash / timecard events that
+ * used to raise the Refresh pill one at a time (the web's
+ * `COST_REPORT_SOURCE_EVENTS`, gone as of PR #6543). The report is heavy, so
+ * this does not reload on the spot: see `CostReportSync.Source` and the quiet
+ * window the view models wait out.
  */
 val CR_SOURCE_SYNC_EVENTS: List<SocketEventName> = listOf(
-    SocketEventName("po:fully_approved"),
-    SocketEventName("po:posted"),
-    SocketEventName("invoice:approved"),
-    SocketEventName("invoice:posted_to_ledger"),
-    SocketEventName("card:receipt:approved"),
-    SocketEventName("card:receipt:posted"),
-    SocketEventName("batch:posted"),
-    SocketEventName("cash:batch:approved"),
-    SocketEventName("cash:batch:posted"),
-    SocketEventName("timecard:approved"),
-    SocketEventName("timecard:final_approved"),
-    SocketEventName("timecard:posted"),
+    SocketEventName("cost_report:refresh"),
 )
 
 val CR_SYNC_EVENTS: List<SocketEventName> = CR_REPORT_SYNC_EVENTS + CR_SOURCE_SYNC_EVENTS

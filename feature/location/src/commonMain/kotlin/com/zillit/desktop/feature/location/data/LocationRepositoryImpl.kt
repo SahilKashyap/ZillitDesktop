@@ -17,7 +17,6 @@ import com.zillit.desktop.feature.location.domain.LocationPin
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.MediaAttachment
-import com.zillit.desktop.feature.location.domain.MovePlace
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
@@ -142,7 +141,7 @@ class LocationRepositoryImpl(
         )
 
     override suspend fun move(records: List<LocationMedia>, from: LocationStatus,
-        to: LocationStatus, place: MovePlace?): ZillitResult<Unit> {
+        to: LocationStatus): ZillitResult<Unit> {
         // The web moves one folder at a time; records from several folders
         // go in as many calls, each naming its own old folder.
         val groups = records.groupBy { Triple(it.location, it.sceneNumber, it.episodes.firstOrNull().orEmpty()) }
@@ -152,7 +151,7 @@ class LocationRepositoryImpl(
                 HttpVerb.Post,
                 "$base/move",
                 RequestModule.ProjectUser,
-                moveWire(group.map { it.id }, sample, to, place),
+                moveWire(group.map { it.id }, sample, to),
                 queryParameters = mapOf("status" to from.wire),
             ).mapData { }
             if (result is ZillitResult.Failure) return result

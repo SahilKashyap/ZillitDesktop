@@ -550,6 +550,9 @@ private fun QueueActions(state: InvoicesUiState, invoice: Invoice, onEvent: (Inv
 /**
  * The hard delete's gate on the accountant queue — the web's `canDeleteInvoice`
  * with the console's own override right (`ApprovalPage.jsx:481-487`).
+ *
+ * This is the accountant side, so the invoice's assignee and invoice seniors
+ * delete on the creator's terms (web PR #6542).
  */
 internal fun queueCanDelete(state: InvoicesUiState, invoice: Invoice): Boolean = InvoiceRules.canDeleteFromQueue(
     invoice = invoice,
@@ -557,6 +560,7 @@ internal fun queueCanDelete(state: InvoicesUiState, invoice: Invoice): Boolean =
     viewer = state.viewer,
     canOverride = state.viewer.canOverride,
     locked = state.isLocked(invoice),
+    accountantSide = true,
 )
 
 internal val DEPARTMENT_SELECT_WIDTH = 220.dp

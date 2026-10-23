@@ -202,6 +202,9 @@ class CardRepositoryImpl(
     override suspend fun overrideCard(cardId: String, userId: String, reason: String): ZillitResult<Unit> =
         post("$base/cards/$cardId/override", actorBody(userId, reason))
 
+    override suspend fun returnCardToApproval(cardId: String): ZillitResult<Unit> =
+        post("$base/cards/$cardId/return-to-approval", null)
+
     override suspend fun activateCard(cardId: String, activation: CardActivation): ZillitResult<Unit> =
         post("$base/cards/$cardId/activate", activation.body())
 

@@ -483,8 +483,17 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
                 },
                 eyebrow = if (location.hasType || location.sceneNumber.isNotBlank()) {
                     {
-                        if (location.hasType) HeroChip("${style.icon}  ${location.type}")
-                        if (location.sceneNumber.isNotBlank()) HeroChip("SC ${location.sceneNumber}", MapIcons.Film)
+                        // A Location-tool pin's type IS its stage ("Shortlisted"
+                        // / "Final"), so the tag drops the type letter — the
+                        // pin on the map keeps its S / F (web PR #6531).
+                        if (location.hasType) {
+                            HeroChip(
+                                if (location.readOnly) location.type else "${style.icon}  ${location.type}",
+                            )
+                        }
+                        if (location.sceneNumber.isNotBlank()) {
+                            HeroChip("${str(S.scene_no)}: ${location.sceneNumber}", MapIcons.Film)
+                        }
                     }
                 } else {
                     null

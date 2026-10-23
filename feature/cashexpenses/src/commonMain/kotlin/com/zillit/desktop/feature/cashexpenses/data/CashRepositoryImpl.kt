@@ -176,6 +176,9 @@ class CashRepositoryImpl(
     override suspend fun overrideFloat(floatId: String): ZillitResult<Unit> =
         post("$base/float-requests/$floatId/override", null)
 
+    override suspend fun returnFloatToApproval(floatId: String): ZillitResult<Unit> =
+        post("$base/float-requests/$floatId/return-to-approval", null)
+
     override suspend fun markFloatReadyToCollect(
         floatId: String,
         companyId: String?,

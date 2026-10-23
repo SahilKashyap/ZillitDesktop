@@ -73,12 +73,11 @@ interface LocationRepository {
     /**
      * Moves records to another shortlist, keeping their folder.
      *
-     * [place] is a place picked in the Move form: a move otherwise drops the
-     * link and the pin, and the web's Move to Shortlist / Final asks where
-     * the location is so the Map tool can draw it (PR #6521).
+     * The move carries no place: each entry keeps the pin and Maps link it
+     * already had (web PR #6522).
      */
-    suspend fun move(records: List<LocationMedia>, from: LocationStatus, to: LocationStatus,
-        place: MovePlace? = null): ZillitResult<Unit>
+    suspend fun move(records: List<LocationMedia>, from: LocationStatus,
+        to: LocationStatus): ZillitResult<Unit>
 
     /**
      * Shortlisted and Final locations that carry a pin, one per place.

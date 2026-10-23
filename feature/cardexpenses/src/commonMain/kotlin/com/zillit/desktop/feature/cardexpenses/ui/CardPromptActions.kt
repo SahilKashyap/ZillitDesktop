@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.BulkAction
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.BulkOutcome
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
+import com.zillit.desktop.feature.cardexpenses.domain.CARD_RETURNABLE_STATUSES
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.InboxWrite
 import com.zillit.desktop.feature.cardexpenses.domain.canDelete
@@ -68,6 +69,11 @@ internal class CardPromptActions(
             CardConfirmAction.OverrideCard ->
                 viewer.canOverrideCard && state.cards.any { it.id == targetId && it.status == CardStatus.Pending }
 
+            // Accountants only, on a decided card (web PR #6519 / #6542).
+            CardConfirmAction.ReturnCardToApproval ->
+                viewer.isAccountant &&
+                    state.cards.any { it.id == targetId && it.status in CARD_RETURNABLE_STATUSES }
+
             CardConfirmAction.ApproveReceipt, CardConfirmAction.BulkApprove, CardConfirmAction.BulkReject ->
                 viewer.isApprover
 
@@ -108,6 +114,9 @@ internal class CardPromptActions(
 
             CardConfirmAction.OverrideCard ->
                 vm.act(str(S.desktop_card_overridden_toast)) { repo.overrideCard(id, me, CARD_OVERRIDE_REASON) }
+
+            CardConfirmAction.ReturnCardToApproval ->
+                vm.act(str(S.desktop_card_returned_to_approval_toast)) { repo.returnCardToApproval(id) }
 
             CardConfirmAction.SuspendCard -> vm.act(str(S.ah_card_suspended_toast)) { repo.suspendCard(id) }
             CardConfirmAction.ReactivateCard -> vm.act(str(S.ah_card_reactivated_toast)) { repo.reactivateCard(id) }

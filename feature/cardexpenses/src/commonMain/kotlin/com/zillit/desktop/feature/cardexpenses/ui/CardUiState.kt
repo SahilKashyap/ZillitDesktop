@@ -449,6 +449,9 @@ sealed interface CardPrompt {
 enum class CardConfirmAction {
     ApproveCard,
     OverrideCard,
+
+    /** Sending a decided card back to pending, approvals cleared. */
+    ReturnCardToApproval,
     SuspendCard,
     ReactivateCard,
     DeleteCard,

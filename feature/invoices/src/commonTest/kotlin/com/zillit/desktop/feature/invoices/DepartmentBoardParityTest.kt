@@ -73,12 +73,31 @@ class DepartmentBoardParityTest {
     private val fresh = Invoice(id = "i1", userId = "someone", status = InvoiceStatus.Approval)
 
     @Test
-    fun `nothing is deleted in a locked period, or once approved or overridden`() {
+    fun `the person who raised it deletes it at any status and in any period`() {
+        // Rule 0 since 2026-10-21: the creator passes before every other rule,
+        // paid and posted included. The backend reverses what was posted.
         val mine = fresh.copy(userId = "me")
-        assertFalse(InvoiceRules.canDeleteFromQueue(mine, tiers, me, canOverride = true, locked = true))
-        assertFalse(
+        assertTrue(InvoiceRules.canDeleteFromQueue(mine, tiers, me, canOverride = false, locked = true))
+        assertTrue(
             InvoiceRules.canDeleteFromQueue(
                 mine.copy(approvalStatus = ApprovalStatus.Approved),
+                tiers,
+                me,
+                canOverride = false,
+                locked = false,
+            ),
+        )
+        listOf(InvoiceStatus.Approved, InvoiceStatus.Override).forEach { status ->
+            assertTrue(InvoiceRules.canDeleteFromQueue(mine.copy(status = status), tiers, me, false, locked = false))
+        }
+    }
+
+    @Test
+    fun `somebody else's invoice is not deleted in a locked period, or once approved`() {
+        assertFalse(InvoiceRules.canDeleteFromQueue(fresh, tiers, me, canOverride = true, locked = true))
+        assertFalse(
+            InvoiceRules.canDeleteFromQueue(
+                fresh.copy(approvalStatus = ApprovalStatus.Approved),
                 tiers,
                 me,
                 canOverride = true,
@@ -87,18 +106,41 @@ class DepartmentBoardParityTest {
         )
         listOf(InvoiceStatus.Approved, InvoiceStatus.Override).forEach { status ->
             assertFalse(
-                InvoiceRules.canDeleteFromQueue(mine.copy(status = status), tiers, me, true, locked = false),
+                InvoiceRules.canDeleteFromQueue(fresh.copy(status = status), tiers, me, true, locked = false),
             )
         }
     }
 
     @Test
-    fun `a part-approved invoice takes override rights, whoever raised it`() {
-        val signed = fresh.copy(userId = "me", approvals = listOf(Approval("hod", 1, 1L)))
+    fun `on the accountant side the assignee and invoice seniors delete on the creator's terms`() {
+        // The crew board passes neither, so it stays creator-only — the web's
+        // InvoiceSeniorContext is provided by the accountant module alone.
+        val posted = fresh.copy(status = InvoiceStatus.Approved, assignedTo = "me")
+        assertTrue(InvoiceRules.canDeleteFromQueue(posted, tiers, me, false, locked = true, accountantSide = true))
+        assertFalse(InvoiceRules.canDeleteFromQueue(posted, tiers, me, false, locked = true))
+
+        val senior = InvoiceViewer(userId = "pa", seniorFlag = true)
+        assertTrue(InvoiceRules.canDeleteFromQueue(fresh, tiers, senior, false, locked = true, accountantSide = true))
+        assertFalse(InvoiceRules.canDeleteFromQueue(fresh, tiers, senior, false, locked = true))
+
+        // Somebody else's, unassigned, and not senior: the old rules still apply.
+        val stranger = InvoiceViewer(userId = "nobody")
+        assertFalse(
+            InvoiceRules.canDeleteFromQueue(posted, tiers, stranger, false, locked = false, accountantSide = true),
+        )
+    }
+
+    @Test
+    fun `a part-approved invoice takes override rights, unless the viewer raised it`() {
+        val signed = fresh.copy(approvals = listOf(Approval("hod", 1, 1L)))
         assertFalse(InvoiceRules.canDeleteFromQueue(signed, tiers, me, canOverride = false, locked = false))
         assertTrue(InvoiceRules.canDeleteFromQueue(signed, tiers, me, canOverride = true, locked = false))
         val approver = InvoiceViewer(userId = "fc")
         assertFalse(InvoiceRules.canDeleteFromQueue(signed, tiers, approver, canOverride = false, locked = false))
+        // Its creator passes before this rule is reached.
+        assertTrue(
+            InvoiceRules.canDeleteFromQueue(signed.copy(userId = "me"), tiers, me, canOverride = false, locked = false),
+        )
     }
 
     @Test
@@ -123,8 +165,10 @@ class DepartmentBoardParityTest {
         assertEquals(ApprovalStatus.Other, ApprovalStatus.from("on_hold"))
         val odd = fresh.copy(userId = "me", status = InvoiceStatus.Inbox, approvalStatus = ApprovalStatus.Other)
         assertFalse(QuickFilter.Pending.keeps(odd))
-        assertFalse(InvoiceRules.canDeleteOwn(odd, me))
-        assertTrue(InvoiceRules.canDeleteOwn(odd.copy(approvalStatus = ApprovalStatus.Pending), me))
+        // The browsing tabs are creator-only, but at any status and in any
+        // period now — it was "my own, still pending" until 2026-10-21.
+        assertTrue(InvoiceRules.canDeleteOwn(odd, me))
+        assertFalse(InvoiceRules.canDeleteOwn(odd.copy(userId = "someone"), me))
     }
 
     // -- the settings' seniority and override (InvoicesModule.jsx:293-318) ---

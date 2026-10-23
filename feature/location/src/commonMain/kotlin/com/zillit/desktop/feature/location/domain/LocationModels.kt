@@ -177,15 +177,6 @@ data class LocationDraft(
 }
 
 /**
- * A place picked in the Move form, carried onto every entry in the move.
- *
- * [link] is always the Google Maps link of [pin]: the web stopped storing
- * whatever URL was typed and derives the link from the coordinates
- * (PR #6521). [mapImage] is the picture of the map around the pin.
- */
-data class MovePlace(val pin: LatLng, val link: String, val mapImage: MediaAttachment?)
-
-/**
  * One pinned location as `/v2/location/map-pins` answers it: a place the
  * Location tool holds, with coordinates, ready to be drawn on a map.
  */

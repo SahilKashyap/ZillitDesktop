@@ -61,6 +61,7 @@ import com.zillit.desktop.feature.drive.domain.DriveInnerTab
 import com.zillit.desktop.feature.drive.domain.DriveSection
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.MyDriveFilter
+import com.zillit.desktop.feature.drive.domain.NewFileType
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.DriveViewMode
@@ -424,6 +425,7 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             // where the user is standing, not which tab it is: an Editor on a
             // folder shared with them gets them too (ZL-21871).
             if (state.canAddHere) {
+                NewFileButton(onEvent)
                 ZillitButton(
                     text = str(S.upload),
                     onClick = { onEvent(DriveEvent.OpenUpload) },
@@ -707,3 +709,38 @@ private val TAB_RAIL_INSET = 4.dp
 private val BADGE_NUDGE = 5.dp
 private const val ACTIVE_WASH = 0.15f
 private const val BULK_BORDER_ALPHA = 0.4f
+
+/**
+ * "New", like Google Drive's: a blank file of a type Drive can edit, made in
+ * the open folder and opened straight away (web PR #6527).
+ *
+ * Beside Upload, and shown wherever Upload is — what may be added where the
+ * user is standing, not which tab it is.
+ */
+@Composable
+private fun NewFileButton(onEvent: (DriveEvent) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ZillitButton(
+            text = str(S.continue_new),
+            onClick = { open = true },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Add,
+        )
+        ZillitActionMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            entries = NewFileType.entries.map { type ->
+                ZillitMenuEntry.Action(label = type.label, icon = newFileIcon(type)) {
+                    open = false
+                    onEvent(DriveEvent.OpenNewFile(type))
+                }
+            },
+        )
+    }
+}
+
+/** The glyph each new file wears in the menu — a sheet gets the grid. */
+private fun newFileIcon(type: NewFileType) =
+    if (type == NewFileType.Spreadsheet) ZillitIcons.Grid else ZillitIcons.File

@@ -270,6 +270,7 @@ internal class FlowFake(
 ) : PurchaseOrderRepository {
     val approved = mutableListOf<Triple<String, Int, Int>>()
     val rejected = mutableListOf<String>()
+    val returned = mutableListOf<String>()
     val posted = mutableListOf<PoPostRequest>()
     val saved = mutableListOf<PoEntryUpdate>()
 
@@ -291,6 +292,10 @@ internal class FlowFake(
     }
     override suspend fun reject(id: String, reason: String): ZillitResult<Unit> {
         rejected += id
+        return ZillitResult.Success(Unit)
+    }
+    override suspend fun returnToApproval(id: String): ZillitResult<Unit> {
+        returned += id
         return ZillitResult.Success(Unit)
     }
     override suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit> {

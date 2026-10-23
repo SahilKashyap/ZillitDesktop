@@ -77,6 +77,19 @@ interface DriveRepository {
     suspend fun createFolder(folder: NewFolder): ZillitResult<DriveItem>
 
     /**
+     * A blank file of a type Drive can edit — `POST /files/new`, the web's
+     * "New" (PR #6527).
+     *
+     * The server adds " (1)" itself when the name is taken, so the caller
+     * sends what was typed and opens whatever comes back.
+     */
+    suspend fun createNewFile(
+        type: NewFileType,
+        name: String,
+        folderId: String?,
+    ): ZillitResult<DriveItem>
+
+    /**
      * Renames and re-describes. [description] null leaves the description
      * alone; the endpoint clears a field it is sent as an empty string.
      */

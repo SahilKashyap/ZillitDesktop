@@ -41,6 +41,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cashexpenses.domain.FLOAT_RETURNABLE_STATUSES
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
@@ -81,6 +82,30 @@ fun FloatDetailDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     leadingIcon = ZillitIcons.Clock,
                 )
                 Spacer(Modifier.weight(1f))
+                // Un-approving: a decided float goes back through its chain,
+                // accountants only, and only while the cash is still in the
+                // safe (web PR #6519).
+                if (state.viewer.isAccountant && float != null && float.status in FLOAT_RETURNABLE_STATUSES) {
+                    ZillitButton(
+                        text = str(S.desktop_inv_return_to_approval),
+                        onClick = {
+                            onEvent(
+                                CashEvent.Ask(
+                                    CashPrompt.Confirm(
+                                        ConfirmAction.ReturnFloatToApproval,
+                                        float.id,
+                                        str(S.desktop_inv_return_to_approval),
+                                        str(S.desktop_ce_float_return_to_approval_confirm),
+                                    ),
+                                ),
+                            )
+                        },
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                        leadingIcon = ZillitIcons.Reload,
+                        enabled = !state.busy,
+                    )
+                }
             }
         },
     ) {

@@ -575,6 +575,9 @@ enum class AmountAction { PartialTopUp, RequestFloatTopUp }
 enum class ConfirmAction {
     ApproveFloat,
     OverrideFloat,
+
+    /** Sending a decided float back to its chain, before the cash is collected. */
+    ReturnFloatToApproval,
     CollectFloat,
     CloseFloat,
     ApproveBatch,

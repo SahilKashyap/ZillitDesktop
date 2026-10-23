@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.drive.domain.DriveVersion
 import com.zillit.desktop.feature.drive.domain.DriveVersionChanges
 import com.zillit.desktop.feature.drive.domain.DriveVersionHistory
 import com.zillit.desktop.feature.drive.domain.EditorSession
+import com.zillit.desktop.feature.drive.domain.NewFileType
 import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
@@ -46,6 +47,11 @@ internal open class FakeDriveRepository(
 
     override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> = unused()
     override suspend fun createFolder(folder: NewFolder): ZillitResult<DriveItem> = unused()
+    override suspend fun createNewFile(
+        type: NewFileType,
+        name: String,
+        folderId: String?,
+    ): ZillitResult<DriveItem> = unused()
     override suspend fun rename(ref: DriveRef, name: String, description: String?): ZillitResult<Unit> = ok()
     override suspend fun move(ref: DriveRef, targetFolderId: String?): ZillitResult<Unit> = ok()
     override suspend fun delete(ref: DriveRef): ZillitResult<Unit> = ok()

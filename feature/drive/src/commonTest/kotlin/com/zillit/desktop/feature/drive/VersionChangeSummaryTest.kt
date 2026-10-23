@@ -14,6 +14,10 @@ import com.zillit.desktop.feature.drive.domain.changeAuthorName
 import com.zillit.desktop.feature.drive.domain.changeAuthors
 import com.zillit.desktop.feature.drive.domain.changesByPerson
 import com.zillit.desktop.feature.drive.domain.describeActivity
+import com.zillit.desktop.feature.drive.domain.DriveFileVersion
+import com.zillit.desktop.feature.drive.domain.DriveSaveType
+import com.zillit.desktop.feature.drive.domain.saveTypeLabel
+import com.zillit.desktop.feature.drive.domain.sessionSummary
 import com.zillit.desktop.feature.drive.domain.describeChanges
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -238,5 +242,63 @@ class VersionChangeSummaryTest {
     fun `a change kind this client has not heard of reads as changed`() {
         assertEquals(DriveChangeKind.Changed, DriveChangeKind.of("something-new"))
         assertEquals(DriveChangeKind.Formula, DriveChangeKind.of("formula"))
+    }
+
+    // -- a session's own line (web PR #6530) --------------------------------
+
+    private fun save(
+        id: String,
+        changes: DriveVersionChanges?,
+        saveType: DriveSaveType = DriveSaveType.Manual,
+    ) = DriveFileVersion(id = id, changes = changes, saveType = saveType)
+
+    @Test
+    fun `a session says what changed only when every save that changed something agrees`() {
+        // The newest save's own line was printed as the session's: a session
+        // read "2 saves · Made 1 edit" while the other save held eleven.
+        val disagreeing = listOf(save("a", done(1, 1)), save("b", done(11, 1)))
+        assertEquals("", sessionSummary(disagreeing), "expand the session to read them one by one")
+
+        val agreeing = listOf(save("a", done(4, 1)), save("b", done(4, 1)))
+        assertEquals("4 cells changed", sessionSummary(agreeing))
+    }
+
+    @Test
+    fun `a baseline save holds nothing of its own, so it does not spoil the agreement`() {
+        // An upload, a New file and an old record only state what was there.
+        val withBaseline = listOf(
+            save("new", null, DriveSaveType.Created),
+            save("up", done(9, 1), DriveSaveType.Upload),
+            save("old", done(9, 1), DriveSaveType.Legacy),
+            save("edit", done(3, 1)),
+        )
+        assertEquals("3 cells changed", sessionSummary(withBaseline))
+    }
+
+    @Test
+    fun `a save that changed nothing is not a line to agree with`() {
+        val nothingAndSomething = listOf(save("a", done(0, 0)), save("b", done(2, 1)))
+        assertEquals("2 cells changed", sessionSummary(nothingAndSomething))
+        assertEquals("", sessionSummary(emptyList()))
+    }
+
+    @Test
+    fun `a document's generic edit line is dropped once its paragraphs are counted`() {
+        val activity = DriveVersionActivity(
+            items = listOf(DriveActivityItem(type = "doc_edits", text = "Made 1 edit")),
+        )
+        val changes = DriveVersionChanges(
+            status = DriveChangeStatus.Done,
+            cells = 3,
+            sheets = 1,
+            total = 3,
+            activity = activity,
+        )
+        assertEquals("3 paragraphs changed", describeChanges(changes, DriveFileKind.Document))
+    }
+
+    @Test
+    fun `a file made with New says Created`() {
+        assertEquals("Created", saveTypeLabel(save("new", null, DriveSaveType.Created)))
     }
 }

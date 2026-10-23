@@ -36,6 +36,9 @@ enum class PoConfirmAction {
     DeleteTemplate,
     RemoveRule,
 
+    /** Sending an approved order back through its chain — asked first. */
+    ReturnToApproval,
+
     /** Editing a fully-approved order discards its approvals — asked first. */
     AmendOrder,
 

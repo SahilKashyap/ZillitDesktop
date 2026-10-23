@@ -210,11 +210,13 @@ private fun EntryActions(
     )
     if (order == null) return
     val ledger = entry.ledger(state)
-    // Delete on an order accounts entered and nobody has posted — the web's
-    // processing-page affordance for whoever may process it.
-    if (!locked && PoAccess.canDelete(order, state.viewer, onProcessingPage = true)) {
+    // Delete: the raiser, PA/FC or the assignee, at any status and in any
+    // period — the same answer the detail modal gives (web PR #6542).
+    if (PoAccess.canDelete(order, state.viewer)) {
         EntryDeleteButton(state, order, onEvent)
     }
+    // Un-approving, the same button the detail modal offers.
+    ReturnToApprovalButton(state, order, locked, onEvent)
     // Query when the coding does not balance, which is when there is a
     // question to ask — the web's `!balanced` button.
     if (!ledger.balances(order) && state.mayQuery(order)) {

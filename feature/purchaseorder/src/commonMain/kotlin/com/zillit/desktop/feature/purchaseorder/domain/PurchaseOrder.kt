@@ -806,6 +806,13 @@ interface PurchaseOrderRepository {
 
     suspend fun reject(id: String, reason: String): ZillitResult<Unit>
 
+    /**
+     * Sends an approved-but-unposted order back through its chain —
+     * `POST /:id/return-to-approval`, no body. The server clears the
+     * approvals and re-notifies tier 1 itself.
+     */
+    suspend fun returnToApproval(id: String): ZillitResult<Unit>
+
     /** Posts the coded order to the ledger, lines and header with it. */
     suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit>
 

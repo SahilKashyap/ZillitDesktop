@@ -24,8 +24,12 @@ import com.zillit.desktop.core.strings.str
  *     rather than absent.
  */
 
-/** Activity types the value comparison already counts. */
-private val VALUE_TYPES = setOf("values", "cleared")
+/**
+ * Activity types the value comparison already counts: cell edits, and a
+ * document's generic "Edited the document" once its paragraphs are compared
+ * — both would otherwise be said twice in one line (web PR #6530).
+ */
+private val VALUE_TYPES = setOf("values", "cleared", "doc_edits")
 
 /** The activity lines to show, overall. */
 fun activityItems(activity: DriveVersionActivity?, skipValues: Boolean = false): List<DriveActivityItem> =
@@ -260,3 +264,33 @@ private const val REASON_TOO_LARGE = "too_large"
 private const val REASON_FORMAT_CHANGED = "format_changed"
 private const val MAX_ROW_LINES = 3
 private const val GROUP_SIZE = 3
+
+/**
+ * Saves that only record what was already there — nothing was changed by them.
+ */
+private val BASELINE_SAVE_TYPES =
+    setOf(DriveSaveType.Upload, DriveSaveType.Created, DriveSaveType.Legacy)
+
+/**
+ * The line for a session row, which stands for several saves — the web's
+ * `sessionSummary`.
+ *
+ * The newest save's own line is the wrong one to print: a session read
+ * "2 saves · Made 1 edit" while the other save held eleven. Each save is
+ * compared with the one before it, so the counts cannot be added up either —
+ * so the line is shown only when every save that changed something says the
+ * same, and otherwise the session is expanded to read them one by one.
+ */
+fun sessionSummary(
+    versions: List<DriveFileVersion>,
+    kind: DriveFileKind = DriveFileKind.Spreadsheet,
+    nameOf: (String) -> String = { "" },
+): String {
+    val nothing = noChangesLabel(kind)
+    val lines = versions
+        .filterNot { it.saveType in BASELINE_SAVE_TYPES }
+        .map { describeChanges(it.changes, kind, nameOf) }
+        .filter { it.isNotEmpty() && it != nothing }
+        .distinct()
+    return lines.singleOrNull().orEmpty()
+}

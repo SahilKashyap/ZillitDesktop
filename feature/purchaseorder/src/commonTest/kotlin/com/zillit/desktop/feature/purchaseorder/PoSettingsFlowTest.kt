@@ -262,6 +262,7 @@ class PoSettingsFlowTest {
         override suspend fun delete(id: String): ZillitResult<Unit> = unsupported()
         override suspend fun approve(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Unit> = unsupported()
         override suspend fun reject(id: String, reason: String): ZillitResult<Unit> = unsupported()
+        override suspend fun returnToApproval(id: String): ZillitResult<Unit> = unsupported()
         override suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit> = unsupported()
         override suspend fun close(id: String, reason: String, effectiveDate: Long?): ZillitResult<Unit> =
             unsupported()

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cardexpenses
 
+import com.zillit.desktop.feature.cardexpenses.domain.CARD_RETURNABLE_STATUSES
 import com.zillit.desktop.feature.cardexpenses.domain.CardMetadata
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
@@ -343,6 +344,52 @@ class CardHandlerGatingTest {
     }
 
     // -- fixtures ----------------------------------------------------------------
+
+    // -- Return to Approval (web PR #6519 / #6542) -------------------------------
+
+    @Test
+    fun `a decided card goes back to its chain for an accountant`() = runTest(dispatcher) {
+        CARD_RETURNABLE_STATUSES.forEach { status ->
+            val repository = FakeCardRepository(cards = listOf(card(status)))
+            val vm = viewModel(repository, senior)
+            vm.onEvent(CardEvent.Open(CardDestination.CardRegister))
+            advanceUntilIdle()
+
+            vm.onEvent(CardEvent.Ask(CardPrompt.Confirm(CardConfirmAction.ReturnCardToApproval, "c1", "", "")))
+            vm.onEvent(CardEvent.ConfirmPrompt)
+            advanceUntilIdle()
+
+            assertTrue("returnCardToApproval" in repository.calls, "$status should be returnable")
+        }
+    }
+
+    @Test
+    fun `a card still awaiting its chain, or a viewer who is not an accountant, is refused`() = runTest(dispatcher) {
+        // Pending has nothing to undo; the server refuses it as
+        // card_cannot_return_to_approval.
+        val pending = FakeCardRepository(cards = listOf(card(CardStatus.Pending)))
+        val seniorVm = viewModel(pending, senior)
+        seniorVm.onEvent(CardEvent.Open(CardDestination.CardRegister))
+        advanceUntilIdle()
+        seniorVm.onEvent(CardEvent.Ask(CardPrompt.Confirm(CardConfirmAction.ReturnCardToApproval, "c1", "", "")))
+        seniorVm.onEvent(CardEvent.ConfirmPrompt)
+        advanceUntilIdle()
+        assertTrue("returnCardToApproval" !in pending.calls)
+
+        val crew = CardViewer(
+            userId = "crew-1",
+            departmentIdentifier = "department_art",
+            designationIdentifier = "designation_art_director",
+        )
+        val approved = FakeCardRepository(cards = listOf(card(CardStatus.Approved)))
+        val crewVm = viewModel(approved, crew)
+        crewVm.onEvent(CardEvent.Open(CardDestination.MyCards))
+        advanceUntilIdle()
+        crewVm.onEvent(CardEvent.Ask(CardPrompt.Confirm(CardConfirmAction.ReturnCardToApproval, "c1", "", "")))
+        crewVm.onEvent(CardEvent.ConfirmPrompt)
+        advanceUntilIdle()
+        assertTrue("returnCardToApproval" !in approved.calls, "accountants only")
+    }
 
     private val senior = CardViewer(
         userId = "senior-1",

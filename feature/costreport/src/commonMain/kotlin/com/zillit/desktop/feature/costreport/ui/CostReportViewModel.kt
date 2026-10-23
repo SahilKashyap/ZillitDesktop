@@ -81,11 +81,11 @@ class CostReportViewModel(
      * Folds the socket's announcements into the screen. A `Report` sync — the
      * report locked or posted elsewhere — re-pulls whatever tab is open (and
      * the posted timeline if it has been fetched, since a post grows it); a
-     * `Source` sync only raises the stale pill, exactly as the web does —
-     * see [CostReportSync]. Guarded so reopening the window does not stack
-     * collectors, and the reload debounced because a post emits both events
-     * back to back (the web coalesces at `accountHubListeners.js`
-     * `DEBOUNCE_MS = 500`).
+     * `Source` sync raises the pill and starts the quiet window after which
+     * the report refreshes itself — see [autoRefreshSoon]. Guarded so
+     * reopening the window does not stack collectors, and the reload debounced
+     * because a post emits both events back to back (the web coalesces at
+     * `accountHubListeners.js` `DEBOUNCE_MS = 500`).
      */
     private fun listenOnce() {
         if (listening) return
@@ -93,8 +93,11 @@ class CostReportViewModel(
         launch {
             repository.syncs.collect { sync ->
                 when (sync) {
-                    CostReportSync.Source -> setState { copy(sourceStale = true) }
+                    CostReportSync.Source -> autoRefreshSoon()
                     CostReportSync.Report -> {
+                        // This re-pull covers whatever the quiet window held.
+                        autoJob?.cancel()
+                        autoJob = null
                         syncJob?.cancel()
                         syncJob = launch {
                             delay(SYNC_DEBOUNCE_MILLIS)
@@ -111,6 +114,37 @@ class CostReportViewModel(
 
     private var listening = false
     private var syncJob: Job? = null
+    private var autoJob: Job? = null
+
+    /** When the burst of source events began, so [MAX_WAIT_MILLIS] can cap it. */
+    private var burstStartedAt: Long? = null
+
+    /**
+     * The pill now, the refresh shortly — the web's `useCostReportAutoRefresh`.
+     *
+     * A fresh event restarts the [QUIET_MILLIS] wait, so a burst settles into
+     * one refresh; [MAX_WAIT_MILLIS] after the first of them it goes anyway,
+     * so a long burst is not an indefinite wait. A snapshot is frozen and
+     * nothing in it can change, so the event is ignored there.
+     */
+    private fun autoRefreshSoon() {
+        if (currentState.snapshot != null) return
+        setState { copy(sourceStale = true, autoRefreshed = false) }
+        val startedAt = burstStartedAt ?: nowMillis().also { burstStartedAt = it }
+        val wait = (startedAt + MAX_WAIT_MILLIS - nowMillis()).coerceIn(0L, QUIET_MILLIS)
+        autoJob?.cancel()
+        autoJob = launch {
+            delay(wait)
+            // Cleared before the refresh, which cancels this slot when a
+            // person asks for the read — and this IS that slot.
+            autoJob = null
+            burstStartedAt = null
+            refresh()
+            setState { copy(autoRefreshed = true) }
+            delay(CHIP_MILLIS)
+            setState { copy(autoRefreshed = false) }
+        }
+    }
 
     @Suppress("CyclomaticComplexMethod") // Event fan-out.
     override fun onEvent(event: CostReportEvent) {
@@ -162,7 +196,11 @@ class CostReportViewModel(
     }
 
     private fun refresh() {
-        // Any full re-pull answers the stale pill, whoever pressed it.
+        // Any full re-pull answers the stale pill, whoever pressed it — and a
+        // read the person asked for covers the one that was waiting.
+        autoJob?.cancel()
+        autoJob = null
+        burstStartedAt = null
         setState { copy(sourceStale = false) }
         when (state.value.tab) {
             CostReportTab.Current -> {
@@ -410,6 +448,15 @@ class CostReportViewModel(
 
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+
+        /** No further source event for this long, and the report refreshes itself. */
+        const val QUIET_MILLIS = 3_500L
+
+        /** However long the burst runs, the refresh goes this long after its first event. */
+        const val MAX_WAIT_MILLIS = 15_000L
+
+        /** How long "Auto-refreshed" stays up afterwards. */
+        const val CHIP_MILLIS = 2_500L
     }
 }
 

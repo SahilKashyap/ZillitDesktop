@@ -12,7 +12,6 @@ import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
-import com.zillit.desktop.feature.location.domain.MovePlace
 import com.zillit.desktop.feature.location.domain.PickedLocationFile
 import com.zillit.desktop.feature.location.ui.LocationEditor
 import com.zillit.desktop.feature.location.ui.LocationEvent
@@ -29,7 +28,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -58,7 +56,7 @@ class LocationPlaceFlowTest {
     ) : LocationRepository {
         val created = mutableListOf<Triple<LocationDraft, MediaAttachment?, MediaAttachment?>>()
         val updated = mutableListOf<Pair<LocationDraft, MediaAttachment?>>()
-        val moves = mutableListOf<MovePlace?>()
+        var moves = 0
         var pinsAskedFor: LocationStatus? = null
 
         override suspend fun info(status: LocationStatus, fileCabinet: Boolean) =
@@ -85,9 +83,9 @@ class LocationPlaceFlowTest {
         override suspend fun delete(ids: List<String>, status: LocationStatus) = ZillitResult.Success(Unit)
 
         override suspend fun move(
-            records: List<LocationMedia>, from: LocationStatus, to: LocationStatus, place: MovePlace?,
+            records: List<LocationMedia>, from: LocationStatus, to: LocationStatus,
         ): ZillitResult<Unit> {
-            moves += place
+            moves += 1
             return ZillitResult.Success(Unit)
         }
 
@@ -202,7 +200,7 @@ class LocationPlaceFlowTest {
     }
 
     @Test
-    fun `moving to Final asks where the location is first`() = runTest(dispatcher) {
+    fun `a move carries no place, so every entry keeps its own`() = runTest(dispatcher) {
         val repository = Recording(records = listOf(record()))
         val model = model(repository)
         model.start()
@@ -210,53 +208,13 @@ class LocationPlaceFlowTest {
         tickOne(model)
         advanceUntilIdle()
 
+        // Each entry has its own pin and Maps link; one place picked for a
+        // folder overwrote them all, so the Move form asks nothing and the
+        // move goes straight through (web PR #6522).
         model.onEvent(LocationEvent.MoveSelected(LocationStatus.Published))
         advanceUntilIdle()
 
-        assertNotNull(model.state.value.moving, "the Move form should be up")
-        assertTrue(repository.moves.isEmpty(), "nothing moved before the form was answered")
-    }
-
-    @Test
-    fun `a place picked in the Move form rides with the move`() = runTest(dispatcher) {
-        val repository = Recording(records = listOf(record(pin = null)))
-        val model = model(repository)
-        model.start()
-        advanceUntilIdle()
-        tickOne(model)
-        advanceUntilIdle()
-
-        model.onEvent(LocationEvent.MoveSelected(LocationStatus.Published))
-        advanceUntilIdle()
-        model.onEvent(
-            LocationEvent.MovePlaceChanged(model.state.value.moving!!.place.copy(pin = pin, address = "Bankside")),
-        )
-        advanceUntilIdle()
-        model.onEvent(LocationEvent.ConfirmMove)
-        advanceUntilIdle()
-
-        val place = assertNotNull(repository.moves.single())
-        assertEquals(pin, place.pin)
-        assertEquals("https://www.google.com/maps?q=51.5079,-0.0877", place.link)
-        assertEquals(stored, place.mapImage)
-    }
-
-    @Test
-    fun `moving to a shortlist the map does not draw goes straight through`() = runTest(dispatcher) {
-        val repository = Recording(records = listOf(record()))
-        val model = model(repository)
-        model.start()
-        advanceUntilIdle()
-        tickOne(model)
-        advanceUntilIdle()
-
-        // Selected is not on the Map tool, so there is nothing to ask for.
-        model.onEvent(LocationEvent.MoveSelected(LocationStatus.Selected))
-        advanceUntilIdle()
-
-        assertNull(model.state.value.moving)
-        assertEquals(1, repository.moves.size)
-        assertNull(repository.moves.single(), "nothing was asked for, so no place was sent")
+        assertEquals(1, repository.moves)
     }
 
     @Test

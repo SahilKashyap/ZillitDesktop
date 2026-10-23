@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.maps
 
+import com.zillit.desktop.feature.maps.ui.MapUiState
+import com.zillit.desktop.feature.maps.domain.MapCity
 import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapHost
 import com.zillit.desktop.feature.maps.domain.MapLocation
@@ -104,6 +106,32 @@ class ShootLocationsTest {
             listOf("/film-tools/location"),
             effects.filterIsInstance<MapEffect.OpenTool>().map { it.path },
         )
+    }
+
+    @Test
+    fun `a pin is drawn under the city whose circle holds it, and nowhere else`() {
+        val delhi = MapCity(id = "delhi", name = "Delhi", coordinates = LatLng(28.6139, 77.2090), radiusMiles = 30.0)
+        val noida = MapCity(id = "noida", name = "Noida", coordinates = LatLng(28.5355, 77.3910), radiusMiles = 30.0)
+        val inNoida = bridge.copy(id = "p-noida", point = LatLng(28.5400, 77.3800))
+        val state = MapUiState(cities = listOf(delhi, noida), shootLocations = listOf(inNoida))
+
+        // The two circles overlap; the pin belongs to the nearer city only,
+        // so Delhi neither draws it nor counts it (web PR #6543).
+        assertEquals(
+            listOf(inNoida.id),
+            state.copy(selectedCityId = "noida").cityShootLocations.map { it.id },
+        )
+        assertTrue(state.copy(selectedCityId = "delhi").cityShootLocations.isEmpty())
+        assertEquals(0, state.copy(selectedCityId = "delhi").typeCounts.size)
+    }
+
+    @Test
+    fun `a pin inside no city shows under every city, so it never disappears`() {
+        val delhi = MapCity(id = "delhi", name = "Delhi", coordinates = LatLng(28.6139, 77.2090), radiusMiles = 30.0)
+        val faraway = bridge.copy(id = "p-far", point = LatLng(51.5079, -0.0877))
+        val state = MapUiState(cities = listOf(delhi), shootLocations = listOf(faraway), selectedCityId = "delhi")
+
+        assertEquals(listOf(faraway.id), state.cityShootLocations.map { it.id })
     }
 
     @Test
