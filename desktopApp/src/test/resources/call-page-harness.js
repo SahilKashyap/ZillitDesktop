@@ -67,6 +67,29 @@ const document = {
     querySelector: () => stage,
     querySelectorAll: () => [],
     addEventListener() {},
+    // `videoState` asks this to tell a mounted video from one a `render` left
+    // behind, which is the whole point of the line it logs: an orphan is still
+    // parented, to a cell no longer in the page, and reporting it by its class
+    // name read "at face" for a call's worth of dead videos (2026-10-13).
+    //
+    // So this walks UP and requires each link to still be listed in its
+    // parent's children, rather than trusting `parentNode`. That is what makes
+    // the two cases differ here at all: `innerHTML = ''` empties a node's child
+    // list without clearing the removed children's `parentNode`, exactly as a
+    // real one detaches a subtree while the orphan keeps pointing at it.
+    contains(node) {
+        let child = node;
+        while (child && child !== document.body && child !== stage) {
+            const parent = child.parentNode;
+            if (!parent || !Array.isArray(parent.children) || !parent.children.includes(child)) {
+                return false;
+            }
+            child = parent;
+        }
+        // The stage is this harness's live page: it is what `getElementById`
+        // hands the page to mount into.
+        return child === document.body || child === stage;
+    },
 };
 
 const context = {
