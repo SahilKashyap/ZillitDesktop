@@ -93,6 +93,53 @@ private fun AppGraph.Ready.scriptSupervisionHost(): SsHost = object : SsHost {
 
     override suspend fun pick(extensions: Set<String>): SsPickedFile? = pickScriptSupervisionFile(extensions)
 
+    /**
+     * An export or a report: SIGNED, unlike [fetch].
+     *
+     * These are this service's own routes, which answer the file itself. A
+     * JSON body on the wire means the service declined, and its `message`
+     * key is carried through so the reader is told why in their own
+     * language — the same shape the e-signature audit trail's raw GET uses,
+     * for the same reason.
+     */
+    override suspend fun downloadBytes(url: String): ZillitResult<ByteArray> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
+                    httpClient.get(url) {
+                        headers.forEach { (name, value) -> this.headers.append(name, value) }
+                        bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+                    }
+                }
+                val bytes = response.readRawBytes()
+                val isJson = response.contentType()?.match(ContentType.Application.Json) == true
+                if (!response.status.isSuccess() || isJson) {
+                    ZillitResult.Failure(
+                        ZillitError.Http(
+                            status = response.status.value,
+                            serverMessage = envelopeMessage(bytes),
+                            technical = "script supervision export",
+                        ),
+                    )
+                } else {
+                    ZillitResult.Success(bytes)
+                }
+            }.getOrElse {
+                ZillitResult.Failure(ZillitError.NoConnection(it::class.simpleName))
+            }
+        }
+
+    /** The save dialog. False is "cancelled", which the module never toasts. */
+    override suspend fun save(suggestedName: String, bytes: ByteArray): Boolean =
+        withContext(Dispatchers.IO) {
+            val dialog = FileDialog(null as Frame?, suggestedName, FileDialog.SAVE)
+            dialog.file = suggestedName
+            dialog.isVisible = true
+            val directory = dialog.directory ?: return@withContext false
+            val chosen = dialog.file ?: return@withContext false
+            runCatching { File(directory, chosen).writeBytes(bytes) }.isSuccess
+        }
+
     override suspend fun upload(
         url: String,
         file: SsPickedFile,

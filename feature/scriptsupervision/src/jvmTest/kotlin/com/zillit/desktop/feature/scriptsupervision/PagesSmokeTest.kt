@@ -156,6 +156,15 @@ class PagesSmokeTest {
             "counts":{"scenes":1,"script_days":1,"shooting_days":1,"costume_looks":1,
             "hair_looks":0,"makeup_looks":0,"wardrobe_items":1,"props_items":1}}"""
         path.contains("/upload/download-url") -> """{"presigned_url":""}"""
+        // The audit trail: paged as `{ logs, total }`, with one entry that
+        // CAN be restored (previous_state + a restorable module) and one
+        // that cannot, so both branches of the Restore column draw.
+        path.contains("/audit/") -> """{"total":2,"logs":[
+            {"_id":"a1","timestamp":"2026-10-23 18:02:11","action":"delete","module":"sound_report",
+             "record_id":"64f0aa11bb22cc33dd44ee55","user_name":"Asha","description":"Deleted a sound report",
+             "previous_state":{"notes":"old"},"changes":{"notes":{"from":"old","to":""}}},
+            {"_id":"a2","timestamp":"2026-10-23 17:40:02","action":"update","module":"character",
+             "record_id":"64f0aa11bb22cc33dd44ee66","user_name":"Ravi","description":"Renamed a character"}]}"""
         // The production summary behind the Production tiles.
         path.contains("/dashboard/summary/") -> """{"counts":{"characters":1,"scenes":1,
             "story_days":1,"boxes":1,"shooting_days":1,"actors":1,"documents":1},"filmed_pct":12,

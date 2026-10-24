@@ -73,6 +73,31 @@ interface SsHost {
         onProgress: (Int) -> Unit = {},
     ): ZillitResult<JsonElement> = noHost()
 
+    /**
+     * The bytes behind one of THIS SERVICE's own addresses — an export or a
+     * report, which answer a file rather than an envelope.
+     *
+     * ⚠ Signed, unlike [fetch]. The two are different calls on purpose:
+     * [fetch] goes to a presigned S3 link that carries its own
+     * authorisation, while this goes to the service, which answers 401
+     * `libs_moduledata_not_accepted` without the app's own signing. Every
+     * raw file export in this app broke that way once.
+     *
+     * A JSON body on the wire means the service DECLINED — the export routes
+     * answer the file on success — so the failure carries its message key.
+     */
+    suspend fun downloadBytes(url: String): ZillitResult<ByteArray> =
+        ZillitResult.Failure(ZillitError.Unknown("no download host is wired"))
+
+    /**
+     * Saves [bytes] through a save dialog; false when the viewer cancelled.
+     *
+     * The web hands a Blob to the browser, which saves it without asking.
+     * A desktop app has to ask, so a cancel is an ordinary outcome and is
+     * not reported as a failure.
+     */
+    suspend fun save(suggestedName: String, bytes: ByteArray): Boolean = false
+
     companion object {
         /** No host: picks nothing, uploads nothing, fetches nothing. */
         val None: SsHost = object : SsHost {}
