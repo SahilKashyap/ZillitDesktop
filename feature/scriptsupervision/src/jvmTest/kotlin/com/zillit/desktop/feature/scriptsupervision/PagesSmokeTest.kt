@@ -64,7 +64,9 @@ class PagesSmokeTest {
         "relationships":[{"character_id":"c2","character_name":"RAVI (stunt)","type":"Stunt performer"}]}"""
 
     private val scene = """{"_id":"s1","scene_number":"14","scene_name":"INT. KITCHEN","int_ext":"INT",
-        "day_night":"DAY","shooting_day":2,"location":"Unit base","status":"in_progress"}"""
+        "day_night":"DAY","shooting_day":2,"location":"Unit base","status":"in_progress",
+        "page_count_eighths":12,"set_name":"KITCHEN","scene_description":"Ravi comes home.",
+        "script_text":["INT. KITCHEN - DAY","RAVI picks up the tiffin.","bicycle leans on the wall."]}"""
 
     private fun reply(url: String): String {
         val path = url.substringBefore('?')
@@ -161,6 +163,15 @@ class PagesSmokeTest {
             "description":"Added a note","timestamp":1761250000000}]}"""
         path.contains("/breakdown/elements/") -> """[{"_id":"e1","name":"Steel tiffin",
             "category_slug":"props","description":"Hero prop","scene_count":9}]"""
+        // One scene's breakdown: the scene, its categories and every tag,
+        // including a SUGGESTED one so the review dialog has a subject.
+        path.contains("/breakdown/sheet/") -> """{"scene":$scene,
+            "categories":[{"category":{"_id":"c1","slug":"props","name":"Props","color":"#2563eb"},
+            "tags":[{"_id":"tg1","element_id":"e1","element_name":"Steel tiffin",
+            "tagged_text":"tiffin","line_index":1,"char_start":18,"char_end":24,"status":"confirmed"},
+            {"_id":"tg2","element_id":"e2","element_name":"Bicycle","tagged_text":"bicycle",
+            "line_index":2,"char_start":0,"char_end":7,"status":"suggested"}]},
+            {"category":{"_id":"c2","slug":"vehicles","name":"Vehicles","color":"#dc2626"},"tags":[]}]}"""
         // The quick log asks for the scene's last take before it draws its
         // form: the take number and the carried camera settings come out of
         // it, so a canned one is what makes that screen testable at all.
@@ -251,6 +262,11 @@ class PagesSmokeTest {
         draws(SsPage.Characters, SsView.SectionDay("c1", CharacterSection.ShootingDays, "2"))
         draws(SsPage.Characters, SsView.SectionDay("c1", CharacterSection.ShootingDays, "0"))
         draws(SsPage.Characters, SsView.CharacterScene("c1", "s1"))
+    }
+
+    @Test
+    fun `one scene's breakdown draws`() {
+        draws(SsPage.ScriptBreakdown, SsView.BreakdownScene("s1"))
     }
 
     @Test

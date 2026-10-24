@@ -51,6 +51,15 @@ sealed interface SsView {
 
     /** A prop's page, `props/:id`. */
     data class Prop(val itemId: String) : SsView
+
+    /**
+     * One scene's breakdown, the web's `script-breakdown?scene=<id>`.
+     *
+     * A query parameter there rather than a path segment, so a link from
+     * elsewhere opens straight onto a scene; here it is the page's inner
+     * position, which is the same thing.
+     */
+    data class BreakdownScene(val sceneId: String) : SsView
 }
 
 /**

@@ -14518,4 +14518,20 @@
     <string name="desktop_ss_total_scenes">Total scenes</string>
     <string name="desktop_ss_unique_characters">Unique characters</string>
     <string name="desktop_ss_add_image_url">Add image URL</string>
+    <string name="desktop_ss_add_tag">Add tag</string>
+    <string name="desktop_ss_element_help">Pick one of the category\'s elements, or type a new one</string>
+    <string name="desktop_ss_elements">Elements</string>
+    <string name="desktop_ss_elements_tagged">elements tagged</string>
+    <string name="desktop_ss_next_scene">Next scene</string>
+    <string name="desktop_ss_no_script_text">This scene has no script text. Import the script to see it here.</string>
+    <string name="desktop_ss_pg">pg</string>
+    <string name="desktop_ss_previous_scene">Previous scene</string>
+    <string name="desktop_ss_review_ai_suggestions">Review AI suggestions</string>
+    <string name="desktop_ss_review_suggestions">Review suggestions</string>
+    <string name="desktop_ss_scene_setting">Scene setting</string>
+    <string name="desktop_ss_shoot_location">Shoot location</string>
+    <string name="desktop_ss_show_empty">Show empty</string>
+    <string name="desktop_ss_synopsis_placeholder">Scene description…</string>
+    <string name="desktop_ss_tagged_text">Words in the script</string>
+    <string name="desktop_ss_tagged_text_help">The words the tag marks in this scene\'s script. Leave empty to use the element\'s name.</string>
 </resources>
