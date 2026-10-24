@@ -36,7 +36,7 @@ import kotlinx.coroutines.Dispatchers
  * service leaves out of a thin record, so a missing-key read shows up here
  * rather than on somebody's screen.
  */
-class SmokeFixture {
+class SmokeFixture(private val defaultTemplate: Boolean = false) {
 
     /**
      * One character, with both halves the screens read: the photos (the first
@@ -139,6 +139,18 @@ class SmokeFixture {
         // stretches, so it must keep one colour), 2B is off screen (dashed),
         // and the spans OVERLAP, which is the normal case — two cameras on
         // the same words. Before the catch-all, which answers a log record.
+        else -> scriptReply(path)
+    }
+
+    /**
+     * The script group's records — the lined script, the templates, and the
+     * catch-all every other folder falls through to.
+     *
+     * Split from [continuityReply] only because one `when` over every folder
+     * is longer than the gate allows; the split follows the menu's own
+     * groups so a reader knows where to look.
+     */
+    private fun scriptReply(path: String): String? = when {
         path.contains("/continuity/lined-script/") -> """[
             {"_id":"ls1","scene_id":"s1","shot_number":"1A","shot_size":"WS",
              "character_focus":"RAVI","shot_description":"Ravi enters",
@@ -156,7 +168,64 @@ class SmokeFixture {
              "character_focus":"RAVI","shot_description":"Insert, the tiffin",
              "page_number":"15","line_start":30,"line_end":55,"line_type":"straight",
              "total_takes":0,"preferred_take":0,"circled_takes":[],"notes":""}]"""
-        path.contains("/continuity/templates/") -> "[]"
+        // ⚠ `is_default` is FALSE on purpose. A default template makes the
+        // quick log hand over to the template log, and that would lose this
+        // fixture's coverage of the quick log's own form — the handover gets
+        // a test of its own instead.
+        else -> templateReply(path)
+    }
+
+    /**
+     * The template designer's records.
+     *
+     * ⚠ The template's sections exercise the designer's awkward parts on
+     * purpose: a DIVIDER followed by take flags (which must share the
+     * divider's run), a CALCULATED field reading two others, a LOOKUP, a
+     * field behind a show-when rule, and a custom section with a colour of
+     * its own. Trim any of those and the page they break is not this one.
+     */
+    private fun templateReply(path: String): String? = when {
+        path.contains("/continuity/templates/detail/") -> """{"_id":"tpl1","name":"Unit A day log",
+            "description":"The unit's own form","tags":["unit"],"version":3,"is_default":false,
+            "version_history":[
+              {"version":1,"updated_at":"2026-10-20 09:00","sections":[{"key":"scene"}]},
+              {"version":2,"updated_at":"2026-10-22 18:30","sections":[{"key":"scene"},{"key":"take"}]}],
+            "sections":[
+              {"key":"scene","label":"Scene","enabled":true,"sort_order":0,
+               "fields":[{"key":"scene_number","label":"Scene number","type":"number","required":true}]},
+              {"key":"take","label":"Take","enabled":true,"sort_order":1,
+               "fields":[
+                 {"key":"take_number","label":"Take","type":"number","required":true},
+                 {"key":"slate_number","label":"Slate","type":"text"},
+                 {"key":"duration_display","label":"Duration (MM:SS)","type":"text"},
+                 {"key":"lens_mm","label":"Lens","type":"select","options":["32","50","85"]},
+                 {"key":"status_divider","label":"Status","type":"divider"},
+                 {"key":"is_circled","label":"Circled","type":"switch"},
+                 {"key":"is_ng","label":"NG","type":"switch"},
+                 {"key":"ng_reason","label":"Why NG","type":"text",
+                  "conditions":[{"field":"is_ng","operator":"is_set","value":""}]},
+                 {"key":"notes","label":"Notes","type":"textarea"}]},
+              {"key":"sound_report","label":"Sound","enabled":false,"sort_order":2,"fields":[]},
+              {"key":"custom_1","label":"Unit notes","enabled":true,"sort_order":3,
+               "isCustom":true,"sectionType":"notes","color":"#0ea5e9",
+               "fields":[
+                 {"key":"f_1","label":"Who","type":"lookup",
+                  "lookupConfig":{"source":"cast","displayField":"name"}},
+                 {"key":"f_2","label":"Elapsed","type":"calculated",
+                  "formula":{"formulaType":"duration_diff","sourceFields":["f_3","f_4"]}},
+                 {"key":"f_3","label":"From (MM:SS)","type":"text"},
+                 {"key":"f_4","label":"To (MM:SS)","type":"text"}]}]}"""
+        path.contains("/continuity/templates/") -> """[{"_id":"tpl1","name":"Unit A day log",
+            "description":"The unit's own form","tags":["unit"],"version":3,"is_default":$defaultTemplate,
+            "sections":[
+              {"key":"scene","label":"Scene","enabled":true,
+               "fields":[{"key":"scene_number","label":"Scene number","type":"number"}]},
+              {"key":"take","label":"Take","enabled":true,
+               "fields":[{"key":"take_number","label":"Take","type":"number"},
+                         {"key":"slate_number","label":"Slate","type":"text"},
+                         {"key":"notes","label":"Notes","type":"textarea"}]},
+              {"key":"sound_report","label":"Sound","enabled":false,
+               "fields":[{"key":"sound_roll","label":"Sound roll","type":"text"}]}]}]"""
         // Every other folder: the twelve logs, which are one screen behind a spec.
         path.contains("/continuity/") -> """[{"_id":"r1","scene_id":"s1","notes":"note",
             "camera":"A","lens_mm":35,"shot_size":"MS","sound_roll":"S001","track_number":2,
@@ -189,6 +258,10 @@ class SmokeFixture {
         // The production summary behind the Production tiles.
         // Not AI despite the path: the service works these out from the
         // coverage lines. Two kinds, because the page shades them differently.
+        path.contains("/quick-log/last-take/") -> """{"take_number":4}"""
+        path.contains("/quick-log/template-analytics/") -> """{"totalLogs":12,"fields":{
+            "take_take_number":{"section":"Take","label":"Take","filled":12,"total":12,"percentage":100},
+            "take_notes":{"section":"Take","label":"Notes","filled":3,"total":12,"percentage":25}}}"""
         path.contains("/ai/coverage-gaps/") -> """[
             {"from_line":56,"to_line":70,"gap_type":"no_coverage"},
             {"from_line":21,"to_line":24,"gap_type":"off_screen_only"}]"""

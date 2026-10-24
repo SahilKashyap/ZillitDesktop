@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.MutedText
 import com.zillit.desktop.feature.scriptsupervision.ui.SsCtx
 import com.zillit.desktop.feature.scriptsupervision.ui.SsPageHeader
 import com.zillit.desktop.feature.scriptsupervision.ui.scenes
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.templates.TemplateLogScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.t
 import kotlinx.coroutines.launch
 
@@ -41,10 +42,11 @@ import kotlinx.coroutines.launch
  * day is the working set, and picking another day drops a scene that is not
  * on it.
  *
- * What the web has here and this does not: when the production has a DEFAULT
- * TEMPLATE, the web's quick log hands over to `TemplateLogScreen` and logs
- * through that template instead. The template editor is not ported yet, so
- * this screen says so rather than silently logging the wrong shape.
+ * ⚠ When the production has a DEFAULT TEMPLATE this screen is not the form at
+ * all: it hands over to [TemplateLogScreen] and logs through that template,
+ * which is what the web does. A production that has designed its own form
+ * expects to fill in THAT form, and logging the built-in shape instead would
+ * quietly write records its template never asked for.
  */
 @Composable
 internal fun QuickLogScreen() {
@@ -69,11 +71,8 @@ internal fun QuickLogScreen() {
 
     when {
         templates.loading -> MutedText(t("loading"))
-        // The production logs through a template, which is not ported yet.
-        templates.defaultId != null -> ZillitEmptyState(
-            title = t("templates"),
-            message = t("not_ported_yet"),
-        )
+        // The production logs through its own template, so that is the form.
+        templates.defaultId != null -> TemplateLogScreen(templateId = templates.defaultId)
 
         else -> {
             ScenePicker(

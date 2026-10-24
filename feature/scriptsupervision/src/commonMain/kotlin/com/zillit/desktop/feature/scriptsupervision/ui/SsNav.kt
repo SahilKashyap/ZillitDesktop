@@ -60,6 +60,17 @@ sealed interface SsView {
      * position, which is the same thing.
      */
     data class BreakdownScene(val sceneId: String) : SsView
+
+    /**
+     * Designing a template, the web's `template-editor/:templateId`.
+     *
+     * A blank [templateId] is a NEW template — the web spells that `/new` in
+     * its URL, and the editor branches on it either way.
+     */
+    data class TemplateEditor(val templateId: String) : SsView
+
+    /** Logging through a template, `template-log/:templateId`. */
+    data class TemplateLog(val templateId: String) : SsView
 }
 
 /**

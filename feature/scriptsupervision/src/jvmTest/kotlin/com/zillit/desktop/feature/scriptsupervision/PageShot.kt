@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.LocalScenes
 import com.zillit.desktop.feature.scriptsupervision.ui.LocalSs
 import com.zillit.desktop.feature.scriptsupervision.ui.SsPage
 import com.zillit.desktop.feature.scriptsupervision.ui.SsRoutes
+import com.zillit.desktop.feature.scriptsupervision.ui.SsView
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.TramLinesPage
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -45,9 +46,21 @@ class PageShot {
     fun `render pages for eyeballing`() {
         if (System.getenv("SS_SHOT") != "1") return
         val out = File(System.getenv("SS_SHOT_DIR") ?: "build/shots").apply { mkdirs() }
-        listOf(SsPage.Dashboard, SsPage.Export, SsPage.AuditLog, SsPage.LinedScript).forEach { page ->
+        listOf(SsPage.Dashboard, SsPage.Export, SsPage.AuditLog, SsPage.LinedScript, SsPage.Templates)
+            .forEach { page ->
+                BOTH_THEMES.forEach { dark ->
+                    shoot(file(out, page.name, dark), view = SsView.Root, page = page) { SsRoutes(page) { } }
+                }
+            }
+        // The designer's two inner views, which the page sweep cannot reach.
+        listOf(
+            "TemplateEditor" to SsView.TemplateEditor("tpl1"),
+            "TemplateLog" to SsView.TemplateLog("tpl1"),
+        ).forEach { (name, view) ->
             BOTH_THEMES.forEach { dark ->
-                shoot(file(out, page.name, dark)) { SsRoutes(page) { } }
+                shoot(file(out, name, dark), view = view, page = SsPage.Templates) {
+                    SsRoutes(SsPage.Templates) { }
+                }
             }
         }
         // The tram lines on their own, with a scene PICKED and gaps SHOWING.
@@ -87,10 +100,13 @@ class PageShot {
      * dark page looks broken, while near-white text on white leaves titles
      * invisible.
      */
+    @Suppress("LongParameterList") // A render harness's whole context.
     private fun shoot(
         file: File,
         fixture: SmokeFixture = SmokeFixture(),
         height: Int = HEIGHT,
+        view: SsView = SsView.Root,
+        page: SsPage = SsPage.LinedScript,
         content: @Composable () -> Unit,
     ) {
         val dark = file.name.endsWith("-dark.png")
@@ -102,7 +118,7 @@ class PageShot {
                     LocalSs provides fixture.ctx,
                     LocalScenes provides fixture.scenes,
                     LocalCast provides fixture.cast,
-                    LocalNav provides fixture.nav(SsPage.LinedScript),
+                    LocalNav provides fixture.nav(page, view),
                 ) {
                     Column(
                         modifier = Modifier

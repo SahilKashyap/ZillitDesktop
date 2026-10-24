@@ -30,6 +30,9 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.reports.ExportScr
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.CallSheetImportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ElementManagerScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.LinedScriptScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.templates.TemplateEditorScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.templates.TemplateLogScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.templates.TemplatesScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ProductionScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptBreakdownScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptImportScreen
@@ -92,6 +95,7 @@ private fun SsScriptRoutes(page: SsPage) {
         SsPage.ScriptBreakdown -> ScriptBreakdownScreen()
         SsPage.ScriptRevisions -> ScriptRevisionsScreen()
         SsPage.LinedScript -> LinedScriptScreen()
+        SsPage.Templates -> TemplateRoutes()
         SsPage.ElementManager -> ElementManagerScreen()
         SsPage.Dashboard -> DashboardScreen()
         SsPage.Export -> ExportScreen()
@@ -133,4 +137,25 @@ private fun SsLogRoutes(page: SsPage) {
 @Composable
 private fun NotPorted(page: SsPage) {
     ZillitEmptyState(title = t(page.labelKey), message = t("not_ported_yet"))
+}
+
+/**
+ * The template designer's three positions: the list, the editor, and logging
+ * through one.
+ *
+ * All under one menu row, as the web keeps them: a template is edited and
+ * used from its own list, and a page of its own for each would highlight no
+ * menu row at all.
+ */
+@Composable
+private fun TemplateRoutes() {
+    val nav = LocalNav.current
+    when (val view = nav.current) {
+        is SsView.TemplateEditor -> TemplateEditorScreen(view.templateId, onDone = nav::back)
+        is SsView.TemplateLog -> TemplateLogScreen(view.templateId, onBack = nav::back)
+        else -> TemplatesScreen(
+            onEdit = { nav.go(SsView.TemplateEditor(it)) },
+            onUse = { nav.go(SsView.TemplateLog(it)) },
+        )
+    }
 }

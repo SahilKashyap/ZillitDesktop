@@ -56,3 +56,32 @@ fun DeleteDialog(
 }
 
 private val CONFIRM_WIDTH = 440.dp
+
+/**
+ * A yes/no the caller answers itself — discarding an edit, removing a section.
+ *
+ * Unlike [DeleteDialog] nothing is sent: the outcome is local, so there is no
+ * server message to carry and [onConfirm] simply runs.
+ */
+@Composable
+fun ConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onClose: () -> Unit,
+    onConfirm: () -> Unit,
+    danger: Boolean = false,
+) {
+    FormDialog(
+        open = true,
+        title = title,
+        onDismiss = onClose,
+        confirmLabel = confirmLabel,
+        onConfirm = onConfirm,
+        danger = danger,
+    ) {
+        MutedText(message, maxLines = MESSAGE_LINES)
+    }
+}
+
+private const val MESSAGE_LINES = 4

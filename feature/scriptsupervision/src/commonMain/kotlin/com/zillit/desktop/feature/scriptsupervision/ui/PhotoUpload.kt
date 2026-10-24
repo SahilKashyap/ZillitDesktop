@@ -152,6 +152,42 @@ private suspend fun SsCtx.uploadPhoto(
     return answer?.rec?.str("key")?.takeIf { it.isNotBlank() }
 }
 
+/**
+ * A template's image field: the picture, filed against the scene.
+ *
+ * The same upload as [pickPhoto], plus the ATTACHMENT record the web saves
+ * after its own upload — without it the file sits in project storage and
+ * appears nowhere, because a storage key in a log is not something anything
+ * else lists.
+ *
+ * ⚠ `module` is `general`, which is the web's literal choice and its own
+ * comment's reason: the attachment model has no template module to file one
+ * under. Sending `template` is refused.
+ */
+suspend fun SsCtx.pickTemplateImage(sceneId: String, onProgress: (Int) -> Unit = {}): String? {
+    val picked = host.pick(IMAGE_EXTENSIONS) ?: return null
+    val project = api.project() ?: return null
+    val key = uploadPhoto(project, "template", picked, onProgress) ?: return null
+    rememberUploadedPhoto(key, picked.bytes)
+    write {
+        api.post(
+            "/upload/attachment",
+            body(
+                "key" to key,
+                "module" to "general",
+                "scene_id" to sceneId,
+                // The stored name, and the one the viewer recognises.
+                "filename" to key.substringAfterLast('/'),
+                "original_name" to picked.name,
+                "content_type" to picked.mime,
+                "file_size" to picked.bytes.size,
+                "media_type" to "image",
+            ),
+        )
+    }
+    return key
+}
+
 /** What the chooser offers: the picture formats this tool's photos are. */
 private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "heic", "webp")
 

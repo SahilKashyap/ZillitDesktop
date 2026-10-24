@@ -140,6 +140,24 @@ class PagesSmokeTest {
         onAllNodesWithText("3C").onFirst().assertExists()
     }
 
+    /**
+     * The template designer's three positions.
+     *
+     * The menu sweep only ever reaches the LIST, because the editor and the
+     * log are inner views — and those two are where the designer's awkward
+     * parts live: a divider sharing its run with the take flags, a
+     * calculated field reading its neighbours, a lookup, and a field behind
+     * a show-when rule. The fixture's template carries all four.
+     */
+    @Test
+    fun `the template editor and the template log draw`() {
+        draws(SsPage.Templates, SsView.TemplateEditor("tpl1"))
+        // A NEW template: every built-in section, built from the defaults
+        // rather than read off the wire.
+        draws(SsPage.Templates, SsView.TemplateEditor(""))
+        draws(SsPage.Templates, SsView.TemplateLog("tpl1"))
+    }
+
     @Test
     fun `every page of the menu draws`() {
         SsPage.entries.forEach { draws(it) }
