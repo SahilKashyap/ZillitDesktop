@@ -134,6 +134,28 @@ class SmokeFixture {
         // No default template, so the quick log draws its own form rather
         // than handing over to the template log. Before the catch-all, which
         // would otherwise answer this with a log record.
+        // The lined script's coverage. Deliberately shaped to exercise the
+        // page's three rules at once: 1A appears TWICE (one setup, two
+        // stretches, so it must keep one colour), 2B is off screen (dashed),
+        // and the spans OVERLAP, which is the normal case — two cameras on
+        // the same words. Before the catch-all, which answers a log record.
+        path.contains("/continuity/lined-script/") -> """[
+            {"_id":"ls1","scene_id":"s1","shot_number":"1A","shot_size":"WS",
+             "character_focus":"RAVI","shot_description":"Ravi enters",
+             "page_number":"14","line_start":1,"line_end":12,"line_type":"straight",
+             "total_takes":4,"preferred_take":3,"circled_takes":[3,4],"notes":"Watch the tiffin"},
+            {"_id":"ls2","scene_id":"s1","shot_number":"2B","shot_size":"MCU",
+             "character_focus":"AMMA","shot_description":"Reverse, off screen",
+             "page_number":"14","line_start":5,"line_end":20,"line_type":"squiggly",
+             "total_takes":2,"preferred_take":0,"circled_takes":[],"notes":""},
+            {"_id":"ls3","scene_id":"s1","shot_number":"1A","shot_size":"WS",
+             "character_focus":"RAVI","shot_description":"Ravi enters",
+             "page_number":"14","line_start":25,"line_end":40,"line_type":"straight",
+             "total_takes":1,"preferred_take":1,"circled_takes":[1],"notes":""},
+            {"_id":"ls4","scene_id":"s1","shot_number":"3C","shot_size":"CU",
+             "character_focus":"RAVI","shot_description":"Insert, the tiffin",
+             "page_number":"15","line_start":30,"line_end":55,"line_type":"straight",
+             "total_takes":0,"preferred_take":0,"circled_takes":[],"notes":""}]"""
         path.contains("/continuity/templates/") -> "[]"
         // Every other folder: the twelve logs, which are one screen behind a spec.
         path.contains("/continuity/") -> """[{"_id":"r1","scene_id":"s1","notes":"note",
@@ -165,6 +187,11 @@ class SmokeFixture {
             {"_id":"a2","timestamp":"2026-10-23 17:40:02","action":"update","module":"character",
              "record_id":"64f0aa11bb22cc33dd44ee66","user_name":"Ravi","description":"Renamed a character"}]}"""
         // The production summary behind the Production tiles.
+        // Not AI despite the path: the service works these out from the
+        // coverage lines. Two kinds, because the page shades them differently.
+        path.contains("/ai/coverage-gaps/") -> """[
+            {"from_line":56,"to_line":70,"gap_type":"no_coverage"},
+            {"from_line":21,"to_line":24,"gap_type":"off_screen_only"}]"""
         path.contains("/dashboard/summary/") -> """{"counts":{"characters":1,"scenes":1,
             "story_days":1,"boxes":1,"shooting_days":1,"actors":1,"documents":1},"filmed_pct":12,
             "recent_activity":[{"_id":"h1","user_name":"Asha","action":"create","module":"scene_notes",

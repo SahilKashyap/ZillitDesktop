@@ -29,6 +29,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.reports.Dashboard
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.reports.ExportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.CallSheetImportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ElementManagerScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.LinedScriptScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ProductionScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptBreakdownScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ScriptImportScreen
@@ -90,6 +91,7 @@ private fun SsScriptRoutes(page: SsPage) {
         SsPage.CallSheetImport -> CallSheetImportScreen()
         SsPage.ScriptBreakdown -> ScriptBreakdownScreen()
         SsPage.ScriptRevisions -> ScriptRevisionsScreen()
+        SsPage.LinedScript -> LinedScriptScreen()
         SsPage.ElementManager -> ElementManagerScreen()
         SsPage.Dashboard -> DashboardScreen()
         SsPage.Export -> ExportScreen()
