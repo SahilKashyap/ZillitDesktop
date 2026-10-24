@@ -140,7 +140,7 @@ private fun ImportControls(
             enabled = !state.busy,
         )
         ZillitButton(
-            text = t("preview"),
+            text = if (state.running == "preview" && state.percent >= 0) "${state.percent}%" else t("preview"),
             onClick = { ctx.scope.launch { state.run(ctx, previewPath, preview = true) } },
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Eye,
@@ -148,7 +148,11 @@ private fun ImportControls(
             enabled = state.file != null && !state.busy,
         )
         ZillitButton(
-            text = t("import_to_project"),
+            text = if (state.running == "import" && state.percent >= 0) {
+                "${state.percent}%"
+            } else {
+                t("import_to_project")
+            },
             onClick = onConfirm,
             leadingIcon = ZillitIcons.Upload,
             loading = state.running == "import",
@@ -183,6 +187,16 @@ internal class ImportState {
     var running by mutableStateOf("")
         private set
 
+    /**
+     * How much of the file has gone, 0..100; -1 when nothing is in flight.
+     *
+     * A script PDF is the biggest thing this tool sends, and both calls send
+     * the whole file — the preview is the same upload with nothing stored —
+     * so a spinner alone would leave a reader guessing twice.
+     */
+    var percent by mutableStateOf(-1)
+        private set
+
     val busy: Boolean get() = running.isNotBlank()
 
     fun chose(picked: SsPickedFile) {
@@ -203,8 +217,10 @@ internal class ImportState {
         val picked = file ?: return
         if (busy) return
         running = if (preview) "preview" else "import"
-        val answer = ctx.write { ctx.upload(path, picked) }
+        percent = 0
+        val answer = ctx.write { ctx.upload(path, picked) { percent = it } }
         running = ""
+        percent = -1
         val record = answer?.rec ?: return
         if (preview) {
             parsed = record

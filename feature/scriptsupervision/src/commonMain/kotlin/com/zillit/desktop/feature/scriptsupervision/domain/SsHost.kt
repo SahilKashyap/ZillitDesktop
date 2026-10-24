@@ -59,11 +59,18 @@ interface SsHost {
      * [fields] are the extra multipart parts the route reads beside the file.
      * The two import routes take none; `/upload/file` takes `folder`, and
      * leaving it out puts the file in the wrong place in project storage.
+     *
+     * [onProgress] is called with 0..100 as the file's bytes are handed to
+     * the engine — the same contract and the same meaning as chat's
+     * `uploadMedia`. It is the share of the FILE that has gone, not of the
+     * whole multipart envelope, because the other parts are a few hundred
+     * bytes and counting them would only make the number lie slightly.
      */
     suspend fun upload(
         url: String,
         file: SsPickedFile,
         fields: Map<String, String> = emptyMap(),
+        onProgress: (Int) -> Unit = {},
     ): ZillitResult<JsonElement> = noHost()
 
     companion object {

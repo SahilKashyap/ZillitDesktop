@@ -81,8 +81,12 @@ class SsCtx(
      * The host does the HTTP because `ApiClient` speaks only JSON envelopes;
      * this keeps the call site looking like the rest of the module.
      */
-    suspend fun upload(path: String, file: SsPickedFile): ZillitResult<Answer> =
-        when (val answer = host.upload(api.url(path), file)) {
+    suspend fun upload(
+        path: String,
+        file: SsPickedFile,
+        onProgress: (Int) -> Unit = {},
+    ): ZillitResult<Answer> =
+        when (val answer = host.upload(api.url(path), file, onProgress = onProgress)) {
             is ZillitResult.Failure -> ZillitResult.Failure(answer.error)
             is ZillitResult.Success -> ZillitResult.Success(Answer(answer.data, null))
         }

@@ -14,17 +14,16 @@ import com.zillit.desktop.feature.scriptsupervision.domain.SsHost
 import com.zillit.desktop.feature.scriptsupervision.domain.SsPickedFile
 import com.zillit.desktop.feature.scriptsupervision.ui.ScriptSupervisionToolProvider
 import com.zillit.desktop.feature.scriptsupervision.ui.ScriptSupervisionViewModel
-import io.ktor.client.request.forms.MultiPartFormDataContent
-import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
+import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.writeFully
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -98,7 +97,8 @@ private fun AppGraph.Ready.scriptSupervisionHost(): SsHost = object : SsHost {
         url: String,
         file: SsPickedFile,
         fields: Map<String, String>,
-    ): ZillitResult<JsonElement> = uploadScriptSupervisionFile(url, file, fields)
+        onProgress: (Int) -> Unit,
+    ): ZillitResult<JsonElement> = uploadScriptSupervisionFile(url, file, fields, onProgress)
 }
 
 /**
@@ -164,30 +164,14 @@ private suspend fun AppGraph.Ready.uploadScriptSupervisionFile(
     url: String,
     file: SsPickedFile,
     fields: Map<String, String>,
+    onProgress: (Int) -> Unit,
 ): ZillitResult<JsonElement> = withContext(Dispatchers.IO) {
     runCatching {
         val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
             httpClient.post(url) {
                 headers.forEach { (name, value) -> this.headers.append(name, value) }
                 bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
-                setBody(
-                    MultiPartFormDataContent(
-                        formData {
-                            // Beside the file: `/upload/file` reads `folder`,
-                            // and without it the file lands in the wrong
-                            // place in project storage.
-                            fields.forEach { (name, value) -> append(name, value) }
-                            append(
-                                "file",
-                                file.bytes,
-                                Headers.build {
-                                    append(HttpHeaders.ContentType, file.mime)
-                                    append(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
-                                },
-                            )
-                        },
-                    ),
-                )
+                setBody(multipartProgressBody(fields, file, onProgress))
             }
         }
         val bytes = response.readRawBytes()
@@ -222,6 +206,75 @@ private suspend fun AppGraph.Ready.uploadScriptSupervisionFile(
         }
     }.getOrElse { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "the import could not be sent")) }
 }
+
+/**
+ * The multipart request body, written chunk by chunk so [onProgress] can
+ * narrate it.
+ *
+ * ## Why this is hand-rolled rather than `MultiPartFormDataContent`
+ *
+ * Two reasons, both learned the hard way in this repo. Ktor's `onUpload`
+ * observer **stalls uploads** on this stack (Ktor + OkHttp + JBR 21) — a
+ * 20 MB file sat for minutes with no request reaching the engine — so the
+ * progress plugin is not an option anywhere here. And
+ * `MultiPartFormDataContent` hands the whole envelope over at once, so even
+ * with an observer the number would jump 0→100; the only way a multipart
+ * upload reports real percent is to stream the envelope yourself, which is
+ * what this does.
+ *
+ * ⚠ `writeFully(src, startIndex, endIndex)` takes an **end index, not a
+ * length**. Passing a length writes the first chunk and then nothing (every
+ * later pass has `start == end`), the request falls short of its declared
+ * `Content-Length`, and OkHttp fails it as "unexpected end of stream" —
+ * invisible under 256 KB. The arithmetic below is copied from
+ * `S3AttachmentUploader.progressBody`, which has it right.
+ *
+ * Content-Length is declared and must be exact for the same reason.
+ */
+internal fun multipartProgressBody(
+    fields: Map<String, String>,
+    file: SsPickedFile,
+    onProgress: (Int) -> Unit,
+): OutgoingContent.WriteChannelContent {
+    val boundary = "ZillitSs" + java.util.UUID.randomUUID().toString().replace("-", "")
+    val prefix = buildString {
+        fields.forEach { (name, value) ->
+            append("--").append(boundary).append(CRLF)
+            append("Content-Disposition: form-data; name=\"").append(name).append('"').append(CRLF)
+            append(CRLF).append(value).append(CRLF)
+        }
+        append("--").append(boundary).append(CRLF)
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(file.name).append('"')
+        append(CRLF)
+        append("Content-Type: ").append(file.mime).append(CRLF)
+        append(CRLF)
+    }.toByteArray(Charsets.UTF_8)
+    val suffix = "$CRLF--$boundary--$CRLF".toByteArray(Charsets.UTF_8)
+
+    return object : OutgoingContent.WriteChannelContent() {
+        override val contentType = ContentType.parse("multipart/form-data; boundary=$boundary")
+        override val contentLength: Long = prefix.size.toLong() + file.bytes.size + suffix.size
+
+        override suspend fun writeTo(channel: ByteWriteChannel) {
+            channel.writeFully(prefix, 0, prefix.size)
+            var written = 0
+            val total = file.bytes.size
+            while (written < total) {
+                // END index, not a length. See the warning above.
+                val end = minOf(written + PROGRESS_CHUNK, total)
+                channel.writeFully(file.bytes, written, end)
+                written = end
+                onProgress(((written.toLong() * FULL) / total.coerceAtLeast(1)).toInt())
+            }
+            channel.writeFully(suffix, 0, suffix.size)
+        }
+    }
+}
+
+/** 256 KB a chunk, as the mail uploader streams. */
+private const val PROGRESS_CHUNK = 256 * 1024
+private const val FULL = 100
+private const val CRLF = "\r\n"
 
 /** The `message` key of a failed envelope, for a non-2xx answer. */
 private fun envelopeMessage(bytes: ByteArray): String? = runCatching {

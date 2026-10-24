@@ -52,6 +52,8 @@ fun AddPhotoRow(
 ) {
     val ctx = LocalSs.current
     var busy by remember { mutableStateOf(false) }
+    // -1 is "not uploading"; 0..100 while one is in flight.
+    var percent by remember { mutableStateOf(-1) }
     var link by remember { mutableStateOf("") }
 
     Row(
@@ -60,14 +62,18 @@ fun AddPhotoRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitButton(
-            text = t("add_photo"),
+            // The percentage replaces the label while it climbs, so one
+            // control says both what it does and how far it has got.
+            text = if (percent >= 0) "$percent%" else t("add_photo"),
             onClick = {
                 ctx.whenPost {
                     ctx.scope.launch {
                         busy = true
+                        percent = 0
                         // Cancelling the chooser is not a failure and is not
                         // toasted; `pickPhoto` answers null for it.
-                        ctx.pickPhoto(folder)?.let(onAdded)
+                        ctx.pickPhoto(folder) { percent = it }?.let(onAdded)
+                        percent = -1
                         busy = false
                     }
                 }
@@ -115,19 +121,30 @@ private val PHOTO_LINK = Regex("^https?://\\S+$", RegexOption.IGNORE_CASE)
  * new photo would show as a placeholder until something re-signed it. The web
  * does the same thing with `rememberUpload`.
  */
-suspend fun SsCtx.pickPhoto(folder: String): String? {
+suspend fun SsCtx.pickPhoto(folder: String, onProgress: (Int) -> Unit = {}): String? {
     // Cancelled, or no production open: nothing happened, and nothing is said.
     val picked = host.pick(IMAGE_EXTENSIONS) ?: return null
     val project = api.project() ?: return null
-    val key = uploadPhoto(project, folder, picked) ?: return null
+    val key = uploadPhoto(project, folder, picked, onProgress) ?: return null
     rememberUploadedPhoto(key, picked.bytes)
     return key
 }
 
 /** The upload itself: the storage key, or null once its refusal has been toasted. */
-private suspend fun SsCtx.uploadPhoto(project: String, folder: String, picked: SsPickedFile): String? {
+private suspend fun SsCtx.uploadPhoto(
+    project: String,
+    folder: String,
+    picked: SsPickedFile,
+    onProgress: (Int) -> Unit,
+): String? {
     val answer = write {
-        when (val uploaded = host.upload(api.url("/upload/file/$project"), picked, mapOf("folder" to folder))) {
+        val uploaded = host.upload(
+            url = api.url("/upload/file/$project"),
+            file = picked,
+            fields = mapOf("folder" to folder),
+            onProgress = onProgress,
+        )
+        when (uploaded) {
             is ZillitResult.Failure -> ZillitResult.Failure(uploaded.error)
             is ZillitResult.Success -> ZillitResult.Success(Answer(uploaded.data, null))
         }
