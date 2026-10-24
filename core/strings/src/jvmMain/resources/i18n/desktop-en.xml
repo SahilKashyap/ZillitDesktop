@@ -14575,4 +14575,7 @@
     <string name="desktop_ss_module_stunt_safety">Stunt &amp; safety</string>
     <string name="desktop_ss_module_timing_log">Timing log</string>
     <string name="desktop_ss_module_vfx_plate_log">VFX plate log</string>
+    <string name="desktop_ss_scene_status">Scene status</string>
+    <string name="desktop_ss_takes_breakdown">Takes breakdown</string>
+    <string name="desktop_ss_unresolved_issues">Unresolved issues</string>
 </resources>

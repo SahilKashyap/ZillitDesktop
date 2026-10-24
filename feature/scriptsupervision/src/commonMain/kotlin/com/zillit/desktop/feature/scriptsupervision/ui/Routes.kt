@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.LooksRoutes
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.looks.PropsWardrobeScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.quicklog.QuickLogScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.reports.AuditLogScreen
+import com.zillit.desktop.feature.scriptsupervision.ui.screens.reports.DashboardScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.reports.ExportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.CallSheetImportScreen
 import com.zillit.desktop.feature.scriptsupervision.ui.screens.script.ElementManagerScreen
@@ -90,6 +91,7 @@ private fun SsScriptRoutes(page: SsPage) {
         SsPage.ScriptBreakdown -> ScriptBreakdownScreen()
         SsPage.ScriptRevisions -> ScriptRevisionsScreen()
         SsPage.ElementManager -> ElementManagerScreen()
+        SsPage.Dashboard -> DashboardScreen()
         SsPage.Export -> ExportScreen()
         SsPage.AuditLog -> AuditLogScreen()
         else -> SsLogRoutes(page)
