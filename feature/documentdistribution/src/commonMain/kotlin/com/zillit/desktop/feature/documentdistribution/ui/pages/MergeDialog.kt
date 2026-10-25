@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -27,8 +28,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
@@ -37,6 +41,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.MergePerson
 import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
@@ -64,7 +69,15 @@ import com.zillit.desktop.feature.documentdistribution.ui.peopleForMerge
 @Composable
 internal fun MergeDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     val merge = state.merge
-    val directory = remember(state.crew, state.contacts, state.viewer.userId, state.viewer.userEmail) {
+    val directory = remember(
+        state.crew,
+        state.contacts,
+        state.viewer.userId,
+        state.viewer.userEmail,
+        // A chosen distribution list can add rows of its own, and a ticked
+        // address only counts once it has one.
+        merge?.listPeople,
+    ) {
         state.peopleForMerge()
     }
     val busy = merge?.busy != null
@@ -124,7 +137,7 @@ internal fun MergeDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit)
             )
         }
         YourCopyPanel(merge, directory.me, state.viewer.userId, onEvent)
-        CrewPanel(merge, directory.people, onEvent)
+        CrewPanel(merge, directory.people, state.lists, onEvent)
         WatermarkNote(state)
         merge.progress?.let { label ->
             Row(
@@ -276,16 +289,94 @@ private sealed interface MergeRow {
     data class Member(val person: MergePerson) : MergeRow
 }
 
+/**
+ * "Add a distribution list" — a whole list at once instead of ticking people
+ * one by one (the web's `MergePrintModal` list picker, PR #6574).
+ *
+ * One row above the crew header, which is already full: an accent tile, what
+ * picking does, and the field itself. It only ever ADDS, so it sits above the
+ * list it fills rather than replacing anything in it; the chosen lists stay in
+ * the field BY NAME so it is always visible where the selection came from, and
+ * removing one unticks only the people that list brought in.
+ *
+ * The rule under it is a sibling, never a child of the row: a full-width
+ * divider inside a horizontal parent collapses the layout.
+ */
+@Composable
+private fun ListPicker(
+    merge: MergeState,
+    lists: List<DistributionList>,
+    enabled: Boolean,
+    onEvent: (DocDistEvent) -> Unit,
+) {
+    val c = ZillitTheme.colors
+    // Resolved against the lists actually on offer, so the diff below can
+    // never report a list the picker could not have shown as removed.
+    val selected = merge.appliedLists.mapNotNull { applied -> lists.firstOrNull { it.id == applied.id } }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            Box(
+                Modifier.size(LIST_TILE.dp).clip(ZillitTheme.shapes.small).background(c.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitIcon(icon = ZillitIcons.Users, size = LIST_ICON.dp, tint = c.accent)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                ZillitText(text = str(S.desktop_docdist_merge_add_list), style = ZillitTheme.typography.label)
+                ZillitText(
+                    text = str(S.desktop_docdist_merge_add_list_hint),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = c.textMuted,
+                )
+            }
+            ZillitMultiSelect(
+                selected = selected,
+                options = lists,
+                label = { it.name },
+                onChange = { chosen ->
+                    val before = selected.map { it.id }.toSet()
+                    val after = chosen.map { it.id }.toSet()
+                    (after - before).forEach { onEvent(DocDistEvent.MergeApplyList(it)) }
+                    (before - after).forEach { onEvent(DocDistEvent.MergeRemoveList(it)) }
+                },
+                // An explicit share of the row: a select with no width beside a
+                // weighted column is squeezed to one letter.
+                modifier = Modifier.weight(LIST_FIELD_WEIGHT),
+                placeholder = str(S.desktop_docdist_merge_choose_list),
+                enabled = enabled,
+                emptyText = str(S.desktop_docdist_merge_no_lists),
+                // The count says what picking it will do.
+                subtitle = { list ->
+                    val n = list.recipients.size
+                    if (n == 1) str(S.desktop_tasks_people_count_one) else str(S.desktop_tasks_people_count, n)
+                },
+                showInitials = false,
+            )
+        }
+        ZillitDivider()
+    }
+}
+
 @Suppress("LongMethod", "CyclomaticComplexMethod") // One panel; head, list and empty states read the same filters.
 @Composable
-private fun CrewPanel(merge: MergeState, people: List<MergePerson>, onEvent: (DocDistEvent) -> Unit) {
+private fun CrewPanel(
+    merge: MergeState,
+    people: List<MergePerson>,
+    lists: List<DistributionList>,
+    onEvent: (DocDistEvent) -> Unit,
+) {
     val c = ZillitTheme.colors
     val busy = merge.busy != null
     val shown = people.filteredFor(merge.source, merge.search)
     val otherLabel = str(S.other)
     val contactsLabel = str(S.contacts)
-    val rows = remember(shown, otherLabel, contactsLabel) {
-        shown.groupedForMerge(otherLabel, contactsLabel).flatMap { group ->
+    val listsLabel = str(S.desktop_docdist_merge_from_lists)
+    val rows = remember(shown, otherLabel, contactsLabel, listsLabel) {
+        shown.groupedForMerge(otherLabel, contactsLabel, listsLabel).flatMap { group ->
             listOf<MergeRow>(MergeRow.Heading(group.key, group.department, group.isContacts)) +
                 group.members.map { MergeRow.Member(it) }
         }
@@ -294,6 +385,7 @@ private fun CrewPanel(merge: MergeState, people: List<MergePerson>, onEvent: (Do
     val allShown = shown.isNotEmpty() && shown.all { it.email.lowercase() in merge.picked }
     val filtering = merge.search.isNotBlank() || merge.source != MergeSource.All
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        ListPicker(merge, lists, enabled = !busy, onEvent = onEvent)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -404,3 +496,6 @@ private const val LIST_HEIGHT = 300
 private const val AVATAR = 36
 private const val EMAIL_WIDTH = 240
 private const val LEFT_OUT_SHOWN = 6
+private const val LIST_ICON = 15
+private const val LIST_TILE = 30
+private const val LIST_FIELD_WEIGHT = 1.2f

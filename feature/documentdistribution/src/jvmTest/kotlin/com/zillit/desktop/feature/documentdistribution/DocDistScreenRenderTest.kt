@@ -512,8 +512,14 @@ class DocDistScreenRenderTest {
                 // FieldLabel draws its heading in capitals.
                 onNodeWithText("YOUR COPY").assertIsDisplayed()
                 onNodeWithText("Rory").assertIsDisplayed()
-                // Crew under their department; an address-book-only person under Contacts.
-                onNodeWithText("Hire Co").assertIsDisplayed()
+                // Crew under their department; an address-book-only person under
+                // Contacts. Composed rather than displayed: since the
+                // distribution-list picker joined the dialog it is taller than
+                // this test window, so the foot of the people list sits below
+                // the fold HERE and the body scrolls to it. A real window shows
+                // it outright — `DocDistParityShotsTest` renders exactly this
+                // dialog at 1440dp with "Hire Co" in plain view.
+                onNodeWithText("Hire Co").assertExists()
             }
         }
     }

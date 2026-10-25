@@ -197,12 +197,24 @@ private fun InfoBanner(onEvent: (DocDistEvent) -> Unit) {
     }
 }
 
+/**
+ * The library's controls, as a full-bleed bar — the web's `.dd-topcard`, which
+ * stopped being an inset rounded card on 2026-10-22: it spans the page edge to
+ * edge with square corners, and its own horizontal padding (the page's) puts
+ * the controls back on the listing's column.
+ */
 @Suppress("LongMethod") // One screen section; splitting it separates each control from its state.
 @Composable
 private fun LibraryToolbar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     val canPost = state.viewer.canPost
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fullBleed(ZillitTheme.spacing.xl)
+            .fillMaxWidth()
+            // No shape: square corners, as the bar is now drawn.
+            .shadow(TOOLBAR_ELEVATION.dp)
+            .background(ZillitTheme.colors.surface)
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -956,6 +968,7 @@ const val LIBRARY_LISTING_TAG = "docdist-listing"
 
 private const val NAME_WEIGHT = 3f
 private const val DESCRIPTION_WEIGHT = 1.6f
+private const val TOOLBAR_ELEVATION = 2
 private const val SEARCH_WIDTH = 260
 private const val DATE_WIDTH = 170
 private const val SORT_WIDTH = 190

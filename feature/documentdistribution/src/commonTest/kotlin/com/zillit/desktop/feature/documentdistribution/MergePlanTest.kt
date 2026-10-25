@@ -1,10 +1,13 @@
 package com.zillit.desktop.feature.documentdistribution
 
+import com.zillit.desktop.feature.documentdistribution.domain.AppliedMergeList
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistCrewMember
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.MergePerson
 import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
+import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.buildMergePlan
 import com.zillit.desktop.feature.documentdistribution.domain.filteredFor
@@ -12,6 +15,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.groupedForMerge
 import com.zillit.desktop.feature.documentdistribution.domain.isMergeable
 import com.zillit.desktop.feature.documentdistribution.domain.mergeDirectory
 import com.zillit.desktop.feature.documentdistribution.domain.mergedFileName
+import com.zillit.desktop.feature.documentdistribution.domain.releaseOnListRemove
+import com.zillit.desktop.feature.documentdistribution.domain.resolveListPicks
 import com.zillit.desktop.feature.documentdistribution.domain.stampedRecipients
 import com.zillit.desktop.feature.documentdistribution.domain.summary
 import kotlin.test.Test
@@ -244,10 +249,84 @@ class MergePlanTest {
 
     @Test
     fun `departments run alphabetically, then other, then contacts`() {
-        val groups = people.groupedForMerge("Other", "Contacts")
+        val groups = people.groupedForMerge("Other", "Contacts", "From distribution lists")
         assertEquals(listOf("Camera", "Grips", "Other", "Contacts"), groups.map { it.department })
         assertTrue(groups.last().isContacts)
         // A contact's department is a label for searching, never a heading of its own.
         assertEquals(listOf("vendor@y.com"), groups.last().members.map { it.email })
+    }
+
+    // ── Picking a distribution list (web PR #6574) ──────────────────────────
+
+    private val fullUnit = DistributionList(
+        id = "l1",
+        name = "Full unit",
+        recipients = listOf(
+            Recipient("CAM@x.com", "Camera Op"),
+            Recipient("outsider@z.com", "Sam Outside", "Catering"),
+            Recipient("cam@x.com", "A duplicate in another spelling"),
+        ),
+    )
+
+    @Test
+    fun `a list ticks the rows it matches and asks for a row for anyone else`() {
+        val picks = resolveListPicks(fullUnit, people, myEmail = "me@x.com")
+        // The ROW's spelling is what gets ticked, so one person cannot count twice.
+        assertEquals(listOf("cam@x.com", "outsider@z.com"), picks.emails)
+        assertEquals(listOf("outsider@z.com"), picks.extra.map { it.email })
+        assertTrue(picks.extra.single().fromList)
+        // A list entry's department rides the job field, as a contact's does.
+        assertEquals("Catering", picks.extra.single().department)
+        assertFalse(picks.includesSelf)
+    }
+
+    @Test
+    fun `being on the list ticks your own copy, not a second crew row`() {
+        val withMe = fullUnit.copy(recipients = fullUnit.recipients + Recipient("Me@X.com", "Me"))
+        val picks = resolveListPicks(withMe, people, myEmail = "me@x.com")
+        assertTrue(picks.includesSelf)
+        assertFalse(picks.emails.any { it.equals("me@x.com", ignoreCase = true) })
+    }
+
+    @Test
+    fun `list-only people get their own heading, last of all`() {
+        val groups = (people + MergePerson(email = "outsider@z.com", fromList = true))
+            .groupedForMerge("Other", "Contacts", "From distribution lists")
+        assertEquals(
+            listOf("Camera", "Grips", "Other", "Contacts", "From distribution lists"),
+            groups.map { it.department },
+        )
+        assertTrue(groups.last().isContacts, "it is not a department heading")
+    }
+
+    @Test
+    fun `removing a list releases only who it ticked, and only if nobody else covers them`() {
+        val removed = AppliedMergeList("l1", "Full unit", listOf("cam@x.com", "grip@x.com"), includesSelf = true)
+        val other = AppliedMergeList("l2", "Grips", listOf("grip@x.com"), includesSelf = false)
+        val release = releaseOnListRemove(
+            removed = removed,
+            remaining = listOf(other),
+            // "vendor@y.com" was ticked by hand, so no list may untick them.
+            listOwned = setOf("cam@x.com", "grip@x.com"),
+            selfOwned = true,
+        )
+        assertEquals(setOf("cam@x.com"), release.release, "the other list still covers the grip")
+        assertTrue(release.releaseSelf)
+    }
+
+    @Test
+    fun `a hand-picked person survives the list that also named them`() {
+        val removed = AppliedMergeList("l1", "Full unit", listOf("cam@x.com"), includesSelf = true)
+        val release = releaseOnListRemove(removed, remaining = emptyList(), listOwned = emptySet(), selfOwned = false)
+        assertEquals(emptySet(), release.release)
+        assertFalse(release.releaseSelf, "your copy was ticked by hand, so the list cannot untick it")
+    }
+
+    @Test
+    fun `your copy stays while another chosen list still names you`() {
+        val removed = AppliedMergeList("l1", "Full unit", emptyList(), includesSelf = true)
+        val other = AppliedMergeList("l2", "Heads of dept", emptyList(), includesSelf = true)
+        val release = releaseOnListRemove(removed, listOf(other), listOwned = emptySet(), selfOwned = true)
+        assertFalse(release.releaseSelf)
     }
 }
