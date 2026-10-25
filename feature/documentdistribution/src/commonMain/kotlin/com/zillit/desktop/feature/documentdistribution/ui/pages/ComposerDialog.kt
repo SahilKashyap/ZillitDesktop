@@ -16,15 +16,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -690,15 +695,7 @@ private fun PreviewStage(composer: ComposerState) {
             }
         }
     }
-    PreviewRow("Content") {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitText(
-                text = composer.body.ifBlank { "(empty)" },
-                color = if (composer.body.isBlank()) c.textMuted else c.textPrimary,
-            )
-            composer.signature?.let { ZillitText(text = HtmlText.toPlainText(it.bodyHtml), color = c.textSecondary) }
-        }
-    }
+    PreviewRow("Content") { EmailBodyPage(composer) }
     ZillitNotice(
         text = "Each recipient’s opens of this email are recorded per person for delivery tracking.",
         tone = StatusTone.Neutral,
@@ -714,6 +711,47 @@ private fun AddressChips(recipients: List<Recipient>) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         recipients.forEach { ZillitStatusPill(label = it.email, tone = StatusTone.Progress) }
+    }
+}
+
+/**
+ * The body as it will ARRIVE, not as this module would style it — the web's
+ * `.dd-html-body` after 2026-10-23.
+ *
+ * A white page with a mail client's own defaults in BOTH themes, deliberately
+ * un-themed: the recipient reads this on white, so previewing it on the app's
+ * dark surface in the app's text colours stops it being a preview. The sizes
+ * and the greys are the web's own (`#ffffff` page, `#e5e7eb` rule, `#222222`
+ * text, 16px Arial), so the two clients preview the same email.
+ *
+ * The web's other half — its dark *writing* area forced to white — has no
+ * desktop counterpart: this composer edits the body as plain text, so nothing
+ * pasted into it carries colours of its own to be made unreadable.
+ */
+@Composable
+private fun EmailBodyPage(composer: ComposerState) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(EMAIL_PAGE_RADIUS.dp))
+            .background(EMAIL_PAGE)
+            .border(EMAIL_PAGE_RULE_WIDTH.dp, EMAIL_PAGE_RULE, RoundedCornerShape(EMAIL_PAGE_RADIUS.dp))
+            .padding(horizontal = EMAIL_PAGE_PADDING_H.dp, vertical = EMAIL_PAGE_PADDING_V.dp),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        val empty = composer.body.isBlank()
+        ZillitText(
+            text = composer.body.ifBlank { "(empty)" },
+            style = EMAIL_BODY_STYLE,
+            color = if (empty) EMAIL_PAGE_PLACEHOLDER else EMAIL_PAGE_TEXT,
+        )
+        composer.signature?.let {
+            ZillitText(
+                text = HtmlText.toPlainText(it.bodyHtml),
+                style = EMAIL_BODY_STYLE,
+                color = EMAIL_PAGE_TEXT,
+            )
+        }
     }
 }
 
@@ -831,3 +869,16 @@ private const val TYPEAHEAD_LIMIT = 6
 private const val TYPEAHEAD_HEIGHT = 200
 private const val PREVIEW_KEY_WIDTH = 110
 private const val PREVIEW_PANE_WIDTH = 340
+
+// The email page in the Preview — fixed, not theme tokens, because it stands
+// for the white page the recipient reads the mail on. The web's own values.
+private const val EMAIL_PAGE_RADIUS = 8
+private const val EMAIL_PAGE_PADDING_H = 14
+private const val EMAIL_PAGE_PADDING_V = 12
+private const val EMAIL_PAGE_RULE_WIDTH = 1
+private const val EMAIL_BODY_SIZE = 16
+private val EMAIL_PAGE = Color(0xFFFFFFFF)
+private val EMAIL_PAGE_RULE = Color(0xFFE5E7EB)
+private val EMAIL_PAGE_TEXT = Color(0xFF222222)
+private val EMAIL_PAGE_PLACEHOLDER = Color(0xFF9CA3AF)
+private val EMAIL_BODY_STYLE = TextStyle(fontSize = EMAIL_BODY_SIZE.sp, fontFamily = FontFamily.SansSerif)

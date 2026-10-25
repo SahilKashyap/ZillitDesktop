@@ -50,6 +50,12 @@ data class MergePerson(
     /** Blank for an address-book-only person, who has no account and no photo to resolve. */
     val userId: String = "",
     val isCrew: Boolean = false,
+    /**
+     * Added by a chosen distribution list, being neither crew nor a saved
+     * contact. They get a heading of their own so it is clear why someone the
+     * user never saved has appeared in the picker.
+     */
+    val fromList: Boolean = false,
 ) {
     val displayName: String get() = name.ifBlank { email }
 
@@ -154,37 +160,151 @@ data class MergeGroup(val key: String, val department: String, val isContacts: B
  * with none fall into [otherLabel], pinned just above the contacts, which are
  * pinned last of all.
  */
-fun List<MergePerson>.groupedForMerge(otherLabel: String, contactsLabel: String): List<MergeGroup> {
+fun List<MergePerson>.groupedForMerge(
+    otherLabel: String,
+    contactsLabel: String,
+    listsLabel: String,
+): List<MergeGroup> {
     val groups = LinkedHashMap<String, MutableList<MergePerson>>()
-    forEach { person ->
-        val key = when {
-            person.isContact -> CONTACTS_KEY
-            person.department.isNotBlank() -> person.department.trim()
-            else -> OTHER_KEY
-        }
-        groups.getOrPut(key) { mutableListOf() } += person
-    }
-    fun rank(key: String) = when (key) {
-        CONTACTS_KEY -> 2
-        OTHER_KEY -> 1
-        else -> 0
-    }
+    forEach { person -> groups.getOrPut(person.groupKey()) { mutableListOf() } += person }
     return groups.map { (key, members) ->
         MergeGroup(
             key = key,
-            department = when (key) {
-                CONTACTS_KEY -> contactsLabel
-                OTHER_KEY -> otherLabel
-                else -> key
-            },
-            isContacts = key == CONTACTS_KEY,
+            department = key.groupLabel(otherLabel, contactsLabel, listsLabel),
+            // Both catch-alls read as "not a department" to the picker.
+            isContacts = key == CONTACTS_KEY || key == LIST_KEY,
             members = members,
         )
-    }.sortedWith(compareBy({ rank(it.key) }, { it.department.lowercase() }))
+    }.sortedWith(compareBy({ it.key.groupRank() }, { it.department.lowercase() }))
+}
+
+/** Which heading someone falls under: their own list first, then the catch-alls. */
+private fun MergePerson.groupKey(): String = when {
+    fromList -> LIST_KEY
+    isContact -> CONTACTS_KEY
+    department.isNotBlank() -> department.trim()
+    else -> OTHER_KEY
+}
+
+/** Departments first, then Other, then Contacts, with the list-only people last of all. */
+private fun String.groupRank(): Int = when (this) {
+    LIST_KEY -> RANK_LISTS
+    CONTACTS_KEY -> RANK_CONTACTS
+    OTHER_KEY -> RANK_OTHER
+    else -> RANK_DEPARTMENT
+}
+
+private fun String.groupLabel(otherLabel: String, contactsLabel: String, listsLabel: String): String =
+    when (this) {
+        LIST_KEY -> listsLabel
+        CONTACTS_KEY -> contactsLabel
+        OTHER_KEY -> otherLabel
+        else -> this
+    }
+
+private const val RANK_DEPARTMENT = 0
+private const val RANK_OTHER = 1
+private const val RANK_CONTACTS = 2
+private const val RANK_LISTS = 3
+
+/**
+ * A distribution list chosen in the Merge dialog, kept in the picker by name.
+ *
+ * [emails] is what the list ticked, in the spelling the ROW carries rather
+ * than the list's own — the row is what gets ticked, so one person can never
+ * count twice.
+ */
+data class AppliedMergeList(
+    val id: String,
+    val name: String,
+    val emails: List<String>,
+    /** You are on it. You have your own row above the crew and are ticked there. */
+    val includesSelf: Boolean,
+)
+
+/** What picking a list does: who to tick, who needs a row first, and whether it is you. */
+data class ListPicks(
+    val emails: List<String>,
+    val extra: List<MergePerson>,
+    val includesSelf: Boolean,
+)
+
+/**
+ * Who a distribution list adds to the merge, resolved against the people the
+ * dialog already lists.
+ *
+ * ⚠ A list member need not be crew or in the address book — a list holds
+ * whatever addresses were typed or imported into it. The picker counts a
+ * ticked address as a recipient only when it has a ROW, so a member without
+ * one would be dropped from the merge without a word. Those come back as
+ * [ListPicks.extra], and the dialog gives each a row under "From distribution
+ * lists".
+ *
+ * Matched on the lowercased address: a list stores what was typed, the crew
+ * list what the server resolved.
+ */
+fun resolveListPicks(list: DistributionList, people: List<MergePerson>, myEmail: String): ListPicks {
+    val known = people.filter { it.email.isNotBlank() }.associate { it.email.lowercase() to it.email }
+    val me = myEmail.trim().lowercase()
+    val emails = mutableListOf<String>()
+    val extra = mutableListOf<MergePerson>()
+    val seen = mutableSetOf<String>()
+    var includesSelf = false
+    list.recipients.forEach { recipient ->
+        val key = recipient.email.trim().lowercase()
+        if (key.isEmpty() || !seen.add(key)) return@forEach
+        when {
+            me.isNotEmpty() && key == me -> includesSelf = true
+            known.containsKey(key) -> emails += known.getValue(key)
+            else -> {
+                val email = recipient.email.trim()
+                emails += email
+                // A contact's department rides the `job` wire field (ZL-21622),
+                // which is where a list's own entries carry it too.
+                extra += MergePerson(
+                    email = email,
+                    name = recipient.name,
+                    department = recipient.jobTitle,
+                    fromList = true,
+                )
+            }
+        }
+    }
+    return ListPicks(emails, extra, includesSelf)
+}
+
+/** Who comes off the selection when one chosen list is removed. Lowercased addresses. */
+data class ListRelease(val release: Set<String>, val releaseSelf: Boolean)
+
+/**
+ * Who comes off the selection when one chosen list is removed again.
+ *
+ * Only people a LIST ticked are released ([listOwned]), never anyone the user
+ * ticked by hand before a list brought them in. And someone on two chosen
+ * lists stays until both are gone — which is why the REMAINING lists' members
+ * are subtracted rather than the removed list's own additions being undone:
+ * the second list to cover a person added nobody, so undoing additions alone
+ * would strand them once the first was removed.
+ */
+fun releaseOnListRemove(
+    removed: AppliedMergeList,
+    remaining: List<AppliedMergeList>,
+    listOwned: Set<String>,
+    selfOwned: Boolean,
+): ListRelease {
+    val owned = listOwned.map { it.trim().lowercase() }.toSet()
+    val covered = remaining.flatMap { it.emails }.map { it.trim().lowercase() }.toSet()
+    val release = removed.emails
+        .map { it.trim().lowercase() }
+        .filter { it in owned && it !in covered }
+        .toSet()
+    val releaseSelf = removed.includesSelf && selfOwned && remaining.none { it.includesSelf }
+    return ListRelease(release, releaseSelf)
 }
 
 private const val CONTACTS_KEY = "\u0000contacts"
 private const val OTHER_KEY = "\u0000other"
+private const val LIST_KEY = "\u0000lists"
 
 /**
  * What one run builds.

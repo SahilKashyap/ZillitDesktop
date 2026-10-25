@@ -22,6 +22,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
 import com.zillit.desktop.feature.documentdistribution.domain.ListUsed
 import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
 import com.zillit.desktop.feature.documentdistribution.domain.MAX_TOTAL_ATTACHMENT_BYTES
+import com.zillit.desktop.feature.documentdistribution.domain.AppliedMergeList
+import com.zillit.desktop.feature.documentdistribution.domain.MergePerson
 import com.zillit.desktop.feature.documentdistribution.domain.MergeSource
 import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
 import com.zillit.desktop.feature.documentdistribution.domain.PublishCard
@@ -290,6 +292,21 @@ data class MergeState(
     val watermarkSelf: Boolean = true,
     /** Lower-cased addresses ticked in the list. */
     val picked: Set<String> = emptySet(),
+    /**
+     * Distribution-list members who are neither crew nor a saved contact,
+     * added when their list was picked. They need a row of their own: only
+     * someone with a row counts as a recipient (see `resolveListPicks`).
+     */
+    val listPeople: List<MergePerson> = emptyList(),
+    /** The lists chosen here, shown by name in the picker, in the order picked. */
+    val appliedLists: List<AppliedMergeList> = emptyList(),
+    /**
+     * Who a LIST ticked (lower-cased), as opposed to the user by hand.
+     * Removing a list only ever unticks these — see `releaseOnListRemove`.
+     */
+    val listOwned: Set<String> = emptySet(),
+    /** Your own copy was ticked by a list, so removing that list can untick it. */
+    val selfOwnedByList: Boolean = false,
     val search: String = "",
     val source: MergeSource = MergeSource.All,
     val busy: MergeAction? = null,

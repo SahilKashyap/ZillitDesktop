@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.documentdistribution.domain.AppliedMergeList
 import com.zillit.desktop.feature.documentdistribution.domain.MergeDirectory
 import com.zillit.desktop.feature.documentdistribution.domain.MergePlan
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
@@ -11,6 +12,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.buildMergePlan
 import com.zillit.desktop.feature.documentdistribution.domain.filteredFor
 import com.zillit.desktop.feature.documentdistribution.domain.mergeDirectory
 import com.zillit.desktop.feature.documentdistribution.domain.mergedFileName
+import com.zillit.desktop.feature.documentdistribution.domain.releaseOnListRemove
+import com.zillit.desktop.feature.documentdistribution.domain.resolveListPicks
 import com.zillit.desktop.feature.documentdistribution.domain.stampedRecipients
 import com.zillit.desktop.feature.documentdistribution.domain.withDefaults
 
@@ -40,6 +43,7 @@ internal class MergeSection(
                 copy(merge = MergeState(documents = documents, folderName = currentFolder?.name), crew = vm.host.crew())
             }
             primeContacts()
+            primeLists()
         }
     }
 
@@ -54,6 +58,90 @@ internal class MergeSection(
                 vm.update { copy(contacts = loaded.data) }
             }
         }
+    }
+
+    /**
+     * The project's distribution lists, refreshed every time the dialog opens
+     * rather than cached, so a list edited a moment ago on the Lists tab is
+     * picked up with its current members (the web refetches on open too). A
+     * failure leaves the picker empty; ticking people by hand still works.
+     */
+    private fun primeLists() {
+        vm.run {
+            (vm.repository.lists() as? ZillitResult.Success)?.let { loaded ->
+                vm.update { copy(lists = loaded.data) }
+            }
+        }
+    }
+
+    /**
+     * Picking a list ADDS everyone on it; nobody already chosen is unticked,
+     * so several lists combine and hand-picked people survive. The same rule
+     * as the composer's and the watermark ZIP's list pickers.
+     */
+    fun applyList(listId: String) {
+        val open = vm.state.merge ?: return
+        val list = vm.state.lists.firstOrNull { it.id == listId } ?: return
+        val directory = vm.state.peopleForMerge()
+        val picks = resolveListPicks(list, directory.people, directory.me.email)
+        val added = picks.emails.filter { it.lowercase() !in open.picked }
+        val selfAdded = picks.includesSelf && !open.includeSelf
+        val newRows = picks.extra.filter { person ->
+            open.listPeople.none { it.email.equals(person.email, ignoreCase = true) }
+        }
+        edit {
+            copy(
+                picked = picked + added.map { it.lowercase() },
+                listPeople = listPeople + newRows,
+                includeSelf = includeSelf || selfAdded,
+                appliedLists = if (appliedLists.any { it.id == listId }) {
+                    appliedLists
+                } else {
+                    appliedLists + AppliedMergeList(listId, list.name, picks.emails, picks.includesSelf)
+                },
+                listOwned = listOwned + added.map { it.lowercase() },
+                selfOwnedByList = selfOwnedByList || selfAdded,
+            )
+        }
+        val count = added.size + if (selfAdded) 1 else 0
+        vm.notice(
+            when {
+                picks.emails.isEmpty() && !picks.includesSelf ->
+                    str(S.desktop_docdist_merge_list_empty, list.name)
+                count == 0 -> str(S.desktop_docdist_merge_list_all_selected, list.name)
+                else -> str(S.desktop_docdist_merge_list_added, count, list.name)
+            },
+        )
+    }
+
+    /**
+     * Removing a chosen list unticks the people IT brought in — not anyone the
+     * user ticked by hand, and not anyone another chosen list still covers.
+     */
+    fun removeList(listId: String) {
+        val open = vm.state.merge ?: return
+        val removed = open.appliedLists.firstOrNull { it.id == listId } ?: return
+        val remaining = open.appliedLists.filter { it.id != listId }
+        val (release, releaseSelf) = releaseOnListRemove(
+            removed = removed,
+            remaining = remaining,
+            listOwned = open.listOwned,
+            selfOwned = open.selfOwnedByList,
+        )
+        edit {
+            copy(
+                appliedLists = remaining,
+                picked = picked - release,
+                listOwned = listOwned - release,
+                // A list-only person has no reason to stay listed once their
+                // list is gone; crew and contacts keep their row regardless.
+                listPeople = listPeople.filterNot { it.email.lowercase() in release },
+                includeSelf = if (releaseSelf) false else includeSelf,
+                selfOwnedByList = if (releaseSelf) false else selfOwnedByList,
+            )
+        }
+        val count = release.size + if (releaseSelf) 1 else 0
+        if (count > 0) vm.notice(str(S.desktop_docdist_merge_list_removed, count, removed.name))
     }
 
     fun close() {
@@ -155,8 +243,23 @@ internal class MergeSection(
 }
 
 /** Everyone the merge picker offers, with the signed-in person set apart. */
-internal fun DocDistUiState.peopleForMerge(): MergeDirectory =
-    mergeDirectory(crew, contacts, viewer.userId, viewer.userEmail)
+/**
+ * Everyone the merge picker offers, with the signed-in person set apart.
+ *
+ * The open dialog's list-only people are appended, never substituted: a row is
+ * what makes a ticked address count as a recipient, so a distribution-list
+ * member who is neither crew nor a contact would otherwise be ticked and then
+ * silently dropped from the merge. Anyone the directory already knows keeps
+ * their own richer row.
+ */
+internal fun DocDistUiState.peopleForMerge(): MergeDirectory {
+    val directory = mergeDirectory(crew, contacts, viewer.userId, viewer.userEmail)
+    val extra = merge?.listPeople.orEmpty()
+    if (extra.isEmpty()) return directory
+    val known = directory.people.map { it.email.lowercase() }.toMutableSet()
+    known += directory.me.email.lowercase()
+    return directory.copy(people = directory.people + extra.filter { known.add(it.email.lowercase()) })
+}
 
 /** What the dialog's current choices would build; null when it is closed. */
 internal fun DocDistUiState.mergePlan(): MergePlan? {

@@ -344,6 +344,8 @@ class DocDistViewModel(
             is DocDistEvent.MergeToggleShown -> merge.toggleShown(event.on)
             is DocDistEvent.MergeSearch -> merge.edit { copy(search = event.text) }
             is DocDistEvent.MergeSetSource -> merge.edit { copy(source = event.source) }
+            is DocDistEvent.MergeApplyList -> merge.applyList(event.listId)
+            is DocDistEvent.MergeRemoveList -> merge.removeList(event.listId)
             is DocDistEvent.RunMerge -> merge.run(event.action)
             DocDistEvent.OpenWatermarkSettings -> watermark.openSettings()
             DocDistEvent.CloseWatermarkSettings -> watermark.closeSettings()

@@ -14719,4 +14719,13 @@
     <string name="desktop_ss_operator_is_set">Is set</string>
     <string name="desktop_ss_operator_is_not_set">Is empty</string>
     <string name="desktop_ss_validation">Validation</string>
+    <string name="desktop_docdist_merge_add_list">Add a distribution list</string>
+    <string name="desktop_docdist_merge_add_list_hint">Selects everyone on each list you choose. Remove a list to untick its people.</string>
+    <string name="desktop_docdist_merge_choose_list">Choose a list</string>
+    <string name="desktop_docdist_merge_from_lists">From distribution lists</string>
+    <string name="desktop_docdist_merge_no_lists">No distribution lists yet</string>
+    <string name="desktop_docdist_merge_list_added">Selected %1$s from \"%2$s\"</string>
+    <string name="desktop_docdist_merge_list_removed">Unticked %1$s from \"%2$s\"</string>
+    <string name="desktop_docdist_merge_list_all_selected">Everyone on \"%1$s\" is already selected</string>
+    <string name="desktop_docdist_merge_list_empty">\"%1$s\" has no one on it yet</string>
 </resources>

@@ -145,6 +145,12 @@ sealed interface DocDistEvent {
     data class MergeToggleShown(val on: Boolean) : DocDistEvent
     data class MergeSearch(val text: String) : DocDistEvent
     data class MergeSetSource(val source: MergeSource) : DocDistEvent
+
+    /** Tick everyone on a distribution list. Only ever ADDS to the selection. */
+    data class MergeApplyList(val listId: String) : DocDistEvent
+
+    /** Untick the people that list brought in — nobody else. */
+    data class MergeRemoveList(val listId: String) : DocDistEvent
     data class RunMerge(val action: MergeAction) : DocDistEvent
 
     // -- the project's watermark settings --------------------------------------
